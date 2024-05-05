@@ -75,11 +75,14 @@ void setup() {
   Serial.begin(SERIAL_BAUDRATE);
   Serial.printf("\n\n\n\n\n !!! BOOTING !!! \n\n\n");
   Serial.printf("\n\n\n EnergyMe - Home \n\n\n\n\n");
-  
+
+  logger.logOnly("Booting...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.logOnly(("Build version: " + String(FIRMWARE_VERSION)).c_str(), "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.logOnly(("Build date: " + String(FIRMWARE_DATE)).c_str(), "main::setup", CUSTOM_LOG_LEVEL_INFO);
+
   logger.logOnly("Setting up LED...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
   led.begin();
   logger.logOnly("LED setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
-
 
   led.setCyan();
 
