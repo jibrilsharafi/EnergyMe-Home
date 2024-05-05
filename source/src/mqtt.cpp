@@ -48,14 +48,14 @@ void setupTopics() {
 
 void mqttLoop() {
     if (!clientMqtt.loop()) {
-        if (millis() - lastMillisMqttFailed < MQTT_MIN_CONNECTION_INTERVAL) {
+        if ((millis() - lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) {
             logger.log("MQTT connection failed recently. Skipping...", "mqtt::connectMqtt", CUSTOM_LOG_LEVEL_DEBUG);
             return;
         }
 
         logger.log("MQTT connection lost. Reconnecting...", "mqtt::mqttLoop", CUSTOM_LOG_LEVEL_WARNING);
         if (!connectMqtt()) {
-            logger.log("MQTT initialization failed!", "mqtt::mqttLoop", CUSTOM_LOG_LEVEL_ERROR);
+            return;
         }
     }
 
@@ -70,8 +70,10 @@ void mqttLoop() {
 
 bool connectMqtt() {
     logger.log("MQTT client configured. Starting attempt to connect...", "mqtt::connectMqtt", CUSTOM_LOG_LEVEL_DEBUG);
+    
     String _clientId = WiFi.macAddress();
     _clientId.replace(":", "");
+
     if (clientMqtt.connect(_clientId.c_str())) {
         logger.log("Connected to MQTT", "mqtt::connectMqtt", CUSTOM_LOG_LEVEL_INFO);
         
