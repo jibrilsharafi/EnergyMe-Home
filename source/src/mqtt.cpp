@@ -14,6 +14,7 @@ char *mqttTopicGeneralConfiguration;
 
 long lastMillisPublished = millis();
 long lastMillisMqttFailed = millis();
+int mqttConnectionAttempt = 0;
 
 Ticker statusTicker;
 
@@ -55,6 +56,9 @@ void mqttLoop() {
 
         logger.log("MQTT connection lost. Reconnecting...", "mqtt::mqttLoop", CUSTOM_LOG_LEVEL_WARNING);
         if (!connectMqtt()) {
+            if (mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
+                restartEsp32("mqtt::mqttLoop", "Failed to connect to MQTT and hit maximum connection attempt.");
+            }
             return;
         }
     }
@@ -76,6 +80,8 @@ bool connectMqtt() {
 
     if (clientMqtt.connect(_clientId.c_str())) {
         logger.log("Connected to MQTT", "mqtt::connectMqtt", CUSTOM_LOG_LEVEL_INFO);
+
+        mqttConnectionAttempt = 0;
         
         publishMetadata();
         publishChannel();
@@ -83,8 +89,13 @@ bool connectMqtt() {
         
         return true;
     } else {
-        logger.log("Failed to connect to MQTT", "mqtt::connectMqtt", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log(
+            ("Failed to connect to MQTT (" + String(mqttConnectionAttempt+1) + "/" + String(MQTT_MAX_CONNECTION_ATTEMPT) + ")").c_str(), 
+            "mqtt::connectMqtt", 
+            CUSTOM_LOG_LEVEL_WARNING
+        );
         lastMillisMqttFailed = millis();
+        mqttConnectionAttempt++;
         return false;
     }
 }
