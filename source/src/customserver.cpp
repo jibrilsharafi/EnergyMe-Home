@@ -21,58 +21,64 @@ void _setHtmlPages() {
     // HTML pages
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         logger.log("Request to get index page", "customserver::_setHtmlPages::/", CUSTOM_LOG_LEVEL_DEBUG);
-        request->send(SPIFFS, "/html/index.html", "text/html");
-    });
-
-    server.on("/home", HTTP_GET, [](AsyncWebServerRequest *request) {
-        logger.log("Request to get home page", "customserver::_setHtmlPages::/home", CUSTOM_LOG_LEVEL_DEBUG);
-        request->redirect("/update-successful");
+        // request->send(SPIFFS, "/html/index.html", "text/html");
+        // Instead of serving from SPIFFS, serve from PROGMEM calling index_html
+        request->send_P(200, "text/html", index_html);
     });
 
     server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
         logger.log("Request to get configuration page", "customserver::_setHtmlPages::/configuration", CUSTOM_LOG_LEVEL_DEBUG);
-        request->send(SPIFFS, "/html/configuration.html", "text/html");
+        // request->send(SPIFFS, "/html/configuration.html", "text/html");
+        request->send_P(200, "text/html", configuration_html);
     });
 
     server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) {
         logger.log("Request to get calibration page", "customserver::_setHtmlPages::/calibration", CUSTOM_LOG_LEVEL_DEBUG);
-        request->send(SPIFFS, "/html/calibration.html", "text/html");
+        // request->send(SPIFFS, "/html/calibration.html", "text/html");
+        request->send_P(200, "text/html", calibration_html);
     });
 
     server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) {
         logger.log("Request to get channel page", "customserver::_setHtmlPages::/channel", CUSTOM_LOG_LEVEL_DEBUG);
-        request->send(SPIFFS, "/html/channel.html", "text/html");
+        // request->send(SPIFFS, "/html/channel.html", "text/html");
+        request->send_P(200, "text/html", channel_html);
     });
 
     server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) {
         logger.log("Request to get info page", "customserver::_setHtmlPages::/info", CUSTOM_LOG_LEVEL_DEBUG);
-        request->send(SPIFFS, "/html/info.html", "text/html");
+        // request->send(SPIFFS, "/html/info.html", "text/html");
+        request->send_P(200, "text/html", info_html);
     });
 
     server.on("/update-successful", HTTP_GET, [](AsyncWebServerRequest *request) {
         logger.log("Request to get update successful page", "customserver::_setHtmlPages::/update-successful", CUSTOM_LOG_LEVEL_DEBUG);
-        request->send(SPIFFS, "/html/update-successful.html", "text/html");
+        // request->send(SPIFFS, "/html/update-successful.html", "text/html");
+        request->send_P(200, "text/html", update_successful_html);
     });
 
     // CSS
     server.on("/css/main.css", HTTP_GET, [](AsyncWebServerRequest *request) {
         logger.log("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", CUSTOM_LOG_LEVEL_DEBUG);
-        request->send(SPIFFS, "/css/main.css", "text/css");
+        // request->send(SPIFFS, "/css/main.css", "text/css");
+        request->send_P(200, "text/css", main_css);
     });
     
     server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) {
         logger.log("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", CUSTOM_LOG_LEVEL_DEBUG);
-        request->send(SPIFFS, "/css/button.css", "text/css");
+        // request->send(SPIFFS, "/css/button.css", "text/css");
+        request->send_P(200, "text/css", button_css);
     });
 
     server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request) {
         logger.log("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", CUSTOM_LOG_LEVEL_DEBUG);
-        request->send(SPIFFS, "/css/section.css", "text/css");
+        // request->send(SPIFFS, "/css/section.css", "text/css");
+        request->send_P(200, "text/css", section_css);
     });
     
     server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request) {
         logger.log("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", CUSTOM_LOG_LEVEL_DEBUG);
-        request->send(SPIFFS, "/css/typography.css", "text/css");
+        // request->send(SPIFFS, "/css/typography.css", "text/css");
+        request->send_P(200, "text/css", typography_css);
     });
 
     // Other
@@ -90,7 +96,8 @@ void _setHtmlPages() {
 void _setOta() {
     server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
       logger.log("Request to get update page", "customserver::_setOta::/update", CUSTOM_LOG_LEVEL_DEBUG);
-    request->send(SPIFFS, "/html/update.html", "text/html");
+    // request->send(SPIFFS, "/html/update.html", "text/html");
+    request->send_P(200, "text/html", update_html);
     });
 
     server.on("/do-update", HTTP_POST,
@@ -516,7 +523,8 @@ void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, siz
         if (!Update.end(true)) {
             Update.printError(Serial);
             logger.log("Update failed", "customserver::handleDoUpdate", CUSTOM_LOG_LEVEL_ERROR);
-            request->send(SPIFFS, "/html/update-failed.html", "text/html");
+            // request->send(SPIFFS, "/html/update-failed.html", "text/html");
+            request->send_P(200, "text/html", update_failed_html);
 
             for (int i = 0; i < 3; i++) {
                 led.setRed(true);
@@ -526,7 +534,8 @@ void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, siz
             }
         } else {
             logger.log("Update complete", "customserver::handleDoUpdate", CUSTOM_LOG_LEVEL_WARNING);
-            request->send(SPIFFS, "/html/update-successful.html", "text/html");
+            // request->send(SPIFFS, "/html/update-successful.html", "text/html");
+            request->send_P(200, "text/html", update_successful_html);
             tickerOnSuccess.once_ms(500, _onUpdateSuccessful);
         }
     }
