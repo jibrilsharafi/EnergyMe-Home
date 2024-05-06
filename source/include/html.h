@@ -958,14 +958,6 @@ const char index_html[] PROGMEM = R"rawliteral(
                         channelCount++;
                     }
 
-                    if (channelCount > 1) {
-                        var otherPower = (parseFloat(powerData[0].data.activePower) - totalPower).toFixed(0);
-                        powerDataHtml += '<div class="channel-box">';
-                        powerDataHtml += '<div class="channel-label">Other</div>';
-                        powerDataHtml += '<div class="channel-value">' + otherPower + ' W</div>';
-                        powerDataHtml += '</div>';
-                    }
-
                     document.getElementById("channels").innerHTML = powerDataHtml;
                 }
             };
