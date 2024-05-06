@@ -462,6 +462,7 @@ void _setRestApi() {
     });
 
     server.serveStatic("/log", SPIFFS, "/log.txt");
+    server.serveStatic("/daily-energy", SPIFFS, "/energy.json");
 }
 
 void _setOtherEndpoints() {

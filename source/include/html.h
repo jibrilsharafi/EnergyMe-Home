@@ -775,11 +775,11 @@ const char index_html[] PROGMEM = R"rawliteral(
 
                     var otherData = [];
                     for (var i = 0; i < consumptionData[0].activeEnergy.daily.length; i++) {
-                        var otherValue = consumptionData[0].activeEnergy.daily[i].value;
+                        var otherValue = consumptionData[0].activeEnergy.daily[i].value / 1000; // Divide by 1000 to go from Wh to kWh
                         for (var channel in consumptionData) {
                             if (channel !== "0") {
                                 if (consumptionData[channel].activeEnergy.daily.length > i) {
-                                    otherValue -= consumptionData[channel].activeEnergy.daily[i].value;
+                                    otherValue -= consumptionData[channel].activeEnergy.daily[i].value / 1000; // Divide by 1000 to go from Wh to kWh
                                 }
                             }
                         }
@@ -806,8 +806,8 @@ const char index_html[] PROGMEM = R"rawliteral(
                     for (var channel in consumptionData) {
                         var dailyData = [];
                         for (var i = 0; i < consumptionData[channel].activeEnergy.daily.length; i++) {
-                            var currentValue = consumptionData[channel].activeEnergy.daily[i].value;
-                            var previousValue = i > 0 ? consumptionData[channel].activeEnergy.daily[i - 1].value : 0;
+                            var currentValue = consumptionData[channel].activeEnergy.daily[i].value / 1000; // Divide by 1000 to go from Wh to kWh
+                            var previousValue = i > 0 ? consumptionData[channel].activeEnergy.daily[i - 1].value / 1000 : 0; // Divide by 1000 to go from Wh to kWh
                             var dailyValue = currentValue - previousValue;
                             dailyData.push({
                                 date: consumptionData[channel].activeEnergy.daily[i].date,
@@ -837,7 +837,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                     plotPieChart(consumptionData);
                 }
             };
-            xhttp.open("GET", "/rest/file/energy.json", true);
+            xhttp.open("GET", "/daily-energy", true);
             xhttp.send();
         }
 
