@@ -1059,9 +1059,6 @@ const char info_html[] PROGMEM = R"rawliteral(
             <h4>Heap</h4>
             <p><span class='list-key'>Free:</span><span id='heapFree' class='list-value'></span> kB</p>
             <p><span class='list-key'>Total:</span><span id='heapTotal' class='list-value'></span> kB</p>
-            <h4>Flash</h4>
-            <p><span class='list-key'>Free:</span><span id='flashFree' class='list-value'></span> kB</p>
-            <p><span class='list-key'>Total:</span><span id='flashTotal' class='list-value'></span> kB</p>
             <h4>Spiffs</h4>
             <p><span class='list-key'>Free:</span><span id='spiffsFree' class='list-value'></span> kB</p>
             <p><span class='list-key'>Total:</span><span id='spiffsTotal' class='list-value'></span> kB</p>
@@ -1149,12 +1146,6 @@ const char info_html[] PROGMEM = R"rawliteral(
                 var heapFreeStr = (heapFree/1000.0).toFixed(1) + " kB (" + ((heapFree/heapTotal)*100).toFixed(1) + "%)";
                 document.getElementById('heapFree').textContent = heapFreeStr;
                 document.getElementById('heapTotal').textContent = (heapTotal/1000.0).toFixed(1) + " kB";
-
-                var flashFree = data.memory.flash.free;
-                var flashTotal = data.memory.flash.total;
-                var flashFreeStr = (flashFree/1000.0).toFixed(1) + " kB (" + ((flashFree/flashTotal)*100).toFixed(1) + "%)";
-                document.getElementById('flashFree').textContent = flashFreeStr;
-                document.getElementById('flashTotal').textContent = (flashTotal/1000.0).toFixed(1) + " kB";
 
                 var spiffsFree = data.memory.spiffs.free;
                 var spiffsTotal = data.memory.spiffs.total;

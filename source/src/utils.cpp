@@ -35,9 +35,6 @@ JsonDocument getDeviceStatus()
     JsonObject _jsonHeap = _jsonMemory["heap"].to<JsonObject>();
     _jsonHeap["free"] = ESP.getFreeHeap();
     _jsonHeap["total"] = ESP.getHeapSize();
-    JsonObject _jsonFlash = _jsonMemory["flash"].to<JsonObject>();
-    _jsonFlash["free"] = ESP.getFreeSketchSpace();
-    _jsonFlash["total"] = ESP.getFlashChipSize();
     JsonObject _jsonSpiffs = _jsonMemory["spiffs"].to<JsonObject>();
     _jsonSpiffs["free"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
     _jsonSpiffs["total"] = SPIFFS.totalBytes();
@@ -158,11 +155,9 @@ void printDeviceStatus() {
   snprintf(
     _buffer, 
     sizeof(_buffer), 
-    "Free heap: %.2f kB | Total heap: %.2f kB || Free flash: %.2f kB | Total flash: %.2f kB || Free SPIFFS: %.2f kB | Total SPIFFS: %.2f kB",
+    "Free heap: %.2f kB | Total heap: %.2f kB || Free SPIFFS: %.2f kB | Total SPIFFS: %.2f kB",
     _jsonDocument["freeHeap"].as<float>() * BYTE_TO_KILOBYTE,
     _jsonDocument["totalHeap"].as<float>() * BYTE_TO_KILOBYTE,
-    _jsonDocument["freeFlash"].as<float>() * BYTE_TO_KILOBYTE,
-    _jsonDocument["totalFlash"].as<float>() * BYTE_TO_KILOBYTE,
     _jsonDocument["spiffsUsedSize"].as<float>() * BYTE_TO_KILOBYTE,
     _jsonDocument["spiffsTotalSize"].as<float>() * BYTE_TO_KILOBYTE
   );
