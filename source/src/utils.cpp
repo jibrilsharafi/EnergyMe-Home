@@ -3,6 +3,7 @@
 extern Logger logger;
 extern CustomTime customTime;
 extern Led led;
+extern Ade7953 ade7953;
 
 extern GeneralConfiguration generalConfiguration;
 
@@ -103,7 +104,8 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument jsonDocument){
 
 void restartEsp32(const char* functionName, const char* reason) {
 
-    // Here, we could save some data before restarting
+    ade7953.saveEnergyToSpiffs();
+
     char _buffer[50+strlen(functionName)+strlen(reason)];
     
     snprintf(
@@ -117,7 +119,7 @@ void restartEsp32(const char* functionName, const char* reason) {
   
     led.setBrightness(LED_MAX_BRIGHTNESS);
     led.block();
-    for (int i = 0; i < 5; i++){
+    for (int i = 0; i < 3; i++){
         led.setYellow(true);
         delay(200);
         led.setCyan(true);

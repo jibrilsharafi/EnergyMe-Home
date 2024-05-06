@@ -14,6 +14,7 @@
 #include "global.h"
 #include "customtime.h"
 #include "logger.h"
+#include "ade7953.h"
 
 JsonDocument getDeviceStatus();
 void restartEsp32(const char* functionName, const char* reason);
