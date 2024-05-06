@@ -116,9 +116,6 @@ void restartEsp32(const char* functionName, const char* reason) {
         reason
     );
     logger.log(_buffer, "main::restartEsp32", CUSTOM_LOG_LEVEL_FATAL);
-    logger.log("", "main::restartEsp32", CUSTOM_LOG_LEVEL_FATAL);
-    logger.log("", "main::restartEsp32", CUSTOM_LOG_LEVEL_FATAL);
-    logger.log("", "main::restartEsp32", CUSTOM_LOG_LEVEL_FATAL);
   
     led.setBrightness(LED_MAX_BRIGHTNESS);
     led.block();
