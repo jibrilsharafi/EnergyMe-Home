@@ -90,6 +90,10 @@ void setup() {
   if (!SPIFFS.begin(true)) {
     logger.logOnly("An Error has occurred while mounting SPIFFS", "main::setup", CUSTOM_LOG_LEVEL_FATAL);
   } else {
+    logger.log("Booting...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(("Build version: " + String(FIRMWARE_VERSION)).c_str(), "main::setup", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(("Build date: " + String(FIRMWARE_DATE)).c_str(), "main::setup", CUSTOM_LOG_LEVEL_INFO);
+    
     logger.log("SPIFFS mounted successfully", "main::setup", CUSTOM_LOG_LEVEL_INFO);
   }
   
