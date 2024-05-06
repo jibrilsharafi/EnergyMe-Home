@@ -4,13 +4,16 @@ WiFiManager wifiManager;
 
 bool setupWifi() {
   logger.log("Setting up WiFi...", "setupWifi", CUSTOM_LOG_LEVEL_DEBUG);
+
   wifiManager.setConfigPortalTimeout(WIFI_CONFIG_PORTAL_TIMEOUT);
+  
   if (!wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID)) {
     logger.log("Failed to connect and hit timeout", "customwifi::setupWifi", CUSTOM_LOG_LEVEL_ERROR);
     return false;
   }
+  
   printWifiStatus();
-  logger.log("Connected to WiFi", "customwifi::setupWifi", CUSTOM_LOG_LEVEL_DEBUG);
+  logger.log("Connected to WiFi", "customwifi::setupWifi", CUSTOM_LOG_LEVEL_INFO);
   return true;
 }
 
