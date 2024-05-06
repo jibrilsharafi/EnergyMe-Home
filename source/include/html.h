@@ -1048,8 +1048,7 @@ const char info_html[] PROGMEM = R"rawliteral(
         <div id="deviceInfo" class="section-box">
             <h2>Device Info</h2>
             <h3>System</h3>
-            <p><span class='list-key'>Uptime:</span><span id='uptime' class='list-value'></span> ms</p>
-            <p><span class='list-key'>Uptime:</span><span id='uptimeDays' class='list-value'></span> days</p>
+            <p><span class='list-key'>Uptime:</span><span id='uptime' class='list-value'></span></p>
             <h3>Firmware</h3>
             <p><span class='list-key'>Version:</span><span id='firmwareVersion' class='list-value'></span></p>
             <p><span class='list-key'>Date:</span><span id='firmwareDate' class='list-value'></span></p>
@@ -1120,18 +1119,49 @@ const char info_html[] PROGMEM = R"rawliteral(
             }
 
             function displayDeviceInfo(data) {
-                document.getElementById('uptime').textContent = data.system.uptime;
-                document.getElementById('uptimeDays').textContent = (data.system.uptime/1000.0/60.0/60.0/24.0).toFixed(1);
+                var uptime = data.system.uptime;
+                var uptimeStr = uptime + " ms";
+                if (uptime > 1000) {
+                    uptime /= 1000;
+                    uptimeStr = uptime.toFixed(1) + " seconds";
+                    if (uptime > 60) {
+                        uptime /= 60;
+                        uptimeStr = uptime.toFixed(1) + " minutes";
+                        if (uptime > 60) {
+                            uptime /= 60;
+                            uptimeStr = uptime.toFixed(1) + " hours";
+                            if (uptime > 24) {
+                                uptime /= 24;
+                                uptimeStr = uptime.toFixed(1) + " days";
+                            }
+                        }
+                    }
+                }
+                document.getElementById('uptime').textContent = uptimeStr;
+
                 document.getElementById('firmwareVersion').textContent = data.firmware.version;
                 document.getElementById('firmwareDate').textContent = data.firmware.date;
                 document.getElementById('filesystemVersion').textContent = data.filesystem.version;
                 document.getElementById('filesystemDate').textContent = data.filesystem.date;
-                document.getElementById('heapFree').textContent = (data.memory.heap.free/1000.0).toFixed(1);
-                document.getElementById('heapTotal').textContent = (data.memory.heap.total/1000.0).toFixed(1);
-                document.getElementById('flashFree').textContent = (data.memory.flash.free/1000.0).toFixed(1);
-                document.getElementById('flashTotal').textContent = (data.memory.flash.total/1000.0).toFixed(1);
-                document.getElementById('spiffsFree').textContent = (data.memory.spiffs.free/1000.0).toFixed(1);
-                document.getElementById('spiffsTotal').textContent = (data.memory.spiffs.total/1000.0).toFixed(1);
+                
+                var heapFree = data.memory.heap.free;
+                var heapTotal = data.memory.heap.total;
+                var heapFreeStr = (heapFree/1000.0).toFixed(1) + " kB (" + ((heapFree/heapTotal)*100).toFixed(1) + "%)";
+                document.getElementById('heapFree').textContent = heapFreeStr;
+                document.getElementById('heapTotal').textContent = (heapTotal/1000.0).toFixed(1) + " kB";
+
+                var flashFree = data.memory.flash.free;
+                var flashTotal = data.memory.flash.total;
+                var flashFreeStr = (flashFree/1000.0).toFixed(1) + " kB (" + ((flashFree/flashTotal)*100).toFixed(1) + "%)";
+                document.getElementById('flashFree').textContent = flashFreeStr;
+                document.getElementById('flashTotal').textContent = (flashTotal/1000.0).toFixed(1) + " kB";
+
+                var spiffsFree = data.memory.spiffs.free;
+                var spiffsTotal = data.memory.spiffs.total;
+                var spiffsFreeStr = (spiffsFree/1000.0).toFixed(1) + " kB (" + ((spiffsFree/spiffsTotal)*100).toFixed(1) + "%)";
+                document.getElementById('spiffsFree').textContent = spiffsFreeStr;
+                document.getElementById('spiffsTotal').textContent = (spiffsTotal/1000.0).toFixed(1) + " kB";
+
                 document.getElementById('chipModel').textContent = data.chip.model;
                 document.getElementById('chipRevision').textContent = data.chip.revision;
                 document.getElementById('chipCpuFrequency').textContent = data.chip.cpuFrequency;
