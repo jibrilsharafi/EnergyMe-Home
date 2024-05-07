@@ -54,9 +54,14 @@ JsonDocument deserializeJsonFromSpiffs(const char* path){
 
     File _file = SPIFFS.open(path, "r");
     if (!_file){
-        char _buffer[50+strlen(path)];
-        snprintf(_buffer, sizeof(_buffer), "Failed to open file %s", path);
-        logger.log(_buffer, "utils::deserializeJsonFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log(
+            (
+                "Failed to open file " + 
+                String(path)
+            ).c_str(),
+            "utils::deserializeJsonFromSpiffs",
+            CUSTOM_LOG_LEVEL_ERROR
+        );
 
         return JsonDocument();
     }
@@ -65,9 +70,16 @@ JsonDocument deserializeJsonFromSpiffs(const char* path){
     DeserializationError _error = deserializeJson(_jsonDocument, _file);
     _file.close();
     if (_error){
-        char _buffer[50+strlen(path)+strlen(_error.c_str())];
-        snprintf(_buffer, sizeof(_buffer), "Failed to deserialize file %s. Error: %s", path, _error.c_str());
-        logger.log(_buffer, "utils::deserializeJsonFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log(
+            (
+                "Failed to deserialize file " + 
+                String(path) + 
+                ". Error: " + 
+                String(_error.c_str())
+            ).c_str(),
+            "utils::deserializeJsonFromSpiffs",
+            CUSTOM_LOG_LEVEL_ERROR
+        );
         
         return JsonDocument();
     }
@@ -83,9 +95,14 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument jsonDocument){
 
     File _file = SPIFFS.open(path, "w");
     if (!_file){
-        char _buffer[50+strlen(path)];
-        snprintf(_buffer, sizeof(_buffer), "Failed to open file %s", path);
-        logger.log(_buffer, "utils::serializeJsonToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log(
+            (
+                "Failed to open file " + 
+                String(path)
+            ).c_str(),
+            "utils::serializeJsonToSpiffs",
+            CUSTOM_LOG_LEVEL_ERROR
+        );
 
         return false;
     }
@@ -103,16 +120,16 @@ void restartEsp32(const char* functionName, const char* reason) {
 
     ade7953.saveEnergyToSpiffs();
 
-    char _buffer[50+strlen(functionName)+strlen(reason)];
-    
-    snprintf(
-        _buffer, 
-        sizeof(_buffer), 
-        "Restarting ESP32 from function %s. Reason: %s",
-        functionName,
-        reason
+    logger.log(
+        (
+            "Restarting ESP32 from function " + 
+            String(functionName) + 
+            ". Reason: " + 
+            String(reason)
+        ).c_str(),
+        "main::restartEsp32",
+        CUSTOM_LOG_LEVEL_FATAL
     );
-    logger.log(_buffer, "main::restartEsp32", CUSTOM_LOG_LEVEL_FATAL);
   
     led.setBrightness(LED_MAX_BRIGHTNESS);
     led.block();
@@ -128,40 +145,37 @@ void restartEsp32(const char* functionName, const char* reason) {
 }
 
 void printMeterValues(MeterValues meterValues, const char* channelLabel) {
-  char _buffer[200];
-  snprintf(
-    _buffer, 
-    sizeof(_buffer), 
-    "%s: %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh | %.3f VARh | %.3f VAh",
-    channelLabel,
-    meterValues.voltage,
-    meterValues.current,
-    meterValues.activePower,
-    meterValues.reactivePower,
-    meterValues.apparentPower,
-    meterValues.powerFactor,
-    meterValues.activeEnergy,
-    meterValues.reactiveEnergy,
-    meterValues.apparentEnergy
-  );
-  logger.log(_buffer, "main::printMeterValues", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log(
+        (
+            String(channelLabel) + ": " + 
+            String(meterValues.voltage, 1) + " V | " + 
+            String(meterValues.current, 3) + " A || " + 
+            String(meterValues.activePower, 1) + " W | " + 
+            String(meterValues.reactivePower, 1) + " VAR | " + 
+            String(meterValues.apparentPower, 1) + " VA | " + 
+            String(meterValues.powerFactor, 3) + " PF || " + 
+            String(meterValues.activeEnergy, 3) + " Wh | " + 
+            String(meterValues.reactiveEnergy, 3) + " VARh | " + 
+            String(meterValues.apparentEnergy, 3) + " VAh"
+        ).c_str(),
+        "main::printMeterValues",
+        CUSTOM_LOG_LEVEL_DEBUG);
 }
 
-void printDeviceStatus() {
-  char _buffer[250];
+void printDeviceStatus()
+{
 
-  JsonDocument _jsonDocument = getDeviceStatus();
+    JsonDocument _jsonDocument = getDeviceStatus();
 
-  snprintf(
-    _buffer, 
-    sizeof(_buffer), 
-    "Free heap: %.2f kB | Total heap: %.2f kB || Free SPIFFS: %.2f kB | Total SPIFFS: %.2f kB",
-    _jsonDocument["freeHeap"].as<float>() * BYTE_TO_KILOBYTE,
-    _jsonDocument["totalHeap"].as<float>() * BYTE_TO_KILOBYTE,
-    _jsonDocument["spiffsUsedSize"].as<float>() * BYTE_TO_KILOBYTE,
-    _jsonDocument["spiffsTotalSize"].as<float>() * BYTE_TO_KILOBYTE
-  );
-  logger.log(_buffer, "main::printDeviceStatus", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log(
+        (
+            "Free heap: " + String(_jsonDocument["memory"]["heap"]["free"].as<int>()) + " bytes | " +
+            "Total heap: " + String(_jsonDocument["memory"]["heap"]["total"].as<int>()) + " bytes || " +
+            "Free SPIFFS: " + String(_jsonDocument["memory"]["spiffs"]["free"].as<int>()) + " bytes | " +
+            "Total SPIFFS: " + String(_jsonDocument["memory"]["spiffs"]["total"].as<int>()) + " bytes")
+            .c_str(),
+        "main::printDeviceStatus",
+        CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 bool checkIfFirstSetup() {

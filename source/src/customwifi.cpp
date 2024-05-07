@@ -69,20 +69,17 @@ JsonDocument getWifiStatus() {
 }
 
 void printWifiStatus() {
-  logger.log("Getting WiFi status...", "customwifi::printWifiStatus", CUSTOM_LOG_LEVEL_DEBUG);
-  char _buffer[200];
-
   JsonDocument _jsonDocument = getWifiStatus();
 
-  snprintf(
-    _buffer, 
-    sizeof(_buffer), 
-    "MAC: %s | IP: %s || Status: %s | SSID: %s | RSSI: %d",
-    _jsonDocument["macAddress"].as<String>().c_str(),
-    _jsonDocument["localIp"].as<String>().c_str(),
-    _jsonDocument["status"].as<String>().c_str(),
-    _jsonDocument["ssid"].as<String>().c_str(),
-    _jsonDocument["rssi"].as<int>()
+  logger.log(
+    (
+      "MAC: " + _jsonDocument["macAddress"].as<String>() + " | " +
+      "IP: " + _jsonDocument["localIp"].as<String>() + " | " +
+      "Status: " + _jsonDocument["status"].as<String>() + " | " +
+      "SSID: " + _jsonDocument["ssid"].as<String>() + " | " +
+      "RSSI: " + _jsonDocument["rssi"].as<String>()
+    ).c_str(),
+    "customwifi::printWifiStatus",
+    CUSTOM_LOG_LEVEL_DEBUG
   );
-  logger.log(_buffer, "customwifi::printWifiStatus", CUSTOM_LOG_LEVEL_DEBUG);
 }

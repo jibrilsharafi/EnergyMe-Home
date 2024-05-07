@@ -246,9 +246,11 @@ void publishGeneralConfiguration() {
 }
 
 void publishMessage(const char* topic, const char* message) {
-    char _buffer[100];
-    snprintf(_buffer, sizeof(_buffer), "Publishing message to topic %s", topic);
-    logger.log(_buffer, "mqtt::publishMessage", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log(
+        ("Publishing message to topic " + String(topic)).c_str(),
+        "mqtt::publishMessage",
+        CUSTOM_LOG_LEVEL_DEBUG
+    );
 
     if (!generalConfiguration.isCloudServicesEnabled) {
         logger.log("Cloud services not enabled", "mqtt::publishMessage", CUSTOM_LOG_LEVEL_INFO);

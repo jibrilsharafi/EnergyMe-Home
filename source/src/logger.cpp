@@ -74,17 +74,23 @@ void Logger::logOnly(const char* message, const char* function, int logLevel) {
 }
 
 void Logger::setPrintLevel(int level){
-    char _buffer[50];
-    snprintf(_buffer, sizeof(_buffer), "Setting print level to %d", level);
-    log(_buffer, "logger::setPrintLevel", CUSTOM_LOG_LEVEL_INFO);
+    log(
+        ("Setting print level to " + String(level)).c_str(),
+        "logger::setPrintLevel",
+        CUSTOM_LOG_LEVEL_INFO
+    );
+
     _print_level = _saturateLogLevel(level);
     _saveLogLevelsToSpiffs();
 }
 
 void Logger::setSaveLevel(int level){
-    char _buffer[50];
-    snprintf(_buffer, sizeof(_buffer), "Setting save level to %d", level);
-    log(_buffer, "logger::setSaveLevel", CUSTOM_LOG_LEVEL_INFO);
+    log(
+        ("Setting save level to " + String(level)).c_str(),
+        "logger::setSaveLevel",
+        CUSTOM_LOG_LEVEL_INFO
+    );
+
     _save_level = _saturateLogLevel(level);
     _saveLogLevelsToSpiffs();
 }
@@ -111,9 +117,13 @@ bool Logger::setLogLevelsFromSpiffs() {
 
     File _file = SPIFFS.open(LOGGER_JSON_PATH, "r");
     if (!_file){
-        char _buffer[50+strlen(LOGGER_JSON_PATH)];
-        snprintf(_buffer, sizeof(_buffer), "Failed to open file %s", LOGGER_JSON_PATH);
-        log(_buffer, "utils::deserializeJsonFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        log(
+            (
+                "Failed to open file " +
+                String(LOGGER_JSON_PATH))
+                .c_str(),
+            "utils::deserializeJsonFromSpiffs",
+            CUSTOM_LOG_LEVEL_ERROR);
         return false;
     }
     JsonDocument _jsonDocument;
@@ -121,9 +131,15 @@ bool Logger::setLogLevelsFromSpiffs() {
     DeserializationError _error = deserializeJson(_jsonDocument, _file);
     _file.close();
     if (_error){
-        char _buffer[50+strlen(LOGGER_JSON_PATH)+strlen(_error.c_str())];
-        snprintf(_buffer, sizeof(_buffer), "Failed to deserialize file %s. Error: %s", LOGGER_JSON_PATH, _error.c_str());
-        log(_buffer, "utils::deserializeJsonFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        log(
+            (
+                "Failed to deserialize file " +
+                String(LOGGER_JSON_PATH) +
+                ". Error: " +
+                String(_error.c_str()))
+                .c_str(),
+            "utils::deserializeJsonFromSpiffs",
+            CUSTOM_LOG_LEVEL_ERROR);
         return false;
     }
 

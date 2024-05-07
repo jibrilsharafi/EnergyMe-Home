@@ -416,10 +416,12 @@ std::vector<CalibrationValues> Ade7953::parseJsonCalibrationValues(JsonDocument 
 
 void Ade7953::setDefaultChannelData() {
     logger.log("Initializing data channel", "Ade7953::setDefaultChannelData", CUSTOM_LOG_LEVEL_DEBUG);
-    char _buffer[100];
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT+1; i++) {
-        snprintf(_buffer, sizeof(_buffer), "Initializing channel %d", i);
-        logger.log(_buffer, "Ade7953::setDefaultChannelData", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log(
+            ("Initializing channel " + String(i)).c_str(),
+            "Ade7953::setDefaultChannelData",
+            CUSTOM_LOG_LEVEL_DEBUG
+        );
         channelData[i].index = i;
         channelData[i].active = false;
         channelData[i].reverse = false;
@@ -749,17 +751,21 @@ void Ade7953::resetEnergyValues() {
 void Ade7953::setLinecyc(long linecyc) {
     linecyc = min(max(linecyc, 1L), 1000L);
 
-    char _buffer[50];
-    sprintf(_buffer, "Setting linecyc to %ld", linecyc);
-    logger.log(_buffer, "Ade7953::setLinecyc", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log(
+        ("Setting linecyc to " + String(linecyc)).c_str(),
+        "Ade7953::setLinecyc",
+        CUSTOM_LOG_LEVEL_DEBUG
+    );
 
     writeRegister(LINECYC_16, 16, linecyc);
 }
 
 void Ade7953::setPhaseCalibration(long phaseCalibration, int channel) {
-    char _buffer[50];
-    sprintf(_buffer, "Setting phase calibration to %ld on channel %d", phaseCalibration, channel);
-    logger.log(_buffer, "Ade7953::setPhaseCalibration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log(
+        ("Setting phase calibration to " + String(phaseCalibration) + " on channel " + String(channel)).c_str(),
+        "Ade7953::setPhaseCalibration",
+        CUSTOM_LOG_LEVEL_DEBUG
+    );
     
     if (channel == CHANNEL_A) {
         writeRegister(PHCALA_16, 16, phaseCalibration);
@@ -769,9 +775,11 @@ void Ade7953::setPhaseCalibration(long phaseCalibration, int channel) {
 }
 
 void Ade7953::setPgaGain(long pgaGain, int channel, int measurementType) {
-    char _buffer[100];
-    sprintf(_buffer, "Setting PGA gain to %ld on channel %d for measurement type %d", pgaGain, channel, measurementType);
-    logger.log(_buffer, "Ade7953::setPgaGain", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log(
+        ("Setting PGA gain to " + String(pgaGain) + " on channel " + String(channel) + " for measurement type " + String(measurementType)).c_str(),
+        "Ade7953::setPgaGain",
+        CUSTOM_LOG_LEVEL_DEBUG
+    );
 
     if (channel == CHANNEL_A) {
         switch (measurementType) {
@@ -795,9 +803,11 @@ void Ade7953::setPgaGain(long pgaGain, int channel, int measurementType) {
 }
 
 void Ade7953::setGain(long gain, int channel, int measurementType) {
-    char _buffer[100];
-    sprintf(_buffer, "Setting gain to %ld on channel %d for measurement type %d", gain, channel, measurementType);
-    logger.log(_buffer, "Ade7953::setGain", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log(
+        ("Setting gain to " + String(gain) + " on channel " + String(channel) + " for measurement type " + String(measurementType)).c_str(),
+        "Ade7953::setGain",
+        CUSTOM_LOG_LEVEL_DEBUG
+    );
 
     if (channel == CHANNEL_A) {
         switch (measurementType) {
@@ -839,9 +849,11 @@ void Ade7953::setGain(long gain, int channel, int measurementType) {
 }
 
 void Ade7953::setOffset(long offset, int channel, int measurementType) {
-    char _buffer[100];
-    sprintf(_buffer, "Setting offset to %ld on channel %d for measurement type %d", offset, channel, measurementType);
-    logger.log(_buffer, "Ade7953::setOffset", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log(
+        ("Setting offset to " + String(offset) + " on channel " + String(channel) + " for measurement type " + String(measurementType)).c_str(),
+        "Ade7953::setOffset",
+        CUSTOM_LOG_LEVEL_DEBUG
+    );
 
     if (channel == CHANNEL_A) {
         switch (measurementType) {
@@ -977,6 +989,11 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData) {
             _long_response -= (1 << nBits);
         }
     }
+    logger.log(
+        ("Read " + String(_long_response) + " from register " + String(registerAddress) + " with " + String(nBits) + " bits").c_str(),
+        "Ade7953::readRegister",
+        CUSTOM_LOG_LEVEL_VERBOSE
+    );
 
     return _long_response;
 }
@@ -989,9 +1006,11 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData) {
  * @param data The data to write to the register. (nBits-bit value)
  */
 void Ade7953::writeRegister(long registerAddress, int nBits, long data) {
-    char _buffer[100];
-    sprintf(_buffer, "Writing %ld to register %ld with %d bits", data, registerAddress, nBits);
-    logger.log(_buffer, "Ade7953::writeRegister", CUSTOM_LOG_LEVEL_DEBUG);    
+    logger.log(
+        ("Writing " + String(data) + " to register " + String(registerAddress) + " with " + String(nBits) + " bits").c_str(),
+        "Ade7953::writeRegister",
+        CUSTOM_LOG_LEVEL_DEBUG
+    );   
 
     digitalWrite(_ssPin, LOW);
 

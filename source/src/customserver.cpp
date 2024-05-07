@@ -11,9 +11,15 @@ void setupServer() {
 
     server.begin();
     Update.onProgress([](size_t progress, size_t total) {
-        char _buffer[30];
-        snprintf(_buffer, sizeof(_buffer), "Progress: %.1f %", (progress / (total / 100.0)));
-        logger.log(_buffer, "customserver::setupServer", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log(
+            (
+                "Progress: " + 
+                String((progress / (total / 100.0))) + 
+                "%"
+            ).c_str(),
+            "customserver::setupServer",
+            CUSTOM_LOG_LEVEL_DEBUG
+        );
     });
 }
 
@@ -314,9 +320,6 @@ void _setRestApi() {
             if (_nBits == 8 || _nBits == 16 || _nBits == 24 || _nBits == 32) {
                 if (_address >= 0 && _address <= 0x3FF) {
                     long registerValue = ade7953.readRegister(_address, _nBits, _signed);
-                    char _buffer[100];
-                    snprintf(_buffer, sizeof(_buffer), "Address: %d, nBits: %d, signed: %d, value: %ld", _address, _nBits, _signed, registerValue);
-                    logger.log(_buffer, "customserver::_setRestApi::/rest/ade7953/read-register", CUSTOM_LOG_LEVEL_DEBUG);
 
                     AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", String(registerValue).c_str());
                     request->send(response);
@@ -342,9 +345,6 @@ void _setRestApi() {
             if (_nBits == 8 || _nBits == 16 || _nBits == 24 || _nBits == 32) {
                 if (_address >= 0 && _address <= 0x3FF) {
                     ade7953.writeRegister(_address, _nBits, _data);
-                    char _buffer[100];
-                    snprintf(_buffer, sizeof(_buffer), "Address: %d, nBits: %d, data: %ld", _address, _nBits, _data);
-                    logger.log(_buffer, "customserver::_setRestApi::/rest/ade7953/read-register", CUSTOM_LOG_LEVEL_DEBUG);
 
                     AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", "Success");
                     request->send(response);
@@ -415,9 +415,6 @@ void _setRestApi() {
     });
 
     server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
-        char _buffer[100];
-        snprintf(_buffer, sizeof(_buffer), "Request to set values from REST API (POST). URL: %s", request->url().c_str());
-        logger.log(_buffer, "customserver::_setRestApi::onRequestBody", CUSTOM_LOG_LEVEL_DEBUG);
 
         if (request->url() == "/rest/calibration") {   
             logger.log("Request to set calibration values from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/calibration", CUSTOM_LOG_LEVEL_WARNING);
@@ -457,6 +454,11 @@ void _setRestApi() {
             request->send(response);
 
         } else {
+            logger.log(
+                ("Request to POST to unknown endpoint: " + request->url()).c_str(),
+                "customserver::_setRestApi::onRequestBody",
+                CUSTOM_LOG_LEVEL_WARNING
+            );
             request->send(404, "text/plain", "Not found");
         }
     });
@@ -467,9 +469,11 @@ void _setRestApi() {
 
 void _setOtherEndpoints() {
     server.onNotFound([](AsyncWebServerRequest *request) {
-        char _buffer[100];
-        snprintf(_buffer, sizeof(_buffer), "Request to get unknown page: %s", request->url().c_str());
-        logger.log(_buffer, "customserver::_setOtherEndpoints::onNotFound", CUSTOM_LOG_LEVEL_WARNING);
+        logger.log(
+            ("Request to get unknown page: " + request->url()).c_str(),
+            "customserver::_setOtherEndpoints::onNotFound",
+            CUSTOM_LOG_LEVEL_WARNING
+        );
         request->send(404, "text/plain", "Not found");
     });
 }
