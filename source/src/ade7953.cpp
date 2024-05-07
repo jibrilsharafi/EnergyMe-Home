@@ -751,7 +751,7 @@ void Ade7953::setLinecyc(long linecyc) {
 
     char _buffer[50];
     sprintf(_buffer, "Setting linecyc to %ld", linecyc);
-    logger.log(_buffer, "Ade7953::setLinecyc", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(_buffer, "Ade7953::setLinecyc", CUSTOM_LOG_LEVEL_DEBUG);
 
     writeRegister(LINECYC_16, 16, linecyc);
 }
@@ -759,7 +759,7 @@ void Ade7953::setLinecyc(long linecyc) {
 void Ade7953::setPhaseCalibration(long phaseCalibration, int channel) {
     char _buffer[50];
     sprintf(_buffer, "Setting phase calibration to %ld on channel %d", phaseCalibration, channel);
-    logger.log(_buffer, "Ade7953::setPhaseCalibration", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(_buffer, "Ade7953::setPhaseCalibration", CUSTOM_LOG_LEVEL_DEBUG);
     
     if (channel == CHANNEL_A) {
         writeRegister(PHCALA_16, 16, phaseCalibration);
@@ -771,7 +771,7 @@ void Ade7953::setPhaseCalibration(long phaseCalibration, int channel) {
 void Ade7953::setPgaGain(long pgaGain, int channel, int measurementType) {
     char _buffer[100];
     sprintf(_buffer, "Setting PGA gain to %ld on channel %d for measurement type %d", pgaGain, channel, measurementType);
-    logger.log(_buffer, "Ade7953::setPgaGain", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(_buffer, "Ade7953::setPgaGain", CUSTOM_LOG_LEVEL_DEBUG);
 
     if (channel == CHANNEL_A) {
         switch (measurementType) {
@@ -797,7 +797,7 @@ void Ade7953::setPgaGain(long pgaGain, int channel, int measurementType) {
 void Ade7953::setGain(long gain, int channel, int measurementType) {
     char _buffer[100];
     sprintf(_buffer, "Setting gain to %ld on channel %d for measurement type %d", gain, channel, measurementType);
-    logger.log(_buffer, "Ade7953::setGain", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(_buffer, "Ade7953::setGain", CUSTOM_LOG_LEVEL_DEBUG);
 
     if (channel == CHANNEL_A) {
         switch (measurementType) {
@@ -841,7 +841,7 @@ void Ade7953::setGain(long gain, int channel, int measurementType) {
 void Ade7953::setOffset(long offset, int channel, int measurementType) {
     char _buffer[100];
     sprintf(_buffer, "Setting offset to %ld on channel %d for measurement type %d", offset, channel, measurementType);
-    logger.log(_buffer, "Ade7953::setOffset", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(_buffer, "Ade7953::setOffset", CUSTOM_LOG_LEVEL_DEBUG);
 
     if (channel == CHANNEL_A) {
         switch (measurementType) {

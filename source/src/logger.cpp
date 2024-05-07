@@ -9,7 +9,7 @@ void Logger::begin(){
     if(!setLogLevelsFromSpiffs()){
         setDefaultLogLevels();
     }
-    log("Logger initialized", "Logger::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    log("Logger initialized", "logger::begin", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void Logger::log(const char* message, const char* function, int logLevel) {
@@ -76,7 +76,7 @@ void Logger::logOnly(const char* message, const char* function, int logLevel) {
 void Logger::setPrintLevel(int level){
     char _buffer[50];
     snprintf(_buffer, sizeof(_buffer), "Setting print level to %d", level);
-    log(_buffer, "Logger::setPrintLevel", CUSTOM_LOG_LEVEL_WARNING);
+    log(_buffer, "logger::setPrintLevel", CUSTOM_LOG_LEVEL_INFO);
     _print_level = _saturateLogLevel(level);
     _saveLogLevelsToSpiffs();
 }
@@ -84,7 +84,7 @@ void Logger::setPrintLevel(int level){
 void Logger::setSaveLevel(int level){
     char _buffer[50];
     snprintf(_buffer, sizeof(_buffer), "Setting save level to %d", level);
-    log(_buffer, "Logger::setSaveLevel", CUSTOM_LOG_LEVEL_WARNING);
+    log(_buffer, "logger::setSaveLevel", CUSTOM_LOG_LEVEL_INFO);
     _save_level = _saturateLogLevel(level);
     _saveLogLevelsToSpiffs();
 }
@@ -101,7 +101,7 @@ String Logger::getSaveLevel(){
 void Logger::setDefaultLogLevels() {
     setPrintLevel(DEFAULT_LOG_PRINT_LEVEL);
     setSaveLevel(DEFAULT_LOG_SAVE_LEVEL);
-    log("Log levels set to default", "Logger::setDefaultLogLevels", CUSTOM_LOG_LEVEL_DEBUG);
+    log("Log levels set to default", "logger::setDefaultLogLevels", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 bool Logger::setLogLevelsFromSpiffs() {
@@ -136,7 +136,7 @@ bool Logger::setLogLevelsFromSpiffs() {
     }
     setPrintLevel(_jsonDocument["level"]["print"].as<int>());
     setSaveLevel(_jsonDocument["level"]["save"].as<int>());
-    log("Log levels set from SPIFFS", "Logger::setLogLevelsFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    log("Log levels set from SPIFFS", "logger::setLogLevelsFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
     return true;
 }
@@ -147,12 +147,12 @@ void Logger::_saveLogLevelsToSpiffs() {
     _jsonDocument["level"]["save"] = _save_level;
     File _file = SPIFFS.open(LOGGER_JSON_PATH, "w");
     if (!_file){
-        log("Failed to open logger.json", "Logger::_saveLogLevelsToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        log("Failed to open logger.json", "logger::_saveLogLevelsToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
         return;
     }
     serializeJson(_jsonDocument, _file);
     _file.close();
-    log("Log levels saved to SPIFFS", "Logger::_saveLogLevelsToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    log("Log levels saved to SPIFFS", "logger::_saveLogLevelsToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void Logger::_save(const char* messageFormatted){
@@ -162,14 +162,14 @@ void Logger::_save(const char* messageFormatted){
         file.println(messageFormatted);
         file.close();
     } else {
-        logOnly("Failed to open log file", "Logger::_save", CUSTOM_LOG_LEVEL_ERROR);
+        logOnly("Failed to open log file", "logger::_save", CUSTOM_LOG_LEVEL_ERROR);
     }
 }
 
 int Logger::getNumberOfLinesInLogFile() {
     File _file = SPIFFS.open(LOG_TXT_PATH, "r");
     if (!_file) {
-        logOnly("Failed to open log file", "Logger::getNumberOfLinesInLogFile", CUSTOM_LOG_LEVEL_ERROR);
+        logOnly("Failed to open log file", "logger::getNumberOfLinesInLogFile", CUSTOM_LOG_LEVEL_ERROR);
         return -1;
     }
 
@@ -184,15 +184,15 @@ int Logger::getNumberOfLinesInLogFile() {
 }
 
 void Logger::clearLog() {
-    logOnly("Clearing log", "Logger::clearLog", CUSTOM_LOG_LEVEL_WARNING);
+    logOnly("Clearing log", "logger::clearLog", CUSTOM_LOG_LEVEL_WARNING);
     SPIFFS.remove(LOG_TXT_PATH);
     File _file = SPIFFS.open(LOG_TXT_PATH, "w");
     if (!_file) {
-        logOnly("Failed to open log file", "Logger::clearLog", CUSTOM_LOG_LEVEL_ERROR);
+        logOnly("Failed to open log file", "logger::clearLog", CUSTOM_LOG_LEVEL_ERROR);
         return;
     }
     _file.close();
-    log("Log cleared", "Logger::clearLog", CUSTOM_LOG_LEVEL_WARNING);
+    log("Log cleared", "logger::clearLog", CUSTOM_LOG_LEVEL_WARNING);
 }
 
 String Logger::_logLevelToString(int logLevel){

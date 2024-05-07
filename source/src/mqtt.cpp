@@ -118,27 +118,27 @@ char* constructMqttTopic(const char* ruleName, const char* topic) {
 
 void setTopicMeter() {
     mqttTopicMeter = constructMqttTopic(MQTT_RULE_NAME_METER, MQTT_TOPIC_METER);
-    logger.log(mqttTopicMeter, "mqtt::setTopicMeter", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(mqttTopicMeter, "mqtt::setTopicMeter", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void setTopicStatus() {
     mqttTopicStatus = constructMqttTopic(MQTT_RULE_NAME_STATUS, MQTT_TOPIC_STATUS);
-    logger.log(mqttTopicStatus, "mqtt::setTopicStatus", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(mqttTopicStatus, "mqtt::setTopicStatus", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void setTopicMetadata() {
     mqttTopicMetadata = constructMqttTopic(MQTT_RULE_NAME_METADATA, MQTT_TOPIC_METADATA);
-    logger.log(mqttTopicMetadata, "mqtt::setTopicMetadata", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(mqttTopicMetadata, "mqtt::setTopicMetadata", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void setTopicChannel() {
     mqttTopicChannel = constructMqttTopic(MQTT_RULE_NAME_CHANNEL, MQTT_TOPIC_CHANNEL);
-    logger.log(mqttTopicChannel, "mqtt::setTopicChannel", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(mqttTopicChannel, "mqtt::setTopicChannel", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void setTopicGeneralConfiguration() {
     mqttTopicGeneralConfiguration = constructMqttTopic(MQTT_RULE_NAME_GENERAL_CONFIGURATION, MQTT_TOPIC_GENERAL_CONFIGURATION);
-    logger.log(mqttTopicGeneralConfiguration, "mqtt::setTopicGeneralConfiguration", CUSTOM_LOG_LEVEL_INFO);
+    logger.log(mqttTopicGeneralConfiguration, "mqtt::setTopicGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 JsonDocument circularBufferToJson(CircularBuffer<data::PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &payloadMeter) {
