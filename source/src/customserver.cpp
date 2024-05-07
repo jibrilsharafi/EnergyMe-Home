@@ -478,7 +478,6 @@ void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, siz
     led.block();
     led.setPurple(true);
     if (!index){
-        logger.log("Update requested", "customserver::handleDoUpdate", CUSTOM_LOG_LEVEL_WARNING);
         int _cmd;
         if (filename.indexOf("spiffs") > -1) {
             logger.log("Update requested for SPIFFS", "customserver::handleDoUpdate", CUSTOM_LOG_LEVEL_WARNING);
