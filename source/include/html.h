@@ -779,7 +779,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                         for (var channel in consumptionData) {
                             if (channel !== "0") {
                                 if (consumptionData[channel].activeEnergy.daily.length > i) {
-                                    otherValue -= consumptionData[channel].activeEnergy.daily[i].value / 1000; // Divide by 1000 to go from Wh to kWh
+                                    otherValue -= consumptionData[channel].activeEnergy.daily[i].value;
                                 }
                             }
                         }
