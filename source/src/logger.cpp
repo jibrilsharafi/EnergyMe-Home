@@ -77,7 +77,7 @@ void Logger::setPrintLevel(int level){
     log(
         ("Setting print level to " + String(level)).c_str(),
         "logger::setPrintLevel",
-        CUSTOM_LOG_LEVEL_INFO
+        CUSTOM_LOG_LEVEL_DEBUG
     );
 
     _print_level = _saturateLogLevel(level);
@@ -88,7 +88,7 @@ void Logger::setSaveLevel(int level){
     log(
         ("Setting save level to " + String(level)).c_str(),
         "logger::setSaveLevel",
-        CUSTOM_LOG_LEVEL_INFO
+        CUSTOM_LOG_LEVEL_DEBUG
     );
 
     _save_level = _saturateLogLevel(level);
@@ -111,8 +111,6 @@ void Logger::setDefaultLogLevels() {
 }
 
 bool Logger::setLogLevelsFromSpiffs() {
-    // JsonDocument _jsonDocument = deserializeJsonFromSpiffs(LOGGER_JSON_PATH);
-
     log("Deserializing JSON from SPIFFS", "utils::deserializeJsonFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
     File _file = SPIFFS.open(LOGGER_JSON_PATH, "r");
