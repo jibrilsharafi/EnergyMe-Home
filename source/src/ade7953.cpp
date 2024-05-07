@@ -26,16 +26,16 @@ Ade7953::Ade7953(
     }
 
 bool Ade7953::begin() {
-    logger.log("Initializing Ade7953", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Initializing Ade7953", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
 
-    logger.log("Setting up pins", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting up pins", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     pinMode(_ssPin, OUTPUT);
     pinMode(_sckPin, OUTPUT);
     pinMode(_misoPin, INPUT);
     pinMode(_mosiPin, OUTPUT);
     pinMode(_resetPin, OUTPUT);
 
-    logger.log("Setting up SPI", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting up SPI", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     SPI.begin(_sckPin, _misoPin, _mosiPin, _ssPin);
     SPI.setClockDivider(SPI_CLOCK_DIV64); // 64div -> 250kHz on 16MHz clock, but on 80MHz clock it's 1.25MHz. Max Ade7953 clock is 2MHz
     SPI.setDataMode(SPI_MODE0);
@@ -44,46 +44,46 @@ bool Ade7953::begin() {
 
     _reset();
 
-    logger.log("Verifying communication with Ade7953", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Verifying communication with Ade7953", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     if (!_verifyCommunication()) {
-        logger.log("Failed to communicate with Ade7953", "Ade7953::begin", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to communicate with Ade7953", "ade7953::begin", CUSTOM_LOG_LEVEL_ERROR);
         return false;
     }
-    logger.log("Successfully initialized Ade7953", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully initialized Ade7953", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     
-    logger.log("Setting optimum settings", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting optimum settings", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     _setOptimumSettings();
-    logger.log("Successfully set optimum settings", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully set optimum settings", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
 
-    logger.log("Setting default configuration", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting default configuration", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     _setDefaultLycmode();
-    logger.log("Successfully set default configuration", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);    
+    logger.log("Successfully set default configuration", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);    
 
-    logger.log("Setting default no-load feature", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting default no-load feature", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     _setDefaultNoLoadFeature();
-    logger.log("Successfully set no-load feature", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully set no-load feature", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     
-    logger.log("Setting default config register", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting default config register", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     _setDefaultConfigRegister();
-    logger.log("Successfully set config register", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully set config register", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
 
-    logger.log("Setting PGA gains", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting PGA gains", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     _setDefaultPgaGain();
-    logger.log("Successfully set PGA gains", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully set PGA gains", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
 
-    logger.log("Setting configuration from spiffs", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting configuration from spiffs", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     _setConfigurationFromSpiffs();
-    logger.log("Done setting configuration from spiffs", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Done setting configuration from spiffs", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
  
-    logger.log("Reading calibration values from SPIFFS", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Reading calibration values from SPIFFS", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     _setCalibrationValuesFromSpiffs();
-    logger.log("Done reading calibration values from SPIFFS", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Done reading calibration values from SPIFFS", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
 
-    logger.log("Reading energy from SPIFFS", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Reading energy from SPIFFS", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     setEnergyFromSpiffs();
-    logger.log("Done reading energy from SPIFFS", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Done reading energy from SPIFFS", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
 
-    logger.log("Initializing data channel", "Ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Initializing data channel", "ade7953::begin", CUSTOM_LOG_LEVEL_DEBUG);
     _setChannelDataFromSpiffs();
 
     energyTicker.attach(ENERGY_SAVE_INTERVAL, [](){ saveEnergyFlag = true; });
@@ -141,7 +141,7 @@ void Ade7953::loop() {
 }
 
 void Ade7953::_reset() {
-    logger.log("Resetting Ade7953", "Ade7953::_reset", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Resetting Ade7953", "ade7953::_reset", CUSTOM_LOG_LEVEL_DEBUG);
     digitalWrite(_resetPin, LOW);
     delay(200);
     digitalWrite(_resetPin, HIGH);
@@ -156,10 +156,10 @@ void Ade7953::_reset() {
  */
 bool Ade7953::_verifyCommunication() {
     if ((readRegister(AP_NOLOAD_32, 32, false)) != DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
-        logger.log("Failed to communicate with Ade7953", "Ade7953::_verifyCommunication", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to communicate with Ade7953", "ade7953::_verifyCommunication", CUSTOM_LOG_LEVEL_ERROR);
         return false;
     }
-    logger.log("Successfully communicated with Ade7953", "Ade7953::_verifyCommunication", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully communicated with Ade7953", "ade7953::_verifyCommunication", CUSTOM_LOG_LEVEL_DEBUG);
     return true;
 }
 
@@ -167,7 +167,7 @@ bool Ade7953::_verifyCommunication() {
 // --------------------
 
 void Ade7953::setDefaultConfiguration() {
-    logger.log("Setting default configuration", "Ade7953::setDefaultConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting default configuration", "ade7953::setDefaultConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
 
     configuration.linecyc = DEFAULT_LCYCMODE_REGISTER;
     configuration.calibration.aWGain = DEFAULT_AWGAIN;
@@ -185,37 +185,37 @@ void Ade7953::setDefaultConfiguration() {
 
     _applyConfiguration();
 
-    logger.log("Default configuration set", "Ade7953::setDefaultConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Default configuration set", "ade7953::setDefaultConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void Ade7953::_setConfigurationFromSpiffs() {
-    logger.log("Setting configuration from SPIFFS", "Ade7953::_setConfigurationFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting configuration from SPIFFS", "ade7953::_setConfigurationFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH);
     if (_jsonDocument.isNull()) {
-        logger.log("Failed to read configuration from SPIFFS. Keeping default one", "Ade7953::_setConfigurationFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to read configuration from SPIFFS. Keeping default one", "ade7953::_setConfigurationFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
         setDefaultConfiguration();
     } else {
         setConfiguration(parseJsonConfiguration(_jsonDocument));
-        logger.log("Successfully read and set configuration from SPIFFS", "Ade7953::_setConfigurationFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully read and set configuration from SPIFFS", "ade7953::_setConfigurationFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
     }
 }
 
 void Ade7953::setConfiguration(Ade7953Configuration newConfiguration) {
-    logger.log("Setting configuration", "Ade7953::setConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting configuration", "ade7953::setConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
     configuration = newConfiguration;
 
     _applyConfiguration();
 
     if (!saveConfigurationToSpiffs()) {
-        logger.log("Failed to save configuration to SPIFFS", "Ade7953::setConfiguration", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to save configuration to SPIFFS", "ade7953::setConfiguration", CUSTOM_LOG_LEVEL_ERROR);
     } else {
-        logger.log("Successfully saved configuration to SPIFFS", "Ade7953::setConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully saved configuration to SPIFFS", "ade7953::setConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
     }
 }
 
 void Ade7953::_applyConfiguration() {
-    logger.log("Applying configuration", "Ade7953::applyConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Applying configuration", "ade7953::applyConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
 
     setLinecyc(configuration.linecyc);
     setGain(configuration.calibration.aWGain, CHANNEL_A, ACTIVE_POWER_MEASUREMENT);
@@ -231,23 +231,23 @@ void Ade7953::_applyConfiguration() {
     setPhaseCalibration(configuration.calibration.phCalA, CHANNEL_A);
     setPhaseCalibration(configuration.calibration.phCalB, CHANNEL_B);
 
-    logger.log("Successfully applied configuration", "Ade7953::applyConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully applied configuration", "ade7953::applyConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 bool Ade7953::saveConfigurationToSpiffs() {
-    logger.log("Saving configuration to SPIFFS", "Ade7953::saveConfigurationToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Saving configuration to SPIFFS", "ade7953::saveConfigurationToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
     if (serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, configurationToJson())) {
-        logger.log("Successfully serialize the JSON configuration to SPIFFS", "Ade7953::saveConfigurationToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully serialize the JSON configuration to SPIFFS", "ade7953::saveConfigurationToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
         return true;
     } else {
-        logger.log("Failed to serialize the JSON configuration to SPIFFS", "Ade7953::saveConfigurationToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to serialize the JSON configuration to SPIFFS", "ade7953::saveConfigurationToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
         return false;
     }
 }
 
 JsonDocument Ade7953::configurationToJson() {
-    logger.log("Converting configuration to JSON", "Ade7953::configurationToJson", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Converting configuration to JSON", "ade7953::configurationToJson", CUSTOM_LOG_LEVEL_DEBUG);
 
     JsonDocument _jsonDocument;
     JsonObject _jsonObject = _jsonDocument.to<JsonObject>();
@@ -271,7 +271,7 @@ JsonDocument Ade7953::configurationToJson() {
 }
 
 Ade7953Configuration Ade7953::parseJsonConfiguration(JsonDocument jsonDocument) {
-    logger.log("Parsing JSON configuration", "Ade7953::parseJsonConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Parsing JSON configuration", "ade7953::parseJsonConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
 
     Ade7953Configuration newConfiguration;
 
@@ -296,7 +296,7 @@ Ade7953Configuration Ade7953::parseJsonConfiguration(JsonDocument jsonDocument) 
 // --------------------
 
 void Ade7953::setDefaultCalibrationValues() {
-    logger.log("Setting default calibration values", "Ade7953::setDefaultCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting default calibration values", "ade7953::setDefaultCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
     CalibrationValues defaultValue;
 
     defaultValue.label = "Unknown";
@@ -313,32 +313,32 @@ void Ade7953::setDefaultCalibrationValues() {
 }
 
 void Ade7953::_setCalibrationValuesFromSpiffs() {
-    logger.log("Setting calibration values from SPIFFS", "Ade7953::_setCalibrationValuesFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting calibration values from SPIFFS", "ade7953::_setCalibrationValuesFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH);
     if (_jsonDocument.isNull()) {
-        logger.log("Failed to read calibration values from SPIFFS. Setting default ones...", "Ade7953::_setCalibrationValuesFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to read calibration values from SPIFFS. Setting default ones...", "ade7953::_setCalibrationValuesFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
         setDefaultCalibrationValues();
     } else {
-        logger.log("Successfully read calibration values from SPIFFS. Setting values...", "Ade7953::_setCalibrationValuesFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully read calibration values from SPIFFS. Setting values...", "ade7953::_setCalibrationValuesFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
         setCalibrationValues(parseJsonCalibrationValues(_jsonDocument));
     }
 }
 
 bool Ade7953::saveCalibrationValuesToSpiffs() {
-    logger.log("Saving calibration values to SPIFFS", "Ade7953::saveCalibrationValuesToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Saving calibration values to SPIFFS", "ade7953::saveCalibrationValuesToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
     if (serializeJsonToSpiffs(CALIBRATION_JSON_PATH, calibrationValuesToJson())) {
-        logger.log("Successfully saved calibration values to SPIFFS", "Ade7953::saveCalibrationValuesToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully saved calibration values to SPIFFS", "ade7953::saveCalibrationValuesToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
         return true;
     } else {
-        logger.log("Failed to save calibration values to SPIFFS", "Ade7953::saveCalibrationValuesToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to save calibration values to SPIFFS", "ade7953::saveCalibrationValuesToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
         return false;
     }
 }
 
 void Ade7953::setCalibrationValues(std::vector<CalibrationValues> newCalibrationValues) {
-    logger.log("Setting new calibration values", "Ade7953::setCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting new calibration values", "ade7953::setCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
 
     bool _found;
     for (auto& newCalibrationValue : newCalibrationValues) {
@@ -356,16 +356,16 @@ void Ade7953::setCalibrationValues(std::vector<CalibrationValues> newCalibration
     }
 
     if (!saveCalibrationValuesToSpiffs()) {
-        logger.log("Failed to save calibration values to SPIFFS", "Ade7953::setCalibrationValues", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to save calibration values to SPIFFS", "ade7953::setCalibrationValues", CUSTOM_LOG_LEVEL_ERROR);
     } else {
-        logger.log("Successfully saved calibration values to SPIFFS", "Ade7953::setCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully saved calibration values to SPIFFS", "ade7953::setCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
     }
 
-    logger.log("Successfully set new calibration values", "Ade7953::setCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully set new calibration values", "ade7953::setCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 JsonDocument Ade7953::calibrationValuesToJson() {
-    logger.log("Converting calibration values to JSON", "Ade7953::calibrationValuesToJson", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Converting calibration values to JSON", "ade7953::calibrationValuesToJson", CUSTOM_LOG_LEVEL_DEBUG);
 
     JsonDocument _jsonDocument;
     JsonArray _jsonArray = _jsonDocument.to<JsonArray>();
@@ -390,7 +390,7 @@ JsonDocument Ade7953::calibrationValuesToJson() {
 }
 
 std::vector<CalibrationValues> Ade7953::parseJsonCalibrationValues(JsonDocument jsonDocument) {
-    logger.log("Parsing JSON calibration values", "Ade7953::parseJsonCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Parsing JSON calibration values", "ade7953::parseJsonCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
     
     JsonArray jsonArray = jsonDocument.as<JsonArray>();
 
@@ -409,7 +409,7 @@ std::vector<CalibrationValues> Ade7953::parseJsonCalibrationValues(JsonDocument 
         calibrationValuesVector.push_back(calibrationValues);
     }
 
-    logger.log("Successfully parsed JSON calibration values", "Ade7953::parseJsonCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully parsed JSON calibration values", "ade7953::parseJsonCalibrationValues", CUSTOM_LOG_LEVEL_DEBUG);
     return calibrationValuesVector;
 }
 
@@ -417,11 +417,11 @@ std::vector<CalibrationValues> Ade7953::parseJsonCalibrationValues(JsonDocument 
 // --------------------
 
 void Ade7953::setDefaultChannelData() {
-    logger.log("Initializing data channel", "Ade7953::setDefaultChannelData", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Initializing data channel", "ade7953::setDefaultChannelData", CUSTOM_LOG_LEVEL_DEBUG);
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT+1; i++) {
         logger.log(
             ("Initializing channel " + String(i)).c_str(),
-            "Ade7953::setDefaultChannelData",
+            "ade7953::setDefaultChannelData",
             CUSTOM_LOG_LEVEL_DEBUG
         );
         channelData[i].index = i;
@@ -436,14 +436,14 @@ void Ade7953::setDefaultChannelData() {
 }
 
 void Ade7953::_setChannelDataFromSpiffs() {
-    logger.log("Setting data channel from SPIFFS", "Ade7953::_setChannelDataFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting data channel from SPIFFS", "ade7953::_setChannelDataFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH);
     if (_jsonDocument.isNull()) {
-        logger.log("Failed to read data channel from SPIFFS. Setting default one", "Ade7953::_setChannelDataFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to read data channel from SPIFFS. Setting default one", "ade7953::_setChannelDataFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
         setDefaultChannelData();
     } else {
-        logger.log("Successfully read data channel from SPIFFS. Setting values...", "Ade7953::_setChannelDataFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully read data channel from SPIFFS. Setting values...", "ade7953::_setChannelDataFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
         
         ChannelData newChannelData[MULTIPLEXER_CHANNEL_COUNT + 1];
         parseJsonChannelData(_jsonDocument, newChannelData);
@@ -453,28 +453,28 @@ void Ade7953::_setChannelDataFromSpiffs() {
 }
 
 void Ade7953::setChannelData(ChannelData* newChannelData) {
-    logger.log("Setting data channel", "Ade7953::setChannelData", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Setting data channel", "ade7953::setChannelData", CUSTOM_LOG_LEVEL_DEBUG);
     for(int i = 0; i < MULTIPLEXER_CHANNEL_COUNT + 1; i++) {
         channelData[i] = newChannelData[i];
     }
     saveChannelDataToSpiffs();
-    logger.log("Successfully set data channel", "Ade7953::setChannelData", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully set data channel", "ade7953::setChannelData", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 bool Ade7953::saveChannelDataToSpiffs() {
-    logger.log("Saving data channel to SPIFFS", "Ade7953::saveChannelDataToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Saving data channel to SPIFFS", "ade7953::saveChannelDataToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
     if (serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, channelDataToJson())) {
-        logger.log("Successfully saved data channel to SPIFFS", "Ade7953::saveChannelDataToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully saved data channel to SPIFFS", "ade7953::saveChannelDataToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
         return true;
     } else {
-        logger.log("Failed to save data channel to SPIFFS", "Ade7953::saveChannelDataToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to save data channel to SPIFFS", "ade7953::saveChannelDataToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
         return false;
     }
 }
 
 JsonDocument Ade7953::channelDataToJson() {
-    logger.log("Converting data channel to JSON", "Ade7953::channelDataToJson", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Converting data channel to JSON", "ade7953::channelDataToJson", CUSTOM_LOG_LEVEL_DEBUG);
 
     JsonDocument _jsonDocument;
     JsonArray _jsonArray = _jsonDocument.to<JsonArray>();
@@ -494,7 +494,7 @@ JsonDocument Ade7953::channelDataToJson() {
 }
 
 void Ade7953::parseJsonChannelData(JsonDocument jsonDocument, ChannelData* channelData) {
-    logger.log("Parsing JSON data channel", "Ade7953::parseJsonChannelData", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Parsing JSON data channel", "ade7953::parseJsonChannelData", CUSTOM_LOG_LEVEL_DEBUG);
 
     JsonArray jsonArray = jsonDocument.as<JsonArray>();
 
@@ -511,11 +511,11 @@ void Ade7953::parseJsonChannelData(JsonDocument jsonDocument, ChannelData* chann
         }
     }
 
-    logger.log("Successfully parsed JSON data channel", "Ade7953::parseJsonChannelData", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Successfully parsed JSON data channel", "ade7953::parseJsonChannelData", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void Ade7953::updateDataChannel() {
-    logger.log("Updating data channel", "Ade7953::updateDataChannel", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Updating data channel", "ade7953::updateDataChannel", CUSTOM_LOG_LEVEL_DEBUG);
     String _previousLabel; 
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT+1; i++) {
         _previousLabel = channelData[i].calibrationValues.label;
@@ -525,7 +525,7 @@ void Ade7953::updateDataChannel() {
 }
 
 void Ade7953::_updateSampleTime() {
-    logger.log("Updating sample time", "Ade7953::updateSampleTime", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Updating sample time", "ade7953::updateSampleTime", CUSTOM_LOG_LEVEL_DEBUG);
 
     int _activeChannelCount = getActiveChannelCount();
     if (_activeChannelCount > 0) {
@@ -533,9 +533,9 @@ void Ade7953::_updateSampleTime() {
         configuration.linecyc = linecyc;
         _applyConfiguration();
         saveConfigurationToSpiffs();
-        logger.log("Successfully updated sample time", "Ade7953::updateSampleTime", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully updated sample time", "ade7953::updateSampleTime", CUSTOM_LOG_LEVEL_DEBUG);
     } else {
-        logger.log("No active channels found, sample time not updated", "Ade7953::updateSampleTime", CUSTOM_LOG_LEVEL_WARNING);
+        logger.log("No active channels found, sample time not updated", "ade7953::updateSampleTime", CUSTOM_LOG_LEVEL_WARNING);
     }
 }
 
@@ -560,7 +560,7 @@ int Ade7953::findNextActiveChannel(int currentChannel) {
             return i;
         }
     }
-    logger.log("No active channel found, returning current channel", "Ade7953::findNextActiveChannel", CUSTOM_LOG_LEVEL_WARNING);
+    logger.log("No active channel found, returning current channel", "ade7953::findNextActiveChannel", CUSTOM_LOG_LEVEL_WARNING);
     return currentChannel;
 }
 
@@ -579,7 +579,7 @@ int Ade7953::getActiveChannelCount() {
 // --------------------
 
 void Ade7953::_initializeMeterValues() {
-    logger.log("Initializing meter values", "Ade7953::_initializeMeterValues", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Initializing meter values", "ade7953::_initializeMeterValues", CUSTOM_LOG_LEVEL_DEBUG);
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT+1; i++) {
         meterValues[i].voltage = 0.0;
         meterValues[i].current = 0.0;
@@ -673,12 +673,12 @@ JsonDocument Ade7953::meterValuesToJson() {
 // --------------------
 
 void Ade7953::setEnergyFromSpiffs() {
-    logger.log("Reading energy from SPIFFS", "Ade7953::readEnergyFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Reading energy from SPIFFS", "ade7953::readEnergyFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(ENERGY_JSON_PATH);
     if (_jsonDocument.isNull()) {
-        logger.log("Failed to read energy from SPIFFS", "Ade7953::readEnergyFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to read energy from SPIFFS", "ade7953::readEnergyFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
     } else {
-        logger.log("Successfully read energy from SPIFFS", "Ade7953::readEnergyFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully read energy from SPIFFS", "ade7953::readEnergyFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
         JsonObject _jsonObject = _jsonDocument.as<JsonObject>();
         for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT+1; i++) {
             meterValues[i].activeEnergy = _jsonObject[String(i)]["activeEnergy"].as<float>();
@@ -689,7 +689,7 @@ void Ade7953::setEnergyFromSpiffs() {
 }
 
 void Ade7953::saveEnergyToSpiffs() {
-    logger.log("Saving energy to SPIFFS", "Ade7953::saveEnergyToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Saving energy to SPIFFS", "ade7953::saveEnergyToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(ENERGY_JSON_PATH);
 
@@ -700,14 +700,14 @@ void Ade7953::saveEnergyToSpiffs() {
     }
 
     if (serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument)) {
-        logger.log("Successfully saved energy to SPIFFS", "Ade7953::saveEnergyToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully saved energy to SPIFFS", "ade7953::saveEnergyToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
     } else {
-        logger.log("Failed to save energy to SPIFFS", "Ade7953::saveEnergyToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to save energy to SPIFFS", "ade7953::saveEnergyToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
     }
 }
 
 void Ade7953::saveDailyEnergyToSpiffs() {
-    logger.log("Saving daily energy to SPIFFS", "Ade7953::saveDailyEnergyToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Saving daily energy to SPIFFS", "ade7953::saveDailyEnergyToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH);
     
@@ -727,14 +727,14 @@ void Ade7953::saveDailyEnergyToSpiffs() {
     }
 
     if (serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument)) {
-        logger.log("Successfully saved daily energy to SPIFFS", "Ade7953::saveDailyEnergyToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.log("Successfully saved daily energy to SPIFFS", "ade7953::saveDailyEnergyToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
     } else {
-        logger.log("Failed to save daily energy to SPIFFS", "Ade7953::saveDailyEnergyToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Failed to save daily energy to SPIFFS", "ade7953::saveDailyEnergyToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
     }
 }
 
 void Ade7953::resetEnergyValues() {
-    logger.log("Resetting energy values to 0", "Ade7953::resetEnergyValues", CUSTOM_LOG_LEVEL_WARNING);
+    logger.log("Resetting energy values to 0", "ade7953::resetEnergyValues", CUSTOM_LOG_LEVEL_WARNING);
 
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT+1; i++) {
         meterValues[i].activeEnergy = 0.0;
@@ -753,7 +753,7 @@ void Ade7953::setLinecyc(long linecyc) {
 
     logger.log(
         ("Setting linecyc to " + String(linecyc)).c_str(),
-        "Ade7953::setLinecyc",
+        "ade7953::setLinecyc",
         CUSTOM_LOG_LEVEL_DEBUG
     );
 
@@ -763,7 +763,7 @@ void Ade7953::setLinecyc(long linecyc) {
 void Ade7953::setPhaseCalibration(long phaseCalibration, int channel) {
     logger.log(
         ("Setting phase calibration to " + String(phaseCalibration) + " on channel " + String(channel)).c_str(),
-        "Ade7953::setPhaseCalibration",
+        "ade7953::setPhaseCalibration",
         CUSTOM_LOG_LEVEL_DEBUG
     );
     
@@ -777,7 +777,7 @@ void Ade7953::setPhaseCalibration(long phaseCalibration, int channel) {
 void Ade7953::setPgaGain(long pgaGain, int channel, int measurementType) {
     logger.log(
         ("Setting PGA gain to " + String(pgaGain) + " on channel " + String(channel) + " for measurement type " + String(measurementType)).c_str(),
-        "Ade7953::setPgaGain",
+        "ade7953::setPgaGain",
         CUSTOM_LOG_LEVEL_DEBUG
     );
 
@@ -805,7 +805,7 @@ void Ade7953::setPgaGain(long pgaGain, int channel, int measurementType) {
 void Ade7953::setGain(long gain, int channel, int measurementType) {
     logger.log(
         ("Setting gain to " + String(gain) + " on channel " + String(channel) + " for measurement type " + String(measurementType)).c_str(),
-        "Ade7953::setGain",
+        "ade7953::setGain",
         CUSTOM_LOG_LEVEL_DEBUG
     );
 
@@ -851,7 +851,7 @@ void Ade7953::setGain(long gain, int channel, int measurementType) {
 void Ade7953::setOffset(long offset, int channel, int measurementType) {
     logger.log(
         ("Setting offset to " + String(offset) + " on channel " + String(channel) + " for measurement type " + String(measurementType)).c_str(),
-        "Ade7953::setOffset",
+        "ade7953::setOffset",
         CUSTOM_LOG_LEVEL_DEBUG
     );
 
@@ -991,7 +991,7 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData) {
     }
     logger.log(
         ("Read " + String(_long_response) + " from register " + String(registerAddress) + " with " + String(nBits) + " bits").c_str(),
-        "Ade7953::readRegister",
+        "ade7953::readRegister",
         CUSTOM_LOG_LEVEL_VERBOSE
     );
 
@@ -1008,7 +1008,7 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData) {
 void Ade7953::writeRegister(long registerAddress, int nBits, long data) {
     logger.log(
         ("Writing " + String(data) + " to register " + String(registerAddress) + " with " + String(nBits) + " bits").c_str(),
-        "Ade7953::writeRegister",
+        "ade7953::writeRegister",
         CUSTOM_LOG_LEVEL_DEBUG
     );   
 
