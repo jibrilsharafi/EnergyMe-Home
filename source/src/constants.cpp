@@ -4,8 +4,8 @@
 // --------------------
 
 // Firmware info
-const char* FIRMWARE_VERSION = "0.3.23";
-const char* FIRMWARE_DATE = "2024-05-06";
+const char* FIRMWARE_VERSION = "0.3.24";
+const char* FIRMWARE_DATE = "2024-05-07";
 
 // File path
 const char* METADATA_JSON_PATH = "/metadata.json";
@@ -15,6 +15,7 @@ const char* CALIBRATION_JSON_PATH = "/config/calibration.json";
 const char* CHANNEL_DATA_JSON_PATH = "/config/channel.json";
 const char* LOGGER_JSON_PATH = "/config/logger.json";
 const char* ENERGY_JSON_PATH = "/energy.json";
+const char* DAILY_ENERGY_JSON_PATH = "/daily-energy.json";
 const char* FACTORY_PATH = "/fct";
 
 // Serial

@@ -3,6 +3,7 @@
 Ticker energyTicker;
 
 bool Ade7953::saveEnergyFlag = false;
+int currentDay = day();
 
 Ade7953::Ade7953(
     int ssPin,
@@ -127,14 +128,15 @@ void Ade7953::_setOptimumSettings()
 }
 
 void Ade7953::loop() {
-
     if (saveEnergyFlag) {
         saveEnergyToSpiffs();
         saveEnergyFlag = false;
     }
 
-    if (hour() == 23 && minute() == 59 && second() < 2) {
+    int newDay = day();
+    if (newDay != currentDay) {
         saveDailyEnergyToSpiffs();
+        currentDay = newDay;
     }
 }
 
@@ -679,9 +681,9 @@ void Ade7953::setEnergyFromSpiffs() {
         logger.log("Successfully read energy from SPIFFS", "Ade7953::readEnergyFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
         JsonObject _jsonObject = _jsonDocument.as<JsonObject>();
         for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT+1; i++) {
-            meterValues[i].activeEnergy = _jsonObject[String(i)]["activeEnergy"]["total"].as<float>();
-            meterValues[i].reactiveEnergy = _jsonObject[String(i)]["reactiveEnergy"]["total"].as<float>();
-            meterValues[i].apparentEnergy = _jsonObject[String(i)]["apparentEnergy"]["total"].as<float>();
+            meterValues[i].activeEnergy = _jsonObject[String(i)]["activeEnergy"].as<float>();
+            meterValues[i].reactiveEnergy = _jsonObject[String(i)]["reactiveEnergy"].as<float>();
+            meterValues[i].apparentEnergy = _jsonObject[String(i)]["apparentEnergy"].as<float>();
         }
     }
 }
@@ -692,9 +694,9 @@ void Ade7953::saveEnergyToSpiffs() {
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(ENERGY_JSON_PATH);
 
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT+1; i++) {
-        _jsonDocument[String(i)]["activeEnergy"]["total"] = meterValues[i].activeEnergy;
-        _jsonDocument[String(i)]["reactiveEnergy"]["total"] = meterValues[i].reactiveEnergy;
-        _jsonDocument[String(i)]["apparentEnergy"]["total"] = meterValues[i].apparentEnergy;
+        _jsonDocument[String(i)]["activeEnergy"] = meterValues[i].activeEnergy;
+        _jsonDocument[String(i)]["reactiveEnergy"] = meterValues[i].reactiveEnergy;
+        _jsonDocument[String(i)]["apparentEnergy"] = meterValues[i].apparentEnergy;
     }
 
     if (serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument)) {
@@ -707,22 +709,20 @@ void Ade7953::saveEnergyToSpiffs() {
 void Ade7953::saveDailyEnergyToSpiffs() {
     logger.log("Saving daily energy to SPIFFS", "Ade7953::saveDailyEnergyToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
 
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(ENERGY_JSON_PATH);
-    String _currentDate = customTime.getTimestamp().substring(0, 10);
+    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH);
+    
+    time_t now = time(nullptr);
+    now -= 24 * 60 * 60;  // Subtract one day to get the previous day
+    struct tm *timeinfo = localtime(&now);
+    char _currentDate[11];
+    strftime(_currentDate, sizeof(_currentDate), "%Y-%m-%d", timeinfo);
 
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT+1; i++) {
         if (channelData[i].active) {
-            JsonObject _jsonDailyObject = _jsonDocument[String(i)]["activeEnergy"]["daily"].add<JsonObject>();
-            _jsonDailyObject["date"] = _currentDate;
-            _jsonDailyObject["value"] = meterValues[i].activeEnergy;
-
-            JsonObject _jsonDailyObjectReactive = _jsonDocument[String(i)]["reactiveEnergy"]["daily"].add<JsonObject>();
-            _jsonDailyObjectReactive["date"] = _currentDate;
-            _jsonDailyObjectReactive["value"] = meterValues[i].reactiveEnergy;
-
-            JsonObject _jsonDailyObjectApparent = _jsonDocument[String(i)]["apparentEnergy"]["daily"].add<JsonObject>();
-            _jsonDailyObjectApparent["date"] = _currentDate;
-            _jsonDailyObjectApparent["value"] = meterValues[i].apparentEnergy;
+            JsonObject _jsonDailyObject = _jsonDocument[_currentDate][String(i)];
+            _jsonDailyObject["activeEnergy"] = meterValues[i].activeEnergy;
+            _jsonDailyObject["reactiveEnergy"] = meterValues[i].reactiveEnergy;
+            _jsonDailyObject["apparentEnergy"] = meterValues[i].apparentEnergy;
         }
     }
 

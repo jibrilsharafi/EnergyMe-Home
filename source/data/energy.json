@@ -1,240 +1,87 @@
 {
     "0": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "1": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "2": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "3": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "4": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "5": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "6": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "7": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "8": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "9": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "10": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "11": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "12": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "13": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "14": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "15": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     },
     "16": {
-        "activeEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "reactiveEnergy": {
-            "total": 0,
-            "daily": []
-        },
-        "apparentEnergy": {
-            "total": 0,
-            "daily": []
-        }
+        "activeEnergy": 0,
+        "reactiveEnergy": 0,
+        "apparentEnergy": 0
     }
 }
