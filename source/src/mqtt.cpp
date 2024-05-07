@@ -253,7 +253,6 @@ void publishMessage(const char* topic, const char* message) {
     );
 
     if (!generalConfiguration.isCloudServicesEnabled) {
-        logger.log("Cloud services not enabled", "mqtt::publishMessage", CUSTOM_LOG_LEVEL_INFO);
         return;
     }
 

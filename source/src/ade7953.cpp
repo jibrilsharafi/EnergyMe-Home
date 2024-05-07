@@ -560,7 +560,7 @@ int Ade7953::findNextActiveChannel(int currentChannel) {
             return i;
         }
     }
-    logger.log("No active channel found, returning current channel", "ade7953::findNextActiveChannel", CUSTOM_LOG_LEVEL_WARNING);
+    logger.log("No active channel found, returning current channel", "ade7953::findNextActiveChannel", CUSTOM_LOG_LEVEL_DEBUG);
     return currentChannel;
 }
 
