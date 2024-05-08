@@ -17,12 +17,11 @@ extern Logger logger;
 extern CustomTime customTime;
 
 bool setupMqtt();
-void setupTopics();
 void mqttLoop();
 bool connectMqtt();
 
+void setupTopics();
 char* constructMqttTopic(const char* ruleName, const char* topic);
-
 void setTopicMeter();
 void setTopicStatus();
 void setTopicMetadata();

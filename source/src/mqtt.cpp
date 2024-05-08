@@ -1,6 +1,8 @@
 #include "mqtt.h"
 
+#if __has_include("secrets.h")
 #include "secrets.h"
+#endif
 
 #include "ade7953.h"
 
@@ -18,9 +20,13 @@ int mqttConnectionAttempt = 0;
 
 Ticker statusTicker;
 
+#ifdef ENERGYME_HOME_SECRETS_H
+
 bool setupMqtt() {
     logger.log("Connecting to MQTT...", "mqtt::setupMqtt", CUSTOM_LOG_LEVEL_DEBUG);
     
+    setupTopics();
+
     net.setCACert(MQTT_CERT_CA);
     net.setCertificate(MQTT_CERT_CRT);
     net.setPrivateKey(MQTT_CERT_PRIVATE);
@@ -37,15 +43,18 @@ bool setupMqtt() {
     statusTicker.attach(MQTT_STATUS_PUBLISH_INTERVAL, publishStatus);
 
     return true;
+
+}
+#else
+
+bool setupMqtt() {
+    logger.log("Secrets not available. MQTT setup failed.", "mqtt::setupMqtt", CUSTOM_LOG_LEVEL_ERROR);
+    return false;
 }
 
-void setupTopics() {
-    setTopicMeter();
-    setTopicStatus();
-    setTopicMetadata();
-    setTopicChannel();
-    setTopicGeneralConfiguration();
-}
+#endif
+
+#ifdef ENERGYME_HOME_SECRETS_H
 
 void mqttLoop() {
     if (!clientMqtt.loop()) {
@@ -71,6 +80,14 @@ void mqttLoop() {
         lastMillisPublished = millis();
     }
 }
+
+#else
+
+void mqttLoop() {
+    logger.log("Secrets not available. MQTT loop failed.", "mqtt::mqttLoop", CUSTOM_LOG_LEVEL_DEBUG);
+}
+
+#endif
 
 bool connectMqtt() {
     logger.log("MQTT client configured. Starting attempt to connect...", "mqtt::connectMqtt", CUSTOM_LOG_LEVEL_DEBUG);
@@ -98,6 +115,16 @@ bool connectMqtt() {
         mqttConnectionAttempt++;
         return false;
     }
+}
+
+#ifdef ENERGYME_HOME_SECRETS_H
+
+void setupTopics() {
+    setTopicMeter();
+    setTopicStatus();
+    setTopicMetadata();
+    setTopicChannel();
+    setTopicGeneralConfiguration();
 }
 
 char* constructMqttTopic(const char* ruleName, const char* topic) {
@@ -140,6 +167,8 @@ void setTopicGeneralConfiguration() {
     mqttTopicGeneralConfiguration = constructMqttTopic(MQTT_RULE_NAME_GENERAL_CONFIGURATION, MQTT_TOPIC_GENERAL_CONFIGURATION);
     logger.log(mqttTopicGeneralConfiguration, "mqtt::setTopicGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
 }
+
+#endif
 
 JsonDocument circularBufferToJson(CircularBuffer<data::PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &payloadMeter) {
     logger.log("Converting circular buffer to JSON", "mqtt::circularBufferToJson", CUSTOM_LOG_LEVEL_DEBUG);

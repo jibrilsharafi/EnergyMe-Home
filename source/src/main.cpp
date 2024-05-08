@@ -156,7 +156,6 @@ void setup() {
   logger.log("Server setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
 
   logger.log("Setting up MQTT...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
-  setupTopics();
   if (generalConfiguration.isCloudServicesEnabled) {
     if (!setupMqtt()) {
       logger.log("MQTT initialization failed!", "main::setup", CUSTOM_LOG_LEVEL_ERROR);
