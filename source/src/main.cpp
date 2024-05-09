@@ -38,8 +38,6 @@ CircularBuffer<data::PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> payloadMeter;
 // Custom classes
 
 CustomTime customTime(
-  GMT_OFFSET, 
-  DAYLIGHT_OFFSET,
   NTP_SERVER,
   TIME_SYNC_INTERVAL
 );
@@ -145,6 +143,7 @@ void setup() {
   }
   
   logger.log("Syncing time...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  updateTimezone();
   if (!customTime.begin()) {
     logger.log("Time sync failed!", "main::setup", CUSTOM_LOG_LEVEL_ERROR);
   } else {

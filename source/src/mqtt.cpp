@@ -269,6 +269,8 @@ void publishGeneralConfiguration() {
     JsonObject _jsonObject = _jsonDocument.to<JsonObject>();
     _jsonObject["unixTime"] = customTime.getUnixTime();
     _jsonObject["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
+    _jsonObject["gmtOffset"] = generalConfiguration.gmtOffset;
+    _jsonObject["dstOffset"] = generalConfiguration.dstOffset;
 
     String _generalConfigurationMessage;
     serializeJson(_jsonDocument, _generalConfigurationMessage);
@@ -308,7 +310,7 @@ String getPublicIp() {
             return payload;
         }
     } else {
-        logger.log("Error on HTTP request", "getPublicIp", CUSTOM_LOG_LEVEL_ERROR);
+        logger.log("Error on HTTP request", "mqtt::getPublicIp", CUSTOM_LOG_LEVEL_ERROR);
     }
 
     http.end();

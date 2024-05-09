@@ -56,6 +56,8 @@ struct Ade7953Configuration {
 
 struct GeneralConfiguration {
   bool isCloudServicesEnabled;
+  int gmtOffset;
+  int dstOffset;
 };
 
 namespace data {

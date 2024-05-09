@@ -332,6 +332,8 @@ void _setRestApi() {
         JsonDocument _jsonDocument;
 
         _jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
+        _jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
+        _jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
 
         String _buffer;
         serializeJson(_jsonDocument, _buffer);

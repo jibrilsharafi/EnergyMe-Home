@@ -210,6 +210,8 @@ void setDefaultGeneralConfiguration() {
     logger.log("Setting default general configuration...", "utils::setDefaultGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
     
     generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
+    generalConfiguration.gmtOffset = DEFAULT_GMT_OFFSET;
+    generalConfiguration.dstOffset = DEFAULT_DST_OFFSET;
     
     logger.log("Default general configuration set", "utils::setDefaultGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
 }
@@ -253,6 +255,8 @@ JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguratio
     JsonDocument _jsonDocument;
     
     _jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
+    _jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
+    _jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
     
     return _jsonDocument;
 }
@@ -261,6 +265,112 @@ GeneralConfiguration jsonToGeneralConfiguration(JsonDocument jsonDocument) {
     GeneralConfiguration _generalConfiguration;
     
     _generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
+    _generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
+    _generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
 
     return _generalConfiguration;
+}
+
+JsonDocument getPublicLocation() {
+    HTTPClient http;
+
+    JsonDocument _jsonDocument;
+
+    http.begin(PUBLIC_LOCATION_ENDPOINT);
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+        if (httpCode == HTTP_CODE_OK) {
+            String payload = http.getString();
+            payload.trim();
+            
+            deserializeJson(_jsonDocument, payload);
+
+            logger.log(
+                (
+                    "Location: " + 
+                    String(_jsonDocument["city"].as<String>()) + 
+                    ", " + 
+                    String(_jsonDocument["country"].as<String>()) + 
+                    " | Lat: " + 
+                    String(_jsonDocument["lat"].as<float>(), 4) + 
+                    " | Lon: " + 
+                    String(_jsonDocument["lon"].as<float>(), 4)
+                ).c_str(),
+                "utils::getPublicLocation",
+                CUSTOM_LOG_LEVEL_DEBUG
+            );
+        }
+    } else {
+        logger.log(
+            ("Error on HTTP request: " + String(httpCode)).c_str(), 
+            "utils::getPublicLocation", 
+            CUSTOM_LOG_LEVEL_ERROR
+        );
+        deserializeJson(_jsonDocument, "{}");
+    }
+
+    http.end();
+
+    return _jsonDocument;
+}
+
+std::pair<int, int> getPublicTimezone() {
+    int _gmtOffset;
+    int _dstOffset;
+
+    JsonDocument _jsonDocument = getPublicLocation();
+
+    HTTPClient http;
+    String _url = PUBLIC_TIMEZONE_ENDPOINT;
+    _url += "lat=" + String(_jsonDocument["lat"].as<float>(), 4);
+    _url += "&lng=" + String(_jsonDocument["lon"].as<float>(), 4);
+    _url += "&username=" + String(PUBLIC_TIMEZONE_USERNAME);
+
+    http.begin(_url);
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+        if (httpCode == HTTP_CODE_OK) {
+            String payload = http.getString();
+            payload.trim();
+            
+            deserializeJson(_jsonDocument, payload);
+
+            logger.log(
+                (
+                    "GMT offset: " + 
+                    String(_jsonDocument["rawOffset"].as<int>()) + 
+                    " | DST offset: " + 
+                    String(_jsonDocument["dstOffset"].as<int>())
+                ).c_str(),
+                "utils::getPublicTimezone",
+                CUSTOM_LOG_LEVEL_DEBUG
+            );
+
+            _gmtOffset = _jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
+            _dstOffset = _jsonDocument["dstOffset"].as<int>() * 3600 - _gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
+        }
+    } else {
+        logger.log(
+            ("Error on HTTP request: " + String(httpCode)).c_str(), 
+            "utils::getPublicTimezone", 
+            CUSTOM_LOG_LEVEL_ERROR
+        );
+        deserializeJson(_jsonDocument, "{}");
+
+        _gmtOffset = generalConfiguration.gmtOffset;
+        _dstOffset = generalConfiguration.dstOffset;
+    }
+
+    return std::make_pair(_gmtOffset, _dstOffset);
+}
+
+void updateTimezone() {
+    logger.log("Updating timezone", "utils::updateTimezone", CUSTOM_LOG_LEVEL_DEBUG);
+
+    std::pair<int, int> _timezones = getPublicTimezone();
+
+    generalConfiguration.gmtOffset = _timezones.first;
+    generalConfiguration.dstOffset = _timezones.second;
+    
+    saveGeneralConfigurationToSpiffs();
 }

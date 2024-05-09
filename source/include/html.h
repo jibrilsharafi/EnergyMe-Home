@@ -225,12 +225,14 @@ const char configuration_html[] PROGMEM = R"rawliteral(
                 xhttp.onreadystatechange = function () {
                     if (this.readyState == 4) {
                         if (this.status == 200) {
-                            alert("Successfully cleared logs.");
+                            document.getElementById("clearLogs").innerHTML = "Clear success";
                         } else {
                             alert("Error clearing logs. Response: " + this.responseText);
                         }
-                        document.getElementById("clearLogs").innerHTML = "Clear logs";
-                        document.getElementById("clearLogs").disabled = false;
+                        setTimeout(function () {
+                            document.getElementById("clearLogs").innerHTML = "Clear logs";
+                            document.getElementById("clearLogs").disabled = false;
+                        }, 3000);
                     }
                 };
                 xhttp.send();
@@ -796,70 +798,76 @@ const char index_html[] PROGMEM = R"rawliteral(
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function () {
                 if (this.readyState == 4 && this.status == 200) {
-                    consumptionData = JSON.parse(this.responseText);
 
-                    var otherData = [];
-                    for (var i = 0; i < consumptionData[0].activeEnergy.daily.length; i++) {
-                        var otherValue = consumptionData[0].activeEnergy.daily[i].value / 1000; // Divide by 1000 to go from Wh to kWh
+                    if (this.responseText != "{}") {
+                        consumptionData = JSON.parse(this.responseText);
+
+                        var otherData = [];
+                        for (var i = 0; i < consumptionData[0].activeEnergy.daily.length; i++) {
+                            var otherValue = consumptionData[0].activeEnergy.daily[i].value / 1000; // Divide by 1000 to go from Wh to kWh
+                            for (var channel in consumptionData) {
+                                if (channel !== "0") {
+                                    if (consumptionData[channel].activeEnergy.daily.length > i) {
+                                        otherValue -= consumptionData[channel].activeEnergy.daily[i].value;
+                                    }
+                                }
+                            }
+                            otherData.push({
+                                date: consumptionData[0].activeEnergy.daily[i].date,
+                                value: otherValue
+                            });
+                        }
+                        consumptionData["Other"] = {
+                            activeEnergy: {
+                                total: 0,
+                                daily: otherData
+                            },
+                            reactiveEnergy: {
+                                total: 0,
+                                daily: []
+                            },
+                            apparentEnergy: {
+                                total: 0,
+                                daily: []
+                            }
+                        };
+
                         for (var channel in consumptionData) {
-                            if (channel !== "0") {
-                                if (consumptionData[channel].activeEnergy.daily.length > i) {
-                                    otherValue -= consumptionData[channel].activeEnergy.daily[i].value;
+                            var dailyData = [];
+                            for (var i = 0; i < consumptionData[channel].activeEnergy.daily.length; i++) {
+                                var currentValue = consumptionData[channel].activeEnergy.daily[i].value;
+                                var previousValue = i > 0 ? consumptionData[channel].activeEnergy.daily[i - 1].value : 0; // Divide by 1000 to go from Wh to kWh
+                                var dailyValue = (currentValue - previousValue) / 1000; // Divide by 1000 to go from Wh to kWh
+                                dailyData.push({
+                                    date: consumptionData[channel].activeEnergy.daily[i].date,
+                                    value: dailyValue // Display data with 2 decimals
+                                });
+                            }
+                            consumptionData[channel] = dailyData;
+                        }
+
+                        delete consumptionData[0];
+                        for (var channel in consumptionData) {
+                            if (consumptionData[channel].length === 0) {
+                                delete consumptionData[channel];
+                            }
+                        }
+
+                        for (var channel in consumptionData) {
+                            for (channelSingleData in channelData) {
+                                if (channelData[channelSingleData].index === parseInt(channel)) {
+                                    consumptionData[channel].label = channelData[channelSingleData].label;
                                 }
                             }
                         }
-                        otherData.push({
-                            date: consumptionData[0].activeEnergy.daily[i].date,
-                            value: otherValue
-                        });
-                    }
-                    consumptionData["Other"] = {
-                        activeEnergy: {
-                            total: 0,
-                            daily: otherData
-                        },
-                        reactiveEnergy: {
-                            total: 0,
-                            daily: []
-                        },
-                        apparentEnergy: {
-                            total: 0,
-                            daily: []
-                        }
-                    };
+                        consumptionData["Other"].label = "Other";
 
-                    for (var channel in consumptionData) {
-                        var dailyData = [];
-                        for (var i = 0; i < consumptionData[channel].activeEnergy.daily.length; i++) {
-                            var currentValue = consumptionData[channel].activeEnergy.daily[i].value / 1000; // Divide by 1000 to go from Wh to kWh
-                            var previousValue = i > 0 ? consumptionData[channel].activeEnergy.daily[i - 1].value / 1000 : 0; // Divide by 1000 to go from Wh to kWh
-                            var dailyValue = currentValue - previousValue;
-                            dailyData.push({
-                                date: consumptionData[channel].activeEnergy.daily[i].date,
-                                value: dailyValue // Display data with 2 decimals
-                            });
-                        }
-                        consumptionData[channel] = dailyData;
+                        plotConsumptionChart(consumptionData);
+                        plotPieChart(consumptionData);
+                    } else {
+                        document.getElementById("consumption-chart").innerHTML = "No data available yet. Come back tomorrow!";
+                        document.getElementById("pie-chart").innerHTML = "No data available yet. Come back tomorrow!";
                     }
-
-                    delete consumptionData[0];
-                    for (var channel in consumptionData) {
-                        if (consumptionData[channel].length === 0) {
-                            delete consumptionData[channel];
-                        }
-                    }
-
-                    for (var channel in consumptionData) {
-                        for (channelSingleData in channelData) {
-                            if (channelData[channelSingleData].index === parseInt(channel)) {
-                                consumptionData[channel].label = channelData[channelSingleData].label;
-                            }
-                        }
-                    }
-                    consumptionData["Other"].label = "Other";
-
-                    plotConsumptionChart(consumptionData);
-                    plotPieChart(consumptionData);
                 }
             };
             xhttp.open("GET", "/daily-energy", true);

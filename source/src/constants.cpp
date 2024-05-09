@@ -4,7 +4,7 @@
 // --------------------
 
 // Firmware info
-const char* FIRMWARE_VERSION = "0.4.1";
+const char* FIRMWARE_VERSION = "0.4.2";
 const char* FIRMWARE_DATE = "2024-05-09";
 
 // File path
@@ -22,7 +22,7 @@ const char* FACTORY_PATH = "/fct";
 const int SERIAL_BAUDRATE = 921600; // Fastest baudrate for ESP32
 
 // Logger
-// 0:VERBOSE, 1: DEBUG, 2: INFO, 3: WARNING, 4: ERROR, 5: FATAL
+// 0: VERBOSE, 1: DEBUG, 2: INFO, 3: WARNING, 4: ERROR, 5: FATAL
 const char* LOG_TXT_PATH = "/log.txt";
 const char* LOG_COPY_TXT_PATH = "/log_copy.txt";
 const int LOG_FILE_MAX_LENGTH = 1000; // In lines
@@ -31,9 +31,9 @@ const int DEFAULT_LOG_SAVE_LEVEL = CUSTOM_LOG_LEVEL_INFO;
 
 // Time
 const char* NTP_SERVER = "pool.ntp.org";
-const int TIME_SYNC_INTERVAL = 3600; // 1 hour
-const int GMT_OFFSET = 3600; // 1 hour
-const int DAYLIGHT_OFFSET = 0;
+const int TIME_SYNC_INTERVAL = 3600; // Sync time every hour
+const int DEFAULT_GMT_OFFSET = 0;
+const int DEFAULT_DST_OFFSET = 0;
 
 // LED
 const int LED_RED_PIN = 38;
@@ -65,8 +65,8 @@ const int MQTT_MIN_CONNECTION_INTERVAL = 60000; // In milliseconds, representing
 const float BYTE_TO_KILOBYTE = 1 / 1024.0;
 const float MILLIS_TO_HOURS = 1 / 3600000.0;
 
-// Saving data
-const int ENERGY_SAVE_INTERVAL = 3600; // Time between each energy save (in seconds) to the SPIFFS
+// Saving date
+const int ENERGY_SAVE_INTERVAL = 3600; // Time between each energy save (in seconds) to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
 // ESP32 status
 const int MINIMUM_FREE_HEAP_SIZE = 10000; // Below this value (in bytes), the ESP32 will restart

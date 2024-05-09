@@ -30,6 +30,9 @@
 
 // URL Utilities
 #define PUBLIC_IP_ENDPOINT "http://checkip.amazonaws.com/"
+#define PUBLIC_LOCATION_ENDPOINT "http://ip-api.com/json/"
+#define PUBLIC_TIMEZONE_ENDPOINT "http://api.geonames.org/timezoneJSON?"
+#define PUBLIC_TIMEZONE_USERNAME "energymehome"
 
 // Logger
 #define CUSTOM_LOG_LEVEL_VERBOSE 0
@@ -71,8 +74,8 @@ extern const int DEFAULT_LOG_SAVE_LEVEL;
 // Time
 extern const char* NTP_SERVER;
 extern const int TIME_SYNC_INTERVAL; // 1 hour
-extern const int GMT_OFFSET; // 1 hour
-extern const int DAYLIGHT_OFFSET;
+extern const int DEFAULT_GMT_OFFSET; // 1 hour
+extern const int DEFAULT_DST_OFFSET;
 
 // LED
 extern const int LED_RED_PIN;

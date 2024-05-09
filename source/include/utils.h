@@ -7,6 +7,7 @@
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
 #include <Ticker.h>
+#include <HTTPClient.h>
 
 #include "structs.h"
 #include "constants.h"
@@ -34,6 +35,8 @@ bool saveGeneralConfigurationToSpiffs();
 JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguration);
 GeneralConfiguration jsonToGeneralConfiguration(JsonDocument jsonDocument);
 
-void clearMemory();
+JsonDocument getPublicLocation();
+std::pair<int, int> getPublicTimezone();
+void updateTimezone();
 
 #endif
