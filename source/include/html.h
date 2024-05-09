@@ -62,7 +62,8 @@ const char configuration_html[] PROGMEM = R"rawliteral(
             </div>
             <br>
             <button class="buttonForm" onclick="setLogLevel()" id="setLogLevel">Set logging level</button>
-            <a class="buttonForm" href="/log" id="log" target="_blank" style="float: right;">View logs</a>
+            <button class="buttonForm" onclick="clearLogs()" id="clearLogs">Clear logs</button>
+            <a class="buttonForm" href="/log" id="log" target="_blank" style="float: right;">Explore logs</a>
         </div>
 
         <div class="section-box">
@@ -159,7 +160,7 @@ const char configuration_html[] PROGMEM = R"rawliteral(
                 var saveLevelNumber = logLevels[saveLogLevel];
 
                 var xhttp = new XMLHttpRequest();
-                xhttp.open("GET", "/rest/set-log?level=" + printLevelNumber + "&type=print", true);
+                xhttp.open("GET", "/rest/set-log-level?level=" + printLevelNumber + "&type=print", true);
                 xhttp.onreadystatechange = function () {
                     if (this.readyState == 4) {
                         if (this.status != 200) {
@@ -170,7 +171,7 @@ const char configuration_html[] PROGMEM = R"rawliteral(
                 xhttp.send();
 
                 var xhttp2 = new XMLHttpRequest();
-                xhttp2.open("GET", "/rest/set-log?level=" + saveLevelNumber + "&type=save", true);
+                xhttp2.open("GET", "/rest/set-log-level?level=" + saveLevelNumber + "&type=save", true);
                 xhttp2.onreadystatechange = function () {
                     if (this.readyState == 4 && this.status != 200) {
                         alert("Error setting save log level. Response: " + this.responseText);
@@ -181,14 +182,14 @@ const char configuration_html[] PROGMEM = R"rawliteral(
                 document.getElementById("setLogLevel").innerHTML = "Set success";
                 document.getElementById("setLogLevel").disabled = true;
                 setTimeout(function () {
-                    document.getElementById("setLogLevel").innerHTML = "Set logging Level";
+                    document.getElementById("setLogLevel").innerHTML = "Set logging level";
                     document.getElementById("setLogLevel").disabled = false;
                 }, 3000);
             }
 
             function getLogLevel() {
                 var xhttp = new XMLHttpRequest();
-                xhttp.open("GET", "/rest/get-log", true);
+                xhttp.open("GET", "/rest/get-log-level", true);
                 xhttp.onreadystatechange = function () {
                     if (this.readyState == 4) {
                         if (this.status == 200) {
@@ -206,6 +207,30 @@ const char configuration_html[] PROGMEM = R"rawliteral(
                         } else {
                             alert("Error getting print log level. Response: " + this.responseText);
                         }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function clearLogs() {
+                var confirm = window.confirm("Are you sure you want to clear the logs?");
+                if (!confirm) {
+                    return;
+                }
+                document.getElementById("clearLogs").innerHTML = "Clearing...";
+                document.getElementById("clearLogs").disabled = true;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/clear-log", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            alert("Successfully cleared logs.");
+                        } else {
+                            alert("Error clearing logs. Response: " + this.responseText);
+                        }
+                        document.getElementById("clearLogs").innerHTML = "Clear logs";
+                        document.getElementById("clearLogs").disabled = false;
                     }
                 };
                 xhttp.send();
@@ -233,7 +258,7 @@ const char configuration_html[] PROGMEM = R"rawliteral(
                 document.getElementById("setGeneralConfigurationButton").disabled = true;
 
                 var xhttp = new XMLHttpRequest();
-                xhttp.open("POST", "/rest/configuration/general", true);
+                xhttp.open("POST", "/rest/set-general-configuration", true);
                 xhttp.onreadystatechange = function () {
                     if (this.readyState == 4) {
                         if (this.status == 200) {
@@ -420,7 +445,7 @@ const char calibration_html[] PROGMEM = R"rawliteral(
                             }
                         }
                     };
-                    xhttp.open("POST", "/rest/calibration/reset", true);
+                    xhttp.open("POST", "/rest/calibration-reset", true);
                     xhttp.send();
                 }
             }
@@ -474,7 +499,7 @@ const char calibration_html[] PROGMEM = R"rawliteral(
                         console.log("Error submitting calibration data.");
                     }
                 };
-                xhttp.open("POST", '/rest/calibration', true);
+                xhttp.open("POST", '/rest/set-calibration', true);
                 xhttp.setRequestHeader("Content-Type", "application/json");
                 xhttp.send(JSON.stringify(calibrationData));
 
@@ -495,7 +520,7 @@ const char calibration_html[] PROGMEM = R"rawliteral(
                 submitCalibrationData();
             });
 
-            Promise.all([fetchData('meter'), fetchData('calibration'), fetchData('get-channel')])
+            Promise.all([fetchData('meter'), fetchData('get-calibration'), fetchData('get-channel')])
                 .then(data => {
                     meterData = data[0];
                     calibrationData = data[1];
@@ -579,7 +604,7 @@ const char channel_html[] PROGMEM = R"rawliteral(
             });
         }
 
-        Promise.all([fetchData('calibration'), fetchData('get-channel')])
+        Promise.all([fetchData('get-calibration'), fetchData('get-channel')])
             .then(data => {
                 calibrationData = data[0];
                 channelData = data[1];

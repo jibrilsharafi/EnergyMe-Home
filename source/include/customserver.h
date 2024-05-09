@@ -30,6 +30,8 @@ void _setHtmlPages();
 void _setOta();
 void _setRestApi();
 void _setOtherEndpoints();
+    
+void _serverLog(const char* message, const char* function, int logLevel);
 
 void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final);
 void _onUpdateSuccessful();
