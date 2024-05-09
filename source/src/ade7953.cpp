@@ -726,7 +726,7 @@ void Ade7953::saveDailyEnergyToSpiffs() {
         }
     }
 
-    if (serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument)) {
+    if (serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument)) {
         logger.log("Successfully saved daily energy to SPIFFS", "ade7953::saveDailyEnergyToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
     } else {
         logger.log("Failed to save daily energy to SPIFFS", "ade7953::saveDailyEnergyToSpiffs", CUSTOM_LOG_LEVEL_ERROR);

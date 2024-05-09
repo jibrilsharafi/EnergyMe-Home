@@ -61,7 +61,7 @@ bool setupMqtt() {
 void mqttLoop() {
     if (!clientMqtt.loop()) {
         if ((millis() - lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) {
-            logger.log("MQTT connection failed recently. Skipping...", "mqtt::connectMqtt", CUSTOM_LOG_LEVEL_DEBUG);
+            logger.log("MQTT connection failed recently. Skipping...", "mqtt::connectMqtt", CUSTOM_LOG_LEVEL_VERBOSE);
             return;
         }
 
@@ -86,7 +86,7 @@ void mqttLoop() {
 #else
 
 void mqttLoop() {
-    logger.log("Secrets not available. MQTT loop failed.", "mqtt::mqttLoop", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.log("Secrets not available. MQTT loop failed.", "mqtt::mqttLoop", CUSTOM_LOG_LEVEL_VERBOSE);
 }
 
 #endif
