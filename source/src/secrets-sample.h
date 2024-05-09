@@ -16,6 +16,9 @@ Configuration). Each MQTT_RULE_NAME_* should be replaced with the appropriate
 rule name for the corresponding type of data. You can also see this just as 
 a way to differentiate the topics.
 
+The final topic will be:
+"{MQTT_BASIC_INGEST}/{MQTT_RULE_NAME_*}/{MQTT_TOPIC_1}/{MQTT_TOPIC_2}/{MQTT_TOPIC_*}"
+
 The MQTT_CERT_CA, MQTT_CERT_CRT, and MQTT_CERT_PRIVATE constants are the 
 certificates used for TLS encryption. They should be replaced with your 
 actual certificates.
@@ -34,25 +37,25 @@ const char *MQTT_ENDPOINT = "REPLACE_WITH_MQTT_ENDPOINT"; // Replace with your M
 const int MQTT_PORT = 8883;                               // Replace with your MQTT broker's port if different
 
 // Basic MQTT topic structure
-const char *MQTT_BASIC_INGEST = "$aws/rules"; // Basic ingest functionality for AWS IoT
-const char *MQTT_TOPIC_1 = "EnergyMe";        // First part of the topic
-const char *MQTT_TOPIC_2 = "Home";            // Second part of the topic
+const char *MQTT_BASIC_INGEST = "";           // First part of the topic
+const char *MQTT_TOPIC_1 = "EnergyMe";        // Third part of the topic
+const char *MQTT_TOPIC_2 = "Home";            // Fourth part of the topic
 
 // MQTT topics for different types of data
-const char *MQTT_RULE_NAME_METER = "XXX"; // Replace with rule name for Meter data
-const char *MQTT_TOPIC_METER = "Meter";   // Topic for Meter data
+const char *MQTT_RULE_NAME_METER = ""; // Second part of the topic
+const char *MQTT_TOPIC_METER = "Meter";   // Topic for Meter data (fifth topic)
 
-const char *MQTT_RULE_NAME_STATUS = "XXX"; // Replace with rule name for Status data
-const char *MQTT_TOPIC_STATUS = "Status";  // Topic for Status data
+const char *MQTT_RULE_NAME_STATUS = ""; // Second part of the topic
+const char *MQTT_TOPIC_STATUS = "Status";  // Topic for Status data (fifth topic)
 
-const char *MQTT_RULE_NAME_METADATA = "XXX";  // Replace with rule name for Metadata data
-const char *MQTT_TOPIC_METADATA = "Metadata"; // Topic for Metadata data
+const char *MQTT_RULE_NAME_METADATA = "";  // Second part of the topic
+const char *MQTT_TOPIC_METADATA = "Metadata"; // Topic for Metadata data (fifth topic)
 
-const char *MQTT_RULE_NAME_CHANNEL = "XXX"; // Replace with rule name for Channel data
-const char *MQTT_TOPIC_CHANNEL = "Channel"; // Topic for Channel data
+const char *MQTT_RULE_NAME_CHANNEL = ""; // Second part of the topic
+const char *MQTT_TOPIC_CHANNEL = "Channel"; // Topic for Channel data (fifth topic)
 
-const char *MQTT_RULE_NAME_GENERAL_CONFIGURATION = "XXX";              // Replace with rule name for General Configuration data
-const char *MQTT_TOPIC_GENERAL_CONFIGURATION = "GeneralConfiguration"; // Topic for General Configuration data
+const char *MQTT_RULE_NAME_GENERAL_CONFIGURATION = "";              // Second part of the topic
+const char *MQTT_TOPIC_GENERAL_CONFIGURATION = "GeneralConfiguration"; // Topic for General Configuration data (fifth topic)
 
 // Certificates for TLS encryption
 // Root CA 1
