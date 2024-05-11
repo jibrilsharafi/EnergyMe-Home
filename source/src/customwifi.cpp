@@ -29,7 +29,7 @@ void checkWifi() {
 void resetWifi() {
   logger.log("Resetting WiFi...", "resetWifi", CUSTOM_LOG_LEVEL_WARNING);
   wifiManager.resetSettings();
-  restartEsp32("customwifi::resetWifi", "WiFi reset (erase credentials). Will restart ESP32 in AP mode.");
+  restartEsp32("customwifi::resetWifi", "WiFi reset (erase credentials). Will restart ESP32 in AP mode");
 }
 
 bool setupMdns() {

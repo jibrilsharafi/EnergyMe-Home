@@ -484,6 +484,7 @@ JsonDocument Ade7953::channelDataToJson() {
         _jsonCalibrationValues["label"] = channelData[i].calibrationValues.label;
     }
 
+    logger.log("Successfully converted data channel to JSON", "ade7953::channelDataToJson", CUSTOM_LOG_LEVEL_DEBUG);
     return _jsonDocument;
 }
 
@@ -523,7 +524,7 @@ void Ade7953::_updateSampleTime() {
 
     int _activeChannelCount = getActiveChannelCount();
     if (_activeChannelCount > 0) {
-        long linecyc = long(SAMPLE_TIME / _activeChannelCount);
+        long linecyc = long(SAMPLE_CYCLES / _activeChannelCount);
         configuration.linecyc = linecyc;
         _applyConfiguration();
         saveConfigurationToSpiffs();

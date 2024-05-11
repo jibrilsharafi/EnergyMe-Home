@@ -137,7 +137,7 @@ void setup() {
   
   logger.log("Setting up mDNS...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
   if (!setupMdns()) {
-    logger.log("Failed to setup mDNS.", "main::setup", CUSTOM_LOG_LEVEL_ERROR);
+    logger.log("Failed to setup mDNS", "main::setup", CUSTOM_LOG_LEVEL_ERROR);
   } else {
     logger.log("mDNS setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
   }
@@ -201,7 +201,7 @@ void loop() {
   }
 
   if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
-    restartEsp32("main::loop", "Heap memory has degraded below safe minimum.");
+    restartEsp32("main::loop", "Heap memory has degraded below safe minimum");
   }
 
   // If memory is below a certain level, clear the logs
