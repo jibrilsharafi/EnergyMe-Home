@@ -336,6 +336,7 @@ const char calibration_html[] PROGMEM = R"rawliteral(
             <h1>Calibration</h1>
             <select id="calibrationDropdown" onchange="fillCalibrationBox()"></select>
             <p id="dropdownError" style="color: red; display: none;"></p>
+            <button id="addButton" class="buttonForm" onclick="addNewChannel()">Add</button>
             <form id="calibrationForm">
                 <h3>Values</h3>
                 <p><span class="list-key">Voltage:</span> <input id="vLsb" name="vLsb" type="number" required> <span class="list-unit">V/LSB</span></p>
@@ -511,6 +512,35 @@ const char calibration_html[] PROGMEM = R"rawliteral(
                     document.getElementById("submitButton").innerHTML = "Submit";
                     document.getElementById("submitButton").disabled = false;
                 }, 3000);
+            }
+
+            function addNewChannel() {
+                var newChannelName = prompt("Please enter the name of the new channel:");
+                if (newChannelName) {
+                    var selectedCalibration = calibrationData.find(calibration => calibration.label === document.getElementById('calibrationDropdown').value);
+                    if (selectedCalibration) {
+                        var newCalibrationData = [{
+                            "label": newChannelName,
+                            "calibrationValues": selectedCalibration.calibrationValues
+                        }];
+
+                        var xhttp = new XMLHttpRequest();
+                        xhttp.onreadystatechange = function() {
+                            if (this.readyState == 4 && this.status == 200) {
+                                console.log(JSON.parse(this.responseText));
+                                location.reload(); // reload the page
+                            } else if (this.readyState == 4) {
+                                console.log("Error submitting new channel data.");
+                            }
+                        };
+                        xhttp.open("POST", '/rest/set-calibration', true);
+                        xhttp.setRequestHeader("Content-Type", "application/json");
+                        xhttp.send(JSON.stringify(newCalibrationData));
+                        
+                    } else {
+                        console.error("Error: Could not find calibration data for selected channel");
+                    }
+                }
             }
 
             document.getElementById("calibrationDropdown").addEventListener("change", function () {
