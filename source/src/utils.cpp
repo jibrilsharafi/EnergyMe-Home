@@ -161,7 +161,7 @@ void printMeterValues(MeterValues meterValues, const char* channelLabel) {
             String(meterValues.apparentEnergy, 3) + " VAh"
         ).c_str(),
         "main::printMeterValues",
-        CUSTOM_LOG_LEVEL_DEBUG);
+        CUSTOM_LOG_LEVEL_VERBOSE);
 }
 
 void printDeviceStatus()

@@ -178,6 +178,7 @@ const char configuration_html[] PROGMEM = R"rawliteral(
             function setLogLevel(level) {
                 document.getElementById("setLogLevel").innerHTML = "Setting...";
                 var logLevels = {
+                    "Verbose": 0,
                     "Debug": 1,
                     "Info": 2,
                     "Warning": 3,
@@ -927,7 +928,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                     dailyActiveEnergy[date] = {};
                 }
 
-                dailyActiveEnergy[date][channel] = dailyEnergy[date][channel].activeEnergy;
+                dailyActiveEnergy[date][channel] = dailyEnergy[date][channel].activeEnergy / 1000;
             }
         }
 
@@ -1016,7 +1017,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         var totalActiveEnergy = {};
 
         for (var channel in meterData) {
-            totalActiveEnergy[channel] = meterData[channel].data.activeEnergy;
+            totalActiveEnergy[channel] = meterData[channel].data.activeEnergy / 1000;
         }
 
         totalActiveEnergy = addTotalOtherEnergy(totalActiveEnergy);
@@ -1072,8 +1073,10 @@ const char index_html[] PROGMEM = R"rawliteral(
                     return consumptionData[label][channel].toFixed(0);
                 } else if (consumptionData[label][channel] >= 100) {
                     return consumptionData[label][channel].toFixed(1);
-                } else {
+                } else if (consumptionData[label][channel] >= 10) {
                     return consumptionData[label][channel].toFixed(2);
+                } else {
+                    return consumptionData[label][channel].toFixed(3);
                 }
             });
     
