@@ -3,18 +3,18 @@
 #if __has_include("secrets.h")
 #include "secrets.h"
 #else
-#warning "[EnergyMe-Home] [mqtt.cpp] secrets.h not found. MQTT will not work. See secrets-sample.h."
+#warning "[EnergyMe-Home] [mqtt.cpp] secrets.h not found. MQTT will not work. See secrets-sample.h"
 #endif
 
 #include "ade7953.h"
 
 extern Ade7953 ade7953;
 
-char *mqttTopicMeter;
-char *mqttTopicStatus;
-char *mqttTopicMetadata;
-char *mqttTopicChannel;
-char *mqttTopicGeneralConfiguration;
+char *mqttTopicMeter = nullptr;
+char *mqttTopicStatus = nullptr;
+char *mqttTopicMetadata = nullptr;
+char *mqttTopicChannel = nullptr;
+char *mqttTopicGeneralConfiguration = nullptr;
 
 long lastMillisPublished = millis();
 long lastMillisMqttFailed = millis();
@@ -68,7 +68,7 @@ void mqttLoop() {
         logger.log("MQTT connection lost. Reconnecting...", "mqtt::mqttLoop", CUSTOM_LOG_LEVEL_WARNING);
         if (!connectMqtt()) {
             if (mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
-                restartEsp32("mqtt::mqttLoop", "Failed to connect to MQTT and hit maximum connection attempt.");
+                restartEsp32("mqtt::mqttLoop", "Failed to connect to MQTT and hit maximum connection attempt");
             }
             return;
         }
@@ -86,7 +86,7 @@ void mqttLoop() {
 #else
 
 void mqttLoop() {
-    logger.log("Secrets not available. MQTT loop failed.", "mqtt::mqttLoop", CUSTOM_LOG_LEVEL_VERBOSE);
+    logger.log("Secrets not available. MQTT loop failed", "mqtt::mqttLoop", CUSTOM_LOG_LEVEL_VERBOSE);
 }
 
 #endif
@@ -205,22 +205,25 @@ JsonDocument circularBufferToJson(CircularBuffer<data::PayloadMeter, MAX_NUMBER_
     _jsonObject["unixTime"] = customTime.getUnixTime();
     _jsonObject["voltage"] = ade7953.meterValues[0].voltage;
 
-    logger.log("Circular buffer converted to JSON. Payload:", "mqtt::circularBufferToJson", CUSTOM_LOG_LEVEL_DEBUG);
-    serializeJson(_jsonDocument, Serial);
-    Serial.println();
+    logger.log("Circular buffer converted to JSON", "mqtt::circularBufferToJson", CUSTOM_LOG_LEVEL_DEBUG);
     return _jsonDocument;
 }
 
 void publishMeter() {
+    logger.log("Publishing meter data to MQTT", "mqtt::publishMeter", CUSTOM_LOG_LEVEL_DEBUG);
+
     JsonDocument _jsonDocument = circularBufferToJson(payloadMeter);
 
     String _meterMessage;
     serializeJson(_jsonDocument, _meterMessage);
 
     publishMessage(mqttTopicMeter, _meterMessage.c_str());
+    logger.log("Meter data published to MQTT", "mqtt::publishMeter", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void publishStatus() {
+    logger.log("Publishing status to MQTT", "mqtt::publishStatus", CUSTOM_LOG_LEVEL_DEBUG);
+
     JsonDocument _jsonDocument;
 
     JsonObject _jsonObject = _jsonDocument.to<JsonObject>();
@@ -233,9 +236,12 @@ void publishStatus() {
     serializeJson(_jsonDocument, _statusMessage);
 
     publishMessage(mqttTopicStatus, _statusMessage.c_str());
+    logger.log("Status published to MQTT", "mqtt::publishStatus", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void publishMetadata() {
+    logger.log("Publishing metadata to MQTT", "mqtt::publishMetadata", CUSTOM_LOG_LEVEL_DEBUG);
+
     JsonDocument _jsonDocument;
 
     JsonObject _jsonObject = _jsonDocument.to<JsonObject>();
@@ -247,9 +253,12 @@ void publishMetadata() {
     serializeJson(_jsonDocument, _metadataMessage);
 
     publishMessage(mqttTopicMetadata, _metadataMessage.c_str());
+    logger.log("Metadata published to MQTT", "mqtt::publishMetadata", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void publishChannel() {
+    logger.log("Publishing channel data to MQTT", "mqtt::publishChannel", CUSTOM_LOG_LEVEL_DEBUG);
+
     JsonDocument _jsonDocumentChannel = ade7953.channelDataToJson();
     
     JsonDocument _jsonDocument;
@@ -261,9 +270,12 @@ void publishChannel() {
     serializeJson(_jsonDocument, _channelMessage);
  
     publishMessage(mqttTopicChannel, _channelMessage.c_str());
+    logger.log("Channel data published to MQTT", "mqtt::publishChannel", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void publishGeneralConfiguration() {
+    logger.log("Publishing general configuration to MQTT", "mqtt::publishGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+
     JsonDocument _jsonDocument;
 
     JsonObject _jsonObject = _jsonDocument.to<JsonObject>();
@@ -276,9 +288,15 @@ void publishGeneralConfiguration() {
     serializeJson(_jsonDocument, _generalConfigurationMessage);
 
     publishMessage(mqttTopicGeneralConfiguration, _generalConfigurationMessage.c_str());
+    logger.log("General configuration published to MQTT", "mqtt::publishGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
 }
 
 void publishMessage(const char* topic, const char* message) {
+    if (topic == nullptr || message == nullptr) {
+        logger.log("Null pointer passed, meaning the CloudServices are likely not enabled", "mqtt::publishMessage", CUSTOM_LOG_LEVEL_DEBUG);
+        return;
+    }
+
     logger.log(
         ("Publishing message to topic " + String(topic)).c_str(),
         "mqtt::publishMessage",
@@ -286,6 +304,7 @@ void publishMessage(const char* topic, const char* message) {
     );
 
     if (!generalConfiguration.isCloudServicesEnabled) {
+        logger.log("Cloud services not enabled. Skipping...", "mqtt::publishMessage", CUSTOM_LOG_LEVEL_DEBUG);
         return;
     }
 
