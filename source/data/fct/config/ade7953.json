@@ -1,0 +1,17 @@
+{
+    "linecyc": 100,
+    "calibration": {
+        "aWGain": 4194304,
+        "aWattOs": 0,
+        "aVarGain": 4194304,
+        "aVarOs": 0,
+        "aVaGain": 4194304,
+        "aVaOs": 0,
+        "aIGain": 4194304,
+        "aIRmsOs": -400,
+        "bIGain": 4320000,
+        "bIRmsOs": -750,
+        "phCalA": 200,
+        "phCalB": 200
+    }
+}

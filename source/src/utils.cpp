@@ -118,7 +118,9 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument jsonDocument){
 
 void restartEsp32(const char* functionName, const char* reason) {
 
-    ade7953.saveEnergyToSpiffs();
+    if (functionName != "utils::factoryReset") {
+        ade7953.saveEnergyToSpiffs();
+    }
 
     logger.log(
         (
@@ -373,4 +375,93 @@ void updateTimezone() {
     generalConfiguration.dstOffset = _timezones.second;
     
     saveGeneralConfigurationToSpiffs();
+}
+
+void factoryReset() {
+    logger.log("Factory reset requested", "utils::factoryReset", CUSTOM_LOG_LEVEL_FATAL);
+
+    File _file;
+
+    std::vector<String> _files = {
+        METADATA_JSON_PATH,
+        GENERAL_CONFIGURATION_JSON_PATH,
+        CONFIGURATION_ADE7953_JSON_PATH,
+        CALIBRATION_JSON_PATH,
+        CHANNEL_DATA_JSON_PATH,
+        LOGGER_JSON_PATH,
+        ENERGY_JSON_PATH,
+        DAILY_ENERGY_JSON_PATH,
+        LOG_TXT_PATH
+    };
+
+    for (String _fileName : _files) {
+        _file = SPIFFS.open(_fileName, "r");
+        if (!_file) {
+            logger.log(
+                (
+                    "Failed to open file " + 
+                    String(_file)
+                ).c_str(),
+                "utils::factoryReset",
+                CUSTOM_LOG_LEVEL_ERROR
+            );
+            return;
+        }
+
+        SPIFFS.rename(_fileName, ("/old" + String(_fileName)).c_str());
+        if (!_duplicateFile((String(FACTORY_PATH) + String(_fileName)).c_str(), _fileName.c_str())) {
+            logger.log(
+                (
+                    "Failed to duplicate file " + 
+                    String(_fileName)
+                ).c_str(),
+                "utils::factoryReset",
+                CUSTOM_LOG_LEVEL_ERROR
+            );
+            return;
+        }
+    }
+
+    logger.log("Factory reset completed. We are back to the good old days. Now rebooting...", "utils::factoryReset", CUSTOM_LOG_LEVEL_FATAL);
+    restartEsp32("utils::factoryReset", "Factory reset");
+}
+
+bool _duplicateFile(const char* sourcePath, const char* destinationPath) {
+    logger.log("Duplicating file", "utils::_duplicateFile", CUSTOM_LOG_LEVEL_DEBUG);
+
+    File _sourceFile = SPIFFS.open(sourcePath, "r");
+    if (!_sourceFile) {
+        logger.log(
+            (
+                "Failed to open source file: " + 
+                String(sourcePath)
+            ).c_str(),
+            "utils::_duplicateFile",
+            CUSTOM_LOG_LEVEL_ERROR
+        );
+        return false;
+    }
+
+    File _destinationFile = SPIFFS.open(destinationPath, "w");
+    if (!_destinationFile) {
+        logger.log(
+            (
+                "Failed to open destination file: " + 
+                String(destinationPath)
+            ).c_str(),
+            "utils::_duplicateFile",
+            CUSTOM_LOG_LEVEL_ERROR
+        );
+        return false;
+    }
+
+    while (_sourceFile.available()) {
+        _destinationFile.write(_sourceFile.read());
+    }
+
+    _sourceFile.close();
+    _destinationFile.close();
+
+    logger.log("File duplicated", "utils::_duplicateFile", CUSTOM_LOG_LEVEL_DEBUG);
+    return true;
 }

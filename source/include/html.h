@@ -81,6 +81,13 @@ const char configuration_html[] PROGMEM = R"rawliteral(
             <button class="buttonForm" onclick="disconnectWifi()" id="disconnect">Disconnect</button>
         </div>
 
+        <div class="section-box">
+            <h2>Factory Reset</h2>
+            <p><i>This will reset the device to its factory settings. All configurations will be lost. The WiFi 
+            connection will be kept.</i></p>
+            <button class="buttonForm" onclick="factoryReset()" id="factoryReset">Reset</button>
+        </div>
+
         <script>
             var logLevels = ["Debug", "Info", "Warning", "Error", "Fatal"];
 
@@ -137,6 +144,31 @@ const char configuration_html[] PROGMEM = R"rawliteral(
                             alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to 192.168.4.1");
                         } else {
                             alert("Error disconnecting from WiFi. Response: " + this.responseText);
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function factoryReset() {
+                var confirm = window.confirm("Are you sure you want to reset the device to factory settings? All configurations and data will be lost.");
+                if (!confirm) {
+                    return;
+                }
+                document.getElementById("factoryReset").innerHTML = "Waiting for response...";
+                document.getElementById("factoryReset").disabled = true;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/factory-reset", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            document.getElementById("factoryReset").innerHTML = "Reset successfull! You will be redirected to the home page in a few seconds...";
+                            setTimeout(function () {
+                                window.location.href = "/";
+                            }, 3000);
+                        } else {
+                            alert("Error resetting to factory settings. Response: " + this.responseText);
                         }
                     }
                 };
@@ -499,7 +531,7 @@ const char calibration_html[] PROGMEM = R"rawliteral(
                     if (this.readyState == 4 && this.status == 200) {
                         console.log(JSON.parse(this.responseText));
                     } else if (this.readyState == 4) {
-                        console.log("Error submitting calibration data.");
+                        console.log("Error submitting calibration data);
                     }
                 };
                 xhttp.open("POST", '/rest/set-calibration', true);
@@ -530,7 +562,7 @@ const char calibration_html[] PROGMEM = R"rawliteral(
                                 console.log(JSON.parse(this.responseText));
                                 location.reload(); // reload the page
                             } else if (this.readyState == 4) {
-                                console.log("Error submitting new channel data.");
+                                console.log("Error submitting new channel data");
                             }
                         };
                         xhttp.open("POST", '/rest/set-calibration', true);
@@ -1136,8 +1168,15 @@ const char index_html[] PROGMEM = R"rawliteral(
 
                 updateMeterData();
 
-                dailyActiveEnergy = parseDailyEnergy();
-                plotConsumptionChart(dailyActiveEnergy);
+                if (Object.keys(dailyEnergy).length !== 0) {
+                    dailyActiveEnergy = parseDailyEnergy();
+                    plotConsumptionChart(dailyActiveEnergy);
+                } else {
+                    document.getElementById("consumption-chart").innerHTML = "No data available yet. Come back in a few hours!";
+                    document.getElementById("consumption-chart").style.textAlign = "center";
+                    document.getElementById("consumption-chart").style.fontSize = "20px";
+                    document.getElementById("consumption-chart").style.color = "#808080"; // Gray color
+                }
 
                 totalActiveEnergy = getTotalActiveEnergy();
                 plotPieChart(totalActiveEnergy);

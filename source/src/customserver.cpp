@@ -318,11 +318,11 @@ void _setRestApi() {
             } else if (_type == "save") {
                 logger.setSaveLevel(_level);
             } else {
-                request->send(400, "text/plain", "Unknown type parameter provided. No changes made.");
+                request->send(400, "text/plain", "Unknown type parameter provided. No changes made");
             }
             request->send(200, "application/json", "{\"message\":\"Success\"}");
         } else {
-            request->send(400, "text/plain", "No level parameter provided. No changes made.");
+            request->send(400, "text/plain", "No level parameter provided. No changes made");
         }
     });
 
@@ -409,39 +409,6 @@ void _setRestApi() {
         request->send(200, "application/json", "{\"message\":\"Daily energy saved\"}");
     });
 
-    server.on("/rest/list-files", HTTP_GET, [](AsyncWebServerRequest *request) {
-        _serverLog("Request to list SPIFFS files from REST API", "customserver::_setRestApi::/rest/list-files", CUSTOM_LOG_LEVEL_DEBUG, request);
-
-        JsonDocument _jsonDocument;
-
-        File _root = SPIFFS.open("/");
-        if (!_root) {
-            _serverLog("Failed to open root directory", "customserver::_setRestApi::/rest/list-files", CUSTOM_LOG_LEVEL_ERROR, request);
-            request->send(500, "text/plain", "Failed to open root directory");
-            return;
-        }
-     
-        File _file = _root.openNextFile();
-        while (_file) {
-            if (_file.isDirectory()) {
-                _serverLog((String(_file.name()) + " is a directory").c_str(), "customserver::_setRestApi::/rest/list-files", CUSTOM_LOG_LEVEL_DEBUG, request);
-            } else {
-                String fileName = String(_file.name());
-                if (fileName.length() > 0 && fileName[0] != '\0' && fileName[0] != '\xFF') {
-                    _jsonDocument[fileName] = _file.size();
-                } else {
-                    _serverLog(("Invalid file name: " + String(fileName)).c_str(), "customserver::_setRestApi::/rest/list-files", CUSTOM_LOG_LEVEL_ERROR, request);
-                }
-            }
-            _file = _root.openNextFile();
-        }
-
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
-
-        request->send(200, "application/json", _buffer.c_str());
-    });
-
     server.on("/rest/file/*", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get file from REST API", "customserver::_setRestApi::/rest/file/*", CUSTOM_LOG_LEVEL_DEBUG, request);
 
@@ -452,6 +419,13 @@ void _setRestApi() {
             _file.close();
         }
         else {request->send(400, "text/plain", "File not found");}
+    });
+
+    server.on("/rest/factory-reset", HTTP_POST, [](AsyncWebServerRequest *request) {
+        _serverLog("Request to factory reset from REST API", "customserver::_setRestApi::/rest/factory-reset", CUSTOM_LOG_LEVEL_WARNING, request);
+
+        request->send(200, "application/json", "{\"message\":\"Factory reset in progress. Check the logs for more information.\"}");
+        factoryReset();
     });
 
     server.on("/rest/clear-log", HTTP_POST, [](AsyncWebServerRequest *request) {

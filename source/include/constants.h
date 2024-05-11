@@ -60,13 +60,13 @@ extern const char* CHANNEL_DATA_JSON_PATH;
 extern const char* LOGGER_JSON_PATH;
 extern const char* ENERGY_JSON_PATH;
 extern const char* DAILY_ENERGY_JSON_PATH;
+extern const char* FACTORY_PATH;
 
 // Serial
 extern const int SERIAL_BAUDRATE; // Fastest baudrate for ESP32
 
 // Logger
 extern const char* LOG_TXT_PATH;
-extern const char* LOG_COPY_TXT_PATH;
 extern const int LOG_FILE_MAX_LENGTH;
 extern const int DEFAULT_LOG_PRINT_LEVEL;
 extern const int DEFAULT_LOG_SAVE_LEVEL;
@@ -159,6 +159,6 @@ extern const int DEFAULT_PHCALB;
 extern const float POWER_FACTOR_CONVERSION_FACTOR; // PF/LSB
 
 // Sample time
-extern const int SAMPLE_TIME;
+extern const int SAMPLE_CYCLES;
 
 #endif
