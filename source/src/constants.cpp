@@ -4,8 +4,8 @@
 // --------------------
 
 // Firmware info
-const char* FIRMWARE_VERSION = "0.4.2";
-const char* FIRMWARE_DATE = "2024-05-09";
+const char* FIRMWARE_VERSION = "0.4.3";
+const char* FIRMWARE_DATE = "2024-05-11";
 
 // File path
 const char* METADATA_JSON_PATH = "/metadata.json";

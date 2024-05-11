@@ -401,17 +401,38 @@ void _setRestApi() {
         }
     });
 
+    server.on("/rest/save-daily-energy", HTTP_POST, [](AsyncWebServerRequest *request) {
+        _serverLog("Request to save daily energy to SPIFFS from REST API", "customserver::_setRestApi::/rest/save-daily-energy", CUSTOM_LOG_LEVEL_DEBUG, request);
+
+        ade7953.saveDailyEnergyToSpiffs();
+
+        request->send(200, "application/json", "{\"message\":\"Daily energy saved\"}");
+    });
+
     server.on("/rest/list-files", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to list SPIFFS files from REST API", "customserver::_setRestApi::/rest/list-files", CUSTOM_LOG_LEVEL_DEBUG, request);
 
         JsonDocument _jsonDocument;
 
         File _root = SPIFFS.open("/");
+        if (!_root) {
+            _serverLog("Failed to open root directory", "customserver::_setRestApi::/rest/list-files", CUSTOM_LOG_LEVEL_ERROR, request);
+            request->send(500, "text/plain", "Failed to open root directory");
+            return;
+        }
+     
         File _file = _root.openNextFile();
-
-        while (_file)
-        {
-            _jsonDocument[_file.name()] = _file.size();
+        while (_file) {
+            if (_file.isDirectory()) {
+                _serverLog((String(_file.name()) + " is a directory").c_str(), "customserver::_setRestApi::/rest/list-files", CUSTOM_LOG_LEVEL_DEBUG, request);
+            } else {
+                String fileName = String(_file.name());
+                if (fileName.length() > 0 && fileName[0] != '\0' && fileName[0] != '\xFF') {
+                    _jsonDocument[fileName] = _file.size();
+                } else {
+                    _serverLog(("Invalid file name: " + String(fileName)).c_str(), "customserver::_setRestApi::/rest/list-files", CUSTOM_LOG_LEVEL_ERROR, request);
+                }
+            }
             _file = _root.openNextFile();
         }
 

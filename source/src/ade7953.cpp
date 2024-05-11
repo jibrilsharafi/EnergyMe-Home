@@ -3,7 +3,6 @@
 Ticker energyTicker;
 
 bool Ade7953::saveEnergyFlag = false;
-int currentDay = day();
 
 Ade7953::Ade7953(
     int ssPin,
@@ -130,13 +129,8 @@ void Ade7953::_setOptimumSettings()
 void Ade7953::loop() {
     if (saveEnergyFlag) {
         saveEnergyToSpiffs();
-        saveEnergyFlag = false;
-    }
-
-    int newDay = day();
-    if (newDay != currentDay) {
         saveDailyEnergyToSpiffs();
-        currentDay = newDay;
+        saveEnergyFlag = false;
     }
 }
 
@@ -712,17 +706,15 @@ void Ade7953::saveDailyEnergyToSpiffs() {
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH);
     
     time_t now = time(nullptr);
-    now -= 24 * 60 * 60;  // Subtract one day to get the previous day
     struct tm *timeinfo = localtime(&now);
     char _currentDate[11];
     strftime(_currentDate, sizeof(_currentDate), "%Y-%m-%d", timeinfo);
 
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT+1; i++) {
         if (channelData[i].active) {
-            JsonObject _jsonDailyObject = _jsonDocument[_currentDate][String(i)];
-            _jsonDailyObject["activeEnergy"] = meterValues[i].activeEnergy;
-            _jsonDailyObject["reactiveEnergy"] = meterValues[i].reactiveEnergy;
-            _jsonDailyObject["apparentEnergy"] = meterValues[i].apparentEnergy;
+            _jsonDocument[_currentDate][String(i)]["activeEnergy"] = meterValues[i].activeEnergy;
+            _jsonDocument[_currentDate][String(i)]["reactiveEnergy"] = meterValues[i].reactiveEnergy;
+            _jsonDocument[_currentDate][String(i)]["apparentEnergy"] = meterValues[i].apparentEnergy;
         }
     }
 

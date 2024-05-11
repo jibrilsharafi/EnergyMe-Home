@@ -687,335 +687,444 @@ const char channel_html[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 const char index_html[] PROGMEM = R"rawliteral(
-    <!DOCTYPE html>
-    <html>
+<!DOCTYPE html>
+<html>
 
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-        <link rel="stylesheet" type="text/css" href="/css/button.css">
-        <link rel="stylesheet" type="text/css" href="/css/main.css">
-        <link rel="stylesheet" type="text/css" href="/css/section.css">
-        <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/main.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
 
-        <link rel="icon" type="image/png" href="/images/favicon.png">
-        <title>EnergyMe</title>
-        <style>
-            .header {
-                font-size: 96px;
-                margin-bottom: 10px;
-                text-align: center;
-            }
-
-            .subheader {
-                font-size: 32px;
-                margin-bottom: 20px;
-                text-align: center;
-                color: #808080;
-            }
-
-            .voltage-box {
-                text-align: center;
-                font-size: 20px;
-                margin-bottom: 20px;
-                margin-top: 5px;
-            }
-
-            .channels-box {
-                display: flex;
-                flex-wrap: wrap;
-                justify-content: space-around;
-            }
-
-            .channel-box {
-                width: 18%;
-                border: 1px solid #ddd;
-                border-radius: 10px;
-                box-sizing: border-box;
-                background-color: white;
-                box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-                margin-bottom: 20px;
-                padding: 10px;
-                text-align: center;
-            }
-
-            .channel-label {
-                font-size: 24px;
-                margin-bottom: 5px;
-                font-weight: bold;
-            }
-
-            .channel-value {
-                font-style: italic;
-                color: #808080;
-            }
-        </style>
-    </head>
-
-    <body>
-
-        <div class="header">EnergyMe</div>
-        <div class="subheader">Home</div>
-
-        <div class="buttonNavigation-container">
-            <a class="buttonNavigation" type="inner" href="/info">Info</a>
-            <a class="buttonNavigation" type="inner" href="/configuration">Configuration</a>
-            <a class="buttonNavigation" type="inner" href="/update">Update</a>
-        </div>
-
-        <div class="section-box">
-            <div id="voltage" class="voltage-box"></div>
-            <div id="channels" class="channels-box"></div>
-        </div>
-
-        <div class="section-box">
-            <div id="consumption-chart">
-                <canvas id="consumption-chart-canvas"></canvas>
-            </div>
-        </div>
-
-        <div class="section-box">
-            <div id="pie-chart">
-                <canvas id="pie-chart-canvas"></canvas>
-            </div>
-        </div>
-
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    </body>
-
-    <script>
-        var colors = [
-            'rgba(0,123,255,0.5)', 'rgba(255,0,0,0.5)', 'rgba(0,255,0,0.5)', 'rgba(255,255,0,0.5)', 'rgba(0,255,255,0.5)',
-            'rgba(123,0,255,0.5)', 'rgba(255,0,123,0.5)', 'rgba(0,255,123,0.5)', 'rgba(255,255,123,0.5)', 'rgba(123,255,0,0.5)',
-            'rgba(0,123,0,0.5)', 'rgba(123,0,0,0.5)', 'rgba(0,0,123,0.5)', 'rgba(123,123,123,0.5)', 'rgba(255,255,255,0.5)',
-            'rgba(0,0,255,0.5)', 'rgba(255,0,255,0.5)', 'rgba(255,123,0,0.5)'
-        ];
-
-        function getConsumptionData() {
-            channelData = getChannelData();
-
-            var xhttp = new XMLHttpRequest();
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4 && this.status == 200) {
-
-                    if (this.responseText != "{}") {
-                        consumptionData = JSON.parse(this.responseText);
-
-                        var otherData = [];
-                        for (var i = 0; i < consumptionData[0].activeEnergy.daily.length; i++) {
-                            var otherValue = consumptionData[0].activeEnergy.daily[i].value / 1000; // Divide by 1000 to go from Wh to kWh
-                            for (var channel in consumptionData) {
-                                if (channel !== "0") {
-                                    if (consumptionData[channel].activeEnergy.daily.length > i) {
-                                        otherValue -= consumptionData[channel].activeEnergy.daily[i].value;
-                                    }
-                                }
-                            }
-                            otherData.push({
-                                date: consumptionData[0].activeEnergy.daily[i].date,
-                                value: otherValue
-                            });
-                        }
-                        consumptionData["Other"] = {
-                            activeEnergy: {
-                                total: 0,
-                                daily: otherData
-                            },
-                            reactiveEnergy: {
-                                total: 0,
-                                daily: []
-                            },
-                            apparentEnergy: {
-                                total: 0,
-                                daily: []
-                            }
-                        };
-
-                        for (var channel in consumptionData) {
-                            var dailyData = [];
-                            for (var i = 0; i < consumptionData[channel].activeEnergy.daily.length; i++) {
-                                var currentValue = consumptionData[channel].activeEnergy.daily[i].value;
-                                var previousValue = i > 0 ? consumptionData[channel].activeEnergy.daily[i - 1].value : 0; // Divide by 1000 to go from Wh to kWh
-                                var dailyValue = (currentValue - previousValue) / 1000; // Divide by 1000 to go from Wh to kWh
-                                dailyData.push({
-                                    date: consumptionData[channel].activeEnergy.daily[i].date,
-                                    value: dailyValue // Display data with 2 decimals
-                                });
-                            }
-                            consumptionData[channel] = dailyData;
-                        }
-
-                        delete consumptionData[0];
-                        for (var channel in consumptionData) {
-                            if (consumptionData[channel].length === 0) {
-                                delete consumptionData[channel];
-                            }
-                        }
-
-                        for (var channel in consumptionData) {
-                            for (channelSingleData in channelData) {
-                                if (channelData[channelSingleData].index === parseInt(channel)) {
-                                    consumptionData[channel].label = channelData[channelSingleData].label;
-                                }
-                            }
-                        }
-                        consumptionData["Other"].label = "Other";
-
-                        plotConsumptionChart(consumptionData);
-                        plotPieChart(consumptionData);
-                    } else {
-                        document.getElementById("consumption-chart").innerHTML = "No data available yet. Come back tomorrow!";
-                        document.getElementById("pie-chart").innerHTML = "No data available yet. Come back tomorrow!";
-                    }
-                }
-            };
-            xhttp.open("GET", "/daily-energy", true);
-            xhttp.send();
+    <link rel="icon" type="image/png" href="/images/favicon.png">
+    <title>EnergyMe</title>
+    <style>
+        .header {
+            font-size: 96px;
+            margin-bottom: 10px;
+            text-align: center;
         }
 
-        function plotConsumptionChart(consumptionData) {
-            var labels = consumptionData.Other.map(function (item) {
-                return item.date;
+        .subheader {
+            font-size: 32px;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #808080;
+        }
+
+        .voltage-box {
+            text-align: center;
+            font-size: 20px;
+            margin-bottom: 20px;
+            margin-top: 5px;
+        }
+
+        .channels-box {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+        }
+
+        .channel-box {
+            width: 18%;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            box-sizing: border-box;
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            margin-bottom: 20px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .channel-label {
+            font-size: 24px;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .channel-value {
+            font-style: italic;
+            color: #808080;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">EnergyMe</div>
+    <div class="subheader">Home</div>
+
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="inner" href="/info">Info</a>
+        <a class="buttonNavigation" type="inner" href="/configuration">Configuration</a>
+        <a class="buttonNavigation" type="inner" href="/update">Update</a>
+    </div>
+
+    <div class="section-box">
+        <div id="voltage" class="voltage-box"></div>
+        <div id="channels" class="channels-box"></div>
+    </div>
+
+    <div class="section-box">
+        <div id="consumption-chart">
+            <canvas id="consumption-chart-canvas"></canvas>
+        </div>
+    </div>
+
+    <div class="section-box">
+        <div id="pie-chart">
+            <canvas id="pie-chart-canvas"></canvas>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</body>
+
+<script>
+    var colors = [
+        'rgba(0,123,255,0.5)', 'rgba(255,0,0,0.5)', 'rgba(0,255,0,0.5)', 'rgba(255,255,0,0.5)', 'rgba(0,255,255,0.5)',
+        'rgba(123,0,255,0.5)', 'rgba(255,0,123,0.5)', 'rgba(0,255,123,0.5)', 'rgba(255,255,123,0.5)', 'rgba(123,255,0,0.5)',
+        'rgba(0,123,0,0.5)', 'rgba(123,0,0,0.5)', 'rgba(0,0,123,0.5)', 'rgba(123,123,123,0.5)', 'rgba(255,255,255,0.5)',
+        'rgba(0,0,255,0.5)', 'rgba(255,0,255,0.5)', 'rgba(255,123,0,0.5)'
+    ];
+
+    var dailyEnergy = {};
+    var channelData = {};
+    var meterData = {};
+
+    function getDailyEnergy() {
+        var xhttp = new XMLHttpRequest();
+
+        xhttp.onreadystatechange = function () {
+            if (this.readyState == 4 && this.status == 200) {
+                dailyEnergy = JSON.parse(this.responseText);
+            }
+        };
+        xhttp.open("GET", "/daily-energy", true);
+        xhttp.send();
+    }
+
+    function getChannelData() {
+        var xhttp = new XMLHttpRequest();
+
+        xhttp.onreadystatechange = function () {
+            if (this.readyState == 4 && this.status == 200) {
+                channelData = JSON.parse(this.responseText);
+            }
+        };
+        xhttp.open("GET", "/rest/get-channel", false);
+        xhttp.send();
+    }
+
+    function getMeterData() {
+        var xhttp = new XMLHttpRequest();
+
+        xhttp.onreadystatechange = function () {
+            if (this.readyState == 4 && this.status == 200) {
+                meterData = JSON.parse(this.responseText);
+            }
+        };
+        xhttp.open("GET", "/rest/meter", false);
+        xhttp.send();
+    }
+
+    function updateMeterData() {
+        document.getElementById("voltage").innerHTML = meterData[0].data.voltage.toFixed(1) + ' V';
+
+        var powerDataHtml = '';
+        var channelCount = 0;
+        var totalPower = 0;
+        for (var channel in meterData) {
+            var label = meterData[channel].label;
+            var activePower = meterData[channel].data.activePower.toFixed(0);
+
+            powerDataHtml += '<div class="channel-box">';
+            powerDataHtml += '<div class="channel-label">' + label + '</div>';
+            powerDataHtml += '<div class="channel-value">' + activePower + ' W</div>';
+            powerDataHtml += '</div>';
+
+            if (channelCount > 0) {
+                totalPower += parseFloat(activePower);
+            }
+            channelCount++;
+        }
+
+        document.getElementById("channels").innerHTML = powerDataHtml;
+    }
+
+    function parseDailyEnergy() {
+        var dailyActiveEnergy = {};
+
+        for (var date in dailyEnergy) {
+            for (var channel in dailyEnergy[date]) {
+                if (!dailyActiveEnergy[date]) {
+                    dailyActiveEnergy[date] = {};
+                }
+
+                dailyActiveEnergy[date][channel] = dailyEnergy[date][channel].activeEnergy;
+            }
+        }
+
+        var firstDay = Object.keys(dailyActiveEnergy)[0];
+        var lastDay = Object.keys(dailyActiveEnergy)[Object.keys(dailyActiveEnergy).length - 1];
+
+        var listMissingDays = [];
+        var currentDate = new Date(firstDay);
+        var lastDate = new Date(lastDay);
+
+        while (currentDate < lastDate) {
+            currentDate.setDate(currentDate.getDate() + 1);
+            var date = currentDate.toISOString().split('T')[0];
+
+            if (!dailyActiveEnergy[date]) {
+                dailyActiveEnergy[date] = {};
+            }
+        }
+
+        var dailyActiveEnergyDifference = {};
+
+        var dates = Object.keys(dailyActiveEnergy).sort();
+        for (var i = 0; i < dates.length; i++) {
+            var date = dates[i];
+            var previousDate = dates[i - 1];
+        
+            dailyActiveEnergyDifference[date] = {};
+        
+            for (var channel in dailyActiveEnergy[date]) {
+                var currentDayEnergy = dailyActiveEnergy[date][channel];
+                var previousDayEnergy = i > 0 ? dailyActiveEnergy[previousDate][channel] || 0 : 0;
+        
+                dailyActiveEnergyDifference[date][channel] = currentDayEnergy - previousDayEnergy;
+            }
+        }
+
+        dailyActiveEnergy = addOtherDailyEnergy(dailyActiveEnergyDifference);
+        dailyActiveEnergy = renameDailyActiveEnergyDifference(dailyActiveEnergy, channelData);
+
+        return dailyActiveEnergy;
+    }
+
+    function addOtherDailyEnergy(dailyActiveEnergyDifference) {
+
+        for (var date in dailyActiveEnergyDifference) {
+
+            var generalEnergy = dailyActiveEnergyDifference[date]["0"];
+            var otherEnergy = 0;
+
+            for (var channel in dailyActiveEnergyDifference[date]) {
+                if (channel !== "0") {
+                    otherEnergy += dailyActiveEnergyDifference[date][channel];
+                }
+            }
+
+            dailyActiveEnergyDifference[date]['Other'] = generalEnergy - otherEnergy;
+            delete dailyActiveEnergyDifference[date]["0"];
+        }
+
+        return dailyActiveEnergyDifference;
+    }
+    
+    function renameDailyActiveEnergyDifference(dailyActiveEnergyDifference, channelData) {
+
+        for (var date in dailyActiveEnergyDifference) {
+
+            for (var channel in dailyActiveEnergyDifference[date]) {
+                if (channel !== "Other") {
+                    var channelIndex = parseInt(channel);
+                    var channelLabel = channelData[channelIndex].label;
+
+                    dailyActiveEnergyDifference[date][channelLabel] = dailyActiveEnergyDifference[date][channel];
+                    delete dailyActiveEnergyDifference[date][channel];
+                }
+            }
+
+            otherEnergy = dailyActiveEnergyDifference[date]['Other'];
+            delete dailyActiveEnergyDifference[date]['Other'];
+            dailyActiveEnergyDifference[date]['Other'] = otherEnergy;
+        }
+
+        return dailyActiveEnergyDifference;
+    }
+
+    function getTotalActiveEnergy() {
+        var totalActiveEnergy = {};
+
+        for (var channel in meterData) {
+            totalActiveEnergy[channel] = meterData[channel].data.activeEnergy;
+        }
+
+        totalActiveEnergy = addTotalOtherEnergy(totalActiveEnergy);
+        totalActiveEnergy = renameTotalActiveEnergy(totalActiveEnergy, channelData);
+
+        return totalActiveEnergy;
+    }
+
+    function addTotalOtherEnergy(totalActiveEnergy) {
+        var totalGeneralEnergy = totalActiveEnergy["0"];
+        var totalOtherEnergy = 0;
+
+        for (var channel in totalActiveEnergy) {
+            if (channel !== "0") {
+                totalOtherEnergy += totalActiveEnergy[channel];
+            }
+        }
+
+        totalActiveEnergy['Other'] = totalGeneralEnergy - totalOtherEnergy;
+        delete totalActiveEnergy["0"];
+
+        return totalActiveEnergy;
+    }
+
+    function renameTotalActiveEnergy(totalActiveEnergy, channelData) {
+
+        for (var channel in totalActiveEnergy) {
+            if (channel !== "Other") {
+                var channelIndex = parseInt(channel);
+                var channelLabel = channelData[channelIndex].label;
+
+                totalActiveEnergy[channelLabel] = totalActiveEnergy[channel];
+                delete totalActiveEnergy[channel];
+            }
+
+            otherEnergy = totalActiveEnergy['Other'];
+            delete totalActiveEnergy['Other'];
+            totalActiveEnergy['Other'] = otherEnergy;
+        }
+
+        return totalActiveEnergy;
+    }
+
+    function plotConsumptionChart(consumptionData) {
+        var labels = Object.keys(consumptionData);
+    
+        var datasets = [];
+        var channels = Object.keys(consumptionData[labels[0]]);
+    
+        channels.forEach(function (channel, i) {
+            var data = labels.map(function (label) {
+                if (consumptionData[label][channel] >= 1000) {
+                    return consumptionData[label][channel].toFixed(0);
+                } else if (consumptionData[label][channel] >= 100) {
+                    return consumptionData[label][channel].toFixed(1);
+                } else {
+                    return consumptionData[label][channel].toFixed(2);
+                }
             });
+    
+            datasets.push({
+                label: channel,
+                data: data,
+                backgroundColor: colors[i % colors.length],
+                borderColor: colors[i % colors.length],
+                borderWidth: 1
+            });
+        });
+    
+        var ctx = document.getElementById('consumption-chart-canvas').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: datasets
+            },
+            options: {
+                scales: {
+                    x: {
+                        stacked: true
+                    },
+                    y: {
+                        stacked: true,
+                        title: {
+                            display: true,
+                            text: 'kWh'
+                        }
+                    }
+                }
+            }
+        });
+    }
 
-            var datasets = [];
-
-            var i = 0;
-            for (var channel in consumptionData) {
-                var data = consumptionData[channel].map(function (item) {
-                    return item.value.toFixed(2); // Display data with 2 decimals
-                });
-
-                datasets.push({
-                    label: consumptionData[channel].label,
+    function plotPieChart(consumptionData) {
+        var labels = Object.keys(consumptionData);
+        var data = Object.values(consumptionData);
+    
+        var totalConsumption = data.reduce(function (acc, value) {
+            return acc + value;
+        }, 0);
+    
+        labels = labels.map(function (label, i) {
+            var percentage = ((data[i] / totalConsumption) * 100).toFixed(1);
+            return label + ' (' + percentage + '%)';
+        });
+    
+        var ctx = document.getElementById('pie-chart-canvas').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut', // Use 'doughnut' type for a pie chart with a hole inside
+            data: {
+                labels: labels,
+                datasets: [{
                     data: data,
-                    backgroundColor: colors[i % colors.length],
-                    borderColor: colors[i % colors.length],
+                    backgroundColor: colors.slice(0, labels.length),
                     borderWidth: 1
-                });
-
-                i++;
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
             }
+        });
+    }
 
-            var ctx = document.getElementById('consumption-chart-canvas').getContext('2d');
-            new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: datasets
-                },
-                options: {
-                    scales: {
-                        x: {
-                            stacked: true
-                        },
-                        y: {
-                            stacked: true,
-                            title: {
-                                display: true,
-                                text: 'kWh'
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
-        function plotPieChart(consumptionData) {
-            var labels = [];
-            var data = [];
-
-            var totalConsumption = 0;
-            for (var channel in consumptionData) {
-                var total = consumptionData[channel].reduce(function (acc, item) {
-                    return acc + item.value;
-                }, 0);
-                totalConsumption += total;
-            }
-
-            var i = 0;
-            for (var channel in consumptionData) {
-                var total = consumptionData[channel].reduce(function (acc, item) {
-                    return acc + item.value;
-                }, 0);
-
-                var percentage = ((total / totalConsumption) * 100).toFixed(1);
-
-                labels.push(consumptionData[channel].label + ' (' + percentage + '%)');
-                data.push(total);
-                i++;
-            }
-
-            var ctx = document.getElementById('pie-chart-canvas').getContext('2d');
-            new Chart(ctx, {
-                type: 'doughnut', // Use 'doughnut' type for a pie chart with a hole inside
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        data: data,
-                        backgroundColor: colors.slice(0, labels.length),
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
-            });
-        }
-
-        function updatePowerData() {
+    function fetchData(endpoint) {
+        return new Promise((resolve, reject) => {
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function () {
-                if (this.readyState == 4 && this.status == 200) {
-                    powerData = JSON.parse(this.responseText);
-
-                    document.getElementById("voltage").innerHTML = powerData[0].data.voltage.toFixed(1) + ' V';
-
-                    var powerDataHtml = '';
-                    var channelCount = 0;
-                    var totalPower = 0;
-                    for (var channel in powerData) {
-                        var label = powerData[channel].label;
-                        var activePower = powerData[channel].data.activePower.toFixed(0);
-
-                        powerDataHtml += '<div class="channel-box">';
-                        powerDataHtml += '<div class="channel-label">' + label + '</div>';
-                        powerDataHtml += '<div class="channel-value">' + activePower + ' W</div>';
-                        powerDataHtml += '</div>';
-
-                        if (channelCount > 0) {
-                            totalPower += parseFloat(activePower);
-                        }
-                        channelCount++;
+                if (this.readyState == 4) {
+                    if (this.status == 200) {
+                        resolve(JSON.parse(this.responseText));
+                    } else {
+                        console.error(`Error fetching data from ${endpoint}. Status: ${this.status}`);
+                        reject();
                     }
-
-                    document.getElementById("channels").innerHTML = powerDataHtml;
                 }
             };
-            xhttp.open("GET", "/rest/meter", true);
+            xhttp.open("GET", `/${endpoint}`, true);
             xhttp.send();
-        }
+        });
+    }
 
-        function getChannelData() {
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("GET", "/rest/get-channel", false);
-            xhttp.send();
-            return JSON.parse(xhttp.responseText);
-        }
+    function plotCharts() {
+        Promise.all([fetchData('daily-energy'), fetchData('rest/get-channel'), fetchData('rest/meter')])
+            .then(data => {
+                dailyEnergy = data[0];
+                channelData = data[1];
+                meterData = data[2];
 
-        updatePowerData();
+                updateMeterData();
 
-        getConsumptionData();
+                dailyActiveEnergy = parseDailyEnergy();
+                plotConsumptionChart(dailyActiveEnergy);
 
-        setInterval(function () {
-            updatePowerData();
-        }, 1000);
+                totalActiveEnergy = getTotalActiveEnergy();
+                plotPieChart(totalActiveEnergy);
+            })
+            .catch(error => console.error('Error:', error));
+    }
 
-    </script>
+    plotCharts();
+    
+    setInterval(function () {
+        getMeterData();
+        updateMeterData();
+    }, 1000);
 
-    </html>
+</script>
+
+</html>
 )rawliteral";
 
 const char info_html[] PROGMEM = R"rawliteral(
