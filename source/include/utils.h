@@ -8,13 +8,13 @@
 #include <ArduinoJson.h>
 #include <Ticker.h>
 #include <HTTPClient.h>
+#include <AdvancedLogger.h>
 
 #include "structs.h"
 #include "constants.h"
 #include "led.h"
 #include "global.h"
 #include "customtime.h"
-#include "logger.h"
 #include "ade7953.h"
 
 JsonDocument getDeviceStatus();

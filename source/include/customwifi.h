@@ -10,7 +10,7 @@
 #include "led.h"
 #include "utils.h"
 
-extern Logger logger;
+extern AdvancedLogger logger;
 extern Led led;
 
 bool setupWifi();

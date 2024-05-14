@@ -20,7 +20,7 @@
 #include "html.h"
 #include "css.h"
 
-extern Logger logger;
+extern AdvancedLogger logger;
 extern Led led;
 extern Ade7953 ade7953;
 

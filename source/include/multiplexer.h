@@ -6,7 +6,7 @@
 #include "constants.h"
 #include "utils.h"
 
-extern Logger logger;
+extern AdvancedLogger logger;
 
 class Multiplexer {
     public:

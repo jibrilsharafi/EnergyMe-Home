@@ -501,7 +501,7 @@ void _setRestApi() {
         }
     });
 
-    server.serveStatic("/log", SPIFFS, "/log.txt");
+    server.serveStatic("/log", SPIFFS, ADVANCEDLOGGER_LOG_PATH);
     server.serveStatic("/daily-energy", SPIFFS, DAILY_ENERGY_JSON_PATH);
 }
 

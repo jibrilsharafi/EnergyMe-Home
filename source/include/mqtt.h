@@ -13,7 +13,7 @@
 #include "global.h"
 #include "structs.h"
 
-extern Logger logger;
+extern AdvancedLogger logger;
 extern CustomTime customTime;
 
 bool setupMqtt();

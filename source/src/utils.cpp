@@ -1,6 +1,6 @@
 #include "utils.h"
 
-extern Logger logger;
+extern AdvancedLogger logger;
 extern CustomTime customTime;
 extern Led led;
 extern Ade7953 ade7953;

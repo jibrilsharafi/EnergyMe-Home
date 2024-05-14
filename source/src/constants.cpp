@@ -69,7 +69,7 @@ const int ENERGY_SAVE_INTERVAL = 900; // Time between each energy save (in secon
 
 // ESP32 status
 const int MINIMUM_FREE_HEAP_SIZE = 10000; // Below this value (in bytes), the ESP32 will restart
-const int MINIMUM_FREE_SPIFFS_SIZE = 1000000; // Below this value (in bytes), the ESP32 will clear the logs
+const int MINIMUM_FREE_SPIFFS_SIZE = 100000; // Below this value (in bytes), the ESP32 will clear the logs
 
 // Multiplexer
 // --------------------

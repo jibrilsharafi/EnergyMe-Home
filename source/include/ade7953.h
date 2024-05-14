@@ -12,7 +12,7 @@
 #include "structs.h"
 #include "global.h"
 
-extern Logger logger;
+extern AdvancedLogger logger;
 extern CustomTime customTime;
 
 class Ade7953 {

@@ -23,11 +23,9 @@
 // Global variables
 int currentChannel = 0;
 int previousChannel = 0;
-bool firstLinecyc = false;
 
 bool isFirstSetup = false;
 
-long lastMillisChange = 0;
 GeneralConfiguration generalConfiguration;
 
 WiFiClientSecure net = WiFiClientSecure();
@@ -42,7 +40,7 @@ CustomTime customTime(
   TIME_SYNC_INTERVAL
 );
 
-Logger logger;
+AdvancedLogger logger;
 
 Led led(
   LED_RED_PIN, 
@@ -125,7 +123,6 @@ void setup() {
     logger.log("ADE7953 setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
   }
   
-
   led.setBlue();
 
   logger.log("Setting up WiFi...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
