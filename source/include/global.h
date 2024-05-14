@@ -13,7 +13,6 @@
 
 extern int currentChannel;
 extern int previousChannel;
-extern bool isfirstLinecyc;
 
 extern bool isFirstSetup;
 

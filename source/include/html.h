@@ -532,7 +532,7 @@ const char calibration_html[] PROGMEM = R"rawliteral(
                     if (this.readyState == 4 && this.status == 200) {
                         console.log(JSON.parse(this.responseText));
                     } else if (this.readyState == 4) {
-                        console.log("Error submitting calibration data);
+                        console.log("Error submitting calibration data");
                     }
                 };
                 xhttp.open("POST", '/rest/set-calibration', true);
