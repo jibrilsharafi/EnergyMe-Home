@@ -4,7 +4,7 @@
 // --------------------
 
 // Firmware info
-const char* FIRMWARE_VERSION = "0.4.4";
+const char* FIRMWARE_VERSION = "0.4.5";
 const char* FIRMWARE_DATE = "2024-05-11";
 
 // File path
