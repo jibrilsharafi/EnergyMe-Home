@@ -1069,14 +1069,18 @@ const char index_html[] PROGMEM = R"rawliteral(
     
         channels.forEach(function (channel, i) {
             var data = labels.map(function (label) {
-                if (consumptionData[label][channel] >= 1000) {
-                    return consumptionData[label][channel].toFixed(0);
-                } else if (consumptionData[label][channel] >= 100) {
-                    return consumptionData[label][channel].toFixed(1);
-                } else if (consumptionData[label][channel] >= 10) {
-                    return consumptionData[label][channel].toFixed(2);
+                var value = consumptionData[label][channel];
+                if (isNaN(value)) {
+                    value = 0; // Replace NaN with 0
+                }
+                if (value >= 1000) {
+                    return value.toFixed(0);
+                } else if (value >= 100) {
+                    return value.toFixed(1);
+                } else if (value >= 10) {
+                    return value.toFixed(2);
                 } else {
-                    return consumptionData[label][channel].toFixed(3);
+                    return value.toFixed(3);
                 }
             });
     
@@ -1088,6 +1092,9 @@ const char index_html[] PROGMEM = R"rawliteral(
                 borderWidth: 1
             });
         });
+    
+        // ... rest of the function
+    }
     
         var ctx = document.getElementById('consumption-chart-canvas').getContext('2d');
         new Chart(ctx, {
@@ -1115,8 +1122,8 @@ const char index_html[] PROGMEM = R"rawliteral(
 
     function plotPieChart(consumptionData) {
         var labels = Object.keys(consumptionData);
-        var data = Object.values(consumptionData);
-    
+        var data = Object.values(consumptionData).map(value => isNaN(value) ? 0 : value); // Replace NaN with 0
+
         var totalConsumption = data.reduce(function (acc, value) {
             return acc + value;
         }, 0);
