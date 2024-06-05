@@ -1071,7 +1071,7 @@ const char index_html[] PROGMEM = R"rawliteral(
             var data = labels.map(function (label) {
                 var value = consumptionData[label][channel];
                 if (isNaN(value)) {
-                    value = 0; // Replace NaN with 0
+                    value = 0;
                 }
                 if (value >= 1000) {
                     return value.toFixed(0);
@@ -1092,9 +1092,6 @@ const char index_html[] PROGMEM = R"rawliteral(
                 borderWidth: 1
             });
         });
-    
-        // ... rest of the function
-    }
     
         var ctx = document.getElementById('consumption-chart-canvas').getContext('2d');
         new Chart(ctx, {
