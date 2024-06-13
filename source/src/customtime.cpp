@@ -15,10 +15,10 @@ bool CustomTime::begin(){
     );
     setSyncInterval(_timeSyncInterval);
     if (_getTime()){
-        Serial.printf("Time synchronized: %s\n", getTimestamp().c_str());
+        logger.info("Time synchronized: %s", "customtime::begin", getTimestamp().c_str());
         return true;
     } else {
-        Serial.println("Failed to synchronize time");
+        logger.error("Failed to synchronize time", "customtime::begin");
         return false;
     }
 }
@@ -31,12 +31,6 @@ bool CustomTime::_getTime() {
     }
     time(&_now);
     return true;
-}
-
-long CustomTime::unixFromTimestamp(String timestamp){
-    struct tm _timeinfo;
-    strptime(timestamp.c_str(), TIMESTAMP_FORMAT, &_timeinfo);
-    return mktime(&_timeinfo);
 }
 
 String CustomTime::timestampFromUnix(long unix){

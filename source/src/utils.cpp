@@ -7,13 +7,11 @@ extern Ade7953 ade7953;
 
 extern GeneralConfiguration generalConfiguration;
 
-// Get the status of the device (firmware, memory, etc.)
 JsonDocument getDeviceStatus()
 {
 
     JsonDocument _jsonDocument;
 
-    // system -> uptimeMs, uptimeDays
     JsonObject _jsonSystem = _jsonDocument["system"].to<JsonObject>();
     _jsonSystem["uptime"] = millis();
 
@@ -50,18 +48,11 @@ JsonDocument getDeviceStatus()
 }
 
 JsonDocument deserializeJsonFromSpiffs(const char* path){
-    logger.log("Deserializing JSON from SPIFFS", "utils::deserializeJsonFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("Deserializing JSON from SPIFFS", "utils::deserializeJsonFromSpiffs");
 
     File _file = SPIFFS.open(path, "r");
     if (!_file){
-        logger.log(
-            (
-                "Failed to open file " + 
-                String(path)
-            ).c_str(),
-            "utils::deserializeJsonFromSpiffs",
-            CUSTOM_LOG_LEVEL_ERROR
-        );
+        logger.error("Failed to open file %s", "utils::deserializeJsonFromSpiffs", path);
 
         return JsonDocument();
     }
@@ -70,49 +61,32 @@ JsonDocument deserializeJsonFromSpiffs(const char* path){
     DeserializationError _error = deserializeJson(_jsonDocument, _file);
     _file.close();
     if (_error){
-        logger.log(
-            (
-                "Failed to deserialize file " + 
-                String(path) + 
-                ". Error: " + 
-                String(_error.c_str())
-            ).c_str(),
-            "utils::deserializeJsonFromSpiffs",
-            CUSTOM_LOG_LEVEL_ERROR
-        );
+        logger.error("Failed to deserialize file %s. Error: %s", "utils::deserializeJsonFromSpiffs", path, _error.c_str());
         
         return JsonDocument();
     }
-
-    logger.log("JSON deserialized from SPIFFS correctly", "utils::deserializeJsonFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
-    serializeJson(_jsonDocument, Serial);
-    Serial.println();
+    
+    String _jsonString;
+    serializeJson(_jsonDocument, _jsonString);
+    logger.debug("JSON serialized to SPIFFS correctly: %s", "main::serializeJsonToSpiffs", _jsonString.c_str());
     return _jsonDocument;
 }
 
-bool serializeJsonToSpiffs(const char* path, JsonDocument jsonDocument){
-    logger.log("Serializing JSON to SPIFFS", "utils::serializeJsonToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+bool serializeJsonToSpiffs(const char* path, JsonDocument _jsonDocument){
+    logger.debug("Serializing JSON to SPIFFS", "utils::serializeJsonToSpiffs");
 
     File _file = SPIFFS.open(path, "w");
     if (!_file){
-        logger.log(
-            (
-                "Failed to open file " + 
-                String(path)
-            ).c_str(),
-            "utils::serializeJsonToSpiffs",
-            CUSTOM_LOG_LEVEL_ERROR
-        );
-
+        logger.error("Failed to open file %s", "utils::serializeJsonToSpiffs", path);
         return false;
     }
 
-    serializeJson(jsonDocument, _file);
+    serializeJson(_jsonDocument, _file);
     _file.close();
 
-    logger.log("JSON serialized to SPIFFS correctly", "main::serializeJsonToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
-    serializeJson(jsonDocument, Serial);
-    Serial.println();
+    String _jsonString;
+    serializeJson(_jsonDocument, _jsonString);
+    logger.debug("JSON serialized to SPIFFS correctly: %s", "main::serializeJsonToSpiffs", _jsonString.c_str());
     return true;
 }
 
@@ -121,18 +95,8 @@ void restartEsp32(const char* functionName, const char* reason) {
     if (functionName != "utils::factoryReset") {
         ade7953.saveEnergyToSpiffs();
     }
+    logger.fatal("Restarting ESP32 from function %s. Reason: %s", "main::restartEsp32", functionName, reason);
 
-    logger.log(
-        (
-            "Restarting ESP32 from function " + 
-            String(functionName) + 
-            ". Reason: " + 
-            String(reason)
-        ).c_str(),
-        "main::restartEsp32",
-        CUSTOM_LOG_LEVEL_FATAL
-    );
-  
     led.setBrightness(LED_MAX_BRIGHTNESS);
     led.block();
     for (int i = 0; i < 3; i++){
@@ -147,21 +111,20 @@ void restartEsp32(const char* functionName, const char* reason) {
 }
 
 void printMeterValues(MeterValues meterValues, const char* channelLabel) {
-    logger.log(
-        (
-            String(channelLabel) + ": " + 
-            String(meterValues.voltage, 1) + " V | " + 
-            String(meterValues.current, 3) + " A || " + 
-            String(meterValues.activePower, 1) + " W | " + 
-            String(meterValues.reactivePower, 1) + " VAR | " + 
-            String(meterValues.apparentPower, 1) + " VA | " + 
-            String(meterValues.powerFactor, 3) + " PF || " + 
-            String(meterValues.activeEnergy, 3) + " Wh | " + 
-            String(meterValues.reactiveEnergy, 3) + " VARh | " + 
-            String(meterValues.apparentEnergy, 3) + " VAh"
-        ).c_str(),
-        "main::printMeterValues",
-        CUSTOM_LOG_LEVEL_VERBOSE);
+    logger.verbose(
+        "%s: %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh | %.3f VARh | %.3f VAh", 
+        "main::printMeterValues", 
+        channelLabel, 
+        meterValues.voltage, 
+        meterValues.current, 
+        meterValues.activePower, 
+        meterValues.reactivePower, 
+        meterValues.apparentPower, 
+        meterValues.powerFactor, 
+        meterValues.activeEnergy, 
+        meterValues.reactiveEnergy, 
+        meterValues.apparentEnergy
+    );
 }
 
 void printDeviceStatus()
@@ -169,22 +132,21 @@ void printDeviceStatus()
 
     JsonDocument _jsonDocument = getDeviceStatus();
 
-    logger.log(
-        (
-            "Free heap: " + String(_jsonDocument["memory"]["heap"]["free"].as<int>()) + " bytes | " +
-            "Total heap: " + String(_jsonDocument["memory"]["heap"]["total"].as<int>()) + " bytes || " +
-            "Free SPIFFS: " + String(_jsonDocument["memory"]["spiffs"]["free"].as<int>()) + " bytes | " +
-            "Total SPIFFS: " + String(_jsonDocument["memory"]["spiffs"]["total"].as<int>()) + " bytes")
-            .c_str(),
+    logger.debug(
+        "Free heap: %d bytes | Total heap: %d bytes || Free SPIFFS: %d bytes | Total SPIFFS: %d bytes",
         "main::printDeviceStatus",
-        CUSTOM_LOG_LEVEL_DEBUG);
+        _jsonDocument["memory"]["heap"]["free"].as<int>(),
+        _jsonDocument["memory"]["heap"]["total"].as<int>(),
+        _jsonDocument["memory"]["spiffs"]["free"].as<int>(),
+        _jsonDocument["memory"]["spiffs"]["total"].as<int>()
+    );
 }
 
 bool checkIfFirstSetup() {
-    logger.log("Checking if first setup...", "main::checkIfFirstSetup", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("Checking if first setup...", "main::checkIfFirstSetup");
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(METADATA_JSON_PATH);
     if (_jsonDocument.isNull()){
-        logger.log("Failed to open metadata.json", "main::checkIfFirstSetup", CUSTOM_LOG_LEVEL_ERROR);
+        logger.error("Failed to open metadata.json", "main::checkIfFirstSetup");
         return false;
     }
 
@@ -192,63 +154,63 @@ bool checkIfFirstSetup() {
 }
 
 void logFirstSetupComplete() {
-    logger.log("Logging first setup complete...", "main::logFirstSetupComplete", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("Logging first setup complete...", "main::logFirstSetupComplete");
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(METADATA_JSON_PATH);
     if (_jsonDocument.isNull()){
-        logger.log("Failed to open metadata.json", "main::logFirstSetupComplete", CUSTOM_LOG_LEVEL_ERROR);
+        logger.error("Failed to open metadata.json", "main::logFirstSetupComplete");
         return;
     }
 
     _jsonDocument["setup"]["isFirstTime"] = false;
     _jsonDocument["setup"]["timestampFirstTime"] = customTime.getTimestamp();
     serializeJsonToSpiffs(METADATA_JSON_PATH, _jsonDocument);
-    logger.log("First setup complete", "main::logFirstSetupComplete", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("First setup complete", "main::logFirstSetupComplete");
 }
 
 // General configuration
 // -----------------------------
 
 void setDefaultGeneralConfiguration() {
-    logger.log("Setting default general configuration...", "utils::setDefaultGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("Setting default general configuration...", "utils::setDefaultGeneralConfiguration");
     
     generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
     generalConfiguration.gmtOffset = DEFAULT_GMT_OFFSET;
     generalConfiguration.dstOffset = DEFAULT_DST_OFFSET;
     
-    logger.log("Default general configuration set", "utils::setDefaultGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("Default general configuration set", "utils::setDefaultGeneralConfiguration");
 }
 
 void setGeneralConfiguration(GeneralConfiguration newGeneralConfiguration) {
-    logger.log("Setting general configuration...", "utils::setGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("Setting general configuration...", "utils::setGeneralConfiguration");
 
     generalConfiguration = newGeneralConfiguration;
 
-    logger.log("General configuration set", "utils::setGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("General configuration set", "utils::setGeneralConfiguration");
 }
 
 bool setGeneralConfigurationFromSpiffs() {
-    logger.log("Setting general configuration from SPIFFS...", "utils::setGeneralConfigurationFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("Setting general configuration from SPIFFS...", "utils::setGeneralConfigurationFromSpiffs");
 
     JsonDocument _jsonDocument = deserializeJsonFromSpiffs(GENERAL_CONFIGURATION_JSON_PATH);
     if (_jsonDocument.isNull()){
-        logger.log("Failed to open general configuration file", "utils::setGeneralConfigurationFromSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.error("Failed to open general configuration file", "utils::setGeneralConfigurationFromSpiffs");
         return false;
     } else {
         setGeneralConfiguration(jsonToGeneralConfiguration(_jsonDocument));
-        logger.log("General configuration set from SPIFFS", "utils::setGeneralConfigurationFromSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.debug("General configuration set from SPIFFS", "utils::setGeneralConfigurationFromSpiffs");
         return true;
     }
 }
 
 bool saveGeneralConfigurationToSpiffs() {
-    logger.log("Saving general configuration to SPIFFS...", "utils::saveGeneralConfigurationToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("Saving general configuration to SPIFFS...", "utils::saveGeneralConfigurationToSpiffs");
 
     JsonDocument _jsonDocument = generalConfigurationToJson(generalConfiguration);
     if (serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument)){
-        logger.log("General configuration saved to SPIFFS", "utils::saveGeneralConfigurationToSpiffs", CUSTOM_LOG_LEVEL_DEBUG);
+        logger.debug("General configuration saved to SPIFFS", "utils::saveGeneralConfigurationToSpiffs");
         return true;
     } else {
-        logger.log("Failed to save general configuration to SPIFFS", "utils::saveGeneralConfigurationToSpiffs", CUSTOM_LOG_LEVEL_ERROR);
+        logger.error("Failed to save general configuration to SPIFFS", "utils::saveGeneralConfigurationToSpiffs");
         return false;
     }
 }
@@ -263,12 +225,12 @@ JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguratio
     return _jsonDocument;
 }
 
-GeneralConfiguration jsonToGeneralConfiguration(JsonDocument jsonDocument) {
+GeneralConfiguration jsonToGeneralConfiguration(JsonDocument _jsonDocument) {
     GeneralConfiguration _generalConfiguration;
     
-    _generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
-    _generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
-    _generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
+    _generalConfiguration.isCloudServicesEnabled = _jsonDocument["isCloudServicesEnabled"].as<bool>();
+    _generalConfiguration.gmtOffset = _jsonDocument["gmtOffset"].as<int>();
+    _generalConfiguration.dstOffset = _jsonDocument["dstOffset"].as<int>();
 
     return _generalConfiguration;
 }
@@ -287,27 +249,17 @@ JsonDocument getPublicLocation() {
             
             deserializeJson(_jsonDocument, payload);
 
-            logger.log(
-                (
-                    "Location: " + 
-                    String(_jsonDocument["city"].as<String>()) + 
-                    ", " + 
-                    String(_jsonDocument["country"].as<String>()) + 
-                    " | Lat: " + 
-                    String(_jsonDocument["lat"].as<float>(), 4) + 
-                    " | Lon: " + 
-                    String(_jsonDocument["lon"].as<float>(), 4)
-                ).c_str(),
+            logger.debug(
+                "Location: %s, %s | Lat: %.4f | Lon: %.4f",
                 "utils::getPublicLocation",
-                CUSTOM_LOG_LEVEL_DEBUG
+                _jsonDocument["city"].as<String>().c_str(),
+                _jsonDocument["country"].as<String>().c_str(),
+                _jsonDocument["lat"].as<float>(),
+                _jsonDocument["lon"].as<float>()
             );
         }
     } else {
-        logger.log(
-            ("Error on HTTP request: " + String(httpCode)).c_str(), 
-            "utils::getPublicLocation", 
-            CUSTOM_LOG_LEVEL_ERROR
-        );
+        logger.error("Error on HTTP request: %d", "utils::getPublicLocation", httpCode);
         deserializeJson(_jsonDocument, "{}");
     }
 
@@ -337,25 +289,21 @@ std::pair<int, int> getPublicTimezone() {
             
             deserializeJson(_jsonDocument, payload);
 
-            logger.log(
-                (
-                    "GMT offset: " + 
-                    String(_jsonDocument["rawOffset"].as<int>()) + 
-                    " | DST offset: " + 
-                    String(_jsonDocument["dstOffset"].as<int>())
-                ).c_str(),
+            logger.debug(
+                "GMT offset: %d | DST offset: %d",
                 "utils::getPublicTimezone",
-                CUSTOM_LOG_LEVEL_DEBUG
+                _jsonDocument["rawOffset"].as<int>(),
+                _jsonDocument["dstOffset"].as<int>()
             );
 
             _gmtOffset = _jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
             _dstOffset = _jsonDocument["dstOffset"].as<int>() * 3600 - _gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
         }
     } else {
-        logger.log(
-            ("Error on HTTP request: " + String(httpCode)).c_str(), 
+        logger.error(
+            "Error on HTTP request: %d", 
             "utils::getPublicTimezone", 
-            CUSTOM_LOG_LEVEL_ERROR
+            httpCode
         );
         deserializeJson(_jsonDocument, "{}");
 
@@ -367,7 +315,7 @@ std::pair<int, int> getPublicTimezone() {
 }
 
 void updateTimezone() {
-    logger.log("Updating timezone", "utils::updateTimezone", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("Updating timezone", "utils::updateTimezone");
 
     std::pair<int, int> _timezones = getPublicTimezone();
 
@@ -378,7 +326,7 @@ void updateTimezone() {
 }
 
 void factoryReset() {
-    logger.log("Factory reset requested", "utils::factoryReset", CUSTOM_LOG_LEVEL_FATAL);
+    logger.fatal("Factory reset requested", "utils::factoryReset");
 
     File _file;
 
@@ -391,67 +339,44 @@ void factoryReset() {
         LOGGER_JSON_PATH,
         ENERGY_JSON_PATH,
         DAILY_ENERGY_JSON_PATH,
-        LOG_TXT_PATH
+        LOG_PATH
     };
 
     for (String _fileName : _files) {
         _file = SPIFFS.open(_fileName, "r");
         if (!_file) {
-            logger.log(
-                (
-                    "Failed to open file " + 
-                    String(_file)
-                ).c_str(),
-                "utils::factoryReset",
-                CUSTOM_LOG_LEVEL_ERROR
-            );
+            logger.error("Failed to open file %s", "utils::factoryReset", _fileName.c_str());
             return;
         }
 
         SPIFFS.rename(_fileName, ("/old" + String(_fileName)).c_str());
         if (!_duplicateFile((String(FACTORY_PATH) + String(_fileName)).c_str(), _fileName.c_str())) {
-            logger.log(
-                (
-                    "Failed to duplicate file " + 
-                    String(_fileName)
-                ).c_str(),
-                "utils::factoryReset",
-                CUSTOM_LOG_LEVEL_ERROR
+
+            logger.error(
+                "Failed to duplicate file %s", 
+                "utils::factoryReset", 
+                _fileName.c_str()
             );
             return;
         }
     }
 
-    logger.log("Factory reset completed. We are back to the good old days. Now rebooting...", "utils::factoryReset", CUSTOM_LOG_LEVEL_FATAL);
+    logger.fatal("Factory reset completed. We are back to the good old days. Now rebooting...", "utils::factoryReset");
     restartEsp32("utils::factoryReset", "Factory reset");
 }
 
 bool _duplicateFile(const char* sourcePath, const char* destinationPath) {
-    logger.log("Duplicating file", "utils::_duplicateFile", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("Duplicating file", "utils::_duplicateFile");
 
     File _sourceFile = SPIFFS.open(sourcePath, "r");
     if (!_sourceFile) {
-        logger.log(
-            (
-                "Failed to open source file: " + 
-                String(sourcePath)
-            ).c_str(),
-            "utils::_duplicateFile",
-            CUSTOM_LOG_LEVEL_ERROR
-        );
+        logger.error("Failed to open source file: %s", "utils::_duplicateFile", sourcePath);
         return false;
     }
 
     File _destinationFile = SPIFFS.open(destinationPath, "w");
     if (!_destinationFile) {
-        logger.log(
-            (
-                "Failed to open destination file: " + 
-                String(destinationPath)
-            ).c_str(),
-            "utils::_duplicateFile",
-            CUSTOM_LOG_LEVEL_ERROR
-        );
+        logger.error("Failed to open destination file: %s", "utils::_duplicateFile", destinationPath);
         return false;
     }
 
@@ -462,6 +387,6 @@ bool _duplicateFile(const char* sourcePath, const char* destinationPath) {
     _sourceFile.close();
     _destinationFile.close();
 
-    logger.log("File duplicated", "utils::_duplicateFile", CUSTOM_LOG_LEVEL_DEBUG);
+    logger.debug("File duplicated", "utils::_duplicateFile");
     return true;
 }

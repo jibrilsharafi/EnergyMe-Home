@@ -3,23 +3,23 @@
 WiFiManager wifiManager;
 
 bool setupWifi() {
-  logger.log("Setting up WiFi...", "setupWifi", CUSTOM_LOG_LEVEL_DEBUG);
+  logger.debug("Setting up WiFi...", "setupWifi");
 
   wifiManager.setConfigPortalTimeout(WIFI_CONFIG_PORTAL_TIMEOUT);
   
   if (!wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID)) {
-    logger.log("Failed to connect and hit timeout", "customwifi::setupWifi", CUSTOM_LOG_LEVEL_ERROR);
+    logger.error("Failed to connect and hit timeout", "customwifi::setupWifi");
     return false;
   }
   
   printWifiStatus();
-  logger.log("Connected to WiFi", "customwifi::setupWifi", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Connected to WiFi", "customwifi::setupWifi");
   return true;
 }
 
 void checkWifi() {
   if (!WiFi.isConnected()) {
-    logger.log("WiFi connection lost. Reconnecting...", "customwifi::checkWifi", CUSTOM_LOG_LEVEL_WARNING);
+    logger.warning("WiFi connection lost. Reconnecting...", "customwifi::checkWifi");
     if (!setupWifi()) {
       restartEsp32("customwifi::checkWifi", "Failed to connect to WiFi and hit timeout");
     }
@@ -27,15 +27,15 @@ void checkWifi() {
 }
 
 void resetWifi() {
-  logger.log("Resetting WiFi...", "resetWifi", CUSTOM_LOG_LEVEL_WARNING);
+  logger.warning("Resetting WiFi...", "resetWifi");
   wifiManager.resetSettings();
   restartEsp32("customwifi::resetWifi", "WiFi reset (erase credentials). Will restart ESP32 in AP mode");
 }
 
 bool setupMdns() {
-  logger.log("Setting up mDNS...", "setupMdns", CUSTOM_LOG_LEVEL_DEBUG);
+  logger.debug("Setting up mDNS...", "setupMdns");
   if (!MDNS.begin(MDNS_HOSTNAME)) {
-    logger.log("Error setting up mDNS responder!", "customwifi::setupMdns", CUSTOM_LOG_LEVEL_ERROR);
+    logger.error("Error setting up mDNS responder!", "customwifi::setupMdns");
     return false;
   }
   MDNS.addService("http", "tcp", 80);
@@ -71,15 +71,13 @@ JsonDocument getWifiStatus() {
 void printWifiStatus() {
   JsonDocument _jsonDocument = getWifiStatus();
 
-  logger.log(
-    (
-      "MAC: " + _jsonDocument["macAddress"].as<String>() + " | " +
-      "IP: " + _jsonDocument["localIp"].as<String>() + " | " +
-      "Status: " + _jsonDocument["status"].as<String>() + " | " +
-      "SSID: " + _jsonDocument["ssid"].as<String>() + " | " +
-      "RSSI: " + _jsonDocument["rssi"].as<String>()
-    ).c_str(),
+  logger.debug(
+    "MAC: %s | IP: %s | Status: %s | SSID: %s | RSSI: %s",
     "customwifi::printWifiStatus",
-    CUSTOM_LOG_LEVEL_DEBUG
+    _jsonDocument["macAddress"].as<String>().c_str(),
+    _jsonDocument["localIp"].as<String>().c_str(),
+    _jsonDocument["status"].as<String>().c_str(),
+    _jsonDocument["ssid"].as<String>().c_str(),
+    _jsonDocument["rssi"].as<String>().c_str()
   );
 }

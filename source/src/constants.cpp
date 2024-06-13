@@ -4,8 +4,8 @@
 // --------------------
 
 // Firmware info
-const char* FIRMWARE_VERSION = "0.4.6";
-const char* FIRMWARE_DATE = "2024-06-05";
+const char* FIRMWARE_VERSION = "0.4.7";
+const char* FIRMWARE_DATE = "2024-06-13";
 
 // File path
 const char* METADATA_JSON_PATH = "/metadata.json";
@@ -23,10 +23,12 @@ const int SERIAL_BAUDRATE = 921600; // Fastest baudrate for ESP32
 
 // Logger
 // 0: VERBOSE, 1: DEBUG, 2: INFO, 3: WARNING, 4: ERROR, 5: FATAL
-const char* LOG_TXT_PATH = "/log.txt";
+const char* LOG_PATH = "/AdvancedLogger/log.txt";
+const char* LOG_CONFIG_PATH = "/AdvancedLogger/config.txt";
+const char* LOG_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S";
 const int LOG_FILE_MAX_LENGTH = 1000; // In lines
-const int DEFAULT_LOG_PRINT_LEVEL = CUSTOM_LOG_LEVEL_DEBUG;
-const int DEFAULT_LOG_SAVE_LEVEL = CUSTOM_LOG_LEVEL_INFO;
+const LogLevel DEFAULT_LOG_PRINT_LEVEL = LogLevel::INFO;
+const LogLevel DEFAULT_LOG_SAVE_LEVEL = LogLevel::WARNING;
 
 // Time
 const char* NTP_SERVER = "pool.ntp.org";

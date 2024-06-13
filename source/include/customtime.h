@@ -8,6 +8,8 @@
 #include "constants.h"
 #include "global.h"
 
+extern AdvancedLogger logger;
+
 class CustomTime{
     public:
         CustomTime(

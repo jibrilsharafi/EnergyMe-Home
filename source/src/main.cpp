@@ -40,7 +40,11 @@ CustomTime customTime(
   TIME_SYNC_INTERVAL
 );
 
-AdvancedLogger logger;
+AdvancedLogger logger(
+  LOG_PATH,
+  LOG_CONFIG_PATH,
+  LOG_TIMESTAMP_FORMAT
+);
 
 Led led(
   LED_RED_PIN, 
@@ -69,106 +73,106 @@ Ade7953 ade7953(
 
 void setup() {
   Serial.begin(SERIAL_BAUDRATE);
-  Serial.printf("\n\n\n\n\n !!! BOOTING !!! \n\n\n");
-  Serial.printf("\n\n\n EnergyMe - Home \n\n\n\n\n");
+  logger.info("Booting...", "main::setup");
+  logger.info("EnergyMe - Home", "main::setup");
 
-  logger.logOnly("Booting...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
-  logger.logOnly(("Build version: " + String(FIRMWARE_VERSION)).c_str(), "main::setup", CUSTOM_LOG_LEVEL_INFO);
-  logger.logOnly(("Build date: " + String(FIRMWARE_DATE)).c_str(), "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Booting...", "main::setup");
+  logger.info("Build version: %s", "main::setup", FIRMWARE_VERSION);
+  logger.info("Build date: %s", "main::setup", FIRMWARE_DATE);
 
-  logger.logOnly("Setting up LED...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Setting up LED...", "main::setup");
   led.begin();
-  logger.logOnly("LED setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("LED setup done", "main::setup");
 
   led.setCyan();
 
-  logger.logOnly("Setting up SPIFFS...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Setting up SPIFFS...", "main::setup");
   if (!SPIFFS.begin(true)) {
-    logger.logOnly("An Error has occurred while mounting SPIFFS", "main::setup", CUSTOM_LOG_LEVEL_FATAL);
+    logger.fatal("An Error has occurred while mounting SPIFFS", "main::setup");
   } else {
-    logger.log("Booting...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
-    logger.log(("Build version: " + String(FIRMWARE_VERSION)).c_str(), "main::setup", CUSTOM_LOG_LEVEL_INFO);
-    logger.log(("Build date: " + String(FIRMWARE_DATE)).c_str(), "main::setup", CUSTOM_LOG_LEVEL_INFO);
-    
-    logger.log("SPIFFS mounted successfully", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+    logger.info("Booting...", "main::setup");  
+    logger.info("Build version: %s", "main::setup", FIRMWARE_VERSION);
+    logger.info("Build date: %s", "main::setup", FIRMWARE_DATE);
+
+    logger.info("SPIFFS mounted successfully", "main::setup");
   }
   
-  logger.log("Setting up logger...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Setting up logger...", "main::setup");
   logger.begin();
-  logger.log("Logger setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Logger setup done", "main::setup");
   
   isFirstSetup = checkIfFirstSetup();
   if (isFirstSetup) {
-    logger.log("First setup detected", "main::setup", CUSTOM_LOG_LEVEL_WARNING);
+    logger.warning("First setup detected", "main::setup");
   }
 
-  logger.log("Fetching configuration from SPIFFS...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Fetching configuration from SPIFFS...", "main::setup");
   if (!setGeneralConfigurationFromSpiffs()) {
-    logger.log("Failed to load configuration from SPIFFS. Using default values.", "main::setup", CUSTOM_LOG_LEVEL_WARNING);
+    logger.warning("Failed to load configuration from SPIFFS. Using default values.", "main::setup");
     setDefaultGeneralConfiguration();
   } else {
-    logger.log("Configuration loaded from SPIFFS", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+    logger.info("Configuration loaded from SPIFFS", "main::setup");
   }
 
   led.setPurple();
   
-  logger.log("Setting up multiplexer...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Setting up multiplexer...", "main::setup");
   multiplexer.begin();
-  logger.log("Multiplexer setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Multiplexer setup done", "main::setup");
   
-  logger.log("Setting up ADE7953...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Setting up ADE7953...", "main::setup");
   if (!ade7953.begin()) {
-    logger.log("ADE7953 initialization failed!", "main::setup", CUSTOM_LOG_LEVEL_FATAL);
+    logger.fatal("ADE7953 initialization failed!", "main::setup");
   } else {
-    logger.log("ADE7953 setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+    logger.info("ADE7953 setup done", "main::setup");
   }
   
   led.setBlue();
 
-  logger.log("Setting up WiFi...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Setting up WiFi...", "main::setup");
   if (!setupWifi()) {
     restartEsp32("main::setup", "Failed to connect to WiFi and hit timeout");
   } else {
-    logger.log("WiFi setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+    logger.info("WiFi setup done", "main::setup");
   }
   
-  logger.log("Setting up mDNS...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Setting up mDNS...", "main::setup");
   if (!setupMdns()) {
-    logger.log("Failed to setup mDNS", "main::setup", CUSTOM_LOG_LEVEL_ERROR);
+    logger.error("Failed to setup mDNS", "main::setup");
   } else {
-    logger.log("mDNS setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+    logger.info("mDNS setup done", "main::setup");
   }
   
-  logger.log("Syncing time...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Syncing time...", "main::setup");
   updateTimezone();
   if (!customTime.begin()) {
-    logger.log("Time sync failed!", "main::setup", CUSTOM_LOG_LEVEL_ERROR);
+    logger.error("Time sync failed!", "main::setup");
   } else {
-    logger.log("Time synced", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+    logger.info("Time synced", "main::setup");
   }
   
-  logger.log("Setting up server...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Setting up server...", "main::setup");
   setupServer();
-  logger.log("Server setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Server setup done", "main::setup");
 
-  logger.log("Setting up MQTT...", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Setting up MQTT...", "main::setup");
   if (generalConfiguration.isCloudServicesEnabled) {
     if (!setupMqtt()) {
-      logger.log("MQTT initialization failed!", "main::setup", CUSTOM_LOG_LEVEL_ERROR);
+      logger.error("MQTT initialization failed!", "main::setup");
     } else {
-      logger.log("MQTT setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+      logger.info("MQTT setup done", "main::setup");
     }
   } else {
-    logger.log("Cloud services not enabled", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+    logger.info("Cloud services not enabled", "main::setup");
   }
 
   if (isFirstSetup) {
     logFirstSetupComplete();
-    logger.log("First setup complete", "main::setup", CUSTOM_LOG_LEVEL_WARNING);
+    logger.warning("First setup complete", "main::setup");
   }
 
   led.setGreen();
-  logger.log("Setup done", "main::setup", CUSTOM_LOG_LEVEL_INFO);
+  logger.info("Setup done", "main::setup");
 }
 
 void loop() {

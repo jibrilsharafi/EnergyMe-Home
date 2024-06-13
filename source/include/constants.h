@@ -1,6 +1,8 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
+#include "AdvancedLogger.h"
+
 // Definitions
 // --------------------
 
@@ -34,16 +36,6 @@
 #define PUBLIC_TIMEZONE_ENDPOINT "http://api.geonames.org/timezoneJSON?"
 #define PUBLIC_TIMEZONE_USERNAME "energymehome"
 
-// Logger
-#define CUSTOM_LOG_LEVEL_VERBOSE 0
-#define CUSTOM_LOG_LEVEL_DEBUG 1
-#define CUSTOM_LOG_LEVEL_INFO 2
-#define CUSTOM_LOG_LEVEL_WARNING 3
-#define CUSTOM_LOG_LEVEL_ERROR 4
-#define CUSTOM_LOG_LEVEL_FATAL 5
-#define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
-#define CUSTOM_LOG_FORMAT "[%s] [%lu ms] [%s] [Core %d] [%s] %s" // [TIME] [MICROS us] [LOG_LEVEL] [Core CORE] [FUNCTION] MESSAGE
-
 // Constants
 // --------------------
 
@@ -66,10 +58,12 @@ extern const char* FACTORY_PATH;
 extern const int SERIAL_BAUDRATE; // Fastest baudrate for ESP32
 
 // Logger
-extern const char* LOG_TXT_PATH;
+extern const char* LOG_PATH;
+extern const char* LOG_CONFIG_PATH;
+extern const char* LOG_TIMESTAMP_FORMAT;
 extern const int LOG_FILE_MAX_LENGTH;
-extern const int DEFAULT_LOG_PRINT_LEVEL;
-extern const int DEFAULT_LOG_SAVE_LEVEL;
+extern const LogLevel DEFAULT_LOG_PRINT_LEVEL;
+extern const LogLevel DEFAULT_LOG_SAVE_LEVEL;
 
 // Time
 extern const char* NTP_SERVER;
