@@ -19,6 +19,7 @@
 #include "structs.h"
 #include "utils.h"
 #include "global.h"
+#include "modbustcp.h"
 
 // Global variables
 int currentChannel = 0;
@@ -32,6 +33,8 @@ WiFiClientSecure net = WiFiClientSecure();
 PubSubClient clientMqtt(net);
 
 CircularBuffer<data::PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> payloadMeter;
+
+ModbusTcp modbusTcp;
 
 // Custom classes
 
@@ -155,6 +158,10 @@ void setup() {
   setupServer();
   logger.info("Server setup done", "main::setup");
 
+  logger.info("Setting up Modbus TCP...", "main::setup");
+  modbusTcp.begin();
+  logger.info("Modbus TCP setup done", "main::setup");
+
   logger.info("Setting up MQTT...", "main::setup");
   if (generalConfiguration.isCloudServicesEnabled) {
     if (!setupMqtt()) {
@@ -184,6 +191,11 @@ void loop() {
   
   if (ade7953.isLinecycFinished()) {
     ade7953.readMeterValues(currentChannel);
+
+    modbusTcp.setVoltage(ade7953.meterValues[currentChannel].voltage);
+    modbusTcp.setCurrent(ade7953.meterValues[currentChannel].current);
+    modbusTcp.setPower(ade7953.meterValues[currentChannel].activePower);
+    modbusTcp.setEnergy(ade7953.meterValues[currentChannel].activeEnergy);
     
     previousChannel = currentChannel;
     currentChannel = ade7953.findNextActiveChannel(currentChannel);
