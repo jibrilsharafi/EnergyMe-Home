@@ -1237,6 +1237,7 @@ const char info_html[] PROGMEM = R"rawliteral(
             <h2>Device Info</h2>
             <h3>System</h3>
             <p><span class='list-key'>Uptime:</span><span id='uptime' class='list-value'></span></p>
+            <p><span class='list-key'>System time:</span><span id='systemTime' class='list-value'></span></p>
             <h3>Firmware</h3>
             <p><span class='list-key'>Version:</span><span id='firmwareVersion' class='list-value'></span></p>
             <p><span class='list-key'>Date:</span><span id='firmwareDate' class='list-value'></span></p>
@@ -1323,6 +1324,7 @@ const char info_html[] PROGMEM = R"rawliteral(
                     }
                 }
                 document.getElementById('uptime').textContent = uptimeStr;
+                document.getElementById('systemTime').textContent = data.system.systemTime;
 
                 document.getElementById('firmwareVersion').textContent = data.firmware.version;
                 document.getElementById('firmwareDate').textContent = data.firmware.date;

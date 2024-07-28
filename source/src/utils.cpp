@@ -14,6 +14,7 @@ JsonDocument getDeviceStatus()
 
     JsonObject _jsonSystem = _jsonDocument["system"].to<JsonObject>();
     _jsonSystem["uptime"] = millis();
+    _jsonSystem["systemTime"] = customTime.getTimestamp();
 
     JsonObject _jsonFirmware = _jsonDocument["firmware"].to<JsonObject>();
     _jsonFirmware["version"] = FIRMWARE_VERSION;
