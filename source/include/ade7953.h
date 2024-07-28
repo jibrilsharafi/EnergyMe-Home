@@ -90,6 +90,11 @@ public:
     static bool saveEnergyFlag;
     static bool saveDailyEnergyFlag;
 
+    float getAggregatedActivePower(bool includeChannel0 = true);
+    float getAggregatedReactivePower(bool includeChannel0 = true);
+    float getAggregatedApparentPower(bool includeChannel0 = true);
+    float getAggregatedPowerFactor(bool includeChannel0 = true);
+
 private:
     bool _verifyCommunication();
     void _setOptimumSettings();
