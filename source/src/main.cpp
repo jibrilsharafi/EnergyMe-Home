@@ -34,7 +34,12 @@ PubSubClient clientMqtt(net);
 
 CircularBuffer<data::PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> payloadMeter;
 
-ModbusTcp modbusTcp;
+ModbusTcp modbusTcp(
+  MODBUS_TCP_PORT, 
+  MODBUS_TCP_SERVER_ID, 
+  MODBUS_TCP_MAX_CLIENTS, 
+  MODBUS_TCP_TIMEOUT
+);
 
 // Custom classes
 
@@ -190,12 +195,9 @@ void loop() {
   }
   
   if (ade7953.isLinecycFinished()) {
-    ade7953.readMeterValues(currentChannel);
+    led.setGreen();
 
-    modbusTcp.setVoltage(ade7953.meterValues[currentChannel].voltage);
-    modbusTcp.setCurrent(ade7953.meterValues[currentChannel].current);
-    modbusTcp.setPower(ade7953.meterValues[currentChannel].activePower);
-    modbusTcp.setEnergy(ade7953.meterValues[currentChannel].activeEnergy);
+    ade7953.readMeterValues(currentChannel);
     
     previousChannel = currentChannel;
     currentChannel = ade7953.findNextActiveChannel(currentChannel);
@@ -208,9 +210,7 @@ void loop() {
       customTime.getUnixTime(),
       ade7953.meterValues[previousChannel].activePower,
       ade7953.meterValues[previousChannel].powerFactor
-    ));
-    
-    led.setGreen();
+    )); 
   }
 
   if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){

@@ -6,31 +6,37 @@
 
 #include "constants.h"
 #include "global.h"
+#include "ade7953.h"
+#include "customtime.h"
 
 extern AdvancedLogger logger;
+extern Ade7953 ade7953;
+extern CustomTime customTime;
 
 class ModbusTcp{
 public:
-    ModbusTcp();
-    void begin(int port = 502);
-    void setVoltage(float voltage);
-    void setCurrent(float current);
-    void setPower(float power);
-    void setEnergy(float energy);
+    ModbusTcp(int port, int serverId, int maxClients, int timeout);
+
+    void begin();
 
 private:
     ModbusServerTCPasync _mbServer;
-    static const uint16_t VOLTAGE_REG = 0;
-    static const uint16_t CURRENT_REG = 1;
-    static const uint16_t POWER_REG = 2;
-    static const uint16_t ENERGY_REG = 3;
-    static const uint16_t NUM_REGS = 4;
-
-    uint16_t holdingRegisters[NUM_REGS];
     
-    static ModbusMessage handleReadHoldingRegisters(ModbusMessage request);
-    static uint16_t floatToUint16(float value);
-    static int16_t floatToInt16(float value);
+    uint16_t _getRegisterValue(uint16_t address);
+    uint16_t _getFloatBits(float value, bool high);
+
+    bool _isValidRegister(uint16_t address);
+    
+    static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request);
+
+    int _port;
+    int _serverId;
+    int _maxClients;
+    int _timeout;
+
+    int _lowerLimitChannelRegisters;
+    int _stepChannelRegisters;
+    int _upperLimitChannelRegisters;
 };
 
 #endif // MODBUS_TCP_H

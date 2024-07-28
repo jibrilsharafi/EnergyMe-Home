@@ -165,4 +165,11 @@ extern const float VALIDATE_POWER_MAX;
 extern const float VALIDATE_POWER_FACTOR_MIN;
 extern const float VALIDATE_POWER_FACTOR_MAX;
 
+// Modbus TCP
+// --------------------
+extern const int MODBUS_TCP_PORT;
+extern const int MODBUS_TCP_MAX_CLIENTS;
+extern const int MODBUS_TCP_TIMEOUT; // In ms
+extern const int MODBUS_TCP_SERVER_ID;
+
 #endif

@@ -4,8 +4,8 @@
 // --------------------
 
 // Firmware info
-const char* FIRMWARE_VERSION = "0.4.9";
-const char* FIRMWARE_DATE = "2024-07-27";
+const char* FIRMWARE_VERSION = "0.4.11";
+const char* FIRMWARE_DATE = "2024-07-28";
 
 // File path
 const char* METADATA_JSON_PATH = "/metadata.json";
@@ -128,3 +128,10 @@ const float VALIDATE_POWER_MIN = -100000.0;
 const float VALIDATE_POWER_MAX = 100000.0;
 const float VALIDATE_POWER_FACTOR_MIN = -1.0;
 const float VALIDATE_POWER_FACTOR_MAX = 1.0;
+
+// Modbus TCP
+// --------------------
+const int MODBUS_TCP_PORT = 502;
+const int MODBUS_TCP_MAX_CLIENTS = 3;
+const int MODBUS_TCP_TIMEOUT = 10000;
+const int MODBUS_TCP_SERVER_ID = 1;
