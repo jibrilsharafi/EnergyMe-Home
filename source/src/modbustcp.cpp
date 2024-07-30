@@ -35,16 +35,13 @@ ModbusMessage ModbusTcp::_handleReadHoldingRegisters(ModbusMessage request) {
         logger.debug("Invalid function code: %d", "ModbusTcp::_handleReadHoldingRegisters", request.getFunctionCode());
         return ModbusMessage(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
     }
+
+    // No check on the valid address is performed as it seems that the response is not correctly handled by the client
     
     uint16_t startAddress;
     uint16_t registerCount;
     request.get(2, startAddress);
     request.get(4, registerCount);
-
-    if (!modbusTcpInstance->_isValidRegister(startAddress)) {
-        logger.debug("Invalid register address: %d", "ModbusTcp::_handleReadHoldingRegisters", startAddress);
-        return ModbusMessage(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
-    }
     
     // Calculate the byte count (2 bytes per register)
     uint8_t byteCount = registerCount * 2;
@@ -141,7 +138,7 @@ uint16_t ModbusTcp::_getRegisterValue(uint16_t address) {
     }
 }
 
-bool ModbusTcp::_isValidRegister(uint16_t address) {
+bool ModbusTcp::_isValidRegister(uint16_t address) { // Currently unused
     // Define valid ranges
     bool isValid = (
         (address >= 0 && address <= 3) ||  // General registers
