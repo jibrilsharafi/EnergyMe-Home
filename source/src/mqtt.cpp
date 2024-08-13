@@ -29,11 +29,11 @@ bool setupMqtt() {
     
     setupTopics();
 
-    net.setCACert(MQTT_CERT_CA);
-    net.setCertificate(MQTT_CERT_CRT);
-    net.setPrivateKey(MQTT_CERT_PRIVATE);
+    net.setCACert(AWS_IOT_CORE_CERT_CA);
+    net.setCertificate(AWS_IOT_CORE_CERT_CRT);
+    net.setPrivateKey(AWS_IOT_CORE_CERT_PRIVATE);
 
-    clientMqtt.setServer(MQTT_ENDPOINT, MQTT_PORT);
+    clientMqtt.setServer(AWS_IOT_CORE_MQTT_ENDPOINT, AWS_IOT_CORE_PORT);
 
     clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
     clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);

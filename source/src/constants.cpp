@@ -19,7 +19,7 @@ const char* DAILY_ENERGY_JSON_PATH = "/daily-energy.json";
 const char* FACTORY_PATH = "/fct";
 
 // Serial
-const int SERIAL_BAUDRATE = 921600; // Fastest baudrate for ESP32
+const int SERIAL_BAUDRATE = 115200; // Fastest baudrate for ESP32
 
 // Logger
 // 0: VERBOSE, 1: DEBUG, 2: INFO, 3: WARNING, 4: ERROR, 5: FATAL

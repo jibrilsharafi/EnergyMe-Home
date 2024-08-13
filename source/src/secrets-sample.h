@@ -4,7 +4,7 @@ It contains constants for connecting to an MQTT broker and publishing data.
 While it was originally created for connecting to AWS IoT Core, it can be
 modified to work with other MQTT brokers.
 
-The MQTT_ENDPOINT and MQTT_PORT constants are the address and port of the 
+The AWS_IOT_CORE_MQTT_ENDPOINT and AWS_IOT_CORE_PORT constants are the address and port of the 
 MQTT broker.
 
 The MQTT_BASIC_INGEST, MQTT_TOPIC_1, and MQTT_TOPIC_2 constants form the basic 
@@ -19,7 +19,7 @@ a way to differentiate the topics.
 The final topic will be:
 "{MQTT_BASIC_INGEST}/{MQTT_RULE_NAME_*}/{MQTT_TOPIC_1}/{MQTT_TOPIC_2}/{MQTT_TOPIC_*}"
 
-The MQTT_CERT_CA, MQTT_CERT_CRT, and MQTT_CERT_PRIVATE constants are the 
+The AWS_IOT_CORE_CERT_CA, AWS_IOT_CORE_CERT_CRT, and AWS_IOT_CORE_CERT_PRIVATE constants are the 
 certificates used for TLS encryption. They should be replaced with your 
 actual certificates.
 
@@ -32,9 +32,11 @@ with your actual values, and rename the file to secrets.h.
 
 #include <pgmspace.h>
 
+// FIXME: update with new secrets
+
 // MQTT broker endpoint and port
-const char *MQTT_ENDPOINT = "REPLACE_WITH_MQTT_ENDPOINT"; // Replace with your MQTT broker's endpoint
-const int MQTT_PORT = 8883;                               // Replace with your MQTT broker's port if different
+const char *AWS_IOT_CORE_MQTT_ENDPOINT = "REPLACE_WITH_MQTT_ENDPOINT"; // Replace with your MQTT broker's endpoint
+const int AWS_IOT_CORE_PORT = 8883;                               // Replace with your MQTT broker's port if different
 
 // Basic MQTT topic structure
 const char *MQTT_BASIC_INGEST = "";           // First part of the topic
@@ -59,21 +61,21 @@ const char *MQTT_TOPIC_GENERAL_CONFIGURATION = "GeneralConfiguration"; // Topic 
 
 // Certificates for TLS encryption
 // Root CA 1
-static const char MQTT_CERT_CA[] PROGMEM = R"EOF(
+static const char AWS_IOT_CORE_CERT_CA[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 XXX
 -----END CERTIFICATE-----
 )EOF"; // Replace XXX with your Root CA 1 certificate
 
 // Device Certificate
-static const char MQTT_CERT_CRT[] PROGMEM = R"KEY(
+static const char AWS_IOT_CORE_CERT_CRT[] PROGMEM = R"KEY(
 -----BEGIN CERTIFICATE-----
 XXX
 -----END CERTIFICATE-----
 )KEY"; // Replace XXX with your device certificate
 
 // Device Private Key
-static const char MQTT_CERT_PRIVATE[] PROGMEM = R"KEY(
+static const char AWS_IOT_CORE_CERT_PRIVATE[] PROGMEM = R"KEY(
 -----BEGIN RSA PRIVATE KEY-----
 XXX
 -----END RSA PRIVATE KEY-----
