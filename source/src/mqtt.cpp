@@ -41,6 +41,8 @@ bool setupMqtt() {
     if (!connectMqtt()) {
         return false;
     } 
+
+    subscribeToTopics();
     
     statusTicker.attach(MQTT_STATUS_PUBLISH_INTERVAL, publishStatus);
 
@@ -232,6 +234,7 @@ void publishStatus() {
     _jsonObject["rssi"] = WiFi.RSSI();
     _jsonObject["uptime"] = millis();
     _jsonObject["freeHeap"] = ESP.getFreeHeap();
+    _jsonObject["freeSpiffs"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
 
     String _statusMessage;
     serializeJson(_jsonDocument, _statusMessage);
@@ -316,6 +319,57 @@ void publishMessage(const char* topic, const char* message) {
     if (!clientMqtt.publish(topic, message)) {
         logger.error("Failed to publish message", "mqtt::publishMessage");
     }
+}
+
+// Callback function to handle incoming messages
+void callback(char* topic, byte* payload, unsigned int length) {
+    // Convert payload to string
+    String message;
+    for (unsigned int i = 0; i < length; i++) {
+        message += (char)payload[i];
+    }
+
+    // Handle firmware update
+    if (String(topic) == MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE) {
+        logger.debug("Firmware update received: %s", "mqtt::callback", message.c_str());
+
+        // Parse JSON payload
+        // DynamicJsonDocument doc(1024);
+        // DeserializationError error = deserializeJson(doc, message);
+        JsonDocument _jsonDocument;
+        DeserializationError _error = deserializeJson(_jsonDocument, message);
+        if (_error) {
+            logger.error("Failed to parse JSON: %s", "mqtt::callback", _error.c_str());
+            return;
+        }
+
+        JsonObject doc = _jsonDocument.as<JsonObject>();
+        const char* version = doc["version"];
+        const char* date = doc["date"];
+        const char* url = doc["url"];
+        const char* checksum = doc["checksum"];
+
+        logger.info("New firmware version available: %s, date: %s, url: %s, checksum: %s", "mqtt::callback", version, date, url, checksum);
+
+        // Save the information to SPIFFS
+        File file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "w");
+        if (!file) {
+            logger.error("Failed to open file for writing: %s", "mqtt::callback", FIRMWARE_UPDATE_INFO_PATH);
+            return;
+        }
+
+        file.print(message);
+        file.close();
+    } else {
+        logger.info("Unknown topic message received: %s", "mqtt::callback", topic);
+        return;
+    }
+}
+
+void subscribeToTopics() {
+    clientMqtt.setCallback(callback);
+    clientMqtt.subscribe(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE);
+    Serial.println("Subscribed to topics");
 }
 
 String getPublicIp() {

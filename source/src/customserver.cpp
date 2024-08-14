@@ -415,6 +415,18 @@ void _setRestApi() {
         else {request->send(400, "text/plain", "File not found");}
     });
 
+    server.on("/rest/firmware-update-info", HTTP_GET, [](AsyncWebServerRequest *request) {
+        _serverLog("Request to get firmware update info from REST API", "customserver::_setRestApi::/rest/firmware-update-info", LogLevel::DEBUG, request);
+
+        File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "r");
+        if (_file) {
+            request->send(_file, "application/json");
+            _file.close();
+        } else {
+            request->send(200, "application/json", "{}");
+        }
+    });
+
     server.on("/rest/factory-reset", HTTP_POST, [](AsyncWebServerRequest *request) {
         _serverLog("Request to factory reset from REST API", "customserver::_setRestApi::/rest/factory-reset", LogLevel::WARNING, request);
 

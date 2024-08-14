@@ -17,6 +17,7 @@ const char* LOGGER_JSON_PATH = "/config/logger.json";
 const char* ENERGY_JSON_PATH = "/energy.json";
 const char* DAILY_ENERGY_JSON_PATH = "/daily-energy.json";
 const char* FACTORY_PATH = "/fct";
+const char* FIRMWARE_UPDATE_INFO_PATH = "/firmware-update.json";
 
 // Serial
 const int SERIAL_BAUDRATE = 115200; // Fastest baudrate for ESP32

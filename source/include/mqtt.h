@@ -36,6 +36,8 @@ void publishGeneralConfiguration();
 
 void publishMessage(const char* topic, const char* message);
 
+void subscribeToTopics();
+
 JsonDocument circularBufferToJson(CircularBuffer<data::PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &buffer);
 
 String getPublicIp();

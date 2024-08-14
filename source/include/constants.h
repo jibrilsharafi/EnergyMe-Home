@@ -53,6 +53,7 @@ extern const char* LOGGER_JSON_PATH;
 extern const char* ENERGY_JSON_PATH;
 extern const char* DAILY_ENERGY_JSON_PATH;
 extern const char* FACTORY_PATH;
+extern const char* FIRMWARE_UPDATE_INFO_PATH;
 
 // Serial
 extern const int SERIAL_BAUDRATE; // Fastest baudrate for ESP32

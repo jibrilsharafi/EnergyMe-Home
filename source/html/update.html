@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/main.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+
+    <link rel="icon" type="image/png" href="/images/favicon.png">
+    
+    <title>Update</title>
+    <style>
+    </style>
+</head>
+
+<body>
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="home" href="/">Home</a>
+    </div>
+    <div id="update" class="section-box">
+        <h2>Update</h2>
+        <p>Upload a new firmware or filesystem to the device (only <i>.bin</i> files are allowed)</p>
+        <form method='POST' action='/do-update' enctype='multipart/form-data' onsubmit="return formSubmitted()">
+            <input type='file' id='file' name='update' accept='.bin' required>
+            <input type='submit' id='submit' value='Update'>
+        </form>
+    </div>
+
+    <div id="current-device" class="section-box">
+        <h2>Current device</h2>
+        <h3>Firmware</h3>
+        <p>Version: <span id="current-firmware-version"></span></p>
+        <p>Date: <span id="current-firmware-date"></span></p>
+        <h3>Filesystem</h3>
+        <p>Version: <span id="current-filesystem-version"></span></p>
+        <p>Date: <span id="current-filesystem-date"></span></p>
+    </div>
+
+    <script>
+        function formSubmitted() {
+            var res = confirm("Are you sure you want to update the device?");
+            if (!res) {
+                return false;
+            }
+            document.getElementById("submit").value = "Updating...";
+            document.getElementById("submit").disabled = true;
+            return true;
+        }
+
+        function getCurrentDeviceInfo() {
+            var request = new XMLHttpRequest();
+            request.open('GET', '/rest/device-info', true);
+            request.onload = function () {
+                if (request.status >= 200 && request.status < 400) {
+                    var data = JSON.parse(request.responseText);
+                    document.getElementById("current-firmware-version").innerHTML = data.firmware.version;
+                    document.getElementById("current-firmware-date").innerHTML = data.firmware.date;
+
+                    document.getElementById("current-filesystem-version").innerHTML = data.filesystem.version;
+                    document.getElementById("current-filesystem-date").innerHTML = data.filesystem.date;
+
+                    var elements = document.querySelectorAll("#current-firmware-version, #current-firmware-date, #current-filesystem-version, #current-filesystem-date");
+                    for (var i = 0; i < elements.length; i++) {
+                        elements[i].style.fontStyle = "italic";
+                    }
+                } else {
+                    console.log("Error getting current firmware");
+                }
+            };
+            request.send();
+        }
+
+        getCurrentDeviceInfo();
+    </script>
+</body>
+
+</html>
