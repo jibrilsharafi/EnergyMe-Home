@@ -50,7 +50,7 @@
         <h2>Update Status</h2>
         <div id="status-details" style="display: none;">
             <p><span class='list-key'>Status:</span><span id='status' class='list-value'></span></p>
-            <p><span class='list-key'>Reason:</span><span id='reason' class='list-value'></span></p>
+            <p><span class='list-key' id="reason-key">Reason:</span><span id='reason' class='list-value'></span></p>
             <p><span class='list-key'>Updated:</span><span id='timestamp' class='list-value'></span></p>
         </div>
         <p id="no-status" class="light-grey-box">No update status available</p>
@@ -88,7 +88,7 @@
             request.onload = function () {
                 if (request.status == 200) {
                     var data = JSON.parse(request.responseText);
-                    if (Object.keys(data).length === 0) {
+                    if (Object.keys(data).length == 0) {
                         document.getElementById("update-details").style.display = "none";
                         document.getElementById("no-update").style.display = "block";
                     } else {
@@ -123,7 +123,7 @@
             ];
 
             const sadDays = [
-                "Why did the update fail?!?",
+                "Why did the update fail that day?!?",
                 "Oh no! I really wanted to update the firmware that day"
             ];
 
@@ -132,29 +132,23 @@
             request.onload = function () {
                 if (request.status == 200) {
                     var data = JSON.parse(request.responseText);
-                    if (Object.keys(data).length === 0) {
-                        document.getElementById("status-details").style.display = "none";
-                        document.getElementById("no-status").style.display = "block";
-                    } else {
-                        var status = data.status.toUpperCase();
-                        var statusElement = document.getElementById("status");
-
-                        statusElement.innerHTML = status;
-
-                        if (status === "FAILED") {
-                            statusElement.style.color = "red";
-                            document.getElementById("reason").innerHTML = data.reason;
-
-                            document.getElementById("status").innerHTML = sadDays[Math.floor(Math.random() * sadDays.length)];
-                        } else if (status === "SUCCESS") {
-                            statusElement.style.color = "green";
-                            document.getElementById("reason").style.display = "none";
-
-                            document.getElementById("status").innerHTML = happyDays[Math.floor(Math.random() * happyDays.length)];
-                        }
-
+                    if (Object.keys(data).length != 0) {
                         var timestamp = new Date(data.timestamp);
                         document.getElementById("timestamp").innerHTML = timestamp.toLocaleString();
+
+                        var status = data.status.toUpperCase();
+                        var statusElement = document.getElementById("status");
+                        statusElement.innerHTML = status;
+                        if (status == "FAILED") {
+                            statusElement.style.color = "red";
+                            document.getElementById("reason").innerHTML = data.reason;
+                            document.getElementById("timestamp").innerHTML = timestamp.toLocaleString() + " | " + sadDays[Math.floor(Math.random() * sadDays.length)];
+                        } else if (status == "SUCCESS") {
+                            statusElement.style.color = "green";
+                            document.getElementById("reason-key").style.display = "none";
+                            document.getElementById("reason").style.display = "none";
+                            document.getElementById("timestamp").innerHTML = timestamp.toLocaleString() + " | " + happyDays[Math.floor(Math.random() * happyDays.length)];
+                        }
 
                         document.getElementById("status-details").style.display = "block";
                         document.getElementById("no-status").style.display = "none";

@@ -416,8 +416,11 @@
 
             var encodedUri = encodeURI(csvContent);
             var link = document.createElement("a");
+            var now = new Date();
+            var timestamp = now.toISOString().replace(/[:.-]/g, "_"); // Format timestamp
+            var filename = "consumption_data_" + timestamp + ".csv";
             link.setAttribute("href", encodedUri);
-            link.setAttribute("download", "consumption_data.csv");
+            link.setAttribute("download", filename);
             document.body.appendChild(link); // Required for FF
 
             link.click();
@@ -512,7 +515,7 @@
         fetch('/rest/is-latest-firmware-installed')
             .then(response => response.json())
             .then(data => {
-                if (data.latest === 'false') {
+                if (data.latest == 'false') {
                     document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
                 }
             })

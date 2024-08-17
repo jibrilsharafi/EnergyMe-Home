@@ -97,33 +97,8 @@ void setup() {
   log_i("Setting up SPIFFS...");
   if (!SPIFFS.begin(true)) {
     log_e("An Error has occurred while mounting SPIFFS");
+    
     // TODO: add here a function to check the presence of all the required files in the SPIFFS
-
-    // FIXME: remove this temporary fix
-    // Check if FIRMWARE_UPDATE_INFO_PATH exists. If it is, check if the content is not null (""). If it is, substitute it with {}
-    // Check if FIRMWARE_UPDATE_INFO_PATH exists. If it doesn't, create it and initialize with {}
-    File file;
-    if (!SPIFFS.exists(FIRMWARE_UPDATE_INFO_PATH)) {
-        file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_WRITE);
-        if (!file) {
-            log_e("Failed to create firmware update info file");
-        } else {
-            file.print("{}");
-            log_w("Firmware update info file did not exist. Created and initialized with default value");
-            file.close();
-        }
-    }
-
-      if (!SPIFFS.exists(FIRMWARE_UPDATE_STATUS_PATH)) {
-        file = SPIFFS.open(FIRMWARE_UPDATE_STATUS_PATH, FILE_WRITE);
-        if (!file) {
-            log_e("Failed to create firmware update info file");
-        } else {
-            file.print("{}");
-            log_w("Firmware update info file did not exist. Created and initialized with default value");
-            file.close();
-        }
-    }
   } else {
     log_i("SPIFFS setup done");
   }

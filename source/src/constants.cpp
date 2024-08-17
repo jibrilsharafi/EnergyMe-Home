@@ -44,7 +44,7 @@ const int LED_FREQUENCY = 5000;
 const int LED_RESOLUTION = 8;
 
 // WiFi
-const int WIFI_CONFIG_PORTAL_TIMEOUT = 180; // 3 minutes
+const int WIFI_CONFIG_PORTAL_TIMEOUT = 300; // 5 minutes
 const char* WIFI_CONFIG_PORTAL_SSID = "EnergyMe";
 
 // MDNS
@@ -52,13 +52,14 @@ const char* MDNS_HOSTNAME = "energyme";
 
 // Cloud services
 const bool DEFAULT_IS_CLOUD_SERVICES_ENABLED = false;
-const int MAX_INTERVAL_PAYLOAD = 60000; // 60 seconds
+const int MAX_INTERVAL_PAYLOAD = 30000; // 30 seconds - The maximum interval between two meter payloads
 
 // MQTT
 const int MQTT_MAX_CONNECTION_ATTEMPT = 5; // The maximum number of attempts to connect to the MQTT broker
 const int MQTT_OVERRIDE_KEEPALIVE = 600; // The default value is 15 seconds, which is too low for the AWS IoT MQTT broker
 const int MQTT_STATUS_PUBLISH_INTERVAL = 3600; // Time between each status publish (in seconds)
-const int MQTT_MIN_CONNECTION_INTERVAL = 60000; // In milliseconds, representing the minimum interval between two connection attempts
+const int MQTT_MIN_CONNECTION_INTERVAL = 30000; // In milliseconds, representing the minimum interval between two connection attempts
+const int MQTT_LOOP_INTERVAL = 100;
 
 // Conversion factors
 const float BYTE_TO_KILOBYTE = 1 / 1024.0;

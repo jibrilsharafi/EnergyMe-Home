@@ -17,6 +17,7 @@
 #include "customtime.h"
 #include "ade7953.h"
 
+JsonDocument getProjectInfo();
 JsonDocument getDeviceInfo();
 void restartEsp32(const char* functionName, const char* reason);
 void printMeterValues(MeterValues meterValues, const char* channelLabel);
@@ -43,5 +44,7 @@ void factoryReset();
 bool _duplicateFile(const char* sourcePath, const char* destinationPath);
 
 bool isLatestFirmwareInstalled();
+
+String getDeviceId();
 
 #endif

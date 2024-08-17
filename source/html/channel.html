@@ -80,7 +80,7 @@
             box.className = 'section-box';
             box.style.textAlign = 'center';
             var calibrationOptions = calibrationData.map(calibration =>
-                `<option value="${calibration.label}" ${calibration.label === channel.calibration.label ? 'selected' : ''}>${calibration.label}</option>`
+                `<option value="${calibration.label}" ${calibration.label == channel.calibration.label ? 'selected' : ''}>${calibration.label}</option>`
             ).join('');
             box.innerHTML = `
                     <label>

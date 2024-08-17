@@ -7,6 +7,25 @@ extern Ade7953 ade7953;
 
 extern GeneralConfiguration generalConfiguration;
 
+JsonDocument getProjectInfo() {
+    JsonDocument _jsonDocument;
+
+    _jsonDocument["companyName"] = COMPANY_NAME;
+    _jsonDocument["fullProductName"] = FULL_PRODUCT_NAME;
+    _jsonDocument["productName"] = PRODUCT_NAME;
+    _jsonDocument["productDescription"] = PRODUCT_DESCRIPTION;
+    _jsonDocument["productUrl"] = PRODUCT_URL;
+    _jsonDocument["githubUrl"] = GITHUB_URL;
+    _jsonDocument["author"] = AUTHOR;
+    _jsonDocument["authorEmail"] = AUTHOR_EMAIL;
+    _jsonDocument["copyrightYear"] = COPYRIGHT_YEAR;
+    _jsonDocument["copyrightHolder"] = COPYRIGHT_HOLDER;
+    _jsonDocument["license"] = LICENSE;
+    _jsonDocument["licenseUrl"] = LICENSE_URL;
+
+    return _jsonDocument;
+}
+
 JsonDocument getDeviceInfo()
 {
     JsonDocument _jsonDocument;
@@ -401,4 +420,10 @@ bool isLatestFirmwareInstalled() {
     );
     
     return _latestFirmwareVersion == _currentFirmwareVersion;
+}
+
+String getDeviceId() {
+    String _macAddress = WiFi.macAddress();
+    _macAddress.replace(":", "");
+    return _macAddress;
 }

@@ -6,10 +6,24 @@
 // Definitions
 // --------------------
 
+// Project info
+#define COMPANY_NAME "EnergyMe"
+#define FULL_PRODUCT_NAME "EnergyMe - Home"
+#define PRODUCT_NAME "Home"
+#define PRODUCT_DESCRIPTION "A open-source energy monitoring system for home use, capable of monitoring up to 17 circuits."
+#define PRODUCT_URL "https://energyme.net"
+#define GITHUB_URL "https://github.com/jibrilsharafi/EnergyMe-Home"
+#define AUTHOR "Jibril Sharafi"
+#define AUTHOR_EMAIL "jibril.sharafi@gmail.com"
+#define COPYRIGHT_YEAR "2024"
+#define COPYRIGHT_HOLDER "Jibril Sharafi"
+#define LICENSE "MIT License"
+#define LICENSE_URL "https://opensource.org/licenses/MIT"
+
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "04"
-#define FIRMWARE_BUILD_VERSION_PATCH "13"
+#define FIRMWARE_BUILD_VERSION_PATCH "14"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
@@ -105,6 +119,7 @@ extern const int MQTT_MAX_CONNECTION_ATTEMPT; // The maximum number of attempts 
 extern const int MQTT_OVERRIDE_KEEPALIVE; // The default value is 15 seconds, which is too low for the AWS IoT MQTT broker
 extern const int MQTT_STATUS_PUBLISH_INTERVAL; // In seconds
 extern const int MQTT_MIN_CONNECTION_INTERVAL; // In milliseconds, representing the minimum interval between two connection attempts
+extern const int MQTT_LOOP_INTERVAL; // In milliseconds, representing the interval between two MQTT loop calls (needed for the subscribe function - https://github.com/knolleary/pubsubclient/issues/163)
 
 // Conversion factors
 extern const float BYTE_TO_KILOBYTE; 

@@ -12,7 +12,7 @@
 
     <link rel="icon" type="image/png" href="/images/favicon.png">
     
-    <title>Device and WiFi Info</title>
+    <title>Info</title>
     <style>
     </style>
 </head>
@@ -53,12 +53,27 @@
         <p><span class='list-key'>Status:</span><span id='status' class='list-value'></span></p>
         <p><span class='list-key'>SSID:</span><span id='ssid' class='list-value'></span></p>
         <p><span class='list-key'>BSSID:</span><span id='bssid' class='list-value'></span></p>
-        <p><span class='list-key'>RSSI:</span><span id='rssi' class='list-value'></span> dB</p>
+        <p><span class='list-key'>RSSI:</span><span id='rssi' class='list-value'></span></p>
+    </div>
+    <div id="projectInfo" class="section-box">
+        <h2>Project Info</h2>
+        <p><span class='list-key'>Company Name:</span><span id='companyName' class='list-value'></span></p>
+        <p><span class='list-key'>Full Product Name:</span><span id='fullProductName' class='list-value'></span></p>
+        <p><span class='list-key'>Product Name:</span><span id='productName' class='list-value'></span></p>
+        <p><span class='list-key'>Description:</span><span id='productDescription' class='list-value'></span></p>
+        <p><span class='list-key'>Product URL:</span><span id='productUrl' class='list-value'></span></p>
+        <p><span class='list-key'>GitHub URL:</span><span id='githubUrl' class='list-value'></span></p>
+        <p><span class='list-key'>Author:</span><span id='author' class='list-value'></span></p>
+        <p><span class='list-key'>Author Email:</span><span id='authorEmail' class='list-value'></span></p>
+        <p><span class='list-key'>Copyright Year:</span><span id='copyrightYear' class='list-value'></span></p>
+        <p><span class='list-key'>Copyright Holder:</span><span id='copyrightHolder' class='list-value'></span></p>
+        <p><span class='list-key'>License:</span><span id='license' class='list-value'></span></p>
+        <p><span class='list-key'>License URL:</span><span id='licenseUrl' class='list-value'></span></p>
     </div>
 
     <script>
         function fetchData() {
-            var deviceInfo, wifiInfo;
+            var deviceInfo, wifiInfo, projectInfo;
 
             function handleRequest() {
                 if (this.readyState == 4 && this.status == 200) {
@@ -76,6 +91,11 @@
             wifiXhttp.onreadystatechange = handleRequest;
             wifiXhttp.open("GET", "/rest/wifi-info", true);
             wifiXhttp.send();
+
+            var projectXhttp = new XMLHttpRequest();
+            projectXhttp.onreadystatechange = handleRequest;
+            projectXhttp.open("GET", "/rest/project-info", true);
+            projectXhttp.send();
         }
 
         function displayData(data, responseUrl) {
@@ -83,6 +103,8 @@
                 displayDeviceInfo(data);
             } else if (responseUrl.includes("wifi-info")) {
                 displayWifiInfo(data);
+            } else if (responseUrl.includes("project-info")) {
+                displayProjectInfo(data);
             } else {
                 console.log("Unknown response URL: " + responseUrl);
                 return;
@@ -151,7 +173,36 @@
             document.getElementById('status').textContent = data.status;
             document.getElementById('ssid').textContent = data.ssid;
             document.getElementById('bssid').textContent = data.bssid;
-            document.getElementById('rssi').textContent = data.rssi;
+
+            var rssi = data.rssi;
+            var rssiStr = rssi + " dB";
+            if (rssi >= -30) {
+                rssiStr += " (Amazing)";
+            } else if (rssi >= -60) {
+                rssiStr += " (Very Good)";
+            } else if (rssi >= -70) {
+                rssiStr += " (Okay)";
+            } else if (rssi >= -80) {
+                rssiStr += " (Not Good)";
+            } else {
+                rssiStr += " (Unusable)";
+            }
+            document.getElementById('rssi').textContent = rssiStr;
+        }
+
+        function displayProjectInfo(data) {
+            document.getElementById('companyName').textContent = data.companyName;
+            document.getElementById('fullProductName').textContent = data.fullProductName;
+            document.getElementById('productName').textContent = data.productName;
+            document.getElementById('productDescription').textContent = data.productDescription;
+            document.getElementById('productUrl').innerHTML = `<a href="${data.productUrl}" target="_blank">${data.productUrl}</a>`;
+            document.getElementById('githubUrl').innerHTML = `<a href="${data.githubUrl}" target="_blank">${data.githubUrl}</a>`;
+            document.getElementById('author').textContent = data.author;
+            document.getElementById('authorEmail').textContent = data.authorEmail;
+            document.getElementById('copyrightYear').textContent = data.copyrightYear;
+            document.getElementById('copyrightHolder').textContent = data.copyrightHolder;
+            document.getElementById('license').textContent = data.license;
+            document.getElementById('licenseUrl').innerHTML = `<a href="${data.licenseUrl}" target="_blank">${data.licenseUrl}</a>`;
         }
 
         fetchData();

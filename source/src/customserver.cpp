@@ -67,11 +67,6 @@ void _setHtmlPages() {
         request->send_P(200, "text/html", info_html);
     });
 
-    server.on("/update-successful", HTTP_GET, [](AsyncWebServerRequest *request) {
-        _serverLog("Request to get update successful page", "customserver::_setHtmlPages::/update-successful", LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", update_successful_html);
-    });
-
     // CSS
     server.on("/css/main.css", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::DEBUG, request);
@@ -111,6 +106,16 @@ void _setOta() {
         request->send_P(200, "text/html", update_html);
     });
 
+    server.on("/update-successful", HTTP_GET, [](AsyncWebServerRequest *request) {
+        _serverLog("Request to get update successful page", "customserver::_setHtmlPages::/update-successful", LogLevel::DEBUG, request);
+        request->send_P(200, "text/html", update_successful_html);
+    });
+
+    server.on("/update-failed", HTTP_GET, [](AsyncWebServerRequest *request) {
+        _serverLog("Request to get update failed page", "customserver::_setHtmlPages::/update-successful", LogLevel::DEBUG, request);
+        request->send_P(200, "text/html", update_failed_html);
+    });
+
     server.on("/do-update", HTTP_POST,
       [](AsyncWebServerRequest *request) {},
       [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
@@ -122,6 +127,14 @@ void _setRestApi() {
         _serverLog("Request to check if the ESP32 is alive", "customserver::_setRestApi::/rest/is-alive", LogLevel::DEBUG, request);
 
         request->send(200, "application/json", "{\"message\":\"True\"}");
+    });
+
+    server.on("/rest/project-info", HTTP_GET, [](AsyncWebServerRequest *request) {
+        _serverLog("Request to get project info from REST API", "customserver::_setRestApi::/rest/project-info", LogLevel::DEBUG, request);
+
+        String _buffer;
+        serializeJson(getProjectInfo(), _buffer);
+        request->send(200, "application/json", _buffer.c_str());
     });
 
     server.on("/rest/device-info", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -577,6 +590,7 @@ void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, siz
         if (!Update.end(true)) {
             _onUpdateFailed(request, "Error during last part of update");
         } else {
+            request->redirect("/update-successful"); // FIXME: this still does not work, as it is too slow to serve the page before rebooting
             _onUpdateSuccessful(request);
         }
     }
@@ -602,14 +616,10 @@ void _updateJsonFirmwareStatus(const char *status, const char *reason)
 }
 
 void _onUpdateSuccessful(AsyncWebServerRequest *request) {
-    request->redirect("/update-successful");
-
     _updateJsonFirmwareStatus("success", "");
     logger.warning("Update complete", "customserver::handleDoUpdate");
 
     ade7953.saveEnergyToSpiffs();
-
-    delay(500); // Delay to allow the response to be sent before the ESP32 restarts
 
     restartEsp32("customserver::_handleDoUpdate", "Restart needed after update");
 }

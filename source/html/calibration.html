@@ -126,7 +126,7 @@
         }
 
         function fillCalibrationBox() {
-            var selectedCalibration = calibrationData.find(calibration => calibration.label === document.getElementById('calibrationDropdown').value);
+            var selectedCalibration = calibrationData.find(calibration => calibration.label == document.getElementById('calibrationDropdown').value);
             if (selectedCalibration) {
                 document.getElementById('vLsb').value = selectedCalibration.calibrationValues.vLsb;
                 document.getElementById('aLsb').value = selectedCalibration.calibrationValues.aLsb;
@@ -225,7 +225,7 @@
         function addNewChannel() {
             var newChannelName = prompt("Please enter the name of the new channel:");
             if (newChannelName) {
-                var selectedCalibration = calibrationData.find(calibration => calibration.label === document.getElementById('calibrationDropdown').value);
+                var selectedCalibration = calibrationData.find(calibration => calibration.label == document.getElementById('calibrationDropdown').value);
                 if (selectedCalibration) {
                     var newCalibrationData = [{
                         "label": newChannelName,

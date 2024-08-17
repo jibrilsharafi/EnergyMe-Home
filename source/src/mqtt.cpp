@@ -18,6 +18,7 @@ char *mqttTopicGeneralConfiguration = nullptr;
 
 long lastMillisPublished = millis();
 long lastMillisMqttFailed = millis();
+long lastMillisMqttLoop = millis();
 int mqttConnectionAttempt = 0;
 
 Ticker statusTicker;
@@ -28,6 +29,7 @@ bool setupMqtt() {
     logger.debug("Connecting to MQTT...", "mqtt::setupMqtt");
     
     setupTopics();
+    clientMqtt.setCallback(subscribeCallback);
 
     net.setCACert(AWS_IOT_CORE_CERT_CA);
     net.setCertificate(AWS_IOT_CORE_CERT_CRT);
@@ -40,14 +42,11 @@ bool setupMqtt() {
 
     if (!connectMqtt()) {
         return false;
-    } 
-
-    subscribeToTopics();
+    }
     
     statusTicker.attach(MQTT_STATUS_PUBLISH_INTERVAL, publishStatus);
 
     return true;
-
 }
 #else
 
@@ -61,27 +60,30 @@ bool setupMqtt() {
 #ifdef ENERGYME_HOME_SECRETS_H
 
 void mqttLoop() {
-    if (!clientMqtt.loop()) {
-        if ((millis() - lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) {
-            logger.verbose("MQTT connection failed recently. Skipping...", "mqtt::connectMqtt");
-            return;
-        }
-
-        logger.warning("MQTT connection lost. Reconnecting...", "mqtt::mqttLoop");
-        if (!connectMqtt()) {
-            if (mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
-                restartEsp32("mqtt::mqttLoop", "Failed to connect to MQTT and hit maximum connection attempt");
+    if ((millis() - lastMillisMqttLoop) > MQTT_LOOP_INTERVAL) {
+        lastMillisMqttLoop = millis();
+        if (!clientMqtt.loop()) {
+            if ((millis() - lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) {
+                logger.verbose("MQTT connection failed recently. Skipping...", "mqtt::connectMqtt");
+                return;
             }
-            return;
+
+            logger.warning("MQTT connection lost. Reconnecting...", "mqtt::mqttLoop");
+            if (!connectMqtt()) {
+                if (mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
+                    restartEsp32("mqtt::mqttLoop", "Failed to connect to MQTT and hit maximum connection attempt");
+                }
+                return;
+            }
         }
-    }
 
-    if (payloadMeter.isFull() || (millis() - lastMillisPublished) > MAX_INTERVAL_PAYLOAD) {
-        logger.debug("Payload meter buffer is full. Publishing...", "mqtt::mqttLoop");
-        
-        publishMeter();
+        if (payloadMeter.isFull() || (millis() - lastMillisPublished) > MAX_INTERVAL_PAYLOAD) {
+            logger.debug("Payload meter buffer is full or enough time has passed. Publishing...", "mqtt::mqttLoop");
+            
+            publishMeter();
 
-        lastMillisPublished = millis();
+            lastMillisPublished = millis();
+        }
     }
 }
 
@@ -96,8 +98,7 @@ void mqttLoop() {
 bool connectMqtt() {
     logger.debug("MQTT client configured. Starting attempt to connect...", "mqtt::connectMqtt");
     
-    String _clientId = WiFi.macAddress();
-    _clientId.replace(":", "");
+    String _clientId = getDeviceId();
 
     if (clientMqtt.connect(_clientId.c_str())) {
         logger.info("Connected to MQTT", "mqtt::connectMqtt");
@@ -107,6 +108,8 @@ bool connectMqtt() {
         publishMetadata();
         publishChannel();
         publishStatus();
+
+        subscribeToTopics();
         
         return true;
     } else {
@@ -142,7 +145,7 @@ char* constructMqttTopic(const char* ruleName, const char* topic) {
         ruleName,
         MQTT_TOPIC_1,
         MQTT_TOPIC_2,
-        WiFi.macAddress().c_str(),
+        WiFi.macAddress().c_str(), //FIXME: this has to become the device_id (and for all the other uses as well)
         topic
     );
     return mqttTopic;
@@ -322,35 +325,60 @@ void publishMessage(const char* topic, const char* message) {
     }
 }
 
-// Callback function to handle incoming messages
-void callback(char* topic, byte* payload, unsigned int length) {
+void subscribeCallback(char* topic, byte* payload, unsigned int length) {
     String message;
     for (unsigned int i = 0; i < length; i++) {
         message += (char)payload[i];
     }
 
-    if (String(topic) == MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE) {
-        logger.debug("Firmware update received: %s", "mqtt::callback", message.c_str());
+    logger.debug("Message arrived: %s", "mqtt::subscribeCallback", message.c_str());
+
+    if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE)) {
+        logger.info("Firmware update received: %s", "mqtt::subscribeCallback", message.c_str());
 
         File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_WRITE);
         if (!_file) {
-            logger.error("Failed to open file for writing: %s", "mqtt::callback", FIRMWARE_UPDATE_INFO_PATH);
+            logger.error("Failed to open file for writing: %s", "mqtt::subscribeCallback", FIRMWARE_UPDATE_INFO_PATH);
             return;
         }
 
         _file.print(message);
         _file.close();
-                
     } else {
-        logger.info("Unknown topic message received: %s", "mqtt::callback", topic);
+        logger.info("Unknown topic message received: %s", "mqtt::subscribeCallback", topic);
         return;
     }
 }
 
 void subscribeToTopics() {
-    clientMqtt.setCallback(callback);
-    clientMqtt.subscribe(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE);
-    Serial.println("Subscribed to topics");
+    logger.debug("Subscribing to topics...", "mqtt::subscribeToTopics");
+
+    subscribeUpdateFirmware();
+
+    logger.debug("Subscribed to topics", "mqtt::subscribeToTopics");
+}
+
+void subscribeUpdateFirmware() {
+    if (!clientMqtt.subscribe(getSpecificDeviceIdTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE))) {
+        logger.error("Failed to subscribe to firmware update topic", "mqtt::subscribeUpdateFirmware");
+    }
+}
+
+const char* getSpecificDeviceIdTopic(const char* baseTopic) {
+    static char topic[MAX_MQTT_TOPIC_LENGTH];
+    snprintf(
+        topic,
+        MAX_MQTT_TOPIC_LENGTH,
+        "%s/%s/%s/%s",
+        MQTT_TOPIC_1,
+        MQTT_TOPIC_2,
+        getDeviceId().c_str(),
+        baseTopic
+    );
+
+    logger.debug("Topic generated: %s", "mqtt::getSpecificDeviceIdTopic", topic);
+
+    return topic;
 }
 
 String getPublicIp() {

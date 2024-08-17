@@ -36,7 +36,10 @@ void publishGeneralConfiguration();
 
 void publishMessage(const char* topic, const char* message);
 
+void subscribeCallback(char* topic, byte* payload, unsigned int length);
 void subscribeToTopics();
+void subscribeUpdateFirmware();
+const char* getSpecificDeviceIdTopic(const char* topic);
 
 JsonDocument circularBufferToJson(CircularBuffer<data::PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &buffer);
 
