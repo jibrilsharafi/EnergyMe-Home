@@ -3,36 +3,13 @@
 
 #include <Arduino.h>
 
-const char configuration_html[] PROGMEM = R"rawliteral(
-    #include "html/configuration.html"
-)rawliteral";
-
-const char calibration_html[] PROGMEM = R"rawliteral(
-    #include "html/calibration.html"
-)rawliteral";
-
-const char channel_html[] PROGMEM = R"rawliteral(
-    #include "html/channel.html"
-)rawliteral";
-
-const char index_html[] PROGMEM = R"rawliteral(
-    #include "html/index.html"
-)rawliteral";
-
-const char info_html[] PROGMEM = R"rawliteral(
-    #include "html/info.html"
-)rawliteral";
-
-const char update_failed_html[] PROGMEM = R"rawliteral(
-    #include "html/update_failed.html"
-)rawliteral";
-
-const char update_successful_html[] PROGMEM = R"rawliteral(
-    #include "html/update_successful.html"
-)rawliteral";
-
-const char update_html[] PROGMEM = R"rawliteral(
-    #include "html/update.html"
-)rawliteral";
+extern const char calibration_html[] asm("_binary_html_calibration_html_start");
+extern const char channel_html[] asm("_binary_html_channel_html_start");
+extern const char configuration_html[] asm("_binary_html_configuration_html_start");
+extern const char index_html[] asm("_binary_html_index_html_start");
+extern const char info_html[] asm("_binary_html_info_html_start");
+extern const char update_failed_html[] asm("_binary_html_update_failed_html_start");
+extern const char update_successful_html[] asm("_binary_html_update_successful_html_start");
+extern const char update_html[] asm("_binary_html_update_html_start");
 
 #endif

@@ -3,24 +3,9 @@
 
 #include <Arduino.h>
 
-const char button_css[] PROGMEM = R"rawliteral(
-#include "css/button.css"
-)rawliteral";
-
-const char main_css[] PROGMEM = R"rawliteral(
-#include "css/main.css"
-)rawliteral";
-
-const char section_css[] PROGMEM = R"rawliteral(
-#include "css/section.css"
-)rawliteral";
-
-const char typography_css[] PROGMEM = R"rawliteral(
-#include "css/typography.css"
-)rawliteral";
-
-const char elements_css[] PROGMEM = R"rawliteral(
-#include "css/elements.css"
-)rawliteral";
+extern const char button_css[] asm("_binary_css_button_css_start");
+extern const char main_css[] asm("_binary_css_main_css_start");
+extern const char section_css[] asm("_binary_css_section_css_start");
+extern const char typography_css[] asm("_binary_css_typography_css_start");
 
 #endif

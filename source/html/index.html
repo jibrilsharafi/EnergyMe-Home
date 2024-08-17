@@ -79,6 +79,10 @@
     <div class="section-box">
         <div id="voltage" class="voltage-box"></div>
         <div id="channels" class="channels-box"></div>
+        <div style="position: relative;">
+            <canvas id="consumption-chart-canvas"></canvas>
+            <button id="download-csv" style="position: absolute; top: 10px; right: 10px;">Download CSV</button>
+        </div>
     </div>
 
     <div class="section-box">
@@ -363,6 +367,29 @@
                     }
                 }
             }
+        });
+
+        // Add event listener to the download button
+        document.getElementById('download-csv').addEventListener('click', function () {
+            var csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Label," + channels.join(",") + "\n";
+
+            labels.forEach(function (label) {
+                var row = [label];
+                channels.forEach(function (channel) {
+                    row.push(consumptionData[label][channel]);
+                });
+                csvContent += row.join(",") + "\n";
+            });
+
+            var encodedUri = encodeURI(csvContent);
+            var link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "consumption_data.csv");
+            document.body.appendChild(link); // Required for FF
+
+            link.click();
+            document.body.removeChild(link);
         });
     }
 

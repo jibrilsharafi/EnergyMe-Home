@@ -526,6 +526,9 @@ void _setOtherEndpoints() {
 void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
     led.block();
     led.setPurple(true);
+
+    _updateJsonFirmware("progress", "Updating firmware from web interface");
+
     if (!index){
         int _cmd;
         if (filename.indexOf("spiffs") > -1) {
@@ -536,49 +539,90 @@ void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, siz
             _cmd = U_FLASH;
         } else {
             logger.error("Update requested with unknown file type. Aborting...", "customserver::handleDoUpdate");
-            return;
+            _onUpdateFailed(request, "Unknown file type");
         } 
             
         if (!Update.begin(UPDATE_SIZE_UNKNOWN, _cmd)) {
-        Update.printError(Serial);
-        logger.error("Update failed", "customserver::handleDoUpdate");
+            _onUpdateFailed(request, "Error during update begin");
         }
     }
 
     if (Update.write(data, len) != len) {
-        Update.printError(Serial);
-        logger.error("Update failed", "customserver::handleDoUpdate");
-        for (int i = 0; i < 3; i++) {
-            led.setRed(true);
-            delay(1000);
-            led.setOff(true);
-            delay(1000);
-        }
+        _onUpdateFailed(request, "Data length mismatch");
     }
 
     if (final) {
         if (!Update.end(true)) {
-            Update.printError(Serial);
-            logger.error("Update failed", "customserver::handleDoUpdate");
-            request->send_P(200, "text/html", update_failed_html);
-
-            for (int i = 0; i < 3; i++) {
-                led.setRed(true);
-                delay(200);
-                led.setOff(true);
-                delay(200);
-            }
+            _onUpdateFailed(request, "Error during last part of update");
         } else {
-            logger.warning("Update complete", "customserver::handleDoUpdate");
-            request->send_P(200, "text/html", update_successful_html);
-            tickerOnSuccess.once_ms(500, _onUpdateSuccessful);
+            _onUpdateSuccessful(request);
         }
     }
     led.setOff(true);
     led.unblock();
 }
 
-void _onUpdateSuccessful() {
+void _updateJsonFirmware(const char *status, const char *reason)
+{
+    File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "r");
+
+    if (!_file)
+    {
+        _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "w");
+        if (_file)
+        {
+            _file.print("{}");
+            _file.close();
+        }
+        else
+        {
+            logger.error("Failed to create file: %s", "mqtt::callback", FIRMWARE_UPDATE_INFO_PATH);
+        }
+    }
+    else
+    {
+        JsonDocument _jsonDocument;
+        DeserializationError _error = deserializeJson(_jsonDocument, _file);
+        if (_error)
+        {
+            logger.error("Failed to parse JSON: %s", "mqtt::callback", _error.c_str());
+            return;
+        }
+        _file.close();
+
+        _jsonDocument["status"] = status;
+        _jsonDocument["reason"] = reason;
+        _jsonDocument["timestamp"] = customTime.getTimestamp();
+        _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "w");
+        if (_file)
+        {
+            serializeJson(_jsonDocument, _file);
+            _file.close();
+        }
+    }
+}
+
+void _onUpdateSuccessful(AsyncWebServerRequest *request) {
+    _updateJsonFirmware("success", "");
+    logger.warning("Update complete", "customserver::handleDoUpdate");
+    request->send_P(200, "text/html", update_successful_html);
+
+    delay(1000); // Needed to send the response before restarting
+    
     ade7953.saveEnergyToSpiffs();
     restartEsp32("customserver::_handleDoUpdate", "Restart needed after update");
+}
+
+void _onUpdateFailed(AsyncWebServerRequest *request, const char* reason) {
+    Update.printError(Serial);
+    logger.error("Update failed. Reason: %s", "customserver::_onUpdateFailed", reason);
+    _updateJsonFirmware("failed", reason);
+    request->send_P(200, "text/html", update_failed_html);
+
+    for (int i = 0; i < 3; i++) {
+        led.setRed(true);
+        delay(1000);
+        led.setOff(true);
+        delay(1000);
+    }
 }

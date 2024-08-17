@@ -252,6 +252,7 @@ void publishMetadata() {
     _jsonObject["unixTime"] = customTime.getUnixTime();
     String _publicIp = getPublicIp();
     _jsonObject["publicIp"] = _publicIp.c_str();
+    _jsonObject["firmwareVersion"] = FIRMWARE_VERSION;
 
     String _metadataMessage;
     serializeJson(_jsonDocument, _metadataMessage);
@@ -323,43 +324,23 @@ void publishMessage(const char* topic, const char* message) {
 
 // Callback function to handle incoming messages
 void callback(char* topic, byte* payload, unsigned int length) {
-    // Convert payload to string
     String message;
     for (unsigned int i = 0; i < length; i++) {
         message += (char)payload[i];
     }
 
-    // Handle firmware update
     if (String(topic) == MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE) {
         logger.debug("Firmware update received: %s", "mqtt::callback", message.c_str());
 
-        // Parse JSON payload
-        // DynamicJsonDocument doc(1024);
-        // DeserializationError error = deserializeJson(doc, message);
-        JsonDocument _jsonDocument;
-        DeserializationError _error = deserializeJson(_jsonDocument, message);
-        if (_error) {
-            logger.error("Failed to parse JSON: %s", "mqtt::callback", _error.c_str());
-            return;
-        }
-
-        JsonObject doc = _jsonDocument.as<JsonObject>();
-        const char* version = doc["version"];
-        const char* date = doc["date"];
-        const char* url = doc["url"];
-        const char* checksum = doc["checksum"];
-
-        logger.info("New firmware version available: %s, date: %s, url: %s, checksum: %s", "mqtt::callback", version, date, url, checksum);
-
-        // Save the information to SPIFFS
-        File file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "w");
-        if (!file) {
+        File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "w");
+        if (!_file) {
             logger.error("Failed to open file for writing: %s", "mqtt::callback", FIRMWARE_UPDATE_INFO_PATH);
             return;
         }
 
-        file.print(message);
-        file.close();
+        _file.print(message);
+        _file.close();
+                
     } else {
         logger.info("Unknown topic message received: %s", "mqtt::callback", topic);
         return;

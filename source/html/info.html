@@ -93,24 +93,33 @@
         }
 
         function displayDeviceInfo(data) {
-            var uptime = data.system.uptime;
-            var uptimeStr = uptime + " ms";
-            if (uptime > 1000) {
-                uptime /= 1000;
-                uptimeStr = uptime.toFixed(1) + " seconds";
-                if (uptime > 60) {
-                    uptime /= 60;
-                    uptimeStr = uptime.toFixed(1) + " minutes";
-                    if (uptime > 60) {
-                        uptime /= 60;
-                        uptimeStr = uptime.toFixed(1) + " hours";
-                        if (uptime > 24) {
-                            uptime /= 24;
-                            uptimeStr = uptime.toFixed(1) + " days";
-                        }
-                    }
-                }
+            var uptime = data.system.uptime / 1000; // Convert milliseconds to seconds
+
+            var days = Math.floor(uptime / 86400); // 86400 seconds in a day
+            uptime %= 86400;
+
+            var hours = Math.floor(uptime / 3600); // 3600 seconds in an hour
+            uptime %= 3600;
+
+            var minutes = Math.floor(uptime / 60); // 60 seconds in a minute
+            var seconds = Math.floor(uptime % 60);
+
+            var uptimeStr = "";
+            if (days > 0) {
+                uptimeStr += days + " days ";
             }
+            if (hours > 0) {
+                uptimeStr += hours + " hours ";
+            }
+            if (minutes > 0) {
+                uptimeStr += minutes + " minutes ";
+            }
+            if (seconds > 0) {
+                uptimeStr += seconds + " seconds";
+            }
+
+            uptimeStr = uptimeStr.trim();
+
             document.getElementById('uptime').textContent = uptimeStr;
             document.getElementById('systemTime').textContent = data.system.systemTime;
 

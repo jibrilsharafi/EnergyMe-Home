@@ -31,9 +31,12 @@ void _setOta();
 void _setRestApi();
 void _setOtherEndpoints();
     
-void _serverLog(const char* message, const char* function, int logLevel);
+void _serverLog(const char* message, const char* function, LogLevel logLevel, AsyncWebServerRequest *request);
 
 void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final);
-void _onUpdateSuccessful();
+void _onUpdateSuccessful(AsyncWebServerRequest *request);
+void _onUpdateFailed(AsyncWebServerRequest *request, const char* reason);
+
+void _updateJsonFirmware(const char* status, const char* reason);
 
 #endif

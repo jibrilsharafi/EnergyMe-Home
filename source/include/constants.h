@@ -6,6 +6,10 @@
 // Definitions
 // --------------------
 
+// Firmware info
+#define FIRMWARE_VERSION "0.4.12"
+#define FIRMWARE_DATE "2024-08-14"
+
 // Measurements
 #define VOLTAGE_MEASUREMENT 1
 #define CURRENT_MEASUREMENT 2
@@ -38,10 +42,6 @@
 
 // Constants
 // --------------------
-
-// Firmware info
-extern const char* FIRMWARE_VERSION;
-extern const char* FIRMWARE_DATE;
 
 // File path
 extern const char* METADATA_JSON_PATH;
