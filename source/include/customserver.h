@@ -37,6 +37,6 @@ void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, siz
 void _onUpdateSuccessful(AsyncWebServerRequest *request);
 void _onUpdateFailed(AsyncWebServerRequest *request, const char* reason);
 
-void _updateJsonFirmware(const char* status, const char* reason);
+void _updateJsonFirmwareStatus(const char* status, const char* reason);
 
 #endif

@@ -29,6 +29,11 @@ bool setupMqtt() {
     
     setupTopics();
 
+    // Temporary log the first 10 characters of all the certificates
+    logger.warning(AWS_IOT_CORE_CERT_CA, "mqtt::setupMqtt");
+    logger.warning(AWS_IOT_CORE_CERT_CRT, "mqtt::setupMqtt");
+    logger.warning(AWS_IOT_CORE_CERT_PRIVATE, "mqtt::setupMqtt");
+
     net.setCACert(AWS_IOT_CORE_CERT_CA);
     net.setCertificate(AWS_IOT_CORE_CERT_CRT);
     net.setPrivateKey(AWS_IOT_CORE_CERT_PRIVATE);
@@ -332,7 +337,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
     if (String(topic) == MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE) {
         logger.debug("Firmware update received: %s", "mqtt::callback", message.c_str());
 
-        File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "w");
+        File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_WRITE);
         if (!_file) {
             logger.error("Failed to open file for writing: %s", "mqtt::callback", FIRMWARE_UPDATE_INFO_PATH);
             return;

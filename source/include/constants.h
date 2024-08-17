@@ -7,8 +7,15 @@
 // --------------------
 
 // Firmware info
-#define FIRMWARE_VERSION "0.4.12"
-#define FIRMWARE_DATE "2024-08-14"
+#define FIRMWARE_MAJOR_VERSION "00"
+#define FIRMWARE_MINOR_VERSION "04"
+#define FIRMWARE_PATCH_VERSION "13"
+#define FIRMWARE_VERSION FIRMWARE_MAJOR_VERSION "." FIRMWARE_MINOR_VERSION "." FIRMWARE_PATCH_VERSION
+
+#define FIRMWARE_YEAR "2024"
+#define FIRMWARE_MONTH "08"
+#define FIRMWARE_DAY "14"
+#define FIRMWARE_DATE FIRMWARE_YEAR "-" FIRMWARE_MONTH "-" FIRMWARE_DAY
 
 // Measurements
 #define VOLTAGE_MEASUREMENT 1
@@ -54,6 +61,7 @@ extern const char* ENERGY_JSON_PATH;
 extern const char* DAILY_ENERGY_JSON_PATH;
 extern const char* FACTORY_PATH;
 extern const char* FIRMWARE_UPDATE_INFO_PATH;
+extern const char* FIRMWARE_UPDATE_STATUS_PATH;
 
 // Serial
 extern const int SERIAL_BAUDRATE; // Fastest baudrate for ESP32

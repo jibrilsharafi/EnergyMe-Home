@@ -20,16 +20,6 @@ JsonDocument getDeviceStatus()
     _jsonFirmware["version"] = FIRMWARE_VERSION;
     _jsonFirmware["date"] = FIRMWARE_DATE;
 
-    JsonObject _jsonFilesystem = _jsonDocument["filesystem"].to<JsonObject>();
-    JsonDocument _jsonMetadata = deserializeJsonFromSpiffs(METADATA_JSON_PATH);
-    if (_jsonMetadata.isNull()){
-        _jsonFilesystem["version"] = "unknown";
-        _jsonFilesystem["date"] = "unknown";
-    } else {
-        _jsonFilesystem["version"] = _jsonMetadata["filesystem"]["version"].as<String>();
-        _jsonFilesystem["date"] = _jsonMetadata["filesystem"]["date"].as<String>();
-    }
-
     JsonObject _jsonMemory = _jsonDocument["memory"].to<JsonObject>();
     JsonObject _jsonHeap = _jsonMemory["heap"].to<JsonObject>();
     _jsonHeap["free"] = ESP.getFreeHeap();
@@ -51,7 +41,7 @@ JsonDocument getDeviceStatus()
 JsonDocument deserializeJsonFromSpiffs(const char* path){
     logger.debug("Deserializing JSON from SPIFFS", "utils::deserializeJsonFromSpiffs");
 
-    File _file = SPIFFS.open(path, "r");
+    File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
         logger.error("Failed to open file %s", "utils::deserializeJsonFromSpiffs", path);
 
@@ -76,7 +66,7 @@ JsonDocument deserializeJsonFromSpiffs(const char* path){
 bool serializeJsonToSpiffs(const char* path, JsonDocument _jsonDocument){
     logger.debug("Serializing JSON to SPIFFS", "utils::serializeJsonToSpiffs");
 
-    File _file = SPIFFS.open(path, "w");
+    File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
         logger.error("Failed to open file %s", "utils::serializeJsonToSpiffs", path);
         return false;
@@ -338,7 +328,7 @@ void factoryReset() {
     };
 
     for (String _fileName : _files) {
-        _file = SPIFFS.open(_fileName, "r");
+        _file = SPIFFS.open(_fileName, FILE_READ);
         if (!_file) {
             logger.error("Failed to open file %s", "utils::factoryReset", _fileName.c_str());
             return;
@@ -363,13 +353,13 @@ void factoryReset() {
 bool _duplicateFile(const char* sourcePath, const char* destinationPath) {
     logger.debug("Duplicating file", "utils::_duplicateFile");
 
-    File _sourceFile = SPIFFS.open(sourcePath, "r");
+    File _sourceFile = SPIFFS.open(sourcePath, FILE_READ);
     if (!_sourceFile) {
         logger.error("Failed to open source file: %s", "utils::_duplicateFile", sourcePath);
         return false;
     }
 
-    File _destinationFile = SPIFFS.open(destinationPath, "w");
+    File _destinationFile = SPIFFS.open(destinationPath, FILE_WRITE);
     if (!_destinationFile) {
         logger.error("Failed to open destination file: %s", "utils::_duplicateFile", destinationPath);
         return false;
@@ -384,4 +374,32 @@ bool _duplicateFile(const char* sourcePath, const char* destinationPath) {
 
     logger.debug("File duplicated", "utils::_duplicateFile");
     return true;
+}
+
+bool isLatestFirmwareInstalled() {
+    
+    File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_READ);
+    if (!_file) {
+        logger.error("Failed to open firmware update info file", "utils::isLatestFirmwareInstalled");
+        return false;
+    }
+
+    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(FIRMWARE_UPDATE_INFO_PATH);
+
+    if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
+        logger.debug("Firmware update info file is empty", "utils::isLatestFirmwareInstalled");
+        return true;
+    }
+
+    String _latestFirmwareVersion = _jsonDocument["version"].as<String>();
+    String _currentFirmwareVersion = FIRMWARE_VERSION;
+
+    logger.debug(
+        "Latest firmware version: %s | Current firmware version: %s",
+        "utils::isLatestFirmwareInstalled",
+        _latestFirmwareVersion.c_str(),
+        _currentFirmwareVersion.c_str()
+    );
+    
+    return _latestFirmwareVersion == _currentFirmwareVersion;
 }

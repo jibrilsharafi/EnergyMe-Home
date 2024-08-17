@@ -107,8 +107,8 @@ void _setHtmlPages() {
 
 void _setOta() {
     server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
-    _serverLog("Request to get update page", "customserver::_setOta::/update", LogLevel::DEBUG, request);
-    request->send_P(200, "text/html", update_html);
+        _serverLog("Request to get update page", "customserver::_setOta::/update", LogLevel::DEBUG, request);
+        request->send_P(200, "text/html", update_html);
     });
 
     server.on("/do-update", HTTP_POST,
@@ -407,7 +407,7 @@ void _setRestApi() {
         _serverLog("Request to get file from REST API", "customserver::_setRestApi::/rest/file/*", LogLevel::DEBUG, request);
 
         String _filename = request->url().substring(10);
-        File _file = SPIFFS.open(_filename, "r");
+        File _file = SPIFFS.open(_filename, FILE_READ);
         if (_file) {
             request->send(_file, "text/plain");
             _file.close();
@@ -418,12 +418,34 @@ void _setRestApi() {
     server.on("/rest/firmware-update-info", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get firmware update info from REST API", "customserver::_setRestApi::/rest/firmware-update-info", LogLevel::DEBUG, request);
 
-        File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "r");
+        File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_READ);
         if (_file) {
             request->send(_file, "application/json");
             _file.close();
         } else {
             request->send(200, "application/json", "{}");
+        }
+    });
+
+    server.on("/rest/firmware-update-status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        _serverLog("Request to get firmware update status from REST API", "customserver::_setRestApi::/rest/firmware-update-status", LogLevel::DEBUG, request);
+
+        File _file = SPIFFS.open(FIRMWARE_UPDATE_STATUS_PATH, FILE_READ);
+        if (_file) {
+            request->send(_file, "application/json");
+            _file.close();
+        } else {
+            request->send(200, "application/json", "{}");
+        }
+    });
+
+    server.on("/rest/is-latest-firmware-installed", HTTP_GET, [](AsyncWebServerRequest *request) {
+        _serverLog("Request to check if the latest firmware is installed from REST API", "customserver::_setRestApi::/rest/is-latest-firmware-installed", LogLevel::DEBUG, request);
+
+        if (isLatestFirmwareInstalled()) {
+            request->send(200, "application/json", "{\"latest\":true}");
+        } else {
+            request->send(200, "application/json", "{\"latest\":false}");
         }
     });
 
@@ -527,28 +549,28 @@ void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, siz
     led.block();
     led.setPurple(true);
 
-    _updateJsonFirmware("progress", "Updating firmware from web interface");
-
     if (!index){
         int _cmd;
         if (filename.indexOf("spiffs") > -1) {
-            logger.warning("Update requested for SPIFFS", "customserver::handleDoUpdate");
-            _cmd = U_SPIFFS;
+            _onUpdateFailed(request, "SPIFFS update is unsupported");
+            return;
         } else if (filename.indexOf("firmware") > -1) {
             logger.warning("Update requested for firmware", "customserver::handleDoUpdate");
             _cmd = U_FLASH;
         } else {
-            logger.error("Update requested with unknown file type. Aborting...", "customserver::handleDoUpdate");
             _onUpdateFailed(request, "Unknown file type");
+            return;
         } 
             
         if (!Update.begin(UPDATE_SIZE_UNKNOWN, _cmd)) {
             _onUpdateFailed(request, "Error during update begin");
+            return;
         }
     }
 
     if (Update.write(data, len) != len) {
         _onUpdateFailed(request, "Data length mismatch");
+        return;
     }
 
     if (final) {
@@ -558,26 +580,19 @@ void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, siz
             _onUpdateSuccessful(request);
         }
     }
+
     led.setOff(true);
     led.unblock();
 }
 
-void _updateJsonFirmware(const char *status, const char *reason)
+void _updateJsonFirmwareStatus(const char *status, const char *reason)
 {
-    File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "r");
+    File _file = SPIFFS.open(FIRMWARE_UPDATE_STATUS_PATH, FILE_WRITE);
 
     if (!_file)
     {
-        _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "w");
-        if (_file)
-        {
-            _file.print("{}");
-            _file.close();
-        }
-        else
-        {
-            logger.error("Failed to create file: %s", "mqtt::callback", FIRMWARE_UPDATE_INFO_PATH);
-        }
+        logger.error("Failed to open file for writing", "customserver::_updateJsonFirmwareStatus");
+        return;
     }
     else
     {
@@ -585,7 +600,7 @@ void _updateJsonFirmware(const char *status, const char *reason)
         DeserializationError _error = deserializeJson(_jsonDocument, _file);
         if (_error)
         {
-            logger.error("Failed to parse JSON: %s", "mqtt::callback", _error.c_str());
+            logger.error("Failed to parse JSON: %s", "customserver::_updateJsonFirmwareStatus", _error.c_str());
             return;
         }
         _file.close();
@@ -593,7 +608,8 @@ void _updateJsonFirmware(const char *status, const char *reason)
         _jsonDocument["status"] = status;
         _jsonDocument["reason"] = reason;
         _jsonDocument["timestamp"] = customTime.getTimestamp();
-        _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, "w");
+
+        _file = SPIFFS.open(FIRMWARE_UPDATE_STATUS_PATH, FILE_WRITE);
         if (_file)
         {
             serializeJson(_jsonDocument, _file);
@@ -603,26 +619,27 @@ void _updateJsonFirmware(const char *status, const char *reason)
 }
 
 void _onUpdateSuccessful(AsyncWebServerRequest *request) {
-    _updateJsonFirmware("success", "");
-    logger.warning("Update complete", "customserver::handleDoUpdate");
-    request->send_P(200, "text/html", update_successful_html);
+    request->redirect("/update-successful");
 
-    delay(1000); // Needed to send the response before restarting
-    
+    _updateJsonFirmwareStatus("success", "");
+    logger.warning("Update complete", "customserver::handleDoUpdate");
+
     ade7953.saveEnergyToSpiffs();
+    
     restartEsp32("customserver::_handleDoUpdate", "Restart needed after update");
 }
 
 void _onUpdateFailed(AsyncWebServerRequest *request, const char* reason) {
+    request->redirect("/update-failed");
+
     Update.printError(Serial);
     logger.error("Update failed. Reason: %s", "customserver::_onUpdateFailed", reason);
-    _updateJsonFirmware("failed", reason);
-    request->send_P(200, "text/html", update_failed_html);
+    _updateJsonFirmwareStatus("failed", reason);
 
     for (int i = 0; i < 3; i++) {
         led.setRed(true);
-        delay(1000);
+        delay(500);
         led.setOff(true);
-        delay(1000);
+        delay(500);
     }
 }

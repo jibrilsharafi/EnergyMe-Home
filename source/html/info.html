@@ -29,9 +29,6 @@
         <h3>Firmware</h3>
         <p><span class='list-key'>Version:</span><span id='firmwareVersion' class='list-value'></span></p>
         <p><span class='list-key'>Date:</span><span id='firmwareDate' class='list-value'></span></p>
-        <h3>Filesystem</h3>
-        <p><span class='list-key'>Version:</span><span id='filesystemVersion' class='list-value'></span></p>
-        <p><span class='list-key'>Date:</span><span id='filesystemDate' class='list-value'></span></p>
         <h3>Memory</h3>
         <h4>Heap</h4>
         <p><span class='list-key'>Free:</span><span id='heapFree' class='list-value'></span></p>
@@ -125,8 +122,6 @@
 
             document.getElementById('firmwareVersion').textContent = data.firmware.version;
             document.getElementById('firmwareDate').textContent = data.firmware.date;
-            document.getElementById('filesystemVersion').textContent = data.filesystem.version;
-            document.getElementById('filesystemDate').textContent = data.filesystem.date;
             
             var heapFree = data.memory.heap.free;
             var heapTotal = data.memory.heap.total;

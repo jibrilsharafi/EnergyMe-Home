@@ -12,6 +12,7 @@
 
     <link rel="icon" type="image/png" href="/images/favicon.png">
     <title>EnergyMe</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         .header {
             font-size: 96px;
@@ -61,6 +62,37 @@
             font-style: italic;
             color: #808080;
         }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: pointer;
+            background: none;
+            border: none;
+            color: #000000;
+            font-size: 24px;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%; /* Position the tooltip above the icon */
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 0.9;
+        }
     </style>
 </head>
 
@@ -79,15 +111,15 @@
     <div class="section-box">
         <div id="voltage" class="voltage-box"></div>
         <div id="channels" class="channels-box"></div>
-        <div style="position: relative;">
-            <canvas id="consumption-chart-canvas"></canvas>
-            <button id="download-csv" style="position: absolute; top: 10px; right: 10px;">Download CSV</button>
-        </div>
     </div>
 
     <div class="section-box">
-        <div id="consumption-chart">
+        <div id="consumption-chart" style="position: relative;">
             <canvas id="consumption-chart-canvas"></canvas>
+            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
+                <i class="fas fa-download"></i>
+                <span class="tooltiptext">Download as CSV</span>
+            </button>
         </div>
     </div>
 
@@ -463,6 +495,9 @@
                     document.getElementById("consumption-chart").style.fontSize = "20px";
                     document.getElementById("consumption-chart").style.color = "#808080"; // Gray color
 
+                    // Hide the download button
+                    document.getElementById("download-csv").style.display = "none";
+
                     document.getElementById("pie-chart").innerHTML = "No data available yet. Come back in a few hours!";
                     document.getElementById("pie-chart").style.textAlign = "center";
                     document.getElementById("pie-chart").style.fontSize = "20px";
@@ -473,21 +508,24 @@
             .catch(error => console.error('Error:', error));
     }
 
+    function fetchFirmwareUpdateInfo() {
+        fetch('/rest/is-latest-firmware-installed')
+            .then(response => response.json())
+            .then(data => {
+                if (data.latest === 'false') {
+                    document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
+                }
+            })
+            .catch(error => console.error('Error:', error));
+    }
+
     plotCharts();
-    
+    fetchFirmwareUpdateInfo();
+
     setInterval(function () {
         getMeterData();
         updateMeterData();
     }, 1000);
-
-    fetch('/rest/firmware-update-info')
-        .then(response => response.json())
-        .then(data => {
-            if (data.updateAvailable) {
-                document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
-            }
-        })
-        .catch(error => console.error('Error:', error));
 
 </script>
 

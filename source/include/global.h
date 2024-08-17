@@ -5,7 +5,7 @@
 
 #include <PubSubClient.h>
 #include <WiFiClientSecure.h>
-#include <CircularBuffer.h>
+#include <CircularBuffer.hpp>
 
 #include "structs.h"
 

@@ -38,7 +38,7 @@ String CustomTime::timestampFromUnix(long unix){
     char _timestamp[26];
 
     _timeinfo = localtime(&unix);
-    strftime(_timestamp, sizeof(_timestamp), TIMESTAMP_FORMAT, _timeinfo);
+    strftime(_timestamp, sizeof(_timestamp), LOG_TIMESTAMP_FORMAT, _timeinfo);
     return String(_timestamp);
 }
 

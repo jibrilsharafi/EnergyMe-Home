@@ -42,4 +42,6 @@ void updateTimezone();
 void factoryReset();
 bool _duplicateFile(const char* sourcePath, const char* destinationPath);
 
+bool isLatestFirmwareInstalled();
+
 #endif
