@@ -515,7 +515,7 @@
         fetch('/rest/is-latest-firmware-installed')
             .then(response => response.json())
             .then(data => {
-                if (data.latest == 'false') {
+                if (data.latest == false) {
                     document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
                 }
             })

@@ -16,6 +16,7 @@
 #include "global.h"
 #include "customtime.h"
 #include "ade7953.h"
+#include "mqtt.h"
 
 JsonDocument getProjectInfo();
 JsonDocument getDeviceInfo();

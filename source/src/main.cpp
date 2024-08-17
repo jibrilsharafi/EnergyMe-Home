@@ -194,7 +194,7 @@ void setup() {
 void loop() {
   checkWifi();
 
-  if (generalConfiguration.isCloudServicesEnabled) {
+  if (generalConfiguration.isCloudServicesEnabled) { //TODO: if this gets disabled, just restart the ESP32
     mqttLoop();
   }
   

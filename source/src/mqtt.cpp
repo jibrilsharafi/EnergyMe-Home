@@ -95,12 +95,10 @@ void mqttLoop() {
 
 #endif
 
-bool connectMqtt() {
+bool connectMqtt() { //TODO: Handle continuous connection/reconnection
     logger.debug("MQTT client configured. Starting attempt to connect...", "mqtt::connectMqtt");
     
-    String _clientId = getDeviceId();
-
-    if (clientMqtt.connect(_clientId.c_str())) {
+    if (clientMqtt.connect(getDeviceId().c_str())) {
         logger.info("Connected to MQTT", "mqtt::connectMqtt");
 
         mqttConnectionAttempt = 0;
@@ -145,7 +143,7 @@ char* constructMqttTopic(const char* ruleName, const char* topic) {
         ruleName,
         MQTT_TOPIC_1,
         MQTT_TOPIC_2,
-        WiFi.macAddress().c_str(), //FIXME: this has to become the device_id (and for all the other uses as well)
+        getDeviceId().c_str(),
         topic
     );
     return mqttTopic;
@@ -317,7 +315,7 @@ void publishMessage(const char* topic, const char* message) {
     }
 
     if (!clientMqtt.connected()) {
-        setupMqtt();
+        logger.warning("MQTT client not connected. Skipping...", "mqtt::publishMessage");
     }
 
     if (!clientMqtt.publish(topic, message)) {
@@ -334,7 +332,7 @@ void subscribeCallback(char* topic, byte* payload, unsigned int length) {
     logger.debug("Message arrived: %s", "mqtt::subscribeCallback", message.c_str());
 
     if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE)) {
-        logger.info("Firmware update received: %s", "mqtt::subscribeCallback", message.c_str());
+        logger.info("Firmware update received", "mqtt::subscribeCallback");
 
         File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_WRITE);
         if (!_file) {
@@ -345,7 +343,7 @@ void subscribeCallback(char* topic, byte* payload, unsigned int length) {
         _file.print(message);
         _file.close();
     } else {
-        logger.info("Unknown topic message received: %s", "mqtt::subscribeCallback", topic);
+        logger.info("Unknown topic message received: %s | %s", "mqtt::subscribeCallback", topic, message.c_str());
         return;
     }
 }
@@ -353,7 +351,7 @@ void subscribeCallback(char* topic, byte* payload, unsigned int length) {
 void subscribeToTopics() {
     logger.debug("Subscribing to topics...", "mqtt::subscribeToTopics");
 
-    subscribeUpdateFirmware();
+    subscribeUpdateFirmware(); //TODO: subscribe to the retained message, so that the device always gets the latest firmware update info
 
     logger.debug("Subscribed to topics", "mqtt::subscribeToTopics");
 }
@@ -364,7 +362,7 @@ void subscribeUpdateFirmware() {
     }
 }
 
-const char* getSpecificDeviceIdTopic(const char* baseTopic) {
+const char* getSpecificDeviceIdTopic(const char* lastTopic) {
     static char topic[MAX_MQTT_TOPIC_LENGTH];
     snprintf(
         topic,
@@ -373,7 +371,7 @@ const char* getSpecificDeviceIdTopic(const char* baseTopic) {
         MQTT_TOPIC_1,
         MQTT_TOPIC_2,
         getDeviceId().c_str(),
-        baseTopic
+        lastTopic
     );
 
     logger.debug("Topic generated: %s", "mqtt::getSpecificDeviceIdTopic", topic);

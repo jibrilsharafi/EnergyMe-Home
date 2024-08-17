@@ -77,7 +77,7 @@ JsonDocument deserializeJsonFromSpiffs(const char* path){
     
     String _jsonString;
     serializeJson(_jsonDocument, _jsonString);
-    logger.debug("JSON serialized to SPIFFS correctly: %s", "main::serializeJsonToSpiffs", _jsonString.c_str());
+    logger.debug("JSON deserialized to SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
     return _jsonDocument;
 }
 
@@ -95,7 +95,7 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument _jsonDocument){
 
     String _jsonString;
     serializeJson(_jsonDocument, _jsonString);
-    logger.debug("JSON serialized to SPIFFS correctly: %s", "main::serializeJsonToSpiffs", _jsonString.c_str());
+    logger.debug("JSON serialized to SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
     return true;
 }
 
@@ -104,6 +104,8 @@ void restartEsp32(const char* functionName, const char* reason) {
     led.block();
     led.setBrightness(LED_MAX_BRIGHTNESS);
     led.setRed(true);
+
+    publishMeter();
     
     if (functionName != "utils::factoryReset") {
         ade7953.saveEnergyToSpiffs();
