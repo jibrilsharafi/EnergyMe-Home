@@ -128,7 +128,7 @@ void _setRestApi() {
         _serverLog("Request to get device info from REST API", "customserver::_setRestApi::/rest/device-info", LogLevel::DEBUG, request);
 
         String _buffer;
-        serializeJson(getDeviceStatus(), _buffer);
+        serializeJson(getDeviceInfo(), _buffer);
         request->send(200, "application/json", _buffer.c_str());
     });
 
@@ -587,34 +587,17 @@ void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, siz
 
 void _updateJsonFirmwareStatus(const char *status, const char *reason)
 {
+    JsonDocument _jsonDocument;
+
+    _jsonDocument["status"] = status;
+    _jsonDocument["reason"] = reason;
+    _jsonDocument["timestamp"] = customTime.getTimestamp();
+
     File _file = SPIFFS.open(FIRMWARE_UPDATE_STATUS_PATH, FILE_WRITE);
-
-    if (!_file)
+    if (_file)
     {
-        logger.error("Failed to open file for writing", "customserver::_updateJsonFirmwareStatus");
-        return;
-    }
-    else
-    {
-        JsonDocument _jsonDocument;
-        DeserializationError _error = deserializeJson(_jsonDocument, _file);
-        if (_error)
-        {
-            logger.error("Failed to parse JSON: %s", "customserver::_updateJsonFirmwareStatus", _error.c_str());
-            return;
-        }
+        serializeJson(_jsonDocument, _file);
         _file.close();
-
-        _jsonDocument["status"] = status;
-        _jsonDocument["reason"] = reason;
-        _jsonDocument["timestamp"] = customTime.getTimestamp();
-
-        _file = SPIFFS.open(FIRMWARE_UPDATE_STATUS_PATH, FILE_WRITE);
-        if (_file)
-        {
-            serializeJson(_jsonDocument, _file);
-            _file.close();
-        }
     }
 }
 
@@ -625,7 +608,9 @@ void _onUpdateSuccessful(AsyncWebServerRequest *request) {
     logger.warning("Update complete", "customserver::handleDoUpdate");
 
     ade7953.saveEnergyToSpiffs();
-    
+
+    delay(500); // Delay to allow the response to be sent before the ESP32 restarts
+
     restartEsp32("customserver::_handleDoUpdate", "Restart needed after update");
 }
 

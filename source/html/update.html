@@ -31,17 +31,17 @@
     <div id="current-device" class="section-box">
         <h2>Current device</h2>
         <h3>Firmware</h3>
-        <p>Version: <span id="current-firmware-version"></span></p>
-        <p>Date: <span id="current-firmware-date"></span></p>
+        <p><span class='list-key'>Version:</span><span id='current-firmware-version' class='list-value'></span></p>
+        <p><span class='list-key'>Date:</span><span id='current-firmware-date' class='list-value'></span></p>
     </div>
 
     <div id="update-info" class="section-box">
         <h2>Update Information</h2>
         <div id="update-details" style="display: none;">
-            <p>Version: <span id="update-version"></span></p>
-            <p>Date: <span id="update-date"></span></p>
-            <p>SHA256: <span id="update-sha256"></span></p>
-            <p>URL: <a id="update-url" href="" target="_blank"></a></p>
+            <p><span class='list-key'>Version:</span><span id='update-version' class='list-value'></span></p>
+            <p><span class='list-key'>Date:</span><span id='update-date' class='list-value'></span></p>
+            <p><span class='list-key'>SHA256:</span><span id='update-sha256' class='list-value'></span></p>
+            <p><span class='list-key'>URL:</span><a id='update-url' href='' target='_blank'></a></p>
         </div>
         <p id="no-update" class="light-grey-box">Latest version installed</p>
     </div>
@@ -49,9 +49,9 @@
     <div id="update-status" class="section-box">
         <h2>Update Status</h2>
         <div id="status-details" style="display: none;">
-            <p>Status: <span id="status"></span></p>
-            <p>Reason: <span id="reason"></span></p>
-            <p>Timestamp: <span id="timestamp"></span></p>
+            <p><span class='list-key'>Status:</span><span id='status' class='list-value'></span></p>
+            <p><span class='list-key'>Reason:</span><span id='reason' class='list-value'></span></p>
+            <p><span class='list-key'>Updated:</span><span id='timestamp' class='list-value'></span></p>
         </div>
         <p id="no-status" class="light-grey-box">No update status available</p>
     </div>
@@ -67,21 +67,16 @@
             return true;
         }
 
-        function getCurrentDeviceInfo() {
+        function getDeviceInfo() {
             var request = new XMLHttpRequest();
             request.open('GET', '/rest/device-info', true);
             request.onload = function () {
-                if (request.status >= 200 && request.status < 400) {
+                if (request.status == 200) {
                     var data = JSON.parse(request.responseText);
-                    document.getElementById("current-firmware-version").innerHTML = data.firmware.version;
-                    document.getElementById("current-firmware-date").innerHTML = data.firmware.date;
-
-                    var elements = document.querySelectorAll("#current-firmware-version, #current-firmware-date");
-                    for (var i = 0; i < elements.length; i++) {
-                        elements[i].style.fontStyle = "italic";
-                    }
+                    document.getElementById("current-firmware-version").innerHTML = data.firmware.buildVersion;
+                    document.getElementById("current-firmware-date").innerHTML = data.firmware.buildDate;
                 } else {
-                    console.log("Error getting current firmware");
+                    console.log("Error getting device info");
                 }
             };
             request.send();
@@ -91,14 +86,14 @@
             var request = new XMLHttpRequest();
             request.open('GET', '/rest/firmware-update-info', true);
             request.onload = function () {
-                if (request.status >= 200 && request.status < 400) {
+                if (request.status == 200) {
                     var data = JSON.parse(request.responseText);
                     if (Object.keys(data).length === 0) {
                         document.getElementById("update-details").style.display = "none";
                         document.getElementById("no-update").style.display = "block";
                     } else {
-                        document.getElementById("update-version").innerHTML = data.version;
-                        document.getElementById("update-date").innerHTML = data.date;
+                        document.getElementById("update-version").innerHTML = data.buildVersion;
+                        document.getElementById("update-date").innerHTML = data.buildDate;
                         document.getElementById("update-sha256").innerHTML = data.sha256;
                         document.getElementById("update-url").innerHTML = data.url;
                         document.getElementById("update-url").href = data.url;
@@ -113,18 +108,54 @@
         }
 
         function getFirmwareUpdateStatus() {
+
+            const happyDays = [
+                "That was such a happy day",
+                "That was a day full of joy",
+                "Oh man, that was a happy day",
+                "That was a day to remember",
+                "I wish every day I could update the firmware",
+                "That was a day full of 1's and 0's",
+                "That was a day full of binary",
+                "That was a day full of 0x01 and 0x00",
+                "That was a day full of energy (get the pun?)",
+                "What an electrifying day"
+            ];
+
+            const sadDays = [
+                "Why did the update fail?!?",
+                "Oh no! I really wanted to update the firmware that day"
+            ];
+
             var request = new XMLHttpRequest();
             request.open('GET', '/rest/firmware-update-status', true);
             request.onload = function () {
-                if (request.status >= 200 && request.status < 400) {
+                if (request.status == 200) {
                     var data = JSON.parse(request.responseText);
                     if (Object.keys(data).length === 0) {
                         document.getElementById("status-details").style.display = "none";
                         document.getElementById("no-status").style.display = "block";
                     } else {
-                        document.getElementById("status").innerHTML = data.status;
-                        document.getElementById("reason").innerHTML = data.reason;
-                        document.getElementById("timestamp").innerHTML = data.timestamp;
+                        var status = data.status.toUpperCase();
+                        var statusElement = document.getElementById("status");
+
+                        statusElement.innerHTML = status;
+
+                        if (status === "FAILED") {
+                            statusElement.style.color = "red";
+                            document.getElementById("reason").innerHTML = data.reason;
+
+                            document.getElementById("status").innerHTML = sadDays[Math.floor(Math.random() * sadDays.length)];
+                        } else if (status === "SUCCESS") {
+                            statusElement.style.color = "green";
+                            document.getElementById("reason").style.display = "none";
+
+                            document.getElementById("status").innerHTML = happyDays[Math.floor(Math.random() * happyDays.length)];
+                        }
+
+                        var timestamp = new Date(data.timestamp);
+                        document.getElementById("timestamp").innerHTML = timestamp.toLocaleString();
+
                         document.getElementById("status-details").style.display = "block";
                         document.getElementById("no-status").style.display = "none";
                     }
@@ -135,7 +166,7 @@
             request.send();
         }
 
-        getCurrentDeviceInfo();
+        getDeviceInfo();
         getFirmwareUpdateInfo();
         getFirmwareUpdateStatus();
     </script>

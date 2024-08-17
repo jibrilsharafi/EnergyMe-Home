@@ -7,9 +7,8 @@ extern Ade7953 ade7953;
 
 extern GeneralConfiguration generalConfiguration;
 
-JsonDocument getDeviceStatus()
+JsonDocument getDeviceInfo()
 {
-
     JsonDocument _jsonDocument;
 
     JsonObject _jsonSystem = _jsonDocument["system"].to<JsonObject>();
@@ -17,8 +16,8 @@ JsonDocument getDeviceStatus()
     _jsonSystem["systemTime"] = customTime.getTimestamp();
 
     JsonObject _jsonFirmware = _jsonDocument["firmware"].to<JsonObject>();
-    _jsonFirmware["version"] = FIRMWARE_VERSION;
-    _jsonFirmware["date"] = FIRMWARE_DATE;
+    _jsonFirmware["buildVersion"] = FIRMWARE_BUILD_VERSION;
+    _jsonFirmware["buildDate"] = FIRMWARE_BUILD_DATE;
 
     JsonObject _jsonMemory = _jsonDocument["memory"].to<JsonObject>();
     JsonObject _jsonHeap = _jsonMemory["heap"].to<JsonObject>();
@@ -115,7 +114,7 @@ void printMeterValues(MeterValues meterValues, const char* channelLabel) {
 void printDeviceStatus()
 {
 
-    JsonDocument _jsonDocument = getDeviceStatus();
+    JsonDocument _jsonDocument = getDeviceInfo();
 
     logger.debug(
         "Free heap: %d bytes | Total heap: %d bytes || Free SPIFFS: %d bytes | Total SPIFFS: %d bytes",
@@ -391,8 +390,8 @@ bool isLatestFirmwareInstalled() {
         return true;
     }
 
-    String _latestFirmwareVersion = _jsonDocument["version"].as<String>();
-    String _currentFirmwareVersion = FIRMWARE_VERSION;
+    String _latestFirmwareVersion = _jsonDocument["buildVersion"].as<String>();
+    String _currentFirmwareVersion = FIRMWARE_BUILD_VERSION;
 
     logger.debug(
         "Latest firmware version: %s | Current firmware version: %s",

@@ -29,11 +29,6 @@ bool setupMqtt() {
     
     setupTopics();
 
-    // Temporary log the first 10 characters of all the certificates
-    logger.warning(AWS_IOT_CORE_CERT_CA, "mqtt::setupMqtt");
-    logger.warning(AWS_IOT_CORE_CERT_CRT, "mqtt::setupMqtt");
-    logger.warning(AWS_IOT_CORE_CERT_PRIVATE, "mqtt::setupMqtt");
-
     net.setCACert(AWS_IOT_CORE_CERT_CA);
     net.setCertificate(AWS_IOT_CORE_CERT_CRT);
     net.setPrivateKey(AWS_IOT_CORE_CERT_PRIVATE);
@@ -257,7 +252,7 @@ void publishMetadata() {
     _jsonObject["unixTime"] = customTime.getUnixTime();
     String _publicIp = getPublicIp();
     _jsonObject["publicIp"] = _publicIp.c_str();
-    _jsonObject["firmwareVersion"] = FIRMWARE_VERSION;
+    _jsonObject["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
 
     String _metadataMessage;
     serializeJson(_jsonDocument, _metadataMessage);

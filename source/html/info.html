@@ -27,8 +27,8 @@
         <p><span class='list-key'>Uptime:</span><span id='uptime' class='list-value'></span></p>
         <p><span class='list-key'>System time:</span><span id='systemTime' class='list-value'></span></p>
         <h3>Firmware</h3>
-        <p><span class='list-key'>Version:</span><span id='firmwareVersion' class='list-value'></span></p>
-        <p><span class='list-key'>Date:</span><span id='firmwareDate' class='list-value'></span></p>
+        <p><span class='list-key'>Version:</span><span id='firmwareBuildVersion' class='list-value'></span></p>
+        <p><span class='list-key'>Date:</span><span id='firmwareBuildDate' class='list-value'></span></p>
         <h3>Memory</h3>
         <h4>Heap</h4>
         <p><span class='list-key'>Free:</span><span id='heapFree' class='list-value'></span></p>
@@ -120,8 +120,8 @@
             document.getElementById('uptime').textContent = uptimeStr;
             document.getElementById('systemTime').textContent = data.system.systemTime;
 
-            document.getElementById('firmwareVersion').textContent = data.firmware.version;
-            document.getElementById('firmwareDate').textContent = data.firmware.date;
+            document.getElementById('firmwareBuildVersion').textContent = data.firmware.buildVersion;
+            document.getElementById('firmwareBuildDate').textContent = data.firmware.buildDate;
             
             var heapFree = data.memory.heap.free;
             var heapTotal = data.memory.heap.total;

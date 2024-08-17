@@ -17,7 +17,7 @@
 #include "customtime.h"
 #include "ade7953.h"
 
-JsonDocument getDeviceStatus();
+JsonDocument getDeviceInfo();
 void restartEsp32(const char* functionName, const char* reason);
 void printMeterValues(MeterValues meterValues, const char* channelLabel);
 void printDeviceStatus();

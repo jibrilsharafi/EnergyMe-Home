@@ -85,8 +85,8 @@ void setup() {
   log_i("Booting...");
   log_i("EnergyMe - Home");
 
-  log_i("Build version: %s", FIRMWARE_VERSION);
-  log_i("Build date: %s", FIRMWARE_DATE);
+  log_i("Build version: %s", FIRMWARE_BUILD_VERSION);
+  log_i("Build date: %s", FIRMWARE_BUILD_DATE);
 
   log_i("Setting up LED...");
   led.begin();
@@ -135,8 +135,8 @@ void setup() {
   
   logger.info("Booting...", "main::setup");  
   logger.info("EnergyMe - Home", "main::setup");
-  logger.info("Build version: %s", "main::setup", FIRMWARE_VERSION);
-  logger.info("Build date: %s", "main::setup", FIRMWARE_DATE);
+  logger.info("Build version: %s", "main::setup", FIRMWARE_BUILD_VERSION);
+  logger.info("Build date: %s", "main::setup", FIRMWARE_BUILD_DATE);
   
   isFirstSetup = checkIfFirstSetup();
   if (isFirstSetup) {
