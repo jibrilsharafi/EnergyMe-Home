@@ -397,7 +397,6 @@ bool _duplicateFile(const char* sourcePath, const char* destinationPath) {
 }
 
 bool isLatestFirmwareInstalled() {
-    
     File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_READ);
     if (!_file) {
         logger.error("Failed to open firmware update info file", "utils::isLatestFirmwareInstalled");
@@ -420,8 +419,24 @@ bool isLatestFirmwareInstalled() {
         _latestFirmwareVersion.c_str(),
         _currentFirmwareVersion.c_str()
     );
-    
-    return _latestFirmwareVersion == _currentFirmwareVersion;
+
+    if (_latestFirmwareVersion.length() == 0 || _latestFirmwareVersion.indexOf(".") == -1) {
+        logger.warning("Latest firmware version is empty or in the wrong format", "utils::isLatestFirmwareInstalled");
+        return true;
+    }
+
+    int _latestMajor, _latestMinor, _latestPatch;
+    sscanf(_latestFirmwareVersion.c_str(), "%d.%d.%d", &_latestMajor, &_latestMinor, &_latestPatch);
+
+    int _currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
+    int _currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
+    int _currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
+
+    if (_latestMajor > _currentMajor) return false;
+    if (_latestMinor > _currentMinor) return false;
+    if (_latestPatch > _currentPatch) return false;
+
+    return true;
 }
 
 String getDeviceId() {
