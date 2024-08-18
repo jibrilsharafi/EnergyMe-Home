@@ -9,3 +9,11 @@ body {
     justify-content: center;
     min-height: 100vh;
 }
+
+:root {
+    --logo-light-green: #a9e68a;
+    --logo-green: #08bf81;
+    --logo-dark-green: #03a09b;
+    --green: #4CAF50;
+    --blue: #2196F3;
+}

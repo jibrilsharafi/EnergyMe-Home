@@ -9,7 +9,7 @@
 
 .buttonNavigation {
     background: transparent;
-    color: #2196F3;
+    color: var(--blue);
     font-weight: bold;
     font-size: 1.2em;
     cursor: pointer;
@@ -30,7 +30,7 @@
 }
 
 .buttonNavigation[type="home"] {
-    color: #4CAF50;
+    color: var(--green);
 }
 
 .buttonNavigation[type="inner"] {
@@ -38,7 +38,7 @@
 }
 
 .buttonNavigation[type="outer"] {
-    color: #0b7dda;
+    color: var(--blue);
 }
 
 .buttonForm-container {
@@ -52,7 +52,7 @@
 .buttonForm {
     background: transparent;
     background-color: #f4f4f4;
-    color: #4CAF50;
+    color: var(--green);
     font-weight: bold;
     padding: 10px 20px;
     border-radius: 50px;
@@ -75,7 +75,7 @@
 }
 
 .buttonForm:disabled {
-    color: #2196F3;
+    color: var(--blue);
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
     background-color: #bf7c0054;
     pointer-events: none;

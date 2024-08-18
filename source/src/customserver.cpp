@@ -67,9 +67,9 @@ void _setHtmlPages() {
     });
 
     // CSS
-    server.on("/css/main.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::DEBUG, request);
-        request->send_P(200, "text/css", main_css);
+        request->send_P(200, "text/css", styles_css);
     });
     
     server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -103,16 +103,6 @@ void _setOta() {
     server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get update page", "customserver::_setOta::/update", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", update_html);
-    });
-
-    server.on("/update-successful", HTTP_GET, [](AsyncWebServerRequest *request) {
-        _serverLog("Request to get update successful page", "customserver::_setHtmlPages::/update-successful", LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", update_successful_html);
-    });
-
-    server.on("/update-failed", HTTP_GET, [](AsyncWebServerRequest *request) {
-        _serverLog("Request to get update failed page", "customserver::_setHtmlPages::/update-successful", LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", update_failed_html);
     });
 
     server.on("/do-update", HTTP_POST,
@@ -608,7 +598,7 @@ void _updateJsonFirmwareStatus(const char *status, const char *reason)
 }
 
 void _onUpdateSuccessful(AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "{\"status\":\"success\", \"reason\":\"\"}");
+    request->send(200, "application/json", "{\"status\":\"success\", \"reason\":\"\"}");
 
     logger.warning("Update complete", "customserver::handleDoUpdate");
     _updateJsonFirmwareStatus("success", "");
@@ -617,7 +607,7 @@ void _onUpdateSuccessful(AsyncWebServerRequest *request) {
 }
 
 void _onUpdateFailed(AsyncWebServerRequest *request, const char* reason) {
-    request->send(400, "text/plain", "{\"status\":\"failed\", \"reason\":\"" + String(reason) + "\"}");
+    request->send(400, "application/json", "{\"status\":\"failed\", \"reason\":\"" + String(reason) + "\"}");
 
     Update.printError(Serial);
     logger.error("Update failed. Reason: %s", "customserver::_onUpdateFailed", reason);

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <link rel="stylesheet" type="text/css" href="/css/button.css">
-    <link rel="stylesheet" type="text/css" href="/css/main.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
 
@@ -176,18 +176,25 @@
 
             var rssi = data.rssi;
             var rssiStr = rssi + " dB";
+            var color = document.getElementById('rssi').style.color;
             if (rssi >= -30) {
                 rssiStr += " (Amazing)";
+                color = 'green';
             } else if (rssi >= -60) {
                 rssiStr += " (Very Good)";
+                color = 'green';
             } else if (rssi >= -70) {
-                rssiStr += " (Okay)";
+                rssiStr += " (Good)";
+                color = 'green';
             } else if (rssi >= -80) {
                 rssiStr += " (Not Good)";
+                color = 'orange';
             } else {
                 rssiStr += " (Unusable)";
+                color = 'red';
             }
             document.getElementById('rssi').textContent = rssiStr;
+            document.getElementById('rssi').style.color = color;
         }
 
         function displayProjectInfo(data) {
