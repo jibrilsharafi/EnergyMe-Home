@@ -6,7 +6,6 @@
 #include <FS.h>
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
-#include <Ticker.h>
 #include <HTTPClient.h>
 #include <AdvancedLogger.h>
 

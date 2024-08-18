@@ -1,7 +1,6 @@
 #include "ade7953.h"
 
-Ticker energyTicker;
-
+Ticker saveEnergyTicker;
 bool Ade7953::saveEnergyFlag = false;
 
 Ade7953::Ade7953(
@@ -85,7 +84,7 @@ bool Ade7953::begin() {
     logger.debug("Initializing data channel", "Ade7953::begin");
     _setChannelDataFromSpiffs();
 
-    energyTicker.attach(ENERGY_SAVE_INTERVAL, [](){ saveEnergyFlag = true; });
+    saveEnergyTicker.attach(ENERGY_SAVE_INTERVAL, [](){ saveEnergyFlag = true; }); // Inside ticker callbacks, only flags should be set
 
     return true;
 }

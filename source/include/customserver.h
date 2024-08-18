@@ -7,7 +7,6 @@
 #include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
 #include <Update.h>
-#include <Ticker.h>
 
 #include "ArduinoJson.h"
 

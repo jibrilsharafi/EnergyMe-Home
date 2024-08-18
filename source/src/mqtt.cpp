@@ -21,7 +21,8 @@ long lastMillisMqttFailed = millis();
 long lastMillisMqttLoop = millis();
 int mqttConnectionAttempt = 0;
 
-Ticker statusTicker;
+Ticker publishStatusTicker;
+bool publishStatusFlag = false;
 
 #ifdef ENERGYME_HOME_SECRETS_H
 
@@ -44,7 +45,7 @@ bool setupMqtt() {
         return false;
     }
     
-    statusTicker.attach(MQTT_STATUS_PUBLISH_INTERVAL, publishStatus);
+    publishStatusTicker.attach(MQTT_STATUS_PUBLISH_INTERVAL, []() { publishStatusFlag = true; }); // Inside ticker callbacks, only flags should be set
 
     return true;
 }
@@ -83,6 +84,11 @@ void mqttLoop() {
             publishMeter();
 
             lastMillisPublished = millis();
+        }
+
+        if (publishStatusFlag) {
+            publishStatus();
+            publishStatusFlag = false;
         }
     }
 }

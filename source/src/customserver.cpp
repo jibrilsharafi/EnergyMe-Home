@@ -1,7 +1,6 @@
 #include "customserver.h"
 
 AsyncWebServer server(80);
-Ticker tickerOnSuccess;
 
 void setupServer() {
     _setHtmlPages();
