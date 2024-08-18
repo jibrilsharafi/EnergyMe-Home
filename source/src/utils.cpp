@@ -102,7 +102,7 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument _jsonDocument){
 void restartEsp32(const char* functionName, const char* reason) {
 
     led.block();
-    led.setBrightness(LED_MAX_BRIGHTNESS);
+    led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
     led.setRed(true);
 
     publishMeter();
@@ -181,6 +181,7 @@ void setDefaultGeneralConfiguration() {
     generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
     generalConfiguration.gmtOffset = DEFAULT_GMT_OFFSET;
     generalConfiguration.dstOffset = DEFAULT_DST_OFFSET;
+    generalConfiguration.ledBrightness = DEFAULT_LED_BRIGHTNESS;
     
     logger.debug("Default general configuration set", "utils::setDefaultGeneralConfiguration");
 }
@@ -189,6 +190,11 @@ void setGeneralConfiguration(GeneralConfiguration newGeneralConfiguration) {
     logger.debug("Setting general configuration...", "utils::setGeneralConfiguration");
 
     generalConfiguration = newGeneralConfiguration;
+
+    applyGeneralConfiguration();
+
+    saveGeneralConfigurationToSpiffs();
+    publishGeneralConfiguration();
 
     logger.debug("General configuration set", "utils::setGeneralConfiguration");
 }
@@ -226,6 +232,7 @@ JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguratio
     _jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
     _jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
     _jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
+    _jsonDocument["ledBrightness"] = generalConfiguration.ledBrightness;
     
     return _jsonDocument;
 }
@@ -233,11 +240,20 @@ JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguratio
 GeneralConfiguration jsonToGeneralConfiguration(JsonDocument _jsonDocument) {
     GeneralConfiguration _generalConfiguration;
     
-    _generalConfiguration.isCloudServicesEnabled = _jsonDocument["isCloudServicesEnabled"].as<bool>();
-    _generalConfiguration.gmtOffset = _jsonDocument["gmtOffset"].as<int>();
-    _generalConfiguration.dstOffset = _jsonDocument["dstOffset"].as<int>();
+    _generalConfiguration.isCloudServicesEnabled = _jsonDocument["isCloudServicesEnabled"] ? _jsonDocument["isCloudServicesEnabled"].as<bool>() : DEFAULT_IS_CLOUD_SERVICES_ENABLED;
+    _generalConfiguration.gmtOffset = _jsonDocument["gmtOffset"] ? _jsonDocument["gmtOffset"].as<int>() : DEFAULT_GMT_OFFSET;
+    _generalConfiguration.dstOffset = _jsonDocument["dstOffset"] ? _jsonDocument["dstOffset"].as<int>() : DEFAULT_DST_OFFSET;
+    _generalConfiguration.ledBrightness = _jsonDocument["ledBrightness"] ? _jsonDocument["ledBrightness"].as<int>() : DEFAULT_LED_BRIGHTNESS;
 
     return _generalConfiguration;
+}
+
+void applyGeneralConfiguration() {
+    logger.debug("Applying general configuration...", "utils::applyGeneralConfiguration");
+
+    led.setBrightness(generalConfiguration.ledBrightness);
+
+    logger.debug("General configuration applied", "utils::applyGeneralConfiguration");
 }
 
 JsonDocument getPublicLocation() {

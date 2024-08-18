@@ -295,11 +295,8 @@ void publishGeneralConfiguration() {
 
     JsonDocument _jsonDocument;
 
-    JsonObject _jsonObject = _jsonDocument.to<JsonObject>();
-    _jsonObject["unixTime"] = customTime.getUnixTime();
-    _jsonObject["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
-    _jsonObject["gmtOffset"] = generalConfiguration.gmtOffset;
-    _jsonObject["dstOffset"] = generalConfiguration.dstOffset;
+    _jsonDocument["unixTime"] = customTime.getUnixTime();
+    _jsonDocument["generalConfiguration"] = generalConfigurationToJson(generalConfiguration);
 
     String _generalConfigurationMessage;
     serializeJson(_jsonDocument, _generalConfigurationMessage);
@@ -321,7 +318,7 @@ void publishMessage(const char* topic, const char* message) {
     );
 
     if (!generalConfiguration.isCloudServicesEnabled) {
-        logger.debug("Cloud services not enabled. Skipping...", "mqtt::publishMessage");
+        logger.verbose("Cloud services not enabled. Skipping...", "mqtt::publishMessage");
         return;
     }
 

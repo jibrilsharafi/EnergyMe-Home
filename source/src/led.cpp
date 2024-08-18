@@ -28,6 +28,10 @@ void Led::setBrightness(int brightness) {
     _setPwm();
 }
 
+int Led::getBrightness() {
+    return _brightness;
+}
+
 void Led::setRed(bool blocking) {
     _setColor(255, 0, 0, blocking);
 }

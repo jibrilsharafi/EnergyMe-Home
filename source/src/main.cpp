@@ -58,7 +58,7 @@ Led led(
   LED_RED_PIN, 
   LED_GREEN_PIN, 
   LED_BLUE_PIN, 
-  LED_DEFAULT_BRIGHTNESS
+  DEFAULT_LED_BRIGHTNESS
 );
 
 Multiplexer multiplexer(
@@ -119,9 +119,9 @@ void setup() {
   }
 
   logger.info("Fetching configuration from SPIFFS...", "main::setup");
+  setDefaultGeneralConfiguration(); // Start with default values
   if (!setGeneralConfigurationFromSpiffs()) {
     logger.warning("Failed to load configuration from SPIFFS. Using default values.", "main::setup");
-    setDefaultGeneralConfiguration();
   } else {
     logger.info("Configuration loaded from SPIFFS", "main::setup");
   }

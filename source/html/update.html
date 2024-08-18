@@ -23,48 +23,83 @@
         <h2>Update</h2>
         <p>Upload a new firmware to the device (only <i>.bin</i> files are allowed)</p>
         <form method='POST' action='/do-update' enctype='multipart/form-data' onsubmit="return formSubmitted()">
-            <input type='file' id='file' name='update' accept='.bin' required>
-            <input type='submit' id='submit' value='Update'>
+            <input type='file' id='file' name='update' accept='.bin' required title="Select the firmware .bin file to upload">
+            <input type='submit' id='submit' value='Update' title="Click to start the firmware update process">
         </form>
     </div>
 
     <div id="current-device" class="section-box">
-        <h2>Current device</h2>
-        <h3>Firmware</h3>
+        <h2>Current Firmware</h2>
         <p><span class='list-key'>Version:</span><span id='current-firmware-version' class='list-value'></span></p>
         <p><span class='list-key'>Date:</span><span id='current-firmware-date' class='list-value'></span></p>
     </div>
 
     <div id="update-info" class="section-box">
-        <h2>Update Information</h2>
+        <h2>Latest update available</h2>
         <div id="update-details" style="display: none;">
             <p><span class='list-key'>Version:</span><span id='update-version' class='list-value'></span></p>
             <p><span class='list-key'>Date:</span><span id='update-date' class='list-value'></span></p>
             <p><span class='list-key'>SHA256:</span><span id='update-sha256' class='list-value'></span></p>
-            <p><span class='list-key'>URL:</span><a id='update-url' href='' target='_blank'></a></p>
+            <p><span class='list-key'>URL:</span><a id='update-url' href='' target='_blank' title="Click to download the firmware update. Then, choose the file and click 'Update'">Download</a></p>
         </div>
         <p id="no-update" class="light-grey-box">Latest version installed</p>
     </div>
 
     <div id="update-status" class="section-box">
-        <h2>Update Status</h2>
+        <h2>Last update status</h2>
         <div id="status-details" style="display: none;">
             <p><span class='list-key'>Status:</span><span id='status' class='list-value'></span></p>
             <p><span class='list-key' id="reason-key">Reason:</span><span id='reason' class='list-value'></span></p>
             <p><span class='list-key'>Updated:</span><span id='timestamp' class='list-value'></span></p>
         </div>
-        <p id="no-status" class="light-grey-box">No update status available</p>
+        <p id="no-status" class="light-grey-box">No update status info available</p>
     </div>
 
     <script>
         function formSubmitted() {
-            var res = confirm("Are you sure you want to update the device?");
-            if (!res) {
-                return false;
-            }
+            var form = document.querySelector('form');
+            var formData = new FormData(form);
+            var request = new XMLHttpRequest();
+            request.open('POST', '/do-update', true);
+
+            request.onload = function () {
+                var response = JSON.parse(request.responseText);
+                var messageBox = document.createElement('div');
+                messageBox.style.padding = '10px';
+                messageBox.style.marginTop = '10px';
+                messageBox.style.borderRadius = '5px';
+
+                if (request.status == 200 && response.status === 'success') {
+                    messageBox.style.backgroundColor = '#d4edda';
+                    messageBox.style.color = '#155724';
+                    messageBox.innerHTML = 'Update successful! Redirecting in 5 seconds...';
+                    document.body.appendChild(messageBox);
+                    setTimeout(function() {
+                        window.location.href = '/';
+                    }, 5000);
+                } else {
+                    messageBox.style.backgroundColor = '#f8d7da';
+                    messageBox.style.color = '#721c24';
+                    messageBox.innerHTML = 'Update failed: ' + response.reason;
+                    document.body.appendChild(messageBox);
+                }
+            };
+
+            request.onerror = function () {
+                var messageBox = document.createElement('div');
+                messageBox.style.backgroundColor = '#f8d7da';
+                messageBox.style.color = '#721c24';
+                messageBox.style.padding = '10px';
+                messageBox.style.marginTop = '10px';
+                messageBox.style.borderRadius = '5px';
+                messageBox.innerHTML = 'An error occurred during the update process.';
+                document.body.appendChild(messageBox);
+            };
+
+            request.send(formData);
             document.getElementById("submit").value = "Updating...";
             document.getElementById("submit").disabled = true;
-            return true;
+            return false; // Prevent the form from submitting the traditional way
         }
 
         function getDeviceInfo() {
@@ -95,7 +130,6 @@
                         document.getElementById("update-version").innerHTML = data.buildVersion;
                         document.getElementById("update-date").innerHTML = data.buildDate;
                         document.getElementById("update-sha256").innerHTML = data.sha256;
-                        document.getElementById("update-url").innerHTML = data.url;
                         document.getElementById("update-url").href = data.url;
                         document.getElementById("update-details").style.display = "block";
                         document.getElementById("no-update").style.display = "none";
@@ -108,7 +142,6 @@
         }
 
         function getFirmwareUpdateStatus() {
-
             const happyDays = [
                 "That was such a happy day",
                 "That was a day full of joy",
@@ -160,9 +193,11 @@
             request.send();
         }
 
-        getDeviceInfo();
-        getFirmwareUpdateInfo();
-        getFirmwareUpdateStatus();
+        document.addEventListener("DOMContentLoaded", function() {
+            getDeviceInfo();
+            getFirmwareUpdateInfo();
+            getFirmwareUpdateStatus();
+        });
     </script>
 </body>
 

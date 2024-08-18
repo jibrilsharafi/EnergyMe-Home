@@ -335,11 +335,7 @@ void _setRestApi() {
     server.on("/rest/get-general-configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get get general configuration from REST API", "customserver::_setRestApi::/rest/get-general-configuration", LogLevel::DEBUG, request);
 
-        JsonDocument _jsonDocument;
-
-        _jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
-        _jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
-        _jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
+        JsonDocument _jsonDocument = generalConfigurationToJson(generalConfiguration);
 
         String _buffer;
         serializeJson(_jsonDocument, _buffer);
@@ -524,8 +520,6 @@ void _setRestApi() {
             deserializeJson(_jsonDocument, data);
 
             setGeneralConfiguration(jsonToGeneralConfiguration(_jsonDocument));
-            saveGeneralConfigurationToSpiffs();
-            publishGeneralConfiguration();
 
             AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Configuration updated\"}");
             request->send(response);
@@ -589,7 +583,6 @@ void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, siz
         if (!Update.end(true)) {
             _onUpdateFailed(request, "Error during last part of update");
         } else {
-            request->redirect("/update-successful"); // FIXME: this still does not work, as it is too slow to serve the page before rebooting
             _onUpdateSuccessful(request);
         }
     }
@@ -615,16 +608,16 @@ void _updateJsonFirmwareStatus(const char *status, const char *reason)
 }
 
 void _onUpdateSuccessful(AsyncWebServerRequest *request) {
-    _updateJsonFirmwareStatus("success", "");
-    logger.warning("Update complete", "customserver::handleDoUpdate");
+    request->send(200, "text/plain", "{\"status\":\"success\", \"reason\":\"\"}");
 
-    ade7953.saveEnergyToSpiffs();
+    logger.warning("Update complete", "customserver::handleDoUpdate");
+    _updateJsonFirmwareStatus("success", "");
 
     restartEsp32("customserver::_handleDoUpdate", "Restart needed after update");
 }
 
 void _onUpdateFailed(AsyncWebServerRequest *request, const char* reason) {
-    request->redirect("/update-failed");
+    request->send(400, "text/plain", "{\"status\":\"failed\", \"reason\":\"" + String(reason) + "\"}");
 
     Update.printError(Serial);
     logger.error("Update failed. Reason: %s", "customserver::_onUpdateFailed", reason);

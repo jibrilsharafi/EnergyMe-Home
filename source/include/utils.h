@@ -36,6 +36,7 @@ bool saveGeneralConfigurationToSpiffs();
 JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguration);
 GeneralConfiguration jsonToGeneralConfiguration(JsonDocument jsonDocument);
 
+void applyGeneralConfiguration();
 JsonDocument getPublicLocation();
 std::pair<int, int> getPublicTimezone();
 void updateTimezone();

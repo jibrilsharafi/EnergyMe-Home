@@ -58,6 +58,7 @@ struct GeneralConfiguration {
   bool isCloudServicesEnabled;
   int gmtOffset;
   int dstOffset;
+  int ledBrightness;
 };
 
 namespace data {

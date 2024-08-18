@@ -14,6 +14,40 @@
 
         <title>Configuration</title>
         <style>
+            .slider {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 100%;
+                height: 15px;
+                border-radius: 5px;
+                background: linear-gradient(to right, #4CAF50 0%, #4CAF50 calc(var(--slider-value, 50%) - 1.25%), #d3d3d3 calc(var(--slider-value, 50%) + 1.25%), #d3d3d3 100%);
+                outline: none;
+                opacity: 0.7;
+                -webkit-transition: .2s;
+                transition: opacity .2s;
+            }
+            
+            .slider:hover {
+                opacity: 1;
+            }
+            
+            .slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 25px;
+                height: 25px;
+                border-radius: 50%;
+                background: #4CAF50;
+                cursor: pointer;
+            }
+            
+            .slider::-moz-range-thumb {
+                width: 25px;
+                height: 25px;
+                border-radius: 50%;
+                background: #4CAF50;
+                cursor: pointer;
+            }
         </style>
     </head>
 
@@ -32,6 +66,12 @@
                     <p><i>Cloud services are used to send data to the cloud. This is useful for monitoring the device remotely.</i></p>
                     <input type="checkbox" id="cloudServices" class="config-input">
                     <label for="cloudServices">Enable cloud services</label>
+                </div>
+                <div>
+                    <h3>LED brightness</h3>
+                    <p><i>LED brightness is used to adjust the brightness of the LED on the device. This is useful for reducing power consumption.</i></p>
+                    <input type="range" id="ledBrightness" class="config-input slider" min="0" max="255" oninput="updateBrightnessValue()">
+                    <span id="ledBrightnessValue">50%</span>
                 </div>
                 <br>
                 <button class="buttonForm" onclick="setGeneralConfiguration()" id="setGeneralConfigurationButton">Set configuration</button>
@@ -274,6 +314,9 @@
                             var generalConfig = JSON.parse(this.responseText);
 
                             document.getElementById("cloudServices").checked = generalConfig.isCloudServicesEnabled;
+                            document.getElementById("ledBrightness").value = generalConfig.ledBrightness;
+
+                            updateBrightnessValue();
                         } else {
                             console.log("Error getting general configuration. Response: " + this.responseText);
                         }
@@ -299,12 +342,22 @@
                     }
                 };
                 xhttp.send(JSON.stringify({
-                    isCloudServicesEnabled: document.getElementById("cloudServices").checked
+                    isCloudServicesEnabled: document.getElementById("cloudServices").checked,
+                    ledBrightness: document.getElementById("ledBrightness").value
                 }));
                 setTimeout(function () {
                     document.getElementById("setGeneralConfigurationButton").innerHTML = "Set configuration";
                     document.getElementById("setGeneralConfigurationButton").disabled = false;
                 }, 3000);
+            }
+
+            function updateBrightnessValue() {
+                var slider = document.getElementById("ledBrightness");
+                var output = document.getElementById("ledBrightnessValue");
+                var percentage = Math.round((slider.value / 255) * 100);
+                slider.style.setProperty('--slider-value', percentage + '%');
+                slider.title = percentage + "%";
+                output.innerHTML = percentage + "%";
             }
 
             getGeneralConfiguration();

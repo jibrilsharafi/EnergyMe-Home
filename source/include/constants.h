@@ -98,7 +98,7 @@ extern const int DEFAULT_DST_OFFSET;
 extern const int LED_RED_PIN;
 extern const int LED_GREEN_PIN;
 extern const int LED_BLUE_PIN;
-extern const int LED_DEFAULT_BRIGHTNESS;
+extern const int DEFAULT_LED_BRIGHTNESS;
 extern const int LED_MAX_BRIGHTNESS;
 extern const int LED_FREQUENCY;
 extern const int LED_RESOLUTION;

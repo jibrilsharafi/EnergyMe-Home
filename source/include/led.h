@@ -14,6 +14,7 @@ class Led {
 
         // Set the brightness of the LED (0-255)
         void setBrightness(int brightness);
+        int getBrightness();
 
         void setRed(bool blocking = false);
         void setGreen(bool blocking = false);
@@ -37,6 +38,7 @@ class Led {
         int _redPin;
         int _greenPin;
         int _bluePin;
+        
         int _brightness;
 
         int _redPinChannel = 1;
