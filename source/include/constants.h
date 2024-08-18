@@ -2,7 +2,7 @@
 #define CONSTANTS_H
 
 #include "AdvancedLogger.h"
-
+//TODO: document all the constats (only here, not in the cpp file)
 // Definitions
 // --------------------
 
@@ -104,8 +104,9 @@ extern const int LED_FREQUENCY;
 extern const int LED_RESOLUTION;
 
 // WiFi
-extern const int WIFI_CONFIG_PORTAL_TIMEOUT; // 3 minutes
-extern const char* WIFI_CONFIG_PORTAL_SSID;
+extern const int WIFI_CONFIG_PORTAL_TIMEOUT; // Timeout for the WiFi captive portal (in seconds)
+extern const char* WIFI_CONFIG_PORTAL_SSID; // SSID of the WiFi captive portal
+extern const int WIFI_LOOP_INTERVAL; // Time between each WiFi check (in milliseconds). Needed to avoid raising a warning each time the WiFi connection is lost for a short period
 
 // MDNS
 extern const char* MDNS_HOSTNAME;

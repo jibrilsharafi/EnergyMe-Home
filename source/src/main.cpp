@@ -193,10 +193,8 @@ void setup() {
 
 void loop() {
   checkWifi();
-
-  if (generalConfiguration.isCloudServicesEnabled) { //TODO: if this gets disabled, just restart the ESP32
-    mqttLoop();
-  }
+  mqttLoop();
+  ade7953.loop();
   
   if (ade7953.isLinecycFinished()) {
     led.setGreen();
@@ -224,9 +222,8 @@ void loop() {
   // If memory is below a certain level, clear the logs
   if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
     logger.clearLog();
+    logger.warning("Logs cleared due to low memory", "main::loop");
   }
   
-  ade7953.loop();
-
   led.setOff();
 }

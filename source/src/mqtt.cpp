@@ -16,10 +16,10 @@ char *mqttTopicMetadata = nullptr;
 char *mqttTopicChannel = nullptr;
 char *mqttTopicGeneralConfiguration = nullptr;
 
-long lastMillisPublished = millis();
-long lastMillisMqttFailed = millis();
-long lastMillisMqttLoop = millis();
-int mqttConnectionAttempt = 0;
+unsigned long lastMillisPublished = millis();
+unsigned long lastMillisMqttFailed = millis();
+unsigned long lastMillisMqttLoop = millis();
+unsigned long mqttConnectionAttempt = 0;
 
 Ticker publishStatusTicker;
 bool publishStatusFlag = false;
@@ -61,8 +61,13 @@ bool setupMqtt() {
 #ifdef ENERGYME_HOME_SECRETS_H
 
 void mqttLoop() {
+    if (!generalConfiguration.isCloudServicesEnabled) { //TODO: if this gets disabled, just restart the ESP32
+        logger.verbose("Cloud services not enabled. Skipping...", "mqtt::mqttLoop");
+    }
+
     if ((millis() - lastMillisMqttLoop) > MQTT_LOOP_INTERVAL) {
         lastMillisMqttLoop = millis();
+        
         if (!clientMqtt.loop()) {
             if ((millis() - lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) {
                 logger.verbose("MQTT connection failed recently. Skipping...", "mqtt::connectMqtt");

@@ -2,13 +2,15 @@
 
 WiFiManager wifiManager;
 
+unsigned long lastMillisWifiLoop = 0;
+
 bool setupWifi() {
   logger.debug("Setting up WiFi...", "setupWifi");
 
   wifiManager.setConfigPortalTimeout(WIFI_CONFIG_PORTAL_TIMEOUT);
   
   if (!wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID)) {
-    logger.error("Failed to connect and hit timeout", "customwifi::setupWifi");
+    logger.warning("Failed to connect and hit timeout", "customwifi::setupWifi");
     return false;
   }
   
@@ -18,10 +20,13 @@ bool setupWifi() {
 }
 
 void checkWifi() {
-  if (!WiFi.isConnected()) {
-    logger.warning("WiFi connection lost. Reconnecting...", "customwifi::checkWifi");
-    if (!setupWifi()) {
-      restartEsp32("customwifi::checkWifi", "Failed to connect to WiFi and hit timeout");
+  if ((millis() - lastMillisWifiLoop) > WIFI_LOOP_INTERVAL) {
+    lastMillisWifiLoop = millis();
+    if (!WiFi.isConnected()) {
+      logger.warning("WiFi connection lost. Reconnecting...", "customwifi::checkWifi");
+      if (!setupWifi()) {
+        restartEsp32("customwifi::checkWifi", "Failed to connect to WiFi and hit timeout");
+      }
     }
   }
 }
