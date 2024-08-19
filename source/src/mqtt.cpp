@@ -188,7 +188,7 @@ void setTopicGeneralConfiguration() {
 
 #endif
 
-JsonDocument circularBufferToJson(CircularBuffer<data::PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &payloadMeter) {
+JsonDocument circularBufferToJson(CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &payloadMeter) {
     logger.debug("Converting circular buffer to JSON", "mqtt::circularBufferToJson");
 
     JsonDocument _jsonDocument;
@@ -197,7 +197,7 @@ JsonDocument circularBufferToJson(CircularBuffer<data::PayloadMeter, MAX_NUMBER_
     while (!payloadMeter.isEmpty()) {
         JsonObject _jsonObject = _jsonArray.add<JsonObject>();
 
-        data::PayloadMeter _oldestPayloadMeter = payloadMeter.shift();
+        PayloadMeter _oldestPayloadMeter = payloadMeter.shift();
 
         _jsonObject["channel"] = _oldestPayloadMeter.channel;
         _jsonObject["unixTime"] = _oldestPayloadMeter.unixTime;

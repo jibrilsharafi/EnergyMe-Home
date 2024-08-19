@@ -3,8 +3,6 @@
 
 #include <Arduino.h>
 
-//TODO: many of these structs could be improved, to better respect the JSON format of the files later saved
-
 struct CalibrationValues{
     String label;
     float vLsb;
@@ -68,20 +66,16 @@ struct GeneralConfiguration {
   int ledBrightness;
 };
 
-namespace data {
-  struct PayloadMeter {
-    int channel;
-    long unixTime;
-    float activePower;
-    float powerFactor;
+struct PayloadMeter {
+  int channel;
+  long unixTime;
+  float activePower;
+  float powerFactor;
 
-    // Default constructor
-    PayloadMeter() : channel(0), unixTime(0), activePower(0.0), powerFactor(0.0) {}
+  PayloadMeter() : channel(0), unixTime(0), activePower(0.0), powerFactor(0.0) {}
 
-    // Constructor
-    PayloadMeter(int channel, long unixTime, float activePower, float powerFactor)
-      : channel(channel), unixTime(unixTime), activePower(activePower), powerFactor(powerFactor) {}
-  };
-}
+  PayloadMeter(int channel, long unixTime, float activePower, float powerFactor)
+    : channel(channel), unixTime(unixTime), activePower(activePower), powerFactor(powerFactor) {}
+};
 
 #endif

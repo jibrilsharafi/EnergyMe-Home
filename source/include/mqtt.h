@@ -41,7 +41,7 @@ void subscribeToTopics();
 void subscribeUpdateFirmware();
 const char* getSpecificDeviceIdTopic(const char* lastTopic);
 
-JsonDocument circularBufferToJson(CircularBuffer<data::PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &buffer);
+JsonDocument circularBufferToJson(CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &buffer);
 
 String getPublicIp();
 

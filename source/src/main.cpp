@@ -32,7 +32,7 @@ GeneralConfiguration generalConfiguration;
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient clientMqtt(net);
 
-CircularBuffer<data::PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> payloadMeter;
+CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> payloadMeter;
 
 ModbusTcp modbusTcp(
   MODBUS_TCP_PORT, 
@@ -203,7 +203,7 @@ void loop() {
     
     printMeterValues(ade7953.meterValues[previousChannel], ade7953.channelData[previousChannel].label.c_str());
 
-    payloadMeter.push(data::PayloadMeter(
+    payloadMeter.push(PayloadMeter(
       previousChannel,
       customTime.getUnixTime(),
       ade7953.meterValues[previousChannel].activePower,
