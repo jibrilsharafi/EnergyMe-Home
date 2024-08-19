@@ -53,7 +53,7 @@ void _setHtmlPages() {
 
     server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get calibration page", "customserver::_setHtmlPages::/calibration", LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", calibration_html);
+        request->send_P(200, "text/html", CALIBRATION_HTML);
     });
 
     server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -88,14 +88,9 @@ void _setHtmlPages() {
     });
 
     // Other
-    server.on("/images/favicon.png", HTTP_GET, [](AsyncWebServerRequest *request) {
-        _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.ico", LogLevel::DEBUG, request);
-        request->send(SPIFFS, "/images/favicon.png", "image/png");
-    });
-
     server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.ico", LogLevel::DEBUG, request);
-        request->send(SPIFFS, "/images/favicon.png", "image/png");
+        request->send_P(200, "image/x-icon", favicon_ico);
     });
 }
 
@@ -218,7 +213,7 @@ void _setRestApi() {
         request->send(response);
     });
 
-    server.on("/rest/set-channel", HTTP_POST, [](AsyncWebServerRequest *request) {
+    server.on("/rest/set-channel", HTTP_POST, [](AsyncWebServerRequest *request) { // TODO: make evertything JSON for coherence
         _serverLog(
             "Request to set channel data from REST API",
             "customserver::_setRestApi::/rest/set-channel",
@@ -233,23 +228,23 @@ void _setRestApi() {
             bool _active = request->getParam("active", false)->value().equalsIgnoreCase("true");
             bool _reverse = request->getParam("reverse", false)->value().equalsIgnoreCase("true");
 
-            if (_index >= 0 && _index <= MULTIPLEXER_CHANNEL_COUNT) {
-                ade7953.channelData[_index].label = _label;
-                ade7953.channelData[_index].calibrationValues.label = _calibration;
-                ade7953.channelData[_index].active = _active;
-                ade7953.channelData[_index].reverse = _reverse;
-
-                ade7953.updateDataChannel();
-                ade7953.saveChannelDataToSpiffs();
-
-                publishChannel();
-
-                AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Channel data set\"}");
-                request->send(response);
-            } else {
+            if (_index < 0 && _index > MULTIPLEXER_CHANNEL_COUNT) {
                 AsyncWebServerResponse *response = request->beginResponse(400, "text/plain", "Channel index out of range");
                 request->send(response);
             }
+
+            ade7953.channelData[_index].label = _label;
+            ade7953.channelData[_index].active = _active;
+            ade7953.channelData[_index].reverse = _reverse;
+            ade7953.channelData[_index].calibrationValues.label = _calibration;
+
+            ade7953.updateDataChannel();
+            ade7953.saveChannelDataToSpiffs();
+
+            publishChannel();
+
+            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Channel data set\"}");
+            request->send(response);
         } else {
             AsyncWebServerResponse *response = request->beginResponse(400, "text/plain", "Missing parameter");
             request->send(response);
@@ -268,6 +263,7 @@ void _setRestApi() {
 
     server.on("/rest/calibration-reset", HTTP_POST, [&](AsyncWebServerRequest *request) {
         _serverLog("Request to reset calibration values from REST API", "customserver::_setRestApi::/rest/calibration-reset", LogLevel::WARNING, request);
+        
         ade7953.setDefaultCalibrationValues();
         ade7953.setDefaultChannelData();
 
@@ -484,9 +480,8 @@ void _setRestApi() {
 
             JsonDocument _jsonDocument;
             deserializeJson(_jsonDocument, data);
-            JsonArray jsonArray = _jsonDocument.as<JsonArray>();
 
-            ade7953.setCalibrationValues(ade7953.parseJsonCalibrationValues(jsonArray));
+            ade7953.setCalibrationValues(ade7953.parseJsonCalibrationValues(_jsonDocument));
             ade7953.updateDataChannel();
             
             AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Calibration values set\"}");
@@ -509,9 +504,10 @@ void _setRestApi() {
             JsonDocument _jsonDocument;
             deserializeJson(_jsonDocument, data);
 
+            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Configuration updated\"}");
+
             setGeneralConfiguration(jsonToGeneralConfiguration(_jsonDocument));
 
-            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Configuration updated\"}");
             request->send(response);
 
         } else {

@@ -10,7 +10,7 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
 
-    <link rel="icon" type="image/png" href="/images/favicon.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
 
     <title>Channel</title>
     <style>
@@ -79,8 +79,8 @@
             var box = document.createElement('div');
             box.className = 'section-box';
             box.style.textAlign = 'center';
-            var calibrationOptions = calibrationData.map(calibration =>
-                `<option value="${calibration.label}" ${calibration.label == channel.calibration.label ? 'selected' : ''}>${calibration.label}</option>`
+            var calibrationOptions = Object.keys(calibrationData).map(key =>
+                `<option value="${key}" ${key == channel.calibrationLabel ? 'selected' : ''}>${key}</option>`
             ).join('');
             box.innerHTML = `
                     <label>

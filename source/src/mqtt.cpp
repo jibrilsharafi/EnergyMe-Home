@@ -52,7 +52,7 @@ bool setupMqtt() {
 #else
 
 bool setupMqtt() {
-    logger.debug("Secrets not available. MQTT setup failed.", "mqtt::setupMqtt", CUSTOM_LOG_LEVEL_ERROR);
+    logger.debug("Secrets not available. MQTT setup failed.", "mqtt::setupMqtt");
     return false;
 }
 
@@ -61,8 +61,9 @@ bool setupMqtt() {
 #ifdef ENERGYME_HOME_SECRETS_H
 
 void mqttLoop() {
-    if (!generalConfiguration.isCloudServicesEnabled) { //TODO: if this gets disabled, just restart the ESP32
+    if (!generalConfiguration.isCloudServicesEnabled) {
         logger.verbose("Cloud services not enabled. Skipping...", "mqtt::mqttLoop");
+        return;
     }
 
     if ((millis() - lastMillisMqttLoop) > MQTT_LOOP_INTERVAL) {
@@ -101,7 +102,7 @@ void mqttLoop() {
 #else
 
 void mqttLoop() {
-    logger.debug("Secrets not available. MQTT loop failed", "mqtt::mqttLoop", CUSTOM_LOG_LEVEL_VERBOSE);
+    logger.debug("Secrets not available. MQTT loop failed", "mqtt::mqttLoop");
 }
 
 #endif
@@ -359,7 +360,7 @@ void subscribeCallback(char* topic, byte* payload, unsigned int length) {
 void subscribeToTopics() {
     logger.debug("Subscribing to topics...", "mqtt::subscribeToTopics");
 
-    subscribeUpdateFirmware(); //TODO: subscribe to the retained message, so that the device always gets the latest firmware update info
+    subscribeUpdateFirmware();
 
     logger.debug("Subscribed to topics", "mqtt::subscribeToTopics");
 }

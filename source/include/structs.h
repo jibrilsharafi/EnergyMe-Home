@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 
+//TODO: many of these structs could be improved, to better respect the JSON format of the files later saved
+
 struct CalibrationValues{
     String label;
     float vLsb;
@@ -37,8 +39,13 @@ struct ChannelData {
 };
 
 struct Ade7953Configuration {
-  long linecyc;
-  struct Calibration {
+    long expectedApNoLoad;
+    long xNoLoad;
+    long disNoLoad;
+    long lcycMode;
+    long linecyc;
+    long pga;
+    long config;
     long aWGain;
     long aWattOs;
     long aVarGain;
@@ -51,10 +58,10 @@ struct Ade7953Configuration {
     long bIRmsOs;
     long phCalA;
     long phCalB;
-  } calibration;
 };
 
 struct GeneralConfiguration {
+  int sampleCycles;
   bool isCloudServicesEnabled;
   int gmtOffset;
   int dstOffset;

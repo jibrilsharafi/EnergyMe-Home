@@ -1,0 +1,104 @@
+{
+    "0" : {
+        "active": true,
+        "reverse": false,
+        "label": "Channel 0",
+        "calibrationLabel": "SCT-013-50A-1V"
+    },
+    "1" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 1",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "2" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 2",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "3" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 3",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "4" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 4",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "5" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 5",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "6" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 6",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "7" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 7",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "8" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 8",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "9" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 9",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "10" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 10",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "11" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 11",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "12" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 12",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "13" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 13",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "14" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 14",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "15" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 15",
+        "calibrationLabel": "SCT-013-30A-1V"
+    },
+    "16" : {
+        "active": false,
+        "reverse": false,
+        "label": "Channel 16",
+        "calibrationLabel": "SCT-013-30A-1V"
+    }
+}

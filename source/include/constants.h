@@ -23,12 +23,12 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "04"
-#define FIRMWARE_BUILD_VERSION_PATCH "18"
+#define FIRMWARE_BUILD_VERSION_PATCH "19"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
 #define FIRMWARE_BUILD_DATE_MONTH "08"
-#define FIRMWARE_BUILD_DATE_DAY "18"
+#define FIRMWARE_BUILD_DATE_DAY "19"
 #define FIRMWARE_BUILD_DATE FIRMWARE_BUILD_DATE_YEAR "-" FIRMWARE_BUILD_DATE_MONTH "-" FIRMWARE_BUILD_DATE_DAY
 
 // Measurements
@@ -49,6 +49,7 @@
 
 // Multiplexer
 #define MULTIPLEXER_CHANNEL_COUNT 16 // This cannot be defined as a constant because it is used for array initialization
+#define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // The number of channels being 1 (general) + 16 (multiplexer)
 
 // MQTT Payload
 #define MAX_NUMBER_POINTS_PAYLOAD 30 // The maximum number of points that can be sent in a single payload. 60 is about 5kB
@@ -65,15 +66,13 @@
 // --------------------
 
 // File path
-extern const char* METADATA_JSON_PATH;
+extern const char* FIRST_SETUP_PATH;
 extern const char* GENERAL_CONFIGURATION_JSON_PATH;
 extern const char* CONFIGURATION_ADE7953_JSON_PATH;
 extern const char* CALIBRATION_JSON_PATH;
 extern const char* CHANNEL_DATA_JSON_PATH;
-extern const char* LOGGER_JSON_PATH;
 extern const char* ENERGY_JSON_PATH;
 extern const char* DAILY_ENERGY_JSON_PATH;
-extern const char* FACTORY_PATH;
 extern const char* FIRMWARE_UPDATE_INFO_PATH;
 extern const char* FIRMWARE_UPDATE_STATUS_PATH;
 
@@ -133,6 +132,12 @@ extern const int ENERGY_SAVE_INTERVAL; // In seconds
 extern const int MINIMUM_FREE_HEAP_SIZE; // Below this value, the ESP32 will restart
 extern const int MINIMUM_FREE_SPIFFS_SIZE; // Below this value, the ESP32 will clear the logs
 
+// Channel info
+extern const char* DEFAULT_CHANNEL_LABEL;
+extern const bool DEFAULT_CHANNEL_ACTIVE;
+extern const bool DEFAULT_CHANNEL_REVERSE;
+extern const char* DEFAULT_CHANNEL_CALIBRATION;
+
 // Multiplexer
 // --------------------
 extern const int MULTIPLEXER_S0_PIN;
@@ -151,34 +156,31 @@ extern const int MOSI_PIN;
 extern const int ADE7953_RESET_PIN;
 
 // Default values for ADE7953 registers
-extern const int DEFAULT_EXPECTED_AP_NOLOAD_REGISTER;
-extern const int DEFAULT_X_NOLOAD_REGISTER;
-extern const int DEFAULT_DISNOLOAD_REGISTER;
-extern const int DEFAULT_CONFIG_REGISTER;
-extern const int DEFAULT_LCYCMODE_REGISTER;
-extern const int DEFAULT_LINECYC_REGISTER;
-extern const int DEFAULT_PGA_REGISTER;
-extern const int DEFAULT_CONFIG_REGISTER;
-
-// Default calibration values
-extern const int DEFAULT_AWGAIN;
-extern const int DEFAULT_AWATTOS;
-extern const int DEFAULT_AVARGAIN;
-extern const int DEFAULT_AVAROS;
-extern const int DEFAULT_AVAGAIN;
-extern const int DEFAULT_AVAOS;
-extern const int DEFAULT_AIGAIN;
-extern const int DEFAULT_AIRMSOS;
-extern const int DEFAULT_BIGAIN;
-extern const int DEFAULT_BIRMSOS;
-extern const int DEFAULT_PHCALA;
-extern const int DEFAULT_PHCALB;
+extern const long DEFAULT_EXPECTED_AP_NOLOAD_REGISTER;
+extern const long DEFAULT_X_NOLOAD_REGISTER;
+extern const long DEFAULT_DISNOLOAD_REGISTER;
+extern const long DEFAULT_LCYCMODE_REGISTER;
+extern const long DEFAULT_LINECYC_REGISTER;
+extern const long DEFAULT_PGA_REGISTER;
+extern const long DEFAULT_CONFIG_REGISTER;
+extern const long DEFAULT_AWGAIN;
+extern const long DEFAULT_AWATTOS;
+extern const long DEFAULT_AVARGAIN;
+extern const long DEFAULT_AVAROS;
+extern const long DEFAULT_AVAGAIN;
+extern const long DEFAULT_AVAOS;
+extern const long DEFAULT_AIGAIN;
+extern const long DEFAULT_AIRMSOS;
+extern const long DEFAULT_BIGAIN;
+extern const long DEFAULT_BIRMSOS;
+extern const long DEFAULT_PHCALA;
+extern const long DEFAULT_PHCALB;
 
 // Fixed conversion values
 extern const float POWER_FACTOR_CONVERSION_FACTOR; // PF/LSB
 
-// Sample time
-extern const int SAMPLE_CYCLES;
+// Sample cycles
+extern const int DEFAULT_SAMPLE_CYCLES;
 
 // Validate values
 extern const float VALIDATE_VOLTAGE_MIN;

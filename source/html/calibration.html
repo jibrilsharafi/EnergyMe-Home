@@ -10,7 +10,7 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
 
-    <link rel="icon" type="image/png" href="/images/favicon.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
 
     <title>Calibration</title>
     <style>
@@ -44,7 +44,7 @@
         <h1>Calibration</h1>
         <select id="calibrationDropdown" onchange="fillCalibrationBox()"></select>
         <p id="dropdownError" style="color: red; display: none;"></p>
-        <button id="addButton" class="buttonForm" onclick="addNewChannel()">Add</button>
+        <button id="addButton" class="buttonForm" onclick="addNewCalibration()">Add</button>
         <form id="calibrationForm">
             <h3>Values</h3>
             <p><span class="list-key">Voltage:</span> <input id="vLsb" name="vLsb" type="number" required> <span class="list-unit">V/LSB</span></p>
@@ -115,10 +115,12 @@
 
         function populateDropdown() {
             var dropdown = document.getElementById('calibrationDropdown');
-            calibrationData.forEach((data, index) => {
+            dropdown.innerHTML = ''; // Clear existing options
+
+            Object.keys(calibrationData).forEach((key, index) => {
                 var option = document.createElement('option');
-                option.text = data.label;
-                option.value = data.label;
+                option.text = key;
+                option.value = key;
                 dropdown.add(option, index);
             });
             dropdown.selectedIndex = 0;
@@ -126,16 +128,18 @@
         }
 
         function fillCalibrationBox() {
-            var selectedCalibration = calibrationData.find(calibration => calibration.label == document.getElementById('calibrationDropdown').value);
+            var selectedKey = document.getElementById('calibrationDropdown').value;
+            var selectedCalibration = calibrationData[selectedKey];
+            
             if (selectedCalibration) {
-                document.getElementById('vLsb').value = selectedCalibration.calibrationValues.vLsb;
-                document.getElementById('aLsb').value = selectedCalibration.calibrationValues.aLsb;
-                document.getElementById('wLsb').value = selectedCalibration.calibrationValues.wLsb;
-                document.getElementById('varLsb').value = selectedCalibration.calibrationValues.varLsb;
-                document.getElementById('vaLsb').value = selectedCalibration.calibrationValues.vaLsb;
-                document.getElementById('whLsb').value = selectedCalibration.calibrationValues.whLsb;
-                document.getElementById('varhLsb').value = selectedCalibration.calibrationValues.varhLsb;
-                document.getElementById('vahLsb').value = selectedCalibration.calibrationValues.vahLsb;
+                document.getElementById('vLsb').value = selectedCalibration.vLsb;
+                document.getElementById('aLsb').value = selectedCalibration.aLsb;
+                document.getElementById('wLsb').value = selectedCalibration.wLsb;
+                document.getElementById('varLsb').value = selectedCalibration.varLsb;
+                document.getElementById('vaLsb').value = selectedCalibration.vaLsb;
+                document.getElementById('whLsb').value = selectedCalibration.whLsb;
+                document.getElementById('varhLsb').value = selectedCalibration.varhLsb;
+                document.getElementById('vahLsb').value = selectedCalibration.vahLsb;
             } else {
                 document.getElementById('dropdownError').innerText = "Error: Could not find calibration data";
                 document.getElementById('dropdownError').style.display = "block";
@@ -185,22 +189,23 @@
             });
         }
 
-        function submitCalibrationData() {            
-            var calibrationData = [
-                {
-                    "label": document.getElementById('calibrationDropdown').value,
-                    "calibrationValues": {
-                        "vLsb": parseFloat(document.getElementById('vLsb').value),
-                        "aLsb": parseFloat(document.getElementById('aLsb').value),
-                        "wLsb": parseFloat(document.getElementById('wLsb').value),
-                        "varLsb": parseFloat(document.getElementById('varLsb').value),
-                        "vaLsb": parseFloat(document.getElementById('vaLsb').value),
-                        "whLsb": parseFloat(document.getElementById('whLsb').value),
-                        "varhLsb": parseFloat(document.getElementById('varhLsb').value),
-                        "vahLsb": parseFloat(document.getElementById('vahLsb').value)
-                    }
+        function submitCalibrationData() {         
+            var label = document.getElementById('calibrationDropdown').value;   
+
+            var calibrationDataModified = {
+                [label]: {
+                    vLsb: parseFloat(document.getElementById('vLsb').value),
+                    aLsb: parseFloat(document.getElementById('aLsb').value),
+                    wLsb: parseFloat(document.getElementById('wLsb').value),
+                    varLsb: parseFloat(document.getElementById('varLsb').value),
+                    vaLsb: parseFloat(document.getElementById('vaLsb').value),
+                    whLsb: parseFloat(document.getElementById('whLsb').value),
+                    varhLsb: parseFloat(document.getElementById('varhLsb').value),
+                    vahLsb: parseFloat(document.getElementById('vahLsb').value)
                 }
-            ];
+            }
+
+            calibrationData[label] = calibrationDataModified[label];
         
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function() {
@@ -222,32 +227,38 @@
             }, 3000);
         }
 
-        function addNewChannel() {
-            var newChannelName = prompt("Please enter the name of the new channel:");
-            if (newChannelName) {
-                var selectedCalibration = calibrationData.find(calibration => calibration.label == document.getElementById('calibrationDropdown').value);
-                if (selectedCalibration) {
-                    var newCalibrationData = [{
-                        "label": newChannelName,
-                        "calibrationValues": selectedCalibration.calibrationValues
-                    }];
-
-                    var xhttp = new XMLHttpRequest();
-                    xhttp.onreadystatechange = function() {
-                        if (this.readyState == 4 && this.status == 200) {
-                            console.log(JSON.parse(this.responseText));
-                            location.reload(); // reload the page
-                        } else if (this.readyState == 4) {
-                            console.log("Error submitting new channel data");
-                        }
-                    };
-                    xhttp.open("POST", '/rest/set-calibration', true);
-                    xhttp.setRequestHeader("Content-Type", "application/json");
-                    xhttp.send(JSON.stringify(newCalibrationData));
-                    
-                } else {
-                    console.error("Error: Could not find calibration data for selected channel");
+        function addNewCalibration() {
+            var newCalibrationName = prompt("Please enter the name of the new calibration:");
+            
+            if (newCalibrationName) {
+                var selectedCalibration = calibrationData[document.getElementById('calibrationDropdown').value];
+                if (!selectedCalibration) {
+                    console.error("Error: Could not find calibration data for selected calibration");
+                    return;
                 }
+
+                var i = 1;
+                while (calibrationData[newCalibrationName]) {
+                    newCalibrationName = newCalibrationName + "_" + i;
+                    i++;
+                }
+
+                calibrationData[newCalibrationName] = selectedCalibration;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.onreadystatechange = function() {
+                    if (this.readyState == 4 && this.status == 200) {
+                        console.log(JSON.parse(this.responseText));
+                        setTimeout(function () {
+                            location.reload();
+                        }, 500);
+                    } else if (this.readyState == 4) {
+                        console.log("Error submitting new channel data");
+                    }
+                };
+                xhttp.open("POST", '/rest/set-calibration', true);
+                xhttp.setRequestHeader("Content-Type", "application/json");
+                xhttp.send(JSON.stringify(calibrationData));
             }
         }
 

@@ -74,10 +74,15 @@ JsonDocument deserializeJsonFromSpiffs(const char* path){
         
         return JsonDocument();
     }
+
+    if (_jsonDocument.isNull() || _jsonDocument.size() == 0){
+        logger.warning("%s is empty", "utils::deserializeJsonFromSpiffs", path);
+    }
     
     String _jsonString;
     serializeJson(_jsonDocument, _jsonString);
-    logger.debug("JSON deserialized to SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
+    logger.debug("JSON deserialized from SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
+
     return _jsonDocument;
 }
 
@@ -93,14 +98,170 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument _jsonDocument){
     serializeJson(_jsonDocument, _file);
     _file.close();
 
+    if (_jsonDocument.isNull()){
+        logger.warning("%s is null", "utils::serializeJsonToSpiffs", path);
+    }
+
     String _jsonString;
     serializeJson(_jsonDocument, _jsonString);
     logger.debug("JSON serialized to SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
+
     return true;
 }
 
-void restartEsp32(const char* functionName, const char* reason) {
+void createDefaultFiles() {
+    logger.debug("Creating default files...", "utils::createDefaultFiles");
 
+    SPIFFS.format();
+
+    createDefaultConfigurationAde7953File();
+    createDefaultGeneralConfigurationFile();
+    createDefaultEnergyFile();
+    createDefaultDailyEnergyFile();
+    createDefaultFirmwareUpdateInfoFile();
+    createDefaultFirmwareUpdateStatusFile();
+
+    createFirstSetupFile();
+
+    logger.debug("Default files created", "utils::createDefaultFiles");
+}
+
+void createDefaultConfigurationAde7953File() {
+    logger.debug("Creating default %s...", "utils::createDefaultAde7953File", CONFIGURATION_ADE7953_JSON_PATH);
+
+    JsonDocument _jsonDocument;
+
+    _jsonDocument["expectedApNoLoad"] = DEFAULT_EXPECTED_AP_NOLOAD_REGISTER;
+    _jsonDocument["xNoLoad"] = DEFAULT_X_NOLOAD_REGISTER;
+    _jsonDocument["disNoLoad"] = DEFAULT_DISNOLOAD_REGISTER;
+    _jsonDocument["lcycMode"] = DEFAULT_LCYCMODE_REGISTER;
+    _jsonDocument["linecyc"] = DEFAULT_LINECYC_REGISTER;
+    _jsonDocument["pga"] = DEFAULT_PGA_REGISTER;
+    _jsonDocument["config"] = DEFAULT_CONFIG_REGISTER;
+    _jsonDocument["aWGain"] = DEFAULT_AWGAIN;
+    _jsonDocument["aWattOs"] = DEFAULT_AWATTOS;
+    _jsonDocument["aVarGain"] = DEFAULT_AVARGAIN;
+    _jsonDocument["aVarOs"] = DEFAULT_AVAROS;
+    _jsonDocument["aVaGain"] = DEFAULT_AVAGAIN;
+    _jsonDocument["aVaOs"] = DEFAULT_AVAOS;
+    _jsonDocument["aIGain"] = DEFAULT_AIGAIN;
+    _jsonDocument["aIRmsOs"] = DEFAULT_AIRMSOS;
+    _jsonDocument["bIGain"] = DEFAULT_BIGAIN;
+    _jsonDocument["bIRmsOs"] = DEFAULT_BIRMSOS;
+    _jsonDocument["phCalA"] = DEFAULT_PHCALA;
+    _jsonDocument["phCalB"] = DEFAULT_PHCALB;
+
+    serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
+
+    logger.debug("Default %s created", "utils::createDefaultAde7953File", CONFIGURATION_ADE7953_JSON_PATH);
+}
+
+void createDefaultGeneralConfigurationFile() {
+    logger.debug("Creating default general %s...", "utils::createDefaultGeneralConfigurationFile", GENERAL_CONFIGURATION_JSON_PATH);
+
+    JsonDocument _jsonDocument;
+
+    _jsonDocument["sampleCycles"] = DEFAULT_SAMPLE_CYCLES;
+    _jsonDocument["isCloudServicesEnabled"] = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
+    _jsonDocument["gmtOffset"] = DEFAULT_GMT_OFFSET;
+    _jsonDocument["dstOffset"] = DEFAULT_DST_OFFSET;
+    _jsonDocument["ledBrightness"] = DEFAULT_LED_BRIGHTNESS;
+
+    serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
+
+    logger.debug("Default %s created", "utils::createDefaultGeneralConfigurationFile", GENERAL_CONFIGURATION_JSON_PATH);
+}
+
+void createDefaultEnergyFile() {
+    logger.debug("Creating default %s...", "utils::createDefaultEnergyFile", ENERGY_JSON_PATH);
+
+    JsonDocument _jsonDocument;
+
+    for (int i = 0; i < CHANNEL_COUNT; i++) { // TODO: change to "0", "1", ...
+        _jsonDocument[i]["activeEnergy"] = 0;
+        _jsonDocument[i]["reactiveEnergy"] = 0;
+        _jsonDocument[i]["apparentEnergy"] = 0;
+    }
+
+    serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument);
+
+    logger.debug("Default %s created", "utils::createDefaultEnergyFile", ENERGY_JSON_PATH);
+}
+
+void createDefaultDailyEnergyFile() {
+    logger.debug("Creating default %s...", "utils::createDefaultDailyEnergyFile", DAILY_ENERGY_JSON_PATH);
+
+    JsonDocument _jsonDocument;
+    _jsonDocument.to<JsonObject>(); // Empty JSON
+
+    serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument);
+
+    logger.debug("Default %s created", "utils::createDefaultDailyEnergyFile", DAILY_ENERGY_JSON_PATH);
+}
+
+void createDefaultFirmwareUpdateInfoFile() {
+    logger.debug("Creating default %s...", "utils::createDefaultFirmwareUpdateInfoFile", FIRMWARE_UPDATE_INFO_PATH);
+
+    JsonDocument _jsonDocument;
+
+    serializeJsonToSpiffs(FIRMWARE_UPDATE_INFO_PATH, _jsonDocument);
+
+    logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateInfoFile", FIRMWARE_UPDATE_INFO_PATH);
+}
+
+void createDefaultFirmwareUpdateStatusFile() {
+    logger.debug("Creating default %s...", "utils::createDefaultFirmwareUpdateStatusFile", FIRMWARE_UPDATE_STATUS_PATH);
+
+    JsonDocument _jsonDocument;
+
+    serializeJsonToSpiffs(FIRMWARE_UPDATE_STATUS_PATH, _jsonDocument);
+
+    logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateStatusFile", FIRMWARE_UPDATE_STATUS_PATH);
+}
+
+void createFirstSetupFile() {
+    logger.debug("Creating %s...", "utils::createFirstSetupFile", FIRST_SETUP_PATH);
+
+    JsonDocument _jsonDocument;
+
+    _jsonDocument["isFirstTime"] = false;
+    _jsonDocument["timestampFirstTime"] = customTime.getTimestamp();
+
+    serializeJsonToSpiffs(FIRST_SETUP_PATH, _jsonDocument);
+
+    logger.debug("%s created", "utils::createFirstSetupFile", FIRST_SETUP_PATH);
+}
+
+bool checkIfFirstSetup() {
+    logger.debug("Checking if first setup...", "main::checkIfFirstSetup");
+
+    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(FIRST_SETUP_PATH);
+
+    if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
+        logger.debug("First setup file is empty", "main::checkIfFirstSetup");
+        return true;
+    }
+
+    return _jsonDocument["isFirstTime"].as<bool>();
+}
+
+bool checkAllFiles() {
+    logger.debug("Checking all files...", "main::checkAllFiles");
+
+    if (!SPIFFS.exists(FIRST_SETUP_PATH)) return true;
+    if (!SPIFFS.exists(GENERAL_CONFIGURATION_JSON_PATH)) return true;
+    if (!SPIFFS.exists(CONFIGURATION_ADE7953_JSON_PATH)) return true;
+    if (!SPIFFS.exists(CALIBRATION_JSON_PATH)) return true;
+    if (!SPIFFS.exists(CHANNEL_DATA_JSON_PATH)) return true;
+    if (!SPIFFS.exists(ENERGY_JSON_PATH)) return true;
+    if (!SPIFFS.exists(DAILY_ENERGY_JSON_PATH)) return true;
+    if (!SPIFFS.exists(FIRMWARE_UPDATE_INFO_PATH)) return true;
+    if (!SPIFFS.exists(FIRMWARE_UPDATE_STATUS_PATH)) return true;
+
+    return false;
+}
+
+void restartEsp32(const char* functionName, const char* reason) { //TODO: modify this to set a flag and reboot in the main loop
     led.block();
     led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
     led.setRed(true);
@@ -108,12 +269,16 @@ void restartEsp32(const char* functionName, const char* reason) {
     publishMeter();
     
     if (functionName != "utils::factoryReset") {
+        ade7953.saveDailyEnergyToSpiffs();
         ade7953.saveEnergyToSpiffs();
     }
     logger.fatal("Restarting ESP32 from function %s. Reason: %s", "main::restartEsp32", functionName, reason);
 
     ESP.restart();
 }
+
+// Print functions
+// -----------------------------
 
 void printMeterValues(MeterValues meterValues, const char* channelLabel) {
     logger.verbose(
@@ -147,37 +312,13 @@ void printDeviceStatus()
     );
 }
 
-bool checkIfFirstSetup() {
-    logger.debug("Checking if first setup...", "main::checkIfFirstSetup");
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(METADATA_JSON_PATH);
-    if (_jsonDocument.isNull()){
-        logger.error("Failed to open metadata.json", "main::checkIfFirstSetup");
-        return false;
-    }
-
-    return _jsonDocument["setup"]["isFirstTime"].as<bool>();
-}
-
-void logFirstSetupComplete() {
-    logger.debug("Logging first setup complete...", "main::logFirstSetupComplete");
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(METADATA_JSON_PATH);
-    if (_jsonDocument.isNull()){
-        logger.error("Failed to open metadata.json", "main::logFirstSetupComplete");
-        return;
-    }
-
-    _jsonDocument["setup"]["isFirstTime"] = false;
-    _jsonDocument["setup"]["timestampFirstTime"] = customTime.getTimestamp();
-    serializeJsonToSpiffs(METADATA_JSON_PATH, _jsonDocument);
-    logger.debug("First setup complete", "main::logFirstSetupComplete");
-}
-
 // General configuration
 // -----------------------------
 
 void setDefaultGeneralConfiguration() {
     logger.debug("Setting default general configuration...", "utils::setDefaultGeneralConfiguration");
     
+    generalConfiguration.sampleCycles = DEFAULT_SAMPLE_CYCLES;
     generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
     generalConfiguration.gmtOffset = DEFAULT_GMT_OFFSET;
     generalConfiguration.dstOffset = DEFAULT_DST_OFFSET;
@@ -189,6 +330,7 @@ void setDefaultGeneralConfiguration() {
 void setGeneralConfiguration(GeneralConfiguration newGeneralConfiguration) {
     logger.debug("Setting general configuration...", "utils::setGeneralConfiguration");
 
+    GeneralConfiguration previousConfiguration = generalConfiguration;
     generalConfiguration = newGeneralConfiguration;
 
     applyGeneralConfiguration();
@@ -196,7 +338,17 @@ void setGeneralConfiguration(GeneralConfiguration newGeneralConfiguration) {
     saveGeneralConfigurationToSpiffs();
     publishGeneralConfiguration();
 
+    if (checkIfRebootRequiredGeneralConfiguration(previousConfiguration, newGeneralConfiguration)) {
+        restartEsp32("utils::setGeneralConfiguration", "General configuration set with reboot required");
+    }
+
     logger.debug("General configuration set", "utils::setGeneralConfiguration");
+}
+
+bool checkIfRebootRequiredGeneralConfiguration(GeneralConfiguration previousConfiguration, GeneralConfiguration newConfiguration) {
+    if (previousConfiguration.isCloudServicesEnabled != newConfiguration.isCloudServicesEnabled) return true;
+
+    return false;
 }
 
 bool setGeneralConfigurationFromSpiffs() {
@@ -229,6 +381,7 @@ bool saveGeneralConfigurationToSpiffs() {
 JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguration) {
     JsonDocument _jsonDocument;
     
+    _jsonDocument["sampleCycles"] = generalConfiguration.sampleCycles;
     _jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
     _jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
     _jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
@@ -240,6 +393,7 @@ JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguratio
 GeneralConfiguration jsonToGeneralConfiguration(JsonDocument _jsonDocument) {
     GeneralConfiguration _generalConfiguration;
     
+    _generalConfiguration.sampleCycles = _jsonDocument["sampleCycles"] ? _jsonDocument["sampleCycles"].as<int>() : DEFAULT_SAMPLE_CYCLES;
     _generalConfiguration.isCloudServicesEnabled = _jsonDocument["isCloudServicesEnabled"] ? _jsonDocument["isCloudServicesEnabled"].as<bool>() : DEFAULT_IS_CLOUD_SERVICES_ENABLED;
     _generalConfiguration.gmtOffset = _jsonDocument["gmtOffset"] ? _jsonDocument["gmtOffset"].as<int>() : DEFAULT_GMT_OFFSET;
     _generalConfiguration.dstOffset = _jsonDocument["dstOffset"] ? _jsonDocument["dstOffset"].as<int>() : DEFAULT_DST_OFFSET;
@@ -288,6 +442,9 @@ JsonDocument getPublicLocation() {
 
     return _jsonDocument;
 }
+
+// Helper functions
+// -----------------------------
 
 std::pair<int, int> getPublicTimezone() {
     int _gmtOffset;
@@ -349,41 +506,9 @@ void updateTimezone() {
 void factoryReset() {
     logger.fatal("Factory reset requested", "utils::factoryReset");
 
-    File _file;
+    createDefaultFiles();
 
-    std::vector<String> _files = {
-        METADATA_JSON_PATH,
-        GENERAL_CONFIGURATION_JSON_PATH,
-        CONFIGURATION_ADE7953_JSON_PATH,
-        CALIBRATION_JSON_PATH,
-        CHANNEL_DATA_JSON_PATH,
-        LOGGER_JSON_PATH,
-        ENERGY_JSON_PATH,
-        DAILY_ENERGY_JSON_PATH,
-        LOG_PATH
-    };
-
-    for (String _fileName : _files) {
-        _file = SPIFFS.open(_fileName, FILE_READ);
-        if (!_file) {
-            logger.error("Failed to open file %s", "utils::factoryReset", _fileName.c_str());
-            return;
-        }
-
-        SPIFFS.rename(_fileName, ("/old" + String(_fileName)).c_str());
-        if (!_duplicateFile((String(FACTORY_PATH) + String(_fileName)).c_str(), _fileName.c_str())) {
-
-            logger.error(
-                "Failed to duplicate file %s", 
-                "utils::factoryReset", 
-                _fileName.c_str()
-            );
-            return;
-        }
-    }
-
-    logger.fatal("Factory reset completed. We are back to the good old days. Now rebooting...", "utils::factoryReset");
-    restartEsp32("utils::factoryReset", "Factory reset");
+    restartEsp32("utils::factoryReset", "Factory reset completed. We are back to the good old days");
 }
 
 bool _duplicateFile(const char* sourcePath, const char* destinationPath) {

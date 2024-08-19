@@ -82,40 +82,41 @@ Ade7953 ade7953(
 void setup() {
   Serial.begin(SERIAL_BAUDRATE);
 
-  log_i("Booting...");
-  log_i("EnergyMe - Home");
+  Serial.println("Booting...");
+  Serial.println("EnergyMe - Home");
 
-  log_i("Build version: %s", FIRMWARE_BUILD_VERSION);
-  log_i("Build date: %s", FIRMWARE_BUILD_DATE);
+  Serial.printf("Build version: %s\n", FIRMWARE_BUILD_VERSION);
+  Serial.printf("Build date: %s\n", FIRMWARE_BUILD_DATE);
 
-  log_i("Setting up LED...");
+  Serial.println("Setting up LED...");
   led.begin();
-  log_i("LED setup done");
+  Serial.println("LED setup done");
 
   led.setCyan();
 
-  log_i("Setting up SPIFFS...");
+  Serial.println("Setting up SPIFFS...");
   if (!SPIFFS.begin(true)) {
-    log_e("An Error has occurred while mounting SPIFFS");
-    
-    // TODO: add here a function to check the presence of all the required files in the SPIFFS
+    Serial.println("An Error has occurred while mounting SPIFFS");
   } else {
-    log_i("SPIFFS setup done");
+    Serial.println("SPIFFS setup done");
   }
   
   // Nothing is logged before this point as the logger is not yet initialized
-  log_i("Setting up logger...");
+  Serial.println("Setting up logger...");
   logger.begin();
-  log_i("Logger setup done");
+  logger.setPrintLevel(LogLevel::DEBUG);
+  logger.setMaxLogLines(LOG_FILE_MAX_LENGTH);
+  logger.info("Logger setup done", "main::setup");
   
   logger.info("Booting...", "main::setup");  
   logger.info("EnergyMe - Home", "main::setup");
   logger.info("Build version: %s", "main::setup", FIRMWARE_BUILD_VERSION);
   logger.info("Build date: %s", "main::setup", FIRMWARE_BUILD_DATE);
   
-  isFirstSetup = checkIfFirstSetup();
-  if (isFirstSetup) {
-    logger.warning("First setup detected", "main::setup");
+  if (checkIfFirstSetup() || checkAllFiles()) {
+    logger.warning("First setup detected or not all files are present. Creating default files...", "main::setup");
+    createDefaultFiles();
+    logger.info("Default files created", "main::setup");
   }
 
   logger.info("Fetching configuration from SPIFFS...", "main::setup");
@@ -180,11 +181,6 @@ void setup() {
     }
   } else {
     logger.info("Cloud services not enabled", "main::setup");
-  }
-
-  if (isFirstSetup) {
-    logFirstSetupComplete();
-    logger.warning("First setup complete", "main::setup");
   }
 
   led.setGreen();

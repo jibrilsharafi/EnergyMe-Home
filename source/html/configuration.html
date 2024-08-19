@@ -10,7 +10,7 @@
         <link rel="stylesheet" type="text/css" href="/css/section.css">
         <link rel="stylesheet" type="text/css" href="/css/typography.css">
 
-        <link rel="icon" type="image/png" href="/images/favicon.png">
+        <link rel="icon" type="image/x-icon" href="/favicon.ico">
 
         <title>Configuration</title>
         <style>
@@ -197,10 +197,10 @@
                 xhttp.onreadystatechange = function () {
                     if (this.readyState == 4) {
                         if (this.status == 200) {
-                            document.getElementById("factoryReset").innerHTML = "Reset successfull! You will be redirected to the home page in a few seconds...";
+                            document.getElementById("factoryReset").innerHTML = "Reset successful! You will be redirected to the home page in 15-30 seconds.";
                             setTimeout(function () {
                                 window.location.href = "/";
-                            }, 3000);
+                            }, 5000);
                         } else {
                             alert("Error resetting to factory settings. Response: " + this.responseText);
                         }

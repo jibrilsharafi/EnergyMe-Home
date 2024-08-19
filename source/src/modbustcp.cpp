@@ -11,7 +11,7 @@ ModbusTcp::ModbusTcp(int port, int serverId, int maxClients, int timeout) {
     // Define the range of registers for the channels
     _lowerLimitChannelRegisters = 1000;
     _stepChannelRegisters = 100;
-    _upperLimitChannelRegisters = _lowerLimitChannelRegisters + (MULTIPLEXER_CHANNEL_COUNT + 1) * _stepChannelRegisters;
+    _upperLimitChannelRegisters = _lowerLimitChannelRegisters + (CHANNEL_COUNT) * _stepChannelRegisters;
 
     modbusTcpInstance = this;
 }

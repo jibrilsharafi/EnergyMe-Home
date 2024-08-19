@@ -46,7 +46,7 @@ public:
     void setChannelData(ChannelData* newChannelData);
     bool saveChannelDataToSpiffs();
     JsonDocument channelDataToJson();
-    void parseJsonChannelData(JsonDocument jsonDocument, ChannelData* channelData);
+    ChannelData* parseJsonChannelData(JsonDocument jsonDocument);
     void updateDataChannel();
     int findNextActiveChannel(int currentChannel);
     int getActiveChannelCount();
@@ -79,8 +79,8 @@ public:
 
     Ade7953Configuration configuration;
     std::vector<CalibrationValues> calibrationValues;
-    MeterValues meterValues[MULTIPLEXER_CHANNEL_COUNT+1];
-    ChannelData channelData[MULTIPLEXER_CHANNEL_COUNT+1];
+    MeterValues meterValues[CHANNEL_COUNT];
+    ChannelData channelData[CHANNEL_COUNT];
 
     bool isLinecycFinished();
 
