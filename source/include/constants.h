@@ -66,132 +66,130 @@
 // --------------------
 
 // File path
-extern const char* FIRST_SETUP_PATH;
-extern const char* GENERAL_CONFIGURATION_JSON_PATH;
-extern const char* CONFIGURATION_ADE7953_JSON_PATH;
-extern const char* CALIBRATION_JSON_PATH;
-extern const char* CHANNEL_DATA_JSON_PATH;
-extern const char* ENERGY_JSON_PATH;
-extern const char* DAILY_ENERGY_JSON_PATH;
-extern const char* FIRMWARE_UPDATE_INFO_PATH;
-extern const char* FIRMWARE_UPDATE_STATUS_PATH;
+const char* FIRST_SETUP_PATH = "/first-setup.json";
+const char* GENERAL_CONFIGURATION_JSON_PATH = "/config/general.json";
+const char* CONFIGURATION_ADE7953_JSON_PATH = "/config/ade7953.json";
+const char* CALIBRATION_JSON_PATH = "/config/calibration.json";
+const char* CHANNEL_DATA_JSON_PATH = "/config/channel.json";
+const char* ENERGY_JSON_PATH = "/energy.json";
+const char* DAILY_ENERGY_JSON_PATH = "/daily-energy.json";
+const char* FIRMWARE_UPDATE_INFO_PATH = "/fw-update-info.json";
+const char* FIRMWARE_UPDATE_STATUS_PATH = "/fw-update-status.json";
 
 // Serial
-extern const int SERIAL_BAUDRATE; // Fastest baudrate for ESP32
+const int SERIAL_BAUDRATE = 115200; // Most common baudrate for ESP32
 
 // Logger
-extern const char* LOG_PATH;
-extern const char* LOG_CONFIG_PATH;
-extern const char* LOG_TIMESTAMP_FORMAT;
-extern const int LOG_FILE_MAX_LENGTH;
-extern const LogLevel DEFAULT_LOG_PRINT_LEVEL;
-extern const LogLevel DEFAULT_LOG_SAVE_LEVEL;
+const char* LOG_PATH = "/AdvancedLogger/log.txt";
+const char* LOG_CONFIG_PATH = "/AdvancedLogger/config.txt";
+const char* LOG_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S";
+const int LOG_FILE_MAX_LENGTH = 1000; // In lines
 
 // Time
-extern const char* NTP_SERVER;
-extern const int TIME_SYNC_INTERVAL;
-extern const int DEFAULT_GMT_OFFSET;
-extern const int DEFAULT_DST_OFFSET;
-extern const char* TIMESTAMP_FORMAT;
+const char* NTP_SERVER = "pool.ntp.org";
+const int TIME_SYNC_INTERVAL = 3600; // Sync time every hour
+const int DEFAULT_GMT_OFFSET = 0;
+const int DEFAULT_DST_OFFSET = 0;
+const char* TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S";
 
 // LED
-extern const int LED_RED_PIN;
-extern const int LED_GREEN_PIN;
-extern const int LED_BLUE_PIN;
-extern const int DEFAULT_LED_BRIGHTNESS;
-extern const int LED_MAX_BRIGHTNESS;
-extern const int LED_FREQUENCY;
-extern const int LED_RESOLUTION;
+const int LED_RED_PIN = 38;
+const int LED_GREEN_PIN = 39;
+const int LED_BLUE_PIN = 37;
+const int DEFAULT_LED_BRIGHTNESS = 191; // 75% of the maximum brightness
+const int LED_MAX_BRIGHTNESS = 255;
+const int LED_FREQUENCY = 5000;
+const int LED_RESOLUTION = 8;
 
 // WiFi
-extern const int WIFI_CONFIG_PORTAL_TIMEOUT; // Timeout for the WiFi captive portal (in seconds)
-extern const char* WIFI_CONFIG_PORTAL_SSID; // SSID of the WiFi captive portal
-extern const int WIFI_LOOP_INTERVAL; // Time between each WiFi check (in milliseconds). Needed to avoid raising a warning each time the WiFi connection is lost for a short period
+const int WIFI_CONFIG_PORTAL_TIMEOUT = 300; // 5 minutes
+const char* WIFI_CONFIG_PORTAL_SSID = "EnergyMe";
+const int WIFI_LOOP_INTERVAL = 15000;
 
 // MDNS
-extern const char* MDNS_HOSTNAME;
+const char* MDNS_HOSTNAME = "energyme";
 
 // Cloud services
-extern const bool DEFAULT_IS_CLOUD_SERVICES_ENABLED;
-extern const int MAX_INTERVAL_PAYLOAD; // The maximum interval between two payloads
+const bool DEFAULT_IS_CLOUD_SERVICES_ENABLED = false;
+const int MAX_INTERVAL_PAYLOAD = 30000; // 30 seconds - The maximum interval between two meter payloads
 
 // MQTT
-extern const int MQTT_MAX_CONNECTION_ATTEMPT; // The maximum number of attempts to connect to the MQTT broker
-extern const int MQTT_OVERRIDE_KEEPALIVE; // The default value is 15 seconds, which is too low for the AWS IoT MQTT broker
-extern const int MQTT_STATUS_PUBLISH_INTERVAL; // In seconds
-extern const int MQTT_MIN_CONNECTION_INTERVAL; // In milliseconds, representing the minimum interval between two connection attempts
-extern const int MQTT_LOOP_INTERVAL; // In milliseconds, representing the interval between two MQTT loop calls (needed for the subscribe function - https://github.com/knolleary/pubsubclient/issues/163)
+const int MQTT_MAX_CONNECTION_ATTEMPT = 5; // The maximum number of attempts to connect to the MQTT broker
+const int MQTT_OVERRIDE_KEEPALIVE = 600; // The default value is 15 seconds, which is too low for the AWS IoT MQTT broker
+const int MQTT_STATUS_PUBLISH_INTERVAL = 3600; // Time between each status publish (in seconds)
+const int MQTT_MIN_CONNECTION_INTERVAL = 10000; // In milliseconds, representing the minimum interval between two connection attempts
+const int MQTT_LOOP_INTERVAL = 1000;
 
 // Conversion factors
-extern const float BYTE_TO_KILOBYTE; 
-extern const float MILLIS_TO_HOURS;
+const float BYTE_TO_KILOBYTE = 1 / 1024.0;
+const float MILLIS_TO_HOURS = 1 / 3600000.0;
 
-// Saving data
-extern const int ENERGY_SAVE_INTERVAL; // In seconds
+// Saving date
+const int ENERGY_SAVE_INTERVAL = 900; // Time between each energy save (in seconds) to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
 // ESP32 status
-extern const int MINIMUM_FREE_HEAP_SIZE; // Below this value, the ESP32 will restart
-extern const int MINIMUM_FREE_SPIFFS_SIZE; // Below this value, the ESP32 will clear the logs
+const int MINIMUM_FREE_HEAP_SIZE = 10000; // Below this value (in bytes), the ESP32 will restart
+const int MINIMUM_FREE_SPIFFS_SIZE = 100000; // Below this value (in bytes), the ESP32 will clear the logs
 
 // Multiplexer
 // --------------------
-extern const int MULTIPLEXER_S0_PIN;
-extern const int MULTIPLEXER_S1_PIN;
-extern const int MULTIPLEXER_S2_PIN;
-extern const int MULTIPLEXER_S3_PIN;
+const int MULTIPLEXER_S0_PIN = 36; 
+const int MULTIPLEXER_S1_PIN = 35;
+const int MULTIPLEXER_S2_PIN = 45;
+const int MULTIPLEXER_S3_PIN = 48;
 
 // ADE7953
 // --------------------
 
 // Hardware pins
-extern const int SS_PIN;
-extern const int SCK_PIN;
-extern const int MISO_PIN;
-extern const int MOSI_PIN;
-extern const int ADE7953_RESET_PIN;
+const int SS_PIN = 11; 
+const int SCK_PIN = 14;
+const int MISO_PIN = 13;
+const int MOSI_PIN = 12;
+const int ADE7953_RESET_PIN = 9;
 
 // Default values for ADE7953 registers
-extern const long DEFAULT_EXPECTED_AP_NOLOAD_REGISTER;
-extern const long DEFAULT_X_NOLOAD_REGISTER;
-extern const long DEFAULT_DISNOLOAD_REGISTER;
-extern const long DEFAULT_LCYCMODE_REGISTER;
-extern const long DEFAULT_LINECYC_REGISTER;
-extern const long DEFAULT_PGA_REGISTER;
-extern const long DEFAULT_CONFIG_REGISTER;
-extern const long DEFAULT_AWGAIN;
-extern const long DEFAULT_AWATTOS;
-extern const long DEFAULT_AVARGAIN;
-extern const long DEFAULT_AVAROS;
-extern const long DEFAULT_AVAGAIN;
-extern const long DEFAULT_AVAOS;
-extern const long DEFAULT_AIGAIN;
-extern const long DEFAULT_AIRMSOS;
-extern const long DEFAULT_BIGAIN;
-extern const long DEFAULT_BIRMSOS;
-extern const long DEFAULT_PHCALA;
-extern const long DEFAULT_PHCALB;
+const long DEFAULT_EXPECTED_AP_NOLOAD_REGISTER = 0x00E419; // Default expected value for AP_NOLOAD_32 
+const long DEFAULT_X_NOLOAD_REGISTER = 0x00C832; // Value for AP_NOLOAD_32, VAR_NOLOAD_32 and VA_NOLOAD_32 register. Represents a scale of 20000:1, meaning that the no-load threshold is 0.005% of the full-scale value
+const long DEFAULT_DISNOLOAD_REGISTER = 0; // 0x00 = 0b00000000 (disable all no-load detection)
+const long DEFAULT_LCYCMODE_REGISTER = 0xFF; // 0xFF = 0b11111111 (enable accumulation mode for all channels)
+const long DEFAULT_LINECYC_REGISTER = 50; // Set the number of half line cycles to accumulate before interrupting
+const long DEFAULT_PGA_REGISTER = 0; // PGA gain = 1
+const long DEFAULT_CONFIG_REGISTER = 0b1000000000000100; // Enable bit 2, and 15 (keep HPF enabled, keep COMM_LOCK disabled)
+const long DEFAULT_AWGAIN = 4194304; // Default AWGAIN value
+const long DEFAULT_AWATTOS = 0; // Default AWATTOS value
+const long DEFAULT_AVARGAIN = 4194304; // Default AVARGAIN value
+const long DEFAULT_AVAROS = 0; // Default AVAROS value
+const long DEFAULT_AVAGAIN = 4194304; // Default AVAGAIN value
+const long DEFAULT_AVAOS = 0; // Default AVAOS value
+const long DEFAULT_AIGAIN = 4194304; // Default AIGAIN value
+const long DEFAULT_AIRMSOS = -400; // Default AIRMSOS value
+const long DEFAULT_BIGAIN = 4295713; // Default BIGAIN value - Modified to match channel A
+const long DEFAULT_BIRMSOS = -750; // Default BIRMSOS value
+const long DEFAULT_PHCALA = 200; // Default PHCALA value
+const long DEFAULT_PHCALB = 200; // Default PHCALB value
 
 // Fixed conversion values
-extern const float POWER_FACTOR_CONVERSION_FACTOR; // PF/LSB
+const float POWER_FACTOR_CONVERSION_FACTOR = 1.0 / 32768.0; // PF/LSB
 
-// Sample cycles
-extern const int DEFAULT_SAMPLE_CYCLES;
+// Sample time
+const int DEFAULT_SAMPLE_CYCLES = 100; // 100 cycles = 1 second for 50Hz
 
 // Validate values
-extern const float VALIDATE_VOLTAGE_MIN;
-extern const float VALIDATE_VOLTAGE_MAX;
-extern const float VALIDATE_CURRENT_MIN;
-extern const float VALIDATE_CURRENT_MAX;
-extern const float VALIDATE_POWER_MIN;
-extern const float VALIDATE_POWER_MAX;
-extern const float VALIDATE_POWER_FACTOR_MIN;
-extern const float VALIDATE_POWER_FACTOR_MAX;
+const float VALIDATE_VOLTAGE_MIN = 150.0; // Any voltage below this value is discarded
+const float VALIDATE_VOLTAGE_MAX = 300.0;  // Any voltage above this value is discarded
+const float VALIDATE_CURRENT_MIN = -100.0; // Any current below this value is discarded
+const float VALIDATE_CURRENT_MAX = 100.0; // Any current above this value is discarded
+const float VALIDATE_POWER_MIN = -100000.0; // Any power below this value is discarded
+const float VALIDATE_POWER_MAX = 100000.0; // Any power above this value is discarded
+const float VALIDATE_POWER_FACTOR_MIN = -1.0; // Any power factor below this value is discarded
+const float VALIDATE_POWER_FACTOR_MAX = 1.0; // Any power factor above this value is discarded
 
 // Modbus TCP
 // --------------------
-extern const int MODBUS_TCP_PORT;
-extern const int MODBUS_TCP_MAX_CLIENTS;
-extern const int MODBUS_TCP_TIMEOUT; // In ms
-extern const int MODBUS_TCP_SERVER_ID;
+const int MODBUS_TCP_PORT = 502; // The default port for Modbus TCP
+const int MODBUS_TCP_MAX_CLIENTS = 3; // The maximum number of clients that can connect to the Modbus TCP server
+const int MODBUS_TCP_TIMEOUT = 10000; // The timeout for the Modbus TCP server (in milliseconds)
+const int MODBUS_TCP_SERVER_ID = 1; // The Modbus TCP server ID
 
 #endif

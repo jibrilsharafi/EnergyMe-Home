@@ -16,8 +16,8 @@
 #include "utils.h"
 #include "global.h"
 #include "mqtt.h"
-#include "html.h"
-#include "css.h"
+#include "binaries.h"
+#include "binaries.h"
 
 extern AdvancedLogger logger;
 extern Led led;

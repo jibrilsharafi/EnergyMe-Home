@@ -17,9 +17,6 @@
 #include "ade7953.h"
 #include "mqtt.h"
 
-extern const char DEFAULT_CALIBRATION_JSON[] asm("_binary_config_calibration_json_start");
-extern const char DEFAULT_CHANNEL_JSON[] asm("_binary_config_channel_json_start");
-
 void getJsonProjectInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
 

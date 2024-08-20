@@ -53,7 +53,7 @@ void _setHtmlPages() {
 
     server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get calibration page", "customserver::_setHtmlPages::/calibration", LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", CALIBRATION_HTML);
+        request->send_P(200, "text/html", calibration_html);
     });
 
     server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) {

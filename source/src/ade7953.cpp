@@ -320,7 +320,7 @@ void Ade7953::setDefaultCalibrationValues() {
     CalibrationValues _defaultValue;
 
     JsonDocument _jsonDocument;
-    deserializeJson(_jsonDocument, DEFAULT_CALIBRATION_JSON);
+    deserializeJson(_jsonDocument, default_calibration_json);
 
     setCalibrationValues(parseJsonCalibrationValues(_jsonDocument));
 
@@ -437,10 +437,10 @@ std::vector<CalibrationValues> Ade7953::parseJsonCalibrationValues(JsonDocument 
 // --------------------
 
 void Ade7953::setDefaultChannelData() {
-    logger.debug("Setting default data channel %s", "Ade7953::setDefaultChannelData", DEFAULT_CHANNEL_JSON);
+    logger.debug("Setting default data channel %s", "Ade7953::setDefaultChannelData", default_channel_json);
 
     JsonDocument _jsonDocument;
-    deserializeJson(_jsonDocument, DEFAULT_CHANNEL_JSON);
+    deserializeJson(_jsonDocument, default_channel_json);
 
     ChannelData _defaultValue;
 
