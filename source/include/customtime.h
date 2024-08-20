@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include <TimeLib.h>
+#include <AdvancedLogger.h>
+
 #include "constants.h"
 #include "global.h"
 

@@ -41,6 +41,6 @@ void subscribeToTopics();
 void subscribeUpdateFirmware();
 void getSpecificDeviceIdTopic(char* topic, const char* lastTopic);
 
-void circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &buffer);
+void circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &buffer);
 
 #endif

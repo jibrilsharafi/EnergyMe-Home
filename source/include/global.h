@@ -19,6 +19,6 @@ extern GeneralConfiguration generalConfiguration;
 extern PubSubClient clientMqtt; // These must be global to ensure proper working of MQTT
 extern WiFiClientSecure net;
 
-extern CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> payloadMeter;
+extern CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;
 
 #endif

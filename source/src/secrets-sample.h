@@ -19,7 +19,7 @@ a way to differentiate the topics.
 The final topic will be:
 "{MQTT_BASIC_INGEST}/{MQTT_RULE_NAME_*}/{MQTT_TOPIC_1}/{MQTT_TOPIC_2}/{MQTT_TOPIC_*}"
 
-The AWS_IOT_CORE_CERT_CA, AWS_IOT_CORE_CERT_CRT, and AWS_IOT_CORE_CERT_PRIVATE constants are the 
+The aws_iot_core_cert_ca, aws_iot_core_cert_crt, and aws_iot_core_cert_private constants are the 
 certificates used for TLS encryption. They should be replaced with your 
 actual certificates.
 
@@ -61,21 +61,21 @@ const char *MQTT_TOPIC_GENERAL_CONFIGURATION = "GeneralConfiguration"; // Topic 
 
 // Certificates for TLS encryption
 // Root CA 1
-static const char AWS_IOT_CORE_CERT_CA[] PROGMEM = R"EOF(
+static const char aws_iot_core_cert_ca[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 XXX
 -----END CERTIFICATE-----
 )EOF"; // Replace XXX with your Root CA 1 certificate
 
 // Device Certificate
-static const char AWS_IOT_CORE_CERT_CRT[] PROGMEM = R"KEY(
+static const char aws_iot_core_cert_crt[] PROGMEM = R"KEY(
 -----BEGIN CERTIFICATE-----
 XXX
 -----END CERTIFICATE-----
 )KEY"; // Replace XXX with your device certificate
 
 // Device Private Key
-static const char AWS_IOT_CORE_CERT_PRIVATE[] PROGMEM = R"KEY(
+static const char aws_iot_core_cert_private[] PROGMEM = R"KEY(
 -----BEGIN RSA PRIVATE KEY-----
 XXX
 -----END RSA PRIVATE KEY-----

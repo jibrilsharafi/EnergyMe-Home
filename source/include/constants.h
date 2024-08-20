@@ -1,11 +1,6 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
-#include "AdvancedLogger.h"
-//TODO: document all the constats (only here, not in the cpp file)
-// Definitions
-// --------------------
-
 // Project info
 #define COMPANY_NAME "EnergyMe"
 #define FULL_PRODUCT_NAME "EnergyMe - Home"
@@ -39,31 +34,11 @@
 #define APPARENT_POWER_MEASUREMENT 5
 #define POWER_FACTOR_MEASUREMENT 6
 
-// ADE7953
-#define CHANNEL_A 0
-#define CHANNEL_B 1
-#define DEFAULT_NUMBER_CALIBRATION_VALUES 2 // This cannot be defined as a constant because it is used for array initialization
-#define MAXIMUM_NUMBER_CALIBRATION_VALUES 10 // This cannot be defined as a constant because it is used for array initialization
-#define MAX_SAMPLES_AVERAGE_MEASUREMENT 1000 // The maximum number of samples to average the measurements. 1000 should be 1 data point per ms, per second
-#define MAX_DURATION_AVERAGE_MEASUREMENT 1000 // Milliseconds, meaning that the maximum duration of the average measurement is 1 second
-
-// Multiplexer
-#define MULTIPLEXER_CHANNEL_COUNT 16 // This cannot be defined as a constant because it is used for array initialization
-#define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // The number of channels being 1 (general) + 16 (multiplexer)
-
-// MQTT Payload
-#define MAX_NUMBER_POINTS_PAYLOAD 30 // The maximum number of points that can be sent in a single payload
-#define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
-#define MAX_MQTT_TOPIC_LENGTH 300 // The maximum length of a MQTT topic
-
 // URL Utilities
 #define PUBLIC_IP_ENDPOINT "http://checkip.amazonaws.com/"
 #define PUBLIC_LOCATION_ENDPOINT "http://ip-api.com/json/"
 #define PUBLIC_TIMEZONE_ENDPOINT "http://api.geonames.org/timezoneJSON?"
 #define PUBLIC_TIMEZONE_USERNAME "energymehome"
-
-// Constants
-// --------------------
 
 // File path
 #define FIRST_SETUP_PATH "/first-setup.json"
@@ -118,18 +93,17 @@
 #define MQTT_OVERRIDE_KEEPALIVE 600 // The default value is 15 seconds, which is too low for the AWS IoT MQTT broker
 #define MQTT_STATUS_PUBLISH_INTERVAL 3600 // Time between each status publish (in seconds)
 #define MQTT_MIN_CONNECTION_INTERVAL 10000 // In milliseconds, representing the minimum interval between two connection attempts
-#define MQTT_LOOP_INTERVAL 1000
-
-// Conversion factors
-#define BYTE_TO_KILOBYTE 1 / 1024.0
-#define MILLIS_TO_HOURS 1 / 3600000.0
+#define MQTT_LOOP_INTERVAL 1000 // In milliseconds, representing the interval between two MQTT loop checks
+#define PAYLOAD_METER_MAX_NUMBER_POINTS 30 // The maximum number of points that can be sent in a single payload
+#define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
+#define MQTT_MAX_TOPIC_LENGTH 300 // The maximum length of a MQTT topic
 
 // Saving date
 #define ENERGY_SAVE_INTERVAL 900 // Time between each energy save (in seconds) to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
 // ESP32 status
 #define MINIMUM_FREE_HEAP_SIZE 10000 // Below this value (in bytes), the ESP32 will restart
-#define MINIMUM_FREE_SPIFFS_SIZE 100000 // Below this value (in bytes), the ESP32 will clear the logs
+#define MINIMUM_FREE_SPIFFS_SIZE 10000 // Below this value (in bytes), the ESP32 will clear the logs
 
 // Multiplexer
 // --------------------
@@ -137,16 +111,21 @@
 #define MULTIPLEXER_S1_PIN 35
 #define MULTIPLEXER_S2_PIN 45
 #define MULTIPLEXER_S3_PIN 48
+#define MULTIPLEXER_CHANNEL_COUNT 16 // This cannot be defined as a constant because it is used for array initialization
+#define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // The number of channels being 1 (general) + 16 (multiplexer)
 
 // ADE7953
 // --------------------
-
 // Hardware pins
 #define SS_PIN 11 
 #define SCK_PIN 14
 #define MISO_PIN 13
 #define MOSI_PIN 12
 #define ADE7953_RESET_PIN 9
+
+// Helper constants
+#define CHANNEL_A 0
+#define CHANNEL_B 1
 
 // Default values for ADE7953 registers
 #define DEFAULT_EXPECTED_AP_NOLOAD_REGISTER 0x00E419 // Default expected value for AP_NOLOAD_32 

@@ -30,7 +30,7 @@ GeneralConfiguration generalConfiguration;
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient clientMqtt(net);
 
-CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> payloadMeter;
+CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;
 
 AdvancedLogger logger(
   LOG_PATH,

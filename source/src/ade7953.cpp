@@ -26,8 +26,6 @@ Ade7953::Ade7953(
     ChannelData channelData[CHANNEL_COUNT];
 
     _initializeMeterValues();
-
-    int _maxDurationMs = MAX_DURATION_AVERAGE_MEASUREMENT;
 }
 
 bool Ade7953::begin() {

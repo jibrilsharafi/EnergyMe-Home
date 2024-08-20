@@ -32,9 +32,9 @@ bool setupMqtt() {
     setupTopics();
     clientMqtt.setCallback(subscribeCallback);
 
-    net.setCACert(AWS_IOT_CORE_CERT_CA);
-    net.setCertificate(AWS_IOT_CORE_CERT_CRT);
-    net.setPrivateKey(AWS_IOT_CORE_CERT_PRIVATE);
+    net.setCACert(aws_iot_core_cert_ca);
+    net.setCertificate(aws_iot_core_cert_crt);
+    net.setPrivateKey(aws_iot_core_cert_private);
 
     clientMqtt.setServer(AWS_IOT_CORE_MQTT_ENDPOINT, AWS_IOT_CORE_PORT);
 
@@ -146,10 +146,10 @@ void setupTopics() {
 }
 
 char* constructMqttTopic(const char* ruleName, const char* topic) {
-    char* mqttTopic = new char[MAX_MQTT_TOPIC_LENGTH];
+    char* mqttTopic = new char[MQTT_MAX_TOPIC_LENGTH];
     snprintf(
         mqttTopic,
-        MAX_MQTT_TOPIC_LENGTH,
+        MQTT_MAX_TOPIC_LENGTH,
         "%s/%s/%s/%s/%s/%s",
         MQTT_BASIC_INGEST,
         ruleName,
@@ -188,7 +188,7 @@ void setTopicGeneralConfiguration() {
 
 #endif
 
-void circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &payloadMeter) {
+void circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter) {
     logger.debug("Converting circular buffer to JSON", "mqtt::circularBufferToJson");
 
     JsonArray _jsonArray = jsonDocument->to<JsonArray>();
@@ -368,7 +368,7 @@ void subscribeToTopics() {
 }
 
 void subscribeUpdateFirmware() {
-    char _topic[MAX_MQTT_TOPIC_LENGTH];
+    char _topic[MQTT_MAX_TOPIC_LENGTH];
     getSpecificDeviceIdTopic(_topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE);
     
     if (!clientMqtt.subscribe(_topic)) {
@@ -379,7 +379,7 @@ void subscribeUpdateFirmware() {
 void getSpecificDeviceIdTopic(char* topic, const char* lastTopic) {
     snprintf(
         topic,
-        MAX_MQTT_TOPIC_LENGTH,
+        MQTT_MAX_TOPIC_LENGTH,
         "%s/%s/%s/%s",
         MQTT_TOPIC_1,
         MQTT_TOPIC_2,
