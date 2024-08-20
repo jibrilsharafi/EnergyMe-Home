@@ -9,23 +9,26 @@ bool setupWifi() {
 
   wifiManager.setConfigPortalTimeout(WIFI_CONFIG_PORTAL_TIMEOUT);
   
-  if (!wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID)) {
+  if (!wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID)) { //TODO: this could be made async
     logger.warning("Failed to connect and hit timeout", "customwifi::setupWifi");
     return false;
   }
   
   printWifiStatus();
+
   logger.info("Connected to WiFi", "customwifi::setupWifi");
   return true;
 }
 
-void checkWifi() {
+void wifiLoop() {
   if ((millis() - lastMillisWifiLoop) > WIFI_LOOP_INTERVAL) {
     lastMillisWifiLoop = millis();
+
     if (!WiFi.isConnected()) {
-      logger.warning("WiFi connection lost. Reconnecting...", "customwifi::checkWifi");
+      logger.warning("WiFi connection lost. Reconnecting...", "customwifi::wifiLoop");
+
       if (!setupWifi()) {
-        restartEsp32("customwifi::checkWifi", "Failed to connect to WiFi and hit timeout");
+        restartEsp32("customwifi::wifiLoop", "Failed to connect to WiFi and hit timeout");
       }
     }
   }
@@ -47,17 +50,14 @@ bool setupMdns() {
   return true;
 }
 
-// Get the status of the WiFi connection (SSID, IP, etc.)
-JsonDocument getWifiStatus() {
-  JsonDocument _jsonDocument;
-
-  _jsonDocument["macAddress"] = WiFi.macAddress();
-  _jsonDocument["localIp"] = WiFi.localIP().toString();
-  _jsonDocument["subnetMask"] = WiFi.subnetMask().toString();
-  _jsonDocument["gatewayIp"] = WiFi.gatewayIP().toString();
-  _jsonDocument["dnsIp"] = WiFi.dnsIP().toString();
+void getWifiStatus(JsonDocument& jsonDocument) {
+  jsonDocument["macAddress"] = WiFi.macAddress();
+  jsonDocument["localIp"] = WiFi.localIP().toString();
+  jsonDocument["subnetMask"] = WiFi.subnetMask().toString();
+  jsonDocument["gatewayIp"] = WiFi.gatewayIP().toString();
+  jsonDocument["dnsIp"] = WiFi.dnsIP().toString();
   wl_status_t _status = WiFi.status();
-  _jsonDocument["status"] = WL_NO_SHIELD == _status ? "No Shield Available" :
+  jsonDocument["status"] = WL_NO_SHIELD == _status ? "No Shield Available" :
                     WL_IDLE_STATUS == _status ? "Idle Status" :
                     WL_NO_SSID_AVAIL == _status ? "No SSID Available" :
                     WL_SCAN_COMPLETED == _status ? "Scan Completed" :
@@ -66,15 +66,14 @@ JsonDocument getWifiStatus() {
                     WL_CONNECTION_LOST == _status ? "Connection Lost" :
                     WL_DISCONNECTED == _status ? "Disconnected" :
                     "Unknown Status";
-  _jsonDocument["ssid"] = WiFi.SSID();
-  _jsonDocument["bssid"] = WiFi.BSSIDstr();
-  _jsonDocument["rssi"] = WiFi.RSSI();
-
-  return _jsonDocument;
+  jsonDocument["ssid"] = WiFi.SSID();
+  jsonDocument["bssid"] = WiFi.BSSIDstr();
+  jsonDocument["rssi"] = WiFi.RSSI();
 }
 
 void printWifiStatus() {
-  JsonDocument _jsonDocument = getWifiStatus();
+  JsonDocument _jsonDocument;
+  getWifiStatus(_jsonDocument);
 
   logger.debug(
     "MAC: %s | IP: %s | Status: %s | SSID: %s | RSSI: %s",

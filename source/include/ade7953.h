@@ -12,9 +12,6 @@
 #include "structs.h"
 #include "global.h"
 
-extern AdvancedLogger logger;
-extern CustomTime customTime;
-
 class Ade7953 {
 public:
     Ade7953(
@@ -22,7 +19,9 @@ public:
         int sckPin,
         int misoPin,
         int mosiPin,
-        int resetPin
+        int resetPin,
+        AdvancedLogger &logger,
+        CustomTime &customTime
     );
 
     bool begin();
@@ -32,7 +31,7 @@ public:
     void setConfiguration(Ade7953Configuration newConfiguration);
     bool saveConfigurationToSpiffs();
     JsonDocument configurationToJson();
-    Ade7953Configuration parseJsonConfiguration(JsonDocument jsonDocument);
+    Ade7953Configuration parseJsonConfiguration(JsonDocument jsonDocument); //TODO: improve me, fix this
 
     void setDefaultCalibrationValues();
     void setCalibrationValues(std::vector<CalibrationValues> newCalibrationValues);
@@ -126,6 +125,9 @@ private:
     int _misoPin;
     int _mosiPin;
     int _resetPin;
+
+    AdvancedLogger* _logger;
+    CustomTime* _customTime;
 };
 
 #endif

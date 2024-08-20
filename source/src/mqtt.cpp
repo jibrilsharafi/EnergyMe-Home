@@ -188,11 +188,10 @@ void setTopicGeneralConfiguration() {
 
 #endif
 
-JsonDocument circularBufferToJson(CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &payloadMeter) {
+void circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &payloadMeter) {
     logger.debug("Converting circular buffer to JSON", "mqtt::circularBufferToJson");
 
-    JsonDocument _jsonDocument;
-    JsonArray _jsonArray = _jsonDocument.to<JsonArray>();
+    JsonArray _jsonArray = jsonDocument->to<JsonArray>();
     
     while (!payloadMeter.isEmpty()) {
         JsonObject _jsonObject = _jsonArray.add<JsonObject>();
@@ -222,13 +221,13 @@ JsonDocument circularBufferToJson(CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS
     _jsonObject["voltage"] = ade7953.meterValues[0].voltage;
 
     logger.debug("Circular buffer converted to JSON", "mqtt::circularBufferToJson");
-    return _jsonDocument;
 }
 
 void publishMeter() {
     logger.debug("Publishing meter data to MQTT", "mqtt::publishMeter");
 
-    JsonDocument _jsonDocument = circularBufferToJson(payloadMeter);
+    JsonDocument _jsonDocument;
+    circularBufferToJson(&_jsonDocument, payloadMeter);
 
     String _meterMessage;
     serializeJson(_jsonDocument, _meterMessage);
@@ -263,8 +262,6 @@ void publishMetadata() {
 
     JsonObject _jsonObject = _jsonDocument.to<JsonObject>();
     _jsonObject["unixTime"] = customTime.getUnixTime();
-    String _publicIp = getPublicIp();
-    _jsonObject["publicIp"] = _publicIp.c_str();
     _jsonObject["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
 
     String _metadataMessage;
@@ -297,7 +294,10 @@ void publishGeneralConfiguration() {
     JsonDocument _jsonDocument;
 
     _jsonDocument["unixTime"] = customTime.getUnixTime();
-    _jsonDocument["generalConfiguration"] = generalConfigurationToJson(generalConfiguration);
+
+    JsonDocument _jsonDocumentConfiguration;
+    generalConfigurationToJson(generalConfiguration, _jsonDocumentConfiguration);
+    _jsonDocument["generalConfiguration"] = _jsonDocumentConfiguration;
 
     String _generalConfigurationMessage;
     serializeJson(_jsonDocument, _generalConfigurationMessage);
@@ -307,11 +307,6 @@ void publishGeneralConfiguration() {
 }
 
 void publishMessage(const char* topic, const char* message) {
-    if (topic == nullptr || message == nullptr) {
-        logger.debug("Null pointer passed, meaning the CloudServices are likely not enabled", "mqtt::publishMessage");
-        return;
-    }
-
     logger.debug(
         "Publishing message to topic %s",
         "mqtt::publishMessage",
@@ -323,6 +318,11 @@ void publishMessage(const char* topic, const char* message) {
         return;
     }
 
+    if (topic == nullptr || message == nullptr) {
+        logger.debug("Null pointer passed, meaning MQTT not initialized yet", "mqtt::publishMessage");
+        return;
+    }
+
     if (!clientMqtt.connected()) {
         logger.warning("MQTT client not connected. Skipping...", "mqtt::publishMessage");
     }
@@ -330,6 +330,8 @@ void publishMessage(const char* topic, const char* message) {
     if (!clientMqtt.publish(topic, message)) {
         logger.error("Failed to publish message", "mqtt::publishMessage");
     }
+
+    logger.debug("Message published: %s", "mqtt::publishMessage", message);
 }
 
 void subscribeCallback(char* topic, byte* payload, unsigned int length) {
@@ -366,13 +368,15 @@ void subscribeToTopics() {
 }
 
 void subscribeUpdateFirmware() {
-    if (!clientMqtt.subscribe(getSpecificDeviceIdTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE))) {
+    char _topic[MAX_MQTT_TOPIC_LENGTH];
+    getSpecificDeviceIdTopic(_topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE);
+    
+    if (!clientMqtt.subscribe(_topic)) {
         logger.error("Failed to subscribe to firmware update topic", "mqtt::subscribeUpdateFirmware");
     }
 }
 
-const char* getSpecificDeviceIdTopic(const char* lastTopic) {
-    static char topic[MAX_MQTT_TOPIC_LENGTH];
+void getSpecificDeviceIdTopic(char* topic, const char* lastTopic) {
     snprintf(
         topic,
         MAX_MQTT_TOPIC_LENGTH,
@@ -384,25 +388,4 @@ const char* getSpecificDeviceIdTopic(const char* lastTopic) {
     );
 
     logger.debug("Topic generated: %s", "mqtt::getSpecificDeviceIdTopic", topic);
-
-    return topic;
-}
-
-String getPublicIp() {
-    HTTPClient http;
-
-    http.begin(PUBLIC_IP_ENDPOINT);
-    int httpCode = http.GET();
-    if (httpCode > 0) {
-        if (httpCode == HTTP_CODE_OK) {
-            String payload = http.getString();
-            payload.trim();
-            return payload;
-        }
-    } else {
-        logger.error("Error on HTTP request", "mqtt::getPublicIp");
-    }
-
-    http.end();
-    return "";
 }

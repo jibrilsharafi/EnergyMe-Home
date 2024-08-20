@@ -2,23 +2,31 @@
 
 CustomTime::CustomTime(
     const char* ntpServer,
-    int timeSyncInterval) {
+    int timeSyncInterval,
+    const char* timestampFormat,
+    GeneralConfiguration &generalConfiguration,
+    AdvancedLogger &logger) {
         _ntpServer = ntpServer;
         _timeSyncInterval = timeSyncInterval;
+        _timestampFormat = timestampFormat;
+        _generalConfiguration = &generalConfiguration;
+        _logger = &logger;
 }
 
-bool CustomTime::begin(){
+bool CustomTime::begin() {
     configTime(
-        generalConfiguration.gmtOffset, 
-        generalConfiguration.dstOffset, 
+        _generalConfiguration->gmtOffset, 
+        _generalConfiguration->dstOffset, 
         _ntpServer
     );
+
     setSyncInterval(_timeSyncInterval);
-    if (_getTime()){
-        logger.info("Time synchronized: %s", "customtime::begin", getTimestamp().c_str());
+
+    if (_getTime()) {
+        _logger->info("Time synchronized: %s", "customtime::begin", getTimestamp().c_str());
         return true;
     } else {
-        logger.error("Failed to synchronize time", "customtime::begin");
+        _logger->error("Failed to synchronize time", "customtime::begin");
         return false;
     }
 }
@@ -38,7 +46,7 @@ String CustomTime::timestampFromUnix(long unix){
     char _timestamp[26];
 
     _timeinfo = localtime(&unix);
-    strftime(_timestamp, sizeof(_timestamp), LOG_TIMESTAMP_FORMAT, _timeinfo);
+    strftime(_timestamp, sizeof(_timestamp), _timestampFormat, _timeinfo);
     return String(_timestamp);
 }
 

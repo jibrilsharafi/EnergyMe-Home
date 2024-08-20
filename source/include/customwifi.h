@@ -14,12 +14,12 @@ extern AdvancedLogger logger;
 extern Led led;
 
 bool setupWifi();
-void checkWifi();
+void wifiLoop();
 void resetWifi();
 
 bool setupMdns();
 
-JsonDocument getWifiStatus();
+void getWifiStatus(JsonDocument& jsonDocument);
 void printWifiStatus();
 
 #endif

@@ -116,24 +116,35 @@ void _setRestApi() {
     server.on("/rest/project-info", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get project info from REST API", "customserver::_setRestApi::/rest/project-info", LogLevel::DEBUG, request);
 
+        JsonDocument _jsonDocument;
+        getJsonProjectInfo(_jsonDocument);
+
         String _buffer;
-        serializeJson(getProjectInfo(), _buffer);
+        serializeJson(_jsonDocument, _buffer);
+
         request->send(200, "application/json", _buffer.c_str());
     });
 
     server.on("/rest/device-info", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get device info from REST API", "customserver::_setRestApi::/rest/device-info", LogLevel::DEBUG, request);
 
+        JsonDocument _jsonDocument;
+        getJsonDeviceInfo(_jsonDocument);
+
         String _buffer;
-        serializeJson(getDeviceInfo(), _buffer);
+        serializeJson(_jsonDocument, _buffer);
+
         request->send(200, "application/json", _buffer.c_str());
     });
 
     server.on("/rest/wifi-info", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get WiFi values from REST API", "customserver::_setRestApi::/rest/wifi-info", LogLevel::DEBUG, request);
         
+        JsonDocument _jsonDocument;
+        getWifiStatus(_jsonDocument);
+
         String _buffer;
-        serializeJson(getWifiStatus(), _buffer);
+        serializeJson(_jsonDocument, _buffer);
 
         request->send(200, "application/json", _buffer.c_str());
     });
@@ -321,7 +332,8 @@ void _setRestApi() {
     server.on("/rest/get-general-configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
         _serverLog("Request to get get general configuration from REST API", "customserver::_setRestApi::/rest/get-general-configuration", LogLevel::DEBUG, request);
 
-        JsonDocument _jsonDocument = generalConfigurationToJson(generalConfiguration);
+        JsonDocument _jsonDocument;
+        generalConfigurationToJson(generalConfiguration, _jsonDocument);
 
         String _buffer;
         serializeJson(_jsonDocument, _buffer);
@@ -506,7 +518,8 @@ void _setRestApi() {
 
             AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Configuration updated\"}");
 
-            setGeneralConfiguration(jsonToGeneralConfiguration(_jsonDocument));
+            jsonToGeneralConfiguration(_jsonDocument, generalConfiguration);
+            setGeneralConfiguration(generalConfiguration);
 
             request->send(response);
 

@@ -8,20 +8,27 @@ Ade7953::Ade7953(
     int sckPin,
     int misoPin,
     int mosiPin,
-    int resetPin
-): _ssPin(ssPin), 
-    _sckPin(sckPin), 
-    _misoPin(misoPin), 
-    _mosiPin(mosiPin), 
-    _resetPin(resetPin) {
-        Ade7953Configuration configuration;
-        MeterValues meterValues[CHANNEL_COUNT];
-        ChannelData channelData[CHANNEL_COUNT];
+    int resetPin,
+    AdvancedLogger &logger,
+    CustomTime &customTime)
+{
+    _ssPin = ssPin;
+    _sckPin = sckPin;
+    _misoPin = misoPin;
+    _mosiPin = mosiPin;
+    _resetPin = resetPin;
 
-        _initializeMeterValues();
+    _logger = &logger;
+    _customTime = &customTime;
 
-        int _maxDurationMs = MAX_DURATION_AVERAGE_MEASUREMENT;
-    }
+    Ade7953Configuration configuration;
+    MeterValues meterValues[CHANNEL_COUNT];
+    ChannelData channelData[CHANNEL_COUNT];
+
+    _initializeMeterValues();
+
+    int _maxDurationMs = MAX_DURATION_AVERAGE_MEASUREMENT;
+}
 
 bool Ade7953::begin() {
     logger.debug("Initializing Ade7953", "Ade7953::begin");
@@ -191,7 +198,9 @@ void Ade7953::setDefaultConfiguration() {
 void Ade7953::_setConfigurationFromSpiffs() {
     logger.debug("Setting configuration from SPIFFS", "Ade7953::_setConfigurationFromSpiffs");
 
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH);
+    JsonDocument _jsonDocument;
+    deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
+
     if (_jsonDocument.isNull()) {
         logger.error("Failed to read configuration from SPIFFS. Keeping default one", "Ade7953::_setConfigurationFromSpiffs");
         setDefaultConfiguration();
@@ -237,7 +246,9 @@ void Ade7953::_applyConfiguration() {
 bool Ade7953::saveConfigurationToSpiffs() {
     logger.debug("Saving configuration to SPIFFS", "Ade7953::saveConfigurationToSpiffs");
 
-    if (serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, configurationToJson())) {
+    JsonDocument _jsonDocument = configurationToJson();
+
+    if (serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument)) {
         logger.debug("Successfully serialize the JSON configuration to SPIFFS", "Ade7953::saveConfigurationToSpiffs");
         return true;
     } else {
@@ -319,7 +330,9 @@ void Ade7953::setDefaultCalibrationValues() {
 void Ade7953::_setCalibrationValuesFromSpiffs() {
     logger.debug("Setting calibration values from SPIFFS", "Ade7953::_setCalibrationValuesFromSpiffs");
 
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH);
+    JsonDocument _jsonDocument;
+    deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
+
     if (_jsonDocument.isNull()) {
         logger.error("Failed to read calibration values from SPIFFS. Setting default ones...", "Ade7953::_setCalibrationValuesFromSpiffs");
         setDefaultCalibrationValues();
@@ -332,7 +345,9 @@ void Ade7953::_setCalibrationValuesFromSpiffs() {
 bool Ade7953::saveCalibrationValuesToSpiffs() {
     logger.debug("Saving calibration values to SPIFFS", "Ade7953::saveCalibrationValuesToSpiffs");
 
-    if (serializeJsonToSpiffs(CALIBRATION_JSON_PATH, calibrationValuesToJson())) {
+    JsonDocument _jsonDocument = calibrationValuesToJson();
+
+    if (serializeJsonToSpiffs(CALIBRATION_JSON_PATH, _jsonDocument)) {
         logger.debug("Successfully saved calibration values to SPIFFS", "Ade7953::saveCalibrationValuesToSpiffs");
         return true;
     } else {
@@ -437,7 +452,9 @@ void Ade7953::setDefaultChannelData() {
 void Ade7953::_setChannelDataFromSpiffs() {
     logger.debug("Setting data channel from SPIFFS", "Ade7953::_setChannelDataFromSpiffs");
 
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH);
+    JsonDocument _jsonDocument;
+    deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument);
+
     if (_jsonDocument.isNull()) {
         logger.error("Failed to read data channel from SPIFFS. Setting default one", "Ade7953::_setChannelDataFromSpiffs");
         setDefaultChannelData();
@@ -461,7 +478,9 @@ void Ade7953::setChannelData(ChannelData* newChannelData) {
 bool Ade7953::saveChannelDataToSpiffs() {
     logger.debug("Saving data channel to SPIFFS", "Ade7953::saveChannelDataToSpiffs");
 
-    if (serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, channelDataToJson())) {
+    JsonDocument _jsonDocument = channelDataToJson();
+
+    if (serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument)) {
         logger.debug("Successfully saved data channel to SPIFFS", "Ade7953::saveChannelDataToSpiffs");
         return true;
     } else {
@@ -711,7 +730,10 @@ JsonDocument Ade7953::meterValuesToJson() {
 
 void Ade7953::setEnergyFromSpiffs() {
     logger.debug("Reading energy from SPIFFS", "Ade7953::readEnergyFromSpiffs");
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(ENERGY_JSON_PATH);
+    
+    JsonDocument _jsonDocument;
+    deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
+
     if (_jsonDocument.isNull()) {
         logger.error("Failed to read energy from SPIFFS", "Ade7953::readEnergyFromSpiffs");
     } else {
@@ -728,7 +750,8 @@ void Ade7953::setEnergyFromSpiffs() {
 void Ade7953::saveEnergyToSpiffs() {
     logger.debug("Saving energy to SPIFFS", "Ade7953::saveEnergyToSpiffs");
 
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(ENERGY_JSON_PATH);
+    JsonDocument _jsonDocument;
+    deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
         _jsonDocument[String(i)]["activeEnergy"] = meterValues[i].activeEnergy;
@@ -746,7 +769,8 @@ void Ade7953::saveEnergyToSpiffs() {
 void Ade7953::saveDailyEnergyToSpiffs() {
     logger.debug("Saving daily energy to SPIFFS", "Ade7953::saveDailyEnergyToSpiffs");
 
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH);
+    JsonDocument _jsonDocument;
+    deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument);
     
     time_t now = time(nullptr);
     struct tm *timeinfo = localtime(&now);

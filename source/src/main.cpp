@@ -25,28 +25,12 @@
 int currentChannel = 0;
 int previousChannel = 0;
 
-bool isFirstSetup = false;
-
 GeneralConfiguration generalConfiguration;
 
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient clientMqtt(net);
 
 CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> payloadMeter;
-
-ModbusTcp modbusTcp(
-  MODBUS_TCP_PORT, 
-  MODBUS_TCP_SERVER_ID, 
-  MODBUS_TCP_MAX_CLIENTS, 
-  MODBUS_TCP_TIMEOUT
-);
-
-// Custom classes
-
-CustomTime customTime(
-  NTP_SERVER,
-  TIME_SYNC_INTERVAL
-);
 
 AdvancedLogger logger(
   LOG_PATH,
@@ -68,12 +52,32 @@ Multiplexer multiplexer(
   MULTIPLEXER_S3_PIN
 );
 
+CustomTime customTime(
+  NTP_SERVER,
+  TIME_SYNC_INTERVAL,
+  TIMESTAMP_FORMAT,
+  generalConfiguration,
+  logger
+);
+
 Ade7953 ade7953(
   SS_PIN,
   SCK_PIN,
   MISO_PIN,
   MOSI_PIN,
-  ADE7953_RESET_PIN
+  ADE7953_RESET_PIN,
+  logger,
+  customTime
+);
+
+ModbusTcp modbusTcp(
+  MODBUS_TCP_PORT, 
+  MODBUS_TCP_SERVER_ID, 
+  MODBUS_TCP_MAX_CLIENTS, 
+  MODBUS_TCP_TIMEOUT,
+  logger,
+  ade7953,
+  customTime
 );
 
 // Main functions
@@ -188,7 +192,7 @@ void setup() {
 }
 
 void loop() {
-  checkWifi();
+  wifiLoop();
   mqttLoop();
   ade7953.loop();
   

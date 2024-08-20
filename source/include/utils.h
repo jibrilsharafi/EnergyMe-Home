@@ -20,14 +20,16 @@
 extern const char DEFAULT_CALIBRATION_JSON[] asm("_binary_config_calibration_json_start");
 extern const char DEFAULT_CHANNEL_JSON[] asm("_binary_config_channel_json_start");
 
-JsonDocument getProjectInfo();
-JsonDocument getDeviceInfo();
+void getJsonProjectInfo(JsonDocument& jsonDocument);
+void getJsonDeviceInfo(JsonDocument& jsonDocument);
+
 void restartEsp32(const char* functionName, const char* reason);
+
 void printMeterValues(MeterValues meterValues, const char* channelLabel);
 void printDeviceStatus();
 
-JsonDocument deserializeJsonFromSpiffs(const char* path);
-bool serializeJsonToSpiffs(const char* path, JsonDocument jsonDocument);
+void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
+bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
 
 void createDefaultFiles();
 void createDefaultConfigurationAde7953File();
@@ -42,21 +44,20 @@ bool checkAllFiles();
 bool checkIfFirstSetup();
 
 void setDefaultGeneralConfiguration();
-void setGeneralConfiguration(GeneralConfiguration generalConfiguration);
+void setGeneralConfiguration(GeneralConfiguration& generalConfiguration);
 bool setGeneralConfigurationFromSpiffs();
 bool saveGeneralConfigurationToSpiffs();
-JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguration);
-GeneralConfiguration jsonToGeneralConfiguration(JsonDocument jsonDocument);
+void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument);
+void jsonToGeneralConfiguration(JsonDocument& jsonDocument, GeneralConfiguration& generalConfiguration);
 
 void applyGeneralConfiguration();
-bool checkIfRebootRequiredGeneralConfiguration(GeneralConfiguration previousConfiguration, GeneralConfiguration newConfiguration);
+bool checkIfRebootRequiredGeneralConfiguration(GeneralConfiguration& previousConfiguration, GeneralConfiguration& newConfiguration);
 
-JsonDocument getPublicLocation();
-std::pair<int, int> getPublicTimezone();
+void getPublicLocation();
+void getPublicTimezone();
 void updateTimezone();
 
 void factoryReset();
-bool _duplicateFile(const char* sourcePath, const char* destinationPath);
 
 bool isLatestFirmwareInstalled();
 

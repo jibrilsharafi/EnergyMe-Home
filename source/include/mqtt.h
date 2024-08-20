@@ -39,10 +39,8 @@ void publishMessage(const char* topic, const char* message);
 void subscribeCallback(char* topic, byte* payload, unsigned int length);
 void subscribeToTopics();
 void subscribeUpdateFirmware();
-const char* getSpecificDeviceIdTopic(const char* lastTopic);
+void getSpecificDeviceIdTopic(char* topic, const char* lastTopic);
 
-JsonDocument circularBufferToJson(CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &buffer);
-
-String getPublicIp();
+void circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MAX_NUMBER_POINTS_PAYLOAD> &buffer);
 
 #endif

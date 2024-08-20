@@ -52,8 +52,8 @@
 #define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // The number of channels being 1 (general) + 16 (multiplexer)
 
 // MQTT Payload
-#define MAX_NUMBER_POINTS_PAYLOAD 30 // The maximum number of points that can be sent in a single payload. 60 is about 5kB
-#define MQTT_PAYLOAD_LIMIT 5000 // Every 5000 bytes is a single message
+#define MAX_NUMBER_POINTS_PAYLOAD 30 // The maximum number of points that can be sent in a single payload
+#define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
 #define MAX_MQTT_TOPIC_LENGTH 300 // The maximum length of a MQTT topic
 
 // URL Utilities
@@ -89,9 +89,10 @@ extern const LogLevel DEFAULT_LOG_SAVE_LEVEL;
 
 // Time
 extern const char* NTP_SERVER;
-extern const int TIME_SYNC_INTERVAL; // 1 hour
-extern const int DEFAULT_GMT_OFFSET; // 1 hour
+extern const int TIME_SYNC_INTERVAL;
+extern const int DEFAULT_GMT_OFFSET;
 extern const int DEFAULT_DST_OFFSET;
+extern const char* TIMESTAMP_FORMAT;
 
 // LED
 extern const int LED_RED_PIN;
@@ -131,12 +132,6 @@ extern const int ENERGY_SAVE_INTERVAL; // In seconds
 // ESP32 status
 extern const int MINIMUM_FREE_HEAP_SIZE; // Below this value, the ESP32 will restart
 extern const int MINIMUM_FREE_SPIFFS_SIZE; // Below this value, the ESP32 will clear the logs
-
-// Channel info
-extern const char* DEFAULT_CHANNEL_LABEL;
-extern const bool DEFAULT_CHANNEL_ACTIVE;
-extern const bool DEFAULT_CHANNEL_REVERSE;
-extern const char* DEFAULT_CHANNEL_CALIBRATION;
 
 // Multiplexer
 // --------------------

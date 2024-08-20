@@ -4,89 +4,70 @@ extern AdvancedLogger logger;
 extern CustomTime customTime;
 extern Led led;
 extern Ade7953 ade7953;
-
 extern GeneralConfiguration generalConfiguration;
 
-JsonDocument getProjectInfo() {
-    JsonDocument _jsonDocument;
-
-    _jsonDocument["companyName"] = COMPANY_NAME;
-    _jsonDocument["fullProductName"] = FULL_PRODUCT_NAME;
-    _jsonDocument["productName"] = PRODUCT_NAME;
-    _jsonDocument["productDescription"] = PRODUCT_DESCRIPTION;
-    _jsonDocument["productUrl"] = PRODUCT_URL;
-    _jsonDocument["githubUrl"] = GITHUB_URL;
-    _jsonDocument["author"] = AUTHOR;
-    _jsonDocument["authorEmail"] = AUTHOR_EMAIL;
-    _jsonDocument["copyrightYear"] = COPYRIGHT_YEAR;
-    _jsonDocument["copyrightHolder"] = COPYRIGHT_HOLDER;
-    _jsonDocument["license"] = LICENSE;
-    _jsonDocument["licenseUrl"] = LICENSE_URL;
-
-    return _jsonDocument;
+void getJsonProjectInfo(JsonDocument& jsonDocument) { 
+    jsonDocument["companyName"] = COMPANY_NAME;
+    jsonDocument["fullProductName"] = FULL_PRODUCT_NAME;
+    jsonDocument["productName"] = PRODUCT_NAME;
+    jsonDocument["productDescription"] = PRODUCT_DESCRIPTION;
+    jsonDocument["productUrl"] = PRODUCT_URL;
+    jsonDocument["githubUrl"] = GITHUB_URL;
+    jsonDocument["author"] = AUTHOR;
+    jsonDocument["authorEmail"] = AUTHOR_EMAIL;
+    jsonDocument["copyrightYear"] = COPYRIGHT_YEAR;
+    jsonDocument["copyrightHolder"] = COPYRIGHT_HOLDER;
+    jsonDocument["license"] = LICENSE;
+    jsonDocument["licenseUrl"] = LICENSE_URL;
 }
 
-JsonDocument getDeviceInfo()
+void getJsonDeviceInfo(JsonDocument& jsonDocument)
 {
-    JsonDocument _jsonDocument;
+    jsonDocument["system"]["uptime"] = millis();
+    jsonDocument["system"]["systemTime"] = customTime.getTimestamp();
 
-    JsonObject _jsonSystem = _jsonDocument["system"].to<JsonObject>();
-    _jsonSystem["uptime"] = millis();
-    _jsonSystem["systemTime"] = customTime.getTimestamp();
+    jsonDocument["firmware"]["buildVersion"] = FIRMWARE_BUILD_VERSION;
+    jsonDocument["firmware"]["buildDate"] = FIRMWARE_BUILD_DATE;
 
-    JsonObject _jsonFirmware = _jsonDocument["firmware"].to<JsonObject>();
-    _jsonFirmware["buildVersion"] = FIRMWARE_BUILD_VERSION;
-    _jsonFirmware["buildDate"] = FIRMWARE_BUILD_DATE;
+    jsonDocument["memory"]["heap"]["free"] = ESP.getFreeHeap();
+    jsonDocument["memory"]["heap"]["total"] = ESP.getHeapSize();
+    jsonDocument["memory"]["spiffs"]["free"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
+    jsonDocument["memory"]["spiffs"]["total"] = SPIFFS.totalBytes();
 
-    JsonObject _jsonMemory = _jsonDocument["memory"].to<JsonObject>();
-    JsonObject _jsonHeap = _jsonMemory["heap"].to<JsonObject>();
-    _jsonHeap["free"] = ESP.getFreeHeap();
-    _jsonHeap["total"] = ESP.getHeapSize();
-    JsonObject _jsonSpiffs = _jsonMemory["spiffs"].to<JsonObject>();
-    _jsonSpiffs["free"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
-    _jsonSpiffs["total"] = SPIFFS.totalBytes();
-
-    JsonObject _jsonChip = _jsonDocument["chip"].to<JsonObject>();
-    _jsonChip["model"] = ESP.getChipModel();
-    _jsonChip["revision"] = ESP.getChipRevision();
-    _jsonChip["cpuFrequency"] = ESP.getCpuFreqMHz();
-    _jsonChip["sdkVersion"] = ESP.getSdkVersion();
-    _jsonChip["id"] = ESP.getEfuseMac();
-
-    return _jsonDocument;
+    jsonDocument["chip"]["model"] = ESP.getChipModel();
+    jsonDocument["chip"]["revision"] = ESP.getChipRevision();
+    jsonDocument["chip"]["cpuFrequency"] = ESP.getCpuFreqMHz();
+    jsonDocument["chip"]["sdkVersion"] = ESP.getSdkVersion();
+    jsonDocument["chip"]["id"] = ESP.getEfuseMac();
 }
 
-JsonDocument deserializeJsonFromSpiffs(const char* path){
+void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     logger.debug("Deserializing JSON from SPIFFS", "utils::deserializeJsonFromSpiffs");
 
     File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
         logger.error("Failed to open file %s", "utils::deserializeJsonFromSpiffs", path);
-
-        return JsonDocument();
+        return;
     }
-    JsonDocument _jsonDocument;
 
-    DeserializationError _error = deserializeJson(_jsonDocument, _file);
+    DeserializationError _error = deserializeJson(jsonDocument, _file);
     _file.close();
     if (_error){
         logger.error("Failed to deserialize file %s. Error: %s", "utils::deserializeJsonFromSpiffs", path, _error.c_str());
-        
-        return JsonDocument();
+        return;
     }
 
-    if (_jsonDocument.isNull() || _jsonDocument.size() == 0){
+    if (jsonDocument.isNull() || jsonDocument.size() == 0){
         logger.warning("%s is empty", "utils::deserializeJsonFromSpiffs", path);
     }
     
     String _jsonString;
-    serializeJson(_jsonDocument, _jsonString);
-    logger.debug("JSON deserialized from SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
+    serializeJson(jsonDocument, _jsonString);
 
-    return _jsonDocument;
+    logger.debug("JSON deserialized from SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
 }
 
-bool serializeJsonToSpiffs(const char* path, JsonDocument _jsonDocument){
+bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     logger.debug("Serializing JSON to SPIFFS", "utils::serializeJsonToSpiffs");
 
     File _file = SPIFFS.open(path, FILE_WRITE);
@@ -95,15 +76,15 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument _jsonDocument){
         return false;
     }
 
-    serializeJson(_jsonDocument, _file);
+    serializeJson(jsonDocument, _file);
     _file.close();
 
-    if (_jsonDocument.isNull()){
+    if (jsonDocument.isNull()){
         logger.warning("%s is null", "utils::serializeJsonToSpiffs", path);
     }
 
     String _jsonString;
-    serializeJson(_jsonDocument, _jsonString);
+    serializeJson(jsonDocument, _jsonString);
     logger.debug("JSON serialized to SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
 
     return true;
@@ -126,7 +107,7 @@ void createDefaultFiles() {
     logger.debug("Default files created", "utils::createDefaultFiles");
 }
 
-void createDefaultConfigurationAde7953File() {
+void createDefaultConfigurationAde7953File() { // TODO: change to static json
     logger.debug("Creating default %s...", "utils::createDefaultAde7953File", CONFIGURATION_ADE7953_JSON_PATH);
 
     JsonDocument _jsonDocument;
@@ -235,7 +216,8 @@ void createFirstSetupFile() {
 bool checkIfFirstSetup() {
     logger.debug("Checking if first setup...", "main::checkIfFirstSetup");
 
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(FIRST_SETUP_PATH);
+    JsonDocument _jsonDocument;
+    deserializeJsonFromSpiffs(FIRST_SETUP_PATH, _jsonDocument);
 
     if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
         logger.debug("First setup file is empty", "main::checkIfFirstSetup");
@@ -299,16 +281,13 @@ void printMeterValues(MeterValues meterValues, const char* channelLabel) {
 
 void printDeviceStatus()
 {
-
-    JsonDocument _jsonDocument = getDeviceInfo();
-
     logger.debug(
         "Free heap: %d bytes | Total heap: %d bytes || Free SPIFFS: %d bytes | Total SPIFFS: %d bytes",
         "main::printDeviceStatus",
-        _jsonDocument["memory"]["heap"]["free"].as<int>(),
-        _jsonDocument["memory"]["heap"]["total"].as<int>(),
-        _jsonDocument["memory"]["spiffs"]["free"].as<int>(),
-        _jsonDocument["memory"]["spiffs"]["total"].as<int>()
+        ESP.getFreeHeap(),
+        ESP.getHeapSize(),
+        SPIFFS.totalBytes() - SPIFFS.usedBytes(),
+        SPIFFS.totalBytes()
     );
 }
 
@@ -327,14 +306,13 @@ void setDefaultGeneralConfiguration() {
     logger.debug("Default general configuration set", "utils::setDefaultGeneralConfiguration");
 }
 
-void setGeneralConfiguration(GeneralConfiguration newGeneralConfiguration) {
+void setGeneralConfiguration(GeneralConfiguration& newGeneralConfiguration) {
     logger.debug("Setting general configuration...", "utils::setGeneralConfiguration");
 
     GeneralConfiguration previousConfiguration = generalConfiguration;
     generalConfiguration = newGeneralConfiguration;
 
     applyGeneralConfiguration();
-
     saveGeneralConfigurationToSpiffs();
     publishGeneralConfiguration();
 
@@ -345,7 +323,7 @@ void setGeneralConfiguration(GeneralConfiguration newGeneralConfiguration) {
     logger.debug("General configuration set", "utils::setGeneralConfiguration");
 }
 
-bool checkIfRebootRequiredGeneralConfiguration(GeneralConfiguration previousConfiguration, GeneralConfiguration newConfiguration) {
+bool checkIfRebootRequiredGeneralConfiguration(GeneralConfiguration& previousConfiguration, GeneralConfiguration& newConfiguration) {
     if (previousConfiguration.isCloudServicesEnabled != newConfiguration.isCloudServicesEnabled) return true;
 
     return false;
@@ -354,12 +332,17 @@ bool checkIfRebootRequiredGeneralConfiguration(GeneralConfiguration previousConf
 bool setGeneralConfigurationFromSpiffs() {
     logger.debug("Setting general configuration from SPIFFS...", "utils::setGeneralConfigurationFromSpiffs");
 
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(GENERAL_CONFIGURATION_JSON_PATH);
+    JsonDocument _jsonDocument;
+    deserializeJsonFromSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
+
     if (_jsonDocument.isNull()){
         logger.error("Failed to open general configuration file", "utils::setGeneralConfigurationFromSpiffs");
         return false;
     } else {
-        setGeneralConfiguration(jsonToGeneralConfiguration(_jsonDocument));
+        GeneralConfiguration _generalConfiguration;
+        jsonToGeneralConfiguration(_jsonDocument, _generalConfiguration);
+        setGeneralConfiguration(_generalConfiguration);
+
         logger.debug("General configuration set from SPIFFS", "utils::setGeneralConfigurationFromSpiffs");
         return true;
     }
@@ -368,7 +351,9 @@ bool setGeneralConfigurationFromSpiffs() {
 bool saveGeneralConfigurationToSpiffs() {
     logger.debug("Saving general configuration to SPIFFS...", "utils::saveGeneralConfigurationToSpiffs");
 
-    JsonDocument _jsonDocument = generalConfigurationToJson(generalConfiguration);
+    JsonDocument _jsonDocument;
+    generalConfigurationToJson(generalConfiguration, _jsonDocument);
+
     if (serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument)){
         logger.debug("General configuration saved to SPIFFS", "utils::saveGeneralConfigurationToSpiffs");
         return true;
@@ -378,28 +363,20 @@ bool saveGeneralConfigurationToSpiffs() {
     }
 }
 
-JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguration) {
-    JsonDocument _jsonDocument;
-    
-    _jsonDocument["sampleCycles"] = generalConfiguration.sampleCycles;
-    _jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
-    _jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
-    _jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
-    _jsonDocument["ledBrightness"] = generalConfiguration.ledBrightness;
-    
-    return _jsonDocument;
+void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument) {
+    jsonDocument["sampleCycles"] = generalConfiguration.sampleCycles;
+    jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
+    jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
+    jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
+    jsonDocument["ledBrightness"] = generalConfiguration.ledBrightness;
 }
 
-GeneralConfiguration jsonToGeneralConfiguration(JsonDocument _jsonDocument) {
-    GeneralConfiguration _generalConfiguration;
-    
-    _generalConfiguration.sampleCycles = _jsonDocument["sampleCycles"] ? _jsonDocument["sampleCycles"].as<int>() : DEFAULT_SAMPLE_CYCLES;
-    _generalConfiguration.isCloudServicesEnabled = _jsonDocument["isCloudServicesEnabled"] ? _jsonDocument["isCloudServicesEnabled"].as<bool>() : DEFAULT_IS_CLOUD_SERVICES_ENABLED;
-    _generalConfiguration.gmtOffset = _jsonDocument["gmtOffset"] ? _jsonDocument["gmtOffset"].as<int>() : DEFAULT_GMT_OFFSET;
-    _generalConfiguration.dstOffset = _jsonDocument["dstOffset"] ? _jsonDocument["dstOffset"].as<int>() : DEFAULT_DST_OFFSET;
-    _generalConfiguration.ledBrightness = _jsonDocument["ledBrightness"] ? _jsonDocument["ledBrightness"].as<int>() : DEFAULT_LED_BRIGHTNESS;
-
-    return _generalConfiguration;
+void jsonToGeneralConfiguration(JsonDocument& jsonDocument, GeneralConfiguration& generalConfiguration) {
+    generalConfiguration.sampleCycles = jsonDocument["sampleCycles"].as<int>();
+    generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
+    generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
+    generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
+    generalConfiguration.ledBrightness = jsonDocument["ledBrightness"].as<int>();
 }
 
 void applyGeneralConfiguration() {
@@ -410,62 +387,68 @@ void applyGeneralConfiguration() {
     logger.debug("General configuration applied", "utils::applyGeneralConfiguration");
 }
 
-JsonDocument getPublicLocation() {
-    HTTPClient http;
+// Helper functions
+// -----------------------------
 
+void getPublicLocation(PublicLocation* publicLocation) {
+    HTTPClient _http;
     JsonDocument _jsonDocument;
 
-    http.begin(PUBLIC_LOCATION_ENDPOINT);
-    int httpCode = http.GET();
+    _http.begin(PUBLIC_LOCATION_ENDPOINT);
+
+    int httpCode = _http.GET();
     if (httpCode > 0) {
         if (httpCode == HTTP_CODE_OK) {
-            String payload = http.getString();
+            String payload = _http.getString();
             payload.trim();
             
             deserializeJson(_jsonDocument, payload);
+
+            publicLocation->country = _jsonDocument["country"].as<String>();
+            publicLocation->city = _jsonDocument["city"].as<String>();
+            publicLocation->latitude = _jsonDocument["lat"].as<String>();
+            publicLocation->longitude = _jsonDocument["lon"].as<String>();
 
             logger.debug(
                 "Location: %s, %s | Lat: %.4f | Lon: %.4f",
                 "utils::getPublicLocation",
-                _jsonDocument["city"].as<String>().c_str(),
-                _jsonDocument["country"].as<String>().c_str(),
-                _jsonDocument["lat"].as<float>(),
-                _jsonDocument["lon"].as<float>()
+                publicLocation->country.c_str(),
+                publicLocation->city.c_str(),
+                publicLocation->latitude.toFloat(),
+                publicLocation->longitude.toFloat()
             );
         }
     } else {
         logger.error("Error on HTTP request: %d", "utils::getPublicLocation", httpCode);
-        deserializeJson(_jsonDocument, "{}");
     }
 
-    http.end();
-
-    return _jsonDocument;
+    _http.end();
 }
 
-// Helper functions
-// -----------------------------
+void getPublicTimezone(int* gmtOffset, int* dstOffset) {
+    PublicLocation _publicLocation;
+    getPublicLocation(&_publicLocation);
 
-std::pair<int, int> getPublicTimezone() {
-    int _gmtOffset;
-    int _dstOffset;
-
-    JsonDocument _jsonDocument = getPublicLocation();
-
-    HTTPClient http;
+    HTTPClient _http;
     String _url = PUBLIC_TIMEZONE_ENDPOINT;
-    _url += "lat=" + String(_jsonDocument["lat"].as<float>(), 4);
-    _url += "&lng=" + String(_jsonDocument["lon"].as<float>(), 4);
+    _url += "lat=" + _publicLocation.latitude;
+    _url += "&lng=" + _publicLocation.longitude;
     _url += "&username=" + String(PUBLIC_TIMEZONE_USERNAME);
 
-    http.begin(_url);
-    int httpCode = http.GET();
+    _http.begin(_url);
+    int httpCode = _http.GET();
+
     if (httpCode > 0) {
         if (httpCode == HTTP_CODE_OK) {
-            String payload = http.getString();
+            String payload = _http.getString();
             payload.trim();
             
+            JsonDocument _jsonDocument;
+
             deserializeJson(_jsonDocument, payload);
+
+            *gmtOffset = _jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
+            *dstOffset = _jsonDocument["dstOffset"].as<int>() * 3600 - *gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
 
             logger.debug(
                 "GMT offset: %d | DST offset: %d",
@@ -473,9 +456,6 @@ std::pair<int, int> getPublicTimezone() {
                 _jsonDocument["rawOffset"].as<int>(),
                 _jsonDocument["dstOffset"].as<int>()
             );
-
-            _gmtOffset = _jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
-            _dstOffset = _jsonDocument["dstOffset"].as<int>() * 3600 - _gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
         }
     } else {
         logger.error(
@@ -483,24 +463,16 @@ std::pair<int, int> getPublicTimezone() {
             "utils::getPublicTimezone", 
             httpCode
         );
-        deserializeJson(_jsonDocument, "{}");
-
-        _gmtOffset = generalConfiguration.gmtOffset;
-        _dstOffset = generalConfiguration.dstOffset;
     }
-
-    return std::make_pair(_gmtOffset, _dstOffset);
 }
 
 void updateTimezone() {
-    logger.debug("Updating timezone", "utils::updateTimezone");
+    logger.debug("Updating timezone...", "utils::updateTimezone");
 
-    std::pair<int, int> _timezones = getPublicTimezone();
-
-    generalConfiguration.gmtOffset = _timezones.first;
-    generalConfiguration.dstOffset = _timezones.second;
-    
+    getPublicTimezone(&generalConfiguration.gmtOffset, &generalConfiguration.dstOffset);
     saveGeneralConfigurationToSpiffs();
+
+    logger.debug("Timezone updated", "utils::updateTimezone");
 }
 
 void factoryReset() {
@@ -511,32 +483,6 @@ void factoryReset() {
     restartEsp32("utils::factoryReset", "Factory reset completed. We are back to the good old days");
 }
 
-bool _duplicateFile(const char* sourcePath, const char* destinationPath) {
-    logger.debug("Duplicating file", "utils::_duplicateFile");
-
-    File _sourceFile = SPIFFS.open(sourcePath, FILE_READ);
-    if (!_sourceFile) {
-        logger.error("Failed to open source file: %s", "utils::_duplicateFile", sourcePath);
-        return false;
-    }
-
-    File _destinationFile = SPIFFS.open(destinationPath, FILE_WRITE);
-    if (!_destinationFile) {
-        logger.error("Failed to open destination file: %s", "utils::_duplicateFile", destinationPath);
-        return false;
-    }
-
-    while (_sourceFile.available()) {
-        _destinationFile.write(_sourceFile.read());
-    }
-
-    _sourceFile.close();
-    _destinationFile.close();
-
-    logger.debug("File duplicated", "utils::_duplicateFile");
-    return true;
-}
-
 bool isLatestFirmwareInstalled() {
     File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_READ);
     if (!_file) {
@@ -544,7 +490,8 @@ bool isLatestFirmwareInstalled() {
         return false;
     }
 
-    JsonDocument _jsonDocument = deserializeJsonFromSpiffs(FIRMWARE_UPDATE_INFO_PATH);
+    JsonDocument _jsonDocument;
+    deserializeJson(_jsonDocument, _file);
 
     if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
         logger.debug("Firmware update info file is empty", "utils::isLatestFirmwareInstalled");

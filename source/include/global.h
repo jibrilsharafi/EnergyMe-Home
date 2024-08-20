@@ -14,8 +14,6 @@
 extern int currentChannel;
 extern int previousChannel;
 
-extern bool isFirstSetup;
-
 extern GeneralConfiguration generalConfiguration;
 
 extern PubSubClient clientMqtt; // These must be global to ensure proper working of MQTT

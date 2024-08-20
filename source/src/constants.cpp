@@ -28,6 +28,7 @@ const char* NTP_SERVER = "pool.ntp.org";
 const int TIME_SYNC_INTERVAL = 3600; // Sync time every hour
 const int DEFAULT_GMT_OFFSET = 0;
 const int DEFAULT_DST_OFFSET = 0;
+const char* TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S";
 
 // LED
 const int LED_RED_PIN = 38;
