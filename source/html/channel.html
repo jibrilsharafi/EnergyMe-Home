@@ -23,7 +23,6 @@
 
         .channel-columns input[type="text"] {
             width: 90%;
-            /* Adjust this value as needed */
             box-sizing: border-box;
         }
     </style>
@@ -75,7 +74,9 @@
     function createChannelBoxes() {
         var container = document.querySelector('.channel-columns');
 
-        channelData.forEach((channel, index) => {
+        Object.keys(channelData).forEach((key) => {
+            const channel = channelData[key];
+            const index = key; // Use the key as the index
             var box = document.createElement('div');
             box.className = 'section-box';
             box.style.textAlign = 'center';
@@ -94,7 +95,6 @@
                             ${calibrationOptions}
                         </select>
                     </label>
-
                     <div style="height: 10px;"></div>
                     <label>
                         <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="updateChannel(${index}, document.getElementById('label${index}').value, document.getElementById('calibration${index}').value, document.getElementById('active${index}').checked, this.checked)">

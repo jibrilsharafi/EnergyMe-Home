@@ -8,8 +8,15 @@ Mqtt::Mqtt(
 
 #ifdef ENERGYME_HOME_SECRETS_H
 
-bool Mqtt::begin() {
+bool Mqtt::begin(String deviceId) {
     _logger.debug("Setting up MQTT...", "mqtt::begin");
+
+    if (!generalConfiguration.isCloudServicesEnabled) {
+        _logger.warning("Cloud services not enabled. Skipping...", "mqtt::begin");
+        return false;
+    }
+
+    _deviceId = deviceId;
     
     _setupTopics();
 
@@ -98,7 +105,7 @@ void Mqtt::mqttLoop() {
 bool Mqtt::_connectMqtt() { //TODO: Handle continuous connection/reconnection
     _logger.debug("Attempt to connect to MQTT...", "mqtt::_connectMqtt");
     
-    if (clientMqtt.connect(getDeviceId().c_str())) {
+    if (clientMqtt.connect(_deviceId.c_str())) {
         _logger.info("Connected to MQTT...", "mqtt::_connectMqtt");
 
         _mqttConnectionAttempt = 0;
@@ -128,6 +135,8 @@ bool Mqtt::_connectMqtt() { //TODO: Handle continuous connection/reconnection
 #ifdef ENERGYME_HOME_SECRETS_H
 
 void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topic) {
+    _logger.debug("Constructing MQTT topic with rule for %s | %s", "mqtt::_constructMqttTopicWithRule", ruleName, finalTopic);
+
     snprintf(
         topic,
         MQTT_MAX_TOPIC_LENGTH,
@@ -136,29 +145,35 @@ void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTo
         ruleName,
         MQTT_TOPIC_1,
         MQTT_TOPIC_2,
-        getDeviceId().c_str(),
+        _deviceId,
         finalTopic
     );
 }
 
 void Mqtt::_constructMqttTopic(const char* finalTopic, char* topic) {
+    _logger.debug("Constructing MQTT topic for %s", "mqtt::_constructMqttTopic", finalTopic);
+
     snprintf(
         topic,
         MQTT_MAX_TOPIC_LENGTH,
         "%s/%s/%s/%s",
         MQTT_TOPIC_1,
         MQTT_TOPIC_2,
-        getDeviceId().c_str(),
+        _deviceId,
         finalTopic
     );
 }
 
 void Mqtt::_setupTopics() {
+    _logger.debug("Setting up MQTT topics...", "mqtt::_setupTopics");
+
     _setTopicMeter();
     _setTopicStatus();
     _setTopicMetadata();
     _setTopicChannel();
     _setTopicGeneralConfiguration();
+
+    _logger.debug("MQTT topics setup complete", "mqtt::_setupTopics");
 }
 
 void Mqtt::_setTopicMeter() {
@@ -306,16 +321,16 @@ void Mqtt::publishGeneralConfiguration() {
 }
 
 void Mqtt::_publishMessage(const char* topic, const char* message) {
+    if (!generalConfiguration.isCloudServicesEnabled) {
+        _logger.verbose("Cloud services not enabled. Skipping...", "mqtt::_publishMessage");
+        return;
+    }
+
     _logger.debug(
         "Publishing message to topic %s",
         "mqtt::_publishMessage",
         topic
     );
-
-    if (!generalConfiguration.isCloudServicesEnabled) {
-        _logger.verbose("Cloud services not enabled. Skipping...", "mqtt::_publishMessage");
-        return;
-    }
 
     if (topic == nullptr || message == nullptr) {
         _logger.debug("Null pointer or message passed, meaning MQTT not initialized yet", "mqtt::_publishMessage");
@@ -367,7 +382,7 @@ void Mqtt::_subscribeToTopics() {
 }
 
 void Mqtt::_subscribeUpdateFirmware() {
-    char *_topic;
+    char _topic[MQTT_MAX_TOPIC_LENGTH];
     _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE, _topic);
     
     if (!clientMqtt.subscribe(_topic)) {

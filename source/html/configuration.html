@@ -124,6 +124,7 @@
 
         <script>
             var logLevels = ["Debug", "Info", "Warning", "Error", "Fatal"];
+            var generalConfig;
 
             function populateDropdown() {
                 var printLogLevel = document.getElementById("printLogLevel");
@@ -311,7 +312,7 @@
                 xhttp.onreadystatechange = function () {
                     if (this.readyState == 4) {
                         if (this.status == 200) {
-                            var generalConfig = JSON.parse(this.responseText);
+                            generalConfig = JSON.parse(this.responseText);
 
                             document.getElementById("cloudServices").checked = generalConfig.isCloudServicesEnabled;
                             document.getElementById("ledBrightness").value = generalConfig.ledBrightness;
@@ -341,10 +342,10 @@
                         }
                     }
                 };
-                xhttp.send(JSON.stringify({
-                    isCloudServicesEnabled: document.getElementById("cloudServices").checked,
-                    ledBrightness: document.getElementById("ledBrightness").value
-                }));
+                generalConfig.isCloudServicesEnabled = document.getElementById("cloudServices").checked;
+                generalConfig.ledBrightness = document.getElementById("ledBrightness").value;
+
+                xhttp.send(JSON.stringify(generalConfig));
                 setTimeout(function () {
                     document.getElementById("setGeneralConfigurationButton").innerHTML = "Set configuration";
                     document.getElementById("setGeneralConfigurationButton").disabled = false;

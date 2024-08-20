@@ -30,7 +30,7 @@ public:
         AdvancedLogger &logger,
         CustomTime &customTime);
 
-    bool begin();
+    bool begin(String deviceId);
     void loop();
 
     void publishMeter();
@@ -69,11 +69,13 @@ private:
 
     CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> _payloadMeter;
 
-    char *_mqttTopicMeter = nullptr;
-    char *_mqttTopicStatus = nullptr;
-    char *_mqttTopicMetadata = nullptr;
-    char *_mqttTopicChannel = nullptr;
-    char *_mqttTopicGeneralConfiguration = nullptr;
+    String _deviceId;
+
+    char _mqttTopicMeter[MQTT_MAX_TOPIC_LENGTH];
+    char _mqttTopicStatus[MQTT_MAX_TOPIC_LENGTH];
+    char _mqttTopicMetadata[MQTT_MAX_TOPIC_LENGTH];
+    char _mqttTopicChannel[MQTT_MAX_TOPIC_LENGTH];
+    char _mqttTopicGeneralConfiguration[MQTT_MAX_TOPIC_LENGTH];
 
     unsigned long _lastMillisMqttLoop = 0;
     unsigned long _lastMillisMeterPublished = 0;

@@ -264,9 +264,9 @@ void restartEsp32(const char* functionName, const char* reason) { //TODO: modify
 // -----------------------------
 
 void printMeterValues(MeterValues meterValues, const char* channelLabel) {
-    logger.verbose(
+    logger.debug(
         "%s: %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh | %.3f VARh | %.3f VAh", 
-        "main::printMeterValues", 
+        "utils::printMeterValues", 
         channelLabel, 
         meterValues.voltage, 
         meterValues.current, 
@@ -319,9 +319,9 @@ void setGeneralConfiguration(GeneralConfiguration& newGeneralConfiguration) {
     // mqtt.publishGeneralConfiguration(); //TODO: understand if it possible to use MQTT here
     // mqtt.publishStatus();
 
-    if (checkIfRebootRequiredGeneralConfiguration(previousConfiguration, newGeneralConfiguration)) {
-        restartEsp32("utils::setGeneralConfiguration", "General configuration set with reboot required");
-    }
+    // if (checkIfRebootRequiredGeneralConfiguration(previousConfiguration, newGeneralConfiguration)) { //TODO: this crashes on boot since previousConfiguration is with default values
+    //     restartEsp32("utils::setGeneralConfiguration", "General configuration set with reboot required");
+    // }
 
     logger.debug("General configuration set", "utils::setGeneralConfiguration");
 }

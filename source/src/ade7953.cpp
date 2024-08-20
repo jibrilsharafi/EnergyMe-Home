@@ -133,6 +133,7 @@ void Ade7953::loop() {
     if (saveEnergyFlag) {
         saveEnergyToSpiffs();
         saveDailyEnergyToSpiffs();
+        
         saveEnergyFlag = false;
     }
 }
@@ -438,15 +439,13 @@ void Ade7953::setDefaultChannelData() {
     JsonDocument _jsonDocument;
     deserializeJson(_jsonDocument, default_channel_json);
 
-    ChannelData _defaultValue;
-
     setChannelData(parseJsonChannelData(_jsonDocument));    
 
     _logger.debug("Successfully initialized data channel", "Ade7953::setDefaultChannelData");
 }
 
 void Ade7953::_setChannelDataFromSpiffs() {
-    _logger.debug("Setting data channel from SPIFFS", "Ade7953::_setChannelDataFromSpiffs");
+    _logger.debug("Setting data channel from SPIFFS...", "Ade7953::_setChannelDataFromSpiffs");
 
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument);
@@ -456,18 +455,22 @@ void Ade7953::_setChannelDataFromSpiffs() {
         setDefaultChannelData();
     } else {
         _logger.debug("Successfully read data channel from SPIFFS. Setting values...", "Ade7953::_setChannelDataFromSpiffs");
-        
         setChannelData(parseJsonChannelData(_jsonDocument));
     }
+
     updateDataChannel();
+
+    _logger.debug("Successfully set data channel from SPIFFS", "Ade7953::_setChannelDataFromSpiffs");
 }
 
 void Ade7953::setChannelData(ChannelData* newChannelData) {
     _logger.debug("Setting data channel", "Ade7953::setChannelData");
+    
     for(int i = 0; i < CHANNEL_COUNT; i++) {
         channelData[i] = newChannelData[i];
     }
     saveChannelDataToSpiffs();
+
     _logger.debug("Successfully set data channel", "Ade7953::setChannelData");
 }
 
@@ -491,10 +494,10 @@ JsonDocument Ade7953::channelDataToJson() {
     JsonDocument _jsonDocument;
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
-        _jsonDocument[i]["active"] = channelData[i].active;
-        _jsonDocument[i]["reverse"] = channelData[i].reverse;
-        _jsonDocument[i]["label"] = channelData[i].label;
-        _jsonDocument[i]["calibrationLabel"] = channelData[i].calibrationValues.label;
+        _jsonDocument[String(i)]["active"] = channelData[i].active;
+        _jsonDocument[String(i)]["reverse"] = channelData[i].reverse;
+        _jsonDocument[String(i)]["label"] = channelData[i].label;
+        _jsonDocument[String(i)]["calibrationLabel"] = channelData[i].calibrationValues.label;
     }
 
     _logger.debug("Successfully converted data channel to JSON", "Ade7953::channelDataToJson");
@@ -546,14 +549,17 @@ void Ade7953::_updateSampleTime() {
     _logger.debug("Updating sample time", "Ade7953::updateSampleTime");
 
     int _activeChannelCount = getActiveChannelCount();
+
     if (_activeChannelCount > 0) {
-        long linecyc = long(generalConfiguration.sampleCycles / _activeChannelCount);
-        configuration.linecyc = linecyc;
+        long _linecyc = long(DEFAULT_SAMPLE_CYCLES / _activeChannelCount);
+        
+        configuration.linecyc = _linecyc;
         _applyConfiguration();
         saveConfigurationToSpiffs();
-        _logger.debug("Successfully updated sample time", "Ade7953::updateSampleTime");
+
+        _logger.debug("Successfully set sample to %d line cycles", "Ade7953::updateSampleTime", _linecyc); 
     } else {
-        _logger.error("No active channels found, sample time not updated", "Ade7953::updateSampleTime");
+        _logger.warning("No active channels found, sample time not updated", "Ade7953::updateSampleTime");
     }
 }
 
@@ -583,7 +589,7 @@ int Ade7953::findNextActiveChannel(int currentChannel) {
             return i;
         }
     }
-    _logger.debug("No active channel found, returning current channel", "Ade7953::findNextActiveChannel");
+    _logger.verbose("No active channel found, returning current channel", "Ade7953::findNextActiveChannel");
     return currentChannel;
 }
 
@@ -594,6 +600,8 @@ int Ade7953::getActiveChannelCount() {
             _activeChannelCount++;
         }
     }
+
+    _logger.debug("Found %d active channels", "Ade7953::getActiveChannelCount", _activeChannelCount);
     return _activeChannelCount;
 }
 
@@ -804,7 +812,7 @@ void Ade7953::resetEnergyValues() {
 // --------------------
 
 void Ade7953::setLinecyc(long linecyc) {
-    linecyc = min(max(linecyc, 1L), 1000L); // Linecyc must be between reasonable values, 1 and 1000
+    linecyc = min(max(linecyc, 10L), 1000L); // Linecyc must be between reasonable values, 10 and 1000
 
     _logger.debug(
         "Setting linecyc to %d",

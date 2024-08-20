@@ -97,7 +97,7 @@
 #define MQTT_LOOP_INTERVAL 1000 // In milliseconds, representing the interval between two MQTT loop checks
 #define PAYLOAD_METER_MAX_NUMBER_POINTS 30 // The maximum number of points that can be sent in a single payload
 #define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
-#define MQTT_MAX_TOPIC_LENGTH 300 // The maximum length of a MQTT topic
+#define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
 
 // Saving date
 #define ENERGY_SAVE_INTERVAL 900 // Time between each energy save (in seconds) to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
@@ -133,7 +133,7 @@
 #define DEFAULT_X_NOLOAD_REGISTER 0x00C832 // Value for AP_NOLOAD_32, VAR_NOLOAD_32 and VA_NOLOAD_32 register. Represents a scale of 20000:1, meaning that the no-load threshold is 0.005% of the full-scale value
 #define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (disable all no-load detection)
 #define DEFAULT_LCYCMODE_REGISTER 0xFF // 0xFF 0b11111111 (enable accumulation mode for all channels)
-#define DEFAULT_LINECYC_REGISTER 50 // Set the number of half line cycles to accumulate before interrupting
+#define DEFAULT_LINECYC_REGISTER 100 // Set the number of half line cycles to accumulate before interrupting
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1000000000000100 // Enable bit 2, and 15 (keep HPF enabled, keep COMM_LOCK disabled)
 #define DEFAULT_AWGAIN 4194304 // Default AWGAIN value

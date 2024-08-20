@@ -184,7 +184,7 @@ void setup() {
 
   logger.info("Setting up MQTT...", "main::setup");
   if (generalConfiguration.isCloudServicesEnabled) {
-    if (!mqtt.begin()) {
+    if (!mqtt.begin(getDeviceId())) {
       logger.error("MQTT initialization failed!", "main::setup");
     } else {
       logger.info("MQTT setup done", "main::setup");
@@ -213,12 +213,14 @@ void loop() {
     
     printMeterValues(ade7953.meterValues[previousChannel], ade7953.channelData[previousChannel].label.c_str());
 
-    payloadMeter.push(PayloadMeter(
-      previousChannel,
-      customTime.getUnixTime(),
-      ade7953.meterValues[previousChannel].activePower,
-      ade7953.meterValues[previousChannel].powerFactor
-    )); 
+    if (generalConfiguration.isCloudServicesEnabled) {
+      payloadMeter.push(PayloadMeter(
+        previousChannel,
+        customTime.getUnixTime(),
+        ade7953.meterValues[previousChannel].activePower,
+        ade7953.meterValues[previousChannel].powerFactor
+      ));
+    } 
   }
 
   if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
