@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
+#include <WiFiManager.h> // Needs to be defined on top due to conflict between WiFiManager and ESPAsyncWebServer
 
 // Project includes
 #include "ade7953.h"
@@ -22,6 +23,7 @@ GeneralConfiguration generalConfiguration;
 
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient clientMqtt(net);
+AsyncWebServer server(80);
 
 CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;
 

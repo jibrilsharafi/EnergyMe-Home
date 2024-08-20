@@ -5,23 +5,16 @@ CustomServer::CustomServer(
     Led &led,
     Ade7953 &ade7953,
     CustomTime &customTime,
-    CustomWifi &customWifi) : _logger(logger), _led(led), _ade7953(ade7953), _customTime(customTime), _customWifi(customWifi), _server(80) {}
+    CustomWifi &customWifi) : _logger(logger), _led(led), _ade7953(ade7953), _customTime(customTime), _customWifi(customWifi) {}
 
 void CustomServer::begin()
 {
-    _setupServer();
-}
-
-void CustomServer::_setupServer()
-{
-    AsyncWebServer _server(80);
-
     _setHtmlPages();
     _setOta();
     _setRestApi();
     _setOtherEndpoints();
 
-    _server.begin();
+    server.begin();
 
     Update.onProgress([](size_t progress, size_t total) {});
 }
@@ -67,54 +60,54 @@ void CustomServer::_serverLog(const char *message, const char *function, LogLeve
 void CustomServer::_setHtmlPages()
 {
     // HTML pages
-    _server.on("/", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get index page", "customserver::_setHtmlPages::/", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", index_html); });
 
-    _server.on("/configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get configuration page", "customserver::_setHtmlPages::/configuration", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", configuration_html); });
 
-    _server.on("/calibration", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/calibration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get calibration page", "customserver::_setHtmlPages::/calibration", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", calibration_html); });
 
-    _server.on("/channel", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/channel", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get channel page", "customserver::_setHtmlPages::/channel", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", channel_html); });
 
-    _server.on("/info", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get info page", "customserver::_setHtmlPages::/info", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", info_html); });
 
     // CSS
-    _server.on("/css/styles.css", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/css/styles.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::DEBUG, request);
         request->send_P(200, "text/css", styles_css); });
 
-    _server.on("/css/button.css", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/css/button.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::DEBUG, request);
         request->send_P(200, "text/css", button_css); });
 
-    _server.on("/css/section.css", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/css/section.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::DEBUG, request);
         request->send_P(200, "text/css", section_css); });
 
-    _server.on("/css/typography.css", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/css/typography.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::DEBUG, request);
         request->send_P(200, "text/css", typography_css); });
 
     // Other
-    _server.on("/favicon.ico", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/favicon.ico", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.ico", LogLevel::DEBUG, request);
         request->send_P(200, "image/x-icon", favicon_ico); });
@@ -122,24 +115,24 @@ void CustomServer::_setHtmlPages()
 
 void CustomServer::_setOta()
 {
-    _server.on("/update", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/update", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get update page", "customserver::_setOta::/update", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", update_html); });
 
-    _server.on("/do-update", HTTP_POST, [this](AsyncWebServerRequest *request) {}, [this](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
+    server.on("/do-update", HTTP_POST, [this](AsyncWebServerRequest *request) {}, [this](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
                { _handleDoUpdate(request, filename, index, data, len, final); });
 }
 
 void CustomServer::_setRestApi()
 {
-    _server.on("/rest/is-alive", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/is-alive", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to check if the ESP32 is alive", "customserver::_setRestApi::/rest/is-alive", LogLevel::DEBUG, request);
 
         request->send(200, "application/json", "{\"message\":\"True\"}"); });
 
-    _server.on("/rest/project-info", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/project-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get project info from REST API", "customserver::_setRestApi::/rest/project-info", LogLevel::DEBUG, request);
 
@@ -151,7 +144,7 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", _buffer.c_str()); });
 
-    _server.on("/rest/device-info", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/device-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get device info from REST API", "customserver::_setRestApi::/rest/device-info", LogLevel::DEBUG, request);
 
@@ -163,7 +156,7 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", _buffer.c_str()); });
 
-    _server.on("/rest/wifi-info", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/wifi-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get WiFi values from REST API", "customserver::_setRestApi::/rest/wifi-info", LogLevel::DEBUG, request);
         
@@ -175,7 +168,7 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", _buffer.c_str()); });
 
-    _server.on("/rest/meter", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/meter", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get meter values from REST API", "customserver::_setRestApi::/rest/meter", LogLevel::DEBUG, request);
 
@@ -185,7 +178,7 @@ void CustomServer::_setRestApi()
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _buffer.c_str());
         request->send(response); });
 
-    _server.on("/rest/meter-single", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/meter-single", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get meter values from REST API", "customserver::_setRestApi::/rest/meter-single", LogLevel::DEBUG, request);
 
@@ -209,7 +202,7 @@ void CustomServer::_setRestApi()
             request->send(400, "text/plain", "Missing index parameter");
         } });
 
-    _server.on("/rest/active-power", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/active-power", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get meter values from REST API", "customserver::_setRestApi::/rest/active-power", LogLevel::DEBUG, request);
 
@@ -230,7 +223,7 @@ void CustomServer::_setRestApi()
             request->send(400, "text/plain", "Missing index parameter");
         } });
 
-    _server.on("/rest/get-ade7953-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/get-ade7953-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get ADE7953 configuration from REST API", "customserver::_setRestApi::/rest/get-ade7953-configuration", LogLevel::DEBUG, request);
 
@@ -240,7 +233,7 @@ void CustomServer::_setRestApi()
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _buffer.c_str());
         request->send(response); });
 
-    _server.on("/rest/get-channel", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/get-channel", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get channel data from REST API", "customserver::_setRestApi::/rest/get-channel", LogLevel::DEBUG, request);
 
@@ -250,7 +243,7 @@ void CustomServer::_setRestApi()
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _buffer.c_str());
         request->send(response); });
 
-    _server.on("/rest/set-channel", HTTP_POST, [this](AsyncWebServerRequest *request) { // TODO: make evertything JSON for coherence
+    server.on("/rest/set-channel", HTTP_POST, [this](AsyncWebServerRequest *request) { // TODO: make evertything JSON for coherence
         _serverLog(
             "Request to set channel data from REST API",
             "customserver::_setRestApi::/rest/set-channel",
@@ -291,7 +284,7 @@ void CustomServer::_setRestApi()
         }
     });
 
-    _server.on("/rest/get-calibration", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/get-calibration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get configuration from REST API", "customserver::_setRestApi::/rest/get-calibration", LogLevel::DEBUG, request);
 
@@ -301,7 +294,7 @@ void CustomServer::_setRestApi()
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _buffer.c_str());
         request->send(response); });
 
-    _server.on("/rest/calibration-reset", HTTP_POST, [&](AsyncWebServerRequest *request)
+    server.on("/rest/calibration-reset", HTTP_POST, [&](AsyncWebServerRequest *request)
                {
         _serverLog("Request to reset calibration values from REST API", "customserver::_setRestApi::/rest/calibration-reset", LogLevel::WARNING, request);
         
@@ -311,7 +304,7 @@ void CustomServer::_setRestApi()
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Calibration values reset\"}");
         request->send(response); });
 
-    _server.on("/rest/reset-energy", HTTP_POST, [this](AsyncWebServerRequest *request)
+    server.on("/rest/reset-energy", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to reset energy counters from REST API", "customserver::_setRestApi::/rest/reset-energy", LogLevel::WARNING, request);
 
@@ -320,7 +313,7 @@ void CustomServer::_setRestApi()
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Energy counters reset\"}");
         request->send(response); });
 
-    _server.on("/rest/get-log-level", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/get-log-level", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get log level from REST API", "customserver::_setRestApi::/rest/get-log-level", LogLevel::DEBUG, request);
 
@@ -334,7 +327,7 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", _buffer.c_str()); });
 
-    _server.on("/rest/set-log-level", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/set-log-level", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog(
             "Request to set log level from REST API",
@@ -358,7 +351,7 @@ void CustomServer::_setRestApi()
             request->send(400, "text/plain", "No level parameter provided. No changes made");
         } });
 
-    _server.on("/rest/get-general-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/get-general-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get get general configuration from REST API", "customserver::_setRestApi::/rest/get-general-configuration", LogLevel::DEBUG, request);
 
@@ -370,7 +363,7 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", _buffer.c_str()); });
 
-    _server.on("/rest/ade7953-read-register", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/ade7953-read-register", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog(
             "Request to get ADE7953 register value from REST API",
@@ -400,7 +393,7 @@ void CustomServer::_setRestApi()
             request->send(400, "text/plain", "Missing parameter. Required: address (int), nBits (int), signed (bool)");
         } });
 
-    _server.on("/rest/ade7953-write-register", HTTP_POST, [this](AsyncWebServerRequest *request)
+    server.on("/rest/ade7953-write-register", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog(
             "Request to get ADE7953 register value from REST API",
@@ -430,7 +423,7 @@ void CustomServer::_setRestApi()
             request->send(400, "text/plain", "Missing parameter. Required: address (int), nBits (int), data (int)");
         } });
 
-    _server.on("/rest/save-daily-energy", HTTP_POST, [this](AsyncWebServerRequest *request)
+    server.on("/rest/save-daily-energy", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to save daily energy to SPIFFS from REST API", "customserver::_setRestApi::/rest/save-daily-energy", LogLevel::DEBUG, request);
 
@@ -438,7 +431,7 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", "{\"message\":\"Daily energy saved\"}"); });
 
-    _server.on("/rest/file/*", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/file/*", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get file from REST API", "customserver::_setRestApi::/rest/file/*", LogLevel::DEBUG, request);
 
@@ -450,7 +443,7 @@ void CustomServer::_setRestApi()
         }
         else {request->send(400, "text/plain", "File not found");} });
 
-    _server.on("/rest/firmware-update-info", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/firmware-update-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get firmware update info from REST API", "customserver::_setRestApi::/rest/firmware-update-info", LogLevel::DEBUG, request);
 
@@ -462,7 +455,7 @@ void CustomServer::_setRestApi()
             request->send(200, "application/json", "{}");
         } });
 
-    _server.on("/rest/firmware-update-status", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/firmware-update-status", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get firmware update status from REST API", "customserver::_setRestApi::/rest/firmware-update-status", LogLevel::DEBUG, request);
 
@@ -474,7 +467,7 @@ void CustomServer::_setRestApi()
             request->send(200, "application/json", "{}");
         } });
 
-    _server.on("/rest/is-latest-firmware-installed", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/is-latest-firmware-installed", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to check if the latest firmware is installed from REST API", "customserver::_setRestApi::/rest/is-latest-firmware-installed", LogLevel::DEBUG, request);
 
@@ -484,14 +477,14 @@ void CustomServer::_setRestApi()
             request->send(200, "application/json", "{\"latest\":false}");
         } });
 
-    _server.on("/rest/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request)
+    server.on("/rest/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to factory reset from REST API", "customserver::_setRestApi::/rest/factory-reset", LogLevel::WARNING, request);
 
         request->send(200, "application/json", "{\"message\":\"Factory reset in progress. Check the logs for more information.\"}");
         factoryReset(); });
 
-    _server.on("/rest/clear-log", HTTP_POST, [this](AsyncWebServerRequest *request)
+    server.on("/rest/clear-log", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to clear log from REST API", "customserver::_setRestApi::/rest/clear-log", LogLevel::DEBUG, request);
 
@@ -499,14 +492,14 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", "{\"message\":\"Log cleared\"}"); });
 
-    _server.on("/rest/restart", HTTP_POST, [this](AsyncWebServerRequest *request)
+    server.on("/rest/restart", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to restart the ESP32 from REST API", "customserver::_setRestApi::/rest/restart", LogLevel::WARNING, request);
 
         request->send(200, "application/json", "{\"message\":\"Restarting...\"}");
         restartEsp32("customserver::_setRestApi", "Request to restart the ESP32 from REST API"); });
 
-    _server.on("/rest/reset-wifi", HTTP_POST, [this](AsyncWebServerRequest *request)
+    server.on("/rest/reset-wifi", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to erase WiFi credentials from REST API", "customserver::_setRestApi::/rest/reset-wifi", LogLevel::WARNING, request);
 
@@ -514,7 +507,7 @@ void CustomServer::_setRestApi()
         _customWifi.resetWifi();
         restartEsp32("customserver::_setRestApi", "Request to erase WiFi credentials from REST API"); });
 
-    _server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+    server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
                           {
 
         if (request->url() == "/rest/set-calibration") {   
@@ -563,13 +556,13 @@ void CustomServer::_setRestApi()
             request->send(404, "text/plain", "Not found");
         } });
 
-    _server.serveStatic("/log", SPIFFS, LOG_PATH);
-    _server.serveStatic("/daily-energy", SPIFFS, DAILY_ENERGY_JSON_PATH);
+    server.serveStatic("/log", SPIFFS, LOG_PATH);
+    server.serveStatic("/daily-energy", SPIFFS, DAILY_ENERGY_JSON_PATH);
 }
 
 void CustomServer::_setOtherEndpoints()
 {
-    _server.onNotFound([this](AsyncWebServerRequest *request)
+    server.onNotFound([this](AsyncWebServerRequest *request)
                        {
         _serverLog(
             ("Request to get unknown page: " + request->url()).c_str(),

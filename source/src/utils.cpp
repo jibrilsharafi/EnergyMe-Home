@@ -478,7 +478,7 @@ void updateTimezone() {
     logger.debug("Timezone updated", "utils::updateTimezone");
 }
 
-void factoryReset() {
+void factoryReset() { // TODO: Set a flag and reboot in the main loop otherwise the async server will crash the watchdog 
     logger.fatal("Factory reset requested", "utils::factoryReset");
 
     createDefaultFiles();

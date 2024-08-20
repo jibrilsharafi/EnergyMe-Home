@@ -33,7 +33,6 @@ public:
     void begin();
 
 private:  
-    void _setupServer();
     void _setHtmlPages();
     void _setOta();
     void _setRestApi();
@@ -50,8 +49,6 @@ private:
     Ade7953 &_ade7953;
     CustomTime &_customTime;
     CustomWifi &_customWifi;
-
-    AsyncWebServer _server;
 };
 
 #endif
