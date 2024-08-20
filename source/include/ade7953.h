@@ -11,6 +11,7 @@
 #include "utils.h"
 #include "structs.h"
 #include "global.h"
+#include "binaries.h"
 
 class Ade7953 {
 public:
