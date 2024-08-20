@@ -46,7 +46,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 
     File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
-        logger.error("Failed to open file %s", "utils::deserializeJsonFromSpiffs", path);
+        logger.error("[%s] Failed to open file", "utils::serializeJsonToSpiffs", path);
         return;
     }
 
@@ -58,13 +58,13 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     }
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){
-        logger.warning("%s is empty", "utils::deserializeJsonFromSpiffs", path);
+        logger.warning("[%s] JSON is null", "utils::serializeJsonToSpiffs", path);
     }
     
     String _jsonString;
     serializeJson(jsonDocument, _jsonString);
 
-    logger.debug("JSON deserialized from SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
+    logger.debug("[%s] JSON deserialized from SPIFFS correctly", "utils::serializeJsonToSpiffs", _jsonString.c_str());
 }
 
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
@@ -72,7 +72,7 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
 
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
-        logger.error("Failed to open file %s", "utils::serializeJsonToSpiffs", path);
+        logger.error("[%s] Failed to open file", "utils::serializeJsonToSpiffs", path);
         return false;
     }
 
@@ -80,12 +80,12 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     _file.close();
 
     if (jsonDocument.isNull()){
-        logger.warning("%s is null", "utils::serializeJsonToSpiffs", path);
+        logger.warning("[%s] JSON is null", "utils::serializeJsonToSpiffs", path);
     }
 
     String _jsonString;
     serializeJson(jsonDocument, _jsonString);
-    logger.debug("JSON serialized to SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
+    logger.debug("[%s] JSON serialized to SPIFFS correctly", "utils::serializeJsonToSpiffs", _jsonString.c_str());
 
     return true;
 }
@@ -159,9 +159,9 @@ void createDefaultEnergyFile() {
     JsonDocument _jsonDocument;
 
     for (int i = 0; i < CHANNEL_COUNT; i++) { // TODO: change to "0", "1", ...
-        _jsonDocument[i]["activeEnergy"] = 0;
-        _jsonDocument[i]["reactiveEnergy"] = 0;
-        _jsonDocument[i]["apparentEnergy"] = 0;
+        _jsonDocument[String(i)]["activeEnergy"] = 0;
+        _jsonDocument[String(i)]["reactiveEnergy"] = 0;
+        _jsonDocument[String(i)]["apparentEnergy"] = 0;
     }
 
     serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument);
@@ -248,7 +248,8 @@ void restartEsp32(const char* functionName, const char* reason) { //TODO: modify
     led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
     led.setRed(true);
 
-    publishMeter();
+    // mqtt.publishMeter(); //TODO: understand if it possible to use MQTT here
+    // mqtt.publishStatus();
     
     if (functionName != "utils::factoryReset") {
         ade7953.saveDailyEnergyToSpiffs();
@@ -314,7 +315,9 @@ void setGeneralConfiguration(GeneralConfiguration& newGeneralConfiguration) {
 
     applyGeneralConfiguration();
     saveGeneralConfigurationToSpiffs();
-    publishGeneralConfiguration();
+    
+    // mqtt.publishGeneralConfiguration(); //TODO: understand if it possible to use MQTT here
+    // mqtt.publishStatus();
 
     if (checkIfRebootRequiredGeneralConfiguration(previousConfiguration, newGeneralConfiguration)) {
         restartEsp32("utils::setGeneralConfiguration", "General configuration set with reboot required");

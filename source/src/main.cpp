@@ -1,25 +1,18 @@
 #include <Arduino.h>
-
-#include <WiFiManager.h>
-#include <ESPmDNS.h>
-
-#include <FS.h>
 #include <SPIFFS.h>
 
-#include <ArduinoJson.h>
-
-// Custom libraries
-#include "customserver.h"
-#include "constants.h"
-#include "customwifi.h"
-#include "led.h"
-#include "multiplexer.h"
+// Project includes
 #include "ade7953.h"
+#include "constants.h"
+#include "customwifi.h" // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
+#include "customserver.h"
+#include "global.h"
+#include "led.h"
+#include "modbustcp.h"
 #include "mqtt.h"
+#include "multiplexer.h"
 #include "structs.h"
 #include "utils.h"
-#include "global.h"
-#include "modbustcp.h"
 
 // Global variables
 int currentChannel = 0;
@@ -52,6 +45,10 @@ Multiplexer multiplexer(
   MULTIPLEXER_S3_PIN
 );
 
+CustomWifi customWifi(
+  logger
+);
+
 CustomTime customTime(
   NTP_SERVER,
   TIME_SYNC_INTERVAL,
@@ -77,6 +74,20 @@ ModbusTcp modbusTcp(
   MODBUS_TCP_TIMEOUT,
   logger,
   ade7953,
+  customTime
+);
+
+CustomServer customServer(
+  logger,
+  led,
+  ade7953,
+  customTime,
+  customWifi
+);
+
+Mqtt mqtt(
+  ade7953,
+  logger,
   customTime
 );
 
@@ -147,17 +158,10 @@ void setup() {
   led.setBlue();
 
   logger.info("Setting up WiFi...", "main::setup");
-  if (!setupWifi()) {
+  if (!customWifi.begin()) {
     restartEsp32("main::setup", "Failed to connect to WiFi and hit timeout");
   } else {
     logger.info("WiFi setup done", "main::setup");
-  }
-  
-  logger.info("Setting up mDNS...", "main::setup");
-  if (!setupMdns()) {
-    logger.error("Failed to setup mDNS", "main::setup");
-  } else {
-    logger.info("mDNS setup done", "main::setup");
   }
   
   logger.info("Syncing time...", "main::setup");
@@ -169,7 +173,7 @@ void setup() {
   }
   
   logger.info("Setting up server...", "main::setup");
-  setupServer();
+  customServer.begin();
   logger.info("Server setup done", "main::setup");
 
   logger.info("Setting up Modbus TCP...", "main::setup");
@@ -178,7 +182,7 @@ void setup() {
 
   logger.info("Setting up MQTT...", "main::setup");
   if (generalConfiguration.isCloudServicesEnabled) {
-    if (!setupMqtt()) {
+    if (!mqtt.begin()) {
       logger.error("MQTT initialization failed!", "main::setup");
     } else {
       logger.info("MQTT setup done", "main::setup");
@@ -192,8 +196,8 @@ void setup() {
 }
 
 void loop() {
-  wifiLoop();
-  mqttLoop();
+  customWifi.loop();
+  mqtt.loop();
   ade7953.loop();
   
   if (ade7953.isLinecycFinished()) {

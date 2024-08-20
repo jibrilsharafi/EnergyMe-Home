@@ -1,87 +1,113 @@
 #include "customwifi.h"
 
-WiFiManager wifiManager;
+CustomWifi::CustomWifi(
+    AdvancedLogger &logger) : _logger(logger) {}
 
-unsigned long lastMillisWifiLoop = 0;
+bool CustomWifi::begin()
+{
+  _logger.debug("Setting up WiFi...", "setupWifi");
 
-bool setupWifi() {
-  logger.debug("Setting up WiFi...", "setupWifi");
+  _wifiManager.setConfigPortalTimeout(WIFI_CONFIG_PORTAL_TIMEOUT);
 
-  wifiManager.setConfigPortalTimeout(WIFI_CONFIG_PORTAL_TIMEOUT);
-  
-  if (!wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID)) { //TODO: this could be made async
-    logger.warning("Failed to connect and hit timeout", "customwifi::setupWifi");
-    return false;
+  if (_connectToWifi())
+  {
+    return true;
   }
-  
-  printWifiStatus();
 
-  logger.info("Connected to WiFi", "customwifi::setupWifi");
+  _setupMdns();
+
+  _logger.info("Connected to WiFi", "customwifi::setupWifi");
   return true;
 }
 
-void wifiLoop() {
-  if ((millis() - lastMillisWifiLoop) > WIFI_LOOP_INTERVAL) {
-    lastMillisWifiLoop = millis();
+bool CustomWifi::_connectToWifi()
+{
+  _logger.debug("Connecting to WiFi...", "customwifi::_connectToWifi");
 
-    if (!WiFi.isConnected()) {
-      logger.warning("WiFi connection lost. Reconnecting...", "customwifi::wifiLoop");
+  if (!_wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID))
+  {
+    _logger.warning("Failed to connect and hit timeout", "customwifi::_connectToWifi");
+    return false;
+  }
 
-      if (!setupWifi()) {
+  printWifiStatus();
+  _logger.info("Connected to WiFi", "customwifi::_connectToWifi");
+  return true;
+}
+
+void CustomWifi::loop()
+{
+  if ((millis() - _lastMillisWifiLoop) > WIFI_LOOP_INTERVAL)
+  {
+    _lastMillisWifiLoop = millis();
+
+    if (!WiFi.isConnected())
+    {
+      _logger.warning("WiFi connection lost. Reconnecting...", "customwifi::wifiLoop");
+
+      if (!_connectToWifi())
+      {
         restartEsp32("customwifi::wifiLoop", "Failed to connect to WiFi and hit timeout");
       }
     }
   }
 }
 
-void resetWifi() {
-  logger.warning("Resetting WiFi...", "resetWifi");
-  wifiManager.resetSettings();
+void CustomWifi::resetWifi()
+{
+  _logger.warning("Resetting WiFi...", "resetWifi");
+
+  _wifiManager.resetSettings();
+
   restartEsp32("customwifi::resetWifi", "WiFi reset (erase credentials). Will restart ESP32 in AP mode");
 }
 
-bool setupMdns() {
-  logger.debug("Setting up mDNS...", "setupMdns");
-  if (!MDNS.begin(MDNS_HOSTNAME)) {
-    logger.error("Error setting up mDNS responder!", "customwifi::setupMdns");
+bool CustomWifi::_setupMdns()
+{
+  _logger.debug("Setting up mDNS...", "setupMdns");
+
+  if (!MDNS.begin(MDNS_HOSTNAME))
+  {
+    _logger.error("Error setting up mDNS responder!", "customwifi::setupMdns");
     return false;
   }
+
   MDNS.addService("http", "tcp", 80);
   return true;
 }
 
-void getWifiStatus(JsonDocument& jsonDocument) {
+void CustomWifi::getWifiStatus(JsonDocument &jsonDocument)
+{
   jsonDocument["macAddress"] = WiFi.macAddress();
   jsonDocument["localIp"] = WiFi.localIP().toString();
   jsonDocument["subnetMask"] = WiFi.subnetMask().toString();
   jsonDocument["gatewayIp"] = WiFi.gatewayIP().toString();
   jsonDocument["dnsIp"] = WiFi.dnsIP().toString();
   wl_status_t _status = WiFi.status();
-  jsonDocument["status"] = WL_NO_SHIELD == _status ? "No Shield Available" :
-                    WL_IDLE_STATUS == _status ? "Idle Status" :
-                    WL_NO_SSID_AVAIL == _status ? "No SSID Available" :
-                    WL_SCAN_COMPLETED == _status ? "Scan Completed" :
-                    WL_CONNECTED == _status ? "Connected" :
-                    WL_CONNECT_FAILED == _status ? "Connection Failed" :
-                    WL_CONNECTION_LOST == _status ? "Connection Lost" :
-                    WL_DISCONNECTED == _status ? "Disconnected" :
-                    "Unknown Status";
+  jsonDocument["status"] = WL_NO_SHIELD == _status ? "No Shield Available" : WL_IDLE_STATUS == _status   ? "Idle Status"
+                                                                         : WL_NO_SSID_AVAIL == _status   ? "No SSID Available"
+                                                                         : WL_SCAN_COMPLETED == _status  ? "Scan Completed"
+                                                                         : WL_CONNECTED == _status       ? "Connected"
+                                                                         : WL_CONNECT_FAILED == _status  ? "Connection Failed"
+                                                                         : WL_CONNECTION_LOST == _status ? "Connection Lost"
+                                                                         : WL_DISCONNECTED == _status    ? "Disconnected"
+                                                                                                         : "Unknown Status";
   jsonDocument["ssid"] = WiFi.SSID();
   jsonDocument["bssid"] = WiFi.BSSIDstr();
   jsonDocument["rssi"] = WiFi.RSSI();
 }
 
-void printWifiStatus() {
+void CustomWifi::printWifiStatus()
+{
   JsonDocument _jsonDocument;
   getWifiStatus(_jsonDocument);
 
-  logger.debug(
-    "MAC: %s | IP: %s | Status: %s | SSID: %s | RSSI: %s",
-    "customwifi::printWifiStatus",
-    _jsonDocument["macAddress"].as<String>().c_str(),
-    _jsonDocument["localIp"].as<String>().c_str(),
-    _jsonDocument["status"].as<String>().c_str(),
-    _jsonDocument["ssid"].as<String>().c_str(),
-    _jsonDocument["rssi"].as<String>().c_str()
-  );
+  _logger.info(
+      "MAC: %s | IP: %s | Status: %s | SSID: %s | RSSI: %s",
+      "customwifi::printWifiStatus",
+      _jsonDocument["macAddress"].as<String>().c_str(),
+      _jsonDocument["localIp"].as<String>().c_str(),
+      _jsonDocument["status"].as<String>().c_str(),
+      _jsonDocument["ssid"].as<String>().c_str(),
+      _jsonDocument["rssi"].as<String>().c_str());
 }

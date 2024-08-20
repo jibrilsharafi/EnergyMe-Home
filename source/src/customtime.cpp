@@ -1,32 +1,23 @@
 #include "customtime.h"
 
-CustomTime::CustomTime(
-    const char* ntpServer,
-    int timeSyncInterval,
-    const char* timestampFormat,
-    GeneralConfiguration &generalConfiguration,
-    AdvancedLogger &logger) {
-        _ntpServer = ntpServer;
-        _timeSyncInterval = timeSyncInterval;
-        _timestampFormat = timestampFormat;
-        _generalConfiguration = &generalConfiguration;
-        _logger = &logger;
+CustomTime::CustomTime(const char *ntpServer, int timeSyncInterval, const char *timestampFormat, GeneralConfiguration &generalConfiguration, AdvancedLogger &logger)
+    : _ntpServer(ntpServer), _timeSyncInterval(timeSyncInterval), _timestampFormat(timestampFormat), _generalConfiguration(generalConfiguration), _logger(logger) {
 }
 
 bool CustomTime::begin() {
     configTime(
-        _generalConfiguration->gmtOffset, 
-        _generalConfiguration->dstOffset, 
+        _generalConfiguration.gmtOffset, 
+        _generalConfiguration.dstOffset, 
         _ntpServer
     );
 
     setSyncInterval(_timeSyncInterval);
 
     if (_getTime()) {
-        _logger->info("Time synchronized: %s", "customtime::begin", getTimestamp().c_str());
+        _logger.info("Time synchronized: %s", "customtime::begin", getTimestamp().c_str());
         return true;
     } else {
-        _logger->error("Failed to synchronize time", "customtime::begin");
+        _logger.error("Failed to synchronize time", "customtime::begin");
         return false;
     }
 }

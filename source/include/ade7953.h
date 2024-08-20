@@ -1,19 +1,23 @@
 #ifndef ADE7953_H
 #define ADE7953_H
 
+#include <AdvancedLogger.h>
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <SPI.h>
-#include <vector>
 #include <Ticker.h>
+#include <vector>
 
 #include "ade7953registers.h"
-#include "constants.h"
-#include "utils.h"
-#include "structs.h"
-#include "global.h"
+#include "customtime.h"
 #include "binaries.h"
+#include "constants.h"
+#include "global.h"
+#include "structs.h"
+#include "utils.h"
 
-class Ade7953 {
+class Ade7953
+{
 public:
     Ade7953(
         int ssPin,
@@ -22,8 +26,7 @@ public:
         int mosiPin,
         int resetPin,
         AdvancedLogger &logger,
-        CustomTime &customTime
-    );
+        CustomTime &customTime);
 
     bool begin();
     void loop();
@@ -32,7 +35,7 @@ public:
     void setConfiguration(Ade7953Configuration newConfiguration);
     bool saveConfigurationToSpiffs();
     JsonDocument configurationToJson();
-    Ade7953Configuration parseJsonConfiguration(JsonDocument jsonDocument); //TODO: improve me, fix this
+    Ade7953Configuration parseJsonConfiguration(JsonDocument jsonDocument); // TODO: improve me, fix this
 
     void setDefaultCalibrationValues();
     void setCalibrationValues(std::vector<CalibrationValues> newCalibrationValues);
@@ -43,10 +46,10 @@ public:
     CalibrationValues findCalibrationValue(String label);
 
     void setDefaultChannelData();
-    void setChannelData(ChannelData* newChannelData);
+    void setChannelData(ChannelData *newChannelData);
     bool saveChannelDataToSpiffs();
     JsonDocument channelDataToJson();
-    ChannelData* parseJsonChannelData(JsonDocument jsonDocument);
+    ChannelData *parseJsonChannelData(JsonDocument jsonDocument);
     void updateDataChannel();
     int findNextActiveChannel(int currentChannel);
     int getActiveChannelCount();
@@ -108,11 +111,11 @@ private:
     void _updateSampleTime();
 
     void _setConfigurationFromSpiffs();
-    
+
     void _setCalibrationValuesFromSpiffs();
-    
+
     void _initializeMeterValues();
-    
+
     void _setChannelDataFromSpiffs();
 
     float _validateValue(float oldValue, float newValue, float min, float max);
@@ -127,8 +130,8 @@ private:
     int _mosiPin;
     int _resetPin;
 
-    AdvancedLogger* _logger;
-    CustomTime* _customTime;
+    AdvancedLogger &_logger;
+    CustomTime &_customTime;
 };
 
 #endif

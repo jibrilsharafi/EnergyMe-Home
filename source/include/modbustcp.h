@@ -3,11 +3,12 @@
 
 #include <WiFi.h>
 #include <ModbusServerTCPasync.h>
+#include <AdvancedLogger.h>
 
-#include "constants.h"
-#include "global.h"
 #include "ade7953.h"
 #include "customtime.h"
+#include "constants.h"
+#include "global.h"
 
 class ModbusTcp
 {
@@ -38,9 +39,9 @@ private:
     int _maxClients;
     int _timeout;
 
-    AdvancedLogger *_logger;
-    Ade7953 *_ade7953;
-    CustomTime *_customTime;
+    AdvancedLogger &_logger;
+    Ade7953 &_ade7953;
+    CustomTime &_customTime;
 
     int _lowerLimitChannelRegisters;
     int _stepChannelRegisters;

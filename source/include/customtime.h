@@ -31,8 +31,9 @@ private:
     const char *_ntpServer;
     int _timeSyncInterval;
     const char *_timestampFormat;
-    GeneralConfiguration *_generalConfiguration;
-    AdvancedLogger *_logger;
+
+    GeneralConfiguration &_generalConfiguration;
+    AdvancedLogger &_logger;
 };
 
 #endif

@@ -86,7 +86,8 @@
 
 // Cloud services
 #define DEFAULT_IS_CLOUD_SERVICES_ENABLED false
-#define MAX_INTERVAL_PAYLOAD 30000 // 30 seconds - The maximum interval between two meter payloads
+#define MAX_INTERVAL_METER_PUBLISH 30000 // 30 seconds - The maximum interval between two meter payloads
+#define MAX_INTERVAL_STATUS_PUBLISH 3600000 // 1 hour - The interval between two status publish
 
 // MQTT
 #define MQTT_MAX_CONNECTION_ATTEMPT 5 // The maximum number of attempts to connect to the MQTT broker
