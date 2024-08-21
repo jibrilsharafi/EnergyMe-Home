@@ -80,3 +80,34 @@
     background-color: #bf7c0054;
     pointer-events: none;
 }
+
+.tooltip {
+    position: relative;
+    display: inline-block;
+    cursor: pointer;
+    background: none;
+    border: none;
+    color: #000000;
+    font-size: 24px;
+}
+
+.tooltip .tooltiptext {
+    visibility: hidden;
+    background-color: #555;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%; /* Position the tooltip above the icon */
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 0.9;
+}
