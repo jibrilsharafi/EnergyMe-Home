@@ -239,10 +239,10 @@ void loop() {
     setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
   }
 
-  // If memory is below a certain level, clear the logs
+  // If memory is below a certain level, clear the log
   if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
     logger.clearLog();
-    logger.warning("Logs cleared due to low memory", "main::loop");
+    logger.warning("Log cleared due to low memory", "main::loop");
   }
 
   if (restartConfiguration.isRequired) {

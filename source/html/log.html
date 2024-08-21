@@ -11,22 +11,22 @@
 
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
 
-    <title>Logs</title>
+    <title>Log</title>
     <style>
         .log-table {
             width: 100%;
             border-collapse: collapse;
+            font-size: 14px;
         }
 
         .log-table th, .log-table td {
-            padding: 8px;
+            padding: 6px;
             text-align: left;
             border-bottom: 1px solid #ddd;
         }
 
         .log-table th {
             background-color: #f2f2f2;
-            cursor: pointer;
         }
 
         .log-table tr:hover {
@@ -35,10 +35,15 @@
 
         .search-input {
             width: 100%;
-            padding: 8px;
-            font-size: 16px;
+            padding: 6px;
+            font-size: 14px;
             border: 1px solid #ddd;
             border-radius: 4px;
+        }
+
+        .download-button {
+            margin-top: 10px;
+            font-size: 14px;
         }
     </style>
 </head>
@@ -47,25 +52,27 @@
         <a class="buttonNavigation" type="inner" href="/configuration">Configuration</a>
     </div>
 
-    <div class="section-box">
-        <h2>Logs</h2>
-        <input type="text" class="search-input" placeholder="Search logs..." onkeyup="filterLogs()">
+    <div class="section-box-wide">
+        <h2>Log</h2>
+        <input type="text" class="search-input" placeholder="Search log..." onkeyup="filterLogs()">
         <br><br>
         <table class="log-table">
             <thead>
                 <tr>
-                    <th onclick="sortTable(0)">Timestamp</th>
-                    <th onclick="sortTable(1)">Time Elapsed</th>
-                    <th onclick="sortTable(2)">Level</th>
-                    <th onclick="sortTable(3)">Core</th>
-                    <th onclick="sortTable(4)">Module</th>
-                    <th onclick="sortTable(5)">Message</th>
+                    <th>Row</th>
+                    <th>Timestamp</th>
+                    <th>Time Elapsed</th>
+                    <th>Level</th>
+                    <th>Core</th>
+                    <th>Module</th>
+                    <th>Message</th>
                 </tr>
             </thead>
             <tbody id="log-body">
                 <!-- Log entries will be dynamically inserted here -->
             </tbody>
         </table>
+        <button class="download-button" onclick="downloadLogAsCSV()">Download Log as CSV</button>
     </div>
 
     <script>
@@ -73,15 +80,23 @@
         fetch('/log-raw')
             .then(response => response.text())
             .then(data => {
-                const logs = data.split('\n').map(line => {
+                const log = data.split('\n').map((line, index) => {
                     const [timestamp, elapsedTime, level, core, module, ...messageParts] = line.replaceAll('[','').replaceAll('\r', '').split(']');
                     const message = messageParts.join(',');
-                    return { timestamp, elapsedTime, level, core, module, message };
-                });
+                    return { row: index + 1, timestamp, elapsedTime, level, core, module, message };
+                }).reverse();
+                // Remove the first and last element if it is a null string
+                if (log[0].message === '') {
+                    log.shift();
+                }
+                if (log[log.length - 1].message === '') {
+                    log.pop();
+                }
                 const logBody = document.getElementById('log-body');
-                logs.forEach(log => {
+                log.forEach(log => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
+                        <td>${log.row}</td>
                         <td>${log.timestamp}</td>
                         <td>${log.elapsedTime}</td>
                         <td>${log.level}</td>
@@ -93,7 +108,7 @@
                 });
             });
 
-        // Filter the logs based on the search input
+        // Filter the log based on the search input
         function filterLogs() {
             const searchInput = document.querySelector('.search-input');
             const filter = searchInput.value.toUpperCase();
@@ -112,24 +127,18 @@
             });
         }
 
-        // Sort the table based on the column index
-        function sortTable(columnIndex) {
+        // Download the log as a CSV file
+        function downloadLogAsCSV() {
             const table = document.querySelector('.log-table');
-            const rows = Array.from(table.rows).slice(1);
-            const isAscending = table.rows[0].cells[columnIndex].classList.toggle('asc');
+            const rows = Array.from(table.rows);
+            const csvData = rows.map(row => row.cells.map(cell => cell.textContent.trim())).join('\n');
 
-            rows.sort((rowA, rowB) => {
-                const cellA = rowA.cells[columnIndex].textContent.trim();
-                const cellB = rowB.cells[columnIndex].textContent.trim();
-
-                if (!isNaN(cellA) && !isNaN(cellB)) {
-                    return isAscending ? cellA - cellB : cellB - cellA;
-                }
-
-                return isAscending ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
-            });
-
-            rows.forEach(row => table.appendChild(row));
+            const downloadLink = document.createElement('a');
+            downloadLink.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvData));
+            downloadLink.setAttribute('download', 'log.csv');
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
         }
     </script>
 </body>

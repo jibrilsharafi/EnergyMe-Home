@@ -487,7 +487,7 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to factory reset from REST API", "customserver::_setRestApi::/rest/factory-reset", LogLevel::WARNING, request);
 
-        request->send(200, "application/json", "{\"message\":\"Factory reset in progress. Check the logs for more information.\"}");
+        request->send(200, "application/json", "{\"message\":\"Factory reset in progress. Check the log for more information.\"}");
         factoryReset(); });
 
     server.on("/rest/clear-log", HTTP_POST, [this](AsyncWebServerRequest *request)

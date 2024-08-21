@@ -96,8 +96,8 @@
             </div>
             <br>
             <button class="buttonForm" onclick="setLogLevel()" id="setLogLevel">Set logging level</button>
-            <button class="buttonForm" onclick="clearLogs()" id="clearLogs">Clear logs</button>
-            <a class="buttonForm" href="/log" id="log" target="_blank" style="float: right;">Explore logs</a>
+            <button class="buttonForm" onclick="clearLogs()" id="clearLogs">Clear log</button>
+            <a class="buttonForm" href="/log" id="log" style="float: right;">Explore log</a>
         </div>
 
         <div class="section-box">
@@ -281,7 +281,7 @@
             }
 
             function clearLogs() {
-                var confirm = window.confirm("Are you sure you want to clear the logs?");
+                var confirm = window.confirm("Are you sure you want to clear the log?");
                 if (!confirm) {
                     return;
                 }
@@ -295,10 +295,10 @@
                         if (this.status == 200) {
                             document.getElementById("clearLogs").innerHTML = "Clear success";
                         } else {
-                            alert("Error clearing logs. Response: " + this.responseText);
+                            alert("Error clearing log. Response: " + this.responseText);
                         }
                         setTimeout(function () {
-                            document.getElementById("clearLogs").innerHTML = "Clear logs";
+                            document.getElementById("clearLogs").innerHTML = "Clear log";
                             document.getElementById("clearLogs").disabled = false;
                         }, 3000);
                     }
