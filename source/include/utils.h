@@ -19,7 +19,10 @@
 void getJsonProjectInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
 
-void restartEsp32(const char* functionName, const char* reason);
+void setRestartEsp32(const char* functionName, const char* reason);
+void restartEsp32();
+
+void checkPublishMqtt();
 
 void printMeterValues(MeterValues meterValues, const char* channelLabel);
 void printDeviceStatus();
@@ -27,7 +30,7 @@ void printDeviceStatus();
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
 
-void createDefaultFiles();
+void formatAndCreateDefaultFiles();
 void createDefaultConfigurationAde7953File();
 void createDefaultGeneralConfigurationFile();
 void createDefaultEnergyFile();

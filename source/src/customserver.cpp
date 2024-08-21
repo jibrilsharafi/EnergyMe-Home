@@ -85,6 +85,16 @@ void CustomServer::_setHtmlPages()
         _serverLog("Request to get info page", "customserver::_setHtmlPages::/info", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", info_html); });
 
+    server.on("/log", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get log page", "customserver::_setHtmlPages::/log", LogLevel::DEBUG, request);
+        request->send_P(200, "text/html", log_html); });
+
+    server.on("/update", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get update page", "customserver::_setOta::/update", LogLevel::DEBUG, request);
+        request->send_P(200, "text/html", update_html); });
+
     // CSS
     server.on("/css/styles.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -115,10 +125,6 @@ void CustomServer::_setHtmlPages()
 
 void CustomServer::_setOta()
 {
-    server.on("/update", HTTP_GET, [this](AsyncWebServerRequest *request)
-               {
-        _serverLog("Request to get update page", "customserver::_setOta::/update", LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", update_html); });
 
     server.on("/do-update", HTTP_POST, [this](AsyncWebServerRequest *request) {}, [this](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
                { _handleDoUpdate(request, filename, index, data, len, final); });
@@ -497,7 +503,7 @@ void CustomServer::_setRestApi()
         _serverLog("Request to restart the ESP32 from REST API", "customserver::_setRestApi::/rest/restart", LogLevel::WARNING, request);
 
         request->send(200, "application/json", "{\"message\":\"Restarting...\"}");
-        restartEsp32("customserver::_setRestApi", "Request to restart the ESP32 from REST API"); });
+        setRestartEsp32("customserver::_setRestApi", "Request to restart the ESP32 from REST API"); });
 
     server.on("/rest/reset-wifi", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
@@ -505,7 +511,7 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", "{\"message\":\"Erasing WiFi credentials and restarting...\"}");
         _customWifi.resetWifi();
-        restartEsp32("customserver::_setRestApi", "Request to erase WiFi credentials from REST API"); });
+        setRestartEsp32("customserver::_setRestApi", "Request to erase WiFi credentials from REST API"); });
 
     server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
                           {
@@ -539,10 +545,17 @@ void CustomServer::_setRestApi()
             JsonDocument _jsonDocument;
             deserializeJson(_jsonDocument, data);
 
-            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Configuration updated\"}");
-
+            GeneralConfiguration previousGeneralConfiguration = generalConfiguration;
             jsonToGeneralConfiguration(_jsonDocument, generalConfiguration);
             setGeneralConfiguration(generalConfiguration);
+            
+            AsyncWebServerResponse *response;
+            if (checkIfRebootRequiredGeneralConfiguration(previousGeneralConfiguration, generalConfiguration)) {
+                setRestartEsp32("utils::setGeneralConfiguration", "General configuration set with reboot required");
+                response = request->beginResponse(200, "application/json", "{\"message\":\"Configuration updated. Restarting...\"}");
+            } else {
+                response = request->beginResponse(200, "application/json", "{\"message\":\"Configuration updated\"}");
+            }
 
             request->send(response);
 
@@ -554,9 +567,10 @@ void CustomServer::_setRestApi()
                 request
             );
             request->send(404, "text/plain", "Not found");
+            
         } });
 
-    server.serveStatic("/log", SPIFFS, LOG_PATH);
+    server.serveStatic("/log-raw", SPIFFS, LOG_PATH);
     server.serveStatic("/daily-energy", SPIFFS, DAILY_ENERGY_JSON_PATH);
 }
 
@@ -649,7 +663,7 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
     _logger.warning("Update complete", "customserver::handleDoUpdate");
     _updateJsonFirmwareStatus("success", "");
 
-    restartEsp32("customserver::_handleDoUpdate", "Restart needed after update");
+    setRestartEsp32("customserver::_handleDoUpdate", "Restart needed after update");
 }
 
 void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *reason)

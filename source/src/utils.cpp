@@ -90,8 +90,8 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     return true;
 }
 
-void createDefaultFiles() {
-    logger.debug("Creating default files...", "utils::createDefaultFiles");
+void formatAndCreateDefaultFiles() {
+    logger.debug("Creating default files...", "utils::formatAndCreateDefaultFiles");
 
     SPIFFS.format();
 
@@ -104,7 +104,7 @@ void createDefaultFiles() {
 
     createFirstSetupFile();
 
-    logger.debug("Default files created", "utils::createDefaultFiles");
+    logger.debug("Default files created", "utils::formatAndCreateDefaultFiles");
 }
 
 void createDefaultConfigurationAde7953File() { // TODO: change to static json
@@ -158,7 +158,7 @@ void createDefaultEnergyFile() {
 
     JsonDocument _jsonDocument;
 
-    for (int i = 0; i < CHANNEL_COUNT; i++) { // TODO: change to "0", "1", ...
+    for (int i = 0; i < CHANNEL_COUNT; i++) {
         _jsonDocument[String(i)]["activeEnergy"] = 0;
         _jsonDocument[String(i)]["reactiveEnergy"] = 0;
         _jsonDocument[String(i)]["apparentEnergy"] = 0;
@@ -243,19 +243,24 @@ bool checkAllFiles() {
     return false;
 }
 
-void restartEsp32(const char* functionName, const char* reason) { //TODO: modify this to set a flag and reboot in the main loop
+void setRestartEsp32(const char* functionName, const char* reason) { 
+    logger.warning("Restart required from function %s. Reason: %s", "utils::setRestartEsp32", functionName, reason);
+    
+    restartConfiguration.isRequired = true;
+    restartConfiguration.functionName = String(functionName);
+    restartConfiguration.reason = String(reason);
+}
+
+void restartEsp32() {
     led.block();
     led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
     led.setRed(true);
 
-    // mqtt.publishMeter(); //TODO: understand if it possible to use MQTT here
-    // mqtt.publishStatus();
-    
-    if (functionName != "utils::factoryReset") {
+    if (restartConfiguration.functionName != "utils::factoryReset") {
         ade7953.saveDailyEnergyToSpiffs();
         ade7953.saveEnergyToSpiffs();
     }
-    logger.fatal("Restarting ESP32 from function %s. Reason: %s", "main::restartEsp32", functionName, reason);
+    logger.fatal("Restarting ESP32 from function %s. Reason: %s", "main::restartEsp32", restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
 
     ESP.restart();
 }
@@ -316,12 +321,8 @@ void setGeneralConfiguration(GeneralConfiguration& newGeneralConfiguration) {
     applyGeneralConfiguration();
     saveGeneralConfigurationToSpiffs();
     
-    // mqtt.publishGeneralConfiguration(); //TODO: understand if it possible to use MQTT here
-    // mqtt.publishStatus();
-
-    // if (checkIfRebootRequiredGeneralConfiguration(previousConfiguration, newGeneralConfiguration)) { //TODO: this crashes on boot since previousConfiguration is with default values
-    //     restartEsp32("utils::setGeneralConfiguration", "General configuration set with reboot required");
-    // }
+    publishMqtt.status = true;
+    publishMqtt.generalConfiguration = true;
 
     logger.debug("General configuration set", "utils::setGeneralConfiguration");
 }
@@ -481,9 +482,9 @@ void updateTimezone() {
 void factoryReset() { // TODO: Set a flag and reboot in the main loop otherwise the async server will crash the watchdog 
     logger.fatal("Factory reset requested", "utils::factoryReset");
 
-    createDefaultFiles();
+    formatAndCreateDefaultFiles();
 
-    restartEsp32("utils::factoryReset", "Factory reset completed. We are back to the good old days");
+    setRestartEsp32("utils::factoryReset", "Factory reset completed. We are back to the good old days");
 }
 
 bool isLatestFirmwareInstalled() {

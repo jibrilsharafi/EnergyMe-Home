@@ -70,27 +70,16 @@ void Mqtt::loop() {
             _logger.warning("MQTT connection lost. Reconnecting...", "mqtt::mqttLoop");
             if (!_connectMqtt()) {
                 if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
-                    restartEsp32("mqtt::mqttLoop", "Failed to connect to MQTT and hit maximum connection attempt");
+                    setRestartEsp32("mqtt::mqttLoop", "Failed to connect to MQTT and hit maximum connection attempt");
                 }
                 return;
             }
         }
 
-        if (payloadMeter.isFull() || (millis() - _lastMillisMeterPublished) > MAX_INTERVAL_METER_PUBLISH) {
-            _logger.debug("Payload meter buffer is full or enough time has passed. Publishing...", "mqtt::mqttLoop");
-            
-            publishMeter();
+        _checkPublishMeter();
+        _checkPublishStatus();
 
-            _lastMillisMeterPublished = millis();
-        }
-
-        if ((millis() - _lastMillisStatusPublished) > MAX_INTERVAL_STATUS_PUBLISH) {
-            _logger.debug("Publishing status...", "mqtt::mqttLoop");
-            
-            publishStatus();
-
-            _lastMillisStatusPublished = millis();
-        }
+        _checkPublishMqtt();
     }
 }
 
@@ -347,6 +336,35 @@ void Mqtt::_publishMessage(const char* topic, const char* message) {
 
     _logger.debug("Message published: %s", "mqtt::_publishMessage", message);
 }
+
+void Mqtt::_checkPublishMeter() {
+    if (payloadMeter.isFull() || (millis() - _lastMillisMeterPublished) > MAX_INTERVAL_METER_PUBLISH) {
+        _logger.debug("Setting flag to publish %d meter data", "mqtt::_checkPublishMeter", payloadMeter.size());
+
+        publishMqtt.meter = true;
+        
+        _lastMillisMeterPublished = millis();
+    }
+}
+
+void Mqtt::_checkPublishStatus() {
+    if ((millis() - _lastMillisStatusPublished) > MAX_INTERVAL_STATUS_PUBLISH) {
+        _logger.debug("Setting flag to publish status", "mqtt::_checkPublishStatus");
+        
+        publishMqtt.status = true;
+        
+        _lastMillisStatusPublished = millis();
+    }
+}
+
+void Mqtt::_checkPublishMqtt() {
+  if (publishMqtt.meter) {publishMeter(); publishMqtt.meter = false;}
+  if (publishMqtt.status) {publishStatus(); publishMqtt.status = false;}
+  if (publishMqtt.metadata) {publishMetadata(); publishMqtt.metadata = false;}
+  if (publishMqtt.channel) {publishChannel(); publishMqtt.channel = false;}
+  if (publishMqtt.generalConfiguration) {publishGeneralConfiguration(); publishMqtt.generalConfiguration = false;}
+}
+
 
 void Mqtt::_subscribeCallback(char* topic, byte* payload, unsigned int length) {
     String message;

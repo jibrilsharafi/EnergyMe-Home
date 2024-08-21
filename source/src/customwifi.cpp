@@ -45,7 +45,7 @@ void CustomWifi::loop()
 
       if (!_connectToWifi())
       {
-        restartEsp32("customwifi::wifiLoop", "Failed to connect to WiFi and hit timeout");
+        setRestartEsp32("customwifi::wifiLoop", "Failed to connect to WiFi and hit timeout");
       }
     }
   }
@@ -57,7 +57,7 @@ void CustomWifi::resetWifi()
 
   _wifiManager.resetSettings();
 
-  restartEsp32("customwifi::resetWifi", "WiFi reset (erase credentials). Will restart ESP32 in AP mode");
+  setRestartEsp32("customwifi::resetWifi", "WiFi reset (erase credentials). Will restart ESP32 in AP mode");
 }
 
 void CustomWifi::getWifiStatus(JsonDocument &jsonDocument)

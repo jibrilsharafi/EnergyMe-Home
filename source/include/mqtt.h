@@ -42,6 +42,11 @@ public:
 private:
     bool _connectMqtt();
 
+    void _checkPublishMeter();
+    void _checkPublishStatus();
+
+    void _checkPublishMqtt();
+
     void _setupTopics();
     void _setTopicMeter();
     void _setTopicStatus();

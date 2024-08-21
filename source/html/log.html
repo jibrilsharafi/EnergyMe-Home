@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+
+    <title>Logs</title>
+    <style>
+        .log-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .log-table th, .log-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .log-table th {
+            background-color: #f2f2f2;
+            cursor: pointer;
+        }
+
+        .log-table tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 8px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="inner" href="/configuration">Configuration</a>
+    </div>
+
+    <div class="section-box">
+        <h2>Logs</h2>
+        <input type="text" class="search-input" placeholder="Search logs..." onkeyup="filterLogs()">
+        <br><br>
+        <table class="log-table">
+            <thead>
+                <tr>
+                    <th onclick="sortTable(0)">Timestamp</th>
+                    <th onclick="sortTable(1)">Time Elapsed</th>
+                    <th onclick="sortTable(2)">Level</th>
+                    <th onclick="sortTable(3)">Core</th>
+                    <th onclick="sortTable(4)">Module</th>
+                    <th onclick="sortTable(5)">Message</th>
+                </tr>
+            </thead>
+            <tbody id="log-body">
+                <!-- Log entries will be dynamically inserted here -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // Fetch the log data from the server and populate the table
+        fetch('/log-raw')
+            .then(response => response.text())
+            .then(data => {
+                const logs = data.split('\n').map(line => {
+                    const [timestamp, elapsedTime, level, core, module, ...messageParts] = line.replaceAll('[','').replaceAll('\r', '').split(']');
+                    const message = messageParts.join(',');
+                    return { timestamp, elapsedTime, level, core, module, message };
+                });
+                const logBody = document.getElementById('log-body');
+                logs.forEach(log => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${log.timestamp}</td>
+                        <td>${log.elapsedTime}</td>
+                        <td>${log.level}</td>
+                        <td>${log.core}</td>
+                        <td>${log.module}</td>
+                        <td>${log.message}</td>
+                    `;
+                    logBody.appendChild(row);
+                });
+            });
+
+        // Filter the logs based on the search input
+        function filterLogs() {
+            const searchInput = document.querySelector('.search-input');
+            const filter = searchInput.value.toUpperCase();
+            const rows = document.querySelectorAll('.log-table tr:not(:first-child)');
+
+            rows.forEach(row => {
+                const cells = row.getElementsByTagName('td');
+                let found = false;
+                for (let i = 0; i < cells.length; i++) {
+                    if (cells[i].textContent.toUpperCase().indexOf(filter) > -1) {
+                        found = true;
+                        break;
+                    }
+                }
+                row.style.display = found ? '' : 'none';
+            });
+        }
+
+        // Sort the table based on the column index
+        function sortTable(columnIndex) {
+            const table = document.querySelector('.log-table');
+            const rows = Array.from(table.rows).slice(1);
+            const isAscending = table.rows[0].cells[columnIndex].classList.toggle('asc');
+
+            rows.sort((rowA, rowB) => {
+                const cellA = rowA.cells[columnIndex].textContent.trim();
+                const cellB = rowB.cells[columnIndex].textContent.trim();
+
+                if (!isNaN(cellA) && !isNaN(cellB)) {
+                    return isAscending ? cellA - cellB : cellB - cellA;
+                }
+
+                return isAscending ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
+            });
+
+            rows.forEach(row => table.appendChild(row));
+        }
+    </script>
+</body>
+</html>

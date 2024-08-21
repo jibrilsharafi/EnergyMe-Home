@@ -114,4 +114,25 @@ struct PublicLocation
   PublicLocation() : country("Unknown"), city("Unknown"), latitude("45.0"), longitude("9.0") {}
 };
 
+struct RestartConfiguration
+{
+  bool isRequired;
+  String functionName;
+  String reason;
+
+  RestartConfiguration() : isRequired(false), functionName("None"), reason("None") {}
+};
+
+struct PublishMqtt
+{
+  bool meter;
+  bool status;
+  bool metadata;
+  bool channel;
+  bool generalConfiguration;
+
+  PublishMqtt() : meter(false), status(false), metadata(false), channel(false), generalConfiguration(false) {}
+};
+  
+
 #endif

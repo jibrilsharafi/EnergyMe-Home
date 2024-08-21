@@ -16,6 +16,9 @@
 #include "utils.h"
 
 // Global variables
+RestartConfiguration restartConfiguration;
+PublishMqtt publishMqtt;
+
 int currentChannel = 0;
 int previousChannel = 0;
 
@@ -132,7 +135,7 @@ void setup() {
   
   if (checkIfFirstSetup() || checkAllFiles()) {
     logger.warning("First setup detected or not all files are present. Creating default files...", "main::setup");
-    createDefaultFiles();
+    formatAndCreateDefaultFiles();
     logger.info("Default files created", "main::setup");
   }
 
@@ -161,19 +164,19 @@ void setup() {
 
   logger.info("Setting up WiFi...", "main::setup");
   if (!customWifi.begin()) {
-    restartEsp32("main::setup", "Failed to connect to WiFi and hit timeout");
+    setRestartEsp32("main::setup", "Failed to connect to WiFi and hit timeout");
   } else {
     logger.info("WiFi setup done", "main::setup");
   }
 
   // The mDNS has to be set up in the main setup function as it is required to be globally accessible
-  logger.info("Setting up mDNS...", "setupMdns");
+  logger.info("Setting up mDNS...", "main::setupMdns");
     if (!MDNS.begin(MDNS_HOSTNAME))
     {
-      logger.error("Error setting up mDNS responder!", "customwifi::setupMdns");
+      logger.error("Error setting up mDNS responder!", "main::setupMdns");
     }
   MDNS.addService("http", "tcp", 80);
-  logger.info("mDNS setup done", "setupMdns");
+  logger.info("mDNS setup done", "main::setupMdns");
   
   logger.info("Syncing time...", "main::setup");
   updateTimezone();
@@ -233,13 +236,20 @@ void loop() {
   }
 
   if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
-    restartEsp32("main::loop", "Heap memory has degraded below safe minimum");
+    setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
   }
 
   // If memory is below a certain level, clear the logs
   if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
     logger.clearLog();
     logger.warning("Logs cleared due to low memory", "main::loop");
+  }
+
+  if (restartConfiguration.isRequired) {
+    mqtt.publishMeter();
+    mqtt.publishStatus();
+
+    restartEsp32();
   }
   
   led.setOff();

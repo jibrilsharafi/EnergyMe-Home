@@ -12,6 +12,9 @@
 
 // Global variables are stored here
 
+extern RestartConfiguration restartConfiguration;
+extern PublishMqtt publishMqtt;
+
 extern int currentChannel;
 extern int previousChannel;
 
