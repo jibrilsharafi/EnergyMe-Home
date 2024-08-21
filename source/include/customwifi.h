@@ -23,7 +23,6 @@ public:
 
 private:
     bool _connectToWifi();
-    bool _setupMdns();
 
     WiFiManager _wifiManager;
 

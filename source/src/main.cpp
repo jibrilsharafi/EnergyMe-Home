@@ -165,6 +165,15 @@ void setup() {
   } else {
     logger.info("WiFi setup done", "main::setup");
   }
+
+  // The mDNS has to be set up in the main setup function as it is required to be globally accessible
+  logger.info("Setting up mDNS...", "setupMdns");
+    if (!MDNS.begin(MDNS_HOSTNAME))
+    {
+      logger.error("Error setting up mDNS responder!", "customwifi::setupMdns");
+    }
+  MDNS.addService("http", "tcp", 80);
+  logger.info("mDNS setup done", "setupMdns");
   
   logger.info("Syncing time...", "main::setup");
   updateTimezone();

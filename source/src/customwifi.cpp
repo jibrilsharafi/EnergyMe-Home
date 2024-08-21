@@ -14,8 +14,6 @@ bool CustomWifi::begin()
     return true;
   }
 
-  _setupMdns();
-
   _logger.info("Connected to WiFi", "customwifi::setupWifi");
   return true;
 }
@@ -60,20 +58,6 @@ void CustomWifi::resetWifi()
   _wifiManager.resetSettings();
 
   restartEsp32("customwifi::resetWifi", "WiFi reset (erase credentials). Will restart ESP32 in AP mode");
-}
-
-bool CustomWifi::_setupMdns()
-{
-  _logger.debug("Setting up mDNS...", "setupMdns");
-
-  if (!MDNS.begin(MDNS_HOSTNAME))
-  {
-    _logger.error("Error setting up mDNS responder!", "customwifi::setupMdns");
-    return false;
-  }
-
-  MDNS.addService("http", "tcp", 80);
-  return true;
 }
 
 void CustomWifi::getWifiStatus(JsonDocument &jsonDocument)
