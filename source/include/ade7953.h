@@ -47,15 +47,10 @@ public:
     void saveEnergy();
 
     void setDefaultConfiguration();
-    void setConfiguration(Ade7953Configuration newConfiguration);
-    bool saveConfigurationToSpiffs();
-    JsonDocument configurationToJson();
-    Ade7953Configuration parseJsonConfiguration(JsonDocument jsonDocument); // TODO: improve me, fix this
+    void setConfiguration(JsonDocument &jsonDocument);
 
     void setDefaultCalibrationValues();
     void setCalibrationValues(JsonDocument &jsonDocument);
-    void _setCalibrationValuesFromSpiffs();
-    void _jsonToCalibrationValues(JsonDocument &jsonDocument, CalibrationValues &calibrationValues);
 
     void setDefaultChannelData();
     void setChannelData(ChannelData *newChannelData);
@@ -81,12 +76,14 @@ private:
     void _setDefaultNoLoadFeature();
     void _setDefaultPgaGain();
     void _setDefaultConfigRegister();
-    void _applyConfiguration();
     void _updateSampleTime();
 
-    void _setConfigurationFromSpiffs();
 
+    void _setConfigurationFromSpiffs();
+    void _applyConfiguration(JsonDocument &jsonDocument);
+    
     void _setCalibrationValuesFromSpiffs();
+    void _jsonToCalibrationValues(JsonDocument &jsonDocument, CalibrationValues &calibrationValues);
 
     void _setChannelDataFromSpiffs();
 
