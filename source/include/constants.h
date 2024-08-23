@@ -124,6 +124,9 @@
 #define MOSI_PIN 12
 #define ADE7953_RESET_PIN 9
 
+// Setup
+#define MAX_VERIFY_COMMUNICATION_ATTEMPTS 5
+
 // Helper constants
 #define CHANNEL_A 0
 #define CHANNEL_B 1
