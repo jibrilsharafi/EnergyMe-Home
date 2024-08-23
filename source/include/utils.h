@@ -31,7 +31,6 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
 
 void formatAndCreateDefaultFiles();
-void createDefaultConfigurationAde7953File();
 void createDefaultGeneralConfigurationFile();
 void createDefaultEnergyFile();
 void createDefaultDailyEnergyFile();

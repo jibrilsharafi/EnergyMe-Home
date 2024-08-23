@@ -18,7 +18,8 @@ extern const char update_html[] asm("_binary_html_update_html_start");
 
 extern const char favicon_ico[] asm("_binary_resources_favicon_ico_start");
 
-extern const char default_calibration_json[] asm("_binary_config_calibration_json_start");
-extern const char default_channel_json[] asm("_binary_config_channel_json_start");
+extern const char default_config_ade7953_json[] asm("_binary_config_ade7953_json_start");
+extern const char default_config_calibration_json[] asm("_binary_config_calibration_json_start");
+extern const char default_config_channel_json[] asm("_binary_config_channel_json_start");
 
 #endif

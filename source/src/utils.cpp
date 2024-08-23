@@ -68,7 +68,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 }
 
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
-    logger.debug("Serializing JSON to SPIFFS", "utils::serializeJsonToSpiffs");
+    logger.debug("Serializing JSON to SPIFFS...", "utils::serializeJsonToSpiffs");
 
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
@@ -95,7 +95,6 @@ void formatAndCreateDefaultFiles() {
 
     SPIFFS.format();
 
-    createDefaultConfigurationAde7953File();
     createDefaultGeneralConfigurationFile();
     createDefaultEnergyFile();
     createDefaultDailyEnergyFile();
@@ -105,36 +104,6 @@ void formatAndCreateDefaultFiles() {
     createFirstSetupFile();
 
     logger.debug("Default files created", "utils::formatAndCreateDefaultFiles");
-}
-
-void createDefaultConfigurationAde7953File() { // TODO: change to static json
-    logger.debug("Creating default %s...", "utils::createDefaultAde7953File", CONFIGURATION_ADE7953_JSON_PATH);
-
-    JsonDocument _jsonDocument;
-
-    _jsonDocument["expectedApNoLoad"] = DEFAULT_EXPECTED_AP_NOLOAD_REGISTER;
-    _jsonDocument["xNoLoad"] = DEFAULT_X_NOLOAD_REGISTER;
-    _jsonDocument["disNoLoad"] = DEFAULT_DISNOLOAD_REGISTER;
-    _jsonDocument["lcycMode"] = DEFAULT_LCYCMODE_REGISTER;
-    _jsonDocument["linecyc"] = DEFAULT_LINECYC_REGISTER;
-    _jsonDocument["pga"] = DEFAULT_PGA_REGISTER;
-    _jsonDocument["config"] = DEFAULT_CONFIG_REGISTER;
-    _jsonDocument["aWGain"] = DEFAULT_AWGAIN;
-    _jsonDocument["aWattOs"] = DEFAULT_AWATTOS;
-    _jsonDocument["aVarGain"] = DEFAULT_AVARGAIN;
-    _jsonDocument["aVarOs"] = DEFAULT_AVAROS;
-    _jsonDocument["aVaGain"] = DEFAULT_AVAGAIN;
-    _jsonDocument["aVaOs"] = DEFAULT_AVAOS;
-    _jsonDocument["aIGain"] = DEFAULT_AIGAIN;
-    _jsonDocument["aIRmsOs"] = DEFAULT_AIRMSOS;
-    _jsonDocument["bIGain"] = DEFAULT_BIGAIN;
-    _jsonDocument["bIRmsOs"] = DEFAULT_BIRMSOS;
-    _jsonDocument["phCalA"] = DEFAULT_PHCALA;
-    _jsonDocument["phCalB"] = DEFAULT_PHCALB;
-
-    serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
-
-    logger.debug("Default %s created", "utils::createDefaultAde7953File", CONFIGURATION_ADE7953_JSON_PATH);
 }
 
 void createDefaultGeneralConfigurationFile() {
@@ -181,43 +150,43 @@ void createDefaultDailyEnergyFile() {
 }
 
 void createDefaultFirmwareUpdateInfoFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultFirmwareUpdateInfoFile", FIRMWARE_UPDATE_INFO_PATH);
+    logger.debug("Creating default %s...", "utils::createDefaultFirmwareUpdateInfoFile", FW_UPDATE_INFO_JSON_PATH);
 
     JsonDocument _jsonDocument;
 
-    serializeJsonToSpiffs(FIRMWARE_UPDATE_INFO_PATH, _jsonDocument);
+    serializeJsonToSpiffs(FW_UPDATE_INFO_JSON_PATH, _jsonDocument);
 
-    logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateInfoFile", FIRMWARE_UPDATE_INFO_PATH);
+    logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateInfoFile", FW_UPDATE_INFO_JSON_PATH);
 }
 
 void createDefaultFirmwareUpdateStatusFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultFirmwareUpdateStatusFile", FIRMWARE_UPDATE_STATUS_PATH);
+    logger.debug("Creating default %s...", "utils::createDefaultFirmwareUpdateStatusFile", FW_UPDATE_STATUS_JSON_PATH);
 
     JsonDocument _jsonDocument;
 
-    serializeJsonToSpiffs(FIRMWARE_UPDATE_STATUS_PATH, _jsonDocument);
+    serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);
 
-    logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateStatusFile", FIRMWARE_UPDATE_STATUS_PATH);
+    logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateStatusFile", FW_UPDATE_STATUS_JSON_PATH);
 }
 
 void createFirstSetupFile() {
-    logger.debug("Creating %s...", "utils::createFirstSetupFile", FIRST_SETUP_PATH);
+    logger.debug("Creating %s...", "utils::createFirstSetupFile", FIRST_SETUP_JSON_PATH);
 
     JsonDocument _jsonDocument;
 
     _jsonDocument["isFirstTime"] = false;
     _jsonDocument["timestampFirstTime"] = customTime.getTimestamp();
 
-    serializeJsonToSpiffs(FIRST_SETUP_PATH, _jsonDocument);
+    serializeJsonToSpiffs(FIRST_SETUP_JSON_PATH, _jsonDocument);
 
-    logger.debug("%s created", "utils::createFirstSetupFile", FIRST_SETUP_PATH);
+    logger.debug("%s created", "utils::createFirstSetupFile", FIRST_SETUP_JSON_PATH);
 }
 
 bool checkIfFirstSetup() {
     logger.debug("Checking if first setup...", "main::checkIfFirstSetup");
 
     JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(FIRST_SETUP_PATH, _jsonDocument);
+    deserializeJsonFromSpiffs(FIRST_SETUP_JSON_PATH, _jsonDocument);
 
     if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
         logger.debug("First setup file is empty", "main::checkIfFirstSetup");
@@ -230,15 +199,15 @@ bool checkIfFirstSetup() {
 bool checkAllFiles() {
     logger.debug("Checking all files...", "main::checkAllFiles");
 
-    if (!SPIFFS.exists(FIRST_SETUP_PATH)) return true;
+    if (!SPIFFS.exists(FIRST_SETUP_JSON_PATH)) return true;
     if (!SPIFFS.exists(GENERAL_CONFIGURATION_JSON_PATH)) return true;
     if (!SPIFFS.exists(CONFIGURATION_ADE7953_JSON_PATH)) return true;
     if (!SPIFFS.exists(CALIBRATION_JSON_PATH)) return true;
     if (!SPIFFS.exists(CHANNEL_DATA_JSON_PATH)) return true;
     if (!SPIFFS.exists(ENERGY_JSON_PATH)) return true;
     if (!SPIFFS.exists(DAILY_ENERGY_JSON_PATH)) return true;
-    if (!SPIFFS.exists(FIRMWARE_UPDATE_INFO_PATH)) return true;
-    if (!SPIFFS.exists(FIRMWARE_UPDATE_STATUS_PATH)) return true;
+    if (!SPIFFS.exists(FW_UPDATE_INFO_JSON_PATH)) return true;
+    if (!SPIFFS.exists(FW_UPDATE_STATUS_JSON_PATH)) return true;
 
     return false;
 }
@@ -479,7 +448,7 @@ void updateTimezone() {
     logger.debug("Timezone updated", "utils::updateTimezone");
 }
 
-void factoryReset() { // TODO: Set a flag and reboot in the main loop otherwise the async server will crash the watchdog 
+void factoryReset() { 
     logger.fatal("Factory reset requested", "utils::factoryReset");
 
     formatAndCreateDefaultFiles();
@@ -488,7 +457,7 @@ void factoryReset() { // TODO: Set a flag and reboot in the main loop otherwise 
 }
 
 bool isLatestFirmwareInstalled() {
-    File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_READ);
+    File _file = SPIFFS.open(FW_UPDATE_INFO_JSON_PATH, FILE_READ);
     if (!_file) {
         logger.error("Failed to open firmware update info file", "utils::isLatestFirmwareInstalled");
         return false;

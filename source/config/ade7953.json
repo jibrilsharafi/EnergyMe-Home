@@ -1,0 +1,20 @@
+{
+    "aIGain": 4194304,
+    "bIGain": 4295713,
+    "aWGain": 4194304,
+    "bWGain": 4194304,
+    "aWattOs": 0,
+    "bWattOs": 0,
+    "aVarGain": 4194304,
+    "bVarGain": 4194304,
+    "aVarOs": 0,
+    "bVarOs": 0,
+    "aVaGain": 4194304,
+    "bVaGain": 4194304,
+    "aVaOs": 0,
+    "bVaOs": 0,
+    "aIRmsOs": -400,
+    "bIRmsOs": -750,
+    "phCalA": 200,
+    "phCalB": 200
+}

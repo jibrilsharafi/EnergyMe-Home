@@ -275,10 +275,10 @@ void CustomServer::_setRestApi()
             _ade7953.channelData[_index].reverse = _reverse;
             _ade7953.channelData[_index].calibrationValues.label = _calibration;
 
-            _ade7953.updateDataChannel();
+            _ade7953._updateDataChannel();
             _ade7953.saveChannelDataToSpiffs();
 
-            // mqtt.publishChannel(); // TODO: understand if the MQTT can be implemented here
+            publishMqtt.channel = true;
 
             AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Channel data set\"}");
             request->send(response);
@@ -294,8 +294,11 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get configuration from REST API", "customserver::_setRestApi::/rest/get-calibration", LogLevel::DEBUG, request);
 
+        JsonDocument _jsonDocument;
+        deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
+
         String _buffer;
-        serializeJson(_ade7953.calibrationValuesToJson(), _buffer);
+        serializeJson(_jsonDocument, _buffer);
 
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _buffer.c_str());
         request->send(response); });
@@ -324,7 +327,6 @@ void CustomServer::_setRestApi()
         _serverLog("Request to get log level from REST API", "customserver::_setRestApi::/rest/get-log-level", LogLevel::DEBUG, request);
 
         JsonDocument _jsonDocument;
-        // _jsonDocument["print"] = _logger.getPrintLevel();
         _jsonDocument["print"] = _logger.logLevelToString(_logger.getPrintLevel());
         _jsonDocument["save"] = _logger.logLevelToString(_logger.getSaveLevel());
 
@@ -453,7 +455,7 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get firmware update info from REST API", "customserver::_setRestApi::/rest/firmware-update-info", LogLevel::DEBUG, request);
 
-        File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_READ);
+        File _file = SPIFFS.open(FW_UPDATE_INFO_JSON_PATH, FILE_READ);
         if (_file) {
             request->send(_file, "application/json");
             _file.close();
@@ -465,7 +467,7 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get firmware update status from REST API", "customserver::_setRestApi::/rest/firmware-update-status", LogLevel::DEBUG, request);
 
-        File _file = SPIFFS.open(FIRMWARE_UPDATE_STATUS_PATH, FILE_READ);
+        File _file = SPIFFS.open(FW_UPDATE_STATUS_JSON_PATH, FILE_READ);
         if (_file) {
             request->send(_file, "application/json");
             _file.close();
@@ -522,8 +524,7 @@ void CustomServer::_setRestApi()
             JsonDocument _jsonDocument;
             deserializeJson(_jsonDocument, data);
 
-            _ade7953.setCalibrationValues(_ade7953.parseJsonCalibrationValues(_jsonDocument));
-            _ade7953.updateDataChannel();
+            _ade7953.setCalibrationValues(_jsonDocument);
             
             AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Calibration values set\"}");
             request->send(response);
@@ -648,7 +649,7 @@ void CustomServer::_updateJsonFirmwareStatus(const char *status, const char *rea
     _jsonDocument["reason"] = reason;
     _jsonDocument["timestamp"] = _customTime.getTimestamp();
 
-    File _file = SPIFFS.open(FIRMWARE_UPDATE_STATUS_PATH, FILE_WRITE);
+    File _file = SPIFFS.open(FW_UPDATE_STATUS_JSON_PATH, FILE_WRITE);
     if (_file)
     {
         serializeJson(_jsonDocument, _file);

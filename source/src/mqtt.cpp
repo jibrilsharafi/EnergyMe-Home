@@ -236,7 +236,8 @@ void Mqtt::publishMeter() {
     String _meterMessage;
     serializeJson(_jsonDocument, _meterMessage);
 
-    _publishMessage(_mqttTopicMeter, _meterMessage.c_str());
+    if (_publishMessage(_mqttTopicMeter, _meterMessage.c_str())) {publishMqtt.meter = false;}
+
     _logger.debug("Meter data published to MQTT", "mqtt::publishMeter");
 }
 
@@ -309,10 +310,10 @@ void Mqtt::publishGeneralConfiguration() {
     _logger.debug("General configuration published to MQTT", "mqtt::publishGeneralConfiguration");
 }
 
-void Mqtt::_publishMessage(const char* topic, const char* message) {
+bool Mqtt::_publishMessage(const char* topic, const char* message) {
     if (!generalConfiguration.isCloudServicesEnabled) {
         _logger.verbose("Cloud services not enabled. Skipping...", "mqtt::_publishMessage");
-        return;
+        return false;
     }
 
     _logger.debug(
@@ -323,18 +324,21 @@ void Mqtt::_publishMessage(const char* topic, const char* message) {
 
     if (topic == nullptr || message == nullptr) {
         _logger.debug("Null pointer or message passed, meaning MQTT not initialized yet", "mqtt::_publishMessage");
-        return;
+        return false;
     }
 
     if (!clientMqtt.connected()) {
         _logger.warning("MQTT client not connected. Skipping...", "mqtt::_publishMessage");
+        return false;
     }
 
     if (!clientMqtt.publish(topic, message)) {
         _logger.error("Failed to publish message", "mqtt::_publishMessage");
+        return false;
     }
 
     _logger.debug("Message published: %s", "mqtt::_publishMessage", message);
+    return true;
 }
 
 void Mqtt::_checkPublishMeter() {
@@ -358,11 +362,11 @@ void Mqtt::_checkPublishStatus() {
 }
 
 void Mqtt::_checkPublishMqtt() {
-  if (publishMqtt.meter) {publishMeter(); publishMqtt.meter = false;}
-  if (publishMqtt.status) {publishStatus(); publishMqtt.status = false;}
-  if (publishMqtt.metadata) {publishMetadata(); publishMqtt.metadata = false;}
-  if (publishMqtt.channel) {publishChannel(); publishMqtt.channel = false;}
-  if (publishMqtt.generalConfiguration) {publishGeneralConfiguration(); publishMqtt.generalConfiguration = false;}
+  if (publishMqtt.meter) {publishMeter();}
+  if (publishMqtt.status) {publishStatus();}
+  if (publishMqtt.metadata) {publishMetadata();}
+  if (publishMqtt.channel) {publishChannel();}
+  if (publishMqtt.generalConfiguration) {publishGeneralConfiguration();}
 }
 
 
@@ -377,9 +381,9 @@ void Mqtt::_subscribeCallback(char* topic, byte* payload, unsigned int length) {
     if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE)) {
         _logger.info("Firmware update received", "mqtt::_subscribeCallback");
 
-        File _file = SPIFFS.open(FIRMWARE_UPDATE_INFO_PATH, FILE_WRITE);
+        File _file = SPIFFS.open(FW_UPDATE_INFO_JSON_PATH, FILE_WRITE);
         if (!_file) {
-            _logger.error("Failed to open file for writing: %s", "mqtt::_subscribeCallback", FIRMWARE_UPDATE_INFO_PATH);
+            _logger.error("Failed to open file for writing: %s", "mqtt::_subscribeCallback", FW_UPDATE_INFO_JSON_PATH);
             return;
         }
 

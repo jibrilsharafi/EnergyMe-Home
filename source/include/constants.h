@@ -41,15 +41,15 @@
 #define PUBLIC_TIMEZONE_USERNAME "energymehome"
 
 // File path
-#define FIRST_SETUP_PATH "/first-setup.json"
+#define FIRST_SETUP_JSON_PATH "/first-setup.json"
 #define GENERAL_CONFIGURATION_JSON_PATH "/config/general.json"
 #define CONFIGURATION_ADE7953_JSON_PATH "/config/ade7953.json"
 #define CALIBRATION_JSON_PATH "/config/calibration.json"
 #define CHANNEL_DATA_JSON_PATH "/config/channel.json"
 #define ENERGY_JSON_PATH "/energy.json"
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
-#define FIRMWARE_UPDATE_INFO_PATH "/fw-update-info.json"
-#define FIRMWARE_UPDATE_STATUS_PATH "/fw-update-status.json"
+#define FW_UPDATE_INFO_JSON_PATH "/fw-update-info.json"
+#define FW_UPDATE_STATUS_JSON_PATH "/fw-update-status.json"
 
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32
@@ -100,7 +100,7 @@
 #define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
 
 // Saving date
-#define ENERGY_SAVE_INTERVAL 900 // Time between each energy save (in seconds) to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
+#define SAVE_ENERGY_INTERVAL 3600 // Time between each energy save (in seconds) to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
 // ESP32 status
 #define MINIMUM_FREE_HEAP_SIZE 10000 // Below this value (in bytes), the ESP32 will restart
@@ -133,21 +133,8 @@
 #define DEFAULT_X_NOLOAD_REGISTER 0x00C832 // Value for AP_NOLOAD_32, VAR_NOLOAD_32 and VA_NOLOAD_32 register. Represents a scale of 20000:1, meaning that the no-load threshold is 0.005% of the full-scale value
 #define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (disable all no-load detection)
 #define DEFAULT_LCYCMODE_REGISTER 0xFF // 0xFF 0b11111111 (enable accumulation mode for all channels)
-#define DEFAULT_LINECYC_REGISTER 100 // Set the number of half line cycles to accumulate before interrupting
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1000000000000100 // Enable bit 2, and 15 (keep HPF enabled, keep COMM_LOCK disabled)
-#define DEFAULT_AWGAIN 4194304 // Default AWGAIN value
-#define DEFAULT_AWATTOS 0 // Default AWATTOS value
-#define DEFAULT_AVARGAIN 4194304 // Default AVARGAIN value
-#define DEFAULT_AVAROS 0 // Default AVAROS value
-#define DEFAULT_AVAGAIN 4194304 // Default AVAGAIN value
-#define DEFAULT_AVAOS 0 // Default AVAOS value
-#define DEFAULT_AIGAIN 4194304 // Default AIGAIN value
-#define DEFAULT_AIRMSOS -400 // Default AIRMSOS value
-#define DEFAULT_BIGAIN 4295713 // Default BIGAIN value - Modified to match channel A
-#define DEFAULT_BIRMSOS -750 // Default BIRMSOS value
-#define DEFAULT_PHCALA 200 // Default PHCALA value
-#define DEFAULT_PHCALB 200 // Default PHCALB value
 
 // Fixed conversion values
 #define POWER_FACTOR_CONVERSION_FACTOR 1.0 / 32768.0 // PF/LSB
