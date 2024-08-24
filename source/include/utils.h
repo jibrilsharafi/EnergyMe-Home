@@ -22,8 +22,6 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument);
 void setRestartEsp32(const char* functionName, const char* reason);
 void restartEsp32();
 
-void checkPublishMqtt();
-
 void printMeterValues(MeterValues meterValues, const char* channelLabel);
 void printDeviceStatus();
 

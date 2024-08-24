@@ -46,7 +46,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 
     File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
-        logger.error("[%s] Failed to open file", "utils::serializeJsonToSpiffs", path);
+        logger.error("%s Failed to open file", "utils::deserializeJsonFromSpiffs", path);
         return;
     }
 
@@ -58,13 +58,13 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     }
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){
-        logger.warning("[%s] JSON is null", "utils::serializeJsonToSpiffs", path);
+        logger.warning("%s JSON is null", "utils::deserializeJsonFromSpiffs", path);
     }
     
     String _jsonString;
     serializeJson(jsonDocument, _jsonString);
 
-    logger.debug("[%s] JSON deserialized from SPIFFS correctly", "utils::serializeJsonToSpiffs", _jsonString.c_str());
+    logger.debug("%s JSON deserialized from SPIFFS correctly", "utils::deserializeJsonFromSpiffs", _jsonString.c_str());
 }
 
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
@@ -72,7 +72,7 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
 
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
-        logger.error("[%s] Failed to open file", "utils::serializeJsonToSpiffs", path);
+        logger.error("%s Failed to open file", "utils::serializeJsonToSpiffs", path);
         return false;
     }
 
@@ -80,14 +80,29 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     _file.close();
 
     if (jsonDocument.isNull()){
-        logger.warning("[%s] JSON is null", "utils::serializeJsonToSpiffs", path);
+        logger.warning("%s JSON is null", "utils::serializeJsonToSpiffs", path);
     }
 
     String _jsonString;
     serializeJson(jsonDocument, _jsonString);
-    logger.debug("[%s] JSON serialized to SPIFFS correctly", "utils::serializeJsonToSpiffs", _jsonString.c_str());
+    logger.debug("%s JSON serialized to SPIFFS correctly", "utils::serializeJsonToSpiffs", _jsonString.c_str());
 
     return true;
+}
+
+void createEmptyJsonFile(const char* path) {
+    logger.debug("Creating empty JSON file %s...", "utils::createEmptyJsonFile", path);
+
+    File _file = SPIFFS.open(path, FILE_WRITE);
+    if (!_file) {
+        logger.error("Failed to open file %s", "utils::createEmptyJsonFile", path);
+        return;
+    }
+
+    _file.print("{}");
+    _file.close();
+
+    logger.debug("Empty JSON file %s created", "utils::createEmptyJsonFile", path);
 }
 
 void formatAndCreateDefaultFiles() {
@@ -111,7 +126,6 @@ void createDefaultGeneralConfigurationFile() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["sampleCycles"] = DEFAULT_SAMPLE_CYCLES;
     _jsonDocument["isCloudServicesEnabled"] = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
     _jsonDocument["gmtOffset"] = DEFAULT_GMT_OFFSET;
     _jsonDocument["dstOffset"] = DEFAULT_DST_OFFSET;
@@ -141,10 +155,7 @@ void createDefaultEnergyFile() {
 void createDefaultDailyEnergyFile() {
     logger.debug("Creating default %s...", "utils::createDefaultDailyEnergyFile", DAILY_ENERGY_JSON_PATH);
 
-    JsonDocument _jsonDocument;
-    _jsonDocument.to<JsonObject>(); // Empty JSON
-
-    serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument);
+    createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
 
     logger.debug("Default %s created", "utils::createDefaultDailyEnergyFile", DAILY_ENERGY_JSON_PATH);
 }
@@ -152,9 +163,7 @@ void createDefaultDailyEnergyFile() {
 void createDefaultFirmwareUpdateInfoFile() {
     logger.debug("Creating default %s...", "utils::createDefaultFirmwareUpdateInfoFile", FW_UPDATE_INFO_JSON_PATH);
 
-    JsonDocument _jsonDocument;
-
-    serializeJsonToSpiffs(FW_UPDATE_INFO_JSON_PATH, _jsonDocument);
+    createEmptyJsonFile(FW_UPDATE_INFO_JSON_PATH);
 
     logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateInfoFile", FW_UPDATE_INFO_JSON_PATH);
 }
@@ -162,9 +171,7 @@ void createDefaultFirmwareUpdateInfoFile() {
 void createDefaultFirmwareUpdateStatusFile() {
     logger.debug("Creating default %s...", "utils::createDefaultFirmwareUpdateStatusFile", FW_UPDATE_STATUS_JSON_PATH);
 
-    JsonDocument _jsonDocument;
-
-    serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);
+    createEmptyJsonFile(FW_UPDATE_STATUS_JSON_PATH);
 
     logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateStatusFile", FW_UPDATE_STATUS_JSON_PATH);
 }
@@ -174,8 +181,9 @@ void createFirstSetupFile() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["isFirstTime"] = false;
-    _jsonDocument["timestampFirstTime"] = customTime.getTimestamp();
+    _jsonDocument["timestamp"] = customTime.getTimestamp();
+    _jsonDocument["buildVersion"] = FIRMWARE_BUILD_VERSION;
+    _jsonDocument["buildDate"] = FIRMWARE_BUILD_DATE;
 
     serializeJsonToSpiffs(FIRST_SETUP_JSON_PATH, _jsonDocument);
 
@@ -183,21 +191,21 @@ void createFirstSetupFile() {
 }
 
 bool checkIfFirstSetup() {
-    logger.debug("Checking if first setup...", "main::checkIfFirstSetup");
+    logger.debug("Checking if first setup...", "utils::checkIfFirstSetup");
 
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(FIRST_SETUP_JSON_PATH, _jsonDocument);
 
     if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
-        logger.debug("First setup file is empty", "main::checkIfFirstSetup");
+        logger.debug("First setup file is empty", "utils::checkIfFirstSetup");
         return true;
     }
 
-    return _jsonDocument["isFirstTime"].as<bool>();
+    return false;
 }
 
 bool checkAllFiles() {
-    logger.debug("Checking all files...", "main::checkAllFiles");
+    logger.debug("Checking all files...", "utils::checkAllFiles");
 
     if (!SPIFFS.exists(FIRST_SETUP_JSON_PATH)) return true;
     if (!SPIFFS.exists(GENERAL_CONFIGURATION_JSON_PATH)) return true;
@@ -226,10 +234,9 @@ void restartEsp32() {
     led.setRed(true);
 
     if (restartConfiguration.functionName != "utils::factoryReset") {
-        ade7953.saveDailyEnergyToSpiffs();
-        ade7953.saveEnergyToSpiffs();
+        ade7953.saveEnergy();
     }
-    logger.fatal("Restarting ESP32 from function %s. Reason: %s", "main::restartEsp32", restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
+    logger.fatal("Restarting ESP32 from function %s. Reason: %s", "utils::restartEsp32", restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
 
     ESP.restart();
 }
@@ -258,7 +265,7 @@ void printDeviceStatus()
 {
     logger.debug(
         "Free heap: %d bytes | Total heap: %d bytes || Free SPIFFS: %d bytes | Total SPIFFS: %d bytes",
-        "main::printDeviceStatus",
+        "utils::printDeviceStatus",
         ESP.getFreeHeap(),
         ESP.getHeapSize(),
         SPIFFS.totalBytes() - SPIFFS.usedBytes(),
@@ -272,7 +279,6 @@ void printDeviceStatus()
 void setDefaultGeneralConfiguration() {
     logger.debug("Setting default general configuration...", "utils::setDefaultGeneralConfiguration");
     
-    generalConfiguration.sampleCycles = DEFAULT_SAMPLE_CYCLES;
     generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
     generalConfiguration.gmtOffset = DEFAULT_GMT_OFFSET;
     generalConfiguration.dstOffset = DEFAULT_DST_OFFSET;
@@ -337,7 +343,6 @@ bool saveGeneralConfigurationToSpiffs() {
 }
 
 void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument) {
-    jsonDocument["sampleCycles"] = generalConfiguration.sampleCycles;
     jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
     jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
     jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
@@ -345,7 +350,6 @@ void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, Json
 }
 
 void jsonToGeneralConfiguration(JsonDocument& jsonDocument, GeneralConfiguration& generalConfiguration) {
-    generalConfiguration.sampleCycles = jsonDocument["sampleCycles"].as<int>();
     generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
     generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
     generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();

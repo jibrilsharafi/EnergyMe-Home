@@ -19,6 +19,8 @@
 RestartConfiguration restartConfiguration;
 PublishMqtt publishMqtt;
 
+bool isFirstSetup = false;
+
 int currentChannel = 0;
 int previousChannel = 0;
 
@@ -112,7 +114,7 @@ void setup() {
   led.begin();
   Serial.println("LED setup done");
 
-  led.setCyan();
+  led.setWhite();
 
   Serial.println("Setting up SPIFFS...");
   if (!SPIFFS.begin(true)) {
@@ -120,12 +122,12 @@ void setup() {
   } else {
     Serial.println("SPIFFS setup done");
   }
+
+  led.setCyan();
   
   // Nothing is logged before this point as the logger is not yet initialized
   Serial.println("Setting up logger...");
   logger.begin();
-  logger.setPrintLevel(LogLevel::DEBUG);
-  logger.setMaxLogLines(LOG_FILE_MAX_LENGTH);
   logger.info("Logger setup done", "main::setup");
   
   logger.info("Booting...", "main::setup");  
@@ -134,9 +136,12 @@ void setup() {
   logger.info("Build date: %s", "main::setup", FIRMWARE_BUILD_DATE);
   
   if (checkIfFirstSetup() || checkAllFiles()) {
+    led.setOrange();
+
     logger.warning("First setup detected or not all files are present. Creating default files...", "main::setup");
+    isFirstSetup = true;
     formatAndCreateDefaultFiles();
-    logger.info("Default files created", "main::setup");
+    logger.info("Default files created after format", "main::setup");
   }
 
   logger.info("Fetching configuration from SPIFFS...", "main::setup");
@@ -202,8 +207,10 @@ void setup() {
       logger.info("MQTT setup done", "main::setup");
     }
   } else {
-    logger.info("Cloud services not enabled", "main::setup");
+    logger.warning("Cloud services not enabled", "main::setup");
   }
+
+  isFirstSetup = false;
 
   led.setGreen();
   logger.info("Setup done", "main::setup");

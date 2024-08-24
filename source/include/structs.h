@@ -49,7 +49,7 @@ struct CalibrationValues
 
   // Default constructor
   CalibrationValues()
-    : label("Calibration"), vLsb(1.0), aLsb(1.0), wLsb(1.0), varLsb(1.0), vaLsb(1.0), whLsb(1.0), varhLsb(1.0), vahLsb(1.0) {}
+    : label(String("Calibration")), vLsb(1.0), aLsb(1.0), wLsb(1.0), varLsb(1.0), vaLsb(1.0), whLsb(1.0), varhLsb(1.0), vahLsb(1.0) {}
 };
 
 
@@ -63,18 +63,17 @@ struct ChannelData
 
   // Default constructor
   ChannelData()
-    : index(0), active(false), reverse(false), label("Channel"), calibrationValues() {}
+    : index(0), active(false), reverse(false), label(String("Channel")), calibrationValues() {}
 };
 
 struct GeneralConfiguration
 {
-  int sampleCycles;
   bool isCloudServicesEnabled;
   int gmtOffset;
   int dstOffset;
   int ledBrightness;
 
-  GeneralConfiguration() : sampleCycles(100), isCloudServicesEnabled(false), gmtOffset(0), dstOffset(0), ledBrightness(127) {}
+  GeneralConfiguration() : isCloudServicesEnabled(false), gmtOffset(0), dstOffset(0), ledBrightness(127) {}
 };
 
 struct PublicLocation
@@ -84,7 +83,7 @@ struct PublicLocation
   String latitude;
   String longitude;
 
-  PublicLocation() : country("Unknown"), city("Unknown"), latitude("45.0"), longitude("9.0") {}
+  PublicLocation() : country(String("Unknown")), city(String("Unknown")), latitude(String("45.0")), longitude(String("9.0")) {}
 };
 
 struct RestartConfiguration
@@ -93,7 +92,7 @@ struct RestartConfiguration
   String functionName;
   String reason;
 
-  RestartConfiguration() : isRequired(false), functionName("None"), reason("None") {}
+  RestartConfiguration() : isRequired(false), functionName(String("Unknown")), reason(String("Unknown")) {}
 };
 
 struct PublishMqtt

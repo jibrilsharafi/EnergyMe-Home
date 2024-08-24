@@ -279,11 +279,12 @@ void Mqtt::publishMetadata() {
 void Mqtt::publishChannel() {
     _logger.debug("Publishing channel data to MQTT", "mqtt::publishChannel");
 
-    JsonDocument _jsonDocumentChannel = _ade7953.channelDataToJson();
+    JsonDocument _jsonChannelData;
+    _ade7953.channelDataToJson(_jsonChannelData);
     
     JsonDocument _jsonDocument;
     _jsonDocument["unixTime"] = _customTime.getUnixTime();
-    _jsonDocument["data"] = _jsonDocumentChannel;
+    _jsonDocument["data"] = _jsonChannelData;
 
     String _channelMessage;
     serializeJson(_jsonDocument, _channelMessage);
@@ -362,11 +363,16 @@ void Mqtt::_checkPublishStatus() {
 }
 
 void Mqtt::_checkPublishMqtt() {
-  if (publishMqtt.meter) {publishMeter();}
-  if (publishMqtt.status) {publishStatus();}
-  if (publishMqtt.metadata) {publishMetadata();}
-  if (publishMqtt.channel) {publishChannel();}
-  if (publishMqtt.generalConfiguration) {publishGeneralConfiguration();}
+    if (!generalConfiguration.isCloudServicesEnabled) {
+        _logger.verbose("Cloud services not enabled. Skipping...", "mqtt::_checkPublishMqtt");
+        return;
+    }
+
+    if (publishMqtt.meter) {publishMeter();}
+    if (publishMqtt.status) {publishStatus();}
+    if (publishMqtt.metadata) {publishMetadata();}
+    if (publishMqtt.channel) {publishChannel();}
+    if (publishMqtt.generalConfiguration) {publishGeneralConfiguration();}
 }
 
 

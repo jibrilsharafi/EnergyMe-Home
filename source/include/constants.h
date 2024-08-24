@@ -18,12 +18,12 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "04"
-#define FIRMWARE_BUILD_VERSION_PATCH "19"
+#define FIRMWARE_BUILD_VERSION_PATCH "20"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
 #define FIRMWARE_BUILD_DATE_MONTH "08"
-#define FIRMWARE_BUILD_DATE_DAY "19"
+#define FIRMWARE_BUILD_DATE_DAY "24"
 #define FIRMWARE_BUILD_DATE FIRMWARE_BUILD_DATE_YEAR "-" FIRMWARE_BUILD_DATE_MONTH "-" FIRMWARE_BUILD_DATE_DAY
 
 // Measurements
@@ -100,7 +100,7 @@
 #define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
 
 // Saving date
-#define SAVE_ENERGY_INTERVAL 3600 // Time between each energy save (in seconds) to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
+#define SAVE_ENERGY_INTERVAL 360000 // Time between each energy save (in milliseconds) to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
 // ESP32 status
 #define MINIMUM_FREE_HEAP_SIZE 10000 // Below this value (in bytes), the ESP32 will restart
@@ -132,6 +132,9 @@
 #define CHANNEL_B 1
 
 // Default values for ADE7953 registers
+#define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
+#define UNLOCK_OPTIMUM_REGISTER 0x00FE // Value to write to unlock the optimum register
+#define DEFAULT_OPTIMUM_REGISTER 0x0030 // Default value for the optimum register
 #define DEFAULT_EXPECTED_AP_NOLOAD_REGISTER 0x00E419 // Default expected value for AP_NOLOAD_32 
 #define DEFAULT_X_NOLOAD_REGISTER 0x00C832 // Value for AP_NOLOAD_32, VAR_NOLOAD_32 and VA_NOLOAD_32 register. Represents a scale of 20000:1, meaning that the no-load threshold is 0.005% of the full-scale value
 #define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (disable all no-load detection)

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -24,10 +24,14 @@
             padding: 6px;
             text-align: left;
             border-bottom: 1px solid #ddd;
+            white-space: nowrap;
         }
 
         .log-table th {
             background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
 
         .log-table tr:hover {
@@ -35,11 +39,61 @@
         }
 
         .search-input {
-            width: 100%;
+            width: calc(100% - 40px);
             padding: 6px;
             font-size: 14px;
             border: 1px solid #ddd;
             border-radius: 4px;
+            margin-bottom: 10px;
+            margin-right: 30px;
+            cursor: text;
+        }
+
+        .log-level {
+            font-weight: bold;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+
+        .log-level-INFO { background-color: #e3f2fd; color: #0d47a1; }
+        .log-level-WARNING { background-color: #fff3e0; color: #e65100; }
+        .log-level-ERROR { background-color: #ffebee; color: #b71c1c; }
+        .log-level-DEBUG { background-color: #e8f5e9; color: #1b5e20; }
+        .log-level-FATAL { background-color: #4a0e0e; color: #ffffff; }
+
+        .table-container {
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .filter-button {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .filter-button.active {
+            font-weight: bold;
+            box-shadow: 0 0 0 1px #ddd;
+        }
+        
+        #download-csv {
+            cursor: pointer;
         }
     </style>
 </head>
@@ -51,27 +105,38 @@
     <div class="section-box-wide">
         <div style="position: relative;">
             <h2>Log</h2>
-                <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
+            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
                 <i class="fas fa-download"></i>
                 <span class="tooltiptext">Download as CSV</span>
             </button>
-            <input type="text" class="search-input" placeholder="Search log..." onkeyup="filterLogs()">
-            <br><br>
-            <table class="log-table">
-                <thead>
-                    <tr>
-                        <th>Row</th>
-                        <th>Timestamp</th>
-                        <th>Time Elapsed</th>
-                        <th>Level</th>
-                        <th>Core</th>
-                        <th>Module</th>
-                        <th>Message</th>
-                    </tr>
-                </thead>
-                <tbody id="log-body">
-                </tbody>
-            </table>
+            <div class="controls">
+                <input type="text" id="search-input-text" class="search-input" placeholder="Search log..." onkeyup="filterLogs()">
+                <div class="filter-buttons">
+                    <button class="filter-button active" data-level="ALL">All</button>
+                    <button class="filter-button log-level-DEBUG" data-level="DEBUG">Debug</button>
+                    <button class="filter-button log-level-INFO" data-level="INFO">Info</button>
+                    <button class="filter-button log-level-WARNING" data-level="WARNING">Warning</button>
+                    <button class="filter-button log-level-ERROR" data-level="ERROR">Error</button>
+                    <button class="filter-button log-level-FATAL" data-level="FATAL">Fatal</button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="log-table">
+                    <thead>
+                        <tr>
+                            <th>Row</th>
+                            <th>Timestamp</th>
+                            <th>Elapsed</th>
+                            <th>Level</th>
+                            <th>Core</th>
+                            <th>Module</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-body">
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -79,19 +144,17 @@
         fetch('/log-raw')
             .then(response => response.text())
             .then(data => {
+                // Remove the last 4 characters if they are \r\n
+                if (data.slice(-2) === '\r\n') data = data.slice(0, -4);
+                
                 const log = data.split('\n').map((line, index) => {
-                    const [timestamp, elapsedTime, level, core, module, ...messageParts] = line.replaceAll('[','').replaceAll('\r', '').split(']');
-                    const message = messageParts.join(',');
-                    return { row: index + 1, timestamp, elapsedTime, level, core, module, message };
+                    const [timestamp, elapsedTime, level, core, module, ...messageParts] = line.replaceAll('[','').replaceAll('\r', '').split('] ');
+                    const message = messageParts.join('] ');
+                    return { row: index + 1, timestamp, elapsedTime, level: level.trim(), core: core.replace('Core ', ''), module, message };
                 }).reverse();
 
-                // The first and last log entries may be empty. Remove them if they are.
-                if (log[0].message === '') {
-                    log.shift();
-                }
-                if (log[log.length - 1].message === '') {
-                    log.pop();
-                }
+                if (log[0].message === '') log.shift();
+                if (log[log.length - 1].message === '') log.pop();
 
                 const logBody = document.getElementById('log-body');
                 log.forEach(log => {
@@ -100,7 +163,7 @@
                         <td>${log.row}</td>
                         <td>${log.timestamp}</td>
                         <td>${log.elapsedTime}</td>
-                        <td>${log.level}</td>
+                        <td><span class="log-level log-level-${log.level}">${log.level}</span></td>
                         <td>${log.core}</td>
                         <td>${log.module}</td>
                         <td>${log.message}</td>
@@ -109,34 +172,54 @@
                 });
             });
 
-        // Filter the log based on the search input
         function filterLogs() {
             const searchInput = document.querySelector('.search-input');
             const filter = searchInput.value.toUpperCase();
-            const rows = document.querySelectorAll('.log-table tr:not(:first-child)');
+            const rows = document.querySelectorAll('.log-table tr');
+            const activeLevel = document.querySelector('.filter-button.active').dataset.level;
 
             rows.forEach(row => {
+                // If it's the header row, skip it.
+                if (row.getElementsByTagName('th').length > 0) return;
+
                 const cells = row.getElementsByTagName('td');
                 let found = false;
-                for (let i = 0; i < cells.length; i++) {
-                    if (cells[i].textContent.toUpperCase().indexOf(filter) > -1) {
-                        found = true;
-                        break;
+                const rowLevel = cells[3].textContent.trim().toUpperCase();
+
+                if (activeLevel === 'ALL' || activeLevel === rowLevel) {
+                    for (let i = 0; i < cells.length; i++) {
+                        if (cells[i].textContent.toUpperCase().indexOf(filter) > -1) {
+                            found = true;
+                            break;
+                        }
                     }
                 }
+                
                 row.style.display = found ? '' : 'none';
             });
         }
 
+        document.querySelectorAll('.filter-button').forEach(button => {
+            button.addEventListener('click', function() {
+                document.querySelectorAll('.filter-button').forEach(btn => btn.classList.remove('active'));
+                this.classList.add('active');
+                filterLogs();
+            });
+        });
+
         document.getElementById('download-csv').addEventListener('click', function () {
             var csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += "Row,Timestamp,Time Elapsed,Level,Core,Module,Message\n";
+            csvContent += "Row,Timestamp,Elapsed,Level,Core,Module,Message\n";
         
             const rows = document.querySelectorAll('.log-table tr:not(:first-child)');
             rows.forEach(function (row) {
                 var rowData = [];
-                row.querySelectorAll('td').forEach(function (cell) {
-                    rowData.push(cell.textContent.trim());
+                row.querySelectorAll('td').forEach(function (cell, index) {
+                    if (index === 3) { // Level column
+                        rowData.push(cell.textContent.trim());
+                    } else {
+                        rowData.push(cell.textContent.trim());
+                    }
                 });
                 csvContent += rowData.join(",") + "\n";
             });
@@ -144,11 +227,11 @@
             var encodedUri = encodeURI(csvContent);
             var link = document.createElement("a");
             var now = new Date();
-            var timestamp = now.toISOString().replace(/[:.-]/g, "_"); // Format timestamp
-            var filename = "log_" + timestamp + ".csv";
+            var timestamp = now.toISOString().replace(/[:.-]/g, "_");
+            var filename = "energyme_home_log_" + timestamp + ".csv";
             link.setAttribute("href", encodedUri);
             link.setAttribute("download", filename);
-            document.body.appendChild(link); // Required for FF
+            document.body.appendChild(link);
         
             link.click();
             document.body.removeChild(link);

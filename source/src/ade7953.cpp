@@ -16,7 +16,6 @@ Ade7953::Ade7953(
         _logger(logger),
         _customTime(customTime) {
 
-    Ade7953Configuration _configuration;
     MeterValues meterValues[CHANNEL_COUNT];
     ChannelData channelData[CHANNEL_COUNT];
 }
@@ -24,19 +23,9 @@ Ade7953::Ade7953(
 bool Ade7953::begin() {
     _logger.debug("Initializing Ade7953", "ade7953::begin");
 
-    _logger.debug("Setting up pins", "ade7953::begin");
-    pinMode(_ssPin, OUTPUT);
-    pinMode(_sckPin, OUTPUT);
-    pinMode(_misoPin, INPUT);
-    pinMode(_mosiPin, OUTPUT);
-    pinMode(_resetPin, OUTPUT);
-
-    _logger.debug("Setting up SPI", "ade7953::begin");
-    SPI.begin(_sckPin, _misoPin, _mosiPin, _ssPin);
-    SPI.setClockDivider(SPI_CLOCK_DIV64); // 64div -> 250kHz on 16MHz clock, but on 80MHz clock it's 1.25MHz. Max Ade7953 clock is 2MHz
-    SPI.setDataMode(SPI_MODE0);
-    SPI.setBitOrder(MSBFIRST);
-    digitalWrite(_ssPin, HIGH);
+    _logger.debug("Setting up hardware pins...", "ade7953::begin");
+    _setHardwarePins();
+    _logger.debug("Successfully set up hardware pins", "ade7953::begin");
 
     _logger.debug("Verifying communication with Ade7953...", "ade7953::begin");
     if (!_verifyCommunication()) {
@@ -49,75 +38,96 @@ bool Ade7953::begin() {
     _setOptimumSettings();
     _logger.debug("Successfully set optimum settings", "ade7953::begin");
 
-    _logger.debug("Setting default configuration...", "ade7953::begin");
-    _setDefaultLycmode();
-    _logger.debug("Successfully set default configuration", "ade7953::begin");    
+    _logger.debug("Setting default parameters...", "ade7953::begin");
+    _setDefaultParameters();
+    _logger.debug("Successfully set default parameters", "ade7953::begin");
 
-    _logger.debug("Setting default no-load feature...", "ade7953::begin");
-    _setDefaultNoLoadFeature();
-    _logger.debug("Successfully set no-load feature", "ade7953::begin");
+    if (isFirstSetup) {
+        _logger.info("First setup detected. Setting everything default...", "ade7953::begin");
+
+        _logger.debug("Setting default configuration...", "ade7953::begin");
+        setDefaultConfiguration();
+        _logger.debug("Done setting default configuration", "ade7953::begin");
+        
+        _logger.debug("Setting default calibration values...", "ade7953::begin");
+        _setDefaultCalibrationValuesOnly();
+        _logger.debug("Done setting default calibration values", "ade7953::begin");
+
+        _logger.debug("Setting default data channel...", "ade7953::begin");
+        setDefaultChannelData();
+        _logger.debug("Done setting default data channel", "ade7953::begin");
+
+        // No need to set the default energy as it is initialized to 0.0
+
+        // Save energy so to have the daily energy to 0.0 from the beginning
+        _logger.debug("Saving energy...", "ade7953::begin");
+        saveEnergy();
+        _logger.debug("Done saving energy", "ade7953::begin");
+
+        _logger.info("First setup done", "ade7953::begin");
+    } else {
+        _logger.debug("Setting configuration from spiffs...", "ade7953::begin");
+        _setConfigurationFromSpiffs();
+        _logger.debug("Done setting configuration from spiffs", "ade7953::begin");
     
-    _logger.debug("Setting default config register...", "ade7953::begin");
-    _setDefaultConfigRegister();
-    _logger.debug("Successfully set config register", "ade7953::begin");
+        _logger.debug("Reading channel data from SPIFFS...", "ade7953::begin");
+        _setChannelDataFromSpiffs();
+        _logger.debug("Done reading channel data from SPIFFS", "ade7953::begin");
 
-    _logger.debug("Setting PGA gains...", "ade7953::begin");
-    _setDefaultPgaGain();
-    _logger.debug("Successfully set PGA gains", "ade7953::begin");
+        _logger.debug("Reading calibration values from SPIFFS...", "ade7953::begin");
+        _setCalibrationValuesFromSpiffs();
+        _logger.debug("Done reading calibration values from SPIFFS", "ade7953::begin");
 
-    _logger.debug("Setting configuration from spiffs...", "ade7953::begin");
-    _setConfigurationFromSpiffs();
-    _logger.debug("Done setting configuration from spiffs", "ade7953::begin");
- 
-    _logger.debug("Reading calibration values from SPIFFS...", "ade7953::begin");
-    _setCalibrationValuesFromSpiffs();
-    _logger.debug("Done reading calibration values from SPIFFS", "ade7953::begin");
-
-    _logger.debug("Reading energy from SPIFFS...", "ade7953::begin");
-    _setEnergyFromSpiffs();
-    _logger.debug("Done reading energy from SPIFFS", "ade7953::begin");
-
-    _logger.debug("Reading channel data from SPIFFS...", "ade7953::begin");
-    _setChannelDataFromSpiffs();
-    _logger.debug("Done reading channel data from SPIFFS", "ade7953::begin");
+        _logger.debug("Reading energy from SPIFFS...", "ade7953::begin");
+        _setEnergyFromSpiffs();
+        _logger.debug("Done reading energy from SPIFFS", "ade7953::begin");
+    }
 
     return true;
 }
 
-void Ade7953::_setDefaultPgaGain()
+void Ade7953::_setHardwarePins() {
+    _logger.debug("Setting hardware pins...", "ade7953::_setHardwarePins");
+
+    pinMode(_ssPin, OUTPUT);
+    pinMode(_sckPin, OUTPUT);
+    pinMode(_misoPin, INPUT);
+    pinMode(_mosiPin, OUTPUT);
+    pinMode(_resetPin, OUTPUT);
+
+    SPI.begin(_sckPin, _misoPin, _mosiPin, _ssPin);
+    SPI.setClockDivider(SPI_CLOCK_DIV64); // 64div -> 250kHz on 16MHz clock, but on 80MHz clock it's 1.25MHz. Max Ade7953 clock is 2MHz
+    SPI.setDataMode(SPI_MODE0);
+    SPI.setBitOrder(MSBFIRST);
+    digitalWrite(_ssPin, HIGH);
+
+    _logger.debug("Successfully set hardware pins", "ade7953::_setHardwarePins");
+}
+
+void Ade7953::_setDefaultParameters()
 {
     _setPgaGain(DEFAULT_PGA_REGISTER, CHANNEL_A, VOLTAGE_MEASUREMENT);
     _setPgaGain(DEFAULT_PGA_REGISTER, CHANNEL_A, CURRENT_MEASUREMENT);
     _setPgaGain(DEFAULT_PGA_REGISTER, CHANNEL_B, CURRENT_MEASUREMENT);
-}
 
-void Ade7953::_setDefaultNoLoadFeature()
-{
     writeRegister(DISNOLOAD_8, 8, DEFAULT_DISNOLOAD_REGISTER);
 
     writeRegister(AP_NOLOAD_32, 32, DEFAULT_X_NOLOAD_REGISTER);
     writeRegister(VAR_NOLOAD_32, 32, DEFAULT_X_NOLOAD_REGISTER);
     writeRegister(VA_NOLOAD_32, 32, DEFAULT_X_NOLOAD_REGISTER);
 
-}
-
-void Ade7953::_setDefaultLycmode()
-{
     writeRegister(LCYCMODE_8, 8, DEFAULT_LCYCMODE_REGISTER);
-}
 
-void Ade7953::_setDefaultConfigRegister()
-{
     writeRegister(CONFIG_16, 16, DEFAULT_CONFIG_REGISTER);
 }
 
-/**
+/*
  * According to the datasheet, setting these registers is mandatory for optimal operation
- */
+*/
 void Ade7953::_setOptimumSettings()
 {
-    writeRegister(0x00FE, 8, 0xAD);
-    writeRegister(0x0120, 16, 0x0030);
+    writeRegister(UNLOCK_OPTIMUM_REGISTER, 8, UNLOCK_OPTIMUM_REGISTER_VALUE);
+    writeRegister(Reserved_16, 16, DEFAULT_OPTIMUM_REGISTER);
 }
 
 void Ade7953::loop() {
@@ -142,25 +152,26 @@ void Ade7953::_reset() {
  * @return true if the communication with the Ade7953 is successful, false otherwise.
  */
 bool Ade7953::_verifyCommunication() {
-    _logger.debug("Verifying communication with Ade7953...", "ade7953::begin");
+    _logger.debug("Verifying communication with Ade7953...", "ade7953::_verifyCommunication");
+    
     int _attempt = 0;
     bool _success = false;
 
     while (_attempt < MAX_VERIFY_COMMUNICATION_ATTEMPTS && !_success) {
-        _logger.debug("Attempt (%d/%d) to communicate with Ade7953", "ade7953::begin", _attempt, MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+        _logger.debug("Attempt (%d/%d) to communicate with Ade7953", "ade7953::_verifyCommunication", _attempt, MAX_VERIFY_COMMUNICATION_ATTEMPTS);
         
         _reset();
         _attempt++;
 
         if ((readRegister(AP_NOLOAD_32, 32, false)) == DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
-            _logger.debug("Communication successful with Ade7953", "ade7953::begin");
+            _logger.debug("Communication successful with Ade7953", "ade7953::_verifyCommunication");
             return true;
         } else {
-            _logger.warning("Failed to communicate with Ade7953 on _attempt (%d/%d)", "ade7953::begin", _attempt, MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+            _logger.warning("Failed to communicate with Ade7953 on _attempt (%d/%d)", "ade7953::_verifyCommunication", _attempt, MAX_VERIFY_COMMUNICATION_ATTEMPTS);
         }
     }
 
-    _logger.error("Failed to communicate with Ade7953 after %d attempts", "ade7953::begin", MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+    _logger.error("Failed to communicate with Ade7953 after %d attempts", "ade7953::_verifyCommunication", MAX_VERIFY_COMMUNICATION_ATTEMPTS);
     return false;
 }
 
@@ -260,12 +271,24 @@ void Ade7953::setDefaultCalibrationValues() {
     _logger.debug("Successfully set default calibration values", "ade7953::setDefaultCalibrationValues");
 }
 
+void Ade7953::_setDefaultCalibrationValuesOnly() {
+    _logger.debug("Setting default calibration values", "ade7953::_setDefaultCalibrationValuesOnly");
+    
+    // Fetch JSON from flashed binary
+    JsonDocument _jsonDocument;
+    deserializeJson(_jsonDocument, default_config_calibration_json);
+
+    serializeJsonToSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
+
+    _logger.debug("Successfully set default calibration values", "ade7953::_setDefaultCalibrationValuesOnly");
+}
+
 void Ade7953::setCalibrationValues(JsonDocument &jsonDocument) {
-    _logger.debug("Setting new calibration values", "ade7953::setCalibrationValues");
+    _logger.debug("Setting new calibration values...", "ade7953::setCalibrationValues");
 
     serializeJsonToSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
 
-    _updateDataChannel();
+    _updateChannelData();
 
     _logger.debug("Successfully set new calibration values", "ade7953::setCalibrationValues");
 }
@@ -278,25 +301,25 @@ void Ade7953::_setCalibrationValuesFromSpiffs() {
 
     if (_jsonDocument.isNull()) {
         _logger.error("Failed to read calibration values from SPIFFS. Setting default ones...", "ade7953::_setCalibrationValuesFromSpiffs");
-        setDefaultCalibrationValues();
+        _setDefaultCalibrationValuesOnly();
     } else {
         _logger.debug("Successfully read calibration values from SPIFFS. Setting values...", "ade7953::_setCalibrationValuesFromSpiffs");
         setCalibrationValues(_jsonDocument);
     }
 }
 
-void Ade7953::_jsonToCalibrationValues(JsonDocument &jsonDocument, CalibrationValues &calibrationValues) {
-    _logger.debug("Parsing JSON calibration values...", "ade7953::_jsonToCalibrationValues");
+void Ade7953::_jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues) {
+    _logger.debug("Parsing JSON calibration values for label %s...", "ade7953::_jsonToCalibrationValues", calibrationValues.label.c_str());
 
-    calibrationValues.label = jsonDocument["label"].as<String>();
-    calibrationValues.vLsb = jsonDocument["vLsb"].as<float>();
-    calibrationValues.aLsb = jsonDocument["aLsb"].as<float>();
-    calibrationValues.wLsb = jsonDocument["wLsb"].as<float>();
-    calibrationValues.varLsb = jsonDocument["varLsb"].as<float>();
-    calibrationValues.vaLsb = jsonDocument["vaLsb"].as<float>();
-    calibrationValues.whLsb = jsonDocument["whLsb"].as<float>();
-    calibrationValues.varhLsb = jsonDocument["varhLsb"].as<float>();
-    calibrationValues.vahLsb = jsonDocument["vahLsb"].as<float>();
+    // The label is not parsed as it is already set in the channel data
+    calibrationValues.vLsb = jsonObject["vLsb"].as<float>();
+    calibrationValues.aLsb = jsonObject["aLsb"].as<float>();
+    calibrationValues.wLsb = jsonObject["wLsb"].as<float>();
+    calibrationValues.varLsb = jsonObject["varLsb"].as<float>();
+    calibrationValues.vaLsb = jsonObject["vaLsb"].as<float>();
+    calibrationValues.whLsb = jsonObject["whLsb"].as<float>();
+    calibrationValues.varhLsb = jsonObject["varhLsb"].as<float>();
+    calibrationValues.vahLsb = jsonObject["vahLsb"].as<float>();
 
     _logger.debug("Successfully parsed JSON calibration values", "ade7953::_jsonToCalibrationValues");
 }
@@ -305,12 +328,17 @@ void Ade7953::_jsonToCalibrationValues(JsonDocument &jsonDocument, CalibrationVa
 // --------------------
 
 void Ade7953::setDefaultChannelData() {
-    _logger.debug("Setting default data channel %s", "ade7953::setDefaultChannelData", default_config_channel_json);
+    _logger.debug("Setting default data channel: %s...", "ade7953::setDefaultChannelData", default_config_channel_json);
 
+    // Read JSON from flashed binary
     JsonDocument _jsonDocument;
     deserializeJson(_jsonDocument, default_config_channel_json);
 
-    setChannelData(parseJsonChannelData(_jsonDocument));    
+    // Save default JSON to SPIFFS
+    serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument);
+
+    // Parse JSON and set channel data
+    setChannelData(_jsonDocument);
 
     _logger.debug("Successfully initialized data channel", "ade7953::setDefaultChannelData");
 }
@@ -318,6 +346,7 @@ void Ade7953::setDefaultChannelData() {
 void Ade7953::_setChannelDataFromSpiffs() {
     _logger.debug("Setting data channel from SPIFFS...", "ade7953::_setChannelDataFromSpiffs");
 
+    // Read the channel data JSON from SPIFFS
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument);
 
@@ -326,111 +355,111 @@ void Ade7953::_setChannelDataFromSpiffs() {
         setDefaultChannelData();
     } else {
         _logger.debug("Successfully read data channel from SPIFFS. Setting values...", "ade7953::_setChannelDataFromSpiffs");
-        setChannelData(parseJsonChannelData(_jsonDocument));
-    }
 
-    _updateDataChannel();
+        // If the JSON is not empty, parse it and set the channelData
+        setChannelData(_jsonDocument);
+    }
 
     _logger.debug("Successfully set data channel from SPIFFS", "ade7953::_setChannelDataFromSpiffs");
 }
 
-void Ade7953::setChannelData(ChannelData* newChannelData) {
-    _logger.debug("Setting data channel", "ade7953::setChannelData");
-    
-    for(int i = 0; i < CHANNEL_COUNT; i++) {
-        channelData[i] = newChannelData[i];
-    }
-    saveChannelDataToSpiffs();
+bool Ade7953::_saveChannelDataToSpiffs() {
+    _logger.debug("Saving data channel to SPIFFS...", "ade7953::_saveChannelDataToSpiffs");
 
-    _logger.debug("Successfully set data channel", "ade7953::setChannelData");
-}
-
-bool Ade7953::saveChannelDataToSpiffs() {
-    _logger.debug("Saving data channel to SPIFFS", "ade7953::saveChannelDataToSpiffs");
-
-    JsonDocument _jsonDocument = channelDataToJson();
+    JsonDocument _jsonDocument;
+    channelDataToJson(_jsonDocument);
 
     if (serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument)) {
-        _logger.debug("Successfully saved data channel to SPIFFS", "ade7953::saveChannelDataToSpiffs");
+        _logger.debug("Successfully saved data channel to SPIFFS", "ade7953::_saveChannelDataToSpiffs");
         return true;
     } else {
-        _logger.error("Failed to save data channel to SPIFFS", "ade7953::saveChannelDataToSpiffs");
+        _logger.error("Failed to save data channel to SPIFFS", "ade7953::_saveChannelDataToSpiffs");
         return false;
     }
 }
 
-JsonDocument Ade7953::channelDataToJson() {
-    _logger.debug("Converting data channel to JSON", "ade7953::channelDataToJson");
-
-    JsonDocument _jsonDocument;
+void Ade7953::channelDataToJson(JsonDocument &jsonDocument) {
+    _logger.debug("Converting data channel to JSON...", "ade7953::channelDataToJson");
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
-        _jsonDocument[String(i)]["active"] = channelData[i].active;
-        _jsonDocument[String(i)]["reverse"] = channelData[i].reverse;
-        _jsonDocument[String(i)]["label"] = channelData[i].label;
-        _jsonDocument[String(i)]["calibrationLabel"] = channelData[i].calibrationValues.label;
+        jsonDocument[String(i)]["index"] = channelData[i].index;
+        jsonDocument[String(i)]["active"] = channelData[i].active;
+        jsonDocument[String(i)]["reverse"] = channelData[i].reverse;
+        jsonDocument[String(i)]["label"] = channelData[i].label;
+        jsonDocument[String(i)]["calibrationLabel"] = channelData[i].calibrationValues.label;
     }
 
     _logger.debug("Successfully converted data channel to JSON", "ade7953::channelDataToJson");
-    return _jsonDocument;
 }
 
-ChannelData* Ade7953::parseJsonChannelData(JsonDocument jsonDocument) {
-    _logger.debug("Parsing JSON data channel", "ade7953::parseJsonChannelData");
+void Ade7953::setChannelData(JsonDocument &jsonDocument) {
+    _logger.debug("Setting channel data...", "ade7953::setChannelData");
 
-    ChannelData* _channelData = new ChannelData[CHANNEL_COUNT];
+    for (JsonPair _kv : jsonDocument.as<JsonObject>()) {
+        _logger.debug(
+            "Parsing JSON data channel %s | Index: %d | Active: %d | Reverse: %d | Label: %s | Calibration Label: %s", 
+            "ade7953::setChannelData", 
+            _kv.key().c_str(), 
+            _kv.value()["index"].as<int>(), 
+            _kv.value()["active"].as<bool>(), 
+            _kv.value()["reverse"].as<bool>(), 
+            _kv.value()["label"].as<String>(), 
+            _kv.value()["calibrationLabel"].as<String>()
+        );
 
-    JsonObject _jsonObject = jsonDocument.as<JsonObject>();
-
-    for (JsonPair _kv : _jsonObject) {
         int _index = atoi(_kv.key().c_str());
 
         // Check if _index is within bounds
         if (_index < 0 || _index >= CHANNEL_COUNT) {
-            _logger.error("Index out of bounds: %d", "ade7953::parseJsonChannelData", _index);
+            _logger.error("Index out of bounds: %d", "ade7953::setChannelData", _index);
             continue;
         }
 
-        _logger.debug("Parsing data channel %d", "ade7953::parseJsonChannelData", _index);
-
-        _channelData[_index].index = _index;
-        _channelData[_index].active = _kv.value()["active"].as<bool>();
-        _channelData[_index].reverse = _kv.value()["reverse"].as<bool>();
-        _channelData[_index].label = _kv.value()["label"].as<String>();
-        _channelData[_index].calibrationValues = _calibrationValuesFromSpiffs(_kv.value()["calibrationLabel"].as<String>());
+        channelData[_index].index = _index;
+        channelData[_index].active = _kv.value()["active"].as<bool>();
+        channelData[_index].reverse = _kv.value()["reverse"].as<bool>();
+        channelData[_index].label = _kv.value()["label"].as<String>();
+        channelData[_index].calibrationValues.label = _kv.value()["calibrationLabel"].as<String>();
     }
+    _logger.debug("Successfully set data channel properties", "ade7953::setChannelData");
 
-    _logger.debug("Successfully parsed JSON data channel", "ade7953::parseJsonChannelData");
-    return _channelData;
+    // Add the calibration values to the channel data
+    _updateChannelData();
+
+    _logger.debug("Successfully parsed JSON data channel", "ade7953::setChannelData");
 }
 
-void Ade7953::_updateDataChannel() {
-    _logger.debug("Updating data channel...", "ade7953::_updateDataChannel");
+void Ade7953::_updateChannelData() {
+    _logger.debug("Updating data channel...", "ade7953::_updateChannelData");
 
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
 
     if (_jsonDocument.isNull()) {
-        _logger.error("Failed to read calibration values from SPIFFS. Keeping previous values", "ade7953::_updateDataChannel");
+        _logger.error("Failed to read calibration values from SPIFFS. Keeping previous values", "ade7953::_updateChannelData");
         return;
     }
     
-    String _calibrationValuesLabel;
-    JsonDocument _jsonDocumentPreviousLabel;
-    for (int i = 0; i < CHANNEL_COUNT; i++) {
-        _calibrationValuesLabel = channelData[i].calibrationValues.label;
-        
-        if (_jsonDocument.containsKey(_calibrationValuesLabel)) {
-            _jsonDocumentPreviousLabel = _jsonDocument[_calibrationValuesLabel];
-            _jsonToCalibrationValues(_jsonDocumentPreviousLabel, channelData[i].calibrationValues);
+    for (int i = 0; i < CHANNEL_COUNT; i++) {        
+        if (_jsonDocument.containsKey(channelData[i].calibrationValues.label)) {
+            // Extract the corresponding calibration values from the JSON
+            JsonObject _jsonCalibrationValues = _jsonDocument[channelData[i].calibrationValues.label].as<JsonObject>();
+
+            // Set the calibration values for the channel
+            _jsonToCalibrationValues(_jsonCalibrationValues, channelData[i].calibrationValues);
         } else {
-            _logger.error("Calibration label %s not found in calibration JSON", "ade7953::_updateDataChannel", _calibrationValuesLabel);
+            _logger.error(
+                "Calibration label %s for channel %d not found in calibration JSON", 
+                "ade7953::_updateChannelData", 
+                channelData[i].calibrationValues.label.c_str(), 
+                i
+            );
         }
     }
     
     _updateSampleTime();
 
-    _logger.debug("Successfully updated data channel", "ade7953::_updateDataChannel");
+    _logger.debug("Successfully updated data channel", "ade7953::_updateChannelData");
 }
 
 void Ade7953::_updateSampleTime() {
@@ -460,12 +489,14 @@ int Ade7953::findNextActiveChannel(int currentChannel) {
             return i;
         }
     }
+
     _logger.verbose("No active channel found, returning current channel", "ade7953::findNextActiveChannel");
     return currentChannel;
 }
 
 int Ade7953::_getActiveChannelCount() {
     int _activeChannelCount = 0;
+
     for (int i = 0; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active) {
             _activeChannelCount++;
@@ -708,7 +739,8 @@ void Ade7953::_setPgaGain(long pgaGain, int channel, int measurementType) {
         "Setting PGA gain to %d on channel %d for measurement type %d",
         "ade7953::_setPgaGain",
         pgaGain,
-        channel
+        channel,
+        measurementType
     );
 
     if (channel == CHANNEL_A) {
@@ -734,7 +766,7 @@ void Ade7953::_setPgaGain(long pgaGain, int channel, int measurementType) {
 
 void Ade7953::_setGain(long gain, int channel, int measurementType) {
     _logger.debug(
-        "Setting gain to %d on channel %d for measurement type %d",
+        "Setting gain to %ld on channel %d for measurement type %d",
         "ade7953::_setGain",
         gain,
         channel,
@@ -943,7 +975,7 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData) {
  */
 void Ade7953::writeRegister(long registerAddress, int nBits, long data) {
     _logger.debug(
-        "Writing %l to register %d with %d bits",
+        "Writing %ld to register %ld with %d bits",
         "ade7953::writeRegister",
         data,
         registerAddress,

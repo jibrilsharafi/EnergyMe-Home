@@ -15,6 +15,8 @@
 extern RestartConfiguration restartConfiguration;
 extern PublishMqtt publishMqtt;
 
+extern bool isFirstSetup;
+
 extern int currentChannel;
 extern int previousChannel;
 

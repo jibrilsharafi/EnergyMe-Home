@@ -40,104 +40,114 @@
     </div>
 </body>
 <script>
-    var meterData;
-    var channelData;
-    var calibrationData;
-    var intervals = []; // Store interval IDs
+    var channelData = {};
+    var calibrationData = {};
+    var intervals = {};
 
     function fetchData(endpoint) {
-        return new Promise((resolve, reject) => {
-            var xhttp = new XMLHttpRequest();
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        resolve(JSON.parse(this.responseText));
-                    } else {
-                        console.error(`Error fetching data from ${endpoint}. Status: ${this.status}`);
-                        reject();
-                    }
-                }
-            };
-            xhttp.open("GET", `/rest/${endpoint}`, true);
-            xhttp.send();
-        });
+        return fetch(`/rest/${endpoint}`).then(response => response.json());
     }
 
     Promise.all([fetchData('get-calibration'), fetchData('get-channel')])
-        .then(data => {
-            calibrationData = data[0];
-            channelData = data[1];
-            createChannelBoxes()
+        .then(([calibrationResponse, channelResponse]) => {
+            calibrationData = calibrationResponse;
+            channelData = channelResponse;
+            createChannelBoxes();
         })
         .catch(error => console.error('Error:', error));
 
     function createChannelBoxes() {
-        var container = document.querySelector('.channel-columns');
+        const container = document.querySelector('.channel-columns');
+        container.innerHTML = ''; // Clear existing content
 
-        Object.keys(channelData).forEach((key) => {
-            const channel = channelData[key];
-            const index = key; // Use the key as the index
-            var box = document.createElement('div');
+        Object.entries(channelData).forEach(([index, channel]) => {
+            const box = document.createElement('div');
             box.className = 'section-box';
             box.style.textAlign = 'center';
-            var calibrationOptions = Object.keys(calibrationData).map(key =>
-                `<option value="${key}" ${key == channel.calibrationLabel ? 'selected' : ''}>${key}</option>`
-            ).join('');
+
+            const calibrationOptions = Object.keys(calibrationData)
+                .map(key => `<option value="${key}" ${key === channel.calibrationLabel ? 'selected' : ''}>${key}</option>`)
+                .join('');
+
             box.innerHTML = `
-                    <label>
-                        Label:
-                        <input type="text" value="${channel.label}" id="label${index}" onchange="updateChannel(${index}, this.value, document.getElementById('calibration${index}').value, document.getElementById('active${index}').checked, document.getElementById('reverse${index}').checked)">
-                    </label>
-                    <div style="height: 10px;"></div>
-                    <label>
-                        Calibration:
-                        <select id="calibration${index}" onchange="updateChannel(${index}, document.getElementById('label${index}').value, this.value, document.getElementById('active${index}').checked, document.getElementById('reverse${index}').checked)">
-                            ${calibrationOptions}
-                        </select>
-                    </label>
-                    <div style="height: 10px;"></div>
-                    <label>
-                        <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="updateChannel(${index}, document.getElementById('label${index}').value, document.getElementById('calibration${index}').value, document.getElementById('active${index}').checked, this.checked)">
-                        Reverse
-                    </label>
-                    <div style="height: 10px;"></div>
-                    <label>
-                        <input type="checkbox" ${channel.active ? 'checked' : ''} id="active${index}" onchange="updateChannel(${index}, document.getElementById('label${index}').value, document.getElementById('calibration${index}').value, this.checked, document.getElementById('reverse${index}').checked)">
-                        Active
-                    </label>
-                    <div style="height: 10px;"></div>
-                    <span id="power${index}"></span>
-                `;
+                <label>
+                    Label:
+                    <input type="text" value="${channel.label}" id="label${index}" onchange="updateChannel(${index})">
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    Calibration:
+                    <select id="calibration${index}" onchange="updateChannel(${index})">
+                        ${calibrationOptions}
+                    </select>
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="updateChannel(${index})">
+                    Reverse
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    <input type="checkbox" ${channel.active ? 'checked' : ''} id="active${index}" onchange="updateChannel(${index})">
+                    Active
+                </label>
+                <div style="height: 10px;"></div>
+                <span id="power${index}"></span>
+            `;
             container.appendChild(box);
 
             if (channel.active) {
-                intervals[index] = setInterval(() => {
-                    fetchData(`active-power?index=${index}`).then(dataActivePower => {
-                        document.getElementById(`power${index}`).innerHTML = `${dataActivePower.toFixed(1)} W`;
-                    });
-                }, 1000);
+                startPowerUpdate(index);
             }
         });
     }
 
-    window.updateChannel = function (index, label, calibration, active, reverse) {
-        if (!active && intervals[index]) {
+    function startPowerUpdate(index) {
+        if (intervals[index]) {
+            clearInterval(intervals[index]);
+        }
+        intervals[index] = setInterval(() => {
+            fetchData(`active-power?index=${index}`).then(dataActivePower => {
+                document.getElementById(`power${index}`).innerHTML = `${dataActivePower.value.toFixed(1)} W`;
+            });
+        }, 1000);
+    }
+
+    function stopPowerUpdate(index) {
+        if (intervals[index]) {
             clearInterval(intervals[index]);
             document.getElementById(`power${index}`).innerHTML = '';
-            intervals[index] = null; // Set the interval ID to null
-        } else if (active && !intervals[index]) {
-            intervals[index] = setInterval(() => {
-                fetchData(`active-power?index=${index}`).then(dataActivePower => {
-                    document.getElementById(`power${index}`).innerHTML = `${dataActivePower.toFixed(1)} W`;
-                });
-            }, 1000);
+            delete intervals[index];
+        }
+    }
+
+    function updateChannel(index) {
+        const channel = channelData[index];
+        channel.label = document.getElementById(`label${index}`).value;
+        channel.calibrationLabel = document.getElementById(`calibration${index}`).value;
+        channel.reverse = document.getElementById(`reverse${index}`).checked;
+        channel.active = document.getElementById(`active${index}`).checked;
+
+        if (channel.active) {
+            startPowerUpdate(index);
+        } else {
+            stopPowerUpdate(index);
         }
 
-        fetchData(`set-channel?index=${index}&label=${encodeURIComponent(label)}&calibration=${encodeURIComponent(calibration)}&active=${active}&reverse=${reverse}`)
-            .then(data => {
-                console.log(data);
-            })
-            .catch(error => console.error('Error:', error));
+        sendChannelUpdate();
+    }
+
+    function sendChannelUpdate() {
+        fetch('/rest/set-channel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(channelData)
+        })
+        .then(response => response.json())
+        .then(data => console.log('Success:', data))
+        .catch((error) => console.error('Error:', error));
     }
 </script>
 

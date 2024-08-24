@@ -98,28 +98,28 @@ void CustomServer::_setHtmlPages()
     // CSS
     server.on("/css/styles.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::DEBUG, request);
+        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::VERBOSE, request);
         request->send_P(200, "text/css", styles_css); });
 
     server.on("/css/button.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::DEBUG, request);
+        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::VERBOSE, request);
         request->send_P(200, "text/css", button_css); });
 
     server.on("/css/section.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::DEBUG, request);
+        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::VERBOSE, request);
         request->send_P(200, "text/css", section_css); });
 
     server.on("/css/typography.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::DEBUG, request);
+        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::VERBOSE, request);
         request->send_P(200, "text/css", typography_css); });
 
     // Other
     server.on("/favicon.ico", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.ico", LogLevel::DEBUG, request);
+        _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.ico", LogLevel::VERBOSE, request);
         request->send_P(200, "image/x-icon", favicon_ico); });
 }
 
@@ -181,8 +181,7 @@ void CustomServer::_setRestApi()
         String _buffer;
         serializeJson(_ade7953.meterValuesToJson(), _buffer);
 
-        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _buffer.c_str());
-        request->send(response); });
+        request->send(200, "application/json", _buffer.c_str()); });
 
     server.on("/rest/meter-single", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -196,16 +195,15 @@ void CustomServer::_setRestApi()
                     String _buffer;
                     serializeJson(_ade7953.singleMeterValuesToJson(_indexInt), _buffer);
 
-                    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _buffer.c_str());
-                    request->send(response);
+                    request->send(200, "application/json", _buffer.c_str());
                 } else {
-                    request->send(400, "text/plain", "Channel not active");
+                    request->send(400, "application/json", "{\"message\":\"Channel not active\"}");
                 }
             } else {
-                request->send(400, "text/plain", "Channel index out of range");
+                request->send(400, "application/json", "{\"message\":\"Channel index out of range\"}");
             }
         } else {
-            request->send(400, "text/plain", "Missing index parameter");
+            request->send(400, "application/json", "{\"message\":\"Missing index parameter\"}");
         } });
 
     server.on("/rest/active-power", HTTP_GET, [this](AsyncWebServerRequest *request)
@@ -217,78 +215,40 @@ void CustomServer::_setRestApi()
 
             if (_indexInt >= 0 && _indexInt <= MULTIPLEXER_CHANNEL_COUNT) {
                 if (_ade7953.channelData[_indexInt].active) {
-                    AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", String(_ade7953.meterValues[_indexInt].activePower));
-                    request->send(response);
+                    request->send(200, "application/json", "{\"value\":" + String(_ade7953.meterValues[_indexInt].activePower) + "}");
                 } else {
-                    request->send(400, "text/plain", "Channel not active");
+                    request->send(400, "application/json", "{\"message\":\"Channel not active\"}");
                 }
             } else {
-                request->send(400, "text/plain", "Channel index out of range");
+                request->send(400, "application/json", "{\"message\":\"Channel index out of range\"}");
             }
         } else {
-            request->send(400, "text/plain", "Missing index parameter");
+            request->send(400, "application/json", "{\"message\":\"Missing index parameter\"}");
         } });
 
     server.on("/rest/get-ade7953-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get ADE7953 configuration from REST API", "customserver::_setRestApi::/rest/get-ade7953-configuration", LogLevel::DEBUG, request);
 
+        JsonDocument _jsonDocument;
+        deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
+        
         String _buffer;
-        serializeJson(_ade7953.configurationToJson(), _buffer);
+        serializeJson(_jsonDocument, _buffer);
 
-        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _buffer.c_str());
-        request->send(response); });
+        request->send(200, "application/json", _buffer.c_str()); });
 
     server.on("/rest/get-channel", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get channel data from REST API", "customserver::_setRestApi::/rest/get-channel", LogLevel::DEBUG, request);
 
+        JsonDocument _jsonDocument;
+        _ade7953.channelDataToJson(_jsonDocument);
+
         String _buffer;
-        serializeJson(_ade7953.channelDataToJson(), _buffer);
+        serializeJson(_jsonDocument, _buffer);
 
-        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _buffer.c_str());
-        request->send(response); });
-
-    server.on("/rest/set-channel", HTTP_POST, [this](AsyncWebServerRequest *request) { // TODO: make evertything JSON for coherence
-        _serverLog(
-            "Request to set channel data from REST API",
-            "customserver::_setRestApi::/rest/set-channel",
-            LogLevel::WARNING,
-            request);
-
-        if (request->hasParam("index", false) && request->hasParam("label", false) && request->hasParam("calibration", false) && request->hasParam("active", false) && request->hasParam("reverse", false))
-        {
-            int _index = request->getParam("index", false)->value().toInt();
-            String _label = request->getParam("label", false)->value();
-            String _calibration = request->getParam("calibration", false)->value();
-            bool _active = request->getParam("active", false)->value().equalsIgnoreCase("true");
-            bool _reverse = request->getParam("reverse", false)->value().equalsIgnoreCase("true");
-
-            if (_index < 0 && _index > MULTIPLEXER_CHANNEL_COUNT)
-            {
-                AsyncWebServerResponse *response = request->beginResponse(400, "text/plain", "Channel index out of range");
-                request->send(response);
-            }
-
-            _ade7953.channelData[_index].label = _label;
-            _ade7953.channelData[_index].active = _active;
-            _ade7953.channelData[_index].reverse = _reverse;
-            _ade7953.channelData[_index].calibrationValues.label = _calibration;
-
-            _ade7953._updateDataChannel();
-            _ade7953.saveChannelDataToSpiffs();
-
-            publishMqtt.channel = true;
-
-            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Channel data set\"}");
-            request->send(response);
-        }
-        else
-        {
-            AsyncWebServerResponse *response = request->beginResponse(400, "text/plain", "Missing parameter");
-            request->send(response);
-        }
-    });
+        request->send(200, "application/json", _buffer.c_str()); });
 
     server.on("/rest/get-calibration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -300,8 +260,7 @@ void CustomServer::_setRestApi()
         String _buffer;
         serializeJson(_jsonDocument, _buffer);
 
-        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", _buffer.c_str());
-        request->send(response); });
+        request->send(200, "application/json", _buffer.c_str()); });
 
     server.on("/rest/calibration-reset", HTTP_POST, [&](AsyncWebServerRequest *request)
                {
@@ -310,8 +269,8 @@ void CustomServer::_setRestApi()
         _ade7953.setDefaultCalibrationValues();
         _ade7953.setDefaultChannelData();
 
-        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Calibration values reset\"}");
-        request->send(response); });
+        request->send(200, "application/json", "{\"message\":\"Calibration values reset\"}");
+    });
 
     server.on("/rest/reset-energy", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
@@ -319,8 +278,7 @@ void CustomServer::_setRestApi()
 
         _ade7953.resetEnergyValues();
 
-        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Energy counters reset\"}");
-        request->send(response); });
+        request->send(200, "application/json", "{\"message\":\"Energy counters reset\"}"); });
 
     server.on("/rest/get-log-level", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -352,11 +310,11 @@ void CustomServer::_setRestApi()
             } else if (_type == "save") {
                 _logger.setSaveLevel(LogLevel(_level));
             } else {
-                request->send(400, "text/plain", "Unknown type parameter provided. No changes made");
+                request->send(400, "application/json", "{\"message\":\"Invalid type parameter. Supported values: print, save\"}");
             }
             request->send(200, "application/json", "{\"message\":\"Success\"}");
         } else {
-            request->send(400, "text/plain", "No level parameter provided. No changes made");
+            request->send(400, "application/json", "{\"message\":\"Missing parameter. Required: level (int), type (string)\"}");
         } });
 
     server.on("/rest/get-general-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
@@ -389,16 +347,15 @@ void CustomServer::_setRestApi()
                 if (_address >= 0 && _address <= 0x3FF) {
                     long registerValue = _ade7953.readRegister(_address, _nBits, _signed);
 
-                    AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", String(registerValue).c_str());
-                    request->send(response);
+                    request->send(200, "application/json", "{\"value\":" + String(registerValue) + "}");
                 } else {
-                    request->send(400, "text/plain", "Address out of range. Supported values: 0-0x3FF (0-1023)");
+                    request->send(400, "application/json", "{\"message\":\"Address out of range. Supported values: 0-0x3FF (0-1023)\"}");
                 }
             } else {
-                request->send(400, "text/plain", "Number of bits not supported. Supported values: 8, 16, 24, 32");
+                request->send(400, "application/json", "{\"message\":\"Number of bits not supported. Supported values: 8, 16, 24, 32\"}");
             }
         } else {
-            request->send(400, "text/plain", "Missing parameter. Required: address (int), nBits (int), signed (bool)");
+            request->send(400, "application/json", "{\"message\":\"Missing parameter. Required: address (int), nBits (int), signed (bool)\"}");
         } });
 
     server.on("/rest/ade7953-write-register", HTTP_POST, [this](AsyncWebServerRequest *request)
@@ -419,37 +376,16 @@ void CustomServer::_setRestApi()
                 if (_address >= 0 && _address <= 0x3FF) {
                     _ade7953.writeRegister(_address, _nBits, _data);
 
-                    AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", "Success");
-                    request->send(response);
+                    request->send(200, "application/json", "{\"message\":\"Success\"}");
                 } else {
-                    request->send(400, "text/plain", "Address out of range. Supported values: 0-0x3FF (0-1023)");
+                    request->send(400, "application/json", "{\"message\":\"Address out of range. Supported values: 0-0x3FF (0-1023)\"}");
                 }
             } else {
-                request->send(400, "text/plain", "Number of bits not supported. Supported values: 8, 16, 24, 32");
+                request->send(400, "application/json", "{\"message\":\"Number of bits not supported. Supported values: 8, 16, 24, 32\"}");
             }
         } else {
-            request->send(400, "text/plain", "Missing parameter. Required: address (int), nBits (int), data (int)");
+            request->send(400, "application/json", "{\"message\":\"Missing parameter. Required: address (int), nBits (int), data (int)\"}");
         } });
-
-    server.on("/rest/save-daily-energy", HTTP_POST, [this](AsyncWebServerRequest *request)
-               {
-        _serverLog("Request to save daily energy to SPIFFS from REST API", "customserver::_setRestApi::/rest/save-daily-energy", LogLevel::DEBUG, request);
-
-        _ade7953.saveDailyEnergyToSpiffs();
-
-        request->send(200, "application/json", "{\"message\":\"Daily energy saved\"}"); });
-
-    server.on("/rest/file/*", HTTP_GET, [this](AsyncWebServerRequest *request)
-               {
-        _serverLog("Request to get file from REST API", "customserver::_setRestApi::/rest/file/*", LogLevel::DEBUG, request);
-
-        String _filename = request->url().substring(10);
-        File _file = SPIFFS.open(_filename, FILE_READ);
-        if (_file) {
-            request->send(_file, "text/plain");
-            _file.close();
-        }
-        else {request->send(400, "text/plain", "File not found");} });
 
     server.on("/rest/firmware-update-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -526,8 +462,7 @@ void CustomServer::_setRestApi()
 
             _ade7953.setCalibrationValues(_jsonDocument);
             
-            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Calibration values set\"}");
-            request->send(response);
+            request->send(200, "application/json", "{\"message\":\"Calibration values set\"}");
 
         } else if (request->url() == "/rest/set-ade7953-configuration") {
             _serverLog("Request to set ADE7953 configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-ade7953-configuration", LogLevel::INFO, request);
@@ -535,10 +470,9 @@ void CustomServer::_setRestApi()
             JsonDocument _jsonDocument;
             deserializeJson(_jsonDocument, data);
 
-            _ade7953.setConfiguration(_ade7953.parseJsonConfiguration(_jsonDocument));
+            _ade7953.setConfiguration(_jsonDocument);
 
-            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"message\":\"Configuration updated\"}");
-            request->send(response);
+            request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
 
         } else if (request->url() == "/rest/set-general-configuration") {
             _serverLog("Request to set general configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-general-configuration", LogLevel::INFO, request);
@@ -553,13 +487,20 @@ void CustomServer::_setRestApi()
             AsyncWebServerResponse *response;
             if (checkIfRebootRequiredGeneralConfiguration(previousGeneralConfiguration, generalConfiguration)) {
                 setRestartEsp32("utils::setGeneralConfiguration", "General configuration set with reboot required");
-                response = request->beginResponse(200, "application/json", "{\"message\":\"Configuration updated. Restarting...\"}");
+                request->send(200, "application/json", "{\"message\":\"Configuration updated. Restarting...\"}");
             } else {
-                response = request->beginResponse(200, "application/json", "{\"message\":\"Configuration updated\"}");
+                request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
             }
 
-            request->send(response);
+        } else if (request->url() == "/rest/set-channel") {
+            _serverLog("Request to set channel data from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-channel", LogLevel::INFO, request);
 
+            JsonDocument _jsonDocument;
+            deserializeJson(_jsonDocument, data);
+
+            _ade7953.setChannelData(_jsonDocument);
+
+            request->send(200, "application/json", "{\"message\":\"Channel data set\"}");
         } else {
             _serverLog(
                 ("Request to POST to unknown endpoint: " + request->url()).c_str(),
@@ -570,6 +511,67 @@ void CustomServer::_setRestApi()
             request->send(404, "text/plain", "Not found");
             
         } });
+
+    server.on("/rest/list-files", HTTP_GET, [this](AsyncWebServerRequest *request)
+    {
+        _serverLog("Request to get list of files from REST API", "customserver::_setRestApi::/rest/files", LogLevel::DEBUG, request);
+
+        File _root = SPIFFS.open("/");
+        File _file = _root.openNextFile();
+
+        JsonDocument _jsonDocument;
+        while (_file)
+        {
+            // Skip if private in name
+            String _filename = String(_file.name());
+
+            if (_filename.indexOf("secret") != -1) {
+                _file = _root.openNextFile();
+            } else {
+                _jsonDocument[_file.name()] = _file.size();
+                _file = _root.openNextFile();
+            }
+        }
+
+        String _buffer;
+        serializeJson(_jsonDocument, _buffer);
+
+        request->send(200, "application/json", _buffer.c_str());
+    });
+
+    server.on("/rest/file/*", HTTP_GET, [this](AsyncWebServerRequest *request)
+    {
+        _serverLog("Request to get file from REST API", "customserver::_setRestApi::/rest/file/*", LogLevel::DEBUG, request);
+    
+        String _filename = request->url().substring(10);
+    
+        if (_filename.indexOf("secret") != -1) {
+            request->send(401, "application/json", "{\"message\":\"Unauthorized\"}");
+            return;
+        }
+    
+        File _file = SPIFFS.open(_filename, FILE_READ);
+        if (_file) {
+            String contentType = "text/plain";
+            
+            if (_filename.indexOf(".json") != -1) {
+                contentType = "application/json";
+            } else if (_filename.indexOf(".html") != -1) {
+                contentType = "text/html";
+            } else if (_filename.indexOf(".css") != -1) {
+                contentType = "text/css";
+            } else if (_filename.indexOf(".ico") != -1) {
+                contentType = "image/x-icon";
+            }
+
+            request->send(_file, contentType);
+            _file.close();
+        }
+        else {
+            request->send(400, "text/plain", "File not found");
+        }
+    });
+
 
     server.serveStatic("/log-raw", SPIFFS, LOG_PATH);
     server.serveStatic("/daily-energy", SPIFFS, DAILY_ENERGY_JSON_PATH);

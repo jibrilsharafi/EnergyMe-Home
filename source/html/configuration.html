@@ -201,7 +201,7 @@
                             document.getElementById("factoryReset").innerHTML = "Reset successful! You will be redirected to the home page in 15-30 seconds.";
                             setTimeout(function () {
                                 window.location.href = "/";
-                            }, 5000);
+                            }, 15000);
                         } else {
                             alert("Error resetting to factory settings. Response: " + this.responseText);
                         }
