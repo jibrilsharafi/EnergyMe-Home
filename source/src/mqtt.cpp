@@ -1,10 +1,21 @@
 #include "mqtt.h"
 
+Mqtt* globalMqttInstance = nullptr;
+
+// Callback must be a global function
+void globalMqttSubscribeCallback(char* topic, byte* payload, unsigned int length) {
+    if (globalMqttInstance) {
+        globalMqttInstance->subscribeCallback(topic, payload, length);
+    }
+}
+
 Mqtt::Mqtt(
     Ade7953 &ade7953,
     AdvancedLogger &logger,
     CustomTime &customTime
-) : _ade7953(ade7953), _logger(logger), _customTime(customTime) {}
+) : _ade7953(ade7953), _logger(logger), _customTime(customTime) {
+    globalMqttInstance = this;
+}
 
 #ifdef ENERGYME_HOME_SECRETS_H
 
@@ -20,7 +31,7 @@ bool Mqtt::begin(String deviceId) {
     
     _setupTopics();
 
-    clientMqtt.setCallback(std::bind(&Mqtt::_subscribeCallback, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    clientMqtt.setCallback(globalMqttSubscribeCallback);
 
     net.setCACert(aws_iot_core_cert_ca);
     net.setCertificate(aws_iot_core_cert_crt);
@@ -374,29 +385,27 @@ void Mqtt::_checkPublishMqtt() {
     if (publishMqtt.channel) {publishChannel();}
     if (publishMqtt.generalConfiguration) {publishGeneralConfiguration();}
 }
-
-
-void Mqtt::_subscribeCallback(char* topic, byte* payload, unsigned int length) {
+void Mqtt::subscribeCallback(const char* topic, byte *payload, unsigned int length) {
     String message;
     for (unsigned int i = 0; i < length; i++) {
         message += (char)payload[i];
     }
 
-    _logger.debug("Message arrived: %s", "mqtt::_subscribeCallback", message.c_str());
+    _logger.debug("Message arrived: %s", "mqtt::subscribeCallback", message.c_str());
 
     if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE)) {
-        _logger.info("Firmware update received", "mqtt::_subscribeCallback");
+        _logger.info("Firmware update received", "mqtt::subscribeCallback");
 
         File _file = SPIFFS.open(FW_UPDATE_INFO_JSON_PATH, FILE_WRITE);
         if (!_file) {
-            _logger.error("Failed to open file for writing: %s", "mqtt::_subscribeCallback", FW_UPDATE_INFO_JSON_PATH);
+            _logger.error("Failed to open file for writing: %s", "mqtt::subscribeCallback", FW_UPDATE_INFO_JSON_PATH);
             return;
         }
 
         _file.print(message);
         _file.close();
     } else {
-        _logger.info("Unknown topic message received: %s | %s", "mqtt::_subscribeCallback", topic, message.c_str());
+        _logger.info("Unknown topic message received: %s | %s", "mqtt::subscribeCallback", topic, message.c_str());
         return;
     }
 }

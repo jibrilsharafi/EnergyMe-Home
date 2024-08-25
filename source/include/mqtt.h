@@ -39,6 +39,8 @@ public:
     void publishChannel();
     void publishGeneralConfiguration();
 
+    void subscribeCallback(const char* topic, byte *payload, unsigned int length);
+
 private:
     bool _connectMqtt();
 
@@ -56,7 +58,6 @@ private:
 
     bool _publishMessage(const char *topic, const char *message);
 
-    void _subscribeCallback(char *topic, byte *payload, unsigned int length);
     void _subscribeUpdateFirmware();
     void _subscribeToTopics();
 
