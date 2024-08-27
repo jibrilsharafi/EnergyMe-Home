@@ -10,7 +10,7 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
 
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" href="/favicon.txt">
 
     <title>Channel</title>
     <style>
@@ -127,23 +127,23 @@
         channel.calibrationLabel = document.getElementById(`calibration${index}`).value;
         channel.reverse = document.getElementById(`reverse${index}`).checked;
         channel.active = document.getElementById(`active${index}`).checked;
-
+        
         if (channel.active) {
             startPowerUpdate(index);
         } else {
             stopPowerUpdate(index);
         }
-
-        sendChannelUpdate();
+        
+        sendChannelUpdate(channel);
     }
-
-    function sendChannelUpdate() {
+    
+    function sendChannelUpdate(updatedChannel) {
         fetch('/rest/set-channel', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(channelData)
+            body: JSON.stringify(updatedChannel)
         })
         .then(response => response.json())
         .then(data => console.log('Success:', data))

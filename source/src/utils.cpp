@@ -15,10 +15,6 @@ void getJsonProjectInfo(JsonDocument& jsonDocument) {
     jsonDocument["githubUrl"] = GITHUB_URL;
     jsonDocument["author"] = AUTHOR;
     jsonDocument["authorEmail"] = AUTHOR_EMAIL;
-    jsonDocument["copyrightYear"] = COPYRIGHT_YEAR;
-    jsonDocument["copyrightHolder"] = COPYRIGHT_HOLDER;
-    jsonDocument["license"] = LICENSE;
-    jsonDocument["licenseUrl"] = LICENSE_URL;
 }
 
 void getJsonDeviceInfo(JsonDocument& jsonDocument)

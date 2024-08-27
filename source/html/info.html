@@ -10,7 +10,7 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
 
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" href="/resources/favicon.ico">
     
     <title>Info</title>
     <style>
@@ -65,10 +65,6 @@
         <p><span class='list-key'>GitHub URL:</span><span id='githubUrl' class='list-value'></span></p>
         <p><span class='list-key'>Author:</span><span id='author' class='list-value'></span></p>
         <p><span class='list-key'>Author Email:</span><span id='authorEmail' class='list-value'></span></p>
-        <p><span class='list-key'>Copyright Year:</span><span id='copyrightYear' class='list-value'></span></p>
-        <p><span class='list-key'>Copyright Holder:</span><span id='copyrightHolder' class='list-value'></span></p>
-        <p><span class='list-key'>License:</span><span id='license' class='list-value'></span></p>
-        <p><span class='list-key'>License URL:</span><span id='licenseUrl' class='list-value'></span></p>
     </div>
 
     <script>
@@ -206,10 +202,6 @@
             document.getElementById('githubUrl').innerHTML = `<a href="${data.githubUrl}" target="_blank">${data.githubUrl}</a>`;
             document.getElementById('author').textContent = data.author;
             document.getElementById('authorEmail').textContent = data.authorEmail;
-            document.getElementById('copyrightYear').textContent = data.copyrightYear;
-            document.getElementById('copyrightHolder').textContent = data.copyrightHolder;
-            document.getElementById('license').textContent = data.license;
-            document.getElementById('licenseUrl').innerHTML = `<a href="${data.licenseUrl}" target="_blank">${data.licenseUrl}</a>`;
         }
 
         fetchData();

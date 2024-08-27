@@ -16,7 +16,7 @@ extern const char info_html[] asm("_binary_html_info_html_start");
 extern const char log_html[] asm("_binary_html_log_html_start");
 extern const char update_html[] asm("_binary_html_update_html_start");
 
-extern const char favicon_ico[] asm("_binary_resources_favicon_ico_start");
+extern const char favicon_txt[] asm("_binary_resources_favicon_txt_start");
 
 extern const char default_config_ade7953_json[] asm("_binary_config_ade7953_json_start");
 extern const char default_config_calibration_json[] asm("_binary_config_calibration_json_start");

@@ -156,9 +156,14 @@ bool Ade7953::_verifyCommunication() {
     
     int _attempt = 0;
     bool _success = false;
+    unsigned long _lastMillisAttempt = 0;
 
-    while (_attempt < MAX_VERIFY_COMMUNICATION_ATTEMPTS && !_success) {
-        _logger.debug("Attempt (%d/%d) to communicate with Ade7953", "ade7953::_verifyCommunication", _attempt, MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+    while (_attempt < ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS && !_success) {
+        if (millis() - _lastMillisAttempt < ADE7953_VERIFY_COMMUNICATION_INTERVAL) {
+            continue;
+        }
+
+        _logger.debug("Attempt (%d/%d) to communicate with Ade7953", "ade7953::_verifyCommunication", _attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
         
         _reset();
         _attempt++;
@@ -167,11 +172,11 @@ bool Ade7953::_verifyCommunication() {
             _logger.debug("Communication successful with Ade7953", "ade7953::_verifyCommunication");
             return true;
         } else {
-            _logger.warning("Failed to communicate with Ade7953 on _attempt (%d/%d)", "ade7953::_verifyCommunication", _attempt, MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+            _logger.warning("Failed to communicate with Ade7953 on _attempt (%d/%d). Retrying in %d ms", "ade7953::_verifyCommunication", _attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
         }
     }
 
-    _logger.error("Failed to communicate with Ade7953 after %d attempts", "ade7953::_verifyCommunication", MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+    _logger.error("Failed to communicate with Ade7953 after %d attempts", "ade7953::_verifyCommunication", ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
     return false;
 }
 

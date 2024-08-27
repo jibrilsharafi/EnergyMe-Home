@@ -120,7 +120,12 @@ void CustomServer::_setHtmlPages()
     server.on("/favicon.ico", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.ico", LogLevel::VERBOSE, request);
-        request->send_P(200, "image/x-icon", favicon_ico); });
+        request->send_P(200, "image/x-icon", favicon_txt); });
+
+    server.on("/favicon.txt", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.ico", LogLevel::VERBOSE, request);
+        request->send_P(200, "text/plain", favicon_txt); });
 }
 
 void CustomServer::_setOta()
@@ -561,7 +566,7 @@ void CustomServer::_setRestApi()
             } else if (_filename.indexOf(".css") != -1) {
                 contentType = "text/css";
             } else if (_filename.indexOf(".ico") != -1) {
-                contentType = "image/x-icon";
+                contentType = "image/png";
             }
 
             request->send(_file, contentType);
