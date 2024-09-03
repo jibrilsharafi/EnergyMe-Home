@@ -117,15 +117,10 @@ void CustomServer::_setHtmlPages()
         request->send_P(200, "text/css", typography_css); });
 
     // Other
-    server.on("/favicon.ico", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/favicon.svg", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.ico", LogLevel::VERBOSE, request);
-        request->send_P(200, "image/x-icon", favicon_txt); });
-
-    server.on("/favicon.txt", HTTP_GET, [this](AsyncWebServerRequest *request)
-               {
-        _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.ico", LogLevel::VERBOSE, request);
-        request->send_P(200, "text/plain", favicon_txt); });
+        _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.png", LogLevel::VERBOSE, request);
+        request->send_P(200, "image/svg+xml", favicon_svg); });
 }
 
 void CustomServer::_setOta()
@@ -456,66 +451,72 @@ void CustomServer::_setRestApi()
         _customWifi.resetWifi();
         setRestartEsp32("customserver::_setRestApi", "Request to erase WiFi credentials from REST API"); });
 
-    server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
-                          {
-
-        if (request->url() == "/rest/set-calibration") {   
-            _serverLog("Request to set calibration values from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-calibration", LogLevel::INFO, request);
-
+    server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (index == 0) {
+            // This is the first chunk of data, initialize the buffer
+            request->_tempObject = new std::vector<uint8_t>();
+        }
+    
+        // Append the current chunk to the buffer
+        std::vector<uint8_t> *buffer = static_cast<std::vector<uint8_t> *>(request->_tempObject);
+        buffer->insert(buffer->end(), data, data + len);
+    
+        if (index + len == total) {
+            // All chunks have been received, process the complete data
             JsonDocument _jsonDocument;
-            deserializeJson(_jsonDocument, data);
+            deserializeJson(_jsonDocument, buffer->data(), buffer->size());
 
-            _ade7953.setCalibrationValues(_jsonDocument);
-            
-            request->send(200, "application/json", "{\"message\":\"Calibration values set\"}");
+            String _buffer;
+            serializeJson(_jsonDocument, _buffer);
+            _serverLog(_buffer.c_str(), "customserver::_setRestApi::onRequestBody", LogLevel::DEBUG, request);
 
-        } else if (request->url() == "/rest/set-ade7953-configuration") {
-            _serverLog("Request to set ADE7953 configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-ade7953-configuration", LogLevel::INFO, request);
-
-            JsonDocument _jsonDocument;
-            deserializeJson(_jsonDocument, data);
-
-            _ade7953.setConfiguration(_jsonDocument);
-
-            request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
-
-        } else if (request->url() == "/rest/set-general-configuration") {
-            _serverLog("Request to set general configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-general-configuration", LogLevel::INFO, request);
-
-            JsonDocument _jsonDocument;
-            deserializeJson(_jsonDocument, data);
-
-            GeneralConfiguration previousGeneralConfiguration = generalConfiguration;
-            jsonToGeneralConfiguration(_jsonDocument, generalConfiguration);
-            setGeneralConfiguration(generalConfiguration);
-            
-            AsyncWebServerResponse *response;
-            if (checkIfRebootRequiredGeneralConfiguration(previousGeneralConfiguration, generalConfiguration)) {
-                setRestartEsp32("utils::setGeneralConfiguration", "General configuration set with reboot required");
-                request->send(200, "application/json", "{\"message\":\"Configuration updated. Restarting...\"}");
-            } else {
+            if (request->url() == "/rest/set-calibration") {
+                _serverLog("Request to set calibration values from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-calibration", LogLevel::INFO, request);
+    
+                _ade7953.setCalibrationValues(_jsonDocument);
+    
+                request->send(200, "application/json", "{\"message\":\"Calibration values set\"}");
+    
+            } else if (request->url() == "/rest/set-ade7953-configuration") {
+                _serverLog("Request to set ADE7953 configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-ade7953-configuration", LogLevel::INFO, request);
+    
+                _ade7953.setConfiguration(_jsonDocument);
+    
                 request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
+    
+            } else if (request->url() == "/rest/set-general-configuration") {
+                _serverLog("Request to set general configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-general-configuration", LogLevel::INFO, request);
+    
+                GeneralConfiguration previousGeneralConfiguration = generalConfiguration;
+                jsonToGeneralConfiguration(_jsonDocument, generalConfiguration);
+                setGeneralConfiguration(generalConfiguration);
+    
+                request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
+    
+            } else if (request->url() == "/rest/set-channel") {
+                _serverLog("Request to set channel data from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-channel", LogLevel::INFO, request);
+    
+                _ade7953.setChannelData(_jsonDocument);
+    
+                request->send(200, "application/json", "{\"message\":\"Channel data set\"}");
+            } else {
+                _serverLog(
+                    ("Request to POST to unknown endpoint: " + request->url()).c_str(),
+                    "customserver::_setRestApi::onRequestBody",
+                    LogLevel::WARNING,
+                    request
+                );
+                request->send(404, "application/json", "{\"message\":\"Unknown endpoint\"}");
             }
-
-        } else if (request->url() == "/rest/set-channel") {
-            _serverLog("Request to set channel data from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-channel", LogLevel::INFO, request);
-
-            JsonDocument _jsonDocument;
-            deserializeJson(_jsonDocument, data);
-
-            _ade7953.setChannelData(_jsonDocument);
-
-            request->send(200, "application/json", "{\"message\":\"Channel data set\"}");
+                    
+    
+            // Clean up the buffer
+            delete buffer;
+            request->_tempObject = nullptr;
         } else {
-            _serverLog(
-                ("Request to POST to unknown endpoint: " + request->url()).c_str(),
-                "customserver::_setRestApi::onRequestBody",
-                LogLevel::WARNING,
-                request
-            );
-            request->send(404, "text/plain", "Not found");
-            
-        } });
+            _serverLog("Getting more data...", "customserver::_setRestApi::onRequestBody", LogLevel::DEBUG, request);
+        }
+    });
 
     server.on("/rest/list-files", HTTP_GET, [this](AsyncWebServerRequest *request)
     {

@@ -124,6 +124,24 @@ void setup() {
   }
 
   led.setCyan();
+
+  if (SPIFFS.exists("/format.txt")) {
+    led.setOrange();
+    Serial.println("Format file detected. Formatting SPIFFS...");
+    SPIFFS.remove("/format.txt");
+    SPIFFS.format();
+    Serial.println("SPIFFS formatted. Rebooting...");
+    ESP.restart();
+  }
+
+  // Create format.txt file to format SPIFFS. If the setup is successful, the file will be removed
+  File file = SPIFFS.open("/format.txt", FILE_WRITE);
+  if (!file) {
+    Serial.println("There was an error opening the file for writing");
+  } else {
+    file.println("");
+    file.close();
+  }
   
   // Nothing is logged before this point as the logger is not yet initialized
   Serial.println("Setting up logger...");
@@ -159,7 +177,7 @@ void setup() {
   logger.info("Multiplexer setup done", "main::setup");
   
   logger.info("Setting up ADE7953...", "main::setup");
-  if (!ade7953.begin()) {
+  if (!ade7953.begin()) { //FIXME: probably here everytime the channel data is resetted 
     logger.fatal("ADE7953 initialization failed!", "main::setup");
   } else {
     logger.info("ADE7953 setup done", "main::setup");
@@ -211,6 +229,9 @@ void setup() {
   }
 
   isFirstSetup = false;
+
+  // Remove the format.txt file as the setup is done
+  SPIFFS.remove("/format.txt");
 
   led.setGreen();
   logger.info("Setup done", "main::setup");

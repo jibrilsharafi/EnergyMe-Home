@@ -2,10 +2,20 @@
 
 Mqtt* globalMqttInstance = nullptr;
 
-// Callback must be a global function
-void globalMqttSubscribeCallback(char* topic, byte* payload, unsigned int length) {
-    if (globalMqttInstance) {
-        globalMqttInstance->subscribeCallback(topic, payload, length);
+void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
+    String message;
+    for (unsigned int i = 0; i < length; i++) {
+        message += (char)payload[i];
+    }
+
+    if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE)) {
+        File _file = SPIFFS.open(FW_UPDATE_INFO_JSON_PATH, FILE_WRITE);
+        if (!_file) {
+            return;
+        }
+
+        _file.print(message);
+        _file.close();
     }
 }
 
@@ -31,7 +41,7 @@ bool Mqtt::begin(String deviceId) {
     
     _setupTopics();
 
-    clientMqtt.setCallback(globalMqttSubscribeCallback);
+    clientMqtt.setCallback(subscribeCallback); //FIXME: not working, crashing the subscribe as well if policy not * (maybe it is the subscribe part, not here)
 
     net.setCACert(aws_iot_core_cert_ca);
     net.setCertificate(aws_iot_core_cert_crt);
@@ -49,6 +59,8 @@ bool Mqtt::begin(String deviceId) {
 
     _logger.debug("MQTT setup complete", "mqtt::begin");
 
+    _isSetupDone = true;
+
     return true;
 }
 
@@ -65,13 +77,25 @@ bool Mqtt::begin() {
 
 void Mqtt::loop() {
     if (!generalConfiguration.isCloudServicesEnabled) {
+        if (_isSetupDone) {
+            _logger.info("Cloud services disabled. Disconnecting MQTT...", "mqtt::mqttLoop");
+            clientMqtt.disconnect();
+            _isSetupDone = false;
+        }
+
         _logger.verbose("Cloud services not enabled. Skipping...", "mqtt::mqttLoop");
         return;
     }
 
+    if (!_isSetupDone) {
+        if (!begin(getDeviceId())) {
+            setRestartEsp32("mqtt::mqttLoop", "Failed to setup MQTT");
+        }
+    }
+
     if ((millis() - _lastMillisMqttLoop) > MQTT_LOOP_INTERVAL) {
         _lastMillisMqttLoop = millis();
-        
+
         if (!clientMqtt.connected()) {
             if ((millis() - _lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) {
                 _logger.verbose("MQTT connection failed recently. Skipping...", "mqtt::_connectMqtt");
@@ -266,7 +290,7 @@ void Mqtt::publishStatus() {
     String _statusMessage;
     serializeJson(_jsonDocument, _statusMessage);
 
-    _publishMessage(_mqttTopicStatus, _statusMessage.c_str());
+    if (_publishMessage(_mqttTopicStatus, _statusMessage.c_str())) {publishMqtt.status = false;}
 
     _logger.debug("Status published to MQTT", "mqtt::publishStatus");
 }
@@ -282,7 +306,7 @@ void Mqtt::publishMetadata() {
     String _metadataMessage;
     serializeJson(_jsonDocument, _metadataMessage);
 
-    _publishMessage(_mqttTopicMetadata, _metadataMessage.c_str());
+    if (_publishMessage(MQTT_TOPIC_METADATA, _metadataMessage.c_str())) {publishMqtt.metadata = false;}
     
     _logger.debug("Metadata published to MQTT", "mqtt::publishMetadata");
 }
@@ -300,7 +324,8 @@ void Mqtt::publishChannel() {
     String _channelMessage;
     serializeJson(_jsonDocument, _channelMessage);
  
-    _publishMessage(_mqttTopicChannel, _channelMessage.c_str());
+    if (_publishMessage(_mqttTopicChannel, _channelMessage.c_str())) {publishMqtt.channel = false;}
+
     _logger.debug("Channel data published to MQTT", "mqtt::publishChannel");
 }
 
@@ -318,7 +343,8 @@ void Mqtt::publishGeneralConfiguration() {
     String _generalConfigurationMessage;
     serializeJson(_jsonDocument, _generalConfigurationMessage);
 
-    _publishMessage(_mqttTopicGeneralConfiguration, _generalConfigurationMessage.c_str());
+    if (_publishMessage(MQTT_TOPIC_GENERAL_CONFIGURATION, _generalConfigurationMessage.c_str())) {publishMqtt.generalConfiguration = false;}
+
     _logger.debug("General configuration published to MQTT", "mqtt::publishGeneralConfiguration");
 }
 
@@ -384,30 +410,6 @@ void Mqtt::_checkPublishMqtt() {
     if (publishMqtt.metadata) {publishMetadata();}
     if (publishMqtt.channel) {publishChannel();}
     if (publishMqtt.generalConfiguration) {publishGeneralConfiguration();}
-}
-void Mqtt::subscribeCallback(const char* topic, byte *payload, unsigned int length) {
-    String message;
-    for (unsigned int i = 0; i < length; i++) {
-        message += (char)payload[i];
-    }
-
-    _logger.debug("Message arrived: %s", "mqtt::subscribeCallback", message.c_str());
-
-    if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE)) {
-        _logger.info("Firmware update received", "mqtt::subscribeCallback");
-
-        File _file = SPIFFS.open(FW_UPDATE_INFO_JSON_PATH, FILE_WRITE);
-        if (!_file) {
-            _logger.error("Failed to open file for writing: %s", "mqtt::subscribeCallback", FW_UPDATE_INFO_JSON_PATH);
-            return;
-        }
-
-        _file.print(message);
-        _file.close();
-    } else {
-        _logger.info("Unknown topic message received: %s | %s", "mqtt::subscribeCallback", topic, message.c_str());
-        return;
-    }
 }
 
 void Mqtt::_subscribeToTopics() {

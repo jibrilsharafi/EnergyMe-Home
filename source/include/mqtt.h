@@ -39,8 +39,6 @@ public:
     void publishChannel();
     void publishGeneralConfiguration();
 
-    void subscribeCallback(const char* topic, byte *payload, unsigned int length);
-
 private:
     bool _connectMqtt();
 
@@ -76,6 +74,8 @@ private:
     CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> _payloadMeter;
 
     String _deviceId;
+
+    bool _isSetupDone = false;
 
     char _mqttTopicMeter[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicStatus[MQTT_MAX_TOPIC_LENGTH];

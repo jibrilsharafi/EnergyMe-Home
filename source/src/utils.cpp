@@ -291,17 +291,13 @@ void setGeneralConfiguration(GeneralConfiguration& newGeneralConfiguration) {
 
     applyGeneralConfiguration();
     saveGeneralConfigurationToSpiffs();
+
+    if (generalConfiguration.isCloudServicesEnabled) {
+        publishMqtt.status = true;
+        publishMqtt.generalConfiguration = true;
+    }
     
-    publishMqtt.status = true;
-    publishMqtt.generalConfiguration = true;
-
     logger.debug("General configuration set", "utils::setGeneralConfiguration");
-}
-
-bool checkIfRebootRequiredGeneralConfiguration(GeneralConfiguration& previousConfiguration, GeneralConfiguration& newConfiguration) {
-    if (previousConfiguration.isCloudServicesEnabled != newConfiguration.isCloudServicesEnabled) return true;
-
-    return false;
 }
 
 bool setGeneralConfigurationFromSpiffs() {

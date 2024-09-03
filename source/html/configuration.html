@@ -10,7 +10,7 @@
         <link rel="stylesheet" type="text/css" href="/css/section.css">
         <link rel="stylesheet" type="text/css" href="/css/typography.css">
 
-        <link rel="icon" href="/favicon.txt">
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
         <title>Configuration</title>
         <style>
@@ -335,19 +335,11 @@
                 xhttp.onreadystatechange = function () {
                     if (this.readyState == 4) {
                         if (this.status == 200) {
-                            // If the word "restart" is in the response, the device will restart
-                            if (this.responseText.includes("restart")) {
-                                document.getElementById("setGeneralConfigurationButton").innerHTML = "Set success! Restarting...";
-                                setTimeout(function () {
-                                    window.location.href = "/";
-                                }, 5000);
-                            } else {
-                                document.getElementById("setGeneralConfigurationButton").innerHTML = "Set success!";
-                                setTimeout(function () {
-                                    document.getElementById("setGeneralConfigurationButton").innerHTML = "Set configuration";
-                                    document.getElementById("setGeneralConfigurationButton").disabled = false;
-                                }, 3000);
-                            }
+                            document.getElementById("setGeneralConfigurationButton").innerHTML = "Set success!";
+                            setTimeout(function () {
+                                document.getElementById("setGeneralConfigurationButton").innerHTML = "Set configuration";
+                                document.getElementById("setGeneralConfigurationButton").disabled = false;
+                            }, 3000);
                         } else {
                             alert("Error setting general configuration. Response: " + this.responseText);
                             document.getElementById("setGeneralConfigurationButton").innerHTML = "Set failed!";
