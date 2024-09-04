@@ -590,7 +590,7 @@ void CustomServer::_setOtherEndpoints()
         _serverLog(
             ("Request to get unknown page: " + request->url()).c_str(),
             "customserver::_setOtherEndpoints::onNotFound",
-            LogLevel::INFO,
+            LogLevel::DEBUG,
             request
         );
         request->send(404, "text/plain", "Not found"); });

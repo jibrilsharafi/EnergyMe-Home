@@ -146,12 +146,11 @@ void setup() {
   // Nothing is logged before this point as the logger is not yet initialized
   Serial.println("Setting up logger...");
   logger.begin();
-  logger.info("Logger setup done", "main::setup");
+  logger.debug("Logger setup done", "main::setup");
   
   logger.info("Booting...", "main::setup");  
-  logger.info("EnergyMe - Home", "main::setup");
-  logger.info("Build version: %s", "main::setup", FIRMWARE_BUILD_VERSION);
-  logger.info("Build date: %s", "main::setup", FIRMWARE_BUILD_DATE);
+
+  logger.info("EnergyMe - Home | Build version: %s | Build date: %s", "main::setup", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE);
   
   if (checkIfFirstSetup() || checkAllFiles()) {
     led.setOrange();
@@ -162,7 +161,7 @@ void setup() {
     logger.info("Default files created after format", "main::setup");
   }
 
-  logger.info("Fetching configuration from SPIFFS...", "main::setup");
+  logger.info("Fetching general configuration from SPIFFS...", "main::setup");
   setDefaultGeneralConfiguration(); // Start with default values
   if (!setGeneralConfigurationFromSpiffs()) {
     logger.warning("Failed to load configuration from SPIFFS. Using default values.", "main::setup");

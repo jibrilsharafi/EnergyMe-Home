@@ -145,7 +145,7 @@
             .then(response => response.text())
             .then(data => {
                 // Remove the last 4 characters if they are \r\n
-                if (data.slice(-2) === '\r\n') data = data.slice(0, -4);
+                if (data.slice(-2) === '\r\n') data = data.slice(0, -2);
                 
                 const log = data.split('\n').map((line, index) => {
                     const [timestamp, elapsedTime, level, core, module, ...messageParts] = line.replaceAll('[','').replaceAll('\r', '').split('] ');

@@ -42,8 +42,8 @@ public:
 private:
     bool _connectMqtt();
 
-    void _checkPublishMeter();
-    void _checkPublishStatus();
+    void _checkIfPublishMeterNeeded();
+    void _checkIfPublishStatusNeeded();
 
     void _checkPublishMqtt();
 

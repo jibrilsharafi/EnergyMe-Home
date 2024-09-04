@@ -111,8 +111,8 @@ void Mqtt::loop() {
             }
         }
 
-        _checkPublishMeter();
-        _checkPublishStatus();
+        _checkIfPublishMeterNeeded();
+        _checkIfPublishStatusNeeded();
 
         _checkPublishMqtt();
     }
@@ -130,13 +130,14 @@ bool Mqtt::_connectMqtt() { //TODO: Handle continuous connection/reconnection
     _logger.debug("Attempt to connect to MQTT...", "mqtt::_connectMqtt");
     
     if (clientMqtt.connect(_deviceId.c_str())) {
-        _logger.info("Connected to MQTT...", "mqtt::_connectMqtt");
+        _logger.info("Connected to MQTT", "mqtt::_connectMqtt");
 
         _mqttConnectionAttempt = 0;
         
         publishMetadata();
         publishChannel();
         publishStatus();
+        publishGeneralConfiguration();
 
         _subscribeToTopics();
         
@@ -201,27 +202,47 @@ void Mqtt::_setupTopics() {
 }
 
 void Mqtt::_setTopicMeter() {
+#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION
     _constructMqttTopicWithRule(MQTT_RULE_NAME_METER, MQTT_TOPIC_METER, _mqttTopicMeter);
+#else
+    _constructMqttTopic(MQTT_TOPIC_METER, _mqttTopicMeter);
+#endif
     _logger.debug(_mqttTopicMeter, "mqtt::_setTopicMeter");
 }
 
 void Mqtt::_setTopicStatus() {
+#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION
     _constructMqttTopicWithRule(MQTT_RULE_NAME_STATUS, MQTT_TOPIC_STATUS, _mqttTopicStatus);
+#else
+    _constructMqttTopic(MQTT_TOPIC_STATUS, _mqttTopicStatus);
+#endif
     _logger.debug(_mqttTopicStatus, "mqtt::_setTopicStatus");
 }
 
 void Mqtt::_setTopicMetadata() {
+#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION
     _constructMqttTopicWithRule(MQTT_RULE_NAME_METADATA, MQTT_TOPIC_METADATA, _mqttTopicMetadata);
+#else
+    _constructMqttTopic(MQTT_TOPIC_METADATA, _mqttTopicMetadata);
+#endif
     _logger.debug(_mqttTopicMetadata, "mqtt::_setTopicMetadata");
 }
 
 void Mqtt::_setTopicChannel() {
+#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION
     _constructMqttTopicWithRule(MQTT_RULE_NAME_CHANNEL, MQTT_TOPIC_CHANNEL, _mqttTopicChannel);
+#else
+    _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel);
+#endif
     _logger.debug(_mqttTopicChannel, "mqtt::_setTopicChannel");
 }
 
 void Mqtt::_setTopicGeneralConfiguration() {
+#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION
     _constructMqttTopicWithRule(MQTT_RULE_NAME_GENERAL_CONFIGURATION, MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration);
+#else
+    _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration);
+#endif
     _logger.debug(_mqttTopicGeneralConfiguration, "mqtt::_setTopicGeneralConfiguration");
 }
 
@@ -301,12 +322,13 @@ void Mqtt::publishMetadata() {
     JsonDocument _jsonDocument;
 
     _jsonDocument["unixTime"] = _customTime.getUnixTime();
-    _jsonDocument["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
+    _jsonDocument["firmwareBuildVersion"] = FIRMWARE_BUILD_VERSION;
+    _jsonDocument["firmwareBuildDate"] = FIRMWARE_BUILD_DATE;
 
     String _metadataMessage;
     serializeJson(_jsonDocument, _metadataMessage);
 
-    if (_publishMessage(MQTT_TOPIC_METADATA, _metadataMessage.c_str())) {publishMqtt.metadata = false;}
+    if (_publishMessage(_mqttTopicMetadata, _metadataMessage.c_str())) {publishMqtt.metadata = false;}
     
     _logger.debug("Metadata published to MQTT", "mqtt::publishMetadata");
 }
@@ -343,7 +365,7 @@ void Mqtt::publishGeneralConfiguration() {
     String _generalConfigurationMessage;
     serializeJson(_jsonDocument, _generalConfigurationMessage);
 
-    if (_publishMessage(MQTT_TOPIC_GENERAL_CONFIGURATION, _generalConfigurationMessage.c_str())) {publishMqtt.generalConfiguration = false;}
+    if (_publishMessage(_mqttTopicGeneralConfiguration, _generalConfigurationMessage.c_str())) {publishMqtt.generalConfiguration = false;}
 
     _logger.debug("General configuration published to MQTT", "mqtt::publishGeneralConfiguration");
 }
@@ -379,9 +401,9 @@ bool Mqtt::_publishMessage(const char* topic, const char* message) {
     return true;
 }
 
-void Mqtt::_checkPublishMeter() {
+void Mqtt::_checkIfPublishMeterNeeded() {
     if (payloadMeter.isFull() || (millis() - _lastMillisMeterPublished) > MAX_INTERVAL_METER_PUBLISH) {
-        _logger.debug("Setting flag to publish %d meter data", "mqtt::_checkPublishMeter", payloadMeter.size());
+        _logger.debug("Setting flag to publish %d meter data", "mqtt::_checkIfPublishMeterNeeded", payloadMeter.size());
 
         publishMqtt.meter = true;
         
@@ -389,9 +411,9 @@ void Mqtt::_checkPublishMeter() {
     }
 }
 
-void Mqtt::_checkPublishStatus() {
+void Mqtt::_checkIfPublishStatusNeeded() {
     if ((millis() - _lastMillisStatusPublished) > MAX_INTERVAL_STATUS_PUBLISH) {
-        _logger.debug("Setting flag to publish status", "mqtt::_checkPublishStatus");
+        _logger.debug("Setting flag to publish status", "mqtt::_checkIfPublishStatusNeeded");
         
         publishMqtt.status = true;
         

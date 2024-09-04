@@ -291,11 +291,6 @@ void setGeneralConfiguration(GeneralConfiguration& newGeneralConfiguration) {
 
     applyGeneralConfiguration();
     saveGeneralConfigurationToSpiffs();
-
-    if (generalConfiguration.isCloudServicesEnabled) {
-        publishMqtt.status = true;
-        publishMqtt.generalConfiguration = true;
-    }
     
     logger.debug("General configuration set", "utils::setGeneralConfiguration");
 }
@@ -335,17 +330,25 @@ bool saveGeneralConfigurationToSpiffs() {
 }
 
 void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument) {
+    logger.debug("Converting general configuration to JSON...", "utils::generalConfigurationToJson");
+
     jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
     jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
     jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
     jsonDocument["ledBrightness"] = generalConfiguration.ledBrightness;
+
+    logger.debug("General configuration converted to JSON", "utils::generalConfigurationToJson");
 }
 
 void jsonToGeneralConfiguration(JsonDocument& jsonDocument, GeneralConfiguration& generalConfiguration) {
+    logger.debug("Converting JSON to general configuration...", "utils::jsonToGeneralConfiguration");
+
     generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
     generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
     generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
     generalConfiguration.ledBrightness = jsonDocument["ledBrightness"].as<int>();
+
+    logger.debug("JSON converted to general configuration", "utils::jsonToGeneralConfiguration");
 }
 
 void applyGeneralConfiguration() {

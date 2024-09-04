@@ -66,9 +66,9 @@ bool Ade7953::begin() {
 
         _logger.info("First setup done", "ade7953::begin");
     } else {
-        _logger.debug("Setting configuration from spiffs...", "ade7953::begin");
+        _logger.debug("Setting configuration from SPIFFS...", "ade7953::begin");
         _setConfigurationFromSpiffs();
-        _logger.debug("Done setting configuration from spiffs", "ade7953::begin");
+        _logger.debug("Done setting configuration from SPIFFS", "ade7953::begin");
     
         _logger.debug("Reading channel data from SPIFFS...", "ade7953::begin");
         _setChannelDataFromSpiffs();
@@ -167,6 +167,7 @@ bool Ade7953::_verifyCommunication() {
         
         _reset();
         _attempt++;
+        _lastMillisAttempt = millis();
 
         if ((readRegister(AP_NOLOAD_32, 32, false)) == DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
             _logger.debug("Communication successful with Ade7953", "ade7953::_verifyCommunication");
