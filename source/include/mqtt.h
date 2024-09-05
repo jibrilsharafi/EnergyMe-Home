@@ -59,13 +59,12 @@ private:
     void _subscribeUpdateFirmware();
     void _subscribeToTopics();
 
+    const char* _getMqttStateReason(int state);
+
     void _constructMqttTopicWithRule(const char *ruleName, const char *finalTopic, char *topic);
     void _constructMqttTopic(const char *finalTopic, char *topic);
 
     void _circularBufferToJson(JsonDocument *jsonDocument, CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &buffer);
-
-    WiFiClientSecure _net;
-    PubSubClient _clientMqtt;
 
     Ade7953 &_ade7953;
     AdvancedLogger &_logger;

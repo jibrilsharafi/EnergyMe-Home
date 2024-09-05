@@ -1,7 +1,5 @@
 #include "mqtt.h"
 
-Mqtt* globalMqttInstance = nullptr;
-
 void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
     String message;
     for (unsigned int i = 0; i < length; i++) {
@@ -23,9 +21,7 @@ Mqtt::Mqtt(
     Ade7953 &ade7953,
     AdvancedLogger &logger,
     CustomTime &customTime
-) : _ade7953(ade7953), _logger(logger), _customTime(customTime) {
-    globalMqttInstance = this;
-}
+) : _ade7953(ade7953), _logger(logger), _customTime(customTime) {}
 
 #ifdef ENERGYME_HOME_SECRETS_H
 
@@ -96,13 +92,15 @@ void Mqtt::loop() {
     if ((millis() - _lastMillisMqttLoop) > MQTT_LOOP_INTERVAL) {
         _lastMillisMqttLoop = millis();
 
+        clientMqtt.loop();
+
         if (!clientMqtt.connected()) {
             if ((millis() - _lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) {
-                _logger.verbose("MQTT connection failed recently. Skipping...", "mqtt::_connectMqtt");
+                _logger.verbose("MQTT connection failed recently. Skipping", "mqtt::_connectMqtt");
                 return;
             }
 
-            _logger.warning("MQTT connection lost. Reconnecting...", "mqtt::mqttLoop");
+            _logger.warning("MQTT connection lost. State: %d. Attempting to reconnect...", "mqtt::mqttLoop", _getMqttStateReason(clientMqtt.state()));
             if (!_connectMqtt()) {
                 if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
                     setRestartEsp32("mqtt::mqttLoop", "Failed to connect to MQTT and hit maximum connection attempt");
@@ -372,7 +370,7 @@ void Mqtt::publishGeneralConfiguration() {
 
 bool Mqtt::_publishMessage(const char* topic, const char* message) {
     if (!generalConfiguration.isCloudServicesEnabled) {
-        _logger.verbose("Cloud services not enabled. Skipping...", "mqtt::_publishMessage");
+        _logger.verbose("Cloud services not enabled. Skipping", "mqtt::_publishMessage");
         return false;
     }
 
@@ -388,7 +386,7 @@ bool Mqtt::_publishMessage(const char* topic, const char* message) {
     }
 
     if (!clientMqtt.connected()) {
-        _logger.warning("MQTT client not connected. Skipping...", "mqtt::_publishMessage");
+        _logger.warning("MQTT client not connected. State: %d. Skipping message publish", "mqtt::_publishMessage", _getMqttStateReason(clientMqtt.state()));
         return false;
     }
 
@@ -402,7 +400,7 @@ bool Mqtt::_publishMessage(const char* topic, const char* message) {
 }
 
 void Mqtt::_checkIfPublishMeterNeeded() {
-    if (payloadMeter.isFull() || (millis() - _lastMillisMeterPublished) > MAX_INTERVAL_METER_PUBLISH) {
+    if (payloadMeter.isFull() || (millis() - _lastMillisMeterPublished) > MAX_INTERVAL_METER_PUBLISH) { // Either buffer is full or time has passed
         _logger.debug("Setting flag to publish %d meter data", "mqtt::_checkIfPublishMeterNeeded", payloadMeter.size());
 
         publishMqtt.meter = true;
@@ -446,7 +444,36 @@ void Mqtt::_subscribeUpdateFirmware() {
     char _topic[MQTT_MAX_TOPIC_LENGTH];
     _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE, _topic);
     
-    if (!clientMqtt.subscribe(_topic)) {
+    if (!clientMqtt.subscribe(_topic, 1)) { // Subscribe with QoS 1
         _logger.error("Failed to subscribe to firmware update topic", "mqtt::_subscribeUpdateFirmware");
+    }
+}
+
+const char* Mqtt::_getMqttStateReason(int state) {
+
+    // Full description of the MQTT state codes
+    // -4 : MQTT_CONNECTION_TIMEOUT - the server didn't respond within the keepalive time
+    // -3 : MQTT_CONNECTION_LOST - the network connection was broken
+    // -2 : MQTT_CONNECT_FAILED - the network connection failed
+    // -1 : MQTT_DISCONNECTED - the client is disconnected cleanly
+    // 0 : MQTT_CONNECTED - the client is connected
+    // 1 : MQTT_CONNECT_BAD_PROTOCOL - the server doesn't support the requested version of MQTT
+    // 2 : MQTT_CONNECT_BAD_CLIENT_ID - the server rejected the client identifier
+    // 3 : MQTT_CONNECT_UNAVAILABLE - the server was unable to accept the connection
+    // 4 : MQTT_CONNECT_BAD_CREDENTIALS - the username/password were rejected
+    // 5 : MQTT_CONNECT_UNAUTHORIZED - the client was not authorized to connect
+
+    switch (state) {
+        case -4: return "MQTT_CONNECTION_TIMEOUT";
+        case -3: return "MQTT_CONNECTION_LOST";
+        case -2: return "MQTT_CONNECT_FAILED";
+        case -1: return "MQTT_DISCONNECTED";
+        case 0: return "MQTT_CONNECTED";
+        case 1: return "MQTT_CONNECT_BAD_PROTOCOL";
+        case 2: return "MQTT_CONNECT_BAD_CLIENT_ID";
+        case 3: return "MQTT_CONNECT_UNAVAILABLE";
+        case 4: return "MQTT_CONNECT_BAD_CREDENTIALS";
+        case 5: return "MQTT_CONNECT_UNAUTHORIZED";
+        default: return "Unknown MQTT state";
     }
 }

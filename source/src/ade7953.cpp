@@ -432,6 +432,8 @@ void Ade7953::setChannelData(JsonDocument &jsonDocument) {
     // Add the calibration values to the channel data
     _updateChannelData();
 
+    publishMqtt.channel = true; //TODO: test if this does not raise problems
+
     _logger.debug("Successfully parsed JSON data channel", "ade7953::setChannelData");
 }
 

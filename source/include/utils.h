@@ -47,10 +47,9 @@ void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, Json
 void jsonToGeneralConfiguration(JsonDocument& jsonDocument, GeneralConfiguration& generalConfiguration);
 
 void applyGeneralConfiguration();
-bool checkIfRebootRequiredGeneralConfiguration(GeneralConfiguration& previousConfiguration, GeneralConfiguration& newConfiguration);
 
-void getPublicLocation();
-void getPublicTimezone();
+void getPublicLocation(PublicLocation* publicLocation);
+void getPublicTimezone(int* gmtOffset, int* dstOffset);
 void updateTimezone();
 
 void factoryReset();
