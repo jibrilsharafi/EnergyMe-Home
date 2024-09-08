@@ -292,7 +292,7 @@ void setGeneralConfiguration(GeneralConfiguration& newGeneralConfiguration) {
     applyGeneralConfiguration();
     saveGeneralConfigurationToSpiffs();
 
-    publishMqtt.generalConfiguration = true; //TODO: test if this does not raise problems
+    publishMqtt.generalConfiguration = true;
     
     logger.debug("General configuration set", "utils::setGeneralConfiguration");
 }

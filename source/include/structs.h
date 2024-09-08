@@ -97,13 +97,14 @@ struct RestartConfiguration
 
 struct PublishMqtt
 {
+  bool connectivity;
   bool meter;
   bool status;
   bool metadata;
   bool channel;
   bool generalConfiguration;
 
-  PublishMqtt() : meter(false), status(false), metadata(false), channel(false), generalConfiguration(false) {}
+  PublishMqtt() : connectivity(true), meter(true), status(true), metadata(true), channel(true), generalConfiguration(true) {} // Set default to true to publish everything on first connection
 };
   
 

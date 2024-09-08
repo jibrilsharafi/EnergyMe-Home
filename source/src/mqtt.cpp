@@ -25,19 +25,14 @@ Mqtt::Mqtt(
 
 #ifdef ENERGYME_HOME_SECRETS_H
 
-bool Mqtt::begin(String deviceId) {
+void Mqtt::begin(String deviceId) {
     _logger.debug("Setting up MQTT...", "mqtt::begin");
-
-    if (!generalConfiguration.isCloudServicesEnabled) {
-        _logger.warning("Cloud services not enabled. Skipping...", "mqtt::begin");
-        return false;
-    }
 
     _deviceId = deviceId;
     
     _setupTopics();
 
-    clientMqtt.setCallback(subscribeCallback); //FIXME: not working, crashing the subscribe as well if policy not * (maybe it is the subscribe part, not here)
+    clientMqtt.setCallback(subscribeCallback);
 
     net.setCACert(aws_iot_core_cert_ca);
     net.setCertificate(aws_iot_core_cert_crt);
@@ -48,16 +43,9 @@ bool Mqtt::begin(String deviceId) {
     clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
     clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
 
-    if (!_connectMqtt()) {
-        _logger.error("Failed to setup MQTT", "mqtt::begin");
-        return false;
-    }
-
     _logger.debug("MQTT setup complete", "mqtt::begin");
 
     _isSetupDone = true;
-
-    return true;
 }
 
 #else
@@ -75,24 +63,31 @@ void Mqtt::loop() {
     if (!generalConfiguration.isCloudServicesEnabled) {
         if (_isSetupDone) {
             _logger.info("Cloud services disabled. Disconnecting MQTT...", "mqtt::mqttLoop");
+
+            // Send last messages before disconnecting
+            publishConnectivity(false); // Send offline connectivity as the last will message will not be sent with graceful disconnect
+            publishMeter();
+            publishStatus();
+            publishMetadata();
+            publishChannel();
+            publishGeneralConfiguration();
+
             clientMqtt.disconnect();
+
             _isSetupDone = false;
+        } else {
+            _logger.verbose("Cloud services not enabled. Skipping...", "mqtt::mqttLoop");
         }
 
-        _logger.verbose("Cloud services not enabled. Skipping...", "mqtt::mqttLoop");
         return;
     }
 
     if (!_isSetupDone) {
-        if (!begin(getDeviceId())) {
-            setRestartEsp32("mqtt::mqttLoop", "Failed to setup MQTT");
-        }
+        begin(getDeviceId());
     }
 
     if ((millis() - _lastMillisMqttLoop) > MQTT_LOOP_INTERVAL) {
         _lastMillisMqttLoop = millis();
-
-        clientMqtt.loop();
 
         if (!clientMqtt.connected()) {
             if ((millis() - _lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) {
@@ -100,14 +95,10 @@ void Mqtt::loop() {
                 return;
             }
 
-            _logger.warning("MQTT connection lost. State: %d. Attempting to reconnect...", "mqtt::mqttLoop", _getMqttStateReason(clientMqtt.state()));
-            if (!_connectMqtt()) {
-                if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
-                    setRestartEsp32("mqtt::mqttLoop", "Failed to connect to MQTT and hit maximum connection attempt");
-                }
-                return;
-            }
+            if (!_connectMqtt()) return;
         }
+
+        clientMqtt.loop();
 
         _checkIfPublishMeterNeeded();
         _checkIfPublishStatusNeeded();
@@ -124,33 +115,45 @@ void Mqtt::mqttLoop() {
 
 #endif
 
-bool Mqtt::_connectMqtt() { //TODO: Handle continuous connection/reconnection
+bool Mqtt::_connectMqtt()
+{
     _logger.debug("Attempt to connect to MQTT...", "mqtt::_connectMqtt");
-    
-    if (clientMqtt.connect(_deviceId.c_str())) {
+
+    if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
+        generalConfiguration.isCloudServicesEnabled = false;
+        _logger.error("Failed to reconnect to MQTT after %d attempts. Disabling cloud services", "mqtt::_connectMqtt", MQTT_MAX_CONNECTION_ATTEMPT);
+        return false;
+    }
+
+    if (
+        clientMqtt.connect(
+            _deviceId.c_str(),
+            _mqttTopicConnectivity,
+            MQTT_WILL_QOS,
+            MQTT_WILL_RETAIN,
+            MQTT_WILL_MESSAGE))
+    {
         _logger.info("Connected to MQTT", "mqtt::_connectMqtt");
 
         _mqttConnectionAttempt = 0;
         
-        publishMetadata();
-        publishChannel();
-        publishStatus();
-        publishGeneralConfiguration();
-
         _subscribeToTopics();
-        
+
         return true;
-    } else {
+    }
+    else
+    {
         _logger.warning(
-            "Failed to connect to MQTT (%d/%d)",
+            "Failed to connect to MQTT (%d/%d). Reason: %s. Retrying...",
             "mqtt::_connectMqtt",
-            _mqttConnectionAttempt+1,
-            MQTT_MAX_CONNECTION_ATTEMPT
+            _mqttConnectionAttempt + 1,
+            MQTT_MAX_CONNECTION_ATTEMPT,
+            _getMqttStateReason(clientMqtt.state())
         );
 
         _lastMillisMqttFailed = millis();
         _mqttConnectionAttempt++;
-        
+
         return false;
     }
 }
@@ -190,6 +193,7 @@ void Mqtt::_constructMqttTopic(const char* finalTopic, char* topic) {
 void Mqtt::_setupTopics() {
     _logger.debug("Setting up MQTT topics...", "mqtt::_setupTopics");
 
+    _setTopicConnectivity();
     _setTopicMeter();
     _setTopicStatus();
     _setTopicMetadata();
@@ -199,8 +203,13 @@ void Mqtt::_setupTopics() {
     _logger.debug("MQTT topics setup complete", "mqtt::_setupTopics");
 }
 
+void Mqtt::_setTopicConnectivity() {
+    _constructMqttTopic(MQTT_TOPIC_CONNECTIVITY, _mqttTopicConnectivity);
+    _logger.debug(_mqttTopicConnectivity, "mqtt::_setTopicConnectivity");
+}
+
 void Mqtt::_setTopicMeter() {
-#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION
+#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION // Only topic with basic ingest as it is the only one publishing constantly
     _constructMqttTopicWithRule(MQTT_RULE_NAME_METER, MQTT_TOPIC_METER, _mqttTopicMeter);
 #else
     _constructMqttTopic(MQTT_TOPIC_METER, _mqttTopicMeter);
@@ -209,38 +218,22 @@ void Mqtt::_setTopicMeter() {
 }
 
 void Mqtt::_setTopicStatus() {
-#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION
-    _constructMqttTopicWithRule(MQTT_RULE_NAME_STATUS, MQTT_TOPIC_STATUS, _mqttTopicStatus);
-#else
     _constructMqttTopic(MQTT_TOPIC_STATUS, _mqttTopicStatus);
-#endif
     _logger.debug(_mqttTopicStatus, "mqtt::_setTopicStatus");
 }
 
 void Mqtt::_setTopicMetadata() {
-#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION
-    _constructMqttTopicWithRule(MQTT_RULE_NAME_METADATA, MQTT_TOPIC_METADATA, _mqttTopicMetadata);
-#else
     _constructMqttTopic(MQTT_TOPIC_METADATA, _mqttTopicMetadata);
-#endif
     _logger.debug(_mqttTopicMetadata, "mqtt::_setTopicMetadata");
 }
 
 void Mqtt::_setTopicChannel() {
-#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION
-    _constructMqttTopicWithRule(MQTT_RULE_NAME_CHANNEL, MQTT_TOPIC_CHANNEL, _mqttTopicChannel);
-#else
     _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel);
-#endif
     _logger.debug(_mqttTopicChannel, "mqtt::_setTopicChannel");
 }
 
 void Mqtt::_setTopicGeneralConfiguration() {
-#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION
-    _constructMqttTopicWithRule(MQTT_RULE_NAME_GENERAL_CONFIGURATION, MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration);
-#else
     _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration);
-#endif
     _logger.debug(_mqttTopicGeneralConfiguration, "mqtt::_setTopicGeneralConfiguration");
 }
 
@@ -279,6 +272,14 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
     _jsonObject["voltage"] = _ade7953.meterValues[0].voltage;
 
     _logger.debug("Circular buffer converted to JSON", "mqtt::_circularBufferToJson");
+}
+
+void Mqtt::publishConnectivity(bool isOnline) {
+    _logger.debug("Publishing connectivity to MQTT...", "mqtt::publishConnectivity");
+
+    if (_publishMessage(_mqttTopicConnectivity, isOnline ? MQTT_CONNECTIVITY_ONLINE : MQTT_CONNECTIVITY_OFFLINE)) {publishMqtt.connectivity = false;}
+
+    _logger.debug("Connectivity published to MQTT", "mqtt::publishConnectivity");
 }
 
 void Mqtt::publishMeter() {
@@ -369,11 +370,6 @@ void Mqtt::publishGeneralConfiguration() {
 }
 
 bool Mqtt::_publishMessage(const char* topic, const char* message) {
-    if (!generalConfiguration.isCloudServicesEnabled) {
-        _logger.verbose("Cloud services not enabled. Skipping", "mqtt::_publishMessage");
-        return false;
-    }
-
     _logger.debug(
         "Publishing message to topic %s",
         "mqtt::_publishMessage",
@@ -381,12 +377,12 @@ bool Mqtt::_publishMessage(const char* topic, const char* message) {
     );
 
     if (topic == nullptr || message == nullptr) {
-        _logger.debug("Null pointer or message passed, meaning MQTT not initialized yet", "mqtt::_publishMessage");
+        _logger.warning("Null pointer or message passed, meaning MQTT not initialized yet", "mqtt::_publishMessage");
         return false;
     }
 
     if (!clientMqtt.connected()) {
-        _logger.warning("MQTT client not connected. State: %d. Skipping message publish", "mqtt::_publishMessage", _getMqttStateReason(clientMqtt.state()));
+        _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", "mqtt::_publishMessage", _getMqttStateReason(clientMqtt.state()), topic);
         return false;
     }
 
@@ -425,6 +421,7 @@ void Mqtt::_checkPublishMqtt() {
         return;
     }
 
+    if (publishMqtt.connectivity) {publishConnectivity();}
     if (publishMqtt.meter) {publishMeter();}
     if (publishMqtt.status) {publishStatus();}
     if (publishMqtt.metadata) {publishMetadata();}
@@ -445,7 +442,7 @@ void Mqtt::_subscribeUpdateFirmware() {
     _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE, _topic);
     
     if (!clientMqtt.subscribe(_topic, 1)) { // Subscribe with QoS 1
-        _logger.error("Failed to subscribe to firmware update topic", "mqtt::_subscribeUpdateFirmware");
+        _logger.warning("Failed to subscribe to firmware update topic", "mqtt::_subscribeUpdateFirmware");
     }
 }
 

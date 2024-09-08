@@ -39,7 +39,7 @@
         }
 
         .search-input {
-            width: calc(100% - 40px);
+            width: calc(50%);
             padding: 6px;
             font-size: 14px;
             border: 1px solid #ddd;
@@ -47,6 +47,12 @@
             margin-bottom: 10px;
             margin-right: 30px;
             cursor: text;
+        }
+
+        .auto-refresh-checkbox {
+            padding: 6px;
+            margin-bottom: 10px;
+            cursor: pointer;
         }
 
         .log-level {
@@ -111,6 +117,9 @@
             </button>
             <div class="controls">
                 <input type="text" id="search-input-text" class="search-input" placeholder="Search log..." onkeyup="filterLogs()">
+                <label>
+                    <input type="checkbox" id="auto-refresh-checkbox" class="auto-refresh-checkbox">Auto-refresh
+                </label>
                 <div class="filter-buttons">
                     <button class="filter-button active" data-level="ALL">All</button>
                     <button class="filter-button log-level-DEBUG" data-level="DEBUG">Debug</button>
@@ -141,51 +150,56 @@
     </div>
 
     <script>
-        fetch('/log-raw')
-            .then(response => response.text())
-            .then(data => {
-                // Remove the last 4 characters if they are \r\n
-                if (data.slice(-2) === '\r\n') data = data.slice(0, -2);
-                
-                const log = data.split('\n').map((line, index) => {
-                    const [timestamp, elapsedTime, level, core, module, ...messageParts] = line.replaceAll('[','').replaceAll('\r', '').split('] ');
-                    const message = messageParts.join('] ');
-                    return { row: index + 1, timestamp, elapsedTime, level: level.trim(), core: core.replace('Core ', ''), module, message };
-                }).reverse();
-
-                if (log[0].message === '') log.shift();
-                if (log[log.length - 1].message === '') log.pop();
-
-                const logBody = document.getElementById('log-body');
-                log.forEach(log => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${log.row}</td>
-                        <td>${log.timestamp}</td>
-                        <td>${log.elapsedTime}</td>
-                        <td><span class="log-level log-level-${log.level}">${log.level}</span></td>
-                        <td>${log.core}</td>
-                        <td>${log.module}</td>
-                        <td>${log.message}</td>
-                    `;
-                    logBody.appendChild(row);
+        let autoRefreshInterval;
+    
+        function fetchLogs() {
+            fetch('/log-raw')
+                .then(response => response.text())
+                .then(data => {
+                    // Remove the last 4 characters if they are \r\n
+                    if (data.slice(-2) === '\r\n') data = data.slice(0, -2);
+                    
+                    const log = data.split('\n').map((line, index) => {
+                        const [timestamp, elapsedTime, level, core, module, ...messageParts] = line.replaceAll('[','').replaceAll('\r', '').split('] ');
+                        const message = messageParts.join('] ');
+                        return { row: index + 1, timestamp, elapsedTime, level: level.trim(), core: core.replace('Core ', ''), module, message };
+                    }).reverse();
+    
+                    if (log[0].message === '') log.shift();
+                    if (log[log.length - 1].message === '') log.pop();
+    
+                    const logBody = document.getElementById('log-body');
+                    logBody.innerHTML = ''; // Clear existing logs
+                    log.forEach(log => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${log.row}</td>
+                            <td>${log.timestamp}</td>
+                            <td>${log.elapsedTime}</td>
+                            <td><span class="log-level log-level-${log.level}">${log.level}</span></td>
+                            <td>${log.core}</td>
+                            <td>${log.module}</td>
+                            <td>${log.message}</td>
+                        `;
+                        logBody.appendChild(row);
+                    });
                 });
-            });
-
+        }
+    
         function filterLogs() {
             const searchInput = document.querySelector('.search-input');
             const filter = searchInput.value.toUpperCase();
             const rows = document.querySelectorAll('.log-table tr');
             const activeLevel = document.querySelector('.filter-button.active').dataset.level;
-
+    
             rows.forEach(row => {
                 // If it's the header row, skip it.
                 if (row.getElementsByTagName('th').length > 0) return;
-
+    
                 const cells = row.getElementsByTagName('td');
                 let found = false;
                 const rowLevel = cells[3].textContent.trim().toUpperCase();
-
+    
                 if (activeLevel === 'ALL' || activeLevel === rowLevel) {
                     for (let i = 0; i < cells.length; i++) {
                         if (cells[i].textContent.toUpperCase().indexOf(filter) > -1) {
@@ -198,7 +212,7 @@
                 row.style.display = found ? '' : 'none';
             });
         }
-
+    
         document.querySelectorAll('.filter-button').forEach(button => {
             button.addEventListener('click', function() {
                 document.querySelectorAll('.filter-button').forEach(btn => btn.classList.remove('active'));
@@ -236,6 +250,17 @@
             link.click();
             document.body.removeChild(link);
         });
+    
+        document.getElementById('auto-refresh-checkbox').addEventListener('change', function() {
+            if (this.checked) {
+                autoRefreshInterval = setInterval(fetchLogs, 1000); // Refresh every 5 seconds
+            } else {
+                clearInterval(autoRefreshInterval);
+            }
+        });
+    
+        // Initial fetch of logs
+        fetchLogs();
     </script>
 </body>
 </html>

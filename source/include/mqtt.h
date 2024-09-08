@@ -30,9 +30,10 @@ public:
         AdvancedLogger &logger,
         CustomTime &customTime);
 
-    bool begin(String deviceId);
+    void begin(String deviceId);
     void loop();
 
+    void publishConnectivity(bool isOnline = true);
     void publishMeter();
     void publishStatus();
     void publishMetadata();
@@ -48,6 +49,7 @@ private:
     void _checkPublishMqtt();
 
     void _setupTopics();
+    void _setTopicConnectivity();
     void _setTopicMeter();
     void _setTopicStatus();
     void _setTopicMetadata();
@@ -76,6 +78,7 @@ private:
 
     bool _isSetupDone = false;
 
+    char _mqttTopicConnectivity[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicMeter[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicStatus[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicMetadata[MQTT_MAX_TOPIC_LENGTH];

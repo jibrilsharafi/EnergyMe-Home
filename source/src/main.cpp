@@ -218,11 +218,8 @@ void setup() {
 
   logger.info("Setting up MQTT...", "main::setup");
   if (generalConfiguration.isCloudServicesEnabled) {
-    if (!mqtt.begin(getDeviceId())) {
-      logger.error("MQTT initialization failed!", "main::setup");
-    } else {
-      logger.info("MQTT setup done", "main::setup");
-    }
+    mqtt.begin(getDeviceId());
+    logger.info("MQTT setup done", "main::setup");
   } else {
     logger.warning("Cloud services not enabled", "main::setup");
   }

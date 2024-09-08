@@ -117,7 +117,7 @@ void CustomServer::_setHtmlPages()
         request->send_P(200, "text/css", typography_css); });
 
     // Other
-    server.on("/favicon.svg", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/favicon.svg", HTTP_GET, [this](AsyncWebServerRequest *request) // SVG format seems to be the only one working with embedded binary data
                {
         _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.png", LogLevel::VERBOSE, request);
         request->send_P(200, "image/svg+xml", favicon_svg); });
