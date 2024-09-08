@@ -89,6 +89,7 @@ struct PublicLocation
 struct RestartConfiguration
 {
   bool isRequired;
+  unsigned long requiredAt;
   String functionName;
   String reason;
 

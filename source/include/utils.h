@@ -20,6 +20,7 @@ void getJsonProjectInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
 
 void setRestartEsp32(const char* functionName, const char* reason);
+void checkIfRestartEsp32Required();
 void restartEsp32();
 
 void printMeterValues(MeterValues meterValues, const char* channelLabel);

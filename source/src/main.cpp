@@ -271,7 +271,7 @@ void loop() {
     logger.warning("Log cleared due to low memory", "main::loop");
   }
 
-  if (restartConfiguration.isRequired) restartEsp32();
+  checkIfRestartEsp32Required();
   
   led.setOff();
 }

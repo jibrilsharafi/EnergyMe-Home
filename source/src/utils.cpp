@@ -220,8 +220,17 @@ void setRestartEsp32(const char* functionName, const char* reason) {
     logger.warning("Restart required from function %s. Reason: %s", "utils::setRestartEsp32", functionName, reason);
     
     restartConfiguration.isRequired = true;
+    restartConfiguration.requiredAt = millis();
     restartConfiguration.functionName = String(functionName);
     restartConfiguration.reason = String(reason);
+}
+
+void checkIfRestartEsp32Required() {
+    if (restartConfiguration.isRequired) {
+        if ((millis() - restartConfiguration.requiredAt) > ESP32_RESTART_DELAY) {
+            restartEsp32();
+        }
+    }
 }
 
 void restartEsp32() {
