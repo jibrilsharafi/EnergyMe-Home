@@ -41,11 +41,11 @@ bool checkAllFiles();
 bool checkIfFirstSetup();
 
 void setDefaultGeneralConfiguration();
-void setGeneralConfiguration(GeneralConfiguration& generalConfiguration);
+bool setGeneralConfiguration(JsonDocument& jsonDocument);
 bool setGeneralConfigurationFromSpiffs();
 bool saveGeneralConfigurationToSpiffs();
 void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument);
-void jsonToGeneralConfiguration(JsonDocument& jsonDocument, GeneralConfiguration& generalConfiguration);
+bool validateGeneralConfigurationJson(JsonDocument& jsonDocument);
 
 void applyGeneralConfiguration();
 

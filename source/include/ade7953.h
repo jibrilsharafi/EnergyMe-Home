@@ -47,13 +47,13 @@ public:
     void saveEnergy();
 
     void setDefaultConfiguration();
-    void setConfiguration(JsonDocument &jsonDocument);
+    bool setConfiguration(JsonDocument &jsonDocument);
 
     void setDefaultCalibrationValues();
-    void setCalibrationValues(JsonDocument &jsonDocument);
+    bool setCalibrationValues(JsonDocument &jsonDocument);
 
     void setDefaultChannelData();
-    void setChannelData(JsonDocument &jsonDocument);
+    bool setChannelData(JsonDocument &jsonDocument);
     void channelDataToJson(JsonDocument &jsonDocument);
     
     int findNextActiveChannel(int currentChannel);
@@ -75,14 +75,17 @@ private:
 
     void _setConfigurationFromSpiffs();
     void _applyConfiguration(JsonDocument &jsonDocument);
+    bool _validateConfigurationJson(JsonDocument &jsonDocument);
     
     void _setDefaultCalibrationValuesOnly();
     void _setCalibrationValuesFromSpiffs();
     void _jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues);
+    bool _validateCalibrationValuesJson(JsonDocument &jsonDocument);
 
     bool _saveChannelDataToSpiffs();
     void _setChannelDataFromSpiffs();
     void _updateChannelData();
+    bool _validateChannelDataJson(JsonDocument &jsonDocument);
 
     void _updateSampleTime();
 

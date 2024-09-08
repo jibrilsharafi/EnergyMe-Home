@@ -213,14 +213,21 @@ void Ade7953::_setConfigurationFromSpiffs() {
     }
 }
 
-void Ade7953::setConfiguration(JsonDocument &jsonDocument) {
+bool Ade7953::setConfiguration(JsonDocument &jsonDocument) {
     _logger.debug("Setting configuration...", "ade7953::setConfiguration");
+
+    if (!_validateConfigurationJson(jsonDocument)) {
+        _logger.error("Invalid configuration JSON. Keeping previous configuration", "ade7953::setConfiguration");
+        return false;
+    }
     
     if (!serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, jsonDocument)) {
         _logger.error("Failed to save configuration to SPIFFS. Keeping previous configuration", "ade7953::setConfiguration");
+        return false;
     } else {
         _applyConfiguration(jsonDocument);
         _logger.debug("Successfully saved configuration to SPIFFS", "ade7953::setConfiguration");
+        return true;
     }
 }
 
@@ -260,6 +267,34 @@ void Ade7953::_applyConfiguration(JsonDocument &jsonDocument) {
     _logger.debug("Successfully applied configuration", "ade7953::_applyConfiguration");
 }
 
+bool Ade7953::_validateConfigurationJson(JsonDocument& jsonDocument) {
+    if (!jsonDocument.is<JsonObject>()) {
+        return false;
+    }
+
+    if (!jsonDocument.containsKey("aVGain") || !jsonDocument["aVGain"].is<long>()) return false;
+    if (!jsonDocument.containsKey("aIGain") || !jsonDocument["aIGain"].is<long>()) return false;
+    if (!jsonDocument.containsKey("bIGain") || !jsonDocument["bIGain"].is<long>()) return false;
+    if (!jsonDocument.containsKey("aIRmsOs") || !jsonDocument["aIRmsOs"].is<long>()) return false;
+    if (!jsonDocument.containsKey("bIRmsOs") || !jsonDocument["bIRmsOs"].is<long>()) return false;
+    if (!jsonDocument.containsKey("aWGain") || !jsonDocument["aWGain"].is<long>()) return false;
+    if (!jsonDocument.containsKey("bWGain") || !jsonDocument["bWGain"].is<long>()) return false;
+    if (!jsonDocument.containsKey("aWattOs") || !jsonDocument["aWattOs"].is<long>()) return false;
+    if (!jsonDocument.containsKey("bWattOs") || !jsonDocument["bWattOs"].is<long>()) return false;
+    if (!jsonDocument.containsKey("aVarGain") || !jsonDocument["aVarGain"].is<long>()) return false;
+    if (!jsonDocument.containsKey("bVarGain") || !jsonDocument["bVarGain"].is<long>()) return false;
+    if (!jsonDocument.containsKey("aVarOs") || !jsonDocument["aVarOs"].is<long>()) return false;
+    if (!jsonDocument.containsKey("bVarOs") || !jsonDocument["bVarOs"].is<long>()) return false;
+    if (!jsonDocument.containsKey("aVaGain") || !jsonDocument["aVaGain"].is<long>()) return false;
+    if (!jsonDocument.containsKey("bVaGain") || !jsonDocument["bVaGain"].is<long>()) return false;
+    if (!jsonDocument.containsKey("aVaOs") || !jsonDocument["aVaOs"].is<long>()) return false;
+    if (!jsonDocument.containsKey("bVaOs") || !jsonDocument["bVaOs"].is<long>()) return false;
+    if (!jsonDocument.containsKey("phCalA") || !jsonDocument["phCalA"].is<long>()) return false;
+    if (!jsonDocument.containsKey("phCalB") || !jsonDocument["phCalB"].is<long>()) return false;
+
+    return true;
+}
+
 // Calibration values
 // --------------------
 
@@ -289,14 +324,21 @@ void Ade7953::_setDefaultCalibrationValuesOnly() {
     _logger.debug("Successfully set default calibration values", "ade7953::_setDefaultCalibrationValuesOnly");
 }
 
-void Ade7953::setCalibrationValues(JsonDocument &jsonDocument) {
+bool Ade7953::setCalibrationValues(JsonDocument &jsonDocument) {
     _logger.debug("Setting new calibration values...", "ade7953::setCalibrationValues");
+
+    if (!_validateCalibrationValuesJson(jsonDocument)) {
+        _logger.error("Invalid calibration JSON. Keeping previous calibration values", "ade7953::setCalibrationValues");
+        return false;
+    }
 
     serializeJsonToSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
 
     _updateChannelData();
 
     _logger.debug("Successfully set new calibration values", "ade7953::setCalibrationValues");
+
+    return true;
 }
 
 void Ade7953::_setCalibrationValuesFromSpiffs() {
@@ -315,7 +357,7 @@ void Ade7953::_setCalibrationValuesFromSpiffs() {
 }
 
 void Ade7953::_jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues) {
-    _logger.debug("Parsing JSON calibration values for label %s...", "ade7953::_jsonToCalibrationValues", calibrationValues.label.c_str());
+    _logger.debug("Parsing JSON calibration values for label %s", "ade7953::_jsonToCalibrationValues", calibrationValues.label.c_str());
 
     // The label is not parsed as it is already set in the channel data
     calibrationValues.vLsb = jsonObject["vLsb"].as<float>();
@@ -326,8 +368,31 @@ void Ade7953::_jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues
     calibrationValues.whLsb = jsonObject["whLsb"].as<float>();
     calibrationValues.varhLsb = jsonObject["varhLsb"].as<float>();
     calibrationValues.vahLsb = jsonObject["vahLsb"].as<float>();
+}
 
-    _logger.debug("Successfully parsed JSON calibration values", "ade7953::_jsonToCalibrationValues");
+bool Ade7953::_validateCalibrationValuesJson(JsonDocument& jsonDocument) {
+    if (!jsonDocument.is<JsonObject>()) {
+        return false;
+    }
+
+    for (JsonPair kv : jsonDocument.as<JsonObject>()) {
+        if (!kv.value().is<JsonObject>()) {
+            return false;
+        }
+
+        JsonObject calibrationObject = kv.value().as<JsonObject>();
+
+        if (!calibrationObject.containsKey("vLsb") || !calibrationObject["vLsb"].is<float>()) return false;
+        if (!calibrationObject.containsKey("aLsb") || !calibrationObject["aLsb"].is<float>()) return false;
+        if (!calibrationObject.containsKey("wLsb") || !calibrationObject["wLsb"].is<float>()) return false;
+        if (!calibrationObject.containsKey("varLsb") || !calibrationObject["varLsb"].is<float>()) return false;
+        if (!calibrationObject.containsKey("vaLsb") || !calibrationObject["vaLsb"].is<float>()) return false;
+        if (!calibrationObject.containsKey("whLsb") || !calibrationObject["whLsb"].is<float>()) return false;
+        if (!calibrationObject.containsKey("varhLsb") || !calibrationObject["varhLsb"].is<float>()) return false;
+        if (!calibrationObject.containsKey("vahLsb") || !calibrationObject["vahLsb"].is<float>()) return false;
+    }
+
+    return true;
 }
 
 // Data channel
@@ -398,8 +463,13 @@ void Ade7953::channelDataToJson(JsonDocument &jsonDocument) {
     _logger.debug("Successfully converted data channel to JSON", "ade7953::channelDataToJson");
 }
 
-void Ade7953::setChannelData(JsonDocument &jsonDocument) {
+bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
     _logger.debug("Setting channel data...", "ade7953::setChannelData");
+
+    if (!_validateChannelDataJson(jsonDocument)) {
+        _logger.error("Invalid JSON data channel. Keeping previous data channel", "ade7953::setChannelData");
+        return false;
+    }
 
     for (JsonPair _kv : jsonDocument.as<JsonObject>()) {
         _logger.debug(
@@ -432,9 +502,35 @@ void Ade7953::setChannelData(JsonDocument &jsonDocument) {
     // Add the calibration values to the channel data
     _updateChannelData();
 
-    publishMqtt.channel = true; //TODO: test if this does not raise problems
+    _saveChannelDataToSpiffs();
+
+    publishMqtt.channel = true;
 
     _logger.debug("Successfully parsed JSON data channel", "ade7953::setChannelData");
+
+    return true;
+}
+
+bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
+    if (!jsonDocument.is<JsonObject>()) {
+        return false;
+    }
+
+    for (JsonPair kv : jsonDocument.as<JsonObject>()) {
+        if (!kv.value().is<JsonObject>()) {
+            return false;
+        }
+
+        JsonObject channelObject = kv.value().as<JsonObject>();
+
+        if (!channelObject.containsKey("index") || !channelObject["index"].is<int>()) return false;
+        if (!channelObject.containsKey("active") || !channelObject["active"].is<bool>()) return false;
+        if (!channelObject.containsKey("reverse") || !channelObject["reverse"].is<bool>()) return false;
+        if (!channelObject.containsKey("label") || !channelObject["label"].is<String>()) return false;
+        if (!channelObject.containsKey("calibrationLabel") || !channelObject["calibrationLabel"].is<String>()) return false;
+    }
+
+    return true;
 }
 
 void Ade7953::_updateChannelData() {

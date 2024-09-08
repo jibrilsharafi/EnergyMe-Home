@@ -292,20 +292,6 @@ void setDefaultGeneralConfiguration() {
     logger.debug("Default general configuration set", "utils::setDefaultGeneralConfiguration");
 }
 
-void setGeneralConfiguration(GeneralConfiguration& newGeneralConfiguration) {
-    logger.debug("Setting general configuration...", "utils::setGeneralConfiguration");
-
-    GeneralConfiguration previousConfiguration = generalConfiguration;
-    generalConfiguration = newGeneralConfiguration;
-
-    applyGeneralConfiguration();
-    saveGeneralConfigurationToSpiffs();
-
-    publishMqtt.generalConfiguration = true;
-    
-    logger.debug("General configuration set", "utils::setGeneralConfiguration");
-}
-
 bool setGeneralConfigurationFromSpiffs() {
     logger.debug("Setting general configuration from SPIFFS...", "utils::setGeneralConfigurationFromSpiffs");
 
@@ -316,9 +302,7 @@ bool setGeneralConfigurationFromSpiffs() {
         logger.error("Failed to open general configuration file", "utils::setGeneralConfigurationFromSpiffs");
         return false;
     } else {
-        GeneralConfiguration _generalConfiguration;
-        jsonToGeneralConfiguration(_jsonDocument, _generalConfiguration);
-        setGeneralConfiguration(_generalConfiguration);
+        setGeneralConfiguration(_jsonDocument);
 
         logger.debug("General configuration set from SPIFFS", "utils::setGeneralConfigurationFromSpiffs");
         return true;
@@ -340,6 +324,26 @@ bool saveGeneralConfigurationToSpiffs() {
     }
 }
 
+bool setGeneralConfiguration(JsonDocument& jsonDocument) {
+    logger.debug("Setting general configuration...", "utils::setGeneralConfiguration");
+
+    if (!validateGeneralConfigurationJson(jsonDocument)) {
+        logger.error("Failed to set general configuration", "utils::setGeneralConfiguration");
+        return false;
+    }
+
+    generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
+    generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
+    generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
+    generalConfiguration.ledBrightness = jsonDocument["ledBrightness"].as<int>();
+
+    applyGeneralConfiguration();
+
+    logger.debug("General configuration set", "utils::setGeneralConfiguration");
+
+    return true;
+}
+
 void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument) {
     logger.debug("Converting general configuration to JSON...", "utils::generalConfigurationToJson");
 
@@ -351,23 +355,23 @@ void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, Json
     logger.debug("General configuration converted to JSON", "utils::generalConfigurationToJson");
 }
 
-void jsonToGeneralConfiguration(JsonDocument& jsonDocument, GeneralConfiguration& generalConfiguration) {
-    logger.debug("Converting JSON to general configuration...", "utils::jsonToGeneralConfiguration");
-
-    generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
-    generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
-    generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
-    generalConfiguration.ledBrightness = jsonDocument["ledBrightness"].as<int>();
-
-    logger.debug("JSON converted to general configuration", "utils::jsonToGeneralConfiguration");
-}
-
 void applyGeneralConfiguration() {
     logger.debug("Applying general configuration...", "utils::applyGeneralConfiguration");
 
     led.setBrightness(generalConfiguration.ledBrightness);
 
     logger.debug("General configuration applied", "utils::applyGeneralConfiguration");
+}
+
+bool validateGeneralConfigurationJson(JsonDocument& jsonDocument) {
+    if (!jsonDocument.is<JsonObject>()) return false;
+
+    if (!jsonDocument.containsKey("isCloudServicesEnabled") || !jsonDocument["isCloudServicesEnabled"].is<bool>()) return false;
+    if (!jsonDocument.containsKey("gmtOffset") || !jsonDocument["gmtOffset"].is<int>()) return false;
+    if (!jsonDocument.containsKey("dstOffset") || !jsonDocument["dstOffset"].is<int>()) return false;
+    if (!jsonDocument.containsKey("ledBrightness") || !jsonDocument["ledBrightness"].is<int>()) return false;
+
+    return true;
 }
 
 // Helper functions

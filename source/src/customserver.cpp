@@ -473,32 +473,42 @@ void CustomServer::_setRestApi()
             if (request->url() == "/rest/set-calibration") {
                 _serverLog("Request to set calibration values from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-calibration", LogLevel::INFO, request);
     
-                _ade7953.setCalibrationValues(_jsonDocument);
+                if (_ade7953.setCalibrationValues(_jsonDocument)) {
+                    request->send(200, "application/json", "{\"message\":\"Calibration values set\"}");
+                } else {
+                    request->send(400, "application/json", "{\"message\":\"Invalid calibration values\"}");
+                }
     
                 request->send(200, "application/json", "{\"message\":\"Calibration values set\"}");
     
             } else if (request->url() == "/rest/set-ade7953-configuration") {
                 _serverLog("Request to set ADE7953 configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-ade7953-configuration", LogLevel::INFO, request);
     
-                _ade7953.setConfiguration(_jsonDocument);
+                if (_ade7953.setConfiguration(_jsonDocument)) {
+                    request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
+                } else {
+                    request->send(400, "application/json", "{\"message\":\"Invalid configuration\"}");
+                }
     
                 request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
     
             } else if (request->url() == "/rest/set-general-configuration") {
                 _serverLog("Request to set general configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-general-configuration", LogLevel::INFO, request);
     
-                GeneralConfiguration previousGeneralConfiguration = generalConfiguration;
-                jsonToGeneralConfiguration(_jsonDocument, generalConfiguration);
-                setGeneralConfiguration(generalConfiguration);
-    
-                request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
+                if (setGeneralConfiguration(_jsonDocument)) {
+                    request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
+                } else {
+                    request->send(400, "application/json", "{\"message\":\"Invalid configuration\"}");
+                }    
     
             } else if (request->url() == "/rest/set-channel") {
                 _serverLog("Request to set channel data from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-channel", LogLevel::INFO, request);
     
-                _ade7953.setChannelData(_jsonDocument);
-    
-                request->send(200, "application/json", "{\"message\":\"Channel data set\"}");
+                if (_ade7953.setChannelData(_jsonDocument)) {
+                    request->send(200, "application/json", "{\"message\":\"Channel data set\"}");
+                } else {
+                    request->send(400, "application/json", "{\"message\":\"Invalid channel data\"}");
+                }    
             } else {
                 _serverLog(
                     ("Request to POST to unknown endpoint: " + request->url()).c_str(),
@@ -577,8 +587,8 @@ void CustomServer::_setRestApi()
             request->send(400, "text/plain", "File not found");
         }
     });
-
-
+    server.serveStatic("/api-docs", SPIFFS, "/swagger-ui.html");
+    server.serveStatic("/swagger.yaml", SPIFFS, "/swagger.yaml");
     server.serveStatic("/log-raw", SPIFFS, LOG_PATH);
     server.serveStatic("/daily-energy", SPIFFS, DAILY_ENERGY_JSON_PATH);
 }

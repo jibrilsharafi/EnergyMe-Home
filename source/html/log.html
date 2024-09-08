@@ -156,6 +156,9 @@
             fetch('/log-raw')
                 .then(response => response.text())
                 .then(data => {
+                    // If data is empty, return to avoid errors
+                    if (data === '') return;
+
                     // Remove the last 4 characters if they are \r\n
                     if (data.slice(-2) === '\r\n') data = data.slice(0, -2);
                     
