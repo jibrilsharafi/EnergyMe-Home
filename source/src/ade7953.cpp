@@ -217,7 +217,7 @@ bool Ade7953::setConfiguration(JsonDocument &jsonDocument) {
     _logger.debug("Setting configuration...", "ade7953::setConfiguration");
 
     if (!_validateConfigurationJson(jsonDocument)) {
-        _logger.error("Invalid configuration JSON. Keeping previous configuration", "ade7953::setConfiguration");
+        _logger.warning("Invalid configuration JSON. Keeping previous configuration", "ade7953::setConfiguration");
         return false;
     }
     
@@ -328,7 +328,7 @@ bool Ade7953::setCalibrationValues(JsonDocument &jsonDocument) {
     _logger.debug("Setting new calibration values...", "ade7953::setCalibrationValues");
 
     if (!_validateCalibrationValuesJson(jsonDocument)) {
-        _logger.error("Invalid calibration JSON. Keeping previous calibration values", "ade7953::setCalibrationValues");
+        _logger.warning("Invalid calibration JSON. Keeping previous calibration values", "ade7953::setCalibrationValues");
         return false;
     }
 
@@ -467,7 +467,7 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
     _logger.debug("Setting channel data...", "ade7953::setChannelData");
 
     if (!_validateChannelDataJson(jsonDocument)) {
-        _logger.error("Invalid JSON data channel. Keeping previous data channel", "ade7953::setChannelData");
+        _logger.warning("Invalid JSON data channel. Keeping previous data channel", "ade7953::setChannelData");
         return false;
     }
 

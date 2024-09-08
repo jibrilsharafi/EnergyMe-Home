@@ -228,7 +228,7 @@
                 var saveLevelNumber = logLevels[saveLogLevel];
 
                 var xhttp = new XMLHttpRequest();
-                xhttp.open("GET", "/rest/set-log-level?level=" + printLevelNumber + "&type=print", true);
+                xhttp.open("POST", "/rest/set-log-level?level=" + printLevelNumber + "&type=print", true);
                 xhttp.onreadystatechange = function () {
                     if (this.readyState == 4) {
                         if (this.status != 200) {
@@ -239,7 +239,7 @@
                 xhttp.send();
 
                 var xhttp2 = new XMLHttpRequest();
-                xhttp2.open("GET", "/rest/set-log-level?level=" + saveLevelNumber + "&type=save", true);
+                xhttp2.open("POST", "/rest/set-log-level?level=" + saveLevelNumber + "&type=save", true);
                 xhttp2.onreadystatechange = function () {
                     if (this.readyState == 4 && this.status != 200) {
                         alert("Error setting save log level. Response: " + this.responseText);

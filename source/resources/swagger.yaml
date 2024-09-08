@@ -1,0 +1,683 @@
+openapi: 3.0.0
+info:
+  title: EnergyMe - Home | API
+  description: API documentation for EnergyMe - Home
+  version: 1.0.0
+        
+tags:
+  - name: System
+    description: System-related endpoints
+  - name: Meter
+    description: Meter reading endpoints
+  - name: Configuration
+    description: Configuration-related endpoints
+  - name: Files
+    description: File management endpoints
+    
+paths:
+  /rest/is-alive:
+    get:
+      summary: Check if the ESP32 is alive
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "True"
+
+  /rest/project-info:
+    get:
+      summary: Get project information
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/device-info:
+    get:
+      summary: Get device information
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/wifi-info:
+    get:
+      summary: Get WiFi status information
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/meter:
+    get:
+      summary: Get all meter values
+      tags:
+        - Meter
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/meter-single:
+    get:
+      summary: Get meter values for a single channel
+      tags:
+        - Meter
+      parameters:
+        - in: query
+          name: index
+          required: true
+          schema:
+            type: integer
+          description: Channel index
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/active-power:
+    get:
+      summary: Get active power for a single channel
+      tags:
+        - Meter
+      parameters:
+        - in: query
+          name: index
+          required: true
+          schema:
+            type: integer
+          description: Channel index
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  value:
+                    type: number
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/get-ade7953-configuration:
+    get:
+      summary: Get ADE7953 configuration
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/get-channel:
+    get:
+      summary: Get channel data
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/get-calibration:
+    get:
+      summary: Get calibration data
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/calibration-reset:
+    post:
+      summary: Reset calibration values
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/reset-energy:
+    post:
+      summary: Reset energy counters
+      tags:
+        - Meter
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/get-log-level:
+    get:
+      summary: Get current log levels
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  print:
+                    type: string
+                  save:
+                    type: string
+
+  /rest/set-log-level:
+    post:
+      summary: Set log level
+      tags:
+        - Configuration
+      parameters:
+        - in: query
+          name: level
+          required: true
+          schema:
+            type: integer
+          description: Log level
+        - in: query
+          name: type
+          required: true
+          schema:
+            type: string
+            enum: [print, save]
+          description: Type of log level to set
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/get-general-configuration:
+    get:
+      summary: Get general configuration
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/ade7953-read-register:
+    get:
+      summary: Read ADE7953 register
+      tags:
+        - Meter
+      parameters:
+        - in: query
+          name: address
+          required: true
+          schema:
+            type: integer
+          description: Register address
+        - in: query
+          name: nBits
+          required: true
+          schema:
+            type: integer
+            enum: [8, 16, 24, 32]
+          description: Number of bits to read
+        - in: query
+          name: signed
+          required: true
+          schema:
+            type: boolean
+          description: Whether the value is signed
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  value:
+                    type: integer
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/ade7953-write-register:
+    post:
+      summary: Write to ADE7953 register
+      tags:
+        - Meter
+      parameters:
+        - in: query
+          name: address
+          required: true
+          schema:
+            type: integer
+          description: Register address
+        - in: query
+          name: nBits
+          required: true
+          schema:
+            type: integer
+            enum: [8, 16, 24, 32]
+          description: Number of bits to write
+        - in: query
+          name: data
+          required: true
+          schema:
+            type: integer
+          description: Data to write
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/firmware-update-info:
+    get:
+      summary: Get firmware update information
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/firmware-update-status:
+    get:
+      summary: Get firmware update status
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/is-latest-firmware-installed:
+    get:
+      summary: Check if the latest firmware is installed
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  latest:
+                    type: boolean
+
+  /rest/factory-reset:
+    post:
+      summary: Perform a factory reset
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/clear-log:
+    post:
+      summary: Clear the log
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/restart:
+    post:
+      summary: Restart the ESP32
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/reset-wifi:
+    post:
+      summary: Reset WiFi credentials
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/set-calibration:
+    post:
+      summary: Set calibration values
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/set-ade7953-configuration:
+    post:
+      summary: Set ADE7953 configuration
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/set-general-configuration:
+    post:
+      summary: Set general configuration
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/set-channel:
+    post:
+      summary: Set channel data
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/list-files:
+    get:
+      summary: List files in SPIFFS
+      tags:
+        - Files
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/file/{filename}:
+    get:
+      summary: Get file content
+      tags:
+        - Files
+      parameters:
+        - in: path
+          name: filename
+          required: true
+          schema:
+            type: string
+          description: Name of the file to retrieve
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/plain: {}
+            application/json: {}
+            text/html: {}
+            text/css: {}
+            image/png: {}
+        '400':
+          description: File not found
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /log-raw:
+    get:
+      summary: Get raw log file
+      tags:
+        - Files
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /daily-energy:
+    get:
+      summary: Get daily energy data
+      tags:
+        - Files
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object

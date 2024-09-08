@@ -116,7 +116,18 @@ void CustomServer::_setHtmlPages()
         _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::VERBOSE, request);
         request->send_P(200, "text/css", typography_css); });
 
-    // Other
+    // Swagger UI
+    server.on("/swagger-ui", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get Swagger UI", "customserver::_setHtmlPages::/swagger-ui", LogLevel::VERBOSE, request);
+        request->send_P(200, "text/html", swagger_ui_html); });
+
+    server.on("/swagger.yaml", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get Swagger YAML", "customserver::_setHtmlPages::/swagger.yaml", LogLevel::VERBOSE, request);
+        request->send_P(200, "text/yaml", swagger_yaml); });
+
+    // Favicon
     server.on("/favicon.svg", HTTP_GET, [this](AsyncWebServerRequest *request) // SVG format seems to be the only one working with embedded binary data
                {
         _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.png", LogLevel::VERBOSE, request);
@@ -293,7 +304,7 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", _buffer.c_str()); });
 
-    server.on("/rest/set-log-level", HTTP_GET, [this](AsyncWebServerRequest *request)
+    server.on("/rest/set-log-level", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog(
             "Request to set log level from REST API",
