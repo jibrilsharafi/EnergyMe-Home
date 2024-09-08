@@ -33,13 +33,6 @@ public:
     void begin(String deviceId);
     void loop();
 
-    void publishConnectivity(bool isOnline = true);
-    void publishMeter();
-    void publishStatus();
-    void publishMetadata();
-    void publishChannel();
-    void publishGeneralConfiguration();
-
 private:
     bool _connectMqtt();
 
@@ -47,6 +40,13 @@ private:
     void _checkIfPublishStatusNeeded();
 
     void _checkPublishMqtt();
+
+    void _publishConnectivity(bool isOnline = true);
+    void _publishMeter();
+    void _publishStatus();
+    void _publishMetadata();
+    void _publishChannel();
+    void _publishGeneralConfiguration();
 
     void _setupTopics();
     void _setTopicConnectivity();

@@ -249,32 +249,29 @@ void loop() {
     
     printMeterValues(ade7953.meterValues[previousChannel], ade7953.channelData[previousChannel].label.c_str());
 
-    if (generalConfiguration.isCloudServicesEnabled) {
-      payloadMeter.push(PayloadMeter(
+    payloadMeter.push(
+      PayloadMeter(
         previousChannel,
         customTime.getUnixTime(),
         ade7953.meterValues[previousChannel].activePower,
         ade7953.meterValues[previousChannel].powerFactor
-      ));
-    } 
+        )
+      );
   }
 
   if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
+    printDeviceStatus();
     setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
   }
 
   // If memory is below a certain level, clear the log
   if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
+    printDeviceStatus();
     logger.clearLog();
     logger.warning("Log cleared due to low memory", "main::loop");
   }
 
-  if (restartConfiguration.isRequired) {
-    mqtt.publishMeter();
-    mqtt.publishStatus();
-
-    restartEsp32();
-  }
+  if (restartConfiguration.isRequired) restartEsp32();
   
   led.setOff();
 }

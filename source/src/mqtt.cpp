@@ -60,17 +60,17 @@ bool Mqtt::begin() {
 #ifdef ENERGYME_HOME_SECRETS_H
 
 void Mqtt::loop() {
-    if (!generalConfiguration.isCloudServicesEnabled) {
+    if (!generalConfiguration.isCloudServicesEnabled || restartConfiguration.isRequired) {
         if (_isSetupDone) {
-            _logger.info("Cloud services disabled. Disconnecting MQTT...", "mqtt::mqttLoop");
+            _logger.info("Disconnecting MQTT", "mqtt::mqttLoop");
 
             // Send last messages before disconnecting
-            publishConnectivity(false); // Send offline connectivity as the last will message will not be sent with graceful disconnect
-            publishMeter();
-            publishStatus();
-            publishMetadata();
-            publishChannel();
-            publishGeneralConfiguration();
+            _publishConnectivity(false); // Send offline connectivity as the last will message will not be sent with graceful disconnect
+            _publishMeter();
+            _publishStatus();
+            _publishMetadata();
+            _publishChannel();
+            _publishGeneralConfiguration();
 
             clientMqtt.disconnect();
 
@@ -117,11 +117,22 @@ void Mqtt::mqttLoop() {
 
 bool Mqtt::_connectMqtt()
 {
-    _logger.debug("Attempt to connect to MQTT...", "mqtt::_connectMqtt");
-
+    _logger.debug("Attempt to connect to MQTT (%d/%d)...", "mqtt::_connectMqtt", _mqttConnectionAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
     if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
+        _logger.error("Failed to connect to MQTT after %d attempts. Disabling cloud services", "mqtt::_connectMqtt", MQTT_MAX_CONNECTION_ATTEMPT);
+    
         generalConfiguration.isCloudServicesEnabled = false;
-        _logger.error("Failed to reconnect to MQTT after %d attempts. Disabling cloud services", "mqtt::_connectMqtt", MQTT_MAX_CONNECTION_ATTEMPT);
+        _isSetupDone = false;
+        _mqttConnectionAttempt = 0;
+
+        // Reset to true for next reconnection
+        publishMqtt.connectivity = true;
+        publishMqtt.meter = true;
+        publishMqtt.status = true;
+        publishMqtt.metadata = true;
+        publishMqtt.channel = true;
+        publishMqtt.generalConfiguration = true;
+
         return false;
     }
 
@@ -136,7 +147,7 @@ bool Mqtt::_connectMqtt()
         _logger.info("Connected to MQTT", "mqtt::_connectMqtt");
 
         _mqttConnectionAttempt = 0;
-        
+
         _subscribeToTopics();
 
         return true;
@@ -249,8 +260,8 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
 
         PayloadMeter _oldestPayloadMeter = payloadMeter.shift();
 
-        _jsonObject["channel"] = _oldestPayloadMeter.channel;
         _jsonObject["unixTime"] = _oldestPayloadMeter.unixTime;
+        _jsonObject["channel"] = _oldestPayloadMeter.channel;
         _jsonObject["activePower"] = _oldestPayloadMeter.activePower;
         _jsonObject["powerFactor"] = _oldestPayloadMeter.powerFactor;
     }
@@ -259,8 +270,8 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
         if (_ade7953.channelData[i].active) {
             JsonObject _jsonObject = _jsonArray.add<JsonObject>();
 
-            _jsonObject["channel"] = i;
             _jsonObject["unixTime"] = _customTime.getUnixTime();
+            _jsonObject["channel"] = i;
             _jsonObject["activeEnergy"] = _ade7953.meterValues[i].activeEnergy;
             _jsonObject["reactiveEnergy"] = _ade7953.meterValues[i].reactiveEnergy;
             _jsonObject["apparentEnergy"] = _ade7953.meterValues[i].apparentEnergy;
@@ -274,16 +285,23 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
     _logger.debug("Circular buffer converted to JSON", "mqtt::_circularBufferToJson");
 }
 
-void Mqtt::publishConnectivity(bool isOnline) {
-    _logger.debug("Publishing connectivity to MQTT...", "mqtt::publishConnectivity");
+void Mqtt::_publishConnectivity(bool isOnline) {
+    _logger.debug("Publishing connectivity to MQTT...", "mqtt::_publishConnectivity");
 
-    if (_publishMessage(_mqttTopicConnectivity, isOnline ? MQTT_CONNECTIVITY_ONLINE : MQTT_CONNECTIVITY_OFFLINE)) {publishMqtt.connectivity = false;}
+    JsonDocument _jsonDocument;
+    _jsonDocument["unixTime"] = _customTime.getUnixTime();
+    _jsonDocument["connectivity"] = isOnline ? "online" : "offline";
 
-    _logger.debug("Connectivity published to MQTT", "mqtt::publishConnectivity");
+    String _connectivityMessage;
+    serializeJson(_jsonDocument, _connectivityMessage);
+
+    if (_publishMessage(_mqttTopicConnectivity, _connectivityMessage.c_str())) {publishMqtt.connectivity = false;}
+
+    _logger.debug("Connectivity published to MQTT", "mqtt::_publishConnectivity");
 }
 
-void Mqtt::publishMeter() {
-    _logger.debug("Publishing meter data to MQTT...", "mqtt::publishMeter");
+void Mqtt::_publishMeter() {
+    _logger.debug("Publishing meter data to MQTT...", "mqtt::_publishMeter");
 
     JsonDocument _jsonDocument;
     _circularBufferToJson(&_jsonDocument, payloadMeter);
@@ -293,11 +311,11 @@ void Mqtt::publishMeter() {
 
     if (_publishMessage(_mqttTopicMeter, _meterMessage.c_str())) {publishMqtt.meter = false;}
 
-    _logger.debug("Meter data published to MQTT", "mqtt::publishMeter");
+    _logger.debug("Meter data published to MQTT", "mqtt::_publishMeter");
 }
 
-void Mqtt::publishStatus() {
-    _logger.debug("Publishing status to MQTT...", "mqtt::publishStatus");
+void Mqtt::_publishStatus() {
+    _logger.debug("Publishing status to MQTT...", "mqtt::_publishStatus");
 
     JsonDocument _jsonDocument;
 
@@ -312,11 +330,11 @@ void Mqtt::publishStatus() {
 
     if (_publishMessage(_mqttTopicStatus, _statusMessage.c_str())) {publishMqtt.status = false;}
 
-    _logger.debug("Status published to MQTT", "mqtt::publishStatus");
+    _logger.debug("Status published to MQTT", "mqtt::_publishStatus");
 }
 
-void Mqtt::publishMetadata() {
-    _logger.debug("Publishing metadata to MQTT...", "mqtt::publishMetadata");
+void Mqtt::_publishMetadata() {
+    _logger.debug("Publishing metadata to MQTT...", "mqtt::_publishMetadata");
 
     JsonDocument _jsonDocument;
 
@@ -329,11 +347,11 @@ void Mqtt::publishMetadata() {
 
     if (_publishMessage(_mqttTopicMetadata, _metadataMessage.c_str())) {publishMqtt.metadata = false;}
     
-    _logger.debug("Metadata published to MQTT", "mqtt::publishMetadata");
+    _logger.debug("Metadata published to MQTT", "mqtt::_publishMetadata");
 }
 
-void Mqtt::publishChannel() {
-    _logger.debug("Publishing channel data to MQTT", "mqtt::publishChannel");
+void Mqtt::_publishChannel() {
+    _logger.debug("Publishing channel data to MQTT", "mqtt::_publishChannel");
 
     JsonDocument _jsonChannelData;
     _ade7953.channelDataToJson(_jsonChannelData);
@@ -347,11 +365,11 @@ void Mqtt::publishChannel() {
  
     if (_publishMessage(_mqttTopicChannel, _channelMessage.c_str())) {publishMqtt.channel = false;}
 
-    _logger.debug("Channel data published to MQTT", "mqtt::publishChannel");
+    _logger.debug("Channel data published to MQTT", "mqtt::_publishChannel");
 }
 
-void Mqtt::publishGeneralConfiguration() {
-    _logger.debug("Publishing general configuration to MQTT", "mqtt::publishGeneralConfiguration");
+void Mqtt::_publishGeneralConfiguration() {
+    _logger.debug("Publishing general configuration to MQTT", "mqtt::_publishGeneralConfiguration");
 
     JsonDocument _jsonDocument;
 
@@ -366,7 +384,7 @@ void Mqtt::publishGeneralConfiguration() {
 
     if (_publishMessage(_mqttTopicGeneralConfiguration, _generalConfigurationMessage.c_str())) {publishMqtt.generalConfiguration = false;}
 
-    _logger.debug("General configuration published to MQTT", "mqtt::publishGeneralConfiguration");
+    _logger.debug("General configuration published to MQTT", "mqtt::_publishGeneralConfiguration");
 }
 
 bool Mqtt::_publishMessage(const char* topic, const char* message) {
@@ -397,7 +415,7 @@ bool Mqtt::_publishMessage(const char* topic, const char* message) {
 
 void Mqtt::_checkIfPublishMeterNeeded() {
     if (payloadMeter.isFull() || (millis() - _lastMillisMeterPublished) > MAX_INTERVAL_METER_PUBLISH) { // Either buffer is full or time has passed
-        _logger.debug("Setting flag to publish %d meter data", "mqtt::_checkIfPublishMeterNeeded", payloadMeter.size());
+        _logger.debug("Setting flag to publish %d meter data points", "mqtt::_checkIfPublishMeterNeeded", payloadMeter.size());
 
         publishMqtt.meter = true;
         
@@ -416,17 +434,12 @@ void Mqtt::_checkIfPublishStatusNeeded() {
 }
 
 void Mqtt::_checkPublishMqtt() {
-    if (!generalConfiguration.isCloudServicesEnabled) {
-        _logger.verbose("Cloud services not enabled. Skipping...", "mqtt::_checkPublishMqtt");
-        return;
-    }
-
-    if (publishMqtt.connectivity) {publishConnectivity();}
-    if (publishMqtt.meter) {publishMeter();}
-    if (publishMqtt.status) {publishStatus();}
-    if (publishMqtt.metadata) {publishMetadata();}
-    if (publishMqtt.channel) {publishChannel();}
-    if (publishMqtt.generalConfiguration) {publishGeneralConfiguration();}
+    if (publishMqtt.connectivity) {_publishConnectivity();}
+    if (publishMqtt.meter) {_publishMeter();}
+    if (publishMqtt.status) {_publishStatus();}
+    if (publishMqtt.metadata) {_publishMetadata();}
+    if (publishMqtt.channel) {_publishChannel();}
+    if (publishMqtt.generalConfiguration) {_publishGeneralConfiguration();}
 }
 
 void Mqtt::_subscribeToTopics() {
