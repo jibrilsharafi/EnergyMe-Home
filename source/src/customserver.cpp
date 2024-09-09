@@ -63,75 +63,75 @@ void CustomServer::_setHtmlPages()
     // HTML pages
     server.on("/", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get index page", "customserver::_setHtmlPages::/", LogLevel::DEBUG, request);
+        _serverLog("Request to get index page", "customserver::_setHtmlPages", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", index_html); });
 
     server.on("/configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get configuration page", "customserver::_setHtmlPages::/configuration", LogLevel::DEBUG, request);
+        _serverLog("Request to get configuration page", "customserver::_setHtmlPages", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", configuration_html); });
 
     server.on("/calibration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get calibration page", "customserver::_setHtmlPages::/calibration", LogLevel::DEBUG, request);
+        _serverLog("Request to get calibration page", "customserver::_setHtmlPages", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", calibration_html); });
 
     server.on("/channel", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get channel page", "customserver::_setHtmlPages::/channel", LogLevel::DEBUG, request);
+        _serverLog("Request to get channel page", "customserver::_setHtmlPages", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", channel_html); });
 
     server.on("/info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get info page", "customserver::_setHtmlPages::/info", LogLevel::DEBUG, request);
+        _serverLog("Request to get info page", "customserver::_setHtmlPages", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", info_html); });
 
     server.on("/log", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get log page", "customserver::_setHtmlPages::/log", LogLevel::DEBUG, request);
+        _serverLog("Request to get log page", "customserver::_setHtmlPages", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", log_html); });
 
     server.on("/update", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get update page", "customserver::_setOta::/update", LogLevel::DEBUG, request);
+        _serverLog("Request to get update page", "customserver::_setOta", LogLevel::DEBUG, request);
         request->send_P(200, "text/html", update_html); });
 
     // CSS
     server.on("/css/styles.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::VERBOSE, request);
+        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages", LogLevel::VERBOSE, request);
         request->send_P(200, "text/css", styles_css); });
 
     server.on("/css/button.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::VERBOSE, request);
+        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages", LogLevel::VERBOSE, request);
         request->send_P(200, "text/css", button_css); });
 
     server.on("/css/section.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::VERBOSE, request);
+        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages", LogLevel::VERBOSE, request);
         request->send_P(200, "text/css", section_css); });
 
     server.on("/css/typography.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages::/css/style.css", LogLevel::VERBOSE, request);
+        _serverLog("Request to get custom CSS", "customserver::_setHtmlPages", LogLevel::VERBOSE, request);
         request->send_P(200, "text/css", typography_css); });
 
     // Swagger UI
     server.on("/swagger-ui", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get Swagger UI", "customserver::_setHtmlPages::/swagger-ui", LogLevel::VERBOSE, request);
+        _serverLog("Request to get Swagger UI", "customserver::_setHtmlPages", LogLevel::VERBOSE, request);
         request->send_P(200, "text/html", swagger_ui_html); });
 
     server.on("/swagger.yaml", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get Swagger YAML", "customserver::_setHtmlPages::/swagger.yaml", LogLevel::VERBOSE, request);
+        _serverLog("Request to get Swagger YAML", "customserver::_setHtmlPages", LogLevel::VERBOSE, request);
         request->send_P(200, "text/yaml", swagger_yaml); });
 
-    // Favicon
-    server.on("/favicon.svg", HTTP_GET, [this](AsyncWebServerRequest *request) // SVG format seems to be the only one working with embedded binary data
+    // Favicon - SVG format seems to be the only one working with embedded binary data
+    server.on("/favicon.svg", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get favicon", "customserver::_setHtmlPages::/favicon.png", LogLevel::VERBOSE, request);
+        _serverLog("Request to get favicon", "customserver::_setHtmlPages", LogLevel::VERBOSE, request);
         request->send_P(200, "image/svg+xml", favicon_svg); });
 }
 
@@ -146,13 +146,13 @@ void CustomServer::_setRestApi()
 {
     server.on("/rest/is-alive", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to check if the ESP32 is alive", "customserver::_setRestApi::/rest/is-alive", LogLevel::DEBUG, request);
+        _serverLog("Request to check if the ESP32 is alive", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         request->send(200, "application/json", "{\"message\":\"True\"}"); });
 
     server.on("/rest/project-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get project info from REST API", "customserver::_setRestApi::/rest/project-info", LogLevel::DEBUG, request);
+        _serverLog("Request to get project info", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         JsonDocument _jsonDocument;
         getJsonProjectInfo(_jsonDocument);
@@ -164,7 +164,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/device-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get device info from REST API", "customserver::_setRestApi::/rest/device-info", LogLevel::DEBUG, request);
+        _serverLog("Request to get device info", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         JsonDocument _jsonDocument;
         getJsonDeviceInfo(_jsonDocument);
@@ -176,7 +176,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/wifi-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get WiFi values from REST API", "customserver::_setRestApi::/rest/wifi-info", LogLevel::DEBUG, request);
+        _serverLog("Request to get WiFi values", "customserver::_setRestApi", LogLevel::DEBUG, request);
         
         JsonDocument _jsonDocument;
         _customWifi.getWifiStatus(_jsonDocument);
@@ -188,7 +188,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/meter", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get meter values from REST API", "customserver::_setRestApi::/rest/meter", LogLevel::DEBUG, request);
+        _serverLog("Request to get meter values", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         String _buffer;
         serializeJson(_ade7953.meterValuesToJson(), _buffer);
@@ -197,7 +197,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/meter-single", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get meter values from REST API", "customserver::_setRestApi::/rest/meter-single", LogLevel::DEBUG, request);
+        _serverLog("Request to get meter values", "customserver::_setRestApi ", LogLevel::DEBUG, request);
 
         if (request->hasParam("index")) {
             int _indexInt = request->getParam("index")->value().toInt();
@@ -220,7 +220,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/active-power", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get meter values from REST API", "customserver::_setRestApi::/rest/active-power", LogLevel::DEBUG, request);
+        _serverLog("Request to get meter values", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         if (request->hasParam("index")) {
             int _indexInt = request->getParam("index")->value().toInt();
@@ -240,13 +240,13 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/get-ade7953-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get ADE7953 configuration from REST API", "customserver::_setRestApi::/rest/get-ade7953-configuration", LogLevel::DEBUG, request);
+        _serverLog("Request to get ADE7953 configuration", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         _serveJsonFile(request, CONFIGURATION_ADE7953_JSON_PATH); });
 
     server.on("/rest/get-channel", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get channel data from REST API", "customserver::_setRestApi::/rest/get-channel", LogLevel::DEBUG, request);
+        _serverLog("Request to get channel data", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         JsonDocument _jsonDocument;
         _ade7953.channelDataToJson(_jsonDocument);
@@ -258,13 +258,13 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/get-calibration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get configuration from REST API", "customserver::_setRestApi::/rest/get-calibration", LogLevel::DEBUG, request);
+        _serverLog("Request to get configuration", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         _serveJsonFile(request, CALIBRATION_JSON_PATH); });
 
     server.on("/rest/calibration-reset", HTTP_POST, [&](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to reset calibration values from REST API", "customserver::_setRestApi::/rest/calibration-reset", LogLevel::WARNING, request);
+        _serverLog("Request to reset calibration values", "customserver::_setRestApi", LogLevel::WARNING, request);
         
         _ade7953.setDefaultCalibrationValues();
         _ade7953.setDefaultChannelData();
@@ -274,7 +274,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/reset-energy", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to reset energy counters from REST API", "customserver::_setRestApi::/rest/reset-energy", LogLevel::WARNING, request);
+        _serverLog("Request to reset energy counters", "customserver::_setRestApi", LogLevel::WARNING, request);
 
         _ade7953.resetEnergyValues();
 
@@ -282,7 +282,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/get-log-level", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get log level from REST API", "customserver::_setRestApi::/rest/get-log-level", LogLevel::DEBUG, request);
+        _serverLog("Request to get log level", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         JsonDocument _jsonDocument;
         _jsonDocument["print"] = _logger.logLevelToString(_logger.getPrintLevel());
@@ -296,8 +296,8 @@ void CustomServer::_setRestApi()
     server.on("/rest/set-log-level", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog(
-            "Request to set log level from REST API",
-            "customserver::_setRestApi::/rest/set-log-level",
+            "Request to set log level",
+            "customserver::_setRestApi",
             LogLevel::DEBUG,
             request
         );
@@ -319,7 +319,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/get-general-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get get general configuration from REST API", "customserver::_setRestApi::/rest/get-general-configuration", LogLevel::DEBUG, request);
+        _serverLog("Request to get get general configuration", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         JsonDocument _jsonDocument;
         generalConfigurationToJson(generalConfiguration, _jsonDocument);
@@ -332,8 +332,8 @@ void CustomServer::_setRestApi()
     server.on("/rest/ade7953-read-register", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog(
-            "Request to get ADE7953 register value from REST API",
-            "customserver::_setRestApi::/rest/ade7953-read-register",
+            "Request to get ADE7953 register value",
+            "customserver::_setRestApi",
             LogLevel::DEBUG,
             request
         );
@@ -361,8 +361,8 @@ void CustomServer::_setRestApi()
     server.on("/rest/ade7953-write-register", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog(
-            "Request to get ADE7953 register value from REST API",
-            "customserver::_setRestApi::/rest/ade7953-read-register",
+            "Request to get ADE7953 register value",
+            "customserver::_setRestApi",
             LogLevel::INFO,
             request
         );
@@ -389,19 +389,19 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/firmware-update-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get firmware update info from REST API", "customserver::_setRestApi::/rest/firmware-update-info", LogLevel::DEBUG, request);
+        _serverLog("Request to get firmware update info", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         _serveJsonFile(request, FW_UPDATE_INFO_JSON_PATH); });
 
     server.on("/rest/firmware-update-status", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get firmware update status from REST API", "customserver::_setRestApi::/rest/firmware-update-status", LogLevel::DEBUG, request);
+        _serverLog("Request to get firmware update status", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         _serveJsonFile(request, FW_UPDATE_STATUS_JSON_PATH); });
 
     server.on("/rest/is-latest-firmware-installed", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to check if the latest firmware is installed from REST API", "customserver::_setRestApi::/rest/is-latest-firmware-installed", LogLevel::DEBUG, request);
+        _serverLog("Request to check if the latest firmware is installed", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         if (isLatestFirmwareInstalled()) {
             request->send(200, "application/json", "{\"latest\":true}");
@@ -411,14 +411,14 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to factory reset from REST API", "customserver::_setRestApi::/rest/factory-reset", LogLevel::WARNING, request);
+        _serverLog("Request to factory reset", "customserver::_setRestApi", LogLevel::WARNING, request);
 
         request->send(200, "application/json", "{\"message\":\"Factory reset in progress. Check the log for more information.\"}");
         factoryReset(); });
 
     server.on("/rest/clear-log", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to clear log from REST API", "customserver::_setRestApi::/rest/clear-log", LogLevel::DEBUG, request);
+        _serverLog("Request to clear log", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         _logger.clearLog();
 
@@ -426,14 +426,14 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/restart", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to restart the ESP32 from REST API", "customserver::_setRestApi::/rest/restart", LogLevel::WARNING, request);
+        _serverLog("Request to restart the ESP32", "customserver::_setRestApi", LogLevel::WARNING, request);
 
         request->send(200, "application/json", "{\"message\":\"Restarting...\"}");
         setRestartEsp32("customserver::_setRestApi", "Request to restart the ESP32 from REST API"); });
 
     server.on("/rest/reset-wifi", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to erase WiFi credentials from REST API", "customserver::_setRestApi::/rest/reset-wifi", LogLevel::WARNING, request);
+        _serverLog("Request to erase WiFi credentials", "customserver::_setRestApi", LogLevel::WARNING, request);
 
         request->send(200, "application/json", "{\"message\":\"Erasing WiFi credentials and restarting...\"}");
         _customWifi.resetWifi();
@@ -441,7 +441,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/get-custom-mqtt-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get custom MQTT configuration from REST API", "customserver::_setRestApi::/rest/get-custom-mqtt-configuration", LogLevel::DEBUG, request);
+        _serverLog("Request to get custom MQTT configuration", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         _serveJsonFile(request, CUSTOM_MQTT_CONFIGURATION_JSON_PATH); });
 
@@ -465,7 +465,7 @@ void CustomServer::_setRestApi()
             _serverLog(_buffer.c_str(), "customserver::_setRestApi::onRequestBody", LogLevel::DEBUG, request);
 
             if (request->url() == "/rest/set-calibration") {
-                _serverLog("Request to set calibration values from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-calibration", LogLevel::INFO, request);
+                _serverLog("Request to set calibration values", "customserver::_setRestApi", LogLevel::INFO, request);
     
                 if (_ade7953.setCalibrationValues(_jsonDocument)) {
                     request->send(200, "application/json", "{\"message\":\"Calibration values set\"}");
@@ -476,7 +476,7 @@ void CustomServer::_setRestApi()
                 request->send(200, "application/json", "{\"message\":\"Calibration values set\"}");
     
             } else if (request->url() == "/rest/set-ade7953-configuration") {
-                _serverLog("Request to set ADE7953 configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-ade7953-configuration", LogLevel::INFO, request);
+                _serverLog("Request to set ADE7953 configuration", "customserver::_setRestApi", LogLevel::INFO, request);
     
                 if (_ade7953.setConfiguration(_jsonDocument)) {
                     request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
@@ -487,7 +487,7 @@ void CustomServer::_setRestApi()
                 request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
     
             } else if (request->url() == "/rest/set-general-configuration") {
-                _serverLog("Request to set general configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-general-configuration", LogLevel::INFO, request);
+                _serverLog("Request to set general configuration", "customserver::_setRestApi", LogLevel::INFO, request);
     
                 if (setGeneralConfiguration(_jsonDocument)) {
                     request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
@@ -496,7 +496,7 @@ void CustomServer::_setRestApi()
                 }    
     
             } else if (request->url() == "/rest/set-channel") {
-                _serverLog("Request to set channel data from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-channel", LogLevel::INFO, request);
+                _serverLog("Request to set channel data", "customserver::_setRestApi", LogLevel::INFO, request);
     
                 if (_ade7953.setChannelData(_jsonDocument)) {
                     request->send(200, "application/json", "{\"message\":\"Channel data set\"}");
@@ -504,7 +504,7 @@ void CustomServer::_setRestApi()
                     request->send(400, "application/json", "{\"message\":\"Invalid channel data\"}");
                 }    
             } else if (request->url() == "/rest/set-custom-mqtt-configuration") {
-                _serverLog("Request to set custom MQTT configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-custom-mqtt-configuration", LogLevel::INFO, request);
+                _serverLog("Request to set custom MQTT configuration", "customserver::_setRestApi", LogLevel::INFO, request);
     
                 if (_customMqtt.setConfiguration(_jsonDocument)) {
                     request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
@@ -514,7 +514,7 @@ void CustomServer::_setRestApi()
             } else {
                 _serverLog(
                     ("Request to POST to unknown endpoint: " + request->url()).c_str(),
-                    "customserver::_setRestApi::onRequestBody",
+                    "customserver::_setRestApi",
                     LogLevel::WARNING,
                     request
                 );
@@ -526,13 +526,13 @@ void CustomServer::_setRestApi()
             delete buffer;
             request->_tempObject = nullptr;
         } else {
-            _serverLog("Getting more data...", "customserver::_setRestApi::onRequestBody", LogLevel::DEBUG, request);
+            _serverLog("Getting more data...", "customserver::_setRestApi", LogLevel::DEBUG, request);
         }
     });
 
     server.on("/rest/list-files", HTTP_GET, [this](AsyncWebServerRequest *request)
     {
-        _serverLog("Request to get list of files from REST API", "customserver::_setRestApi::/rest/files", LogLevel::DEBUG, request);
+        _serverLog("Request to get list of files", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         File _root = SPIFFS.open("/");
         File _file = _root.openNextFile();
@@ -556,7 +556,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/file/*", HTTP_GET, [this](AsyncWebServerRequest *request)
     {
-        _serverLog("Request to get file from REST API", "customserver::_setRestApi::/rest/file/*", LogLevel::DEBUG, request);
+        _serverLog("Request to get file", "customserver::_setRestApi", LogLevel::DEBUG, request);
     
         String _filename = request->url().substring(10);
 
@@ -598,7 +598,7 @@ void CustomServer::_setOtherEndpoints()
                        {
         _serverLog(
             ("Request to get unknown page: " + request->url()).c_str(),
-            "customserver::_setOtherEndpoints::onNotFound",
+            "customserver::_setOtherEndpoints",
             LogLevel::DEBUG,
             request
         );
