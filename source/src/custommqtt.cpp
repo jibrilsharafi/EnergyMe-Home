@@ -6,7 +6,7 @@ CustomMqtt::CustomMqtt(
 
 void CustomMqtt::setup()
 {
-    _logger.debug("Setting up custom MQTT...", "custommqtt::begin");
+    _logger.debug("Setting up custom MQTT...", "custommqtt::setup");
     
     if (isFirstSetup) {
         _setDefaultConfiguration();
@@ -18,7 +18,7 @@ void CustomMqtt::setup()
     
     customClientMqtt.setServer(customMqttConfiguration.server.c_str(), customMqttConfiguration.port);
 
-    _logger.debug("MQTT setup complete", "custommqtt::begin");
+    _logger.debug("MQTT setup complete", "custommqtt::setup");
 
     if (customMqttConfiguration.enabled) _isSetupDone = true;
 }
@@ -29,13 +29,13 @@ void CustomMqtt::loop()
     {
         if (_isSetupDone)
         {
-            _logger.info("Disconnecting custom MQTT", "custommqtt::mqttLoop");
+            _logger.info("Disconnecting custom MQTT", "custommqtt::loop");
             customClientMqtt.disconnect();
             _isSetupDone = false;
         }
         else
         {
-            _logger.verbose("Custom MQTT not enabled. Skipping...", "custommqtt::mqttLoop");
+            _logger.verbose("Custom MQTT not enabled. Skipping...", "custommqtt::loop");
         }
 
         return;
@@ -98,10 +98,12 @@ bool CustomMqtt::setConfiguration(JsonDocument &jsonDocument)
     customMqttConfiguration.username = jsonDocument["username"].as<String>();
     customMqttConfiguration.password = jsonDocument["password"].as<String>();
 
+    _saveConfigurationToSpiffs();
+    
     customClientMqtt.disconnect();
     customClientMqtt.setServer(customMqttConfiguration.server.c_str(), customMqttConfiguration.port);
-    
-    _saveConfigurationToSpiffs();
+
+    _mqttConnectionAttempt = 0;
 
     _logger.debug("Custom MQTT configuration set", "custommqtt::setConfiguration");
 
@@ -179,10 +181,10 @@ bool CustomMqtt::_validateJsonConfiguration(JsonDocument &jsonDocument)
 }
 
 void CustomMqtt::_disable() {
-    _logger.info("Disabling custom MQTT...", "custommqtt::_disable");
+    _logger.debug("Disabling custom MQTT...", "custommqtt::_disable");
 
     JsonDocument _jsonDocument;
-    deserializeJson(_jsonDocument, CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
+    deserializeJsonFromSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
 
     _jsonDocument["enabled"] = false;
 
@@ -191,7 +193,7 @@ void CustomMqtt::_disable() {
     _isSetupDone = false;
     _mqttConnectionAttempt = 0;
 
-    _logger.info("Custom MQTT disabled", "custommqtt::_disable");
+    _logger.debug("Custom MQTT disabled", "custommqtt::_disable");
 }
 
 bool CustomMqtt::_connectMqtt()
