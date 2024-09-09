@@ -41,6 +41,7 @@ private:
     void _onUpdateSuccessful(AsyncWebServerRequest *request);
     void _onUpdateFailed(AsyncWebServerRequest *request, const char* reason);
     void _updateJsonFirmwareStatus(const char* status, const char* reason);
+    void _serveJsonFile(AsyncWebServerRequest *request, const char* filePath);
 
     void _serverLog(const char* message, const char* function, LogLevel logLevel, AsyncWebServerRequest *request);
 

@@ -241,13 +241,7 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get ADE7953 configuration from REST API", "customserver::_setRestApi::/rest/get-ade7953-configuration", LogLevel::DEBUG, request);
 
-        JsonDocument _jsonDocument;
-        deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
-        
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
-
-        request->send(200, "application/json", _buffer.c_str()); });
+        _serveJsonFile(request, CONFIGURATION_ADE7953_JSON_PATH); });
 
     server.on("/rest/get-channel", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -265,13 +259,7 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get configuration from REST API", "customserver::_setRestApi::/rest/get-calibration", LogLevel::DEBUG, request);
 
-        JsonDocument _jsonDocument;
-        deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
-
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
-
-        request->send(200, "application/json", _buffer.c_str()); });
+        _serveJsonFile(request, CALIBRATION_JSON_PATH); });
 
     server.on("/rest/calibration-reset", HTTP_POST, [&](AsyncWebServerRequest *request)
                {
@@ -402,25 +390,13 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get firmware update info from REST API", "customserver::_setRestApi::/rest/firmware-update-info", LogLevel::DEBUG, request);
 
-        File _file = SPIFFS.open(FW_UPDATE_INFO_JSON_PATH, FILE_READ);
-        if (_file) {
-            request->send(_file, "application/json");
-            _file.close();
-        } else {
-            request->send(200, "application/json", "{}");
-        } });
+        _serveJsonFile(request, FW_UPDATE_INFO_JSON_PATH); });
 
     server.on("/rest/firmware-update-status", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get firmware update status from REST API", "customserver::_setRestApi::/rest/firmware-update-status", LogLevel::DEBUG, request);
 
-        File _file = SPIFFS.open(FW_UPDATE_STATUS_JSON_PATH, FILE_READ);
-        if (_file) {
-            request->send(_file, "application/json");
-            _file.close();
-        } else {
-            request->send(200, "application/json", "{}");
-        } });
+        _serveJsonFile(request, FW_UPDATE_STATUS_JSON_PATH); });
 
     server.on("/rest/is-latest-firmware-installed", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -550,14 +526,11 @@ void CustomServer::_setRestApi()
         while (_file)
         {
             // Skip if private in name
-            String _filename = String(_file.name());
+            String _filename = String(_file.path());
 
-            if (_filename.indexOf("secret") != -1) {
-                _file = _root.openNextFile();
-            } else {
-                _jsonDocument[_file.name()] = _file.size();
-                _file = _root.openNextFile();
-            }
+            if (_filename.indexOf("secret") == -1) _jsonDocument[_filename] = _file.size();
+            
+            _file = _root.openNextFile();
         }
 
         String _buffer;
@@ -571,7 +544,7 @@ void CustomServer::_setRestApi()
         _serverLog("Request to get file from REST API", "customserver::_setRestApi::/rest/file/*", LogLevel::DEBUG, request);
     
         String _filename = request->url().substring(10);
-    
+
         if (_filename.indexOf("secret") != -1) {
             request->send(401, "application/json", "{\"message\":\"Unauthorized\"}");
             return;
@@ -591,7 +564,7 @@ void CustomServer::_setRestApi()
                 contentType = "image/png";
             }
 
-            request->send(_file, contentType);
+            request->send(_file, _filename, contentType);
             _file.close();
         }
         else {
@@ -710,5 +683,16 @@ void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *r
         delay(500);
         _led.setOff(true);
         delay(500);
+    }
+}
+
+void CustomServer::_serveJsonFile(AsyncWebServerRequest *request, const char *filePath) {
+    File file = SPIFFS.open(filePath, FILE_READ);
+
+    if (file) {
+        request->send(file, filePath, "application/json");
+        file.close();
+    } else {
+        request->send(500, "application/json", "{\"message\":\"File not found\"}");
     }
 }

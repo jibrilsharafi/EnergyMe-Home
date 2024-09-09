@@ -41,6 +41,28 @@
     color: var(--blue);
 }
 
+.buttonNavigationExternal {
+    background: transparent;
+    color: #1bacdc;
+    font-weight: bold;
+    font-size: 1.2em;
+    cursor: pointer;
+    padding: 10px 20px;
+    border-radius: 50px;
+    text-decoration: none;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+    transition: all 0.1s ease;
+}
+
+.buttonNavigationExternal:hover {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.6);
+}
+
+.buttonNavigationExternal:active {
+    transform: scale(0.98);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+}
+
 .buttonForm-container {
     display: flex;
     flex-direction: row;

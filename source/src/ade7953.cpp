@@ -453,7 +453,6 @@ void Ade7953::channelDataToJson(JsonDocument &jsonDocument) {
     _logger.debug("Converting data channel to JSON...", "ade7953::channelDataToJson");
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
-        jsonDocument[String(i)]["index"] = channelData[i].index;
         jsonDocument[String(i)]["active"] = channelData[i].active;
         jsonDocument[String(i)]["reverse"] = channelData[i].reverse;
         jsonDocument[String(i)]["label"] = channelData[i].label;
@@ -473,10 +472,9 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
 
     for (JsonPair _kv : jsonDocument.as<JsonObject>()) {
         _logger.debug(
-            "Parsing JSON data channel %s | Index: %d | Active: %d | Reverse: %d | Label: %s | Calibration Label: %s", 
+            "Parsing JSON data channel %s | Active: %d | Reverse: %d | Label: %s | Calibration Label: %s", 
             "ade7953::setChannelData", 
             _kv.key().c_str(), 
-            _kv.value()["index"].as<int>(), 
             _kv.value()["active"].as<bool>(), 
             _kv.value()["reverse"].as<bool>(), 
             _kv.value()["label"].as<String>(), 
@@ -521,9 +519,13 @@ bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
             return false;
         }
 
+        int _index = atoi(kv.key().c_str());
+        if (_index < 0 || _index >= CHANNEL_COUNT) {
+            return false;
+        }
+
         JsonObject channelObject = kv.value().as<JsonObject>();
 
-        if (!channelObject.containsKey("index") || !channelObject["index"].is<int>()) return false;
         if (!channelObject.containsKey("active") || !channelObject["active"].is<bool>()) return false;
         if (!channelObject.containsKey("reverse") || !channelObject["reverse"].is<bool>()) return false;
         if (!channelObject.containsKey("label") || !channelObject["label"].is<String>()) return false;
@@ -710,7 +712,7 @@ JsonDocument Ade7953::meterValuesToJson() {
     for (int i = 0; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active) {
             JsonObject _jsonChannel = _jsonDocument.add<JsonObject>();
-            _jsonChannel["index"] = channelData[i].index;
+            _jsonChannel["index"] = i;
             _jsonChannel["label"] = channelData[i].label;
             _jsonChannel["data"] = singleMeterValuesToJson(i);
         }

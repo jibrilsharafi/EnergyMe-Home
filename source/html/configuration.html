@@ -347,7 +347,7 @@
                     }
                 };
                 generalConfig.isCloudServicesEnabled = document.getElementById("cloudServices").checked;
-                generalConfig.ledBrightness = document.getElementById("ledBrightness").value;
+                generalConfig.ledBrightness = parseInt(document.getElementById("ledBrightness").value);
 
                 xhttp.send(JSON.stringify(generalConfig));
             }
