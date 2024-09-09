@@ -23,8 +23,6 @@ Mqtt::Mqtt(
     CustomTime &customTime
 ) : _ade7953(ade7953), _logger(logger), _customTime(customTime) {}
 
-#ifdef ENERGYME_HOME_SECRETS_H
-
 void Mqtt::begin(String deviceId) {
     _logger.debug("Setting up MQTT...", "mqtt::begin");
 
@@ -38,7 +36,7 @@ void Mqtt::begin(String deviceId) {
     net.setCertificate(aws_iot_core_cert_crt);
     net.setPrivateKey(aws_iot_core_cert_private);
 
-    clientMqtt.setServer(AWS_IOT_CORE_MQTT_ENDPOINT, AWS_IOT_CORE_PORT);
+    clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
 
     clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
     clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
@@ -47,16 +45,6 @@ void Mqtt::begin(String deviceId) {
 
     _isSetupDone = true;
 }
-
-#else
-
-void Mqtt::begin() {
-    _logger.warning("Secrets not available. MQTT setup failed.", "mqtt::setupMqtt");
-}
-
-#endif
-
-#ifdef ENERGYME_HOME_SECRETS_H
 
 void Mqtt::loop() {
     if (!generalConfiguration.isCloudServicesEnabled || restartConfiguration.isRequired) {
@@ -105,14 +93,6 @@ void Mqtt::loop() {
         _checkPublishMqtt();
     }
 }
-
-#else
-
-void Mqtt::mqttLoop() {
-    _logger.verbose("Secrets not available. MQTT loop failed", "mqtt::mqttLoop");
-}
-
-#endif
 
 bool Mqtt::_connectMqtt()
 {
@@ -168,8 +148,6 @@ bool Mqtt::_connectMqtt()
     }
 }
 
-#ifdef ENERGYME_HOME_SECRETS_H
-
 void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topic) {
     _logger.debug("Constructing MQTT topic with rule for %s | %s", "mqtt::_constructMqttTopicWithRule", ruleName, finalTopic);
 
@@ -219,11 +197,8 @@ void Mqtt::_setTopicConnectivity() {
 }
 
 void Mqtt::_setTopicMeter() {
-#ifdef USE_RULE_FOR_TOPIC_CONSTRUCTION // Only topic with basic ingest as it is the only one publishing constantly
-    _constructMqttTopicWithRule(MQTT_RULE_NAME_METER, MQTT_TOPIC_METER, _mqttTopicMeter);
-#else
+    // _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter); FIXME: Uncomment this line
     _constructMqttTopic(MQTT_TOPIC_METER, _mqttTopicMeter);
-#endif
     _logger.debug(_mqttTopicMeter, "mqtt::_setTopicMeter");
 }
 
@@ -246,8 +221,6 @@ void Mqtt::_setTopicGeneralConfiguration() {
     _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration);
     _logger.debug(_mqttTopicGeneralConfiguration, "mqtt::_setTopicGeneralConfiguration");
 }
-
-#endif
 
 void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter) {
     _logger.debug("Converting circular buffer to JSON", "mqtt::_circularBufferToJson");

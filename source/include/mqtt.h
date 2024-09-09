@@ -16,12 +16,6 @@
 #include "structs.h"
 #include "utils.h"
 
-#if __has_include("secrets.h")
-#include "secrets.h"
-#else
-#warning "[EnergyMe-Home] [mqtt.cpp] secrets.h not found. MQTT will not work. See secrets-sample.h"
-#endif
-
 class Mqtt
 {
 public:

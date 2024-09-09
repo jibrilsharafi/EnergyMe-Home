@@ -1,8 +1,5 @@
 .pio
 .vscode
 
-**/secrets.*
-certs/ca.pem
-certs/cert.pem
-certs/private.pem
+secrets
 temp/

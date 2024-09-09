@@ -342,6 +342,8 @@ bool setGeneralConfiguration(JsonDocument& jsonDocument) {
 
     saveGeneralConfigurationToSpiffs();
 
+    publishMqtt.generalConfiguration = true;
+
     logger.debug("General configuration set", "utils::setGeneralConfiguration");
 
     return true;

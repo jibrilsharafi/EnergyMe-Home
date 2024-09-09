@@ -171,4 +171,45 @@
 #define MODBUS_TCP_TIMEOUT 10000 // The timeout for the Modbus TCP server (in milliseconds)
 #define MODBUS_TCP_SERVER_ID 1 // The Modbus TCP server ID
 
+// Cloud services
+// --------------------
+// Basic ingest functionality
+#define AWS_TOPIC "$aws"
+#define MQTT_BASIC_INGEST AWS_TOPIC "/rules"
+
+// EnergyMe - Home | Custom MQTT topics
+// Base topics
+#define MQTT_TOPIC_1 "energyme"
+#define MQTT_TOPIC_2 "home"
+
+// Publish topics
+#define MQTT_TOPIC_METER "meter"
+#define MQTT_TOPIC_STATUS "status"
+#define MQTT_TOPIC_METADATA "metadata"
+#define MQTT_TOPIC_CHANNEL "channel"
+#define MQTT_TOPIC_GENERAL_CONFIGURATION "general-configuration"
+#define MQTT_TOPIC_CONNECTIVITY "connectivity"
+
+// Subscribe topics
+#define MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE "firmware-update"
+
+// MQTT will
+#define MQTT_WILL_QOS 1
+#define MQTT_WILL_RETAIN true
+#define MQTT_WILL_MESSAGE "{\"connectivity\":\"unexpected_offline\"}"
+
+// Provisioning process
+#define ACCEPTED_TOPIC "accepted"
+#define REJECTED_TOPIC "rejected"
+
+#define CERT_CREATE_TOPIC AWS_TOPIC "/certificates/create/json"
+#define CERT_CREATE_ACCEPTED_TOPIC AWS_TOPIC "/certificates/create/json/" ACCEPTED_TOPIC
+#define CERT_CREATE_REJECTED_TOPIC AWS_TOPIC "/certificates/create/json/" REJECTED_TOPIC
+#define PROVISIONING_TOPIC AWS_TOPIC "/provisioning-templates/" THING_GROUP "/provision/json"
+#define PROVISIONING_ACCEPTED_TOPIC AWS_TOPIC "/provisioning-templates/" THING_GROUP "/provision/json/" ACCEPTED_TOPIC
+#define PROVISIONING_REJECTED_TOPIC AWS_TOPIC "/provisioning-templates/" THING_GROUP "/provision/json/" REJECTED_TOPIC
+
+// AWS IoT Core endpoint
+#define AWS_IOT_CORE_PORT 8883
+
 #endif
