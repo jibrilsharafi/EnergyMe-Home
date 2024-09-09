@@ -16,7 +16,7 @@
 #include "constants.h"
 #include "utils.h"
 #include "global.h"
-#include "mqtt.h"
+#include "custommqtt.h"
 #include "binaries.h"
 
 class CustomServer
@@ -27,7 +27,8 @@ public:
         Led &led,
         Ade7953 &ade7953,
         CustomTime &customTime,
-        CustomWifi &customWifi
+        CustomWifi &customWifi,
+        CustomMqtt &customMqtt
     );
 
     void begin();
@@ -50,6 +51,7 @@ private:
     Ade7953 &_ade7953;
     CustomTime &_customTime;
     CustomWifi &_customWifi;
+    CustomMqtt &_customMqtt;
 };
 
 #endif

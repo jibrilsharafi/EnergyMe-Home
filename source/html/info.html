@@ -204,7 +204,9 @@
             document.getElementById('authorEmail').textContent = data.authorEmail;
         }
 
+        // On page load and every 1 second
         fetchData();
+        setInterval(fetchData, 1000);
     </script>
 </body>
 

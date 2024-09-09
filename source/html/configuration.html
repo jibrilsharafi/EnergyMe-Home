@@ -101,6 +101,46 @@
         </div>
 
         <div class="section-box">
+            <h2>Custom MQTT</h2>
+            <p><i>
+                Custom MQTT is used to send meter data to a custom MQTT server. This is useful for integrating the device with your own IoT platform. 
+                <br>
+                <br>
+                The payload content will be the same one returned by the REST API endpoint <a href="/rest/meter" target="_blank">meter</a> 
+                (<a href="/swagger-ui#/Meter/get_rest_meter" target="_blank">swagger</a>).
+            </i></p>
+            <input type="checkbox" id="customMqttEnabled" class="config-input">
+            <label for="customMqttEnabled">Enable custom MQTT</label>
+            <div id="customMqttSettings">
+                <label for="customMqttServer">Server:</label>
+                <input type="text" id="customMqttServer" class="config-input" placeholder="e.g., mqtt.example.com">
+                <br>
+                <label for="customMqttPort">Port:</label>
+                <input type="number" id="customMqttPort" class="config-input" placeholder="e.g., 1883">
+                <br> 
+                <label for="customMqttClientId">Client ID:</label>
+                <input type="text" id="customMqttClientId" class="config-input" placeholder="e.g., client123">
+                <br> 
+                <label for="customMqttTopic">Topic:</label>
+                <input type="text" id="customMqttTopic" class="config-input" placeholder="e.g., home/sensor">
+                <br> 
+                <label for="customMqttFrequency">Frequency (in seconds):</label>
+                <input type="number" id="customMqttFrequency" class="config-input" placeholder="e.g., 60" min="1" max="86400">
+                <br> 
+                <input type="checkbox" id="customMqttUseCredentials" class="config-input">
+                <label for="useCredentials">Use credentials</label>
+                <br>
+                <label for="customMqttUsername">Username:</label>
+                <input type="text" id="customMqttUsername" class="config-input" placeholder="Leave empty if not required">
+                <br> 
+                <label for="customMqttPassword">Password:</label>
+                <input type="password" id="customMqttPassword" class="config-input" placeholder="Leave empty if not required">
+            </div>
+            <button class="buttonForm" onclick="setCustomMqttConfiguration()" id="setCustomMqttConfigurationButton">Set configuration</button>
+
+        </div>
+
+        <div class="section-box">
             <h2>Restart Device</h2>
             <p><i>This will take a few seconds.</i></p>
             <button class="buttonForm" onclick="restart()" id="restart">Restart</button>
@@ -343,6 +383,10 @@
                         } else {
                             alert("Error setting general configuration. Response: " + this.responseText);
                             document.getElementById("setGeneralConfigurationButton").innerHTML = "Set failed!";
+                            setTimeout(function () {
+                                document.getElementById("setGeneralConfigurationButton").innerHTML = "Set configuration";
+                                document.getElementById("setGeneralConfigurationButton").disabled = false;
+                            }, 3000);
                         }
                     }
                 };
@@ -361,8 +405,72 @@
                 output.innerHTML = percentage + "%";
             }
 
-            getGeneralConfiguration();
-            getLogLevel();
+            function getCustomMqttConfiguration() {
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("GET", "/rest/get-custom-mqtt-configuration", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            var customMqttConfig = JSON.parse(this.responseText);
+
+                            document.getElementById("customMqttEnabled").checked = customMqttConfig.enabled;
+                            document.getElementById("customMqttServer").value = customMqttConfig.server;
+                            document.getElementById("customMqttPort").value = customMqttConfig.port;
+                            document.getElementById("customMqttClientId").value = customMqttConfig.clientid;
+                            document.getElementById("customMqttTopic").value = customMqttConfig.topic;
+                            document.getElementById("customMqttFrequency").value = customMqttConfig.frequency;
+                            document.getElementById("customMqttUseCredentials").checked = customMqttConfig.useCredentials;
+                            document.getElementById("customMqttUsername").value = customMqttConfig.username;
+                            document.getElementById("customMqttPassword").value = customMqttConfig.password;
+                        } else {
+                            console.log("Error getting custom MQTT configuration. Response: " + this.responseText);
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function setCustomMqttConfiguration() {
+                document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Setting...";
+                document.getElementById("setCustomMqttConfigurationButton").disabled = true;
+
+                var customMqttConfig = {
+                    "enabled": document.getElementById("customMqttEnabled").checked,
+                    "server": document.getElementById("customMqttServer").value,
+                    "port": parseInt(document.getElementById("customMqttPort").value),
+                    "clientid": document.getElementById("customMqttClientId").value,
+                    "topic": document.getElementById("customMqttTopic").value,
+                    "frequency": parseInt(document.getElementById("customMqttFrequency").value),
+                    "useCredentials": document.getElementById("customMqttUseCredentials").checked,
+                    "username": document.getElementById("customMqttUsername").value,
+                    "password": document.getElementById("customMqttPassword").value
+                };
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/set-custom-mqtt-configuration", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set success!";
+                            setTimeout(function () {
+                                document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
+                                document.getElementById("setCustomMqttConfigurationButton").disabled = false;
+                            }, 3000);
+                        } else {
+                            alert("Error setting custom MQTT configuration. Response: " + this.responseText);
+                            document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set failed!";
+                        }
+                    }
+                };
+                xhttp.send(JSON.stringify(customMqttConfig));
+            }
+
+            document.addEventListener("DOMContentLoaded", function() {
+                getGeneralConfiguration();
+                getLogLevel();
+                getCustomMqttConfiguration();
+            });
+
         </script>
 
     </body>

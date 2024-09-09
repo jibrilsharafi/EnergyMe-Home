@@ -107,6 +107,29 @@ struct PublishMqtt
 
   PublishMqtt() : connectivity(true), meter(true), status(true), metadata(true), channel(true), generalConfiguration(true) {} // Set default to true to publish everything on first connection
 };
+
+struct CustomMqttConfiguration {
+    bool enabled;
+    String server;
+    int port;
+    String clientid;
+    String topic;
+    int frequency;
+    bool useCredentials;
+    String username;
+    String password;
+
+    CustomMqttConfiguration() 
+        : enabled(false), 
+          server(String("test.mosquitto.org")), 
+          port(1883), 
+          clientid(String("")),
+          topic(String("meter")), 
+          frequency(60),
+          useCredentials(false),
+          username(String("")), 
+          password(String("")) {}
+};
   
 
 #endif

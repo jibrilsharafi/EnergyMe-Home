@@ -5,7 +5,8 @@ CustomServer::CustomServer(
     Led &led,
     Ade7953 &ade7953,
     CustomTime &customTime,
-    CustomWifi &customWifi) : _logger(logger), _led(led), _ade7953(ade7953), _customTime(customTime), _customWifi(customWifi) {}
+    CustomWifi &customWifi,
+    CustomMqtt &customMqtt) : _logger(logger), _led(led), _ade7953(ade7953), _customTime(customTime), _customWifi(customWifi), _customMqtt(customMqtt) {}
 
 void CustomServer::begin()
 {
@@ -438,6 +439,12 @@ void CustomServer::_setRestApi()
         _customWifi.resetWifi();
         setRestartEsp32("customserver::_setRestApi", "Request to erase WiFi credentials from REST API"); });
 
+    server.on("/rest/get-custom-mqtt-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get custom MQTT configuration from REST API", "customserver::_setRestApi::/rest/get-custom-mqtt-configuration", LogLevel::DEBUG, request);
+
+        _serveJsonFile(request, CUSTOM_MQTT_CONFIGURATION_JSON_PATH); });
+
     server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
         if (index == 0) {
             // This is the first chunk of data, initialize the buffer
@@ -496,6 +503,14 @@ void CustomServer::_setRestApi()
                 } else {
                     request->send(400, "application/json", "{\"message\":\"Invalid channel data\"}");
                 }    
+            } else if (request->url() == "/rest/set-custom-mqtt-configuration") {
+                _serverLog("Request to set custom MQTT configuration from REST API (POST)", "customserver::_setRestApi::onRequestBody::/rest/set-custom-mqtt-configuration", LogLevel::INFO, request);
+    
+                if (_customMqtt.setConfiguration(_jsonDocument)) {
+                    request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
+                } else {
+                    request->send(400, "application/json", "{\"message\":\"Invalid configuration\"}");
+                }         
             } else {
                 _serverLog(
                     ("Request to POST to unknown endpoint: " + request->url()).c_str(),

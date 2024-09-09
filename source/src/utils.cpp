@@ -54,7 +54,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     }
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){
-        logger.warning("%s JSON is null", "utils::deserializeJsonFromSpiffs", path);
+        logger.debug("%s JSON is null", "utils::deserializeJsonFromSpiffs", path);
     }
     
     String _jsonString;
@@ -208,6 +208,7 @@ bool checkAllFiles() {
     if (!SPIFFS.exists(CONFIGURATION_ADE7953_JSON_PATH)) return true;
     if (!SPIFFS.exists(CALIBRATION_JSON_PATH)) return true;
     if (!SPIFFS.exists(CHANNEL_DATA_JSON_PATH)) return true;
+    if (!SPIFFS.exists(CUSTOM_MQTT_CONFIGURATION_JSON_PATH)) return true;
     if (!SPIFFS.exists(ENERGY_JSON_PATH)) return true;
     if (!SPIFFS.exists(DAILY_ENERGY_JSON_PATH)) return true;
     if (!SPIFFS.exists(FW_UPDATE_INFO_JSON_PATH)) return true;
@@ -338,6 +339,8 @@ bool setGeneralConfiguration(JsonDocument& jsonDocument) {
     generalConfiguration.ledBrightness = jsonDocument["ledBrightness"].as<int>();
 
     applyGeneralConfiguration();
+
+    saveGeneralConfigurationToSpiffs();
 
     logger.debug("General configuration set", "utils::setGeneralConfiguration");
 
@@ -518,4 +521,48 @@ String getDeviceId() {
     String _macAddress = WiFi.macAddress();
     _macAddress.replace(":", "");
     return _macAddress;
+}
+
+
+
+const char* getMqttStateReason(int state)
+{
+
+    // Full description of the MQTT state codes
+    // -4 : MQTT_CONNECTION_TIMEOUT - the server didn't respond within the keepalive time
+    // -3 : MQTT_CONNECTION_LOST - the network connection was broken
+    // -2 : MQTT_CONNECT_FAILED - the network connection failed
+    // -1 : MQTT_DISCONNECTED - the client is disconnected cleanly
+    // 0 : MQTT_CONNECTED - the client is connected
+    // 1 : MQTT_CONNECT_BAD_PROTOCOL - the server doesn't support the requested version of MQTT
+    // 2 : MQTT_CONNECT_BAD_CLIENT_ID - the server rejected the client identifier
+    // 3 : MQTT_CONNECT_UNAVAILABLE - the server was unable to accept the connection
+    // 4 : MQTT_CONNECT_BAD_CREDENTIALS - the username/password were rejected
+    // 5 : MQTT_CONNECT_UNAUTHORIZED - the client was not authorized to connect
+
+    switch (state)
+    {
+    case -4:
+        return "MQTT_CONNECTION_TIMEOUT";
+    case -3:
+        return "MQTT_CONNECTION_LOST";
+    case -2:
+        return "MQTT_CONNECT_FAILED";
+    case -1:
+        return "MQTT_DISCONNECTED";
+    case 0:
+        return "MQTT_CONNECTED";
+    case 1:
+        return "MQTT_CONNECT_BAD_PROTOCOL";
+    case 2:
+        return "MQTT_CONNECT_BAD_CLIENT_ID";
+    case 3:
+        return "MQTT_CONNECT_UNAVAILABLE";
+    case 4:
+        return "MQTT_CONNECT_BAD_CREDENTIALS";
+    case 5:
+        return "MQTT_CONNECT_UNAUTHORIZED";
+    default:
+        return "Unknown MQTT state";
+    }
 }

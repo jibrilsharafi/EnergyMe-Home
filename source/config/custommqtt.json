@@ -1,0 +1,11 @@
+{
+    "enabled": false,
+    "server": "test.mosquitto.org",
+    "port": 1883,
+    "clientid": "energyme-home",
+    "topic": "meter",
+    "frequency": 15,
+    "useCredentials": false,
+    "username": "",
+    "password": ""
+}

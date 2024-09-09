@@ -59,4 +59,6 @@ bool isLatestFirmwareInstalled();
 
 String getDeviceId();
 
+const char* getMqttStateReason(int state);
+
 #endif

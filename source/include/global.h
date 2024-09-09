@@ -21,9 +21,13 @@ extern int currentChannel;
 extern int previousChannel;
 
 extern GeneralConfiguration generalConfiguration;
+extern CustomMqttConfiguration customMqttConfiguration;
 
 extern WiFiClientSecure net;
 extern PubSubClient clientMqtt; // These must be global to ensure proper working of MQTT
+
+extern WiFiClient customNet;
+extern PubSubClient customClientMqtt;
 
 extern AsyncWebServer server;
 

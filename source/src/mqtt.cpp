@@ -50,9 +50,8 @@ void Mqtt::begin(String deviceId) {
 
 #else
 
-bool Mqtt::begin() {
+void Mqtt::begin() {
     _logger.warning("Secrets not available. MQTT setup failed.", "mqtt::setupMqtt");
-    return false;
 }
 
 #endif
@@ -159,7 +158,7 @@ bool Mqtt::_connectMqtt()
             "mqtt::_connectMqtt",
             _mqttConnectionAttempt + 1,
             MQTT_MAX_CONNECTION_ATTEMPT,
-            _getMqttStateReason(clientMqtt.state())
+            getMqttStateReason(clientMqtt.state())
         );
 
         _lastMillisMqttFailed = millis();
@@ -400,7 +399,7 @@ bool Mqtt::_publishMessage(const char* topic, const char* message) {
     }
 
     if (!clientMqtt.connected()) {
-        _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", "mqtt::_publishMessage", _getMqttStateReason(clientMqtt.state()), topic);
+        _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", "mqtt::_publishMessage", getMqttStateReason(clientMqtt.state()), topic);
         return false;
     }
 
@@ -456,34 +455,5 @@ void Mqtt::_subscribeUpdateFirmware() {
     
     if (!clientMqtt.subscribe(_topic, 1)) { // Subscribe with QoS 1
         _logger.warning("Failed to subscribe to firmware update topic", "mqtt::_subscribeUpdateFirmware");
-    }
-}
-
-const char* Mqtt::_getMqttStateReason(int state) {
-
-    // Full description of the MQTT state codes
-    // -4 : MQTT_CONNECTION_TIMEOUT - the server didn't respond within the keepalive time
-    // -3 : MQTT_CONNECTION_LOST - the network connection was broken
-    // -2 : MQTT_CONNECT_FAILED - the network connection failed
-    // -1 : MQTT_DISCONNECTED - the client is disconnected cleanly
-    // 0 : MQTT_CONNECTED - the client is connected
-    // 1 : MQTT_CONNECT_BAD_PROTOCOL - the server doesn't support the requested version of MQTT
-    // 2 : MQTT_CONNECT_BAD_CLIENT_ID - the server rejected the client identifier
-    // 3 : MQTT_CONNECT_UNAVAILABLE - the server was unable to accept the connection
-    // 4 : MQTT_CONNECT_BAD_CREDENTIALS - the username/password were rejected
-    // 5 : MQTT_CONNECT_UNAUTHORIZED - the client was not authorized to connect
-
-    switch (state) {
-        case -4: return "MQTT_CONNECTION_TIMEOUT";
-        case -3: return "MQTT_CONNECTION_LOST";
-        case -2: return "MQTT_CONNECT_FAILED";
-        case -1: return "MQTT_DISCONNECTED";
-        case 0: return "MQTT_CONNECTED";
-        case 1: return "MQTT_CONNECT_BAD_PROTOCOL";
-        case 2: return "MQTT_CONNECT_BAD_CLIENT_ID";
-        case 3: return "MQTT_CONNECT_UNAVAILABLE";
-        case 4: return "MQTT_CONNECT_BAD_CREDENTIALS";
-        case 5: return "MQTT_CONNECT_UNAUTHORIZED";
-        default: return "Unknown MQTT state";
     }
 }

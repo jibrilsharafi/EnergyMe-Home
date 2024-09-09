@@ -11,6 +11,7 @@
 #include "led.h"
 #include "modbustcp.h"
 #include "mqtt.h"
+#include "custommqtt.h"
 #include "multiplexer.h"
 #include "structs.h"
 #include "utils.h"
@@ -25,12 +26,17 @@ int currentChannel = 0;
 int previousChannel = 0;
 
 GeneralConfiguration generalConfiguration;
+CustomMqttConfiguration customMqttConfiguration;
 
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient clientMqtt(net);
-AsyncWebServer server(80);
+
+WiFiClient customNet;
+PubSubClient customClientMqtt(customNet);
 
 CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;
+
+AsyncWebServer server(80);
 
 AdvancedLogger logger(
   LOG_PATH,
@@ -84,18 +90,24 @@ ModbusTcp modbusTcp(
   customTime
 );
 
-CustomServer customServer(
-  logger,
-  led,
+CustomMqtt customMqtt(
   ade7953,
-  customTime,
-  customWifi
+  logger
 );
 
 Mqtt mqtt(
   ade7953,
   logger,
   customTime
+);
+
+CustomServer customServer(
+  logger,
+  led,
+  ade7953,
+  customTime,
+  customWifi,
+  customMqtt
 );
 
 // Main functions
@@ -135,6 +147,8 @@ void setup() {
   }
 
   // Create format.txt file to format SPIFFS. If the setup is successful, the file will be removed
+  // Otherwise, to prevent the device from getting stuck in a boot loop, the file will be checked
+  // and the device will be formatted if the file is present
   File file = SPIFFS.open("/format.txt", FILE_WRITE);
   if (!file) {
     Serial.println("There was an error opening the file for writing");
@@ -216,13 +230,17 @@ void setup() {
   modbusTcp.begin();
   logger.info("Modbus TCP setup done", "main::setup");
 
-  logger.info("Setting up MQTT...", "main::setup");
   if (generalConfiguration.isCloudServicesEnabled) {
+    logger.info("Setting up MQTT...", "main::setup");
     mqtt.begin(getDeviceId());
     logger.info("MQTT setup done", "main::setup");
   } else {
-    logger.warning("Cloud services not enabled", "main::setup");
+    logger.info("Cloud services not enabled", "main::setup");
   }
+
+  logger.info("Setting up custom MQTT...", "main::setup");
+  customMqtt.setup();
+  logger.info("Custom MQTT setup done", "main::setup");
 
   isFirstSetup = false;
 
@@ -236,6 +254,7 @@ void setup() {
 void loop() {
   customWifi.loop();
   mqtt.loop();
+  customMqtt.loop();
   ade7953.loop();
   
   if (ade7953.isLinecycFinished()) {

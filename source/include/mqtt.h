@@ -61,8 +61,6 @@ private:
     void _subscribeUpdateFirmware();
     void _subscribeToTopics();
 
-    const char* _getMqttStateReason(int state);
-
     void _constructMqttTopicWithRule(const char *ruleName, const char *finalTopic, char *topic);
     void _constructMqttTopic(const char *finalTopic, char *topic);
 
