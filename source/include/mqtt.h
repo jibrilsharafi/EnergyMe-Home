@@ -50,7 +50,7 @@ private:
     void _setTopicChannel();
     void _setTopicGeneralConfiguration();
 
-    bool _publishMessage(const char *topic, const char *message);
+    bool _publishMessage(const char *topic, const char *message, bool retain = false);
 
     void _subscribeUpdateFirmware();
     void _subscribeToTopics();

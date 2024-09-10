@@ -267,7 +267,7 @@ void Mqtt::_publishConnectivity(bool isOnline) {
     String _connectivityMessage;
     serializeJson(_jsonDocument, _connectivityMessage);
 
-    if (_publishMessage(_mqttTopicConnectivity, _connectivityMessage.c_str())) {publishMqtt.connectivity = false;}
+    if (_publishMessage(_mqttTopicConnectivity, _connectivityMessage.c_str(), true)) {publishMqtt.connectivity = false;} // Publish with retain
 
     _logger.debug("Connectivity published to MQTT", "mqtt::_publishConnectivity");
 }
@@ -359,7 +359,7 @@ void Mqtt::_publishGeneralConfiguration() {
     _logger.debug("General configuration published to MQTT", "mqtt::_publishGeneralConfiguration");
 }
 
-bool Mqtt::_publishMessage(const char* topic, const char* message) {
+bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) {
     _logger.debug(
         "Publishing message to topic %s",
         "mqtt::_publishMessage",
@@ -376,7 +376,7 @@ bool Mqtt::_publishMessage(const char* topic, const char* message) {
         return false;
     }
 
-    if (!clientMqtt.publish(topic, message)) {
+    if (!clientMqtt.publish(topic, message, retain)) {
         _logger.error("Failed to publish message", "mqtt::_publishMessage");
         return false;
     }
