@@ -81,6 +81,7 @@ void Mqtt::loop() {
                 _logger.verbose("MQTT connection failed recently. Skipping", "mqtt::_connectMqtt");
                 return;
             }
+            _logger.warning("MQTT client not connected. Attempting to reconnect...", "mqtt::mqttLoop");
 
             if (!_connectMqtt()) return;
         }
@@ -104,14 +105,6 @@ bool Mqtt::_connectMqtt()
         _isSetupDone = false;
         _mqttConnectionAttempt = 0;
 
-        // Reset to true for next reconnection
-        publishMqtt.connectivity = true;
-        publishMqtt.meter = true;
-        publishMqtt.status = true;
-        publishMqtt.metadata = true;
-        publishMqtt.channel = true;
-        publishMqtt.generalConfiguration = true;
-
         return false;
     }
 
@@ -128,6 +121,13 @@ bool Mqtt::_connectMqtt()
         _mqttConnectionAttempt = 0;
 
         _subscribeToTopics();
+
+        publishMqtt.connectivity = true;
+        publishMqtt.meter = true;
+        publishMqtt.status = true;
+        publishMqtt.metadata = true;
+        publishMqtt.channel = true;
+        publishMqtt.generalConfiguration = true;
 
         return true;
     }
@@ -426,7 +426,7 @@ void Mqtt::_subscribeUpdateFirmware() {
     char _topic[MQTT_MAX_TOPIC_LENGTH];
     _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE, _topic);
     
-    if (!clientMqtt.subscribe(_topic, 1)) { // Subscribe with QoS 1
+    if (!clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE_QOS)) {
         _logger.warning("Failed to subscribe to firmware update topic", "mqtt::_subscribeUpdateFirmware");
     }
 }

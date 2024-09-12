@@ -120,15 +120,15 @@ struct CustomMqttConfiguration {
     String password;
 
     CustomMqttConfiguration() 
-        : enabled(false), 
-          server(String("test.mosquitto.org")), 
-          port(1883), 
-          clientid(String("")),
-          topic(String("meter")), 
-          frequency(60),
-          useCredentials(false),
-          username(String("")), 
-          password(String("")) {}
+        : enabled(DEFAULT_IS_CUSTOM_MQTT_ENABLED), 
+          server(String(MQTT_CUSTOM_SERVER_DEFAULT)), 
+          port(MQTT_CUSTOM_PORT_DEFAULT),
+          clientid(String(MQTT_CUSTOM_CLIENTID_DEFAULT)),
+          topic(String(MQTT_CUSTOM_TOPIC_DEFAULT)),
+          frequency(MQTT_CUSTOM_FREQUENCY_DEFAULT),
+          useCredentials(MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT),
+          username(String(MQTT_CUSTOM_USERNAME_DEFAULT)),
+          password(String(MQTT_CUSTOM_PASSWORD_DEFAULT)) {}
 };
   
 

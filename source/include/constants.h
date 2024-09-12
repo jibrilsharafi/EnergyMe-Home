@@ -14,12 +14,12 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "04"
-#define FIRMWARE_BUILD_VERSION_PATCH "30"
+#define FIRMWARE_BUILD_VERSION_PATCH "31"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
 #define FIRMWARE_BUILD_DATE_MONTH "09"
-#define FIRMWARE_BUILD_DATE_DAY "10"
+#define FIRMWARE_BUILD_DATE_DAY "12"
 #define FIRMWARE_BUILD_DATE FIRMWARE_BUILD_DATE_YEAR "-" FIRMWARE_BUILD_DATE_MONTH "-" FIRMWARE_BUILD_DATE_DAY
 
 // Measurements
@@ -55,7 +55,6 @@
 #define LOG_PATH "/AdvancedLogger/log.txt"
 #define LOG_CONFIG_PATH "/AdvancedLogger/config.txt"
 #define LOG_TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
-#define LOG_FILE_MAX_LENGTH 1000 // In lines
 
 // Time
 #define NTP_SERVER "pool.ntp.org"
@@ -81,16 +80,13 @@
 // MDNS
 #define MDNS_HOSTNAME "energyme"
 
-// Cloud services
+// MQTT
 #define DEFAULT_IS_CLOUD_SERVICES_ENABLED false
 #define MAX_INTERVAL_METER_PUBLISH 30000 // 30 seconds - The maximum interval between two meter payloads
 #define MAX_INTERVAL_STATUS_PUBLISH 3600000 // 1 hour - The interval between two status publish
-
-// MQTT
-#define MQTT_MAX_CONNECTION_ATTEMPT 5 // The maximum number of attempts to connect to the MQTT server
-#define MQTT_OVERRIDE_KEEPALIVE 15 // The default value is 15 seconds and it is fine for most cases
-#define MQTT_STATUS_PUBLISH_INTERVAL 3600 // Time between each status publish (in seconds)
-#define MQTT_MIN_CONNECTION_INTERVAL 10000 // In milliseconds, representing the minimum interval between two connection attempts
+#define MQTT_MAX_CONNECTION_ATTEMPT 3 // The maximum number of attempts to connect to the MQTT server
+#define MQTT_OVERRIDE_KEEPALIVE 30 // Same value as the maximum interval between two meter payloads
+#define MQTT_MIN_CONNECTION_INTERVAL 5000 // In milliseconds, representing the minimum interval between two connection attempts
 #define MQTT_LOOP_INTERVAL 100 // In milliseconds, representing the interval between two MQTT loop checks
 #define PAYLOAD_METER_MAX_NUMBER_POINTS 30 // The maximum number of points that can be sent in a single payload
 #define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
@@ -98,6 +94,14 @@
 
 // Custom MQTT
 #define DEFAULT_IS_CUSTOM_MQTT_ENABLED false
+#define MQTT_CUSTOM_SERVER_DEFAULT "test.mosquitto.org"
+#define MQTT_CUSTOM_PORT_DEFAULT 1883
+#define MQTT_CUSTOM_CLIENTID_DEFAULT "energyme-home"
+#define MQTT_CUSTOM_TOPIC_DEFAULT "topic"
+#define MQTT_CUSTOM_FREQUENCY_DEFAULT 30000 // 30 seconds
+#define MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT false
+#define MQTT_CUSTOM_USERNAME_DEFAULT "username"
+#define MQTT_CUSTOM_PASSWORD_DEFAULT "password"
 #define MQTT_CUSTOM_MAX_CONNECTION_ATTEMPT 5 // The maximum number of attempts to connect to the custom MQTT server
 #define MQTT_CUSTOM_LOOP_INTERVAL 100 // In milliseconds, representing the interval between two MQTT loop checks
 #define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL 10000 // In milliseconds, representing the minimum interval between two connection attempts
@@ -109,7 +113,7 @@
 // ESP32 status
 #define MINIMUM_FREE_HEAP_SIZE 10000 // Below this value (in bytes), the ESP32 will restart
 #define MINIMUM_FREE_SPIFFS_SIZE 10000 // Below this value (in bytes), the ESP32 will clear the log
-#define ESP32_RESTART_DELAY 1000 // The delay before restarting the ESP32 (in milliseconds) after a restart request
+#define ESP32_RESTART_DELAY 1000 // The delay before restarting the ESP32 (in milliseconds) after a restart request, needed to allow the ESP32 to finish the current operations
 
 // Multiplexer
 // --------------------
@@ -192,6 +196,7 @@
 
 // Subscribe topics
 #define MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE "firmware-update"
+#define MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE_QOS 1
 
 // MQTT will
 #define MQTT_WILL_QOS 1
