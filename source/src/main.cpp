@@ -190,7 +190,7 @@ void setup() {
   logger.info("Multiplexer setup done", "main::setup");
   
   logger.info("Setting up ADE7953...", "main::setup");
-  if (!ade7953.begin()) { //FIXME: probably here everytime the channel data is resetted 
+  if (!ade7953.begin()) {
     logger.fatal("ADE7953 initialization failed!", "main::setup");
   } else {
     logger.info("ADE7953 setup done", "main::setup");

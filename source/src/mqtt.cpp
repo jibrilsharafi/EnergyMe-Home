@@ -197,8 +197,7 @@ void Mqtt::_setTopicConnectivity() {
 }
 
 void Mqtt::_setTopicMeter() {
-    // _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter); FIXME: Uncomment this line
-    _constructMqttTopic(MQTT_TOPIC_METER, _mqttTopicMeter);
+    _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter);
     _logger.debug(_mqttTopicMeter, "mqtt::_setTopicMeter");
 }
 

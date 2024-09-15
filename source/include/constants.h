@@ -14,12 +14,12 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "04"
-#define FIRMWARE_BUILD_VERSION_PATCH "31"
+#define FIRMWARE_BUILD_VERSION_PATCH "32"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
 #define FIRMWARE_BUILD_DATE_MONTH "09"
-#define FIRMWARE_BUILD_DATE_DAY "12"
+#define FIRMWARE_BUILD_DATE_DAY "16"
 #define FIRMWARE_BUILD_DATE FIRMWARE_BUILD_DATE_YEAR "-" FIRMWARE_BUILD_DATE_MONTH "-" FIRMWARE_BUILD_DATE_DAY
 
 // Measurements
@@ -73,21 +73,21 @@
 #define LED_RESOLUTION 8
 
 // WiFi
-#define WIFI_CONFIG_PORTAL_TIMEOUT 300 // 5 minutes
+#define WIFI_CONFIG_PORTAL_TIMEOUT 300 // In seconds
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
-#define WIFI_LOOP_INTERVAL 5000
+#define WIFI_LOOP_INTERVAL 5000 // In milliseconds
 
 // MDNS
 #define MDNS_HOSTNAME "energyme"
 
 // MQTT
 #define DEFAULT_IS_CLOUD_SERVICES_ENABLED false
-#define MAX_INTERVAL_METER_PUBLISH 30000 // 30 seconds - The maximum interval between two meter payloads
-#define MAX_INTERVAL_STATUS_PUBLISH 3600000 // 1 hour - The interval between two status publish
+#define MAX_INTERVAL_METER_PUBLISH 30000 // The maximum interval between two meter payloads (in milliseconds)
+#define MAX_INTERVAL_STATUS_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
 #define MQTT_MAX_CONNECTION_ATTEMPT 3 // The maximum number of attempts to connect to the MQTT server
-#define MQTT_OVERRIDE_KEEPALIVE 30 // Same value as the maximum interval between two meter payloads
-#define MQTT_MIN_CONNECTION_INTERVAL 5000 // In milliseconds, representing the minimum interval between two connection attempts
-#define MQTT_LOOP_INTERVAL 100 // In milliseconds, representing the interval between two MQTT loop checks
+#define MQTT_OVERRIDE_KEEPALIVE 30 // Minimum value supported by AWS IoT Core (in seconds) 
+#define MQTT_MIN_CONNECTION_INTERVAL 5000 // Minimum interval between two connection attempts (in milliseconds)
+#define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks (in milliseconds)
 #define PAYLOAD_METER_MAX_NUMBER_POINTS 30 // The maximum number of points that can be sent in a single payload
 #define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
 #define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
@@ -98,13 +98,13 @@
 #define MQTT_CUSTOM_PORT_DEFAULT 1883
 #define MQTT_CUSTOM_CLIENTID_DEFAULT "energyme-home"
 #define MQTT_CUSTOM_TOPIC_DEFAULT "topic"
-#define MQTT_CUSTOM_FREQUENCY_DEFAULT 30000 // 30 seconds
+#define MQTT_CUSTOM_FREQUENCY_DEFAULT 30000 // In milliseconds
 #define MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT false
 #define MQTT_CUSTOM_USERNAME_DEFAULT "username"
 #define MQTT_CUSTOM_PASSWORD_DEFAULT "password"
 #define MQTT_CUSTOM_MAX_CONNECTION_ATTEMPT 5 // The maximum number of attempts to connect to the custom MQTT server
-#define MQTT_CUSTOM_LOOP_INTERVAL 100 // In milliseconds, representing the interval between two MQTT loop checks
-#define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL 10000 // In milliseconds, representing the minimum interval between two connection attempts
+#define MQTT_CUSTOM_LOOP_INTERVAL 100 // Interval between two MQTT loop checks (in milliseconds)
+#define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL 10000 // Minimum interval between two connection attempts (in milliseconds)
 #define MQTT_CUSTOM_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
 
 // Saving date
@@ -202,17 +202,6 @@
 #define MQTT_WILL_QOS 1
 #define MQTT_WILL_RETAIN true
 #define MQTT_WILL_MESSAGE "{\"connectivity\":\"unexpected_offline\"}"
-
-// Provisioning process
-#define ACCEPTED_TOPIC "accepted"
-#define REJECTED_TOPIC "rejected"
-
-#define CERT_CREATE_TOPIC AWS_TOPIC "/certificates/create/json"
-#define CERT_CREATE_ACCEPTED_TOPIC AWS_TOPIC "/certificates/create/json/" ACCEPTED_TOPIC
-#define CERT_CREATE_REJECTED_TOPIC AWS_TOPIC "/certificates/create/json/" REJECTED_TOPIC
-#define PROVISIONING_TOPIC AWS_TOPIC "/provisioning-templates/" THING_GROUP "/provision/json"
-#define PROVISIONING_ACCEPTED_TOPIC AWS_TOPIC "/provisioning-templates/" THING_GROUP "/provision/json/" ACCEPTED_TOPIC
-#define PROVISIONING_REJECTED_TOPIC AWS_TOPIC "/provisioning-templates/" THING_GROUP "/provision/json/" REJECTED_TOPIC
 
 // AWS IoT Core endpoint
 #define AWS_IOT_CORE_PORT 8883
