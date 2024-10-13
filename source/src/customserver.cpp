@@ -137,9 +137,16 @@ void CustomServer::_setHtmlPages()
 
 void CustomServer::_setOta()
 {
-
     server.on("/do-update", HTTP_POST, [this](AsyncWebServerRequest *request) {}, [this](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
-               { _handleDoUpdate(request, filename, index, data, len, final); });
+               {
+                    // If the md5 is included in the request and it is 32 characters exactly, use it
+                    if (request->hasParam("md5", true) && request->getParam("md5", true)->value().length() == 32)
+                    {
+                        _handleDoUpdate(request, filename, index, data, len, final, request->getParam("md5", true)->value().c_str());
+                    } else {
+                        _handleDoUpdate(request, filename, index, data, len, final, "");
+                    }                
+               });
 }
 
 void CustomServer::_setRestApi()
@@ -605,40 +612,35 @@ void CustomServer::_setOtherEndpoints()
         request->send(404, "text/plain", "Not found"); });
 }
 
-void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
+void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final, const char *md5)
 {
     _led.block();
     _led.setPurple(true);
 
+    Update.setMD5(md5); // No checks needed as the setMD5 function does it
+
     if (!index)
     {
-        int _cmd;
-        if (filename.indexOf("spiffs") > -1)
-        {
-            _onUpdateFailed(request, "SPIFFS update is unsupported");
-            return;
-        }
-        else if (filename.indexOf("firmware") > -1)
+        if (filename.indexOf(".bin") > -1)
         {
             _logger.warning("Update requested for firmware", "customserver::handleDoUpdate");
-            _cmd = U_FLASH;
         }
         else
         {
-            _onUpdateFailed(request, "Unknown file type");
+            _onUpdateFailed(request, "File must be in .bin format");
             return;
         }
 
-        if (!Update.begin(UPDATE_SIZE_UNKNOWN, _cmd))
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH))
         {
-            _onUpdateFailed(request, "Error during update begin");
+            _onUpdateFailed(request, Update.errorString());
             return;
         }
     }
 
     if (Update.write(data, len) != len)
     {
-        _onUpdateFailed(request, "Data length mismatch");
+        _onUpdateFailed(request, Update.errorString());
         return;
     }
 
@@ -646,7 +648,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
     {
         if (!Update.end(true))
         {
-            _onUpdateFailed(request, "Error during last part of update");
+            _onUpdateFailed(request, Update.errorString());
         }
         else
         {
@@ -689,7 +691,7 @@ void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *r
     request->send(400, "application/json", "{\"status\":\"failed\", \"reason\":\"" + String(reason) + "\"}");
 
     Update.printError(Serial);
-    _logger.error("Update fai_led. Reason: %s", "customserver::_onUpdateFailed", reason);
+    _logger.warning("Update failed, keeping current firmware. Reason: %s", "customserver::_onUpdateFailed", reason);
     _updateJsonFirmwareStatus("failed", reason);
 
     for (int i = 0; i < 3; i++)

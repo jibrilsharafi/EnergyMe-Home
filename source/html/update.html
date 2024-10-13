@@ -122,6 +122,7 @@
         <p id="no-status" class="light-grey-box">No update status info available</p>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
     <script>
         function getLoadingMessage() {
             return "Please wait, this operation usually takes 10-20 seconds.<br>In the meantime, did you know that...<br><br>" + getRandomFact();
@@ -156,32 +157,57 @@
             document.getElementById("submit").disabled = true;
             var previousColor = document.getElementById("submit").style.backgroundColor;
 
-            var formData = new FormData(event.target);
+            var fileInput = document.getElementById('file');
+            var file = fileInput.files[0];
 
-            fetch('/do-update', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('loading-overlay').style.display = 'none';
-                resultMessageBox.style.display = 'block';                    
+            function proceedWithUpdate(md5) {
+                var formData = new FormData(event.target);
+                var url = '/do-update' + (md5 ? '?md5=' + encodeURIComponent(md5) : '');
 
-                if (data.status === 'success') {
-                    resultMessageBox.style.backgroundColor = '#d4edda';
-                    resultMessageBox.style.color = '#155724';
-                    resultMessageBox.innerHTML = 'Update successful! Redirecting in 5 seconds...';
+                fetch(url, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    resultMessageBox.style.display = 'block';                    
 
-                    document.getElementById("submit").value = "Update successful";
-                    document.getElementById("submit").style.backgroundColor = '#28a74550';
+                    if (data.status === 'success') {
+                        resultMessageBox.style.backgroundColor = '#d4edda';
+                        resultMessageBox.style.color = '#155724';
+                        resultMessageBox.innerHTML = 'Update successful! Redirecting in 5 seconds...';
 
-                    setTimeout(function() {
-                        window.location.href = '/';
-                    }, 7000);
-                } else {
+                        document.getElementById("submit").value = "Update successful";
+                        document.getElementById("submit").style.backgroundColor = '#28a74550';
+
+                        setTimeout(function() {
+                            window.location.href = '/';
+                        }, 7000);
+                    } else {
+                        resultMessageBox.style.backgroundColor = '#f8d7da';
+                        resultMessageBox.style.color = '#721c24';
+                        resultMessageBox.innerHTML = 'Update failed: ' + data.reason;
+
+                        document.getElementById("submit").value = "Update failed";
+                        document.getElementById("submit").style.backgroundColor = '#dc354550';
+
+                        setTimeout(function() {
+                            document.getElementById("submit").value = "Update";
+                            document.getElementById("submit").disabled = false;
+                            document.getElementById("submit").style.backgroundColor = previousColor;
+
+                            resultMessageBox.style.display = 'none';
+                        }, 5000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    
                     resultMessageBox.style.backgroundColor = '#f8d7da';
                     resultMessageBox.style.color = '#721c24';
-                    resultMessageBox.innerHTML = 'Update failed: ' + data.reason;
+                    resultMessageBox.innerHTML = 'Update failed: ' + error.message;
 
                     document.getElementById("submit").value = "Update failed";
                     document.getElementById("submit").style.backgroundColor = '#dc354550';
@@ -193,27 +219,25 @@
 
                         resultMessageBox.style.display = 'none';
                     }, 5000);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                document.getElementById('loading-overlay').style.display = 'none';
-                
-                resultMessageBox.style.backgroundColor = '#f8d7da';
-                resultMessageBox.style.color = '#721c24';
-                resultMessageBox.innerHTML = 'Update failed: ' + error.message;
+                });
+            }
 
-                document.getElementById("submit").value = "Update failed";
-                document.getElementById("submit").style.backgroundColor = '#dc354550';
-
-                setTimeout(function() {
-                    document.getElementById("submit").value = "Update";
-                    document.getElementById("submit").disabled = false;
-                    document.getElementById("submit").style.backgroundColor = previousColor;
-
-                    resultMessageBox.style.display = 'none';
-                }, 5000);
-            });
+            if (typeof SparkMD5 !== 'undefined') {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    var binary = e.target.result;
+                    var md5 = SparkMD5.ArrayBuffer.hash(binary);
+                    proceedWithUpdate(md5);
+                };
+                reader.onerror = function() {
+                    console.warn('Failed to read file for MD5 calculation. Proceeding without MD5.');
+                    proceedWithUpdate('');
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                console.warn('SparkMD5 not available. Proceeding without MD5 calculation.');
+                proceedWithUpdate('');
+            }
 
             return false; // Prevent the form from submitting the traditional way
         }
