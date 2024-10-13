@@ -14,6 +14,8 @@ void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
 
         _file.print(message);
         _file.close();
+    } else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_RESTART)) {
+        setRestartEsp32("subscribeCallback", "Restart requested from MQTT");
     }
 }
 
@@ -425,7 +427,22 @@ void Mqtt::_subscribeUpdateFirmware() {
     char _topic[MQTT_MAX_TOPIC_LENGTH];
     _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE, _topic);
     
-    if (!clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE_QOS)) {
+    if (!clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
         _logger.warning("Failed to subscribe to firmware update topic", "mqtt::_subscribeUpdateFirmware");
     }
 }
+
+void Mqtt::_subscribeRestart() {
+    char _topic[MQTT_MAX_TOPIC_LENGTH];
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_RESTART, _topic);
+    
+    if (!clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+        _logger.warning("Failed to subscribe to restart topic", "mqtt::_subscribeRestart");
+    }
+}
+
+// TODO: 
+// - claim provisioning
+// - implement an automatic MQTT reconnection if the reconnection failed
+// - add possibility to do FOTA by downloading from HTTPS and then updating the firmware. Check the HttpsOTAUpdate.h and Updater.h
+// - implement rollback. Check the Updater.h and HttpsOTAUpdate.h which have many interesting features

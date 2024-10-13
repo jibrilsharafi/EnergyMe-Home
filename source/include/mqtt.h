@@ -53,6 +53,7 @@ private:
     bool _publishMessage(const char *topic, const char *message, bool retain = false);
 
     void _subscribeUpdateFirmware();
+    void _subscribeRestart();
     void _subscribeToTopics();
 
     void _constructMqttTopicWithRule(const char *ruleName, const char *finalTopic, char *topic);
