@@ -309,17 +309,17 @@ components:
           type: string
         password:
           type: string
-      GeneralConfiguration:
-        type: object
-        properties:
-          "isCloudServicesEnabled":
-            type: boolean
-          "gmtOffset":
-            type: integer
-          "dstOffset":
-            type: integer
-          "ledBrightness":
-            type: integer
+    GeneralConfiguration:
+      type: object
+      properties:
+        "isCloudServicesEnabled":
+          type: boolean
+        "gmtOffset":
+          type: integer
+        "dstOffset":
+          type: integer
+        "ledBrightness":
+          type: integer
 
 paths:
   /rest/is-alive:
@@ -514,6 +514,48 @@ paths:
                 properties:
                   latest:
                     type: boolean
+
+  /do-update:
+    post:
+      summary: Perform an update
+      tags:
+        - System
+      parameters:
+        - name: md5
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional MD5 checksum for the update
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
 
   /rest/factory-reset:
     post:

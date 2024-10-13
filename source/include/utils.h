@@ -35,6 +35,8 @@ void createDefaultEnergyFile();
 void createDefaultDailyEnergyFile();
 void createDefaultFirmwareUpdateInfoFile();
 void createDefaultFirmwareUpdateStatusFile();
+void createDefaultFirmwareRollbackFile();
+void createDefaultCrashCounterFile();
 void createFirstSetupFile();
 
 bool checkAllFiles();
@@ -60,5 +62,11 @@ bool isLatestFirmwareInstalled();
 String getDeviceId();
 
 const char* getMqttStateReason(int state);
+
+void incrementCrashCounter();
+void handleCrashCounter();
+void crashCounterLoop();
+void handleFirmwareTesting();
+void firmwareTestingLoop();
 
 #endif

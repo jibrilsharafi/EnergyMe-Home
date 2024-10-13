@@ -462,4 +462,3 @@ void Mqtt::_subscribeRestart() {
 // TODO: 
 // - claim provisioning
 // - add possibility to do FOTA by downloading from HTTPS and then updating the firmware. Check the HttpsOTAUpdate.h and Updater.h
-// - implement rollback. Check the Updater.h and HttpsOTAUpdate.h which have many interesting features

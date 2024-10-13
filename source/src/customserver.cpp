@@ -683,6 +683,15 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
     _logger.warning("Update complete", "customserver::handleDoUpdate");
     _updateJsonFirmwareStatus("success", "");
 
+    // Set the rollback flag
+    _logger.debug("Setting rollback flag", "customserver::_onUpdateSuccessful");
+    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+    if (_file)
+    {
+        _file.print(NEW_FIRMWARE_TO_BE_TESTED);
+        _file.close();
+    }
+
     setRestartEsp32("customserver::_handleDoUpdate", "Restart needed after update");
 }
 
@@ -691,6 +700,7 @@ void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *r
     request->send(400, "application/json", "{\"status\":\"failed\", \"reason\":\"" + String(reason) + "\"}");
 
     Update.printError(Serial);
+    _logger.debug("Size: %d bytes | Progress: %d bytes | Remaining: %d bytes", "customserver::_onUpdateFailed", Update.size(), Update.progress(), Update.remaining());
     _logger.warning("Update failed, keeping current firmware. Reason: %s", "customserver::_onUpdateFailed", reason);
     _updateJsonFirmwareStatus("failed", reason);
 

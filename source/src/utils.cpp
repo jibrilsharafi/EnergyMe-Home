@@ -111,6 +111,8 @@ void formatAndCreateDefaultFiles() {
     createDefaultDailyEnergyFile();
     createDefaultFirmwareUpdateInfoFile();
     createDefaultFirmwareUpdateStatusFile();
+    createDefaultFirmwareRollbackFile();
+    createDefaultCrashCounterFile();
 
     createFirstSetupFile();
 
@@ -172,6 +174,37 @@ void createDefaultFirmwareUpdateStatusFile() {
     logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateStatusFile", FW_UPDATE_STATUS_JSON_PATH);
 }
 
+void createDefaultFirmwareRollbackFile() {
+    logger.debug("Creating default %s...", "utils::createDefaultFirmwareRollbackFile", FW_ROLLBACK_TXT);
+
+    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+    if (!_file) {
+        logger.error("Failed to open file %s", "utils::createDefaultFirmwareRollbackFile", FW_ROLLBACK_TXT);
+        return;
+    }
+
+    _file.print(STABLE_FIRMWARE);
+    _file.close();
+
+    logger.debug("Default %s created", "utils::createDefaultFirmwareRollbackFile", FW_ROLLBACK_TXT);
+}
+
+// CRASH_COUNTER_TXT
+void createDefaultCrashCounterFile() {
+    logger.debug("Creating default %s...", "utils::createDefaultCrashCounterFile", CRASH_COUNTER_TXT);
+
+    File _file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_WRITE);
+    if (!_file) {
+        logger.error("Failed to open file %s", "utils::createDefaultCrashCounterFile", CRASH_COUNTER_TXT);
+        return;
+    }
+
+    _file.print(0);
+    _file.close();
+
+    logger.debug("Default %s created", "utils::createDefaultCrashCounterFile", CRASH_COUNTER_TXT);
+}
+
 void createFirstSetupFile() {
     logger.debug("Creating %s...", "utils::createFirstSetupFile", FIRST_SETUP_JSON_PATH);
 
@@ -202,7 +235,7 @@ bool checkIfFirstSetup() {
 
 bool checkAllFiles() {
     logger.debug("Checking all files...", "utils::checkAllFiles");
-
+    // TODO: understand if this is actually needed, or if it is better to check each file individually and create it if it does not exist
     if (!SPIFFS.exists(FIRST_SETUP_JSON_PATH)) return true;
     if (!SPIFFS.exists(GENERAL_CONFIGURATION_JSON_PATH)) return true;
     if (!SPIFFS.exists(CONFIGURATION_ADE7953_JSON_PATH)) return true;
@@ -213,6 +246,8 @@ bool checkAllFiles() {
     if (!SPIFFS.exists(DAILY_ENERGY_JSON_PATH)) return true;
     if (!SPIFFS.exists(FW_UPDATE_INFO_JSON_PATH)) return true;
     if (!SPIFFS.exists(FW_UPDATE_STATUS_JSON_PATH)) return true;
+    if (!SPIFFS.exists(FW_ROLLBACK_TXT)) createDefaultFirmwareRollbackFile();
+    if (!SPIFFS.exists(CRASH_COUNTER_TXT)) createDefaultCrashCounterFile();
 
     return false;
 }
@@ -243,6 +278,16 @@ void restartEsp32() {
         ade7953.saveEnergy();
     }
     logger.fatal("Restarting ESP32 from function %s. Reason: %s", "utils::restartEsp32", restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
+
+    // If a firmware evaluation is in progress, set the firmware to test again
+    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+    if (_file) {
+        int _firmwareStatus = _file.parseInt();
+        if (_firmwareStatus == NEW_FIRMWARE_TESTING) {
+            _file.print(NEW_FIRMWARE_TO_BE_TESTED);
+        }
+        _file.close();
+    }
 
     ESP.restart();
 }
@@ -566,5 +611,121 @@ const char* getMqttStateReason(int state)
         return "MQTT_CONNECT_UNAUTHORIZED";
     default:
         return "Unknown MQTT state";
+    }
+}
+
+void incrementCrashCounter() {
+    logger.debug("Incrementing crash counter...", "utils::incrementCrashCounter");
+
+    File file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_READ);
+    int _crashCounter = 0;
+    if (file) {
+        _crashCounter = file.parseInt();
+        file.close();
+    }
+
+    _crashCounter++;
+
+    file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_WRITE);
+    if (file) {
+        file.print(_crashCounter);
+        file.close();
+    }
+
+    logger.debug("Crash counter incremented to %d", "utils::incrementCrashCounter", _crashCounter);
+}
+
+void handleCrashCounter() {
+    logger.debug("Handling crash counter...", "utils::handleCrashCounter");
+
+    File file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_READ);
+    int crashCounter = 0;
+    if (file) {
+        crashCounter = file.parseInt();
+        file.close();
+    }
+    logger.debug("Crash counter: %d", "utils::handleCrashCounter", crashCounter);
+
+    if (crashCounter >= MAX_CRASH_COUNT) {
+        logger.fatal("Crash counter reached the maximum allowed crashes. Rolling back to stable firmware...", "utils::handleCrashCounter");
+        
+        if (!Update.rollBack()) {
+            logger.error("No firmware to rollback available. Keeping current firmware", "utils::handleCrashCounter");
+        }
+
+        file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_WRITE);
+        if (file) {
+            file.print(0); // Reset crash counter after rollback
+            file.close();
+        }
+
+        ESP.restart(); // Only place where ESP.restart is directly called
+    } else {
+        incrementCrashCounter();
+    }
+}
+
+void crashCounterLoop() {
+    if (millis() > CRASH_COUNTER_TIMEOUT) {
+        logger.debug("Timeout reached. Resetting crash counter...", "utils::crashCounterLoop");
+
+        File file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_WRITE);
+        if (file) {
+            file.print(0); // Reset crash counter
+            file.close();
+        }
+    }
+}
+
+void handleFirmwareTesting() {
+    logger.debug("Checking if rollback is needed...", "utils::handleFirmwareTesting");
+
+    File file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
+    int _rollbackStatus = STABLE_FIRMWARE;
+    if (file) {
+        _rollbackStatus = file.parseInt();
+        file.close();
+    }
+
+    if (_rollbackStatus == NEW_FIRMWARE_TO_BE_TESTED) { // First restart after new firmware is installed
+        logger.info("Testing new firmware", "utils::handleFirmwareTesting");
+
+        File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+        if (_file) {
+            _file.print(NEW_FIRMWARE_TESTING); // Set the flag to test the new firmware
+            _file.close();
+        }
+        isFirmwareUpdate = true;
+        return;
+    } else if (_rollbackStatus == NEW_FIRMWARE_TESTING) { // If the flag did not get set to stable firmware, then the new firmware is not working
+        logger.fatal("Testing new firmware failed. Rolling back to stable firmware", "utils::handleFirmwareTesting");
+        
+        if (!Update.rollBack()) {
+            logger.error("No firmware to rollback available. Keeping current firmware", "utils::handleFirmwareTesting");
+        }
+
+        File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+        if (_file) {
+            _file.print(STABLE_FIRMWARE);
+            _file.close();
+        }
+    } else {
+        logger.debug("No rollback needed", "utils::handleFirmwareTesting");
+    }
+}
+
+void firmwareTestingLoop() {
+    if (!isFirmwareUpdate) return;
+
+    logger.verbose("Checking if firmware has passed the testing period...", "utils::firmwareTestingLoop");
+
+    if (millis() > ROLLBACK_TESTING_TIMEOUT) {
+        logger.info("Testing period of new firmware has passed. Keeping current firmware", "utils::firmwareTestingLoop");
+
+        File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+        if (_file) {
+            _file.print(STABLE_FIRMWARE);
+            _file.close();
+        }
     }
 }

@@ -14,7 +14,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "04"
-#define FIRMWARE_BUILD_VERSION_PATCH "35"
+#define FIRMWARE_BUILD_VERSION_PATCH "36"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
@@ -47,6 +47,16 @@
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
 #define FW_UPDATE_INFO_JSON_PATH "/fw-update-info.json"
 #define FW_UPDATE_STATUS_JSON_PATH "/fw-update-status.json"
+
+// Rollback
+#define FW_ROLLBACK_TXT "/fw-rollback-status.txt"
+#define STABLE_FIRMWARE 0
+#define NEW_FIRMWARE_TO_BE_TESTED 1
+#define NEW_FIRMWARE_TESTING 2
+#define ROLLBACK_TESTING_TIMEOUT 3600000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
+#define CRASH_COUNTER_TXT "/crash-counter.txt"
+#define MAX_CRASH_COUNT 10
+#define CRASH_COUNTER_TIMEOUT 3600000 // Interval in which the crash counter is reset
 
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32

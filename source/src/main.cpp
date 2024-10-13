@@ -21,6 +21,7 @@ RestartConfiguration restartConfiguration;
 PublishMqtt publishMqtt;
 
 bool isFirstSetup = false;
+bool isFirmwareUpdate = false;
 
 int currentChannel = 0;
 int previousChannel = 0;
@@ -136,6 +137,10 @@ void setup() {
   }
 
   led.setCyan();
+
+  // Check if the device has crashed more than the maximum allowed times. If so, the device will rollback to the stable firmware
+  handleCrashCounter();
+  handleFirmwareTesting();
 
   if (SPIFFS.exists("/format.txt")) {
     led.setOrange();
@@ -290,6 +295,7 @@ void loop() {
     logger.warning("Log cleared due to low memory", "main::loop");
   }
 
+  firmwareTestingLoop();
   checkIfRestartEsp32Required();
   
   led.setOff();
