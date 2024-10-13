@@ -54,7 +54,7 @@ void Mqtt::loop() {
             _logger.info("Disconnecting MQTT", "mqtt::mqttLoop");
 
             // Send last messages before disconnecting
-            _publishConnectivity(false); // Send offline connectivity as the last will message will not be sent with graceful disconnect
+            _publishConnectivity(false); // Send offline connectivity as the last will message is not sent with graceful disconnect
             _publishMeter();
             _publishStatus();
             _publishMetadata();
@@ -78,12 +78,22 @@ void Mqtt::loop() {
     if ((millis() - _lastMillisMqttLoop) > MQTT_LOOP_INTERVAL) {
         _lastMillisMqttLoop = millis();
 
+        if (_forceDisableMqtt) {
+            if ((millis() - _mqttConnectionFailedAt) < MQTT_TEMPORARY_DISABLE_INTERVAL) {
+                _logger.verbose("Forced disabling MQTT. Skipping...", "mqtt::mqttLoop");
+                return;
+            } else {
+                _forceDisableMqtt = false;
+                _logger.info("Retrying MQTT connection after temporary disable", "mqtt::mqttLoop");
+            }
+        }
+
         if (!clientMqtt.connected()) {
             if ((millis() - _lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) {
                 _logger.verbose("MQTT connection failed recently. Skipping", "mqtt::_connectMqtt");
                 return;
             }
-            _logger.warning("MQTT client not connected. Attempting to reconnect...", "mqtt::mqttLoop");
+            _logger.info("MQTT client not connected. Attempting to reconnect...", "mqtt::mqttLoop");
 
             if (!_connectMqtt()) return;
         }
@@ -101,11 +111,9 @@ bool Mqtt::_connectMqtt()
 {
     _logger.debug("Attempt to connect to MQTT (%d/%d)...", "mqtt::_connectMqtt", _mqttConnectionAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
     if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
-        _logger.error("Failed to connect to MQTT after %d attempts. Disabling cloud services", "mqtt::_connectMqtt", MQTT_MAX_CONNECTION_ATTEMPT);
+        _logger.warning("Failed to connect to MQTT after %d attempts. Temporarely disabling cloud services", "mqtt::_connectMqtt", MQTT_MAX_CONNECTION_ATTEMPT);
     
-        generalConfiguration.isCloudServicesEnabled = false;
-        _isSetupDone = false;
-        _mqttConnectionAttempt = 0;
+        _temporaryDisable();
 
         return false;
     }
@@ -148,6 +156,16 @@ bool Mqtt::_connectMqtt()
 
         return false;
     }
+}
+
+void Mqtt::_temporaryDisable() {
+    _logger.debug("Temporarely disabling MQTT...", "mqtt::_temporaryDisable");
+
+    _forceDisableMqtt = true;
+    _mqttConnectionFailedAt = millis();
+    _mqttConnectionAttempt = 0;
+
+    _logger.debug("MQTT temporarely disabled. Retrying connection in %d milliseconds", "mqtt::_temporaryDisable", MQTT_TEMPORARY_DISABLE_INTERVAL);
 }
 
 void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topic) {
@@ -443,6 +461,5 @@ void Mqtt::_subscribeRestart() {
 
 // TODO: 
 // - claim provisioning
-// - implement an automatic MQTT reconnection if the reconnection failed
 // - add possibility to do FOTA by downloading from HTTPS and then updating the firmware. Check the HttpsOTAUpdate.h and Updater.h
 // - implement rollback. Check the Updater.h and HttpsOTAUpdate.h which have many interesting features

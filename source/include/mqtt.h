@@ -69,8 +69,6 @@ private:
 
     String _deviceId;
 
-    bool _isSetupDone = false;
-
     char _mqttTopicConnectivity[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicMeter[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicStatus[MQTT_MAX_TOPIC_LENGTH];
@@ -83,6 +81,12 @@ private:
     unsigned long _lastMillisStatusPublished = 0;
     unsigned long _lastMillisMqttFailed = 0;
     unsigned long _mqttConnectionAttempt = 0;
+
+    bool _isSetupDone = false;
+
+    void _temporaryDisable();
+    bool _forceDisableMqtt = false;
+    unsigned long _mqttConnectionFailedAt = 0;
 };
 
 #endif
