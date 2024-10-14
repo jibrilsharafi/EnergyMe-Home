@@ -1,0 +1,135 @@
+.buttonNavigation-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-evenly;
+    width: 50%;
+    margin-top: 20px;
+    margin-bottom: 50px;
+}
+
+.buttonNavigation {
+    background: transparent;
+    color: var(--blue);
+    font-weight: bold;
+    font-size: 1.2em;
+    cursor: pointer;
+    padding: 10px 20px;
+    border-radius: 50px;
+    text-decoration: none;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+    transition: all 0.1s ease;
+}
+
+.buttonNavigation:hover {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.6);
+}
+
+.buttonNavigation:active {
+    transform: scale(0.98);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+}
+
+.buttonNavigation[type="home"] {
+    color: var(--green);
+}
+
+.buttonNavigation[type="inner"] {
+    color: #ff9800;
+}
+
+.buttonNavigation[type="outer"] {
+    color: var(--blue);
+}
+
+.buttonNavigationExternal {
+    background: transparent;
+    color: #1bacdc;
+    font-weight: bold;
+    font-size: 1.2em;
+    cursor: pointer;
+    padding: 10px 20px;
+    border-radius: 50px;
+    text-decoration: none;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+    transition: all 0.1s ease;
+}
+
+.buttonNavigationExternal:hover {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.6);
+}
+
+.buttonNavigationExternal:active {
+    transform: scale(0.98);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+}
+
+.buttonForm-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-evenly;
+    width: 50%;
+    margin-bottom: 100px;
+}
+
+.buttonForm {
+    background: transparent;
+    background-color: #f4f4f4;
+    color: var(--green);
+    font-weight: bold;
+    padding: 10px 20px;
+    border-radius: 50px;
+    font-size: 1.0em;
+    cursor: pointer;
+    text-decoration: none;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+    transition: all 0.1s ease;
+    border: 1px solid;
+    margin-top: 10px;
+}
+
+.buttonForm:hover {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+}
+
+.buttonForm:active {
+    transform: scale(0.98);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.6);
+}
+
+.buttonForm:disabled {
+    color: var(--blue);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+    background-color: #bf7c0054;
+    pointer-events: none;
+}
+
+.tooltip {
+    position: relative;
+    display: inline-block;
+    cursor: pointer;
+    background: none;
+    border: none;
+    color: #000000;
+    font-size: 24px;
+}
+
+.tooltip .tooltiptext {
+    visibility: hidden;
+    background-color: #555;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%; /* Position the tooltip above the icon */
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 0.9;
+}

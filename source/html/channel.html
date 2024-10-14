@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+    <title>Channel</title>
+    <style>
+        .channel-columns {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 10px;
+            justify-items: center;
+        }
+
+        .channel-columns input[type="text"] {
+            width: 90%;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="outer" href="/configuration">Configuration</a>
+    </div>
+
+    <div id="channelContainer" class="section-box" style="text-align: center;">
+        <h1>Channels</h1>
+        <div style="height: 20px;"></div>
+        <div class="channel-columns"></div>
+    </div>
+</body>
+<script>
+    var channelData = {};
+    var calibrationData = {};
+    var intervals = {};
+
+    function fetchData(endpoint) {
+        return fetch(`/rest/${endpoint}`).then(response => response.json());
+    }
+
+    Promise.all([fetchData('get-calibration'), fetchData('get-channel')])
+        .then(([calibrationResponse, channelResponse]) => {
+            calibrationData = calibrationResponse;
+            channelData = channelResponse;
+            createChannelBoxes();
+        })
+        .catch(error => console.error('Error:', error));
+
+    function createChannelBoxes() {
+        const container = document.querySelector('.channel-columns');
+        container.innerHTML = ''; // Clear existing content
+
+        Object.entries(channelData).forEach(([index, channel]) => {
+            const box = document.createElement('div');
+            box.className = 'section-box';
+            box.style.textAlign = 'center';
+
+            const calibrationOptions = Object.keys(calibrationData)
+                .map(key => `<option value="${key}" ${key === channel.calibrationLabel ? 'selected' : ''}>${key}</option>`)
+                .join('');
+
+            box.innerHTML = `
+                <label>
+                    Label:
+                    <input type="text" value="${channel.label}" id="label${index}" onchange="updateChannel(${index})">
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    Calibration:
+                    <select id="calibration${index}" onchange="updateChannel(${index})">
+                        ${calibrationOptions}
+                    </select>
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="updateChannel(${index})">
+                    Reverse
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    <input type="checkbox" ${channel.active ? 'checked' : ''} id="active${index}" onchange="updateChannel(${index})">
+                    Active
+                </label>
+                <div style="height: 10px;"></div>
+                <span id="power${index}"></span>
+            `;
+            container.appendChild(box);
+
+            if (channel.active) {
+                startPowerUpdate(index);
+            }
+        });
+    }
+
+    function startPowerUpdate(index) {
+        if (intervals[index]) {
+            clearInterval(intervals[index]);
+        }
+        intervals[index] = setInterval(() => {
+            fetchData(`active-power?index=${index}`).then(dataActivePower => {
+                document.getElementById(`power${index}`).innerHTML = `${dataActivePower.value.toFixed(1)} W`;
+            });
+        }, 1000);
+    }
+
+    function stopPowerUpdate(index) {
+        if (intervals[index]) {
+            clearInterval(intervals[index]);
+            document.getElementById(`power${index}`).innerHTML = '';
+            delete intervals[index];
+        }
+    }
+
+    function updateChannel(index) {
+        channel = {};
+        channel[index] = {};
+        channel[index].label = document.getElementById(`label${index}`).value;
+        channel[index].calibrationLabel = document.getElementById(`calibration${index}`).value;
+        channel[index].reverse = document.getElementById(`reverse${index}`).checked;
+        channel[index].active = document.getElementById(`active${index}`).checked;
+        
+        if (channel[index].active) {
+            startPowerUpdate(index);
+        } else {
+            stopPowerUpdate(index);
+        }
+        
+        sendChannelUpdate(channel);
+    }
+    
+    function sendChannelUpdate(updatedChannel) {
+        fetch('/rest/set-channel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updatedChannel)
+        })
+        .then(response => response.json())
+        .then(data => console.log('Success:', data))
+        .catch((error) => console.error('Error:', error));
+    }
+</script>
+
+</html>

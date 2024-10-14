@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    
+    <title>EnergyMe</title>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        .header {
+            font-size: 96px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .subheader {
+            font-size: 32px;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #808080;
+        }
+
+        .voltage-box {
+            text-align: center;
+            font-size: 20px;
+            margin-bottom: 20px;
+            margin-top: 5px;
+        }
+
+        .channels-box {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+        }
+
+        .channel-box {
+            width: 18%;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            box-sizing: border-box;
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            margin-bottom: 20px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .channel-label {
+            font-size: 24px;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .channel-value {
+            font-style: italic;
+            color: #808080;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">EnergyMe</div>
+    <div class="subheader">Home</div>
+
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="inner" href="/info">Info</a>
+        <a class="buttonNavigation" type="inner" href="/configuration">Configuration</a>
+        <a class="buttonNavigation" type="inner" href="/update"> Update</a>
+        <a class="buttonNavigationExternal" type="inner" href="/swagger-ui" target="_blank">API Docs</a>
+        </a>
+    </div>
+
+    <div class="section-box">
+        <div id="voltage" class="voltage-box"></div>
+        <div id="channels" class="channels-box"></div>
+    </div>
+
+    <div class="section-box">
+        <div id="consumption-chart" style="position: relative;">
+            <canvas id="consumption-chart-canvas"></canvas>
+            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
+                <i class="fas fa-download"></i>
+                <span class="tooltiptext">Download as CSV</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="section-box">
+        <div id="pie-chart">
+            <canvas id="pie-chart-canvas"></canvas>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</body>
+
+<script>
+    var colors = [
+        'rgba(0,123,255,0.5)', 'rgba(255,0,0,0.5)', 'rgba(0,255,0,0.5)', 'rgba(255,255,0,0.5)', 'rgba(0,255,255,0.5)',
+        'rgba(123,0,255,0.5)', 'rgba(255,0,123,0.5)', 'rgba(0,255,123,0.5)', 'rgba(255,255,123,0.5)', 'rgba(123,255,0,0.5)',
+        'rgba(0,123,0,0.5)', 'rgba(123,0,0,0.5)', 'rgba(0,0,123,0.5)', 'rgba(123,123,123,0.5)', 'rgba(255,255,255,0.5)',
+        'rgba(0,0,255,0.5)', 'rgba(255,0,255,0.5)', 'rgba(255,123,0,0.5)'
+    ];
+
+    var dailyEnergy = {};
+    var channelData = {};
+    var meterData = {};
+
+    function getDailyEnergy() {
+        var xhttp = new XMLHttpRequest();
+
+        xhttp.onreadystatechange = function () {
+            if (this.readyState == 4 && this.status == 200) {
+                dailyEnergy = JSON.parse(this.responseText);
+            }
+        };
+        xhttp.open("GET", "/daily-energy", true);
+        xhttp.send();
+    }
+
+    function getChannelData() {
+        var xhttp = new XMLHttpRequest();
+
+        xhttp.onreadystatechange = function () {
+            if (this.readyState == 4 && this.status == 200) {
+                channelData = JSON.parse(this.responseText);
+            }
+        };
+        xhttp.open("GET", "/rest/get-channel", false);
+        xhttp.send();
+    }
+
+    function getMeterData() {
+        var xhttp = new XMLHttpRequest();
+
+        xhttp.onreadystatechange = function () {
+            if (this.readyState == 4 && this.status == 200) {
+                meterData = JSON.parse(this.responseText);
+            }
+        };
+        xhttp.open("GET", "/rest/meter", false);
+        xhttp.send();
+    }
+
+    function updateMeterData() {
+        document.getElementById("voltage").innerHTML = meterData[0].data.voltage.toFixed(1) + ' V';
+
+        var powerDataHtml = '';
+        var channelCount = 0;
+        var totalPower = 0;
+        for (var channel in meterData) {
+            var label = meterData[channel].label;
+            var activePower = meterData[channel].data.activePower.toFixed(0);
+
+            powerDataHtml += '<div class="channel-box">';
+            powerDataHtml += '<div class="channel-label">' + label + '</div>';
+            powerDataHtml += '<div class="channel-value">' + activePower + ' W</div>';
+            powerDataHtml += '</div>';
+
+            if (channelCount > 0) {
+                totalPower += parseFloat(activePower);
+            }
+            channelCount++;
+        }
+
+        document.getElementById("channels").innerHTML = powerDataHtml;
+    }
+
+    function parseDailyEnergy() {
+        var dailyActiveEnergy = {};
+
+        for (var date in dailyEnergy) {
+            for (var channel in dailyEnergy[date]) {
+                if (!dailyActiveEnergy[date]) {
+                    dailyActiveEnergy[date] = {};
+                }
+
+                dailyActiveEnergy[date][channel] = dailyEnergy[date][channel].activeEnergy / 1000;
+            }
+        }
+
+        var firstDay = Object.keys(dailyActiveEnergy)[0];
+        var lastDay = Object.keys(dailyActiveEnergy)[Object.keys(dailyActiveEnergy).length - 1];
+
+        var listMissingDays = [];
+        var currentDate = new Date(firstDay);
+        var lastDate = new Date(lastDay);
+
+        while (currentDate < lastDate) {
+            currentDate.setDate(currentDate.getDate() + 1);
+            var date = currentDate.toISOString().split('T')[0];
+
+            if (!dailyActiveEnergy[date]) {
+                dailyActiveEnergy[date] = {};
+            }
+        }
+
+        var dailyActiveEnergyDifference = {};
+
+        var dates = Object.keys(dailyActiveEnergy).sort();
+        for (var i = 0; i < dates.length; i++) {
+            var date = dates[i];
+            var previousDate = dates[i - 1];
+        
+            dailyActiveEnergyDifference[date] = {};
+        
+            for (var channel in dailyActiveEnergy[date]) {
+                var currentDayEnergy = dailyActiveEnergy[date][channel];
+                var previousDayEnergy = i > 0 ? dailyActiveEnergy[previousDate][channel] || 0 : 0;
+        
+                dailyActiveEnergyDifference[date][channel] = currentDayEnergy - previousDayEnergy;
+            }
+        }
+
+        dailyActiveEnergy = addOtherDailyEnergy(dailyActiveEnergyDifference);
+        dailyActiveEnergy = renameDailyActiveEnergyDifference(dailyActiveEnergy, channelData);
+
+        return dailyActiveEnergy;
+    }
+
+    function addOtherDailyEnergy(dailyActiveEnergyDifference) {
+
+        for (var date in dailyActiveEnergyDifference) {
+
+            var generalEnergy = dailyActiveEnergyDifference[date]["0"];
+            var otherEnergy = 0;
+
+            for (var channel in dailyActiveEnergyDifference[date]) {
+                if (channel !== "0") {
+                    otherEnergy += dailyActiveEnergyDifference[date][channel];
+                }
+            }
+
+            dailyActiveEnergyDifference[date]['Other'] = generalEnergy - otherEnergy;
+            delete dailyActiveEnergyDifference[date]["0"];
+        }
+
+        return dailyActiveEnergyDifference;
+    }
+    
+    function renameDailyActiveEnergyDifference(dailyActiveEnergyDifference, channelData) {
+
+        for (var date in dailyActiveEnergyDifference) {
+
+            for (var channel in dailyActiveEnergyDifference[date]) {
+                if (channel !== "Other") {
+                    var channelIndex = parseInt(channel);
+                    var channelLabel = channelData[channelIndex].label;
+
+                    dailyActiveEnergyDifference[date][channelLabel] = dailyActiveEnergyDifference[date][channel];
+                    delete dailyActiveEnergyDifference[date][channel];
+                }
+            }
+
+            otherEnergy = dailyActiveEnergyDifference[date]['Other'];
+            delete dailyActiveEnergyDifference[date]['Other'];
+            dailyActiveEnergyDifference[date]['Other'] = otherEnergy;
+        }
+
+        return dailyActiveEnergyDifference;
+    }
+
+    function getTotalActiveEnergy() {
+        var totalActiveEnergy = {};
+
+        for (var channel in meterData) {
+            totalActiveEnergy[meterData[channel].index] = meterData[channel].data.activeEnergy / 1000;
+        }
+
+        totalActiveEnergy = addTotalOtherEnergy(totalActiveEnergy);
+        totalActiveEnergy = renameTotalActiveEnergy(totalActiveEnergy, channelData);
+
+        return totalActiveEnergy;
+    }
+
+    function addTotalOtherEnergy(totalActiveEnergy) {
+        var totalGeneralEnergy = totalActiveEnergy["0"];
+        var totalOtherEnergy = 0;
+
+        for (var channel in totalActiveEnergy) {
+            if (channel !== "0") {
+                totalOtherEnergy += totalActiveEnergy[channel];
+            }
+        }
+
+        totalActiveEnergy['Other'] = totalGeneralEnergy - totalOtherEnergy;
+        delete totalActiveEnergy["0"];
+
+        return totalActiveEnergy;
+    }
+
+    function renameTotalActiveEnergy(totalActiveEnergy, channelData) {
+
+        for (var channel in totalActiveEnergy) {
+            if (channel !== "Other") {
+                var channelIndex = parseInt(channel);
+                var channelLabel = channelData[channelIndex].label;
+
+                totalActiveEnergy[channelLabel] = totalActiveEnergy[channel];
+                delete totalActiveEnergy[channel];
+            }
+
+            otherEnergy = totalActiveEnergy['Other'];
+            delete totalActiveEnergy['Other'];
+            totalActiveEnergy['Other'] = otherEnergy;
+        }
+
+        return totalActiveEnergy;
+    }
+
+    function plotConsumptionChart(consumptionData) {
+        var labels = Object.keys(consumptionData);
+    
+        var datasets = [];
+        var channels = Object.keys(consumptionData[labels[0]]);
+    
+        channels.forEach(function (channel, i) {
+            var data = labels.map(function (label) {
+                var value = consumptionData[label][channel];
+                if (isNaN(value)) {
+                    value = 0;
+                }
+                if (value >= 1000) {
+                    return value.toFixed(0);
+                } else if (value >= 100) {
+                    return value.toFixed(1);
+                } else if (value >= 10) {
+                    return value.toFixed(2);
+                } else {
+                    return value.toFixed(3);
+                }
+            });
+    
+            datasets.push({
+                label: channel,
+                data: data,
+                backgroundColor: colors[i % colors.length],
+                borderColor: colors[i % colors.length],
+                borderWidth: 1
+            });
+        });
+    
+        var ctx = document.getElementById('consumption-chart-canvas').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: datasets
+            },
+            options: {
+                scales: {
+                    x: {
+                        stacked: true
+                    },
+                    y: {
+                        stacked: true,
+                        title: {
+                            display: true,
+                            text: 'kWh'
+                        }
+                    }
+                }
+            }
+        });
+
+        document.getElementById('download-csv').addEventListener('click', function () {
+            var csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "time," + channels.join(",") + "\n";
+
+            labels.forEach(function (label) {
+                var row = [label];
+                channels.forEach(function (channel) {
+                    row.push(consumptionData[label][channel]);
+                });
+                csvContent += row.join(",") + "\n";
+            });
+
+            var encodedUri = encodeURI(csvContent);
+            var link = document.createElement("a");
+            var now = new Date();
+            var timestamp = now.toISOString().replace(/[:.-]/g, "_"); // Format timestamp
+            var filename = "consumption_data_" + timestamp + ".csv";
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", filename);
+            document.body.appendChild(link); // Required for FF
+
+            link.click();
+            document.body.removeChild(link);
+        });
+    }
+
+    function plotPieChart(consumptionData) {
+        var labels = Object.keys(consumptionData);
+        var data = Object.values(consumptionData).map(value => isNaN(value) ? 0 : value); // Replace NaN with 0
+
+        var totalConsumption = data.reduce(function (acc, value) {
+            return acc + value;
+        }, 0);
+    
+        labels = labels.map(function (label, i) {
+            var percentage = ((data[i] / totalConsumption) * 100).toFixed(1);
+            return label + ' (' + percentage + '%)';
+        });
+    
+        var ctx = document.getElementById('pie-chart-canvas').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut', // Use 'doughnut' type for a pie chart with a hole inside
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors.slice(0, labels.length),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    }
+
+    function fetchData(endpoint) {
+        return new Promise((resolve, reject) => {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function () {
+                if (this.readyState == 4) {
+                    if (this.status == 200) {
+                        resolve(JSON.parse(this.responseText));
+                    } else {
+                        console.error(`Error fetching data from ${endpoint}. Status: ${this.status}`);
+                        reject();
+                    }
+                }
+            };
+            xhttp.open("GET", `/${endpoint}`, true);
+            xhttp.send();
+        });
+    }
+
+    function plotCharts() {
+        Promise.all([fetchData('daily-energy'), fetchData('rest/get-channel'), fetchData('rest/meter')])
+            .then(data => {
+                dailyEnergy = data[0];
+                channelData = data[1];
+                meterData = data[2];
+
+                updateMeterData();
+
+                if (Object.keys(dailyEnergy).length !== 0) {
+                    dailyActiveEnergy = parseDailyEnergy();
+                    plotConsumptionChart(dailyActiveEnergy);
+                    
+                    totalActiveEnergy = getTotalActiveEnergy();
+                    plotPieChart(totalActiveEnergy);
+                } else {
+                    document.getElementById("consumption-chart").innerHTML = "No data available yet. Come back in a few hours!";
+                    document.getElementById("consumption-chart").style.textAlign = "center";
+                    document.getElementById("consumption-chart").style.fontSize = "20px";
+                    document.getElementById("consumption-chart").style.color = "#808080"; // Gray color
+
+                    // Hide the download button
+                    document.getElementById("download-csv").style.display = "none";
+
+                    document.getElementById("pie-chart").innerHTML = "No data available yet. Come back in a few hours!";
+                    document.getElementById("pie-chart").style.textAlign = "center";
+                    document.getElementById("pie-chart").style.fontSize = "20px";
+                    document.getElementById("pie-chart").style.color = "#808080"; // Gray color
+                }
+
+            })
+            .catch(error => console.error('Error:', error));
+    }
+
+    function fetchFirmwareUpdateInfo() {
+        fetch('/rest/is-latest-firmware-installed')
+            .then(response => response.json())
+            .then(data => {
+                if (data.latest == false) {
+                    document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
+                }
+            })
+            .catch(error => console.error('Error:', error));
+    }
+
+    plotCharts();
+    fetchFirmwareUpdateInfo();
+
+    setInterval(function () {
+        getMeterData();
+        updateMeterData();
+    }, 1000);
+
+</script>
+
+</html>

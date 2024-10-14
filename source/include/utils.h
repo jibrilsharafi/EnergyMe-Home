@@ -1,45 +1,72 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <Arduino.h>
-#include <TimeLib.h>
-#include <FS.h>
-#include <SPIFFS.h>
-#include <ArduinoJson.h>
-#include <Ticker.h>
-#include <HTTPClient.h>
 #include <AdvancedLogger.h>
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <FS.h>
+#include <HTTPClient.h>
+#include <SPIFFS.h>
+#include <TimeLib.h>
 
-#include "structs.h"
-#include "constants.h"
-#include "led.h"
-#include "global.h"
-#include "customtime.h"
 #include "ade7953.h"
+#include "constants.h"
+#include "customtime.h"
+#include "global.h"
+#include "led.h"
+#include "structs.h"
 
-JsonDocument getDeviceStatus();
-void restartEsp32(const char* functionName, const char* reason);
+void getJsonProjectInfo(JsonDocument& jsonDocument);
+void getJsonDeviceInfo(JsonDocument& jsonDocument);
+
+void setRestartEsp32(const char* functionName, const char* reason);
+void checkIfRestartEsp32Required();
+void restartEsp32();
+
 void printMeterValues(MeterValues meterValues, const char* channelLabel);
 void printDeviceStatus();
 
-JsonDocument deserializeJsonFromSpiffs(const char* path);
-bool serializeJsonToSpiffs(const char* path, JsonDocument jsonDocument);
+void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
+bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
 
+void formatAndCreateDefaultFiles();
+void createDefaultGeneralConfigurationFile();
+void createDefaultEnergyFile();
+void createDefaultDailyEnergyFile();
+void createDefaultFirmwareUpdateInfoFile();
+void createDefaultFirmwareUpdateStatusFile();
+void createDefaultFirmwareRollbackFile();
+void createDefaultCrashCounterFile();
+void createFirstSetupFile();
+
+bool checkAllFiles();
 bool checkIfFirstSetup();
-void logFirstSetupComplete();
 
 void setDefaultGeneralConfiguration();
-void setGeneralConfiguration(GeneralConfiguration generalConfiguration);
+bool setGeneralConfiguration(JsonDocument& jsonDocument);
 bool setGeneralConfigurationFromSpiffs();
 bool saveGeneralConfigurationToSpiffs();
-JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguration);
-GeneralConfiguration jsonToGeneralConfiguration(JsonDocument jsonDocument);
+void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument);
+bool validateGeneralConfigurationJson(JsonDocument& jsonDocument);
 
-JsonDocument getPublicLocation();
-std::pair<int, int> getPublicTimezone();
+void applyGeneralConfiguration();
+
+void getPublicLocation(PublicLocation* publicLocation);
+void getPublicTimezone(int* gmtOffset, int* dstOffset);
 void updateTimezone();
 
 void factoryReset();
-bool _duplicateFile(const char* sourcePath, const char* destinationPath);
+
+bool isLatestFirmwareInstalled();
+
+String getDeviceId();
+
+const char* getMqttStateReason(int state);
+
+void incrementCrashCounter();
+void handleCrashCounter();
+void crashCounterLoop();
+void handleFirmwareTesting();
+void firmwareTestingLoop();
 
 #endif

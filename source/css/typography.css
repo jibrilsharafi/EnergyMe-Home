@@ -1,0 +1,25 @@
+.list-key {
+    font-weight: bold;
+    margin-right: 10px;
+}
+
+.list-value {
+    font-style: italic;
+}
+
+h2 {
+    color: #1e83d6;
+}
+
+h3 {
+    color: #54a2e2;
+}
+
+h4 {
+    color: #a4aff2;
+}
+
+.light-grey-box {
+    font-style: italic;
+    color: #aaa;
+}
