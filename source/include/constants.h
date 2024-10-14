@@ -13,8 +13,8 @@
 
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
-#define FIRMWARE_BUILD_VERSION_MINOR "04"
-#define FIRMWARE_BUILD_VERSION_PATCH "36"
+#define FIRMWARE_BUILD_VERSION_MINOR "05"
+#define FIRMWARE_BUILD_VERSION_PATCH "00"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
@@ -102,6 +102,8 @@
 #define PAYLOAD_METER_MAX_NUMBER_POINTS 30 // The maximum number of points that can be sent in a single payload
 #define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
 #define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
+#define MQTT_PROVISIONING_TIMEOUT 15000 // The timeout for the provisioning response (in milliseconds)
+#define MQTT_PROVISIONING_LOOP_CHECK 1000 // Interval between two certificates check on memory (in milliseconds)
 
 // Custom MQTT
 #define DEFAULT_IS_CUSTOM_MQTT_ENABLED false
@@ -192,6 +194,10 @@
 #define AWS_TOPIC "$aws"
 #define MQTT_BASIC_INGEST AWS_TOPIC "/rules"
 
+// Certificates path
+#define CERTIFICATE_PATH "/certs/cert.pem"
+#define PRIVATE_KEY_PATH "/certs/private.pem"
+
 // EnergyMe - Home | Custom MQTT topics
 // Base topics
 #define MQTT_TOPIC_1 "energyme"
@@ -204,10 +210,12 @@
 #define MQTT_TOPIC_CHANNEL "channel"
 #define MQTT_TOPIC_GENERAL_CONFIGURATION "general-configuration"
 #define MQTT_TOPIC_CONNECTIVITY "connectivity"
+#define MQTT_TOPIC_PROVISIONING_REQUEST "provisioning/request"
 
 // Subscribe topics
 #define MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE "firmware-update"
 #define MQTT_TOPIC_SUBSCRIBE_RESTART "restart"
+#define MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE "provisioning/response"
 #define MQTT_TOPIC_SUBSCRIBE_QOS 1
 
 // MQTT will

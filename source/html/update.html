@@ -107,7 +107,7 @@
             <p><span class='list-key'>Date:</span><span id='update-date' class='list-value'></span></p>
             <p><span class='list-key'>URL:</span><a id='update-url' href='' target='_blank' title="Click to download the firmware update. Then, choose the file and click 'Update'">Download</a></p>
             <p><span class='list-key'>Changelog:</span><a id='update-changelog' href='' target='_blank' title="Click to see the changelog">Changelog</a></p>
-            <p><span class='list-key'>SHA256:</span><span id='update-sha256' class='list-value'></span></p>
+            <p><span class='list-key'>MD5:</span><span id='update-md5' class='list-value'></span></p>
         </div>
         <p id="no-update" class="light-grey-box">Latest version installed</p>
     </div>
@@ -271,7 +271,7 @@
                         document.getElementById("update-date").innerHTML = data.buildDate;
                         document.getElementById("update-url").href = data.url;
                         document.getElementById("update-changelog").href = data.changelog;
-                        document.getElementById("update-sha256").innerHTML = data.sha256;
+                        document.getElementById("update-md5").innerHTML = data.md5;
                         document.getElementById("update-details").style.display = "block";
                         document.getElementById("no-update").style.display = "none";
                     }

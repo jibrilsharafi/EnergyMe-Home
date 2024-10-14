@@ -476,7 +476,7 @@ paths:
                     type: string
                   changelog:
                     type: string
-                  sha256:
+                  md5:
                     type: string
 
   /rest/firmware-update-status:

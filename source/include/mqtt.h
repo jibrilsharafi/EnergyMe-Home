@@ -24,11 +24,14 @@ public:
         AdvancedLogger &logger,
         CustomTime &customTime);
 
-    void begin(String deviceId);
+    void begin();
     void loop();
 
 private:
     bool _connectMqtt();
+    void _setCertificates();
+    bool _checkCertificates();
+    void _claimProcess();
 
     void _checkIfPublishMeterNeeded();
     void _checkIfPublishStatusNeeded();
@@ -41,6 +44,7 @@ private:
     void _publishMetadata();
     void _publishChannel();
     void _publishGeneralConfiguration();
+    bool _publishProvisioningRequest();
 
     void _setupTopics();
     void _setTopicConnectivity();
@@ -49,11 +53,14 @@ private:
     void _setTopicMetadata();
     void _setTopicChannel();
     void _setTopicGeneralConfiguration();
+    void _setTopicProvisioningRequest();
+    void _setTopicProvisioningResponse();
 
     bool _publishMessage(const char *topic, const char *message, bool retain = false);
 
     void _subscribeUpdateFirmware();
     void _subscribeRestart();
+    void _subscribeProvisioningResponse();
     void _subscribeToTopics();
 
     void _constructMqttTopicWithRule(const char *ruleName, const char *finalTopic, char *topic);
@@ -75,6 +82,8 @@ private:
     char _mqttTopicMetadata[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicChannel[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicGeneralConfiguration[MQTT_MAX_TOPIC_LENGTH];
+    char _mqttTopicProvisioningRequest[MQTT_MAX_TOPIC_LENGTH];
+    char _mqttTopicProvisioningResponse[MQTT_MAX_TOPIC_LENGTH];
 
     unsigned long _lastMillisMqttLoop = 0;
     unsigned long _lastMillisMeterPublished = 0;
@@ -83,10 +92,14 @@ private:
     unsigned long _mqttConnectionAttempt = 0;
 
     bool _isSetupDone = false;
+    bool _isClaimInProgress = false;
 
     void _temporaryDisable();
     bool _forceDisableMqtt = false;
     unsigned long _mqttConnectionFailedAt = 0;
+
+    const char *_awsIotCoreCert;
+    const char *_awsIotCorePrivateKey;
 };
 
 #endif

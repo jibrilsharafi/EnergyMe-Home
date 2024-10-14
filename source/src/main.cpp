@@ -237,7 +237,7 @@ void setup() {
 
   if (generalConfiguration.isCloudServicesEnabled) {
     logger.info("Setting up MQTT...", "main::setup");
-    mqtt.begin(getDeviceId());
+    mqtt.begin();
     logger.info("MQTT setup done", "main::setup");
   } else {
     logger.info("Cloud services not enabled", "main::setup");

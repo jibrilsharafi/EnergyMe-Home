@@ -659,7 +659,7 @@ void handleCrashCounter() {
             file.close();
         }
 
-        ESP.restart(); // Only place where ESP.restart is directly called
+        ESP.restart(); // Only place where ESP.restart is directly called as we need to avoid again to crash
     } else {
         incrementCrashCounter();
     }
@@ -709,6 +709,8 @@ void handleFirmwareTesting() {
             _file.print(STABLE_FIRMWARE);
             _file.close();
         }
+
+        setRestartEsp32("utils::handleFirmwareTesting", "Testing new firmware failed. Rolling back to stable firmware");
     } else {
         logger.debug("No rollback needed", "utils::handleFirmwareTesting");
     }

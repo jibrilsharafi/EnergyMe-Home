@@ -16,6 +16,31 @@ void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
         _file.close();
     } else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_RESTART)) {
         setRestartEsp32("subscribeCallback", "Restart requested from MQTT");
+    } else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE)) {
+        JsonDocument _jsonDocument;
+
+        deserializeJson(_jsonDocument, message);
+
+        if (_jsonDocument["status"] == "success") {
+            // Save certificates
+            const char* _certPem = _jsonDocument["certificatePem"];
+            const char* _privateKey = _jsonDocument["privateKey"];
+
+            File _certFile = SPIFFS.open(CERTIFICATE_PATH, FILE_WRITE);
+            if (_certFile) {
+                _certFile.print(_certPem);
+                _certFile.close();
+            }
+
+            File _keyFile = SPIFFS.open(PRIVATE_KEY_PATH, FILE_WRITE);
+            if (_keyFile) {
+                _keyFile.print(_privateKey);
+                _keyFile.close();
+            }
+
+            // Restart MQTT connection
+            setRestartEsp32("subscribeCallback", "Restarting after successful certificates provisioning");
+        }
     }
 }
 
@@ -25,18 +50,25 @@ Mqtt::Mqtt(
     CustomTime &customTime
 ) : _ade7953(ade7953), _logger(logger), _customTime(customTime) {}
 
-void Mqtt::begin(String deviceId) {
+void Mqtt::begin() {
     _logger.debug("Setting up MQTT...", "mqtt::begin");
 
-    _deviceId = deviceId;
+    _deviceId = getDeviceId();
+
+    if (!_checkCertificates()) {
+        _claimProcess();
+        return;
+    }
     
     _setupTopics();
 
     clientMqtt.setCallback(subscribeCallback);
 
+    _setCertificates();
+
     net.setCACert(aws_iot_core_cert_ca);
-    net.setCertificate(aws_iot_core_cert_crt);
-    net.setPrivateKey(aws_iot_core_cert_private);
+    net.setCertificate(_awsIotCoreCert);
+    net.setPrivateKey(_awsIotCorePrivateKey);
 
     clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
 
@@ -49,6 +81,8 @@ void Mqtt::begin(String deviceId) {
 }
 
 void Mqtt::loop() {
+    if (_isClaimInProgress) {return;} // On next reboot, the device will try to claim the certificates again
+
     if (!generalConfiguration.isCloudServicesEnabled || restartConfiguration.isRequired) {
         if (_isSetupDone) {
             _logger.info("Disconnecting MQTT", "mqtt::mqttLoop");
@@ -72,7 +106,7 @@ void Mqtt::loop() {
     }
 
     if (!_isSetupDone) {
-        begin(getDeviceId());
+        begin();
     }
 
     if ((millis() - _lastMillisMqttLoop) > MQTT_LOOP_INTERVAL) {
@@ -168,6 +202,116 @@ void Mqtt::_temporaryDisable() {
     _logger.debug("MQTT temporarely disabled. Retrying connection in %d milliseconds", "mqtt::_temporaryDisable", MQTT_TEMPORARY_DISABLE_INTERVAL);
 }
 
+void Mqtt::_setCertificates() {
+    _logger.debug("Setting certificates...", "mqtt::_setCertificates");
+
+    File _certFile = SPIFFS.open(CERTIFICATE_PATH, FILE_READ);
+    if (!_certFile) {
+        _logger.error("Failed to open certificate file", "mqtt::_setCertificates");
+        return;
+    }
+
+    _awsIotCoreCert = _certFile.readString().c_str();
+    _certFile.close();
+
+    File _keyFile = SPIFFS.open(PRIVATE_KEY_PATH, FILE_READ);
+    if (!_keyFile) {
+        _logger.error("Failed to open private key file", "mqtt::_setCertificates");
+        return;
+    }
+
+    _awsIotCorePrivateKey = _keyFile.readString().c_str();
+    _keyFile.close();
+
+    _logger.debug("Certificates set", "mqtt::_setCertificates");
+}
+
+bool Mqtt::_checkCertificates() {
+    if (SPIFFS.exists(CERTIFICATE_PATH) && SPIFFS.exists(PRIVATE_KEY_PATH)) {
+        _logger.debug("Certificates found", "mqtt::_checkCertificates");
+        return true;
+    }
+    _logger.info("Certificates not found", "mqtt::_checkCertificates");
+    return false;
+}
+
+void Mqtt::_claimProcess() {
+    _isClaimInProgress = true;
+
+    _setTopicProvisioningRequest();
+    _setTopicProvisioningResponse();
+
+    clientMqtt.setCallback(subscribeCallback);
+    net.setCACert(aws_iot_core_cert_ca);
+    net.setCertificate(aws_iot_core_cert_crtclaim);
+    net.setPrivateKey(aws_iot_core_cert_privateclaim);
+
+    clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
+
+    clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
+    clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
+
+    _logger.debug("MQTT setup for claiming certificates complete", "mqtt::begin");
+
+    int _connectionAttempt = 0;
+    while (_connectionAttempt < MQTT_MAX_CONNECTION_ATTEMPT) {
+        _logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", "mqtt::begin", _connectionAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
+
+        if (clientMqtt.connect(_deviceId.c_str())) {
+            _logger.info("Connected to MQTT for claiming certificates", "mqtt::begin");
+            break;
+        }
+
+        _logger.warning(
+            "Failed to connect to MQTT for claiming certificates (%d/%d). Reason: %s. Retrying...",
+            "mqtt::begin",
+            _connectionAttempt + 1,
+            MQTT_MAX_CONNECTION_ATTEMPT,
+            getMqttStateReason(clientMqtt.state())
+        );
+
+        _connectionAttempt++;
+    }
+
+    _subscribeProvisioningResponse();
+    
+    int _publishAttempt = 0;
+    while (_publishAttempt < MQTT_MAX_CONNECTION_ATTEMPT) {
+        _logger.debug("Attempting to publish provisioning request (%d/%d)...", "mqtt::begin", _publishAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
+
+        if (_publishProvisioningRequest()) {
+            _logger.info("Provisioning request published", "mqtt::begin");
+            break;
+        }
+
+        _logger.warning(
+            "Failed to publish provisioning request (%d/%d). Retrying...",
+            "mqtt::begin",
+            _publishAttempt + 1,
+            MQTT_MAX_CONNECTION_ATTEMPT
+        );
+
+        _publishAttempt++;
+    }
+
+    unsigned long _wait = millis();
+    unsigned long _checkCertificatesTime = millis();
+    while ((millis() - _wait) < MQTT_PROVISIONING_TIMEOUT) {
+        clientMqtt.loop();
+
+        if ((millis() - _checkCertificatesTime) > MQTT_PROVISIONING_LOOP_CHECK) {
+            _checkCertificatesTime = millis();
+
+            if (_checkCertificates()) {
+                _logger.info("Certificates claimed", "mqtt::begin");
+                break;
+            }
+        }
+    }
+
+    _isClaimInProgress = false;
+}
+
 void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topic) {
     _logger.debug("Constructing MQTT topic with rule for %s | %s", "mqtt::_constructMqttTopicWithRule", ruleName, finalTopic);
 
@@ -239,6 +383,16 @@ void Mqtt::_setTopicChannel() {
 void Mqtt::_setTopicGeneralConfiguration() {
     _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration);
     _logger.debug(_mqttTopicGeneralConfiguration, "mqtt::_setTopicGeneralConfiguration");
+}
+
+void Mqtt::_setTopicProvisioningRequest() {
+    _constructMqttTopic(MQTT_TOPIC_PROVISIONING_REQUEST, _mqttTopicProvisioningRequest);
+    _logger.debug(_mqttTopicProvisioningRequest, "mqtt::_setTopicProvisioningRequest");
+}
+
+void Mqtt::_setTopicProvisioningResponse() {
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE, _mqttTopicProvisioningResponse);
+    _logger.debug(_mqttTopicProvisioningResponse, "mqtt::_setTopicProvisioningResponse");
 }
 
 void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter) {
@@ -378,6 +532,20 @@ void Mqtt::_publishGeneralConfiguration() {
     _logger.debug("General configuration published to MQTT", "mqtt::_publishGeneralConfiguration");
 }
 
+bool Mqtt::_publishProvisioningRequest() {
+    _logger.debug("Publishing provisioning request to MQTT", "mqtt::_publishProvisioningRequest");
+
+    JsonDocument _jsonDocument;
+
+    _jsonDocument["unixTime"] = _customTime.getUnixTime();
+    _jsonDocument["firmwareVersion"] = _deviceId;
+
+    String _provisioningRequestMessage;
+    serializeJson(_jsonDocument, _provisioningRequestMessage);
+
+    return _publishMessage(_mqttTopicProvisioningRequest, _provisioningRequestMessage.c_str());
+}
+
 bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) {
     _logger.debug(
         "Publishing message to topic %s",
@@ -437,6 +605,7 @@ void Mqtt::_subscribeToTopics() {
     _logger.debug("Subscribing to topics...", "mqtt::_subscribeToTopics");
 
     _subscribeUpdateFirmware();
+    _subscribeRestart();
 
     _logger.debug("Subscribed to topics", "mqtt::_subscribeToTopics");
 }
@@ -459,6 +628,11 @@ void Mqtt::_subscribeRestart() {
     }
 }
 
-// TODO: 
-// - claim provisioning
-// - add possibility to do FOTA by downloading from HTTPS and then updating the firmware. Check the HttpsOTAUpdate.h and Updater.h
+void Mqtt::_subscribeProvisioningResponse() {
+    char _topic[MQTT_MAX_TOPIC_LENGTH];
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE, _topic);
+    
+    if (!clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+        _logger.warning("Failed to subscribe to provisioning response topic", "mqtt::_subscribeProvisioningResponse");
+    }
+}

@@ -37,8 +37,8 @@ extern const char default_config_custom_mqtt_json[] asm("_binary_config_custommq
 // AWS IoT Core secrets
 // --------------------------------------------------
 extern const char aws_iot_core_cert_ca[] asm("_binary_secrets_ca_pem_start");
-extern const char aws_iot_core_cert_crt[] asm("_binary_secrets_cert_pem_start");
-extern const char aws_iot_core_cert_private[] asm("_binary_secrets_private_pem_start");
+extern const char aws_iot_core_cert_crtclaim[] asm("_binary_secrets_certclaim_pem_start");
+extern const char aws_iot_core_cert_privateclaim[] asm("_binary_secrets_privateclaim_pem_start");
 extern const char aws_iot_core_endpoint[] asm("_binary_secrets_endpoint_txt_start");
 extern const char aws_iot_core_rulemeter[] asm("_binary_secrets_rulemeter_txt_start");
 
