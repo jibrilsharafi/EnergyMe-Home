@@ -150,126 +150,182 @@
     </div>
 
     <script>
-        let autoRefreshInterval;
-    
-        function fetchLogs() {
-            fetch('/log-raw')
-                .then(response => response.text())
-                .then(data => {
-                    // If data is empty, return to avoid errors
-                    if (data === '') return;
+    let autoRefreshInterval;
+    let isLogFetchActive = false;
+    let lastFetchTime = 0;
+    const FETCH_THROTTLE = 1000; // Minimum time between fetches in milliseconds
 
-                    // Remove the last 4 characters if they are \r\n
-                    if (data.slice(-2) === '\r\n') data = data.slice(0, -2);
-                    
-                    const log = data.split('\n').map((line, index) => {
-                        try {
-                            const [timestamp, elapsedTime, level, core, module, ...messageParts] = line.replaceAll('[','').replaceAll('\r', '').split('] ');
-                            const message = messageParts.join('] ');
-                            return { row: index + 1, timestamp, elapsedTime, level: level.trim(), core: core.replace('Core ', ''), module, message };
-                        } catch (error) {
-                            return { row: index + 1, timestamp: '', elapsedTime: '', level: '', core: '', module: '', message: '' };
-                        }
-                    }).reverse();
-    
-                    if (log[0].message === '') log.shift();
-                    if (log[log.length - 1].message === '') log.pop();
-    
-                    const logBody = document.getElementById('log-body');
-                    logBody.innerHTML = ''; // Clear existing logs
-                    log.forEach(log => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td>${log.row}</td>
-                            <td>${log.timestamp}</td>
-                            <td>${log.elapsedTime}</td>
-                            <td><span class="log-level log-level-${log.level}">${log.level}</span></td>
-                            <td>${log.core}</td>
-                            <td>${log.module}</td>
-                            <td>${log.message}</td>
-                        `;
-                        logBody.appendChild(row);
-                    });
-
-                    filterLogs();
-                });
+    async function fetchLogs() {
+        const now = Date.now();
+        
+        // If a fetch is already in progress or we haven't waited long enough, skip this fetch
+        if (isLogFetchActive || (now - lastFetchTime < FETCH_THROTTLE)) {
+            return;
         }
-    
-        function filterLogs() {
-            const searchInput = document.querySelector('.search-input');
-            const filter = searchInput.value.toUpperCase();
-            const rows = document.querySelectorAll('.log-table tr');
-            const activeLevel = document.querySelector('.filter-button.active').dataset.level;
-    
-            rows.forEach(row => {
-                // If it's the header row, skip it.
-                if (row.getElementsByTagName('th').length > 0) return;
-    
-                const cells = row.getElementsByTagName('td');
-                let found = false;
-                const rowLevel = cells[3].textContent.trim().toUpperCase();
-    
-                if (activeLevel === 'ALL' || activeLevel === rowLevel) {
-                    for (let i = 0; i < cells.length; i++) {
-                        if (cells[i].textContent.toUpperCase().indexOf(filter) > -1) {
-                            found = true;
-                            break;
-                        }
+
+        isLogFetchActive = true;
+        lastFetchTime = now;
+
+        try {
+            const response = await fetch('/log-raw');
+            const data = await response.text();
+
+            // If data is empty, return early
+            if (data === '') {
+                return;
+            }
+
+            // Remove the last 4 characters if they are \r\n
+            let processedData = data;
+            if (processedData.slice(-2) === '\r\n') {
+                processedData = processedData.slice(0, -2);
+            }
+            
+            const log = processedData.split('\n').map((line, index) => {
+                try {
+                    const [timestamp, elapsedTime, level, core, module, ...messageParts] = 
+                        line.replaceAll('[','').replaceAll('\r', '').split('] ');
+                    const message = messageParts.join('] ');
+                    return {
+                        row: index + 1,
+                        timestamp,
+                        elapsedTime,
+                        level: level.trim(),
+                        core: core.replace('Core ', ''),
+                        module,
+                        message
+                    };
+                } catch (error) {
+                    return {
+                        row: index + 1,
+                        timestamp: '',
+                        elapsedTime: '',
+                        level: '',
+                        core: '',
+                        module: '',
+                        message: ''
+                    };
+                }
+            }).reverse();
+
+            if (log[0].message === '') log.shift();
+            if (log[log.length - 1].message === '') log.pop();
+
+            const logBody = document.getElementById('log-body');
+            logBody.innerHTML = ''; // Clear existing logs
+            
+            // Use DocumentFragment for better performance
+            const fragment = document.createDocumentFragment();
+            log.forEach(log => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${log.row}</td>
+                    <td>${log.timestamp}</td>
+                    <td>${log.elapsedTime}</td>
+                    <td><span class="log-level log-level-${log.level}">${log.level}</span></td>
+                    <td>${log.core}</td>
+                    <td>${log.module}</td>
+                    <td>${log.message}</td>
+                `;
+                fragment.appendChild(row);
+            });
+            logBody.appendChild(fragment);
+
+            filterLogs();
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+        } finally {
+            isLogFetchActive = false;
+        }
+    }
+
+    // Debounced version of filterLogs for better performance
+    const debouncedFilterLogs = debounce(function() {
+        const searchInput = document.querySelector('.search-input');
+        const filter = searchInput.value.toUpperCase();
+        const rows = document.querySelectorAll('.log-table tr');
+        const activeLevel = document.querySelector('.filter-button.active').dataset.level;
+
+        rows.forEach(row => {
+            if (row.getElementsByTagName('th').length > 0) return;
+
+            const cells = row.getElementsByTagName('td');
+            let found = false;
+            const rowLevel = cells[3].textContent.trim().toUpperCase();
+
+            if (activeLevel === 'ALL' || activeLevel === rowLevel) {
+                for (let i = 0; i < cells.length; i++) {
+                    if (cells[i].textContent.toUpperCase().indexOf(filter) > -1) {
+                        found = true;
+                        break;
                     }
                 }
-                
-                row.style.display = found ? '' : 'none';
-            });
-        }
-    
-        document.querySelectorAll('.filter-button').forEach(button => {
-            button.addEventListener('click', function() {
-                document.querySelectorAll('.filter-button').forEach(btn => btn.classList.remove('active'));
-                this.classList.add('active');
-                filterLogs();
-            });
+            }
+            
+            row.style.display = found ? '' : 'none';
+        });
+    }, 250); // 250ms debounce time
+
+    // Debounce helper function
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    // Event Listeners
+    document.querySelectorAll('.filter-button').forEach(button => {
+        button.addEventListener('click', function() {
+            document.querySelectorAll('.filter-button').forEach(btn => 
+                btn.classList.remove('active'));
+            this.classList.add('active');
+            debouncedFilterLogs();
+        });
+    });
+
+    document.getElementById('download-csv').addEventListener('click', function() {
+        const csvContent = ["data:text/csv;charset=utf-8,"];
+        csvContent.push("Row,Timestamp,Elapsed,Level,Core,Module,Message");
+
+        const rows = document.querySelectorAll('.log-table tr:not(:first-child)');
+        rows.forEach(function(row) {
+            const rowData = Array.from(row.querySelectorAll('td'))
+                .map(cell => cell.textContent.trim())
+                .join(",");
+            csvContent.push(rowData);
         });
 
-        document.getElementById('download-csv').addEventListener('click', function () {
-            var csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += "Row,Timestamp,Elapsed,Level,Core,Module,Message\n";
-        
-            const rows = document.querySelectorAll('.log-table tr:not(:first-child)');
-            rows.forEach(function (row) {
-                var rowData = [];
-                row.querySelectorAll('td').forEach(function (cell, index) {
-                    if (index === 3) { // Level column
-                        rowData.push(cell.textContent.trim());
-                    } else {
-                        rowData.push(cell.textContent.trim());
-                    }
-                });
-                csvContent += rowData.join(",") + "\n";
-            });
-        
-            var encodedUri = encodeURI(csvContent);
-            var link = document.createElement("a");
-            var now = new Date();
-            var timestamp = now.toISOString().replace(/[:.-]/g, "_");
-            var filename = "energyme_home_log_" + timestamp + ".csv";
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", filename);
-            document.body.appendChild(link);
-        
-            link.click();
-            document.body.removeChild(link);
-        });
-    
-        document.getElementById('auto-refresh-checkbox').addEventListener('change', function() {
-            if (this.checked) {
-                autoRefreshInterval = setInterval(fetchLogs, 1000); // Refresh every 5 seconds
-            } else {
-                clearInterval(autoRefreshInterval);
-            }
-        });
-    
-        // Initial fetch of logs
-        fetchLogs();
+        const encodedUri = encodeURI(csvContent.join("\n"));
+        const link = document.createElement("a");
+        const timestamp = new Date().toISOString().replace(/[:.-]/g, "_");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `energyme_home_log_${timestamp}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+
+    document.getElementById('auto-refresh-checkbox').addEventListener('change', function() {
+        if (this.checked) {
+            // Start with an immediate fetch
+            fetchLogs();
+            autoRefreshInterval = setInterval(fetchLogs, FETCH_THROTTLE);
+        } else {
+            clearInterval(autoRefreshInterval);
+        }
+    });
+
+    // Replace the original filterLogs function with the debounced version
+    const filterLogs = debouncedFilterLogs;
+
+    // Initial fetch of logs
+    fetchLogs();
     </script>
 </body>
 </html>
