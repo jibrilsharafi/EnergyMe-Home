@@ -701,7 +701,7 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
         _file.close();
     }
 
-    // Just for debugging reasons, print the content of the rollback file
+    // Just for debugging reasons, print the content of the rollback file || FIXME: remove this as this works (obviously)
     _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
     if (!_file) {
         _logger.error("Failed to open rollback file at %s", "customserver::_onUpdateSuccessful", FW_ROLLBACK_TXT);
@@ -739,6 +739,6 @@ void CustomServer::_serveJsonFile(AsyncWebServerRequest *request, const char *fi
         request->send(file, filePath, "application/json");
         file.close();
     } else {
-        request->send(500, "application/json", "{\"message\":\"File not found\"}");
+        request->send(404, "application/json", "{\"message\":\"File not found\"}");
     }
 }

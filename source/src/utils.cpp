@@ -281,17 +281,25 @@ void restartEsp32() {
 
     // If a firmware evaluation is in progress, set the firmware to test again
     File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
+    String _firmwareStatus;
     if (_file) {
-        const char* _firmwareStatus = _file.readString().c_str();
-        logger.debug("Firmware status: %s", "utils::restartEsp32", _firmwareStatus);
-        if (_firmwareStatus == NEW_FIRMWARE_TESTING) {
-            logger.warning("Firmware evaluation is in progress. Setting firmware to test again", "utils::restartEsp32");
-            _file.close();
-            
-            _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
-            _file.print(NEW_FIRMWARE_TO_BE_TESTED);
-        }
+        _firmwareStatus = _file.readString();
+        logger.debug("Firmware status: %s", "utils::restartEsp32", _firmwareStatus.c_str());
         _file.close();
+    } else {
+        logger.error("Failed to open firmware rollback file", "utils::restartEsp32");
+    }
+
+    if (_firmwareStatus == NEW_FIRMWARE_TESTING) {
+        logger.warning("Firmware evaluation is in progress. Setting firmware to test again", "utils::restartEsp32");
+
+        _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+        if (_file) {
+            _file.print(NEW_FIRMWARE_TO_BE_TESTED);
+            _file.close();
+        } else {
+            logger.error("Failed to open firmware rollback file for writing", "utils::restartEsp32");
+        }
     }
 
     ESP.restart();
@@ -687,17 +695,17 @@ void crashCounterLoop() {
 void handleFirmwareTesting() {
     logger.debug("Checking if rollback is needed...", "utils::handleFirmwareTesting");
 
-    const char* _rollbackStatus;
+    String _rollbackStatus;
     File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
     if (!_file) {
         logger.error("Failed to open firmware rollback file", "utils::handleFirmwareTesting");
         return;
     } else {
-        _rollbackStatus = _file.readString().c_str();
+        _rollbackStatus = _file.readString();
         _file.close();
     }
 
-    logger.debug("Rollback status: %s", "utils::handleFirmwareTesting", _rollbackStatus); //FIXME: set to debug
+    logger.debug("Rollback status: %s", "utils::handleFirmwareTesting", _rollbackStatus);
     if (_rollbackStatus == NEW_FIRMWARE_TO_BE_TESTED) { // First restart after new firmware is installed
         logger.info("Testing new firmware", "utils::handleFirmwareTesting");
 
@@ -734,6 +742,7 @@ void firmwareTestingLoop() {
 
     if (millis() > ROLLBACK_TESTING_TIMEOUT) {
         logger.info("Testing period of new firmware has passed. Keeping current firmware", "utils::firmwareTestingLoop");
+        isFirmwareUpdate = false;
 
         File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
         if (_file) {

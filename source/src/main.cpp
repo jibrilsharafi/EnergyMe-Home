@@ -2,6 +2,17 @@
 #include <SPIFFS.h>
 #include <WiFiManager.h> // Needs to be defined on top due to conflict between WiFiManager and ESPAsyncWebServer
 
+// Testing the RTC memory to store the crash counter
+#include <esp_system.h>
+#include <rom/rtc.h>
+
+// Define structure for RTC memory
+RTC_DATA_ATTR struct { //FIXME: this does not really store data across reboots
+    uint32_t breadcrumbs[8];  // Stores last 8 checkpoint IDs
+    uint8_t currentIndex;     // Current position in circular buffer
+    uint32_t crashCount;      // Number of crashes detected
+} rtcData;
+
 // Project includes
 #include "ade7953.h"
 #include "constants.h"
@@ -112,6 +123,60 @@ CustomServer customServer(
   customMqtt
 );
 
+const char* getResetReasonString(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_UNKNOWN: return "Unknown reset";
+        case ESP_RST_POWERON: return "Power-on reset";
+        case ESP_RST_EXT: return "External pin reset";
+        case ESP_RST_SW: return "Software reset";
+        case ESP_RST_PANIC: return "Exception/Panic reset";
+        case ESP_RST_INT_WDT: return "Interrupt watchdog reset";
+        case ESP_RST_TASK_WDT: return "Task watchdog reset";
+        case ESP_RST_WDT: return "Other watchdog reset";
+        case ESP_RST_DEEPSLEEP: return "Deep sleep reset";
+        case ESP_RST_BROWNOUT: return "Brownout reset";
+        case ESP_RST_SDIO: return "SDIO reset";
+        default: return "Unknown";
+    }
+}
+
+void setupBreadcrumbs() {
+    esp_reset_reason_t _resetReason = esp_reset_reason();
+    
+    // Initialize on first boot or power-on
+    if (_resetReason == ESP_RST_POWERON) {
+        memset(&rtcData, 0, sizeof(rtcData));
+        logger.info("Power loss detected. Resetting breadcrumbs.", "main::setupBreadcrumbs");
+        return;
+    }
+    
+    // Check for crash conditions
+    if (_resetReason == ESP_RST_PANIC ||       // Exception/Panic
+        _resetReason == ESP_RST_INT_WDT ||     // Interrupt watchdog
+        _resetReason == ESP_RST_TASK_WDT ||    // Task watchdog
+        _resetReason == ESP_RST_WDT ||         // Other watchdog
+        _resetReason == ESP_RST_BROWNOUT) {    // Brownout
+        
+        rtcData.crashCount++;
+        logger.warning("Crash detected! Type: %s (%d) | Crash count: %d", "main::setupBreadcrumbs", getResetReasonString(_resetReason), _resetReason, rtcData.crashCount);
+        
+        logger.info("Last breadcrumbs (most recent first):", "main::setupBreadcrumbs");
+        for (int i = 0; i < 8; i++) {
+            uint8_t index = (rtcData.currentIndex - i - 1) & 0x07;
+            if (rtcData.breadcrumbs[index] != 0) {
+                logger.info("Breadcrumb %d: 0x%04X", "main::setupBreadcrumbs", i, rtcData.breadcrumbs[index]);
+            }
+        }
+    }
+}
+
+
+void leaveBreadcrumb(int checkpoint) {
+    // Store checkpoint in circular buffer
+    rtcData.breadcrumbs[rtcData.currentIndex] = checkpoint;
+    rtcData.currentIndex = (rtcData.currentIndex + 1) & 0x07;  // Keep within 0-7
+}
+
 // Main functions
 // --------------------
 
@@ -169,12 +234,18 @@ void setup() {
 
   logger.info("EnergyMe - Home | Build version: %s | Build date: %s", "main::setup", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE);
 
+  setupBreadcrumbs();
+  leaveBreadcrumb(0x1001);
+
   // Check if the device has crashed more than the maximum allowed times. If so, the device will rollback to the stable firmware
   logger.info("Checking integrity...", "main::setup");
+  leaveBreadcrumb(0x1004);
   handleCrashCounter();
+  leaveBreadcrumb(0x1005);
   handleFirmwareTesting();
   logger.info("Integrity check done", "main::setup");
   
+  leaveBreadcrumb(0x1006);
   if (checkIfFirstSetup() || checkAllFiles()) {
     led.setOrange();
 
@@ -184,6 +255,7 @@ void setup() {
     logger.info("Default files created after format", "main::setup");
   }
 
+  leaveBreadcrumb(0x1007);
   logger.info("Fetching general configuration from SPIFFS...", "main::setup");
   setDefaultGeneralConfiguration(); // Start with default values
   if (!setGeneralConfigurationFromSpiffs()) {
@@ -194,10 +266,12 @@ void setup() {
 
   led.setPurple();
   
+  leaveBreadcrumb(0x1008);
   logger.info("Setting up multiplexer...", "main::setup");
   multiplexer.begin();
   logger.info("Multiplexer setup done", "main::setup");
   
+  leaveBreadcrumb(0x1009);
   logger.info("Setting up ADE7953...", "main::setup");
   if (!ade7953.begin()) {
     logger.fatal("ADE7953 initialization failed!", "main::setup");
@@ -207,6 +281,7 @@ void setup() {
   
   led.setBlue();
 
+  leaveBreadcrumb(0x10010);
   logger.info("Setting up WiFi...", "main::setup");
   if (!customWifi.begin()) {
     setRestartEsp32("main::setup", "Failed to connect to WiFi and hit timeout");
@@ -215,6 +290,7 @@ void setup() {
   }
 
   // The mDNS has to be set up in the main setup function as it is required to be globally accessible
+  leaveBreadcrumb(0x10011);
   logger.info("Setting up mDNS...", "main::setupMdns");
     if (!MDNS.begin(MDNS_HOSTNAME))
     {
@@ -223,6 +299,7 @@ void setup() {
   MDNS.addService("http", "tcp", 80);
   logger.info("mDNS setup done", "main::setupMdns");
   
+  leaveBreadcrumb(0x10012);
   logger.info("Syncing time...", "main::setup");
   updateTimezone();
   if (!customTime.begin()) {
@@ -231,14 +308,17 @@ void setup() {
     logger.info("Time synced", "main::setup");
   }
   
+  leaveBreadcrumb(0x10013);
   logger.info("Setting up server...", "main::setup");
   customServer.begin();
   logger.info("Server setup done", "main::setup");
 
+  leaveBreadcrumb(0x10014);
   logger.info("Setting up Modbus TCP...", "main::setup");
   modbusTcp.begin();
   logger.info("Modbus TCP setup done", "main::setup");
 
+  leaveBreadcrumb(0x10015);
   if (generalConfiguration.isCloudServicesEnabled) {
     logger.info("Setting up MQTT...", "main::setup");
     mqtt.begin();
@@ -247,6 +327,7 @@ void setup() {
     logger.info("Cloud services not enabled", "main::setup");
   }
 
+  leaveBreadcrumb(0x10016);
   logger.info("Setting up custom MQTT...", "main::setup");
   customMqtt.setup();
   logger.info("Custom MQTT setup done", "main::setup");
@@ -254,18 +335,26 @@ void setup() {
   isFirstSetup = false;
 
   // Remove the format.txt file as the setup is done
+  leaveBreadcrumb(0x10017);
   SPIFFS.remove("/format.txt");
 
   led.setGreen();
+
+  leaveBreadcrumb(0x10018);
   logger.info("Setup done", "main::setup");
 }
 
 void loop() {
+  leaveBreadcrumb(0x1100);
   customWifi.loop();
+  leaveBreadcrumb(0x1101);
   mqtt.loop();
+  leaveBreadcrumb(0x1102);
   customMqtt.loop();
+  leaveBreadcrumb(0x1103);
   ade7953.loop();
   
+  leaveBreadcrumb(0x1104);
   if (ade7953.isLinecycFinished()) {
     led.setGreen();
 
@@ -287,21 +376,27 @@ void loop() {
       );
   }
 
+  leaveBreadcrumb(0x1105);
   if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
     printDeviceStatus();
     setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
   }
 
   // If memory is below a certain level, clear the log
+  leaveBreadcrumb(0x1106);
   if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
     printDeviceStatus();
     logger.clearLog();
     logger.warning("Log cleared due to low memory", "main::loop");
   }
 
+  leaveBreadcrumb(0x1107);
   firmwareTestingLoop();
+  leaveBreadcrumb(0x1108);
   crashCounterLoop();
+  leaveBreadcrumb(0x1109);
   checkIfRestartEsp32Required();
   
+  leaveBreadcrumb(0x1110);
   led.setOff();
 }
