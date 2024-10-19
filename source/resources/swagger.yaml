@@ -545,7 +545,9 @@ paths:
               schema:
                 type: object
                 properties:
-                  message:
+                  status:
+                    type: string
+                  md5:
                     type: string
         '400':
           description: Bad request
@@ -554,7 +556,9 @@ paths:
               schema:
                 type: object
                 properties:
-                  message:
+                  status:
+                    type: string
+                  reason:
                     type: string
 
   /rest/factory-reset:

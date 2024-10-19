@@ -8,6 +8,8 @@
 #include <HTTPClient.h>
 #include <SPIFFS.h>
 #include <TimeLib.h>
+#include "mbedtls/aes.h"
+#include "mbedtls/base64.h"
 
 #include "ade7953.h"
 #include "constants.h"
@@ -68,5 +70,8 @@ void handleCrashCounter();
 void crashCounterLoop();
 void handleFirmwareTesting();
 void firmwareTestingLoop();
+
+String decryptData(String encryptedData, String key);
+String readEncryptedFile(const char* path);
 
 #endif

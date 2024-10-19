@@ -357,7 +357,7 @@ void Ade7953::_setCalibrationValuesFromSpiffs() {
 }
 
 void Ade7953::_jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues) {
-    _logger.debug("Parsing JSON calibration values for label %s", "ade7953::_jsonToCalibrationValues", calibrationValues.label.c_str());
+    _logger.verbose("Parsing JSON calibration values for label %s", "ade7953::_jsonToCalibrationValues", calibrationValues.label.c_str());
 
     // The label is not parsed as it is already set in the channel data
     calibrationValues.vLsb = jsonObject["vLsb"].as<float>();
@@ -471,7 +471,7 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
     }
 
     for (JsonPair _kv : jsonDocument.as<JsonObject>()) {
-        _logger.debug(
+        _logger.verbose(
             "Parsing JSON data channel %s | Active: %d | Reverse: %d | Label: %s | Calibration Label: %s", 
             "ade7953::setChannelData", 
             _kv.key().c_str(), 

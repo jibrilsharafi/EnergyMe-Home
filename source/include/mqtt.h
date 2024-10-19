@@ -53,8 +53,6 @@ private:
     void _setTopicMetadata();
     void _setTopicChannel();
     void _setTopicGeneralConfiguration();
-    void _setTopicProvisioningRequest();
-    void _setTopicProvisioningResponse();
 
     bool _publishMessage(const char *topic, const char *message, bool retain = false);
 
@@ -82,8 +80,6 @@ private:
     char _mqttTopicMetadata[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicChannel[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicGeneralConfiguration[MQTT_MAX_TOPIC_LENGTH];
-    char _mqttTopicProvisioningRequest[MQTT_MAX_TOPIC_LENGTH];
-    char _mqttTopicProvisioningResponse[MQTT_MAX_TOPIC_LENGTH];
 
     unsigned long _lastMillisMqttLoop = 0;
     unsigned long _lastMillisMeterPublished = 0;
@@ -98,8 +94,8 @@ private:
     bool _forceDisableMqtt = false;
     unsigned long _mqttConnectionFailedAt = 0;
 
-    const char *_awsIotCoreCert;
-    const char *_awsIotCorePrivateKey;
+    String _awsIotCoreCert;
+    String _awsIotCorePrivateKey;
 };
 
 #endif

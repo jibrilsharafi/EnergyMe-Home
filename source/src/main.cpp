@@ -22,6 +22,7 @@ PublishMqtt publishMqtt;
 
 bool isFirstSetup = false;
 bool isFirmwareUpdate = false;
+bool isCrashCounterReset = false;
 
 int currentChannel = 0;
 int previousChannel = 0;
@@ -138,10 +139,7 @@ void setup() {
 
   led.setCyan();
 
-  // Check if the device has crashed more than the maximum allowed times. If so, the device will rollback to the stable firmware
-  handleCrashCounter();
-  handleFirmwareTesting();
-
+  // TODO: delete this part as it is inherently handled by the crash counter
   if (SPIFFS.exists("/format.txt")) {
     led.setOrange();
     Serial.println("Format file detected. Formatting SPIFFS...");
@@ -170,6 +168,12 @@ void setup() {
   logger.info("Booting...", "main::setup");  
 
   logger.info("EnergyMe - Home | Build version: %s | Build date: %s", "main::setup", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE);
+
+  // Check if the device has crashed more than the maximum allowed times. If so, the device will rollback to the stable firmware
+  logger.info("Checking integrity...", "main::setup");
+  handleCrashCounter();
+  handleFirmwareTesting();
+  logger.info("Integrity check done", "main::setup");
   
   if (checkIfFirstSetup() || checkAllFiles()) {
     led.setOrange();
@@ -296,6 +300,7 @@ void loop() {
   }
 
   firmwareTestingLoop();
+  crashCounterLoop();
   checkIfRestartEsp32Required();
   
   led.setOff();

@@ -14,12 +14,12 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "05"
-#define FIRMWARE_BUILD_VERSION_PATCH "00"
+#define FIRMWARE_BUILD_VERSION_PATCH "01"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
 #define FIRMWARE_BUILD_DATE_MONTH "10"
-#define FIRMWARE_BUILD_DATE_DAY "14"
+#define FIRMWARE_BUILD_DATE_DAY "19"
 #define FIRMWARE_BUILD_DATE FIRMWARE_BUILD_DATE_YEAR "-" FIRMWARE_BUILD_DATE_MONTH "-" FIRMWARE_BUILD_DATE_DAY
 
 // Measurements
@@ -50,13 +50,13 @@
 
 // Rollback
 #define FW_ROLLBACK_TXT "/fw-rollback-status.txt"
-#define STABLE_FIRMWARE 0
-#define NEW_FIRMWARE_TO_BE_TESTED 1
-#define NEW_FIRMWARE_TESTING 2
-#define ROLLBACK_TESTING_TIMEOUT 3600000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
+#define STABLE_FIRMWARE "stable"
+#define NEW_FIRMWARE_TO_BE_TESTED "new_firmware"
+#define NEW_FIRMWARE_TESTING "testing"
+#define ROLLBACK_TESTING_TIMEOUT 60000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
 #define CRASH_COUNTER_TXT "/crash-counter.txt"
-#define MAX_CRASH_COUNT 10
-#define CRASH_COUNTER_TIMEOUT 3600000 // Interval in which the crash counter is reset
+#define MAX_CRASH_COUNT 50
+#define CRASH_COUNTER_TIMEOUT 60000 // Interval in which the crash counter is reset
 
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32
@@ -102,7 +102,7 @@
 #define PAYLOAD_METER_MAX_NUMBER_POINTS 30 // The maximum number of points that can be sent in a single payload
 #define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
 #define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
-#define MQTT_PROVISIONING_TIMEOUT 15000 // The timeout for the provisioning response (in milliseconds)
+#define MQTT_PROVISIONING_TIMEOUT 60000 // The timeout for the provisioning response (in milliseconds)
 #define MQTT_PROVISIONING_LOOP_CHECK 1000 // Interval between two certificates check on memory (in milliseconds)
 
 // Custom MQTT
@@ -195,8 +195,9 @@
 #define MQTT_BASIC_INGEST AWS_TOPIC "/rules"
 
 // Certificates path
-#define CERTIFICATE_PATH "/certs/cert.pem"
-#define PRIVATE_KEY_PATH "/certs/private.pem"
+#define CERTIFICATE_PATH "/secret/cert.pem"
+#define PRIVATE_KEY_PATH "/secret/private.pem"
+#define CERTIFICATE_LENGTH 2048
 
 // EnergyMe - Home | Custom MQTT topics
 // Base topics

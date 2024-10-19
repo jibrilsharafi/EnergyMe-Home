@@ -38,7 +38,7 @@ private:
     void _setOta();
     void _setRestApi();
     void _setOtherEndpoints();
-    void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final, const char *md5);
+    void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final);
     void _onUpdateSuccessful(AsyncWebServerRequest *request);
     void _onUpdateFailed(AsyncWebServerRequest *request, const char* reason);
     void _updateJsonFirmwareStatus(const char* status, const char* reason);

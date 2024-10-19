@@ -104,7 +104,7 @@ void createEmptyJsonFile(const char* path) {
 void formatAndCreateDefaultFiles() {
     logger.debug("Creating default files...", "utils::formatAndCreateDefaultFiles");
 
-    SPIFFS.format();
+    // SPIFFS.format();
 
     createDefaultGeneralConfigurationFile();
     createDefaultEnergyFile();
@@ -280,10 +280,15 @@ void restartEsp32() {
     logger.fatal("Restarting ESP32 from function %s. Reason: %s", "utils::restartEsp32", restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
 
     // If a firmware evaluation is in progress, set the firmware to test again
-    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
     if (_file) {
-        int _firmwareStatus = _file.parseInt();
+        const char* _firmwareStatus = _file.readString().c_str();
+        logger.debug("Firmware status: %s", "utils::restartEsp32", _firmwareStatus);
         if (_firmwareStatus == NEW_FIRMWARE_TESTING) {
+            logger.warning("Firmware evaluation is in progress. Setting firmware to test again", "utils::restartEsp32");
+            _file.close();
+            
+            _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
             _file.print(NEW_FIRMWARE_TO_BE_TESTED);
         }
         _file.close();
@@ -557,11 +562,10 @@ bool isLatestFirmwareInstalled() {
     int _currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
     int _currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
 
-    if (_latestMajor > _currentMajor) return false;
-    if (_latestMinor > _currentMinor) return false;
-    if (_latestPatch > _currentPatch) return false;
-
-    return true;
+    if (_latestMajor < _currentMajor) return true;
+    else if (_latestMinor < _currentMinor) return true;
+    else if (_latestPatch < _currentPatch) return true;
+    else return false;
 }
 
 String getDeviceId() {
@@ -666,7 +670,10 @@ void handleCrashCounter() {
 }
 
 void crashCounterLoop() {
+    if (isCrashCounterReset) return; // Counter already reset
+
     if (millis() > CRASH_COUNTER_TIMEOUT) {
+        isCrashCounterReset = true;
         logger.debug("Timeout reached. Resetting crash counter...", "utils::crashCounterLoop");
 
         File file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_WRITE);
@@ -680,13 +687,17 @@ void crashCounterLoop() {
 void handleFirmwareTesting() {
     logger.debug("Checking if rollback is needed...", "utils::handleFirmwareTesting");
 
-    File file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
-    int _rollbackStatus = STABLE_FIRMWARE;
-    if (file) {
-        _rollbackStatus = file.parseInt();
-        file.close();
+    const char* _rollbackStatus;
+    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
+    if (!_file) {
+        logger.error("Failed to open firmware rollback file", "utils::handleFirmwareTesting");
+        return;
+    } else {
+        _rollbackStatus = _file.readString().c_str();
+        _file.close();
     }
 
+    logger.debug("Rollback status: %s", "utils::handleFirmwareTesting", _rollbackStatus); //FIXME: set to debug
     if (_rollbackStatus == NEW_FIRMWARE_TO_BE_TESTED) { // First restart after new firmware is installed
         logger.info("Testing new firmware", "utils::handleFirmwareTesting");
 
@@ -730,4 +741,45 @@ void firmwareTestingLoop() {
             _file.close();
         }
     }
+}
+
+String decryptData(String encryptedData, String key) {
+    logger.info("Decrypting data: key: %s | encryptedData: %s", "utils::decryptData", key.c_str(), encryptedData.c_str());
+
+    if (key.length() != 32) {
+        logger.error("Invalid key length: %d. Expected 32 bytes", "utils::decryptData", key.length());
+        return String("");
+    }
+
+    unsigned char _decodedData[CERTIFICATE_LENGTH];
+    size_t _decodedLength;
+    int _ret = mbedtls_base64_decode(_decodedData, CERTIFICATE_LENGTH, &_decodedLength, (const unsigned char*)encryptedData.c_str(), encryptedData.length());
+    if (_ret != 0) {
+        logger.error("Second base64 decoding failed: %d", "utils::decryptData", _ret);
+        return String("");
+    }
+    logger.info("Decoded data: %s", "utils::decryptData", _decodedData);
+    
+    mbedtls_aes_context aes;
+    mbedtls_aes_init(&aes);
+    mbedtls_aes_setkey_dec(&aes, (const unsigned char*)key.c_str(), 256);
+    unsigned char decryptedData[CERTIFICATE_LENGTH];
+    mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, _decodedData, decryptedData);
+
+    logger.info("Decrypted data: %s", "mqtt::_setCertificates", String(reinterpret_cast<const char*>(decryptedData))); // FIXME: Remove sensitive information from logs
+
+    return String(reinterpret_cast<const char*>(decryptedData));
+}
+
+String readEncryptedFile(const char* path) {
+    File file = SPIFFS.open(path, FILE_READ);
+    if (!file) {
+        logger.error("Failed to open file for reading", "utils::readEncryptedFile");
+        return String("");
+    }
+
+    String _encryptedData = file.readString();
+    file.close();
+
+    return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId());
 }
