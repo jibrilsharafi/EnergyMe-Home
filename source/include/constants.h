@@ -14,7 +14,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "05"
-#define FIRMWARE_BUILD_VERSION_PATCH "03"
+#define FIRMWARE_BUILD_VERSION_PATCH "04"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
@@ -55,7 +55,7 @@
 #define NEW_FIRMWARE_TESTING "testing"
 #define ROLLBACK_TESTING_TIMEOUT 60000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
 #define CRASH_COUNTER_TXT "/crash-counter.txt"
-#define MAX_CRASH_COUNT 50
+#define MAX_CRASH_COUNT 10 // The maximum number of crashes before the firmware is rolled back and the SPIFFS is formatted
 #define CRASH_COUNTER_TIMEOUT 60000 // Interval in which the crash counter is reset
 
 // Serial

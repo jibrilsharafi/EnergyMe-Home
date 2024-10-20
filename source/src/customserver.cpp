@@ -154,6 +154,7 @@ void CustomServer::_setOta()
                });
 
     // TODO: Add an endpoint returning the current firmware update status percentage using Update.size(), Update.progress(), Update.remaining()
+    // TODO: Add an endpoint for rollback (and also save the previous firmware details in a txt file, as well as making a backup of the current spiffs content)
 }
 
 void CustomServer::_setRestApi()
@@ -451,7 +452,7 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", "{\"message\":\"Erasing WiFi credentials and restarting...\"}");
         _customWifi.resetWifi();
-        setRestartEsp32("customserver::_setRestApi", "Request to erase WiFi credentials from REST API"); });
+    });
 
     server.on("/rest/get-custom-mqtt-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -698,16 +699,6 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
         return;
     } else {
         _file.print(NEW_FIRMWARE_TO_BE_TESTED);
-        _file.close();
-    }
-
-    // Just for debugging reasons, print the content of the rollback file || FIXME: remove this as this works (obviously)
-    _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
-    if (!_file) {
-        _logger.error("Failed to open rollback file at %s", "customserver::_onUpdateSuccessful", FW_ROLLBACK_TXT);
-        return;
-    } else {
-        _logger.debug("Content of rollback file: %s", "customserver::_onUpdateSuccessful", _file.readString().c_str());
         _file.close();
     }
 

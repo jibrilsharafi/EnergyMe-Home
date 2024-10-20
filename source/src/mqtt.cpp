@@ -55,7 +55,6 @@ void Mqtt::begin() {
 
     if (!_checkCertificates()) {
         _claimProcess();
-        _logger.info("Claiming certificates in progress", "mqtt::begin");
         return;
     }
     
@@ -209,7 +208,9 @@ void Mqtt::_temporaryDisable() {
 void Mqtt::_setCertificates() {
     _logger.debug("Setting certificates...", "mqtt::_setCertificates");
 
+    leaveBreadcrumb(1300);
     _awsIotCoreCert = readEncryptedFile(CERTIFICATE_PATH);
+    leaveBreadcrumb(1400);
     _awsIotCorePrivateKey = readEncryptedFile(PRIVATE_KEY_PATH);
 
     _logger.debug("Certificates set", "mqtt::_setCertificates");
@@ -527,7 +528,7 @@ bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) 
     }
 
     if (!clientMqtt.connected()) {
-        _logger.warning("MQTT client not connected, cannot publish on topic %s. State: %s. Skipping publishing on %s", "mqtt::_publishMessage", topic, getMqttStateReason(clientMqtt.state()), topic);
+        _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", "mqtt::_publishMessage", getMqttStateReason(clientMqtt.state()), topic);
         return false;
     }
 

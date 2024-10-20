@@ -10,6 +10,8 @@
 #include <TimeLib.h>
 #include "mbedtls/aes.h"
 #include "mbedtls/base64.h"
+#include <esp_system.h>
+#include <rom/rtc.h>
 
 #include "ade7953.h"
 #include "constants.h"
@@ -17,6 +19,14 @@
 #include "global.h"
 #include "led.h"
 #include "structs.h"
+
+// Define structure for RTC memory
+RTC_NOINIT_ATTR struct { //FIXME: this does not really store data across reboots
+    uint32_t breadcrumbs[8];  // Stores last 8 checkpoint IDs
+    uint8_t currentIndex;     // Current position in circular buffer
+    uint32_t resetCount;      // Number of crashes detected
+} rtcData;
+
 
 void getJsonProjectInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
@@ -73,5 +83,9 @@ void firmwareTestingLoop();
 
 String decryptData(String encryptedData, String key);
 String readEncryptedFile(const char* path);
+
+const char* getResetReasonString(esp_reset_reason_t reason);
+void setupBreadcrumbs();
+void leaveBreadcrumb(int checkpoint);
 
 #endif

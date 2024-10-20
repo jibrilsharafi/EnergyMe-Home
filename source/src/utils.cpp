@@ -104,7 +104,7 @@ void createEmptyJsonFile(const char* path) {
 void formatAndCreateDefaultFiles() {
     logger.debug("Creating default files...", "utils::formatAndCreateDefaultFiles");
 
-    // SPIFFS.format();
+    SPIFFS.format();
 
     createDefaultGeneralConfigurationFile();
     createDefaultEnergyFile();
@@ -647,7 +647,7 @@ void incrementCrashCounter() {
     logger.debug("Crash counter incremented to %d", "utils::incrementCrashCounter", _crashCounter);
 }
 
-void handleCrashCounter() {
+void handleCrashCounter() { // TODO: Move this to RTC
     logger.debug("Handling crash counter...", "utils::handleCrashCounter");
 
     File file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_READ);
@@ -665,11 +665,7 @@ void handleCrashCounter() {
             logger.error("No firmware to rollback available. Keeping current firmware", "utils::handleCrashCounter");
         }
 
-        file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_WRITE);
-        if (file) {
-            file.print(0); // Reset crash counter after rollback
-            file.close();
-        }
+        SPIFFS.format(); // Factory reset
 
         ESP.restart(); // Only place where ESP.restart is directly called as we need to avoid again to crash
     } else {
@@ -692,7 +688,7 @@ void crashCounterLoop() {
     }
 }
 
-void handleFirmwareTesting() {
+void handleFirmwareTesting() { // TODO: Move this to RTC
     logger.debug("Checking if rollback is needed...", "utils::handleFirmwareTesting");
 
     String _rollbackStatus;
@@ -753,15 +749,28 @@ void firmwareTestingLoop() {
 }
 
 String decryptData(String encryptedData, String key) {
-    logger.info("Decrypting data: key: %s | encryptedData: %s", "utils::decryptData", key.c_str(), encryptedData.c_str());
+    leaveBreadcrumb(1203);
+    if (encryptedData.length() == 0) {
+        logger.error("Empty encrypted data", "utils::decryptData");
+        return String("");
+    }
+    leaveBreadcrumb(1204);
+    if (key.length() == 0) {
+        logger.error("Empty key", "utils::decryptData");
+        return String("");
+    }
+    leaveBreadcrumb(1205);
 
+    leaveBreadcrumb(1206);
     if (key.length() != 32) {
         logger.error("Invalid key length: %d. Expected 32 bytes", "utils::decryptData", key.length());
         return String("");
     }
 
+    leaveBreadcrumb(1207);
     unsigned char _decodedData[CERTIFICATE_LENGTH];
     size_t _decodedLength;
+    leaveBreadcrumb(1208);
     int _ret = mbedtls_base64_decode(_decodedData, CERTIFICATE_LENGTH, &_decodedLength, (const unsigned char*)encryptedData.c_str(), encryptedData.length());
     if (_ret != 0) {
         logger.error("Second base64 decoding failed: %d", "utils::decryptData", _ret);
@@ -769,26 +778,90 @@ String decryptData(String encryptedData, String key) {
     }
     logger.info("Decoded data: %s", "utils::decryptData", _decodedData);
     
+    leaveBreadcrumb(1220);
     mbedtls_aes_context aes;
+    leaveBreadcrumb(1230);
     mbedtls_aes_init(&aes);
+    leaveBreadcrumb(1240);
     mbedtls_aes_setkey_dec(&aes, (const unsigned char*)key.c_str(), 256);
+    leaveBreadcrumb(1250);
     unsigned char decryptedData[CERTIFICATE_LENGTH];
+    leaveBreadcrumb(1260);
     mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, _decodedData, decryptedData);
 
-    logger.info("Decrypted data: %s", "mqtt::_setCertificates", String(reinterpret_cast<const char*>(decryptedData))); // FIXME: Remove sensitive information from logs
-
+    leaveBreadcrumb(1270);
     return String(reinterpret_cast<const char*>(decryptedData));
 }
 
 String readEncryptedFile(const char* path) {
+    leaveBreadcrumb(1200);
     File file = SPIFFS.open(path, FILE_READ);
     if (!file) {
         logger.error("Failed to open file for reading", "utils::readEncryptedFile");
         return String("");
     }
 
+    leaveBreadcrumb(1201);
     String _encryptedData = file.readString();
     file.close();
 
-    return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId());
+    leaveBreadcrumb(1202);
+    // return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId());
+    return _encryptedData;
+}
+
+const char* getResetReasonString(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_UNKNOWN: return "Unknown reset";
+        case ESP_RST_POWERON: return "Power-on reset";
+        case ESP_RST_EXT: return "External pin reset";
+        case ESP_RST_SW: return "Software reset";
+        case ESP_RST_PANIC: return "Exception/Panic reset";
+        case ESP_RST_INT_WDT: return "Interrupt watchdog reset";
+        case ESP_RST_TASK_WDT: return "Task watchdog reset";
+        case ESP_RST_WDT: return "Other watchdog reset";
+        case ESP_RST_DEEPSLEEP: return "Deep sleep reset";
+        case ESP_RST_BROWNOUT: return "Brownout reset";
+        case ESP_RST_SDIO: return "SDIO reset";
+        default: return "Unknown";
+    }
+}
+
+void setupBreadcrumbs() {
+    esp_reset_reason_t _resetReason = esp_reset_reason();
+    rtcData.resetCount++;
+    
+    // Initialize on first boot or power-on
+    if (_resetReason == ESP_RST_POWERON) {
+        memset(&rtcData, 0, sizeof(rtcData));
+        logger.info("Power loss detected. Resetting breadcrumbs.", "main::setupBreadcrumbs");
+        return;
+    }
+    
+    // Check for crash conditions
+    // if (_resetReason == ESP_RST_PANIC ||       // Exception/Panic
+    //     _resetReason == ESP_RST_INT_WDT ||     // Interrupt watchdog
+    //     _resetReason == ESP_RST_TASK_WDT ||    // Task watchdog
+    //     _resetReason == ESP_RST_WDT ||         // Other watchdog
+    //     _resetReason == ESP_RST_BROWNOUT) {    // Brownout
+  
+    if (true) {
+        
+        logger.warning("Crash detected! Type: %s (%d) | Reset count: %d", "main::setupBreadcrumbs", getResetReasonString(_resetReason), _resetReason, rtcData.resetCount);
+        
+        logger.info("Last breadcrumbs (most recent first):", "main::setupBreadcrumbs");
+        for (int i = 0; i < 8; i++) {
+            uint8_t index = (rtcData.currentIndex - i - 1) & 0x07;
+            if (rtcData.breadcrumbs[index] != 0) {
+                logger.info("Breadcrumb %d: %d", "main::setupBreadcrumbs", i, rtcData.breadcrumbs[index]);
+            }
+        }
+    }
+}
+
+
+void leaveBreadcrumb(int checkpoint) {
+    // Store checkpoint in circular buffer
+    rtcData.breadcrumbs[rtcData.currentIndex] = checkpoint;
+    rtcData.currentIndex = (rtcData.currentIndex + 1) & 0x07;  // Keep within 0-7
 }

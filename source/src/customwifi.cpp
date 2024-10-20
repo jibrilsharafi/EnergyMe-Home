@@ -45,7 +45,7 @@ void CustomWifi::loop()
 
       if (!_connectToWifi())
       {
-        setRestartEsp32("customwifi::wifiLoop", "Failed to connect to WiFi and hit timeout");
+        setRestartEsp32("customwifi::wifiLoop", "Failed to reconnect to WiFi and hit timeout");
       }
     }
   }
