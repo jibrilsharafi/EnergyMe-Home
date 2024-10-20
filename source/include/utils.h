@@ -21,7 +21,7 @@
 #include "structs.h"
 
 // Define structure for RTC memory
-RTC_NOINIT_ATTR struct { //FIXME: this does not really store data across reboots
+RTC_NOINIT_ATTR struct {
     uint32_t breadcrumbs[8];  // Stores last 8 checkpoint IDs
     uint8_t currentIndex;     // Current position in circular buffer
     uint32_t resetCount;      // Number of crashes detected

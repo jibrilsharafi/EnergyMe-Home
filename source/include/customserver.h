@@ -52,6 +52,8 @@ private:
     CustomTime &_customTime;
     CustomWifi &_customWifi;
     CustomMqtt &_customMqtt;
+
+    String _md5;
 };
 
 #endif

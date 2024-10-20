@@ -35,16 +35,6 @@
             padding: 20px;
             border-radius: 10px;
         }
-        
-        .spinner {
-            border: 16px solid #f3f3f3;
-            border-top: 16px solid var(--green);
-            border-radius: 50%;
-            width: 120px;
-            height: 120px;
-            animation: spin 2s linear infinite;
-            margin: 0 auto;
-        } 
 
         @keyframes spin {
             0% { transform: rotate(0deg); }
@@ -59,6 +49,24 @@
             padding: 10px;
             border-radius: 5px;
             text-align: center;
+        }
+
+        /* Add this to your existing CSS */
+        .progress-circle {
+            stroke-dasharray: 565.48; /* 2 * PI * 90 (radius) */
+            stroke-dashoffset: 565.48;
+            transform: rotate(-90deg);
+            transform-origin: center;
+            transition: stroke-dashoffset 0.3s ease;
+        }
+
+        .progress-ring {
+            margin: 0 auto;
+        }
+
+        .percent-text {
+            font-family: Arial, sans-serif;
+            font-weight: bold;
         }
         
         #result-message {
@@ -78,7 +86,6 @@
 
     <div id="loading-overlay" style="display: none;">
         <div class="loading-content">
-            <div class="spinner"></div> 
             <p id="loading-message"></p>
         </div>
     </div>
@@ -124,6 +131,9 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
     <script>
+        var file_size = 341760; // Default to ESP32 firmware size to avoid division by zero
+        const UPDATE_PROGRESS_INTERVAL = 500;
+
         function getLoadingMessage() {
             return "Please wait, this operation usually takes 10-20 seconds.<br>In the meantime, did you know that...<br><br>" + getRandomFact();
         }
@@ -140,6 +150,37 @@
             return fact;
         }
 
+        function updateProgress() {
+            if (!document.getElementById('loading-overlay').style.display === 'flex') {
+                return; // Stop if overlay is hidden
+            }
+
+            fetch('/rest/update-status')
+                .then(response => response.json())
+                .then(data => {
+                    const percentage = Math.min(Math.floor((data.progress / file_size) * 100) || 0, 100);
+                    const circle = document.querySelector('.progress-circle');
+                    const percentText = document.querySelector('.percent-text');
+                    const circumference = 2 * Math.PI * 90; // radius is 90
+
+                    // Update circle progress
+                    const offset = circumference - (percentage / 100) * circumference;
+                    circle.style.strokeDashoffset = offset;
+
+                    // Update percentage text
+                    percentText.textContent = `${percentage}%`;
+
+                    if (percentage < 100) {
+                        setTimeout(updateProgress, UPDATE_PROGRESS_INTERVAL);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching progress:', error);
+                    setTimeout(updateProgress, UPDATE_PROGRESS_INTERVAL);
+                });
+        }
+
+
         function formSubmitted(event) {
             if (!confirm("Are you sure you want to update the firmware?")) {
                 return false;
@@ -150,9 +191,6 @@
             var resultMessageBox = document.getElementById('result-message');
             resultMessageBox.style.display = 'none';                    
 
-            document.getElementById('loading-overlay').style.display = 'flex';
-            document.getElementById('loading-message').innerHTML = getLoadingMessage();
-
             document.getElementById("submit").value = "Updating...";
             document.getElementById("submit").disabled = true;
             var previousColor = document.getElementById("submit").style.backgroundColor;
@@ -161,8 +199,52 @@
             var file = fileInput.files[0];
 
             function proceedWithUpdate(md5) {
+                fetch('/set-md5?md5=' + md5)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            console.log('MD5 hash set successfully');
+                        } else {
+                            console.error('Failed to set MD5 hash:', data.reason);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error setting MD5 hash:', error);
+                    });
+
                 var formData = new FormData(event.target);
-                var url = '/do-update' + (md5 ? '?md5=' + encodeURIComponent(md5) : '');
+                var url = '/do-update';
+
+                // Inside your fetch .then() callback, before making the update request:
+                document.getElementById('loading-overlay').innerHTML = `
+                    <div class="loading-content">
+                        <svg class="progress-ring" width="200" height="200">
+                            <circle class="progress-ring-bg" 
+                                cx="100" cy="100" r="90" 
+                                fill="transparent" 
+                                stroke="#f3f3f3" 
+                                stroke-width="16"/>
+                            <circle class="progress-circle" 
+                                cx="100" cy="100" r="90" 
+                                fill="transparent" 
+                                stroke="var(--green)" 
+                                stroke-width="16"
+                                stroke-linecap="round"/>
+                            <text class="percent-text" 
+                                x="100" y="100" 
+                                text-anchor="middle" 
+                                dominant-baseline="middle" 
+                                fill="white" 
+                                font-size="32">0%</text>
+                        </svg>
+                        <p id="loading-message"></p>
+                    </div>`;
+
+                // Start progress tracking
+                updateProgress();
+                
+                document.getElementById('loading-overlay').style.display = 'flex';
+                document.getElementById('loading-message').innerHTML = getLoadingMessage();
 
                 fetch(url, {
                     method: 'POST',
@@ -171,7 +253,7 @@
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('loading-overlay').style.display = 'none';
-                    resultMessageBox.style.display = 'block';                    
+                    resultMessageBox.style.display = 'block';     
 
                     if (data.status === 'success') {
                         resultMessageBox.style.backgroundColor = '#d4edda';
@@ -221,6 +303,8 @@
                     }, 5000);
                 });
             }
+
+            file_size = file.size;
 
             if (typeof SparkMD5 !== 'undefined') {
                 var reader = new FileReader();

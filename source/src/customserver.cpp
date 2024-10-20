@@ -18,6 +18,7 @@ void CustomServer::begin()
     server.begin();
 
     Update.onProgress([](size_t progress, size_t total) {});
+    _md5 = "";
 }
 
 void CustomServer::_serverLog(const char *message, const char *function, LogLevel logLevel, AsyncWebServerRequest *request)
@@ -138,23 +139,70 @@ void CustomServer::_setHtmlPages()
 void CustomServer::_setOta()
 {
     server.on("/do-update", HTTP_POST, [this](AsyncWebServerRequest *request) {}, [this](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
-               {
-                    if (request->hasParam("md5", true)) // FIXME: This is always false, even if the parameter is present in the request
-                    {
-                        String _md5 = request->getParam("md5", true)->value();
-                        _md5.toLowerCase();
-                        _logger.debug("MD5 included in the request: %s", "customserver::_setOta", _md5.c_str());
-                        
-                        if (!Update.setMD5(_md5.c_str())) {_logger.warning("MD5 not 32 characters long. Skipping MD5 verification", "customserver::_handleDoUpdate");}
-                        
-                        _handleDoUpdate(request, filename, index, data, len, final);
-                    } else {
-                        _handleDoUpdate(request, filename, index, data, len, final);
-                    }                
-               });
+               {_handleDoUpdate(request, filename, index, data, len, final);});
 
-    // TODO: Add an endpoint returning the current firmware update status percentage using Update.size(), Update.progress(), Update.remaining()
-    // TODO: Add an endpoint for rollback (and also save the previous firmware details in a txt file, as well as making a backup of the current spiffs content)
+    server.on("/set-md5", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to set MD5", "customserver::_setOta", LogLevel::DEBUG, request);
+
+        if (request->hasParam("md5"))
+        {
+            _md5 = request->getParam("md5")->value();
+            _md5.toLowerCase();
+            _logger.debug("MD5 included in the request: %s", "customserver::_setOta", _md5.c_str());
+
+            if (_md5.length() != 32)
+            {
+                _logger.warning("MD5 not 32 characters long. Skipping MD5 verification", "customserver::_setOta");
+                request->send(400, "application/json", "{\"message\":\"MD5 not 32 characters long\"}");
+            }
+            else
+            {
+                _md5 = request->getParam("md5")->value();
+                request->send(200, "application/json", "{\"message\":\"MD5 set\"}");
+            }
+        }
+        else
+        {
+            request->send(400, "application/json", "{\"message\":\"Missing MD5 parameter\"}");
+        }
+    });
+
+    server.on("/rest/update-status", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get update status", "customserver::_setOta", LogLevel::DEBUG, request);
+
+        if (Update.isRunning())
+        {
+            request->send(200, "application/json", "{\"status\":\"running\",\"size\":" + String(Update.size()) + ",\"progress\":" + String(Update.progress()) + ",\"remaining\":" + String(Update.remaining()) + "}");
+        }
+        else
+        {
+            request->send(200, "application/json", "{\"status\":\"idle\"}");
+        }
+    });
+
+    server.on("/rest/update-rollback", HTTP_POST, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to rollback firmware", "customserver::_setOta", LogLevel::WARNING, request);
+
+        if (Update.isRunning())
+        {
+            Update.abort();
+        }
+
+        if (Update.canRollBack())
+        {
+            Update.rollBack();
+            request->send(200, "application/json", "{\"message\":\"Rollback in progress. Restarting ESP32...\"}");
+            setRestartEsp32("customserver::_setOta", "Firmware rollback in progress requested from REST API");
+        }
+        else
+        {
+            _logger.error("Rollback not possible. Reason: %s", "customserver::_setOta", Update.errorString());
+            request->send(500, "application/json", "{\"message\":\"Rollback not possible\"}");
+        }
+    });
 }
 
 void CustomServer::_setRestApi()
@@ -526,7 +574,26 @@ void CustomServer::_setRestApi()
                 } else {
                     request->send(400, "application/json", "{\"message\":\"Invalid configuration\"}");
                 }         
-            } else { // TODO: add a upload-file endpoint
+            } else if (request->url() == "/rest/upload-file") {
+                _serverLog("Request to upload file", "customserver::_setRestApi", LogLevel::INFO, request);
+    
+                if (_jsonDocument.containsKey("filename") && _jsonDocument.containsKey("data")) {
+                    String _filename = _jsonDocument["filename"];
+                    String _data = _jsonDocument["data"];
+    
+                    File _file = SPIFFS.open(_filename, FILE_WRITE);
+                    if (_file) {
+                        _file.print(_data);
+                        _file.close();
+    
+                        request->send(200, "application/json", "{\"message\":\"File uploaded\"}");
+                    } else {
+                        request->send(500, "application/json", "{\"message\":\"Failed to open file\"}");
+                    }
+                } else {
+                    request->send(400, "application/json", "{\"message\":\"Missing filename or data\"}");
+                }
+            } else {
                 _serverLog(
                     ("Request to POST to unknown endpoint: " + request->url()).c_str(),
                     "customserver::_setRestApi",
@@ -558,7 +625,7 @@ void CustomServer::_setRestApi()
             // Skip if private in name
             String _filename = String(_file.path());
 
-            // if (_filename.indexOf("secret") == -1) _jsonDocument[_filename] = _file.size(); //FIXME: uncomment
+            if (_filename.indexOf("secret") == -1) _jsonDocument[_filename] = _file.size();
             _jsonDocument[_filename] = _file.size();
             
             _file = _root.openNextFile();
@@ -576,10 +643,10 @@ void CustomServer::_setRestApi()
     
         String _filename = request->url().substring(10);
 
-        // if (_filename.indexOf("secret") != -1) {
-        //     request->send(401, "application/json", "{\"message\":\"Unauthorized\"}");
-        //     return;
-        // }
+        if (_filename.indexOf("secret") != -1) {
+            request->send(401, "application/json", "{\"message\":\"Unauthorized\"}");
+            return;
+        }
     
         File _file = SPIFFS.open(_filename, FILE_READ);
         if (_file) {
@@ -643,6 +710,8 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
             _onUpdateFailed(request, Update.errorString());
             return;
         }
+
+        Update.setMD5(_md5.c_str());
     }
 
     if (Update.write(data, len) != len)

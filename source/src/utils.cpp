@@ -235,7 +235,7 @@ bool checkIfFirstSetup() {
 
 bool checkAllFiles() {
     logger.debug("Checking all files...", "utils::checkAllFiles");
-    // TODO: understand if this is actually needed, or if it is better to check each file individually and create it if it does not exist
+
     if (!SPIFFS.exists(FIRST_SETUP_JSON_PATH)) return true;
     if (!SPIFFS.exists(GENERAL_CONFIGURATION_JSON_PATH)) return true;
     if (!SPIFFS.exists(CONFIGURATION_ADE7953_JSON_PATH)) return true;
@@ -246,8 +246,8 @@ bool checkAllFiles() {
     if (!SPIFFS.exists(DAILY_ENERGY_JSON_PATH)) return true;
     if (!SPIFFS.exists(FW_UPDATE_INFO_JSON_PATH)) return true;
     if (!SPIFFS.exists(FW_UPDATE_STATUS_JSON_PATH)) return true;
-    if (!SPIFFS.exists(FW_ROLLBACK_TXT)) createDefaultFirmwareRollbackFile();
-    if (!SPIFFS.exists(CRASH_COUNTER_TXT)) createDefaultCrashCounterFile();
+    if (!SPIFFS.exists(FW_ROLLBACK_TXT)) return true;
+    if (!SPIFFS.exists(CRASH_COUNTER_TXT)) return true;
 
     return false;
 }
@@ -806,7 +806,7 @@ String readEncryptedFile(const char* path) {
     file.close();
 
     leaveBreadcrumb(1202);
-    // return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId());
+    // return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId()); //FIXME: Uncomment this line and fix the panic in the decryptData function
     return _encryptedData;
 }
 
@@ -836,17 +836,7 @@ void setupBreadcrumbs() {
         memset(&rtcData, 0, sizeof(rtcData));
         logger.info("Power loss detected. Resetting breadcrumbs.", "main::setupBreadcrumbs");
         return;
-    }
-    
-    // Check for crash conditions
-    // if (_resetReason == ESP_RST_PANIC ||       // Exception/Panic
-    //     _resetReason == ESP_RST_INT_WDT ||     // Interrupt watchdog
-    //     _resetReason == ESP_RST_TASK_WDT ||    // Task watchdog
-    //     _resetReason == ESP_RST_WDT ||         // Other watchdog
-    //     _resetReason == ESP_RST_BROWNOUT) {    // Brownout
-  
-    if (true) {
-        
+    } else if (_resetReason != ESP_RST_SW) {
         logger.warning("Crash detected! Type: %s (%d) | Reset count: %d", "main::setupBreadcrumbs", getResetReasonString(_resetReason), _resetReason, rtcData.resetCount);
         
         logger.info("Last breadcrumbs (most recent first):", "main::setupBreadcrumbs");

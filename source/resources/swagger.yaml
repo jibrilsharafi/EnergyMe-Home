@@ -561,6 +561,94 @@ paths:
                   reason:
                     type: string
 
+  /set-md5:
+    get:
+      summary: Set MD5 checksum for the update
+      tags:
+        - System
+      parameters:
+        - in: query
+          name: md5
+          required: true
+          schema:
+            type: string
+          description: MD5 checksum for the update
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/update-status:
+    get:
+      summary: Get update status
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  size:
+                    type: integer
+                  progress:
+                    type: integer
+                  remaining:
+                    type: integer
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/update-rollback:
+    post:
+      summary: Rollback firmware
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
   /rest/factory-reset:
     post:
       summary: Perform a factory reset
@@ -1201,6 +1289,43 @@ paths:
                 properties:
                   message:
                     type: string
+
+  /rest/upload-file:
+    post:
+      summary: Upload a file to SPIFFS
+      tags:
+        - Files
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filename:
+                  type: string
+                data:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
 
   /log-raw:
     get:
