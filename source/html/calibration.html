@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+    <title>Calibration</title>
+    <style>
+        #meterTable {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: center;
+        }
+
+        #meterTable th,
+        #meterTable td {
+            padding: 8px;
+            border: 1px solid #ddd;
+        }
+
+        #meterTable th {
+            font-weight: bold;
+        }
+
+        #meterTable td:first-child {
+            border-right: 1px solid #ddd;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="outer" href="/configuration">Configuration</a>
+    </div>
+    <div id="calibrationBox" class="section-box">
+        <h1>Calibration</h1>
+        <select id="calibrationDropdown" onchange="fillCalibrationBox()"></select>
+        <p id="dropdownError" style="color: red; display: none;"></p>
+        <button id="addButton" class="buttonForm" onclick="addNewCalibration()">Add</button>
+        <form id="calibrationForm">
+            <h3>Values</h3>
+            <p><span class="list-key">Voltage:</span> <input id="vLsb" name="vLsb" type="number" required> <span class="list-unit">V/LSB</span></p>
+            <p><span class="list-key">Current:</span> <input id="aLsb" name="aLsb" type="number" required> <span class="list-unit">A/LSB</span></p>
+            <p><span class="list-key">Power:</span> <input id="wLsb" name="wLsb" type="number" required> <span class="list-unit">W/LSB</span></p>
+            <p><span class="list-key">Reactive Power:</span> <input id="varLsb" name="varLsb" type="number" required> <span class="list-unit">VAr/LSB</span></p>
+            <p><span class="list-key">Apparent Power:</span> <input id="vaLsb" name="vaLsb" type="number" required> <span class="list-unit">VA/LSB</span></p>
+            <p><span class="list-key">Energy:</span> <input id="whLsb" name="whLsb" type="number" required> <span class="list-unit">Wh/LSB</span></p>
+            <p><span class="list-key">Reactive Energy:</span> <input id="varhLsb" name="varhLsb" type="number" required> <span class="list-unit">VArh/LSB</span></p>
+            <p><span class="list-key">Apparent Energy:</span> <input id="vahLsb" name="vahLsb" type="number" required> <span class="list-unit">VAh/LSB</span></p>
+        </form>
+        <div style="display: flex; justify-content: space-between;">
+            <button class="buttonForm" type="submit" onclick="submitCalibrationData()" id="submitButton">Submit</button>
+            <button class="buttonForm" onclick="repopulateFields()">Reload</button>
+            <button class="buttonForm" type="default" onclick="resetDefaultCalibration()">Reset default
+                calibration</button>
+        </div>
+    </div>
+
+    <div id="meterBox" class="section-box">
+        <h1>Live meter data</h1>
+        <table id="meterTable">
+            <tr>
+                <th>Label</th>
+                <th>Voltage</th>
+                <th>Current</th>
+                <th>Active power</th>
+                <th>Apparent power</th>
+                <th>Reactive power</th>
+                <th>Power factor</th>
+            </tr>
+        </table>
+    </div>
+
+    <script>
+        var meterData;
+        var channelData;
+        var calibrationData;
+
+        function fetchData(endpoint) {
+            return new Promise((resolve, reject) => {
+                var xhttp = new XMLHttpRequest();
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            resolve(JSON.parse(this.responseText));
+                        } else {
+                            console.error(`Error fetching data from ${endpoint}. Status: ${this.status}`);
+                            reject();
+                        }
+                    }
+                };
+                xhttp.open("GET", `/rest/${endpoint}`, true);
+                xhttp.send();
+            });
+        }
+
+        function repopulateFields() {
+            Promise.all([fetchData('meter')])
+                .then(data => {
+                    meterData = data[0];
+
+                    showMeterDataInTable();
+                    fillCalibrationBox();
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function populateDropdown() {
+            var dropdown = document.getElementById('calibrationDropdown');
+            dropdown.innerHTML = ''; // Clear existing options
+
+            Object.keys(calibrationData).forEach((key, index) => {
+                var option = document.createElement('option');
+                option.text = key;
+                option.value = key;
+                dropdown.add(option, index);
+            });
+            dropdown.selectedIndex = 0;
+            fillCalibrationBox();
+        }
+
+        function fillCalibrationBox() {
+            var selectedKey = document.getElementById('calibrationDropdown').value;
+            var selectedCalibration = calibrationData[selectedKey];
+            
+            if (selectedCalibration) {
+                document.getElementById('vLsb').value = selectedCalibration.vLsb;
+                document.getElementById('aLsb').value = selectedCalibration.aLsb;
+                document.getElementById('wLsb').value = selectedCalibration.wLsb;
+                document.getElementById('varLsb').value = selectedCalibration.varLsb;
+                document.getElementById('vaLsb').value = selectedCalibration.vaLsb;
+                document.getElementById('whLsb').value = selectedCalibration.whLsb;
+                document.getElementById('varhLsb').value = selectedCalibration.varhLsb;
+                document.getElementById('vahLsb').value = selectedCalibration.vahLsb;
+            } else {
+                document.getElementById('dropdownError').innerText = "Error: Could not find calibration data";
+                document.getElementById('dropdownError').style.display = "block";
+            }
+        }
+
+        function resetDefaultCalibration() {
+            var r = confirm("Are you sure you want to reset the calibration to the default values?");
+            if (r == true) {
+                var xhttp = new XMLHttpRequest();
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            alert("Default calibration reset successfully");
+                            location.reload();
+                        } else {
+                            console.error("Error submitting default calibration data");
+                        }
+                    }
+                };
+                xhttp.open("POST", "/rest/calibration-reset", true);
+                xhttp.send();
+            }
+        }
+
+        function showMeterDataInTable() {
+            var table = document.getElementById("meterTable");
+            table.innerHTML = "<tr><th>Label</th><th>Voltage</th><th>Current</th><th>Active power</th><th>Apparent power</th><th>Reactive power</th><th>Power factor</th></tr>";
+
+            meterData.forEach(function (meter) {
+                var row = table.insertRow();
+                var labelCell = row.insertCell(0);
+                var voltageCell = row.insertCell(1);
+                var currentCell = row.insertCell(2);
+                var activePowerCell = row.insertCell(3);
+                var apparentPowerCell = row.insertCell(4);
+                var reactivePowerCell = row.insertCell(5);
+                var powerFactorCell = row.insertCell(6);
+
+                labelCell.innerHTML = meter.label;
+                voltageCell.innerHTML = meter.data.voltage.toFixed(1) + " V";
+                currentCell.innerHTML = meter.data.current.toFixed(3) + " A";
+                activePowerCell.innerHTML = meter.data.activePower.toFixed(1) + " W";
+                apparentPowerCell.innerHTML = meter.data.apparentPower.toFixed(1) + " VA";
+                reactivePowerCell.innerHTML = meter.data.reactivePower.toFixed(1) + " VAr";
+                powerFactorCell.innerHTML = (meter.data.powerFactor * 100.0).toFixed(1) + " %";
+            });
+        }
+
+        function submitCalibrationData() {         
+            var label = document.getElementById('calibrationDropdown').value;   
+
+            var calibrationDataModified = {
+                [label]: {
+                    vLsb: parseFloat(document.getElementById('vLsb').value),
+                    aLsb: parseFloat(document.getElementById('aLsb').value),
+                    wLsb: parseFloat(document.getElementById('wLsb').value),
+                    varLsb: parseFloat(document.getElementById('varLsb').value),
+                    vaLsb: parseFloat(document.getElementById('vaLsb').value),
+                    whLsb: parseFloat(document.getElementById('whLsb').value),
+                    varhLsb: parseFloat(document.getElementById('varhLsb').value),
+                    vahLsb: parseFloat(document.getElementById('vahLsb').value)
+                }
+            }
+
+            calibrationData[label] = calibrationDataModified[label];
+        
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200) {
+                    console.log(JSON.parse(this.responseText));
+                } else if (this.readyState == 4) {
+                    console.log("Error submitting calibration data");
+                }
+            };
+            xhttp.open("POST", '/rest/set-calibration', true);
+            xhttp.setRequestHeader("Content-Type", "application/json");
+            xhttp.send(JSON.stringify(calibrationData));
+
+            document.getElementById("submitButton").innerHTML = "Set success";
+            document.getElementById("submitButton").disabled = true;
+            setTimeout(function () {
+                document.getElementById("submitButton").innerHTML = "Submit";
+                document.getElementById("submitButton").disabled = false;
+            }, 3000);
+        }
+
+        function addNewCalibration() {
+            var newCalibrationName = prompt("Please enter the name of the new calibration:");
+            
+            if (newCalibrationName) {
+                var selectedCalibration = calibrationData[document.getElementById('calibrationDropdown').value];
+                if (!selectedCalibration) {
+                    console.error("Error: Could not find calibration data for selected calibration");
+                    return;
+                }
+
+                var i = 1;
+                while (calibrationData[newCalibrationName]) {
+                    newCalibrationName = newCalibrationName + "_" + i;
+                    i++;
+                }
+
+                calibrationData[newCalibrationName] = selectedCalibration;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.onreadystatechange = function() {
+                    if (this.readyState == 4 && this.status == 200) {
+                        console.log(JSON.parse(this.responseText));
+                        setTimeout(function () {
+                            location.reload();
+                        }, 500);
+                    } else if (this.readyState == 4) {
+                        console.log("Error submitting new channel data");
+                    }
+                };
+                xhttp.open("POST", '/rest/set-calibration', true);
+                xhttp.setRequestHeader("Content-Type", "application/json");
+                xhttp.send(JSON.stringify(calibrationData));
+            }
+        }
+
+        document.getElementById("calibrationDropdown").addEventListener("change", function () {
+            fillCalibrationBox();
+        });
+
+        document.getElementById('calibrationForm').addEventListener('submit', function (event) {
+            event.preventDefault();
+            submitCalibrationData();
+        });
+
+        Promise.all([fetchData('meter'), fetchData('get-calibration'), fetchData('get-channel')])
+            .then(data => {
+                meterData = data[0];
+                calibrationData = data[1];
+                channelData = data[2];
+
+                populateDropdown();
+                showMeterDataInTable();
+            })
+            .catch(error => console.error('Error:', error));
+
+    </script>
+</body>
+
+</html>

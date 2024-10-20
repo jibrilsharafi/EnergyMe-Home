@@ -2,24 +2,33 @@
 #define CUSTOMWIFI_H
 
 #include <Arduino.h>
-
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
 
 #include "constants.h"
-#include "led.h"
 #include "utils.h"
 
-extern AdvancedLogger logger;
-extern Led led;
+class CustomWifi
+{
+public:
+    CustomWifi(
+        AdvancedLogger &logger);
 
-bool setupWifi();
-void checkWifi();
-void resetWifi();
+    bool begin();
+    void loop();
+    void resetWifi();
 
-bool setupMdns();
+    void getWifiStatus(JsonDocument &jsonDocument);
+    void printWifiStatus();
 
-JsonDocument getWifiStatus();
-void printWifiStatus();
+private:
+    bool _connectToWifi();
+
+    WiFiManager _wifiManager;
+
+    AdvancedLogger &_logger;
+
+    unsigned long _lastMillisWifiLoop = 0;
+};
 
 #endif

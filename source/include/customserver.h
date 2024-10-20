@@ -1,39 +1,59 @@
 #ifndef CUSTOMSERVER_H
 #define CUSTOMSERVER_H
 
-#include "customwifi.h"
-
 #include <Arduino.h>
-#include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
 #include <Update.h>
-#include <Ticker.h>
-
-#include "ArduinoJson.h"
+#include <ArduinoJson.h>
+#include <AdvancedLogger.h>
+#include <SPIFFS.h>
 
 #include "ade7953.h"
-#include "constants.h"
 #include "led.h"
+#include "customtime.h"
+#include "customwifi.h"
+#include <ESPAsyncWebServer.h> // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
+#include "constants.h"
 #include "utils.h"
 #include "global.h"
-#include "mqtt.h"
-#include "html.h"
-#include "css.h"
+#include "custommqtt.h"
+#include "binaries.h"
 
-extern AdvancedLogger logger;
-extern Led led;
-extern Ade7953 ade7953;
+class CustomServer
+{
+public:
+    CustomServer(
+        AdvancedLogger &logger,
+        Led &led,
+        Ade7953 &ade7953,
+        CustomTime &customTime,
+        CustomWifi &customWifi,
+        CustomMqtt &customMqtt
+    );
 
-void setupServer();
+    void begin();
 
-void _setHtmlPages();
-void _setOta();
-void _setRestApi();
-void _setOtherEndpoints();
-    
-void _serverLog(const char* message, const char* function, int logLevel);
+private:  
+    void _setHtmlPages();
+    void _setOta();
+    void _setRestApi();
+    void _setOtherEndpoints();
+    void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final);
+    void _onUpdateSuccessful(AsyncWebServerRequest *request);
+    void _onUpdateFailed(AsyncWebServerRequest *request, const char* reason);
+    void _updateJsonFirmwareStatus(const char* status, const char* reason);
+    void _serveJsonFile(AsyncWebServerRequest *request, const char* filePath);
 
-void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final);
-void _onUpdateSuccessful();
+    void _serverLog(const char* message, const char* function, LogLevel logLevel, AsyncWebServerRequest *request);
+
+    AdvancedLogger &_logger;
+    Led &_led;
+    Ade7953 &_ade7953;
+    CustomTime &_customTime;
+    CustomWifi &_customWifi;
+    CustomMqtt &_customMqtt;
+
+    String _md5;
+};
 
 #endif

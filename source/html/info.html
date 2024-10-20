@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    
+    <title>Info</title>
+    <style>
+    </style>
+</head>
+
+<body>
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="home" href="/">Home</a>
+    </div>
+    <div id="deviceInfo" class="section-box">
+        <h2>Device Info</h2>
+        <h3>System</h3>
+        <p><span class='list-key'>Uptime:</span><span id='uptime' class='list-value'></span></p>
+        <p><span class='list-key'>System time:</span><span id='systemTime' class='list-value'></span></p>
+        <h3>Firmware</h3>
+        <p><span class='list-key'>Version:</span><span id='firmwareBuildVersion' class='list-value'></span></p>
+        <p><span class='list-key'>Date:</span><span id='firmwareBuildDate' class='list-value'></span></p>
+        <h3>Memory</h3>
+        <h4>Heap</h4>
+        <p><span class='list-key'>Free:</span><span id='heapFree' class='list-value'></span></p>
+        <p><span class='list-key'>Total:</span><span id='heapTotal' class='list-value'></span></p>
+        <h4>Spiffs</h4>
+        <p><span class='list-key'>Free:</span><span id='spiffsFree' class='list-value'></span></p>
+        <p><span class='list-key'>Total:</span><span id='spiffsTotal' class='list-value'></span></p>
+        <h3>Chip</h3>
+        <p><span class='list-key'>Model:</span><span id='chipModel' class='list-value'></span></p>
+        <p><span class='list-key'>Revision:</span><span id='chipRevision' class='list-value'></span></p>
+        <p><span class='list-key'>CPU Frequency:</span><span id='chipCpuFrequency' class='list-value'></span> MHz</p>
+        <p><span class='list-key'>SDK Version:</span><span id='chipSdkVersion' class='list-value'></span></p>
+        <p><span class='list-key'>Flash Chip ID:</span><span id='chipFlashChipId' class='list-value'></span></p>
+    </div>
+    <div id="wifiInfo" class="section-box">
+        <h2>WiFi Info</h2>
+        <p><span class='list-key'>MAC Address:</span><span id='macAddress' class='list-value'></span></p>
+        <p><span class='list-key'>Local IP:</span><span id='localIp' class='list-value'></span></p>
+        <p><span class='list-key'>Subnet Mask:</span><span id='subnetMask' class='list-value'></span></p>
+        <p><span class='list-key'>Gateway IP:</span><span id='gatewayIp' class='list-value'></span></p>
+        <p><span class='list-key'>DNS IP:</span><span id='dnsIp' class='list-value'></span></p>
+        <p><span class='list-key'>Status:</span><span id='status' class='list-value'></span></p>
+        <p><span class='list-key'>SSID:</span><span id='ssid' class='list-value'></span></p>
+        <p><span class='list-key'>BSSID:</span><span id='bssid' class='list-value'></span></p>
+        <p><span class='list-key'>RSSI:</span><span id='rssi' class='list-value'></span></p>
+    </div>
+    <div id="projectInfo" class="section-box">
+        <h2>Project Info</h2>
+        <p><span class='list-key'>Company Name:</span><span id='companyName' class='list-value'></span></p>
+        <p><span class='list-key'>Full Product Name:</span><span id='fullProductName' class='list-value'></span></p>
+        <p><span class='list-key'>Product Name:</span><span id='productName' class='list-value'></span></p>
+        <p><span class='list-key'>Description:</span><span id='productDescription' class='list-value'></span></p>
+        <p><span class='list-key'>Product URL:</span><span id='productUrl' class='list-value'></span></p>
+        <p><span class='list-key'>GitHub URL:</span><span id='githubUrl' class='list-value'></span></p>
+        <p><span class='list-key'>Author:</span><span id='author' class='list-value'></span></p>
+        <p><span class='list-key'>Author Email:</span><span id='authorEmail' class='list-value'></span></p>
+    </div>
+
+    <script>
+        function fetchData() {
+            var deviceInfo, wifiInfo, projectInfo;
+
+            function handleRequest() {
+                if (this.readyState == 4 && this.status == 200) {
+                    var data = JSON.parse(this.responseText);
+                    displayData(data, this.responseURL);
+                }
+            }
+
+            var deviceXhttp = new XMLHttpRequest();
+            deviceXhttp.onreadystatechange = handleRequest;
+            deviceXhttp.open("GET", "/rest/device-info", true);
+            deviceXhttp.send();
+
+            var wifiXhttp = new XMLHttpRequest();
+            wifiXhttp.onreadystatechange = handleRequest;
+            wifiXhttp.open("GET", "/rest/wifi-info", true);
+            wifiXhttp.send();
+
+            var projectXhttp = new XMLHttpRequest();
+            projectXhttp.onreadystatechange = handleRequest;
+            projectXhttp.open("GET", "/rest/project-info", true);
+            projectXhttp.send();
+        }
+
+        function displayData(data, responseUrl) {
+            if (responseUrl.includes("device-info")) {
+                displayDeviceInfo(data);
+            } else if (responseUrl.includes("wifi-info")) {
+                displayWifiInfo(data);
+            } else if (responseUrl.includes("project-info")) {
+                displayProjectInfo(data);
+            } else {
+                console.log("Unknown response URL: " + responseUrl);
+                return;
+            }
+        }
+
+        function displayDeviceInfo(data) {
+            var uptime = data.system.uptime / 1000; // Convert milliseconds to seconds
+
+            var days = Math.floor(uptime / 86400); // 86400 seconds in a day
+            uptime %= 86400;
+
+            var hours = Math.floor(uptime / 3600); // 3600 seconds in an hour
+            uptime %= 3600;
+
+            var minutes = Math.floor(uptime / 60); // 60 seconds in a minute
+            var seconds = Math.floor(uptime % 60);
+
+            var uptimeStr = "";
+            if (days > 0) {
+                uptimeStr += days + " days ";
+            }
+            if (hours > 0) {
+                uptimeStr += hours + " hours ";
+            }
+            if (minutes > 0) {
+                uptimeStr += minutes + " minutes ";
+            }
+            if (seconds > 0) {
+                uptimeStr += seconds + " seconds";
+            }
+
+            uptimeStr = uptimeStr.trim();
+
+            document.getElementById('uptime').textContent = uptimeStr;
+            document.getElementById('systemTime').textContent = data.system.systemTime;
+
+            document.getElementById('firmwareBuildVersion').textContent = data.firmware.buildVersion;
+            document.getElementById('firmwareBuildDate').textContent = data.firmware.buildDate;
+            
+            var heapFree = data.memory.heap.free;
+            var heapTotal = data.memory.heap.total;
+            var heapFreeStr = (heapFree/1000.0).toFixed(1) + " kB (" + ((heapFree/heapTotal)*100).toFixed(1) + "%)";
+            document.getElementById('heapFree').textContent = heapFreeStr;
+            document.getElementById('heapTotal').textContent = (heapTotal/1000.0).toFixed(1) + " kB";
+
+            var spiffsFree = data.memory.spiffs.free;
+            var spiffsTotal = data.memory.spiffs.total;
+            var spiffsFreeStr = (spiffsFree/1000.0).toFixed(1) + " kB (" + ((spiffsFree/spiffsTotal)*100).toFixed(1) + "%)";
+            document.getElementById('spiffsFree').textContent = spiffsFreeStr;
+            document.getElementById('spiffsTotal').textContent = (spiffsTotal/1000.0).toFixed(1) + " kB";
+
+            document.getElementById('chipModel').textContent = data.chip.model;
+            document.getElementById('chipRevision').textContent = data.chip.revision;
+            document.getElementById('chipCpuFrequency').textContent = data.chip.cpuFrequency;
+            document.getElementById('chipSdkVersion').textContent = data.chip.sdkVersion;
+            document.getElementById('chipFlashChipId').textContent = data.chip.id;
+        }
+
+        function displayWifiInfo(data) {
+            document.getElementById('macAddress').textContent = data.macAddress;
+            document.getElementById('localIp').textContent = data.localIp;
+            document.getElementById('subnetMask').textContent = data.subnetMask;
+            document.getElementById('gatewayIp').textContent = data.gatewayIp;
+            document.getElementById('dnsIp').textContent = data.dnsIp;
+            document.getElementById('status').textContent = data.status;
+            document.getElementById('ssid').textContent = data.ssid;
+            document.getElementById('bssid').textContent = data.bssid;
+
+            var rssi = data.rssi;
+            var rssiStr = rssi + " dB";
+            var color = document.getElementById('rssi').style.color;
+            if (rssi >= -30) {
+                rssiStr += " (Amazing)";
+                color = 'green';
+            } else if (rssi >= -60) {
+                rssiStr += " (Very Good)";
+                color = 'green';
+            } else if (rssi >= -70) {
+                rssiStr += " (Good)";
+                color = 'green';
+            } else if (rssi >= -80) {
+                rssiStr += " (Not Good)";
+                color = 'orange';
+            } else {
+                rssiStr += " (Unusable)";
+                color = 'red';
+            }
+            document.getElementById('rssi').textContent = rssiStr;
+            document.getElementById('rssi').style.color = color;
+        }
+
+        function displayProjectInfo(data) {
+            document.getElementById('companyName').textContent = data.companyName;
+            document.getElementById('fullProductName').textContent = data.fullProductName;
+            document.getElementById('productName').textContent = data.productName;
+            document.getElementById('productDescription').textContent = data.productDescription;
+            document.getElementById('productUrl').innerHTML = `<a href="${data.productUrl}" target="_blank">${data.productUrl}</a>`;
+            document.getElementById('githubUrl').innerHTML = `<a href="${data.githubUrl}" target="_blank">${data.githubUrl}</a>`;
+            document.getElementById('author').textContent = data.author;
+            document.getElementById('authorEmail').textContent = data.authorEmail;
+        }
+
+        // On page load and every 1 second
+        fetchData();
+        setInterval(fetchData, 1000);
+    </script>
+</body>
+
+</html>

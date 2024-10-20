@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+    <title>Channel</title>
+    <style>
+        .channel-columns {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 10px;
+            justify-items: center;
+        }
+
+        .channel-columns input[type="text"] {
+            width: 90%;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="outer" href="/configuration">Configuration</a>
+    </div>
+
+    <div id="channelContainer" class="section-box" style="text-align: center;">
+        <h1>Channels</h1>
+        <div style="height: 20px;"></div>
+        <div class="channel-columns"></div>
+    </div>
+</body>
+<script>
+    var channelData = {};
+    var calibrationData = {};
+    var intervals = {};
+    var lastSetChannelTime = 0;
+    const FETCH_THROTTLE = 1000;
+    var pendingUpdates = {};
+    var activeRequests = new Set();
+
+    function fetchData(endpoint) {
+        if (activeRequests.has(endpoint)) {
+            return Promise.reject('Request already in progress');
+        }
+        
+        activeRequests.add(endpoint);
+        return fetch(`/rest/${endpoint}`)
+            .then(response => response.json())
+            .finally(() => activeRequests.delete(endpoint));
+    }
+
+    Promise.all([fetchData('get-calibration'), fetchData('get-channel')])
+        .then(([calibrationResponse, channelResponse]) => {
+            calibrationData = calibrationResponse;
+            channelData = channelResponse;
+            createChannelBoxes();
+        })
+        .catch(error => console.error('Error:', error));
+
+    function createChannelBoxes() {
+        const container = document.querySelector('.channel-columns');
+        container.innerHTML = ''; // Clear existing content
+
+        Object.entries(channelData).forEach(([index, channel]) => {
+            const box = document.createElement('div');
+            box.className = 'section-box';
+            box.style.textAlign = 'center';
+
+            const calibrationOptions = Object.keys(calibrationData)
+                .map(key => `<option value="${key}" ${key === channel.calibrationLabel ? 'selected' : ''}>${key}</option>`)
+                .join('');
+
+            box.innerHTML = `
+                <label>
+                    Label:
+                    <input type="text" value="${channel.label}" id="label${index}" onchange="updateChannel(${index})">
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    Calibration:
+                    <select id="calibration${index}" onchange="updateChannel(${index})">
+                        ${calibrationOptions}
+                    </select>
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="updateChannel(${index})">
+                    Reverse
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    <input type="checkbox" ${channel.active ? 'checked' : ''} id="active${index}" onchange="updateChannel(${index})">
+                    Active
+                </label>
+                <div style="height: 10px;"></div>
+                <span id="power${index}"></span>
+            `;
+            container.appendChild(box);
+
+            if (channel.active) {
+                startPowerUpdate(index);
+            }
+        });
+    }
+
+    function startPowerUpdate(index) {
+        if (intervals[index]) {
+            clearInterval(intervals[index]);
+        }
+
+        const updatePower = () => {
+            // Only fetch if no active request for this index
+            if (!activeRequests.has(`active-power-${index}`)) {
+                activeRequests.add(`active-power-${index}`);
+                fetchData(`active-power?index=${index}`)
+                    .then(dataActivePower => {
+                        document.getElementById(`power${index}`).innerHTML = `${dataActivePower.value.toFixed(1)} W`;
+                    })
+                    .finally(() => {
+                        activeRequests.delete(`active-power-${index}`);
+                    });
+            }
+        };
+
+        updatePower(); // Initial update
+        intervals[index] = setInterval(updatePower, FETCH_THROTTLE);
+    }
+
+    function stopPowerUpdate(index) {
+        if (intervals[index]) {
+            clearInterval(intervals[index]);
+            document.getElementById(`power${index}`).innerHTML = '';
+            delete intervals[index];
+        }
+    }
+
+    function updateChannel(index) {
+        const now = Date.now();
+        if (now - lastSetChannelTime < FETCH_THROTTLE) {
+            // If there's already a pending update for this index, update it
+            // Otherwise create a new pending update
+            pendingUpdates[index] = {
+                label: document.getElementById(`label${index}`).value,
+                calibrationLabel: document.getElementById(`calibration${index}`).value,
+                reverse: document.getElementById(`reverse${index}`).checked,
+                active: document.getElementById(`active${index}`).checked
+            };
+            
+            return; // Exit and wait for the throttle timeout
+        }
+
+        // Clear any pending update for this index
+        delete pendingUpdates[index];
+        
+        const channel = {};
+        channel[index] = {
+            label: document.getElementById(`label${index}`).value,
+            calibrationLabel: document.getElementById(`calibration${index}`).value,
+            reverse: document.getElementById(`reverse${index}`).checked,
+            active: document.getElementById(`active${index}`).checked
+        };
+
+        if (channel[index].active) {
+            startPowerUpdate(index);
+        } else {
+            stopPowerUpdate(index);
+        }
+
+        sendChannelUpdate(channel);
+    }
+
+    function sendChannelUpdate(updatedChannel) {
+        if (activeRequests.has('set-channel')) {
+            return; // Don't send if there's already an active request
+        }
+
+        lastSetChannelTime = Date.now();
+        activeRequests.add('set-channel');
+
+        fetch('/rest/set-channel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updatedChannel)
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Success:', data);
+            
+            // After successful update, process any pending updates
+            processPendingUpdates();
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+            processPendingUpdates();
+        })
+        .finally(() => {
+            activeRequests.delete('set-channel');
+        });
+    }
+
+    // New function to process pending updates
+    function processPendingUpdates() {
+        const now = Date.now();
+        if (now - lastSetChannelTime >= FETCH_THROTTLE && Object.keys(pendingUpdates).length > 0) {
+            // Take the first pending update
+            const index = Object.keys(pendingUpdates)[0];
+            const channel = {};
+            channel[index] = pendingUpdates[index];
+            delete pendingUpdates[index];
+            
+            // Update active status if needed
+            if (channel[index].active) {
+                startPowerUpdate(index);
+            } else {
+                stopPowerUpdate(index);
+            }
+            
+            sendChannelUpdate(channel);
+        }
+    }
+
+    // Add a periodic check for pending updates
+    setInterval(processPendingUpdates, FETCH_THROTTLE);
+</script>
+
+</html>

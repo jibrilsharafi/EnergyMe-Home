@@ -1,0 +1,19 @@
+body {
+    font-family: 'Trebuchet MS', sans-serif;
+    background-color: #f4f4f4;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+}
+
+:root {
+    --logo-light-green: #a9e68a;
+    --logo-green: #08bf81;
+    --logo-dark-green: #03a09b;
+    --green: #4CAF50;
+    --blue: #2196F3;
+}

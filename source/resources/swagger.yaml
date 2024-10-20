@@ -1,0 +1,1354 @@
+openapi: 3.0.0
+info:
+  title: EnergyMe - Home | API
+  description: API documentation for EnergyMe - Home
+  version: 1.0.0
+        
+tags:
+  - name: System
+    description: System-related endpoints
+  - name: Meter
+    description: Meter reading endpoints
+  - name: Configuration
+    description: Configuration-related endpoints
+  - name: Files
+    description: File management endpoints
+
+components:
+  schemas:
+    CalibrationValues:
+      type: object
+      properties:
+        SCT-013-30A-1V:
+          type: object
+          properties:
+            vLsb:
+              type: number
+            aLsb:
+              type: number
+            wLsb:
+              type: number
+            varLsb:
+              type: number
+            vaLsb:
+              type: number
+            whLsb:
+              type: number
+            varhLsb:
+              type: number
+            vahLsb:
+              type: number
+        SCT-013-50A-1V:
+          type: object
+          properties:
+            vLsb:
+              type: number
+            aLsb:
+              type: number
+            wLsb:
+              type: number
+            varLsb:
+              type: number
+            vaLsb:
+              type: number
+            whLsb:
+              type: number
+            varhLsb:
+              type: number
+            vahLsb:
+              type: number
+    Ade7953Configuration:
+      type: object
+      properties:
+        aVGain:
+          type: integer
+        aIGain:
+          type: integer
+        bIGain:
+          type: integer
+        aIRmsOs:
+          type: integer
+        bIRmsOs:
+          type: integer
+        aWGain:
+          type: integer
+        bWGain:
+          type: integer
+        aWattOs:
+          type: integer
+        bWattOs:
+          type: integer
+        aVarGain:
+          type: integer
+        bVarGain:
+          type: integer
+        aVarOs:
+          type: integer
+        bVarOs:
+          type: integer
+        aVaGain:
+          type: integer
+        bVaGain:
+          type: integer
+        aVaOs:
+          type: integer
+        bVaOs:
+          type: integer
+        phCalA:
+          type: integer
+        phCalB:
+          type: integer
+    ChannelData:
+      type: object
+      properties:
+        "0":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "1":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "2":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "3":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "4":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "5":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "6":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "7":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "8":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "9":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "10":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "11":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "12":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "13":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "14":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "15":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+        "16":
+          type: object
+          properties:
+            active:
+              type: boolean
+            reverse:
+              type: boolean
+            label:
+              type: string
+            calibrationLabel:
+              type: string
+    CustomMqtt:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        server:
+          type: string
+        port:
+          type: integer
+        clientid:
+          type: string
+        topic:
+          type: string
+        frequency:
+          type: integer
+        useCredentials:
+          type: boolean
+        username:
+          type: string
+        password:
+          type: string
+    GeneralConfiguration:
+      type: object
+      properties:
+        "isCloudServicesEnabled":
+          type: boolean
+        "gmtOffset":
+          type: integer
+        "dstOffset":
+          type: integer
+        "ledBrightness":
+          type: integer
+
+paths:
+  /rest/is-alive:
+    get:
+      summary: Check if the ESP32 is alive
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "True"
+
+  /rest/project-info:
+    get:
+      summary: Get project information
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  companyName:
+                    type: string
+                  fullProductName:
+                    type: string
+                  productName:
+                    type: string
+                  productDescription:
+                    type: string
+                  productUrl:
+                    type: string
+                  githubUrl:
+                    type: string
+
+  /rest/device-info:
+    get:
+      summary: Get device information
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  system:
+                    type: object
+                    properties:
+                      uptime:
+                        type: integer
+                      systemTime:
+                        type: string
+                  firmware:
+                    type: object
+                    properties:
+                      buildVersion:
+                        type: string
+                      buildDate:
+                        type: string
+                  memory:
+                    type: object
+                    properties:
+                      heap:
+                        type: object
+                        properties:
+                          free:
+                            type: integer
+                          total:
+                            type: integer
+                      spiffs:
+                        type: object
+                        properties:
+                          free:
+                            type: integer
+                          total:
+                            type: integer
+                  chip:
+                    type: object
+                    properties:
+                      model:
+                        type: string
+                      revision:
+                        type: integer
+                      cpuFrequency:
+                        type: integer
+                      sdkVersion:
+                        type: string
+                      id:
+                        type: integer
+
+  /rest/wifi-info:
+    get:
+      summary: Get WiFi status information
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  macAddress:
+                    type: string
+                  localIp:
+                    type: string
+                  subnetMask:
+                    type: string
+                  gatewayIp:
+                    type: string
+                  dnsIp:
+                    type: string
+                  status:
+                    type: string
+                  ssid:
+                    type: string
+                  bssid:
+                    type: string
+                  rssi:
+                    type: integer
+
+  /rest/firmware-update-info:
+    get:
+      summary: Get firmware update information
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buildVersion:
+                    type: string
+                  buildDate:
+                    type: string
+                  url:
+                    type: string
+                  changelog:
+                    type: string
+                  md5:
+                    type: string
+
+  /rest/firmware-update-status:
+    get:
+      summary: Get firmware update status
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  reason:
+                    type: string
+                  timestamp:
+                    type: string
+
+  /rest/is-latest-firmware-installed:
+    get:
+      summary: Check if the latest firmware is installed
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  latest:
+                    type: boolean
+
+  /do-update:
+    post:
+      summary: Perform an update
+      tags:
+        - System
+      parameters:
+        - name: md5
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional MD5 checksum for the update
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  md5:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  reason:
+                    type: string
+
+  /set-md5:
+    get:
+      summary: Set MD5 checksum for the update
+      tags:
+        - System
+      parameters:
+        - in: query
+          name: md5
+          required: true
+          schema:
+            type: string
+          description: MD5 checksum for the update
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/update-status:
+    get:
+      summary: Get update status
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  size:
+                    type: integer
+                  progress:
+                    type: integer
+                  remaining:
+                    type: integer
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/update-rollback:
+    post:
+      summary: Rollback firmware
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/factory-reset:
+    post:
+      summary: Perform a factory reset
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/clear-log:
+    post:
+      summary: Clear the log
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/restart:
+    post:
+      summary: Restart the ESP32
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/reset-wifi:
+    post:
+      summary: Reset WiFi credentials
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/meter:
+    get:
+      summary: Get all meter values
+      tags:
+        - Meter
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    index:
+                      type: integer
+                    label:
+                      type: string
+                    data:
+                      type: object
+                      properties:
+                        voltage:
+                          type: number
+                        current:
+                          type: number
+                        activePower:
+                          type: number
+                        reactivePower:
+                          type: number
+                        apparentPower:
+                          type: number
+                        powerFactor:
+                          type: number
+                        activeEnergy:
+                          type: number
+                        reactiveEnergy:
+                          type: number
+                        apparentEnergy:
+                          type: number
+
+  /rest/meter-single:
+    get:
+      summary: Get meter values for a single channel
+      tags:
+        - Meter
+      parameters:
+        - in: query
+          name: index
+          required: true
+          schema:
+            type: integer
+          description: Channel index
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  index:
+                    type: integer
+                  label:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      voltage:
+                        type: number
+                      current:
+                        type: number
+                      activePower:
+                        type: number
+                      reactivePower:
+                        type: number
+                      apparentPower:
+                        type: number
+                      powerFactor:
+                        type: number
+                      activeEnergy:
+                        type: number
+                      reactiveEnergy:
+                        type: number
+                      apparentEnergy:
+                        type: number
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/active-power:
+    get:
+      summary: Get active power for a single channel
+      tags:
+        - Meter
+      parameters:
+        - in: query
+          name: index
+          required: true
+          schema:
+            type: integer
+          description: Channel index
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  value:
+                    type: number
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/ade7953-read-register:
+    get:
+      summary: Read ADE7953 register
+      tags:
+        - Meter
+      parameters:
+        - in: query
+          name: address
+          required: true
+          schema:
+            type: integer
+          description: Register address
+        - in: query
+          name: nBits
+          required: true
+          schema:
+            type: integer
+            enum: [8, 16, 24, 32]
+          description: Number of bits to read
+        - in: query
+          name: signed
+          required: true
+          schema:
+            type: boolean
+          description: Whether the value is signed
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  value:
+                    type: integer
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/ade7953-write-register:
+    post:
+      summary: Write to ADE7953 register
+      tags:
+        - Meter
+      parameters:
+        - in: query
+          name: address
+          required: true
+          schema:
+            type: integer
+          description: Register address
+        - in: query
+          name: nBits
+          required: true
+          schema:
+            type: integer
+            enum: [8, 16, 24, 32]
+          description: Number of bits to write
+        - in: query
+          name: data
+          required: true
+          schema:
+            type: integer
+          description: Data to write
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/reset-energy:
+    post:
+      summary: Reset energy counters
+      tags:
+        - Meter
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/get-ade7953-configuration:
+    get:
+      summary: Get ADE7953 configuration
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ade7953Configuration'
+
+  /rest/set-ade7953-configuration:
+    post:
+      summary: Set ADE7953 configuration
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Ade7953Configuration'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/get-channel:
+    get:
+      summary: Get channel data
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelData'
+
+  /rest/set-channel:
+    post:
+      summary: Set channel data
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelData'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/get-calibration:
+    get:
+      summary: Get calibration data
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalibrationValues'
+
+  /rest/set-calibration:
+    post:
+      summary: Set calibration values
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalibrationValues'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/calibration-reset:
+    post:
+      summary: Reset calibration values
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+  
+  /rest/get-custom-mqtt-configuration:
+    get:
+      summary: Get custom MQTT configuration
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomMqtt'
+
+  /rest/set-custom-mqtt-configuration:
+    post:
+      summary: Set custom MQTT configuration
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomMqtt'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/get-log-level:
+    get:
+      summary: Get current log levels
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  print:
+                    type: string
+                  save:
+                    type: string
+
+  /rest/set-log-level:
+    post:
+      summary: Set log level
+      tags:
+        - Configuration
+      parameters:
+        - in: query
+          name: level
+          required: true
+          schema:
+            type: integer
+          description: Log level
+        - in: query
+          name: type
+          required: true
+          schema:
+            type: string
+            enum: [print, save]
+          description: Type of log level to set
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/get-general-configuration:
+    get:
+      summary: Get general configuration
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneralConfiguration'
+
+  /rest/set-general-configuration:
+    post:
+      summary: Set general configuration
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeneralConfiguration'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/list-files:
+    get:
+      summary: List files in SPIFFS
+      tags:
+        - Files
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /rest/file/{filename}:
+    get:
+      summary: Get file content
+      tags:
+        - Files
+      parameters:
+        - in: path
+          name: filename
+          required: true
+          schema:
+            type: string
+          description: Name of the file to retrieve
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/plain: {}
+            application/json: {}
+            text/html: {}
+            text/css: {}
+            image/png: {}
+        '400':
+          description: File not found
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rest/upload-file:
+    post:
+      summary: Upload a file to SPIFFS
+      tags:
+        - Files
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filename:
+                  type: string
+                data:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+
+  /log-raw:
+    get:
+      summary: Get raw log file
+      tags:
+        - Files
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /daily-energy:
+    get:
+      summary: Get daily energy data
+      tags:
+        - Files
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object

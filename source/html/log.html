@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+    <title>Log</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        .log-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .log-table th, .log-table td {
+            padding: 6px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+            white-space: nowrap;
+        }
+
+        .log-table th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .log-table tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .search-input {
+            width: calc(50%);
+            padding: 6px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            margin-right: 30px;
+            cursor: text;
+        }
+
+        .auto-refresh-checkbox {
+            padding: 6px;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+
+        .log-level {
+            font-weight: bold;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+
+        .log-level-INFO { background-color: #e3f2fd; color: #0d47a1; }
+        .log-level-WARNING { background-color: #fff3e0; color: #e65100; }
+        .log-level-ERROR { background-color: #ffebee; color: #b71c1c; }
+        .log-level-DEBUG { background-color: #e8f5e9; color: #1b5e20; }
+        .log-level-FATAL { background-color: #4a0e0e; color: #ffffff; }
+
+        .table-container {
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .filter-button {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .filter-button.active {
+            font-weight: bold;
+            box-shadow: 0 0 0 1px #ddd;
+        }
+        
+        #download-csv {
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="inner" href="/configuration">Configuration</a>
+    </div>
+
+    <div class="section-box-wide">
+        <div style="position: relative;">
+            <h2>Log</h2>
+            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
+                <i class="fas fa-download"></i>
+                <span class="tooltiptext">Download as CSV</span>
+            </button>
+            <div class="controls">
+                <input type="text" id="search-input-text" class="search-input" placeholder="Search log..." onkeyup="filterLogs()">
+                <label>
+                    <input type="checkbox" id="auto-refresh-checkbox" class="auto-refresh-checkbox">Auto-refresh
+                </label>
+                <div class="filter-buttons">
+                    <button class="filter-button active" data-level="ALL">All</button>
+                    <button class="filter-button log-level-DEBUG" data-level="DEBUG">Debug</button>
+                    <button class="filter-button log-level-INFO" data-level="INFO">Info</button>
+                    <button class="filter-button log-level-WARNING" data-level="WARNING">Warning</button>
+                    <button class="filter-button log-level-ERROR" data-level="ERROR">Error</button>
+                    <button class="filter-button log-level-FATAL" data-level="FATAL">Fatal</button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="log-table">
+                    <thead>
+                        <tr>
+                            <th>Row</th>
+                            <th>Timestamp</th>
+                            <th>Elapsed</th>
+                            <th>Level</th>
+                            <th>Core</th>
+                            <th>Module</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    let autoRefreshInterval;
+    let isLogFetchActive = false;
+    let lastFetchTime = 0;
+    const FETCH_THROTTLE = 1000; // Minimum time between fetches in milliseconds
+
+    async function fetchLogs() {
+        const now = Date.now();
+        
+        // If a fetch is already in progress or we haven't waited long enough, skip this fetch
+        if (isLogFetchActive || (now - lastFetchTime < FETCH_THROTTLE)) {
+            return;
+        }
+
+        isLogFetchActive = true;
+        lastFetchTime = now;
+
+        try {
+            const response = await fetch('/log-raw');
+            const data = await response.text();
+
+            // If data is empty, return early
+            if (data === '') {
+                return;
+            }
+
+            // Remove the last 4 characters if they are \r\n
+            let processedData = data;
+            if (processedData.slice(-2) === '\r\n') {
+                processedData = processedData.slice(0, -2);
+            }
+            
+            const log = processedData.split('\n').map((line, index) => {
+                try {
+                    const [timestamp, elapsedTime, level, core, module, ...messageParts] = 
+                        line.replaceAll('[','').replaceAll('\r', '').split('] ');
+                    const message = messageParts.join('] ');
+                    return {
+                        row: index + 1,
+                        timestamp,
+                        elapsedTime,
+                        level: level.trim(),
+                        core: core.replace('Core ', ''),
+                        module,
+                        message
+                    };
+                } catch (error) {
+                    return {
+                        row: index + 1,
+                        timestamp: '',
+                        elapsedTime: '',
+                        level: '',
+                        core: '',
+                        module: '',
+                        message: ''
+                    };
+                }
+            }).reverse();
+
+            if (log[0].message === '') log.shift();
+            if (log[log.length - 1].message === '') log.pop();
+
+            const logBody = document.getElementById('log-body');
+            logBody.innerHTML = ''; // Clear existing logs
+            
+            // Use DocumentFragment for better performance
+            const fragment = document.createDocumentFragment();
+            log.forEach(log => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${log.row}</td>
+                    <td>${log.timestamp}</td>
+                    <td>${log.elapsedTime}</td>
+                    <td><span class="log-level log-level-${log.level}">${log.level}</span></td>
+                    <td>${log.core}</td>
+                    <td>${log.module}</td>
+                    <td>${log.message}</td>
+                `;
+                fragment.appendChild(row);
+            });
+            logBody.appendChild(fragment);
+
+            filterLogs();
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+        } finally {
+            isLogFetchActive = false;
+        }
+    }
+
+    // Debounced version of filterLogs for better performance
+    const debouncedFilterLogs = debounce(function() {
+        const searchInput = document.querySelector('.search-input');
+        const filter = searchInput.value.toUpperCase();
+        const rows = document.querySelectorAll('.log-table tr');
+        const activeLevel = document.querySelector('.filter-button.active').dataset.level;
+
+        rows.forEach(row => {
+            if (row.getElementsByTagName('th').length > 0) return;
+
+            const cells = row.getElementsByTagName('td');
+            let found = false;
+            const rowLevel = cells[3].textContent.trim().toUpperCase();
+
+            if (activeLevel === 'ALL' || activeLevel === rowLevel) {
+                for (let i = 0; i < cells.length; i++) {
+                    if (cells[i].textContent.toUpperCase().indexOf(filter) > -1) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            
+            row.style.display = found ? '' : 'none';
+        });
+    }, 250); // 250ms debounce time
+
+    // Debounce helper function
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    // Event Listeners
+    document.querySelectorAll('.filter-button').forEach(button => {
+        button.addEventListener('click', function() {
+            document.querySelectorAll('.filter-button').forEach(btn => 
+                btn.classList.remove('active'));
+            this.classList.add('active');
+            debouncedFilterLogs();
+        });
+    });
+
+    document.getElementById('download-csv').addEventListener('click', function() {
+        const csvContent = ["data:text/csv;charset=utf-8,"];
+        csvContent.push("Row,Timestamp,Elapsed,Level,Core,Module,Message");
+
+        const rows = document.querySelectorAll('.log-table tr:not(:first-child)');
+        rows.forEach(function(row) {
+            const rowData = Array.from(row.querySelectorAll('td'))
+                .map(cell => cell.textContent.trim())
+                .join(",");
+            csvContent.push(rowData);
+        });
+
+        const encodedUri = encodeURI(csvContent.join("\n"));
+        const link = document.createElement("a");
+        const timestamp = new Date().toISOString().replace(/[:.-]/g, "_");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `energyme_home_log_${timestamp}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+
+    document.getElementById('auto-refresh-checkbox').addEventListener('change', function() {
+        if (this.checked) {
+            // Start with an immediate fetch
+            fetchLogs();
+            autoRefreshInterval = setInterval(fetchLogs, FETCH_THROTTLE);
+        } else {
+            clearInterval(autoRefreshInterval);
+        }
+    });
+
+    // Replace the original filterLogs function with the debounced version
+    const filterLogs = debouncedFilterLogs;
+
+    // Initial fetch of logs
+    fetchLogs();
+    </script>
+</body>
+</html>

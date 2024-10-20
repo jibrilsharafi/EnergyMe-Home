@@ -1,0 +1,478 @@
+    <!DOCTYPE html>
+    <html>
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+        <link rel="stylesheet" type="text/css" href="/css/button.css">
+        <link rel="stylesheet" type="text/css" href="/css/styles.css">
+        <link rel="stylesheet" type="text/css" href="/css/section.css">
+        <link rel="stylesheet" type="text/css" href="/css/typography.css">
+
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+        <title>Configuration</title>
+        <style>
+            .slider {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 100%;
+                height: 15px;
+                border-radius: 5px;
+                background: linear-gradient(to right, var(--green) 0%, var(--green) calc(var(--slider-value, 50%) - 1.25%), #d3d3d3 calc(var(--slider-value, 50%) + 1.25%), #d3d3d3 100%);
+                outline: none;
+                opacity: 0.7;
+                -webkit-transition: .2s;
+                transition: opacity .2s;
+            }
+            
+            .slider:hover {
+                opacity: 1;
+            }
+            
+            .slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 25px;
+                height: 25px;
+                border-radius: 50%;
+                background: var(--green);
+                cursor: pointer;
+            }
+            
+            .slider::-moz-range-thumb {
+                width: 25px;
+                height: 25px;
+                border-radius: 50%;
+                background: var(--green);
+                cursor: pointer;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="buttonNavigation-container">
+            <a class="buttonNavigation" type="home" href="/">Home</a>
+            <a class="buttonNavigation" type="inner" href="/calibration">Calibration</a>
+            <a class="buttonNavigation" type="inner" href="/channel">Channel</a>
+        </div>
+
+        <div class="section-box">
+            <h2>General configuration</h2>
+            <form id="generalConfigurationForm">
+                <div>
+                    <h3>Cloud services</h3>
+                    <p><i>Cloud services are used to send data to the cloud. This is useful for monitoring the device remotely and get the latest firmware updates.</i></p>
+                    <input type="checkbox" id="cloudServices" class="config-input">
+                    <label for="cloudServices">Enable cloud services</label>
+                </div>
+                <div>
+                    <h3>LED brightness</h3>
+                    <p><i>LED brightness is used to adjust the brightness of the status LED on the device. Keeping a small amount of brightness is recommended.</i></p> 
+                    <input type="range" id="ledBrightness" class="config-input slider" min="0" max="255" oninput="updateBrightnessValue()">
+                    <span id="ledBrightnessValue">50%</span>
+                </div>
+                <br>
+                <button class="buttonForm" onclick="setGeneralConfiguration()" id="setGeneralConfigurationButton">Set configuration</button>
+            </form>
+        </div>
+
+        <div class="section-box">
+            <h2>Logging</h2>
+            <p><i>Logging is used to record events and errors. It is useful for debugging and troubleshooting.</i></p>
+            <div>
+                <h3>Print</h3>
+                <p><i>Print logging is used to display events and errors when the serial monitor is available. The serial
+                        monitor is available when the device is connected to a computer via USB.</i></p>
+                <select id="printLogLevel" class="config-input"></select>
+            </div>
+            <br>
+            <div>
+                <h3>Save</h3>
+                <p><i>Save logging is used to record events and errors to the internal memory of the device. The internal
+                        memory is limited, so it is recommended to only use this for troubleshooting.</i></p>
+                <select id="saveLogLevel" class="config-input"></select>
+            </div>
+            <br>
+            <button class="buttonForm" onclick="setLogLevel()" id="setLogLevel">Set logging level</button>
+            <button class="buttonForm" onclick="clearLogs()" id="clearLogs">Clear log</button>
+            <a class="buttonForm" href="/log" id="log" style="float: right;">Explore log</a>
+        </div>
+
+        <div class="section-box">
+            <h2>Custom MQTT</h2>
+            <p><i>
+                Custom MQTT is used to send meter data to a custom MQTT server. This is useful for integrating the device with your own IoT platform. 
+                <br>
+                <br>
+                The payload content will be the same one returned by the REST API endpoint <a href="/rest/meter" target="_blank">meter</a> 
+                (<a href="/swagger-ui#/Meter/get_rest_meter" target="_blank">swagger</a>).
+            </i></p>
+            <input type="checkbox" id="customMqttEnabled" class="config-input">
+            <label for="customMqttEnabled">Enable custom MQTT</label>
+            <div id="customMqttSettings">
+                <label for="customMqttServer">Server:</label>
+                <input type="text" id="customMqttServer" class="config-input" placeholder="e.g., mqtt.example.com">
+                <br>
+                <label for="customMqttPort">Port:</label>
+                <input type="number" id="customMqttPort" class="config-input" placeholder="e.g., 1883">
+                <br> 
+                <label for="customMqttClientId">Client ID:</label>
+                <input type="text" id="customMqttClientId" class="config-input" placeholder="e.g., client123">
+                <br> 
+                <label for="customMqttTopic">Topic:</label>
+                <input type="text" id="customMqttTopic" class="config-input" placeholder="e.g., home/sensor">
+                <br> 
+                <label for="customMqttFrequency">Frequency (in seconds):</label>
+                <input type="number" id="customMqttFrequency" class="config-input" placeholder="e.g., 60" min="1" max="86400">
+                <br> 
+                <input type="checkbox" id="customMqttUseCredentials" class="config-input">
+                <label for="useCredentials">Use credentials</label>
+                <br>
+                <label for="customMqttUsername">Username:</label>
+                <input type="text" id="customMqttUsername" class="config-input" placeholder="Leave empty if not required">
+                <br> 
+                <label for="customMqttPassword">Password:</label>
+                <input type="password" id="customMqttPassword" class="config-input" placeholder="Leave empty if not required">
+            </div>
+            <button class="buttonForm" onclick="setCustomMqttConfiguration()" id="setCustomMqttConfigurationButton">Set configuration</button>
+
+        </div>
+
+        <div class="section-box">
+            <h2>Restart Device</h2>
+            <p><i>This will take a few seconds.</i></p>
+            <button class="buttonForm" onclick="restart()" id="restart">Restart</button>
+        </div>
+
+        <div class="section-box">
+            <h2>Disconnect from WiFi</h2>
+            <p><i>This will erase the WiFi credentials.</i></p>
+            <p><i>The device will create a WiFi network called "EnergyMe".
+                    Connect to this network and go <a href="http://192.168.4.1" target="_blank">here</a> (192.168.4.1).
+                    You can then configure the device to connect to your WiFi network.</i></p>
+            <button class="buttonForm" onclick="disconnectWifi()" id="disconnect">Disconnect</button>
+        </div>
+
+        <div class="section-box">
+            <h2>Factory Reset</h2>
+            <p><i>This will reset the device to its factory settings. All configurations will be lost. The WiFi 
+            connection will be kept.</i></p>
+            <button class="buttonForm" onclick="factoryReset()" id="factoryReset">Reset</button>
+        </div>
+
+        <script>
+            var logLevels = ["Debug", "Info", "Warning", "Error", "Fatal"];
+            var generalConfig;
+
+            function populateDropdown() {
+                var printLogLevel = document.getElementById("printLogLevel");
+                var saveLogLevel = document.getElementById("saveLogLevel");
+
+                for (var i = 0; i < logLevels.length; i++) {
+                    var opt = document.createElement("option");
+                    opt.value = logLevels[i];
+                    opt.innerHTML = logLevels[i];
+
+                    printLogLevel.appendChild(opt.cloneNode(true));
+                    saveLogLevel.appendChild(opt.cloneNode(true));
+                }
+            }
+
+            function restart() {
+                var restartButton = document.getElementById("restart");
+                restartButton.innerHTML = "Restarting...";
+                restartButton.disabled = true;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/restart", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            setTimeout(function () {
+                                window.location.href = "/";
+                            }, 7000);
+                        } else {
+                            alert("Error restarting device. Response: " + this.responseText);
+                            restartButton.innerHTML = "Restart";
+                            restartButton.disabled = false;
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function disconnectWifi() {
+                var confirm = window.confirm("Are you sure you want to disconnect from WiFi? You will lose access to the device until you reconnect it to WiFi.");
+                if (!confirm) {
+                    return;
+                }
+                document.getElementById("disconnect").innerHTML = "Disconnecting...";
+                document.getElementById("disconnect").disabled = true;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/disconnect", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to 192.168.4.1");
+                        } else {
+                            alert("Error disconnecting from WiFi. Response: " + this.responseText);
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function factoryReset() {
+                var confirm = window.confirm("Are you sure you want to reset the device to factory settings? All configurations and data will be lost.");
+                if (!confirm) {
+                    return;
+                }
+                document.getElementById("factoryReset").innerHTML = "Waiting for response...";
+                document.getElementById("factoryReset").disabled = true;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/factory-reset", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            document.getElementById("factoryReset").innerHTML = "Reset successful! You will be redirected to the home page in 15-30 seconds.";
+                            setTimeout(function () {
+                                window.location.href = "/";
+                            }, 15000);
+                        } else {
+                            alert("Error resetting to factory settings. Response: " + this.responseText);
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function setLogLevel(level) {
+                document.getElementById("setLogLevel").innerHTML = "Setting...";
+                var logLevels = {
+                    "Verbose": 0,
+                    "Debug": 1,
+                    "Info": 2,
+                    "Warning": 3,
+                    "Error": 4,
+                    "Fatal": 5
+                };
+
+                var printLogLevel = document.getElementById("printLogLevel").value;
+                var saveLogLevel = document.getElementById("saveLogLevel").value;
+
+                var printLevelNumber = logLevels[printLogLevel];
+                var saveLevelNumber = logLevels[saveLogLevel];
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/set-log-level?level=" + printLevelNumber + "&type=print", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status != 200) {
+                            alert("Error setting print log level. Response: " + this.responseText);
+                        }
+                    }
+                };
+                xhttp.send();
+
+                var xhttp2 = new XMLHttpRequest();
+                xhttp2.open("POST", "/rest/set-log-level?level=" + saveLevelNumber + "&type=save", true);
+                xhttp2.onreadystatechange = function () {
+                    if (this.readyState == 4 && this.status != 200) {
+                        alert("Error setting save log level. Response: " + this.responseText);
+                    }
+                };
+                xhttp2.send();
+
+                document.getElementById("setLogLevel").innerHTML = "Set success";
+                document.getElementById("setLogLevel").disabled = true;
+                setTimeout(function () {
+                    document.getElementById("setLogLevel").innerHTML = "Set logging level";
+                    document.getElementById("setLogLevel").disabled = false;
+                }, 3000);
+            }
+
+            function getLogLevel() {
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("GET", "/rest/get-log-level", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            var logLevels = JSON.parse(this.responseText);
+                            var printLogLevel = logLevels.print.toLowerCase().replace(/\b[a-z]/g, function (letter) {
+                                return letter.toUpperCase();
+                            });
+                            var saveLogLevel = logLevels.save.toLowerCase().replace(/\b[a-z]/g, function (letter) {
+                                return letter.toUpperCase();
+                            });
+
+                            populateDropdown();
+                            document.getElementById("printLogLevel").value = printLogLevel;
+                            document.getElementById("saveLogLevel").value = saveLogLevel;
+                        } else {
+                            console.log("Error getting print log level. Response: " + this.responseText);
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function clearLogs() {
+                var confirm = window.confirm("Are you sure you want to clear the log?");
+                if (!confirm) {
+                    return;
+                }
+                document.getElementById("clearLogs").innerHTML = "Clearing...";
+                document.getElementById("clearLogs").disabled = true;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/clear-log", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            document.getElementById("clearLogs").innerHTML = "Clear success";
+                        } else {
+                            alert("Error clearing log. Response: " + this.responseText);
+                        }
+                        setTimeout(function () {
+                            document.getElementById("clearLogs").innerHTML = "Clear log";
+                            document.getElementById("clearLogs").disabled = false;
+                        }, 3000);
+                    }
+                };
+                xhttp.send();
+            }
+
+            function getGeneralConfiguration() {
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("GET", "/rest/get-general-configuration", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            generalConfig = JSON.parse(this.responseText);
+
+                            document.getElementById("cloudServices").checked = generalConfig.isCloudServicesEnabled;
+                            document.getElementById("ledBrightness").value = generalConfig.ledBrightness;
+
+                            updateBrightnessValue();
+                        } else {
+                            console.log("Error getting general configuration. Response: " + this.responseText);
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function setGeneralConfiguration() {
+                document.getElementById("setGeneralConfigurationButton").innerHTML = "Setting...";
+                document.getElementById("setGeneralConfigurationButton").disabled = true;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/set-general-configuration", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            document.getElementById("setGeneralConfigurationButton").innerHTML = "Set success!";
+                            setTimeout(function () {
+                                document.getElementById("setGeneralConfigurationButton").innerHTML = "Set configuration";
+                                document.getElementById("setGeneralConfigurationButton").disabled = false;
+                            }, 3000);
+                        } else {
+                            alert("Error setting general configuration. Response: " + this.responseText);
+                            document.getElementById("setGeneralConfigurationButton").innerHTML = "Set failed!";
+                            setTimeout(function () {
+                                document.getElementById("setGeneralConfigurationButton").innerHTML = "Set configuration";
+                                document.getElementById("setGeneralConfigurationButton").disabled = false;
+                            }, 3000);
+                        }
+                    }
+                };
+                generalConfig.isCloudServicesEnabled = document.getElementById("cloudServices").checked;
+                generalConfig.ledBrightness = parseInt(document.getElementById("ledBrightness").value);
+
+                xhttp.send(JSON.stringify(generalConfig));
+            }
+
+            function updateBrightnessValue() {
+                var slider = document.getElementById("ledBrightness");
+                var output = document.getElementById("ledBrightnessValue");
+                var percentage = Math.round((slider.value / 255) * 100);
+                slider.style.setProperty('--slider-value', percentage + '%');
+                slider.title = percentage + "%";
+                output.innerHTML = percentage + "%";
+            }
+
+            function getCustomMqttConfiguration() {
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("GET", "/rest/get-custom-mqtt-configuration", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            var customMqttConfig = JSON.parse(this.responseText);
+
+                            document.getElementById("customMqttEnabled").checked = customMqttConfig.enabled;
+                            document.getElementById("customMqttServer").value = customMqttConfig.server;
+                            document.getElementById("customMqttPort").value = customMqttConfig.port;
+                            document.getElementById("customMqttClientId").value = customMqttConfig.clientid;
+                            document.getElementById("customMqttTopic").value = customMqttConfig.topic;
+                            document.getElementById("customMqttFrequency").value = customMqttConfig.frequency;
+                            document.getElementById("customMqttUseCredentials").checked = customMqttConfig.useCredentials;
+                            document.getElementById("customMqttUsername").value = customMqttConfig.username;
+                            document.getElementById("customMqttPassword").value = customMqttConfig.password;
+                        } else {
+                            console.log("Error getting custom MQTT configuration. Response: " + this.responseText);
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function setCustomMqttConfiguration() {
+                document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Setting...";
+                document.getElementById("setCustomMqttConfigurationButton").disabled = true;
+
+                var customMqttConfig = {
+                    "enabled": document.getElementById("customMqttEnabled").checked,
+                    "server": document.getElementById("customMqttServer").value,
+                    "port": parseInt(document.getElementById("customMqttPort").value),
+                    "clientid": document.getElementById("customMqttClientId").value,
+                    "topic": document.getElementById("customMqttTopic").value,
+                    "frequency": parseInt(document.getElementById("customMqttFrequency").value),
+                    "useCredentials": document.getElementById("customMqttUseCredentials").checked,
+                    "username": document.getElementById("customMqttUsername").value,
+                    "password": document.getElementById("customMqttPassword").value
+                };
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/set-custom-mqtt-configuration", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set success!";
+                            setTimeout(function () {
+                                document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
+                                document.getElementById("setCustomMqttConfigurationButton").disabled = false;
+                            }, 3000);
+                        } else {
+                            alert("Error setting custom MQTT configuration. Response: " + this.responseText);
+                            document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set failed!";
+                        }
+                    }
+                };
+                xhttp.send(JSON.stringify(customMqttConfig));
+            }
+
+            document.addEventListener("DOMContentLoaded", function() {
+                getGeneralConfiguration();
+                getLogLevel();
+                getCustomMqttConfiguration();
+            });
+
+        </script>
+
+    </body>
+
+    </html>
