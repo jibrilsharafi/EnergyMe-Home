@@ -749,28 +749,28 @@ void firmwareTestingLoop() {
 }
 
 String decryptData(String encryptedData, String key) {
-    leaveBreadcrumb(1203);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 3);
     if (encryptedData.length() == 0) {
         logger.error("Empty encrypted data", "utils::decryptData");
         return String("");
     }
-    leaveBreadcrumb(1204);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 4);
     if (key.length() == 0) {
         logger.error("Empty key", "utils::decryptData");
         return String("");
     }
-    leaveBreadcrumb(1205);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 5);
 
-    leaveBreadcrumb(1206);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 6);
     if (key.length() != 32) {
         logger.error("Invalid key length: %d. Expected 32 bytes", "utils::decryptData", key.length());
         return String("");
     }
 
-    leaveBreadcrumb(1207);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 7);
     unsigned char _decodedData[CERTIFICATE_LENGTH];
     size_t _decodedLength;
-    leaveBreadcrumb(1208);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 8);
     int _ret = mbedtls_base64_decode(_decodedData, CERTIFICATE_LENGTH, &_decodedLength, (const unsigned char*)encryptedData.c_str(), encryptedData.length());
     if (_ret != 0) {
         logger.error("Second base64 decoding failed: %d", "utils::decryptData", _ret);
@@ -778,80 +778,34 @@ String decryptData(String encryptedData, String key) {
     }
     logger.info("Decoded data: %s", "utils::decryptData", _decodedData);
     
-    leaveBreadcrumb(1220);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 9);
     mbedtls_aes_context aes;
-    leaveBreadcrumb(1230);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 10);
     mbedtls_aes_init(&aes);
-    leaveBreadcrumb(1240);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 11);
     mbedtls_aes_setkey_dec(&aes, (const unsigned char*)key.c_str(), 256);
-    leaveBreadcrumb(1250);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 12);
     unsigned char decryptedData[CERTIFICATE_LENGTH];
-    leaveBreadcrumb(1260);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 13);
     mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, _decodedData, decryptedData);
 
-    leaveBreadcrumb(1270);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 14);
     return String(reinterpret_cast<const char*>(decryptedData));
 }
 
 String readEncryptedFile(const char* path) {
-    leaveBreadcrumb(1200);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 0);
     File file = SPIFFS.open(path, FILE_READ);
     if (!file) {
         logger.error("Failed to open file for reading", "utils::readEncryptedFile");
         return String("");
     }
 
-    leaveBreadcrumb(1201);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 1);
     String _encryptedData = file.readString();
     file.close();
 
-    leaveBreadcrumb(1202);
+    crashMonitor.leaveBreadcrumb(CustomModule::UTILS, 2);
     // return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId()); //FIXME: Uncomment this line and fix the panic in the decryptData function
     return _encryptedData;
-}
-
-const char* getResetReasonString(esp_reset_reason_t reason) {
-    switch (reason) {
-        case ESP_RST_UNKNOWN: return "Unknown reset";
-        case ESP_RST_POWERON: return "Power-on reset";
-        case ESP_RST_EXT: return "External pin reset";
-        case ESP_RST_SW: return "Software reset";
-        case ESP_RST_PANIC: return "Exception/Panic reset";
-        case ESP_RST_INT_WDT: return "Interrupt watchdog reset";
-        case ESP_RST_TASK_WDT: return "Task watchdog reset";
-        case ESP_RST_WDT: return "Other watchdog reset";
-        case ESP_RST_DEEPSLEEP: return "Deep sleep reset";
-        case ESP_RST_BROWNOUT: return "Brownout reset";
-        case ESP_RST_SDIO: return "SDIO reset";
-        default: return "Unknown";
-    }
-}
-
-void setupBreadcrumbs() {
-    esp_reset_reason_t _resetReason = esp_reset_reason();
-    rtcData.resetCount++;
-    
-    // Initialize on first boot or power-on
-    if (_resetReason == ESP_RST_POWERON) {
-        memset(&rtcData, 0, sizeof(rtcData));
-        logger.info("Power loss detected. Resetting breadcrumbs.", "main::setupBreadcrumbs");
-        return;
-    } else if (_resetReason != ESP_RST_SW) {
-        logger.warning("Crash detected! Type: %s (%d) | Reset count: %d", "main::setupBreadcrumbs", getResetReasonString(_resetReason), _resetReason, rtcData.resetCount);
-        
-        logger.info("Last breadcrumbs (most recent first):", "main::setupBreadcrumbs");
-        for (int i = 0; i < 8; i++) {
-            uint8_t index = (rtcData.currentIndex - i - 1) & 0x07;
-            if (rtcData.breadcrumbs[index] != 0) {
-                logger.info("Breadcrumb %d: %d", "main::setupBreadcrumbs", i, rtcData.breadcrumbs[index]);
-            }
-        }
-    }
-}
-
-
-void leaveBreadcrumb(int checkpoint) {
-    // Store checkpoint in circular buffer
-    rtcData.breadcrumbs[rtcData.currentIndex] = checkpoint;
-    rtcData.currentIndex = (rtcData.currentIndex + 1) & 0x07;  // Keep within 0-7
 }

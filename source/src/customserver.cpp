@@ -489,7 +489,7 @@ void CustomServer::_setRestApi()
 
     server.on("/rest/restart", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to restart the ESP32", "customserver::_setRestApi", LogLevel::WARNING, request);
+        _serverLog("Request to restart the ESP32", "customserver::_setRestApi", LogLevel::INFO, request);
 
         request->send(200, "application/json", "{\"message\":\"Restarting...\"}");
         setRestartEsp32("customserver::_setRestApi", "Request to restart the ESP32 from REST API"); });

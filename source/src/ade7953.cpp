@@ -778,6 +778,10 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
     deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument);
     
     time_t now = time(nullptr);
+    if (now < 1000000000) { // Any time less than 2001-09-09 01:46:40
+        _logger.warning("Skipping saving daily energy as time is not set yet", "ade7953::saveDailyEnergyToSpiffs");
+        return;
+    }
     struct tm *timeinfo = localtime(&now);
     char _currentDate[11];
     strftime(_currentDate, sizeof(_currentDate), "%Y-%m-%d", timeinfo);

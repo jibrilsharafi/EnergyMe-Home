@@ -8,6 +8,7 @@
 #include <WiFiClientSecure.h>
 #include <CircularBuffer.hpp>
 
+#include "crashmonitor.h"
 #include "structs.h"
 
 // Global variables are stored here
@@ -24,6 +25,7 @@ extern int previousChannel;
 
 extern GeneralConfiguration generalConfiguration;
 extern CustomMqttConfiguration customMqttConfiguration;
+extern CrashMonitor crashMonitor;
 
 extern WiFiClientSecure net;
 extern PubSubClient clientMqtt; // These must be global to ensure proper working of MQTT

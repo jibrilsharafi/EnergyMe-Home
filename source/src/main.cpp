@@ -3,11 +3,11 @@
 #include <WiFiManager.h> // Needs to be defined on top due to conflict between WiFiManager and ESPAsyncWebServer
 
 // Project includes
+#include "global.h"
 #include "ade7953.h"
 #include "constants.h"
 #include "customwifi.h" // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
 #include "customserver.h"
-#include "global.h"
 #include "led.h"
 #include "modbustcp.h"
 #include "mqtt.h"
@@ -29,6 +29,7 @@ int previousChannel = 0;
 
 GeneralConfiguration generalConfiguration;
 CustomMqttConfiguration customMqttConfiguration;
+RTC_NOINIT_ATTR CrashData crashData;
 
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient clientMqtt(net);
@@ -44,6 +45,11 @@ AdvancedLogger logger(
   LOG_PATH,
   LOG_CONFIG_PATH,
   LOG_TIMESTAMP_FORMAT
+);
+
+CrashMonitor crashMonitor(
+  logger,
+  crashData
 );
 
 Led led(
@@ -148,18 +154,18 @@ void setup() {
 
   logger.info("EnergyMe - Home | Build version: %s | Build date: %s", "main::setup", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE);
 
-  setupBreadcrumbs();
-  leaveBreadcrumb(1001);
+  crashMonitor.begin();
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 1);
 
   // Check if the device has crashed more than the maximum allowed times. If so, the device will rollback to the stable firmware
   logger.info("Checking integrity...", "main::setup");
-  leaveBreadcrumb(1004);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 4);
   handleCrashCounter();
-  leaveBreadcrumb(1005);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 5);
   handleFirmwareTesting();
   logger.info("Integrity check done", "main::setup");
   
-  leaveBreadcrumb(1006);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 6);
   if (checkIfFirstSetup() || checkAllFiles()) {
     led.setOrange();
 
@@ -169,7 +175,7 @@ void setup() {
     logger.info("Default files created after format", "main::setup");
   }
 
-  leaveBreadcrumb(1007);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 7);
   logger.info("Fetching general configuration from SPIFFS...", "main::setup");
   setDefaultGeneralConfiguration(); // Start with default values
   if (!setGeneralConfigurationFromSpiffs()) {
@@ -180,12 +186,12 @@ void setup() {
 
   led.setPurple();
   
-  leaveBreadcrumb(1008);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 8);
   logger.info("Setting up multiplexer...", "main::setup");
   multiplexer.begin();
   logger.info("Multiplexer setup done", "main::setup");
   
-  leaveBreadcrumb(1009);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 9);
   logger.info("Setting up ADE7953...", "main::setup");
   if (!ade7953.begin()) {
     logger.fatal("ADE7953 initialization failed!", "main::setup");
@@ -195,7 +201,7 @@ void setup() {
   
   led.setBlue();
 
-  leaveBreadcrumb(1010);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 0);
   logger.info("Setting up WiFi...", "main::setup");
   if (!customWifi.begin()) {
     setRestartEsp32("main::setup", "Failed to connect to WiFi and hit timeout");
@@ -204,7 +210,7 @@ void setup() {
   }
 
   // The mDNS has to be set up in the main setup function as it is required to be globally accessible
-  leaveBreadcrumb(1011);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 1);
   logger.info("Setting up mDNS...", "main::setupMdns");
     if (!MDNS.begin(MDNS_HOSTNAME))
     {
@@ -213,7 +219,7 @@ void setup() {
   MDNS.addService("http", "tcp", 80);
   logger.info("mDNS setup done", "main::setupMdns");
   
-  leaveBreadcrumb(1012);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 2);
   logger.info("Syncing time...", "main::setup");
   updateTimezone();
   if (!customTime.begin()) {
@@ -222,17 +228,17 @@ void setup() {
     logger.info("Time synced", "main::setup");
   }
   
-  leaveBreadcrumb(1013);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 3);
   logger.info("Setting up server...", "main::setup");
   customServer.begin();
   logger.info("Server setup done", "main::setup");
 
-  leaveBreadcrumb(1014);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 4);
   logger.info("Setting up Modbus TCP...", "main::setup");
   modbusTcp.begin();
   logger.info("Modbus TCP setup done", "main::setup");
 
-  leaveBreadcrumb(1015);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 5);
   if (generalConfiguration.isCloudServicesEnabled) {
     logger.info("Setting up MQTT...", "main::setup");
     mqtt.begin();
@@ -241,7 +247,7 @@ void setup() {
     logger.info("Cloud services not enabled", "main::setup");
   }
 
-  leaveBreadcrumb(1016);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 6);
   logger.info("Setting up custom MQTT...", "main::setup");
   customMqtt.setup();
   logger.info("Custom MQTT setup done", "main::setup");
@@ -250,21 +256,21 @@ void setup() {
 
   led.setGreen();
 
-  leaveBreadcrumb(1018);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 8);
   logger.info("Setup done", "main::setup");
 }
 
 void loop() {
-  leaveBreadcrumb(1100);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 0);
   customWifi.loop();
-  leaveBreadcrumb(1101);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 1);
   mqtt.loop();
-  leaveBreadcrumb(1102);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 2);
   customMqtt.loop();
-  leaveBreadcrumb(1103);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 3);
   ade7953.loop();
   
-  leaveBreadcrumb(1104);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 4);
   if (ade7953.isLinecycFinished()) {
     led.setGreen();
 
@@ -286,27 +292,27 @@ void loop() {
       );
   }
 
-  leaveBreadcrumb(1105);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 5);
   if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
     printDeviceStatus();
     setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
   }
 
   // If memory is below a certain level, clear the log
-  leaveBreadcrumb(1106);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 6);
   if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
     printDeviceStatus();
     logger.clearLog();
     logger.warning("Log cleared due to low memory", "main::loop");
   }
 
-  leaveBreadcrumb(1107);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 7);
   firmwareTestingLoop();
-  leaveBreadcrumb(1108);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 8);
   crashCounterLoop();
-  leaveBreadcrumb(1109);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 9);
   checkIfRestartEsp32Required();
   
-  leaveBreadcrumb(1110);
+  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 0);
   led.setOff();
 }

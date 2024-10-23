@@ -14,12 +14,12 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "05"
-#define FIRMWARE_BUILD_VERSION_PATCH "05"
+#define FIRMWARE_BUILD_VERSION_PATCH "06"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
 #define FIRMWARE_BUILD_DATE_MONTH "10"
-#define FIRMWARE_BUILD_DATE_DAY "20"
+#define FIRMWARE_BUILD_DATE_DAY "23"
 #define FIRMWARE_BUILD_DATE FIRMWARE_BUILD_DATE_YEAR "-" FIRMWARE_BUILD_DATE_MONTH "-" FIRMWARE_BUILD_DATE_DAY
 
 // Measurements
@@ -48,13 +48,16 @@
 #define FW_UPDATE_INFO_JSON_PATH "/fw-update-info.json"
 #define FW_UPDATE_STATUS_JSON_PATH "/fw-update-status.json"
 
-// Rollback
+// Rollback and crash
 #define FW_ROLLBACK_TXT "/fw-rollback-status.txt"
 #define STABLE_FIRMWARE "stable"
 #define NEW_FIRMWARE_TO_BE_TESTED "new_firmware"
 #define NEW_FIRMWARE_TESTING "testing"
 #define ROLLBACK_TESTING_TIMEOUT 60000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
 #define CRASH_COUNTER_TXT "/crash-counter.txt"
+#define CRASH_DATA_JSON "/crash-data.json"
+#define CRASH_TRACKER_SIGNATURE 0xDEADBEEF
+#define CRASH_MONITOR_WATCHDOG_TIMEOUT 300 // The watchdog timeout for the crash monitor (in seconds)
 #define MAX_CRASH_COUNT 10 // The maximum number of crashes before the firmware is rolled back and the SPIFFS is formatted
 #define CRASH_COUNTER_TIMEOUT 60000 // Interval in which the crash counter is reset
 

@@ -208,9 +208,9 @@ void Mqtt::_temporaryDisable() {
 void Mqtt::_setCertificates() {
     _logger.debug("Setting certificates...", "mqtt::_setCertificates");
 
-    leaveBreadcrumb(1300);
+    crashMonitor.leaveBreadcrumb(CustomModule::MQTT, 0);
     _awsIotCoreCert = readEncryptedFile(CERTIFICATE_PATH);
-    leaveBreadcrumb(1400);
+    crashMonitor.leaveBreadcrumb(CustomModule::MQTT, 1);
     _awsIotCorePrivateKey = readEncryptedFile(PRIVATE_KEY_PATH);
 
     _logger.debug("Certificates set", "mqtt::_setCertificates");

@@ -202,7 +202,7 @@
                 fetch('/set-md5?md5=' + md5)
                     .then(response => response.json())
                     .then(data => {
-                        if (data.status === 'success') {
+                        if (response.ok) {
                             console.log('MD5 hash set successfully');
                         } else {
                             console.error('Failed to set MD5 hash:', data.reason);
