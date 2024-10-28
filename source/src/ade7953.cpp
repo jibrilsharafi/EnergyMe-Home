@@ -650,7 +650,8 @@ void Ade7953::readMeterValues(int channel) {
         if (channelData[channel].phase == PHASE_2) {
             _powerFactor = cos(acos(meterValues[0].powerFactor) - (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
         } else if (channelData[channel].phase == PHASE_3) {
-            _powerFactor = cos(acos(meterValues[0].powerFactor) + (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
+            // I cannot prove why, but I am SURE the minus is needed if the phase is leading (phase 3)
+            _powerFactor = - cos(acos(meterValues[0].powerFactor) + (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
         }
 
         // Read data

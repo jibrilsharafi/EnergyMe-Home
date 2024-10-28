@@ -177,7 +177,7 @@
             label: document.getElementById(`label${index}`).value,
             calibrationLabel: document.getElementById(`calibration${index}`).value,
             reverse: document.getElementById(`reverse${index}`).checked,
-            phase: document.getElementById(`phase${index}`).value,
+            phase: parseInt(document.getElementById(`phase${index}`).value),
             active: document.getElementById(`active${index}`).checked
         };
 
