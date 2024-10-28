@@ -33,6 +33,7 @@ void printDeviceStatus();
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
 
+void createEmptyJsonFile(const char* path);
 void formatAndCreateDefaultFiles();
 void createDefaultGeneralConfigurationFile();
 void createDefaultEnergyFile();

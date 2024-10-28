@@ -96,12 +96,18 @@ uint16_t ModbusTcp::_getRegisterValue(uint16_t address) {
             case 7: return _getFloatBits(_ade7953.meterValues[channel].apparentPower, false);
             case 8: return _getFloatBits(_ade7953.meterValues[channel].powerFactor, true);
             case 9: return _getFloatBits(_ade7953.meterValues[channel].powerFactor, false);
-            case 10: return _getFloatBits(_ade7953.meterValues[channel].activeEnergy, true);
-            case 11: return _getFloatBits(_ade7953.meterValues[channel].activeEnergy, false);
-            case 12: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergy, true);
-            case 13: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergy, false);
-            case 14: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergy, true);
-            case 15: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergy, false);
+            case 10: return _getFloatBits(_ade7953.meterValues[channel].activeEnergyImported, true);
+            case 11: return _getFloatBits(_ade7953.meterValues[channel].activeEnergyImported, false);
+            case 12: return _getFloatBits(_ade7953.meterValues[channel].activeEnergyExported, true);
+            case 13: return _getFloatBits(_ade7953.meterValues[channel].activeEnergyExported, false);
+            case 14: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyImported, true);
+            case 15: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyImported, false);
+            case 16: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyExported, true);
+            case 17: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyExported, false);
+            case 18: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergyImported, true);
+            case 19: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergyImported, false);
+            case 20: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergyExported, true);
+            case 21: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergyExported, false);
         }
     }
 

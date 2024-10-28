@@ -781,11 +781,17 @@ paths:
                           type: number
                         powerFactor:
                           type: number
-                        activeEnergy:
+                        activeEnergyImported:
                           type: number
-                        reactiveEnergy:
+                        activeEnergyExported:
                           type: number
-                        apparentEnergy:
+                        reactiveEnergyImported:
+                          type: number
+                        reactiveEnergyExported:
+                          type: number
+                        apparentEnergyImported:
+                          type: number
+                        apparentEnergyExported:
                           type: number
 
   /rest/meter-single:
@@ -827,11 +833,17 @@ paths:
                         type: number
                       powerFactor:
                         type: number
-                      activeEnergy:
+                      activeEnergyImported:
                         type: number
-                      reactiveEnergy:
+                      activeEnergyExported:
                         type: number
-                      apparentEnergy:
+                      reactiveEnergyImported:
+                        type: number
+                      reactiveEnergyExported:
+                        type: number
+                      apparentEnergyImported:
+                        type: number
+                      apparentEnergyExported:
                         type: number
         '400':
           description: Bad request

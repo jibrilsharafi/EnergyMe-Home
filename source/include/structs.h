@@ -17,15 +17,18 @@ struct MeterValues
   float reactivePower;
   float apparentPower;
   float powerFactor;
-  float activeEnergy;
-  float reactiveEnergy;
-  float apparentEnergy;
+  float activeEnergyImported;
+  float activeEnergyExported;
+  float reactiveEnergyImported;
+  float reactiveEnergyExported;
+  float apparentEnergyImported;
+  float apparentEnergyExported;
   long lastMillis;
 
-  // Default constructor
   MeterValues()
     : voltage(230.0), current(0.0), activePower(0.0), reactivePower(0.0), apparentPower(0.0), powerFactor(0.0),
-      activeEnergy(0.0), reactiveEnergy(0.0), apparentEnergy(0.0), lastMillis(0) {}
+      activeEnergyImported(0.0), activeEnergyExported(0.0), reactiveEnergyImported(0.0), 
+      reactiveEnergyExported(0.0), apparentEnergyImported(0.0), apparentEnergyExported(0.0), lastMillis(0) {}
 };
 
 struct PayloadMeter
@@ -53,7 +56,6 @@ struct CalibrationValues
   float varhLsb;
   float vahLsb;
 
-  // Default constructor
   CalibrationValues()
     : label(String("Calibration")), vLsb(1.0), aLsb(1.0), wLsb(1.0), varLsb(1.0), vaLsb(1.0), whLsb(1.0), varhLsb(1.0), vahLsb(1.0) {}
 };
@@ -68,7 +70,6 @@ struct ChannelData
   Phase phase;
   CalibrationValues calibrationValues;
 
-  // Default constructor
   ChannelData()
     : index(0), active(false), reverse(false), label(String("Channel")), phase(PHASE_1), calibrationValues(CalibrationValues()) {}
 };

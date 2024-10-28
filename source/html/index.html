@@ -185,7 +185,7 @@
                     dailyActiveEnergy[date] = {};
                 }
 
-                dailyActiveEnergy[date][channel] = dailyEnergy[date][channel].activeEnergy / 1000;
+                dailyActiveEnergy[date][channel] = dailyEnergy[date][channel].activeEnergyImported / 1000;
             }
         }
 
@@ -274,7 +274,7 @@
         var totalActiveEnergy = {};
 
         for (var channel in meterData) {
-            totalActiveEnergy[meterData[channel].index] = meterData[channel].data.activeEnergy / 1000;
+            totalActiveEnergy[meterData[channel].index] = meterData[channel].data.activeEnergyImported / 1000;
         }
 
         totalActiveEnergy = addTotalOtherEnergy(totalActiveEnergy);

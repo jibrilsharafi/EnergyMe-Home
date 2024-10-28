@@ -533,6 +533,7 @@ bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
         if (!channelObject.containsKey("reverse") || !channelObject["reverse"].is<bool>()) return false;
         if (!channelObject.containsKey("label") || !channelObject["label"].is<String>()) return false;
         if (!channelObject.containsKey("phase") || !channelObject["phase"].is<int>()) return false;
+        if (kv.value()["phase"].as<int>() < 1 || kv.value()["phase"].as<int>() > 3) return false;
         if (!channelObject.containsKey("calibrationLabel") || !channelObject["calibrationLabel"].is<String>()) return false;
     }
 
@@ -675,21 +676,27 @@ void Ade7953::readMeterValues(int channel) {
     float _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.varhLsb;
     float _apparentEnergy = _readApparentEnergy(_ade7953Channel) * channelData[channel].calibrationValues.vahLsb;
 
-    if (_activeEnergy != 0.0) {
-        meterValues[channel].activeEnergy += meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0; // W * ms * s / 1000 ms * h / 3600 s = Wh
+    if (_activeEnergy > 0) {
+        meterValues[channel].activeEnergyImported += meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0; // W * ms * s / 1000 ms * h / 3600 s = Wh
+    } else if (_activeEnergy < 0) {
+        meterValues[channel].activeEnergyExported += - meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0; // W * ms * s / 1000 ms * h / 3600 s = Wh
     } else {
         meterValues[channel].activePower = 0.0;
         meterValues[channel].powerFactor = 0.0;
     }
 
-    if (_reactiveEnergy != 0.0) {
-        meterValues[channel].reactiveEnergy += meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0; // var * ms * s / 1000 ms * h / 3600 s = VArh
+    if (_reactiveEnergy > 0) {
+        meterValues[channel].reactiveEnergyImported += meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0; // var * ms * s / 1000 ms * h / 3600 s = VArh
+    } else if (_reactiveEnergy < 0) {
+        meterValues[channel].reactiveEnergyExported += - meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0; // var * ms * s / 1000 ms * h / 3600 s = VArh
     } else {
         meterValues[channel].reactivePower = 0.0;
     }
 
-    if (_apparentEnergy != 0.0) {
-        meterValues[channel].apparentEnergy += meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
+    if (_apparentEnergy > 0) {
+        meterValues[channel].apparentEnergyImported += meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
+    } else if (_apparentEnergy < 0) {
+        meterValues[channel].apparentEnergyExported += - meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
     } else {
         meterValues[channel].current = 0.0;
         meterValues[channel].apparentPower = 0.0;
@@ -731,9 +738,12 @@ JsonDocument Ade7953::singleMeterValuesToJson(int index) {
     _jsonValues["apparentPower"] = meterValues[index].apparentPower;
     _jsonValues["reactivePower"] = meterValues[index].reactivePower;
     _jsonValues["powerFactor"] = meterValues[index].powerFactor;
-    _jsonValues["activeEnergy"] = meterValues[index].activeEnergy;
-    _jsonValues["reactiveEnergy"] = meterValues[index].reactiveEnergy;
-    _jsonValues["apparentEnergy"] = meterValues[index].apparentEnergy;
+    _jsonValues["activeEnergyImported"] = meterValues[index].activeEnergyImported;
+    _jsonValues["activeEnergyExported"] = meterValues[index].activeEnergyExported;
+    _jsonValues["reactiveEnergyImported"] = meterValues[index].reactiveEnergyImported;
+    _jsonValues["reactiveEnergyExported"] = meterValues[index].reactiveEnergyExported;
+    _jsonValues["apparentEnergyImported"] = meterValues[index].apparentEnergyImported;
+    _jsonValues["apparentEnergyExported"] = meterValues[index].apparentEnergyExported;
 
     return _jsonDocument;
 }
@@ -769,9 +779,12 @@ void Ade7953::_setEnergyFromSpiffs() {
         _logger.debug("Successfully read energy from SPIFFS", "ade7953::readEnergyFromSpiffs");
 
         for (int i = 0; i < CHANNEL_COUNT; i++) {
-            meterValues[i].activeEnergy = _jsonDocument[String(i)]["activeEnergy"].as<float>();
-            meterValues[i].reactiveEnergy = _jsonDocument[String(i)]["reactiveEnergy"].as<float>();
-            meterValues[i].apparentEnergy = _jsonDocument[String(i)]["apparentEnergy"].as<float>();
+            meterValues[i].activeEnergyImported = _jsonDocument[String(i)]["activeEnergyImported"].as<float>();
+            meterValues[i].activeEnergyExported = _jsonDocument[String(i)]["activeEnergyExported"].as<float>();
+            meterValues[i].reactiveEnergyImported = _jsonDocument[String(i)]["reactiveEnergyImported"].as<float>();
+            meterValues[i].reactiveEnergyExported = _jsonDocument[String(i)]["reactiveEnergyExported"].as<float>();
+            meterValues[i].apparentEnergyImported = _jsonDocument[String(i)]["apparentEnergyImported"].as<float>();
+            meterValues[i].apparentEnergyExported = _jsonDocument[String(i)]["apparentEnergyExported"].as<float>();
         }
     }
 }
@@ -792,9 +805,12 @@ void Ade7953::_saveEnergyToSpiffs() {
     deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
-        _jsonDocument[String(i)]["activeEnergy"] = meterValues[i].activeEnergy;
-        _jsonDocument[String(i)]["reactiveEnergy"] = meterValues[i].reactiveEnergy;
-        _jsonDocument[String(i)]["apparentEnergy"] = meterValues[i].apparentEnergy;
+        _jsonDocument[String(i)]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
+        _jsonDocument[String(i)]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
+        _jsonDocument[String(i)]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
+        _jsonDocument[String(i)]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
+        _jsonDocument[String(i)]["apparentEnergyImported"] = meterValues[i].apparentEnergyImported;
+        _jsonDocument[String(i)]["apparentEnergyExported"] = meterValues[i].apparentEnergyExported;
     }
 
     if (serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument)) {
@@ -821,9 +837,23 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active) {
-            _jsonDocument[_currentDate][String(i)]["activeEnergy"] = meterValues[i].activeEnergy;
-            _jsonDocument[_currentDate][String(i)]["reactiveEnergy"] = meterValues[i].reactiveEnergy;
-            _jsonDocument[_currentDate][String(i)]["apparentEnergy"] = meterValues[i].apparentEnergy;
+            if (meterValues[i].activeEnergyImported < 1) continue;
+            _jsonDocument[_currentDate][String(i)]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
+            
+            if (meterValues[i].activeEnergyExported < 1) continue;
+            _jsonDocument[_currentDate][String(i)]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
+            
+            if (meterValues[i].reactiveEnergyImported < 1) continue;
+            _jsonDocument[_currentDate][String(i)]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
+            
+            if (meterValues[i].reactiveEnergyExported < 1) continue;
+            _jsonDocument[_currentDate][String(i)]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
+            
+            if (meterValues[i].apparentEnergyImported < 1) continue;
+            _jsonDocument[_currentDate][String(i)]["apparentEnergyImported"] = meterValues[i].apparentEnergyImported;
+            
+            if (meterValues[i].apparentEnergyExported < 1) continue;
+            _jsonDocument[_currentDate][String(i)]["apparentEnergyExported"] = meterValues[i].apparentEnergyExported;
         }
     }
 
@@ -838,11 +868,16 @@ void Ade7953::resetEnergyValues() {
     _logger.warning("Resetting energy values to 0", "ade7953::resetEnergyValues");
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
-        meterValues[i].activeEnergy = 0.0;
-        meterValues[i].reactiveEnergy = 0.0;
-        meterValues[i].apparentEnergy = 0.0;
+        meterValues[i].activeEnergyImported = 0.0;
+        meterValues[i].activeEnergyExported = 0.0;
+        meterValues[i].reactiveEnergyImported = 0.0;
+        meterValues[i].reactiveEnergyExported = 0.0;
+        meterValues[i].apparentEnergyImported = 0.0;
+        meterValues[i].apparentEnergyExported = 0.0;
     }
 
+    JsonDocument _jsonDocument;
+    createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
     saveEnergy();
 }
 
