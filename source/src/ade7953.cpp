@@ -456,6 +456,7 @@ void Ade7953::channelDataToJson(JsonDocument &jsonDocument) {
         jsonDocument[String(i)]["active"] = channelData[i].active;
         jsonDocument[String(i)]["reverse"] = channelData[i].reverse;
         jsonDocument[String(i)]["label"] = channelData[i].label;
+        jsonDocument[String(i)]["phase"] = channelData[i].phase;
         jsonDocument[String(i)]["calibrationLabel"] = channelData[i].calibrationValues.label;
     }
 
@@ -472,12 +473,13 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
 
     for (JsonPair _kv : jsonDocument.as<JsonObject>()) {
         _logger.verbose(
-            "Parsing JSON data channel %s | Active: %d | Reverse: %d | Label: %s | Calibration Label: %s", 
+            "Parsing JSON data channel %s | Active: %d | Reverse: %d | Label: %s | Phase: %d | Calibration Label: %s", 
             "ade7953::setChannelData", 
             _kv.key().c_str(), 
             _kv.value()["active"].as<bool>(), 
             _kv.value()["reverse"].as<bool>(), 
             _kv.value()["label"].as<String>(), 
+            _kv.value()["phase"].as<Phase>(),
             _kv.value()["calibrationLabel"].as<String>()
         );
 
@@ -493,6 +495,7 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
         channelData[_index].active = _kv.value()["active"].as<bool>();
         channelData[_index].reverse = _kv.value()["reverse"].as<bool>();
         channelData[_index].label = _kv.value()["label"].as<String>();
+        channelData[_index].phase = _kv.value()["phase"].as<Phase>();
         channelData[_index].calibrationValues.label = _kv.value()["calibrationLabel"].as<String>();
     }
     _logger.debug("Successfully set data channel properties", "ade7953::setChannelData");
@@ -529,6 +532,7 @@ bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
         if (!channelObject.containsKey("active") || !channelObject["active"].is<bool>()) return false;
         if (!channelObject.containsKey("reverse") || !channelObject["reverse"].is<bool>()) return false;
         if (!channelObject.containsKey("label") || !channelObject["label"].is<String>()) return false;
+        if (!channelObject.containsKey("phase") || !channelObject["phase"].is<int>()) return false;
         if (!channelObject.containsKey("calibrationLabel") || !channelObject["calibrationLabel"].is<String>()) return false;
     }
 
@@ -624,12 +628,39 @@ void Ade7953::readMeterValues(int channel) {
 
     int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
 
-    float _voltage = _readVoltageRms() * channelData[channel].calibrationValues.vLsb;
-    float _current = _readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb;
-    float _activePower = _readActivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.wLsb * (channelData[channel].reverse ? -1 : 1);
-    float _reactivePower = _readReactivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.varLsb * (channelData[channel].reverse ? -1 : 1);
-    float _apparentPower = _readApparentPowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.vaLsb;
-    float _powerFactor = _readPowerFactor(_ade7953Channel) * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
+    float _voltage = 0.0;
+    float _powerFactor = 0.0;
+    float _current = 0.0;
+    float _activePower = 0.0;
+    float _reactivePower = 0.0;
+    float _apparentPower = 0.0;
+
+    if (channelData[channel].phase == PHASE_1) {
+        _voltage = _readVoltageRms() * channelData[channel].calibrationValues.vLsb;
+        _powerFactor = _readPowerFactor(_ade7953Channel) * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
+        _current = _readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb;
+        _activePower = _readActivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.wLsb * (channelData[channel].reverse ? -1 : 1);
+        _reactivePower = _readReactivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.varLsb * (channelData[channel].reverse ? -1 : 1);
+        _apparentPower = _readApparentPowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.vaLsb;
+    } else { // Assume everything is the same as channel 0 except the current
+        // Assume from channel 0
+        _voltage = meterValues[0].voltage;
+        
+        // Compute the power factor assuming 120 degrees phase shift
+        if (channelData[channel].phase == PHASE_2) {
+            _powerFactor = cos(acos(meterValues[0].powerFactor) - (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
+        } else if (channelData[channel].phase == PHASE_3) {
+            _powerFactor = cos(acos(meterValues[0].powerFactor) + (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
+        }
+
+        // Read data
+        _current = _readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb;
+        
+        // Compute power values
+        _activePower = _current * _voltage * _powerFactor;
+        _apparentPower = _current * _voltage;
+        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2));
+    }
 
     meterValues[channel].voltage = _validateVoltage(meterValues[channel].voltage, _voltage);
     meterValues[channel].current = _validateCurrent(meterValues[channel].current, _current);
@@ -637,7 +668,8 @@ void Ade7953::readMeterValues(int channel) {
     meterValues[channel].reactivePower = _validatePower(meterValues[channel].reactivePower, _reactivePower);
     meterValues[channel].apparentPower = _validatePower(meterValues[channel].apparentPower, _apparentPower);
     meterValues[channel].powerFactor = _validatePowerFactor(meterValues[channel].powerFactor, _powerFactor);
-    
+
+    // Even though the energy is not directly used, we can use the ADE7953 register for the no-load feature (enabled during setup)
     float _activeEnergy = _readActiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.whLsb;
     float _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.varhLsb;
     float _apparentEnergy = _readApparentEnergy(_ade7953Channel) * channelData[channel].calibrationValues.vahLsb;

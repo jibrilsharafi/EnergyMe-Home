@@ -3,6 +3,12 @@
 
 #include <Arduino.h>
 
+enum Phase : int {
+    PHASE_1 = 1,
+    PHASE_2 = 2,
+    PHASE_3 = 3,
+};
+
 struct MeterValues
 {
   float voltage;
@@ -59,11 +65,12 @@ struct ChannelData
   bool active;
   bool reverse;
   String label;
+  Phase phase;
   CalibrationValues calibrationValues;
 
   // Default constructor
   ChannelData()
-    : index(0), active(false), reverse(false), label(String("Channel")), calibrationValues() {}
+    : index(0), active(false), reverse(false), label(String("Channel")), phase(PHASE_1), calibrationValues(CalibrationValues()) {}
 };
 
 struct GeneralConfiguration

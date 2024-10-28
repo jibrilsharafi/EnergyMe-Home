@@ -110,6 +110,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "1":
@@ -121,6 +123,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "2":
@@ -132,6 +136,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "3":
@@ -143,6 +149,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "4":
@@ -154,6 +162,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "5":
@@ -165,6 +175,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "6":
@@ -176,6 +188,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "7":
@@ -187,6 +201,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "8":
@@ -198,6 +214,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "9":
@@ -209,6 +227,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "10":
@@ -220,6 +240,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "11":
@@ -231,6 +253,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "12":
@@ -242,6 +266,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "13":
@@ -253,6 +279,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "14":
@@ -264,6 +292,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "15":
@@ -275,6 +305,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "16":
@@ -286,6 +318,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
     CustomMqtt:
