@@ -381,7 +381,7 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
         if (_ade7953.channelData[i].active) {
             JsonObject _jsonObject = _jsonArray.add<JsonObject>();
 
-            _jsonObject["unixTime"] = _customTime.getUnixTime();
+            _jsonObject["unixTime"] = _customTime.getUnixTimeMilliseconds();
             _jsonObject["channel"] = i;
             _jsonObject["activeEnergyImported"] = _ade7953.meterValues[i].activeEnergyImported;
             _jsonObject["activeEnergyExported"] = _ade7953.meterValues[i].activeEnergyExported;
@@ -391,7 +391,7 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
     }
 
     JsonObject _jsonObject = _jsonArray.add<JsonObject>();
-    _jsonObject["unixTime"] = _customTime.getUnixTime();
+    _jsonObject["unixTime"] = _customTime.getUnixTimeMilliseconds();
     _jsonObject["voltage"] = _ade7953.meterValues[0].voltage;
 
     _logger.debug("Circular buffer converted to JSON", "mqtt::_circularBufferToJson");
@@ -401,7 +401,7 @@ void Mqtt::_publishConnectivity(bool isOnline) {
     _logger.debug("Publishing connectivity to MQTT...", "mqtt::_publishConnectivity");
 
     JsonDocument _jsonDocument;
-    _jsonDocument["unixTime"] = _customTime.getUnixTime();
+    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
     _jsonDocument["connectivity"] = isOnline ? "online" : "offline";
 
     String _connectivityMessage;
@@ -431,7 +431,7 @@ void Mqtt::_publishStatus() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["unixTime"] = _customTime.getUnixTime();
+    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
     _jsonDocument["rssi"] = WiFi.RSSI();
     _jsonDocument["uptime"] = millis();
     _jsonDocument["freeHeap"] = ESP.getFreeHeap();
@@ -450,7 +450,7 @@ void Mqtt::_publishMetadata() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["unixTime"] = _customTime.getUnixTime();
+    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
     _jsonDocument["firmwareBuildVersion"] = FIRMWARE_BUILD_VERSION;
     _jsonDocument["firmwareBuildDate"] = FIRMWARE_BUILD_DATE;
 
@@ -469,7 +469,7 @@ void Mqtt::_publishChannel() {
     _ade7953.channelDataToJson(_jsonChannelData);
     
     JsonDocument _jsonDocument;
-    _jsonDocument["unixTime"] = _customTime.getUnixTime();
+    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
     _jsonDocument["data"] = _jsonChannelData;
 
     String _channelMessage;
@@ -485,7 +485,7 @@ void Mqtt::_publishGeneralConfiguration() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["unixTime"] = _customTime.getUnixTime();
+    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
 
     JsonDocument _jsonDocumentConfiguration;
     generalConfigurationToJson(generalConfiguration, _jsonDocumentConfiguration);
@@ -504,7 +504,7 @@ bool Mqtt::_publishProvisioningRequest() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["unixTime"] = _customTime.getUnixTime();
+    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
     _jsonDocument["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
 
     String _provisioningRequestMessage;

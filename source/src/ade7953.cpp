@@ -573,7 +573,7 @@ void Ade7953::_updateChannelData() {
     _logger.debug("Successfully updated data channel", "ade7953::_updateChannelData");
 }
 
-void Ade7953::_updateSampleTime() {
+void Ade7953::_updateSampleTime() { //TODO: make this using a dynamic value from the config
     _logger.debug("Updating sample time", "ade7953::updateSampleTime");
 
     int _activeChannelCount = _getActiveChannelCount();

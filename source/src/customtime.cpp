@@ -41,8 +41,14 @@ String CustomTime::timestampFromUnix(long unix){
     return String(_timestamp);
 }
 
-long CustomTime::getUnixTime(){
-    return static_cast<long>(time(nullptr));
+unsigned long CustomTime::getUnixTime(){
+    return static_cast<unsigned long>(time(nullptr));
+}
+
+unsigned long long CustomTime::getUnixTimeMilliseconds() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000LL + (tv.tv_usec / 1000LL);
 }
 
 String CustomTime::getTimestamp(){

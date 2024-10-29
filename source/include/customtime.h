@@ -22,7 +22,8 @@ public:
 
     String timestampFromUnix(long unix);
 
-    long getUnixTime();
+    unsigned long getUnixTime();
+    unsigned long long getUnixTimeMilliseconds(); 
     String getTimestamp();
 
 private:

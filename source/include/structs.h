@@ -34,13 +34,13 @@ struct MeterValues
 struct PayloadMeter
 {
   int channel;
-  long unixTime;
+  unsigned long long unixTime;
   float activePower;
   float powerFactor;
 
   PayloadMeter() : channel(0), unixTime(0), activePower(0.0), powerFactor(0.0) {}
 
-  PayloadMeter(int channel, long unixTime, float activePower, float powerFactor)
+  PayloadMeter(int channel, unsigned long long unixTime, float activePower, float powerFactor)
       : channel(channel), unixTime(unixTime), activePower(activePower), powerFactor(powerFactor) {}
 };
 

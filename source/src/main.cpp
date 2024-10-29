@@ -285,7 +285,7 @@ void loop() {
     payloadMeter.push(
       PayloadMeter(
         previousChannel,
-        customTime.getUnixTime(),
+        customTime.getUnixTimeMilliseconds(),
         ade7953.meterValues[previousChannel].activePower,
         ade7953.meterValues[previousChannel].powerFactor
         )
