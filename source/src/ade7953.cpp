@@ -813,11 +813,7 @@ void Ade7953::_saveEnergyToSpiffs() {
         _jsonDocument[String(i)]["apparentEnergyExported"] = meterValues[i].apparentEnergyExported;
     }
 
-    if (serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument)) {
-        _logger.debug("Successfully saved energy to SPIFFS", "ade7953::saveEnergyToSpiffs");
-    } else {
-        _logger.error("Failed to save energy to SPIFFS", "ade7953::saveEnergyToSpiffs");
-    }
+    serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument);
 }
 
 void Ade7953::_saveDailyEnergyToSpiffs() {
@@ -837,31 +833,16 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active) {
-            if (meterValues[i].activeEnergyImported < 1) continue;
-            _jsonDocument[_currentDate][String(i)]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
-            
-            if (meterValues[i].activeEnergyExported < 1) continue;
-            _jsonDocument[_currentDate][String(i)]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
-            
-            if (meterValues[i].reactiveEnergyImported < 1) continue;
-            _jsonDocument[_currentDate][String(i)]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
-            
-            if (meterValues[i].reactiveEnergyExported < 1) continue;
-            _jsonDocument[_currentDate][String(i)]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
-            
-            if (meterValues[i].apparentEnergyImported < 1) continue;
-            _jsonDocument[_currentDate][String(i)]["apparentEnergyImported"] = meterValues[i].apparentEnergyImported;
-            
-            if (meterValues[i].apparentEnergyExported < 1) continue;
-            _jsonDocument[_currentDate][String(i)]["apparentEnergyExported"] = meterValues[i].apparentEnergyExported;
+            if (meterValues[i].activeEnergyImported > 1) _jsonDocument[_currentDate][String(i)]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
+            if (meterValues[i].activeEnergyExported > 1) _jsonDocument[_currentDate][String(i)]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
+            if (meterValues[i].reactiveEnergyImported > 1) _jsonDocument[_currentDate][String(i)]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
+            if (meterValues[i].reactiveEnergyExported > 1) _jsonDocument[_currentDate][String(i)]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
+            if (meterValues[i].apparentEnergyImported > 1) _jsonDocument[_currentDate][String(i)]["apparentEnergyImported"] = meterValues[i].apparentEnergyImported;
+            if (meterValues[i].apparentEnergyExported > 1) _jsonDocument[_currentDate][String(i)]["apparentEnergyExported"] = meterValues[i].apparentEnergyExported;
         }
     }
 
-    if (serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument)) {
-        _logger.debug("Successfully saved daily energy to SPIFFS", "ade7953::saveDailyEnergyToSpiffs");
-    } else {
-        _logger.error("Failed to save daily energy to SPIFFS", "ade7953::saveDailyEnergyToSpiffs");
-    }
+    serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument);
 }
 
 void Ade7953::resetEnergyValues() {

@@ -387,8 +387,6 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
             _jsonObject["activeEnergyExported"] = _ade7953.meterValues[i].activeEnergyExported;
             _jsonObject["reactiveEnergyImported"] = _ade7953.meterValues[i].reactiveEnergyImported;
             _jsonObject["reactiveEnergyExported"] = _ade7953.meterValues[i].reactiveEnergyExported;
-            _jsonObject["apparentEnergyImported"] = _ade7953.meterValues[i].apparentEnergyImported;
-            _jsonObject["apparentEnergyExported"] = _ade7953.meterValues[i].apparentEnergyExported;
         }
     }
 

@@ -14,12 +14,12 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "06"
-#define FIRMWARE_BUILD_VERSION_PATCH "01"
+#define FIRMWARE_BUILD_VERSION_PATCH "02"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
 #define FIRMWARE_BUILD_DATE_MONTH "10"
-#define FIRMWARE_BUILD_DATE_DAY "28"
+#define FIRMWARE_BUILD_DATE_DAY "29"
 #define FIRMWARE_BUILD_DATE FIRMWARE_BUILD_DATE_YEAR "-" FIRMWARE_BUILD_DATE_MONTH "-" FIRMWARE_BUILD_DATE_DAY
 
 // Measurements
@@ -31,7 +31,6 @@
 #define POWER_FACTOR_MEASUREMENT 6
 
 // URL Utilities
-#define PUBLIC_IP_ENDPOINT "http://checkip.amazonaws.com/"
 #define PUBLIC_LOCATION_ENDPOINT "http://ip-api.com/json/"
 #define PUBLIC_TIMEZONE_ENDPOINT "http://api.geonames.org/timezoneJSON?"
 #define PUBLIC_TIMEZONE_USERNAME "energymehome"
@@ -166,7 +165,7 @@
 #define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (disable all no-load detection)
 #define DEFAULT_LCYCMODE_REGISTER 0xFF // 0xFF 0b11111111 (enable accumulation mode for all channels)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
-#define DEFAULT_CONFIG_REGISTER 0b1000000000000100 // Enable bit 2, and 15 (keep HPF enabled, keep COMM_LOCK disabled)
+#define DEFAULT_CONFIG_REGISTER 0b1000000000001100 // Enable bit 2, bit 3 (line accumulation for PF), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
 
 // Fixed conversion values
 #define POWER_FACTOR_CONVERSION_FACTOR 1.0 / 32768.0 // PF/LSB
