@@ -111,19 +111,21 @@ private:
     float _validatePower(float oldValue, float newValue);
     float _validatePowerFactor(float oldValue, float newValue);
 
-    void _setLinecyc(long linecyc);
+    void _setLinecyc(unsigned int linecyc);
     void _setPgaGain(long pgaGain, int channel, int measurementType);
     void _setPhaseCalibration(long phaseCalibration, int channel);
     void _setGain(long gain, int channel, int measurementType);
     void _setOffset(long offset, int channel, int measurementType);
 
-    int _getActiveChannelCount();
+    unsigned int _getActiveChannelCount();
 
     int _ssPin;
     int _sckPin;
     int _misoPin;
     int _mosiPin;
     int _resetPin;
+
+    unsigned int _sampleTime;
 
     AdvancedLogger &_logger;
     CustomTime &_customTime;

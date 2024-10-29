@@ -233,6 +233,9 @@ bool Ade7953::setConfiguration(JsonDocument &jsonDocument) {
 
 void Ade7953::_applyConfiguration(JsonDocument &jsonDocument) {
     _logger.debug("Applying configuration...", "ade7953::_applyConfiguration");
+
+    _sampleTime = jsonDocument["sampleTime"].as<unsigned long>();
+    _updateSampleTime();
     
     _setGain(jsonDocument["aVGain"].as<long>(), CHANNEL_A, VOLTAGE_MEASUREMENT);
     // Channel B voltage gain should not be set as by datasheet
@@ -272,6 +275,7 @@ bool Ade7953::_validateConfigurationJson(JsonDocument& jsonDocument) {
         return false;
     }
 
+    if (!jsonDocument.containsKey("sampleTime") || !jsonDocument["sampleTime"].is<unsigned long>()) return false;
     if (!jsonDocument.containsKey("aVGain") || !jsonDocument["aVGain"].is<long>()) return false;
     if (!jsonDocument.containsKey("aIGain") || !jsonDocument["aIGain"].is<long>()) return false;
     if (!jsonDocument.containsKey("bIGain") || !jsonDocument["bIGain"].is<long>()) return false;
@@ -573,13 +577,13 @@ void Ade7953::_updateChannelData() {
     _logger.debug("Successfully updated data channel", "ade7953::_updateChannelData");
 }
 
-void Ade7953::_updateSampleTime() { //TODO: make this using a dynamic value from the config
+void Ade7953::_updateSampleTime() {
     _logger.debug("Updating sample time", "ade7953::updateSampleTime");
 
-    int _activeChannelCount = _getActiveChannelCount();
+    unsigned int _activeChannelCount = _getActiveChannelCount();
 
     if (_activeChannelCount > 0) {
-        long _linecyc = long(DEFAULT_SAMPLE_CYCLES / _activeChannelCount);
+        unsigned int _linecyc = _sampleTime * 50 * 2 / 1000 / _activeChannelCount; // 1 channel at 1000 ms: 1000 / 1000 / 1 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
         
         _setLinecyc(_linecyc);
 
@@ -605,8 +609,8 @@ int Ade7953::findNextActiveChannel(int currentChannel) {
     return currentChannel;
 }
 
-int Ade7953::_getActiveChannelCount() {
-    int _activeChannelCount = 0;
+unsigned int Ade7953::_getActiveChannelCount() {
+    unsigned int _activeChannelCount = 0;
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active) {
@@ -615,7 +619,7 @@ int Ade7953::_getActiveChannelCount() {
     }
 
     _logger.debug("Found %d active channels", "ade7953::_getActiveChannelCount", _activeChannelCount);
-    return _activeChannelCount;
+    return _activeChannelCount > 0 ? _activeChannelCount : 1;
 }
 
 
@@ -866,8 +870,11 @@ void Ade7953::resetEnergyValues() {
 // Others
 // --------------------
 
-void Ade7953::_setLinecyc(long linecyc) {
-    linecyc = min(max(linecyc, 10L), 1000L); // Linecyc must be between reasonable values, 10 and 1000
+void Ade7953::_setLinecyc(unsigned int linecyc) {
+    unsigned int _minLinecyc = 1;
+    unsigned int _maxLinecyc = 1000;
+
+    linecyc = min(max(linecyc, _minLinecyc), _maxLinecyc);
 
     _logger.debug(
         "Setting linecyc to %d",
@@ -875,7 +882,7 @@ void Ade7953::_setLinecyc(long linecyc) {
         linecyc
     );
 
-    writeRegister(LINECYC_16, 16, linecyc);
+    writeRegister(LINECYC_16, 16, long(linecyc));
 }
 
 void Ade7953::_setPhaseCalibration(long phaseCalibration, int channel) {

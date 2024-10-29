@@ -60,6 +60,8 @@ components:
     Ade7953Configuration:
       type: object
       properties:
+        sampleTime:
+          type: integer
         aVGain:
           type: integer
         aIGain:

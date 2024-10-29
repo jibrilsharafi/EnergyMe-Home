@@ -81,39 +81,39 @@ void Mqtt::begin() {
 }
 
 void Mqtt::loop() {
-    if (_isClaimInProgress) { // Only wait for certificates to be claimed
-        clientMqtt.loop();
-        return;
-    }
-
-    if (!generalConfiguration.isCloudServicesEnabled || restartConfiguration.isRequired) {
-        if (_isSetupDone && clientMqtt.connected()) {
-            _logger.info("Disconnecting MQTT", "mqtt::mqttLoop");
-
-            // Send last messages before disconnecting
-            _publishConnectivity(false); // Send offline connectivity as the last will message is not sent with graceful disconnect
-            _publishMeter();
-            _publishStatus();
-            _publishMetadata();
-            _publishChannel();
-            _publishGeneralConfiguration();
-
-            clientMqtt.disconnect();
-
-            _isSetupDone = false;
-        } else {
-            _logger.verbose("Cloud services not enabled or device not connected. Skipping...", "mqtt::mqttLoop");
-        }
-
-        return;
-    }
-
-    if (!_isSetupDone) {
-        begin();
-    }
-
     if ((millis() - _lastMillisMqttLoop) > MQTT_LOOP_INTERVAL) {
         _lastMillisMqttLoop = millis();
+
+        if (_isClaimInProgress) { // Only wait for certificates to be claimed
+            clientMqtt.loop();
+            return;
+        }
+
+        if (!generalConfiguration.isCloudServicesEnabled || restartConfiguration.isRequired) {
+            if (_isSetupDone && clientMqtt.connected()) {
+                _logger.info("Disconnecting MQTT", "mqtt::mqttLoop");
+
+                // Send last messages before disconnecting
+                _publishConnectivity(false); // Send offline connectivity as the last will message is not sent with graceful disconnect
+                _publishMeter();
+                _publishStatus();
+                _publishMetadata();
+                _publishChannel();
+                _publishGeneralConfiguration();
+
+                clientMqtt.disconnect();
+
+                _isSetupDone = false;
+            } else {
+                _logger.verbose("Cloud services not enabled or device not connected. Skipping...", "mqtt::mqttLoop");
+            }
+
+            return;
+        }
+
+        if (!_isSetupDone) {
+            begin();
+        }
 
         if (_forceDisableMqtt) {
             if ((millis() - _mqttConnectionFailedAt) < MQTT_TEMPORARY_DISABLE_INTERVAL) {

@@ -14,7 +14,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "06"
-#define FIRMWARE_BUILD_VERSION_PATCH "03"
+#define FIRMWARE_BUILD_VERSION_PATCH "04"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
@@ -169,9 +169,6 @@
 
 // Fixed conversion values
 #define POWER_FACTOR_CONVERSION_FACTOR 1.0 / 32768.0 // PF/LSB
-
-// Sample time
-#define DEFAULT_SAMPLE_CYCLES 100 // 100 cycles 1 second for 50Hz
 
 // Validate values
 #define VALIDATE_VOLTAGE_MIN 150.0 // Any voltage below this value is discarded
