@@ -23,6 +23,7 @@ PublishMqtt publishMqtt;
 bool isFirstSetup = false;
 bool isFirmwareUpdate = false;
 bool isCrashCounterReset = false;
+bool isfirstLinecyc = true;
 
 int currentChannel = 0;
 int previousChannel = 0;
@@ -272,24 +273,29 @@ void loop() {
   
   crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 4);
   if (ade7953.isLinecycFinished()) {
-    led.setGreen();
+    if (isfirstLinecyc) {
+      isfirstLinecyc = false;
+    } else {
+      isfirstLinecyc = true;
+      led.setGreen();
 
-    ade7953.readMeterValues(currentChannel);
-    
-    previousChannel = currentChannel;
-    currentChannel = ade7953.findNextActiveChannel(currentChannel);
-    multiplexer.setChannel(max(currentChannel-1, 0));
-    
-    printMeterValues(ade7953.meterValues[previousChannel], ade7953.channelData[previousChannel].label.c_str());
+      ade7953.readMeterValues(currentChannel);
+      
+      previousChannel = currentChannel;
+      currentChannel = ade7953.findNextActiveChannel(currentChannel);
+      multiplexer.setChannel(max(currentChannel-1, 0));
+      
+      printMeterValues(ade7953.meterValues[previousChannel], ade7953.channelData[previousChannel].label.c_str());
 
-    payloadMeter.push(
-      PayloadMeter(
-        previousChannel,
-        customTime.getUnixTimeMilliseconds(),
-        ade7953.meterValues[previousChannel].activePower,
-        ade7953.meterValues[previousChannel].powerFactor
-        )
-      );
+      payloadMeter.push(
+        PayloadMeter(
+          previousChannel,
+          customTime.getUnixTimeMilliseconds(),
+          ade7953.meterValues[previousChannel].activePower,
+          ade7953.meterValues[previousChannel].powerFactor
+          )
+        );
+    }
   }
 
   crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 5);

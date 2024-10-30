@@ -14,7 +14,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "06"
-#define FIRMWARE_BUILD_VERSION_PATCH "04"
+#define FIRMWARE_BUILD_VERSION_PATCH "05"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE_YEAR "2024"
@@ -161,14 +161,15 @@
 #define UNLOCK_OPTIMUM_REGISTER 0x00FE // Value to write to unlock the optimum register
 #define DEFAULT_OPTIMUM_REGISTER 0x0030 // Default value for the optimum register
 #define DEFAULT_EXPECTED_AP_NOLOAD_REGISTER 0x00E419 // Default expected value for AP_NOLOAD_32 
-#define DEFAULT_X_NOLOAD_REGISTER 0x00C832 // Value for AP_NOLOAD_32, VAR_NOLOAD_32 and VA_NOLOAD_32 register. Represents a scale of 20000:1, meaning that the no-load threshold is 0.005% of the full-scale value
-#define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (disable all no-load detection)
+#define DEFAULT_X_NOLOAD_REGISTER 0x00E419 // Value for AP_NOLOAD_32, VAR_NOLOAD_32 and VA_NOLOAD_32 register. Represents a scale of 10000:1, meaning that the no-load threshold is 0.01% of the full-scale value
+#define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (enable all no-load detection)
 #define DEFAULT_LCYCMODE_REGISTER 0xFF // 0xFF 0b11111111 (enable accumulation mode for all channels)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1000000000001100 // Enable bit 2, bit 3 (line accumulation for PF), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
 
 // Fixed conversion values
 #define POWER_FACTOR_CONVERSION_FACTOR 1.0 / 32768.0 // PF/LSB
+#define ANGLE_CONVERTION_FACTOR 360.0 * 50.0 / 223000.0 // 0.0807 °/LSB
 
 // Validate values
 #define VALIDATE_VOLTAGE_MIN 150.0 // Any voltage below this value is discarded

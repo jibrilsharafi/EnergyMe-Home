@@ -104,6 +104,7 @@ private:
     long _readReactiveEnergy(int channel);
     long _readApparentEnergy(int channel);
     long _readPowerFactor(int channel);
+    long _readAngle(int channel);
 
     float _validateValue(float oldValue, float newValue, float min, float max);
     float _validateVoltage(float oldValue, float newValue);

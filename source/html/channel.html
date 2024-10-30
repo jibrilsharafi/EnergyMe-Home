@@ -80,6 +80,10 @@
                 .map(key => `<option value="${key}" ${key === channel.calibrationLabel ? 'selected' : ''}>${key}</option>`)
                 .join('');
 
+            const phaseOptions = [1, 2, 3]
+                .map(phase => `<option value="${phase}" ${phase === channel.phase ? 'selected' : ''}>${phase}</option>`)
+                .join('');
+
             box.innerHTML = `
                 <label>
                     Label:
@@ -96,9 +100,7 @@
                 <label>
                     Phase:
                     <select id="phase${index}" onchange="updateChannel(${index})">
-                        <option value="1">1</option>
-                        <option value="2">2</option>
-                        <option value="3">3</option>
+                        ${phaseOptions}
                     </select>
                 </label>
                 <div style="height: 10px;"></div>

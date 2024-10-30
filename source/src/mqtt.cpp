@@ -48,7 +48,7 @@ Mqtt::Mqtt(
     CustomTime &customTime
 ) : _ade7953(ade7953), _logger(logger), _customTime(customTime) {}
 
-void Mqtt::begin() {
+void Mqtt::begin() { // FIXME: For some reason, when the cloud services are enabled for the first time such that the provisioning process should start, the process gets stuck and a reboot is needed
     _logger.debug("Setting up MQTT...", "mqtt::begin");
 
     _deviceId = getDeviceId();
@@ -387,6 +387,7 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
             _jsonObject["activeEnergyExported"] = _ade7953.meterValues[i].activeEnergyExported;
             _jsonObject["reactiveEnergyImported"] = _ade7953.meterValues[i].reactiveEnergyImported;
             _jsonObject["reactiveEnergyExported"] = _ade7953.meterValues[i].reactiveEnergyExported;
+            _jsonObject["apparentEnergy"] = _ade7953.meterValues[i].apparentEnergy;
         }
     }
 

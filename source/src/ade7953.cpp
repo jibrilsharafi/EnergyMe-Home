@@ -605,7 +605,6 @@ int Ade7953::findNextActiveChannel(int currentChannel) {
         }
     }
 
-    _logger.verbose("No active channel found, returning current channel", "ade7953::findNextActiveChannel");
     return currentChannel;
 }
 
@@ -626,7 +625,7 @@ unsigned int Ade7953::_getActiveChannelCount() {
 // Meter values
 // --------------------
 
-void Ade7953::readMeterValues(int channel) {
+void Ade7953::readMeterValues(int channel) { // TODO: Can this be changed to average the values?
     long _currentMillis = millis();
     long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
     meterValues[channel].lastMillis = _currentMillis;
@@ -639,14 +638,28 @@ void Ade7953::readMeterValues(int channel) {
     float _activePower = 0.0;
     float _reactivePower = 0.0;
     float _apparentPower = 0.0;
+    int _signActivePower = 1;
+    int _signReactivePower = 1;
 
     if (channelData[channel].phase == PHASE_1) {
         _voltage = _readVoltageRms() * channelData[channel].calibrationValues.vLsb;
-        _powerFactor = _readPowerFactor(_ade7953Channel) * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
-        _current = _readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb;
-        _activePower = _readActivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.wLsb * (channelData[channel].reverse ? -1 : 1);
-        _reactivePower = _readReactivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.varLsb * (channelData[channel].reverse ? -1 : 1);
-        _apparentPower = _readApparentPowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.vaLsb;
+        _signActivePower = _readActivePowerInstantaneous(_ade7953Channel) < 0 ? -1 : 1;
+        _current = _readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb * (channelData[channel].reverse ? -1 : 1) * _signActivePower;
+        
+        _powerFactor = _readPowerFactor(_ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
+        _signReactivePower = _powerFactor < 0 ? -1 : 1;
+
+        _activePower = _current * _voltage * abs(_powerFactor); 
+        _apparentPower = _current * _voltage;
+        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower; // FIXME: This is incorrect, but it is the best we can do
+
+        // _activePower = _readActivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.wLsb * (channelData[channel].reverse ? -1 : 1);
+        // _reactivePower = _readReactivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.varLsb * (channelData[channel].reverse ? -1 : 1);
+        // _apparentPower = _readApparentPowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.vaLsb;
+       
+        // // The power factor read from the ADE7953 is not reliable, so we compute it ourselves (in the end it is the same formula computed in the ADE7953)
+        // _signReactivePower = _reactivePower < 0 ? -1 : 1;
+        // _powerFactor = _signReactivePower * abs(_activePower) / _apparentPower;
     } else { // Assume everything is the same as channel 0 except the current
         // Assume from channel 0
         _voltage = meterValues[0].voltage;
@@ -697,10 +710,8 @@ void Ade7953::readMeterValues(int channel) {
         meterValues[channel].reactivePower = 0.0;
     }
 
-    if (_apparentEnergy > 0) {
-        meterValues[channel].apparentEnergyImported += meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
-    } else if (_apparentEnergy < 0) {
-        meterValues[channel].apparentEnergyExported += - meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
+    if (_apparentEnergy != 0) {
+        meterValues[channel].apparentEnergy += meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
     } else {
         meterValues[channel].current = 0.0;
         meterValues[channel].apparentPower = 0.0;
@@ -746,8 +757,7 @@ JsonDocument Ade7953::singleMeterValuesToJson(int index) {
     _jsonValues["activeEnergyExported"] = meterValues[index].activeEnergyExported;
     _jsonValues["reactiveEnergyImported"] = meterValues[index].reactiveEnergyImported;
     _jsonValues["reactiveEnergyExported"] = meterValues[index].reactiveEnergyExported;
-    _jsonValues["apparentEnergyImported"] = meterValues[index].apparentEnergyImported;
-    _jsonValues["apparentEnergyExported"] = meterValues[index].apparentEnergyExported;
+    _jsonValues["apparentEnergy"] = meterValues[index].apparentEnergy;
 
     return _jsonDocument;
 }
@@ -787,8 +797,7 @@ void Ade7953::_setEnergyFromSpiffs() {
             meterValues[i].activeEnergyExported = _jsonDocument[String(i)]["activeEnergyExported"].as<float>();
             meterValues[i].reactiveEnergyImported = _jsonDocument[String(i)]["reactiveEnergyImported"].as<float>();
             meterValues[i].reactiveEnergyExported = _jsonDocument[String(i)]["reactiveEnergyExported"].as<float>();
-            meterValues[i].apparentEnergyImported = _jsonDocument[String(i)]["apparentEnergyImported"].as<float>();
-            meterValues[i].apparentEnergyExported = _jsonDocument[String(i)]["apparentEnergyExported"].as<float>();
+            meterValues[i].apparentEnergy = _jsonDocument[String(i)]["apparentEnergy"].as<float>();
         }
     }
 }
@@ -813,8 +822,7 @@ void Ade7953::_saveEnergyToSpiffs() {
         _jsonDocument[String(i)]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
         _jsonDocument[String(i)]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
         _jsonDocument[String(i)]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
-        _jsonDocument[String(i)]["apparentEnergyImported"] = meterValues[i].apparentEnergyImported;
-        _jsonDocument[String(i)]["apparentEnergyExported"] = meterValues[i].apparentEnergyExported;
+        _jsonDocument[String(i)]["apparentEnergy"] = meterValues[i].apparentEnergy;
     }
 
     serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument);
@@ -841,8 +849,7 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
             if (meterValues[i].activeEnergyExported > 1) _jsonDocument[_currentDate][String(i)]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
             if (meterValues[i].reactiveEnergyImported > 1) _jsonDocument[_currentDate][String(i)]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
             if (meterValues[i].reactiveEnergyExported > 1) _jsonDocument[_currentDate][String(i)]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
-            if (meterValues[i].apparentEnergyImported > 1) _jsonDocument[_currentDate][String(i)]["apparentEnergyImported"] = meterValues[i].apparentEnergyImported;
-            if (meterValues[i].apparentEnergyExported > 1) _jsonDocument[_currentDate][String(i)]["apparentEnergyExported"] = meterValues[i].apparentEnergyExported;
+            if (meterValues[i].apparentEnergy > 1) _jsonDocument[_currentDate][String(i)]["apparentEnergy"] = meterValues[i].apparentEnergy;
         }
     }
 
@@ -857,8 +864,7 @@ void Ade7953::resetEnergyValues() {
         meterValues[i].activeEnergyExported = 0.0;
         meterValues[i].reactiveEnergyImported = 0.0;
         meterValues[i].reactiveEnergyExported = 0.0;
-        meterValues[i].apparentEnergyImported = 0.0;
-        meterValues[i].apparentEnergyExported = 0.0;
+        meterValues[i].apparentEnergy = 0.0;
     }
 
     JsonDocument _jsonDocument;
@@ -871,7 +877,7 @@ void Ade7953::resetEnergyValues() {
 // --------------------
 
 void Ade7953::_setLinecyc(unsigned int linecyc) {
-    unsigned int _minLinecyc = 1;
+    unsigned int _minLinecyc = 10;
     unsigned int _maxLinecyc = 1000;
 
     linecyc = min(max(linecyc, _minLinecyc), _maxLinecyc);
@@ -1077,6 +1083,11 @@ long Ade7953::_readApparentEnergy(int channel) {
 long Ade7953::_readPowerFactor(int channel) {
     if (channel == CHANNEL_A) {return readRegister(PFA_16, 16, true);} 
     else {return readRegister(PFB_16, 16, true);}
+}
+
+long Ade7953::_readAngle(int channel) {
+    if (channel == CHANNEL_A) {return readRegister(ANGLE_A_16, 16, true);} 
+    else {return readRegister(ANGLE_B_16, 16, true);}
 }
 
 /**

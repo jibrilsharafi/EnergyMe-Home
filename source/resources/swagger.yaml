@@ -791,9 +791,7 @@ paths:
                           type: number
                         reactiveEnergyExported:
                           type: number
-                        apparentEnergyImported:
-                          type: number
-                        apparentEnergyExported:
+                        apparentEnergy:
                           type: number
 
   /rest/meter-single:
@@ -843,9 +841,7 @@ paths:
                         type: number
                       reactiveEnergyExported:
                         type: number
-                      apparentEnergyImported:
-                        type: number
-                      apparentEnergyExported:
+                      apparentEnergy:
                         type: number
         '400':
           description: Bad request

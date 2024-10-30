@@ -21,14 +21,13 @@ struct MeterValues
   float activeEnergyExported;
   float reactiveEnergyImported;
   float reactiveEnergyExported;
-  float apparentEnergyImported;
-  float apparentEnergyExported;
+  float apparentEnergy;
   long lastMillis;
 
   MeterValues()
     : voltage(230.0), current(0.0), activePower(0.0), reactivePower(0.0), apparentPower(0.0), powerFactor(0.0),
       activeEnergyImported(0.0), activeEnergyExported(0.0), reactiveEnergyImported(0.0), 
-      reactiveEnergyExported(0.0), apparentEnergyImported(0.0), apparentEnergyExported(0.0), lastMillis(0) {}
+      reactiveEnergyExported(0.0), apparentEnergy(0.0), lastMillis(0) {}
 };
 
 struct PayloadMeter

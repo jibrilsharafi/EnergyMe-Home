@@ -104,10 +104,8 @@ uint16_t ModbusTcp::_getRegisterValue(uint16_t address) {
             case 15: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyImported, false);
             case 16: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyExported, true);
             case 17: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyExported, false);
-            case 18: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergyImported, true);
-            case 19: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergyImported, false);
-            case 20: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergyExported, true);
-            case 21: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergyExported, false);
+            case 18: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergy, true);
+            case 19: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergy, false);
         }
     }
 

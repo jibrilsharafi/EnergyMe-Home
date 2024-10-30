@@ -144,8 +144,7 @@ void createDefaultEnergyFile() {
         _jsonDocument[String(i)]["activeEnergyExported"] = 0;
         _jsonDocument[String(i)]["reactiveEnergyImported"] = 0;
         _jsonDocument[String(i)]["reactiveEnergyExported"] = 0;
-        _jsonDocument[String(i)]["apparentEnergyImported"] = 0;
-        _jsonDocument[String(i)]["apparentEnergyExported"] = 0;
+        _jsonDocument[String(i)]["apparentEnergy"] = 0;
     }
 
     serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument);
@@ -313,7 +312,7 @@ void restartEsp32() {
 
 void printMeterValues(MeterValues meterValues, const char* channelLabel) {
     logger.verbose(
-        "%s: %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh | %.3f Wh | %.3f VARh | %.3f VARh | %.3f VAh | %.3f VAh", 
+        "%s: %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh | %.3f Wh | %.3f VARh | %.3f VARh | %.3f VAh", 
         "utils::printMeterValues", 
         channelLabel, 
         meterValues.voltage, 
@@ -326,8 +325,7 @@ void printMeterValues(MeterValues meterValues, const char* channelLabel) {
         meterValues.activeEnergyExported,
         meterValues.reactiveEnergyImported, 
         meterValues.reactiveEnergyExported, 
-        meterValues.apparentEnergyImported,
-        meterValues.apparentEnergyExported
+        meterValues.apparentEnergy
     );
 }
 
