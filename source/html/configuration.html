@@ -149,16 +149,25 @@
         <div class="section-box">
             <h2>Disconnect from WiFi</h2>
             <p><i>This will erase the WiFi credentials.</i></p>
-            <p><i>The device will create a WiFi network called "EnergyMe".
-                    Connect to this network and go <a href="http://192.168.4.1" target="_blank">here</a> (192.168.4.1).
+            <p><i>The device will create a WiFi network called "EnergyMe" with no password.
+                    Connect to that network and navigate to <a href="http://192.168.4.1", target="_blank">http://192.168.4.1</a>
+                    (or <a href="http://energyme.local", target="_blank">http://energyme.local</a>)
+                    if the device does not redirect you automatically.
                     You can then configure the device to connect to your WiFi network.</i></p>
+            <div class="warning-box" style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                ⚠️ Warning: You will lose access to the device until you reconnect it to WiFi.
+            </div>
             <button class="buttonForm" onclick="disconnectWifi()" id="disconnect">Disconnect</button>
         </div>
 
         <div class="section-box">
             <h2>Factory Reset</h2>
-            <p><i>This will reset the device to its factory settings. All configurations will be lost. The WiFi 
-            connection will be kept.</i></p>
+            <p><i>This will reset the device to its factory settings. Useful if you are having issues with the device or
+                    want to start fresh.</i></p>
+            <p><i>WiFi credentials will be kept.</i></p>
+            <div class="warning-box" style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                ⚠️ Warning: This will erase all configurations and data. This action cannot be undone.
+            </div>
             <button class="buttonForm" onclick="factoryReset()" id="factoryReset">Reset</button>
         </div>
 

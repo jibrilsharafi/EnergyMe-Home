@@ -25,8 +25,7 @@ bool isFirmwareUpdate = false;
 bool isCrashCounterReset = false;
 bool isfirstLinecyc = true;
 
-int currentChannel = 0;
-int previousChannel = 0;
+int currentChannel = -1;
 
 GeneralConfiguration generalConfiguration;
 CustomMqttConfiguration customMqttConfiguration;
@@ -273,29 +272,47 @@ void loop() {
   
   crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 4);
   if (ade7953.isLinecycFinished()) {
+    
+    led.setGreen();
+
+     // Since there is a settling time after the multiplexer is switched, 
+     // we let one cycle pass before we start reading the values
     if (isfirstLinecyc) {
       isfirstLinecyc = false;
     } else {
       isfirstLinecyc = true;
-      led.setGreen();
 
-      ade7953.readMeterValues(currentChannel);
+      if (currentChannel != -1) { // -1 indicates that no channel is active
+        ade7953.readMeterValues(currentChannel);
+
+        multiplexer.setChannel(max(currentChannel-1, 0));
+
+        payloadMeter.push(
+          PayloadMeter(
+            currentChannel,
+            customTime.getUnixTimeMilliseconds(),
+            ade7953.meterValues[currentChannel].activePower,
+            ade7953.meterValues[currentChannel].powerFactor
+            )
+          );
+        
+        printMeterValues(ade7953.meterValues[currentChannel], ade7953.channelData[currentChannel].label.c_str());
+      }
       
-      previousChannel = currentChannel;
       currentChannel = ade7953.findNextActiveChannel(currentChannel);
-      multiplexer.setChannel(max(currentChannel-1, 0));
-      
-      printMeterValues(ade7953.meterValues[previousChannel], ade7953.channelData[previousChannel].label.c_str());
+    }
 
-      payloadMeter.push(
+    // We always read the first channel as it is in a separate channel and is not impacted by the switching of the multiplexer
+    ade7953.readMeterValues(0);
+    payloadMeter.push(
         PayloadMeter(
-          previousChannel,
-          customTime.getUnixTimeMilliseconds(),
-          ade7953.meterValues[previousChannel].activePower,
-          ade7953.meterValues[previousChannel].powerFactor
+            0,
+            customTime.getUnixTimeMilliseconds(),
+            ade7953.meterValues[0].activePower,
+            ade7953.meterValues[0].powerFactor
           )
         );
-    }
+    printMeterValues(ade7953.meterValues[0], ade7953.channelData[0].label.c_str());
   }
 
   crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 5);

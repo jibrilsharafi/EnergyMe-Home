@@ -20,9 +20,6 @@ extern bool isFirstSetup;
 extern bool isFirmwareUpdate;
 extern bool isCrashCounterReset;
 
-extern int currentChannel;
-extern int previousChannel;
-
 extern GeneralConfiguration generalConfiguration;
 extern CustomMqttConfiguration customMqttConfiguration;
 extern CrashMonitor crashMonitor;

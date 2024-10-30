@@ -583,7 +583,7 @@ void Ade7953::_updateSampleTime() {
     unsigned int _activeChannelCount = _getActiveChannelCount();
 
     if (_activeChannelCount > 0) {
-        unsigned int _linecyc = _sampleTime * 50 * 2 / 1000 / _activeChannelCount; // 1 channel at 1000 ms: 1000 / 1000 / 1 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
+        unsigned int _linecyc = _sampleTime * 50 * 2 / 1000; // 1 channel at 1000 ms: 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
         
         _setLinecyc(_linecyc);
 
@@ -595,17 +595,17 @@ void Ade7953::_updateSampleTime() {
 
 int Ade7953::findNextActiveChannel(int currentChannel) {
     for (int i = currentChannel + 1; i < CHANNEL_COUNT; i++) {
-        if (channelData[i].active) {
+        if (channelData[i].active && i != 0) {
             return i;
         }
     }
-    for (int i = 0; i < currentChannel; i++) {
-        if (channelData[i].active) {
+    for (int i = 1; i < currentChannel; i++) {
+        if (channelData[i].active && i != 0) {
             return i;
         }
     }
 
-    return currentChannel;
+    return -1;
 }
 
 unsigned int Ade7953::_getActiveChannelCount() {
@@ -624,6 +624,33 @@ unsigned int Ade7953::_getActiveChannelCount() {
 
 // Meter values
 // --------------------
+/*
+
+There is no better way to read the values from the ADE7953 
+than this. Since we use a multiplexer, we cannot read the data
+more often than 200 ms as that is the settling time for the
+RMS current. 
+
+Moreover, as we switch the multiplexer just after the line cycle has
+ended, we need to make 1 line cycle go empty before we can actually
+read the data. This is because we want the power factor reading
+to be as accurate as possible.
+
+In the end we can have a channel 0 reading every 200 ms, while the
+other will need 400 ms per channel.
+
+The read values from which everything is computed afterwards are:
+- Voltage RMS
+- Current RMS (needs 200 ms to settle, and is computed by the ADE7953 at every zero crossing)
+- Sign of the active power (as we use RMS values, the sign will indicate the direction of the power)
+- Power factor (computed by the ADE7953 by averaging on the whole line cycle, thus why we need to read only every other line cycle)
+- Active energy, reactive energy, apparent energy (only to make use of the no-load feature)
+
+It the energies are 0, all the previously computed values are set to 0 as the no-load feature is enabled.
+
+All the values are validated to be within the limits of the hardware/system used.
+
+*/
 
 void Ade7953::readMeterValues(int channel) { // TODO: Can this be changed to average the values?
     long _currentMillis = millis();
@@ -652,14 +679,6 @@ void Ade7953::readMeterValues(int channel) { // TODO: Can this be changed to ave
         _activePower = _current * _voltage * abs(_powerFactor); 
         _apparentPower = _current * _voltage;
         _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower; // FIXME: This is incorrect, but it is the best we can do
-
-        // _activePower = _readActivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.wLsb * (channelData[channel].reverse ? -1 : 1);
-        // _reactivePower = _readReactivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.varLsb * (channelData[channel].reverse ? -1 : 1);
-        // _apparentPower = _readApparentPowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.vaLsb;
-       
-        // // The power factor read from the ADE7953 is not reliable, so we compute it ourselves (in the end it is the same formula computed in the ADE7953)
-        // _signReactivePower = _reactivePower < 0 ? -1 : 1;
-        // _powerFactor = _signReactivePower * abs(_activePower) / _apparentPower;
     } else { // Assume everything is the same as channel 0 except the current
         // Assume from channel 0
         _voltage = meterValues[0].voltage;
@@ -689,8 +708,8 @@ void Ade7953::readMeterValues(int channel) { // TODO: Can this be changed to ave
     meterValues[channel].powerFactor = _validatePowerFactor(meterValues[channel].powerFactor, _powerFactor);
 
     // Even though the energy is not directly used, we can use the ADE7953 register for the no-load feature (enabled during setup)
-    float _activeEnergy = _readActiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.whLsb;
-    float _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.varhLsb;
+    float _activeEnergy = _readActiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.whLsb * _signActivePower;
+    float _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.varhLsb * _signReactivePower;
     float _apparentEnergy = _readApparentEnergy(_ade7953Channel) * channelData[channel].calibrationValues.vahLsb;
 
     if (_activeEnergy > 0) {

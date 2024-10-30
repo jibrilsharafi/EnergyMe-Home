@@ -1,6 +1,6 @@
 #include "led.h"
 
-Led::Led(int redPin, int greenPin, int bluePin, int brightness) {
+Led::Led(int redPin, int greenPin, int bluePin, int brightness) { // TODO: Add a blinking with time with led.loop method
     _redPin = redPin;
     _greenPin = greenPin;
     _bluePin = bluePin;
