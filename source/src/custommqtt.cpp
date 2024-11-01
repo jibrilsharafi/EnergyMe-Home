@@ -167,15 +167,15 @@ bool CustomMqtt::_validateJsonConfiguration(JsonDocument &jsonDocument)
         return false;
     }
 
-    if (!jsonDocument.containsKey("enabled") || !jsonDocument["enabled"].is<bool>()) return false;
-    if (!jsonDocument.containsKey("server") || !jsonDocument["server"].is<String>()) return false;
-    if (!jsonDocument.containsKey("port") || !jsonDocument["port"].is<int>()) return false;
-    if (!jsonDocument.containsKey("clientid") || !jsonDocument["clientid"].is<String>()) return false;
-    if (!jsonDocument.containsKey("topic") || !jsonDocument["topic"].is<String>()) return false;
-    if (!jsonDocument.containsKey("frequency") || !jsonDocument["frequency"].is<int>()) return false;
-    if (!jsonDocument.containsKey("useCredentials") || !jsonDocument["useCredentials"].is<bool>()) return false;
-    if (!jsonDocument.containsKey("username") || !jsonDocument["username"].is<String>()) return false;
-    if (!jsonDocument.containsKey("password") || !jsonDocument["password"].is<String>()) return false;
+    if (!jsonDocument["enabled"] || !jsonDocument["enabled"].is<bool>()) return false;
+    if (!jsonDocument["server"] || !jsonDocument["server"].is<String>()) return false;
+    if (!jsonDocument["port"] || !jsonDocument["port"].is<int>()) return false;
+    if (!jsonDocument["clientid"] || !jsonDocument["clientid"].is<String>()) return false;
+    if (!jsonDocument["topic"] || !jsonDocument["topic"].is<String>()) return false;
+    if (!jsonDocument["frequency"] || !jsonDocument["frequency"].is<int>()) return false;
+    if (!jsonDocument["useCredentials"] || !jsonDocument["useCredentials"].is<bool>()) return false;
+    if (!jsonDocument["username"] || !jsonDocument["username"].is<String>()) return false;
+    if (!jsonDocument["password"] || !jsonDocument["password"].is<String>()) return false;
 
     return true;
 }

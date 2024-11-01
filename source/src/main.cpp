@@ -202,7 +202,7 @@ void setup() {
   led.setBlue();
 
   crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 0);
-  logger.info("Setting up WiFi...", "main::setup");
+  logger.info("Setting up WiFi...", "main::setup"); // FIXME: on first setup from captive portal, it does not show any webserver
   if (!customWifi.begin()) {
     setRestartEsp32("main::setup", "Failed to connect to WiFi and hit timeout");
   } else {

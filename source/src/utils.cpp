@@ -433,10 +433,10 @@ void applyGeneralConfiguration() {
 bool validateGeneralConfigurationJson(JsonDocument& jsonDocument) {
     if (!jsonDocument.is<JsonObject>()) return false;
 
-    if (!jsonDocument.containsKey("isCloudServicesEnabled") || !jsonDocument["isCloudServicesEnabled"].is<bool>()) return false;
-    if (!jsonDocument.containsKey("gmtOffset") || !jsonDocument["gmtOffset"].is<int>()) return false;
-    if (!jsonDocument.containsKey("dstOffset") || !jsonDocument["dstOffset"].is<int>()) return false;
-    if (!jsonDocument.containsKey("ledBrightness") || !jsonDocument["ledBrightness"].is<int>()) return false;
+    if (!jsonDocument["isCloudServicesEnabled"] || !jsonDocument["isCloudServicesEnabled"].is<bool>()) return false;
+    if (!jsonDocument["gmtOffset"] || !jsonDocument["gmtOffset"].is<int>()) return false;
+    if (!jsonDocument["dstOffset"] || !jsonDocument["dstOffset"].is<int>()) return false;
+    if (!jsonDocument["ledBrightness"] || !jsonDocument["ledBrightness"].is<int>()) return false;
 
     return true;
 }

@@ -275,26 +275,26 @@ bool Ade7953::_validateConfigurationJson(JsonDocument& jsonDocument) {
         return false;
     }
 
-    if (!jsonDocument.containsKey("sampleTime") || !jsonDocument["sampleTime"].is<unsigned long>()) return false;
-    if (!jsonDocument.containsKey("aVGain") || !jsonDocument["aVGain"].is<long>()) return false;
-    if (!jsonDocument.containsKey("aIGain") || !jsonDocument["aIGain"].is<long>()) return false;
-    if (!jsonDocument.containsKey("bIGain") || !jsonDocument["bIGain"].is<long>()) return false;
-    if (!jsonDocument.containsKey("aIRmsOs") || !jsonDocument["aIRmsOs"].is<long>()) return false;
-    if (!jsonDocument.containsKey("bIRmsOs") || !jsonDocument["bIRmsOs"].is<long>()) return false;
-    if (!jsonDocument.containsKey("aWGain") || !jsonDocument["aWGain"].is<long>()) return false;
-    if (!jsonDocument.containsKey("bWGain") || !jsonDocument["bWGain"].is<long>()) return false;
-    if (!jsonDocument.containsKey("aWattOs") || !jsonDocument["aWattOs"].is<long>()) return false;
-    if (!jsonDocument.containsKey("bWattOs") || !jsonDocument["bWattOs"].is<long>()) return false;
-    if (!jsonDocument.containsKey("aVarGain") || !jsonDocument["aVarGain"].is<long>()) return false;
-    if (!jsonDocument.containsKey("bVarGain") || !jsonDocument["bVarGain"].is<long>()) return false;
-    if (!jsonDocument.containsKey("aVarOs") || !jsonDocument["aVarOs"].is<long>()) return false;
-    if (!jsonDocument.containsKey("bVarOs") || !jsonDocument["bVarOs"].is<long>()) return false;
-    if (!jsonDocument.containsKey("aVaGain") || !jsonDocument["aVaGain"].is<long>()) return false;
-    if (!jsonDocument.containsKey("bVaGain") || !jsonDocument["bVaGain"].is<long>()) return false;
-    if (!jsonDocument.containsKey("aVaOs") || !jsonDocument["aVaOs"].is<long>()) return false;
-    if (!jsonDocument.containsKey("bVaOs") || !jsonDocument["bVaOs"].is<long>()) return false;
-    if (!jsonDocument.containsKey("phCalA") || !jsonDocument["phCalA"].is<long>()) return false;
-    if (!jsonDocument.containsKey("phCalB") || !jsonDocument["phCalB"].is<long>()) return false;
+    if (!jsonDocument["sampleTime"] || !jsonDocument["sampleTime"].is<unsigned long>()) return false;
+    if (!jsonDocument["aVGain"] || !jsonDocument["aVGain"].is<long>()) return false;
+    if (!jsonDocument["aIGain"] || !jsonDocument["aIGain"].is<long>()) return false;
+    if (!jsonDocument["bIGain"] || !jsonDocument["bIGain"].is<long>()) return false;
+    if (!jsonDocument["aIRmsOs"] || !jsonDocument["aIRmsOs"].is<long>()) return false;
+    if (!jsonDocument["bIRmsOs"] || !jsonDocument["bIRmsOs"].is<long>()) return false;
+    if (!jsonDocument["aWGain"] || !jsonDocument["aWGain"].is<long>()) return false;
+    if (!jsonDocument["bWGain"] || !jsonDocument["bWGain"].is<long>()) return false;
+    if (!jsonDocument["aWattOs"] || !jsonDocument["aWattOs"].is<long>()) return false;
+    if (!jsonDocument["bWattOs"] || !jsonDocument["bWattOs"].is<long>()) return false;
+    if (!jsonDocument["aVarGain"] || !jsonDocument["aVarGain"].is<long>()) return false;
+    if (!jsonDocument["bVarGain"] || !jsonDocument["bVarGain"].is<long>()) return false;
+    if (!jsonDocument["aVarOs"] || !jsonDocument["aVarOs"].is<long>()) return false;
+    if (!jsonDocument["bVarOs"] || !jsonDocument["bVarOs"].is<long>()) return false;
+    if (!jsonDocument["aVaGain"] || !jsonDocument["aVaGain"].is<long>()) return false;
+    if (!jsonDocument["bVaGain"] || !jsonDocument["bVaGain"].is<long>()) return false;
+    if (!jsonDocument["aVaOs"] || !jsonDocument["aVaOs"].is<long>()) return false;
+    if (!jsonDocument["bVaOs"] || !jsonDocument["bVaOs"].is<long>()) return false;
+    if (!jsonDocument["phCalA"] || !jsonDocument["phCalA"].is<long>()) return false;
+    if (!jsonDocument["phCalB"] || !jsonDocument["phCalB"].is<long>()) return false;
 
     return true;
 }
@@ -386,14 +386,14 @@ bool Ade7953::_validateCalibrationValuesJson(JsonDocument& jsonDocument) {
 
         JsonObject calibrationObject = kv.value().as<JsonObject>();
 
-        if (!calibrationObject.containsKey("vLsb") || !calibrationObject["vLsb"].is<float>()) return false;
-        if (!calibrationObject.containsKey("aLsb") || !calibrationObject["aLsb"].is<float>()) return false;
-        if (!calibrationObject.containsKey("wLsb") || !calibrationObject["wLsb"].is<float>()) return false;
-        if (!calibrationObject.containsKey("varLsb") || !calibrationObject["varLsb"].is<float>()) return false;
-        if (!calibrationObject.containsKey("vaLsb") || !calibrationObject["vaLsb"].is<float>()) return false;
-        if (!calibrationObject.containsKey("whLsb") || !calibrationObject["whLsb"].is<float>()) return false;
-        if (!calibrationObject.containsKey("varhLsb") || !calibrationObject["varhLsb"].is<float>()) return false;
-        if (!calibrationObject.containsKey("vahLsb") || !calibrationObject["vahLsb"].is<float>()) return false;
+        if (!calibrationObject["vLsb"] || !calibrationObject["vLsb"].is<float>()) return false;
+        if (!calibrationObject["aLsb"] || !calibrationObject["aLsb"].is<float>()) return false;
+        if (!calibrationObject["wLsb"] || !calibrationObject["wLsb"].is<float>()) return false;
+        if (!calibrationObject["varLsb"] || !calibrationObject["varLsb"].is<float>()) return false;
+        if (!calibrationObject["vaLsb"] || !calibrationObject["vaLsb"].is<float>()) return false;
+        if (!calibrationObject["whLsb"] || !calibrationObject["whLsb"].is<float>()) return false;
+        if (!calibrationObject["varhLsb"] || !calibrationObject["varhLsb"].is<float>()) return false;
+        if (!calibrationObject["vahLsb"] || !calibrationObject["vahLsb"].is<float>()) return false;
     }
 
     return true;
@@ -533,12 +533,12 @@ bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
 
         JsonObject channelObject = kv.value().as<JsonObject>();
 
-        if (!channelObject.containsKey("active") || !channelObject["active"].is<bool>()) return false;
-        if (!channelObject.containsKey("reverse") || !channelObject["reverse"].is<bool>()) return false;
-        if (!channelObject.containsKey("label") || !channelObject["label"].is<String>()) return false;
-        if (!channelObject.containsKey("phase") || !channelObject["phase"].is<int>()) return false;
+        if (!channelObject["active"] || !channelObject["active"].is<bool>()) return false;
+        if (!channelObject["reverse"] || !channelObject["reverse"].is<bool>()) return false;
+        if (!channelObject["label"] || !channelObject["label"].is<String>()) return false;
+        if (!channelObject["phase"] || !channelObject["phase"].is<int>()) return false;
         if (kv.value()["phase"].as<int>() < 1 || kv.value()["phase"].as<int>() > 3) return false;
-        if (!channelObject.containsKey("calibrationLabel") || !channelObject["calibrationLabel"].is<String>()) return false;
+        if (!channelObject["calibrationLabel"] || !channelObject["calibrationLabel"].is<String>()) return false;
     }
 
     return true;
@@ -556,7 +556,7 @@ void Ade7953::_updateChannelData() {
     }
     
     for (int i = 0; i < CHANNEL_COUNT; i++) {        
-        if (_jsonDocument.containsKey(channelData[i].calibrationValues.label)) {
+        if (_jsonDocument[channelData[i].calibrationValues.label]) {
             // Extract the corresponding calibration values from the JSON
             JsonObject _jsonCalibrationValues = _jsonDocument[channelData[i].calibrationValues.label].as<JsonObject>();
 
@@ -646,13 +646,15 @@ The read values from which everything is computed afterwards are:
 - Power factor (computed by the ADE7953 by averaging on the whole line cycle, thus why we need to read only every other line cycle)
 - Active energy, reactive energy, apparent energy (only to make use of the no-load feature)
 
+For the three phase, we assume that the phase shift is 120 degrees. 
+
 It the energies are 0, all the previously computed values are set to 0 as the no-load feature is enabled.
 
 All the values are validated to be within the limits of the hardware/system used.
 
 */
 
-void Ade7953::readMeterValues(int channel) { // TODO: Can this be changed to average the values?
+void Ade7953::readMeterValues(int channel) {
     long _currentMillis = millis();
     long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
     meterValues[channel].lastMillis = _currentMillis;
@@ -678,26 +680,41 @@ void Ade7953::readMeterValues(int channel) { // TODO: Can this be changed to ave
 
         _activePower = _current * _voltage * abs(_powerFactor); 
         _apparentPower = _current * _voltage;
-        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower; // FIXME: This is incorrect, but it is the best we can do
+        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower;
     } else { // Assume everything is the same as channel 0 except the current
         // Assume from channel 0
-        _voltage = meterValues[0].voltage;
+        _voltage = meterValues[0].voltage; // Assume the voltage is the same for all channels (weak assumption but difference usually is in the order of few volts, so less than 1%)
         
-        // Compute the power factor assuming 120 degrees phase shift
+        // Read wrong power factor due to the phase shift
+        _powerFactor = _readPowerFactor(_ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
+
+        // Compute the correct power factor assuming 120 degrees phase shift in voltage (solid assumption)
+        // The idea is to:
+        // 1. Compute the angle between the voltage and the current with the arc cosine of the just read power factor
+        // 2. Add or subtract 120 degrees to the angle depending on the phase (phase is is lagging 120 degrees, phase 3 is leading 120 degrees)
+        // 3. Compute the cosine of the new corrected angle to get the corrected power factor
+        // 4. Multiply by -1 if the channel is reversed (as normal)
+
+        // Note that the direction of the current (and consequently the power) cannot be determined. This is because the only reliable reading
+        // is the power factor, while the angle only gives the angle difference of the current reading instead of the one of the whole 
+        // line cycle. As such, the power factor is the only reliable reading and it cannot provide information about the direction of the power.
+
         if (channelData[channel].phase == PHASE_2) {
-            _powerFactor = cos(acos(meterValues[0].powerFactor) - (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
+            _powerFactor = cos(acos(_powerFactor) - (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
         } else if (channelData[channel].phase == PHASE_3) {
             // I cannot prove why, but I am SURE the minus is needed if the phase is leading (phase 3)
-            _powerFactor = - cos(acos(meterValues[0].powerFactor) + (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
+            _powerFactor = - cos(acos(_powerFactor) + (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
+        } else {
+            _logger.error("Invalid phase %d for channel %d", "ade7953::readMeterValues", channelData[channel].phase, channel);
         }
 
-        // Read data
-        _current = _readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb;
+        // Read the current
+        _current = _readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb * (channelData[channel].reverse ? -1 : 1);
         
         // Compute power values
-        _activePower = _current * _voltage * _powerFactor;
+        _activePower = _current * _voltage * abs(_powerFactor);
         _apparentPower = _current * _voltage;
-        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2));
+        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower;
     }
 
     meterValues[channel].voltage = _validateVoltage(meterValues[channel].voltage, _voltage);
@@ -711,6 +728,13 @@ void Ade7953::readMeterValues(int channel) { // TODO: Can this be changed to ave
     float _activeEnergy = _readActiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.whLsb * _signActivePower;
     float _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.varhLsb * _signReactivePower;
     float _apparentEnergy = _readApparentEnergy(_ade7953Channel) * channelData[channel].calibrationValues.vahLsb;
+
+    // If the phase is not Phase 1, set the energy to 1 if the current is above 0.003 A since we cannot  use the no-load future in this approximation
+    if (channelData[channel].phase != PHASE_1 && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
+        _activeEnergy = 1;
+        _reactiveEnergy = 1;
+        _apparentEnergy = 1;
+    }
 
     if (_activeEnergy > 0) {
         meterValues[channel].activeEnergyImported += meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0; // W * ms * s / 1000 ms * h / 3600 s = Wh

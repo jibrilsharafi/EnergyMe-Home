@@ -577,7 +577,7 @@ void CustomServer::_setRestApi()
             } else if (request->url() == "/rest/upload-file") {
                 _serverLog("Request to upload file", "customserver::_setRestApi", LogLevel::INFO, request);
     
-                if (_jsonDocument.containsKey("filename") && _jsonDocument.containsKey("data")) {
+                if (_jsonDocument["filename"] && _jsonDocument["data"]) {
                     String _filename = _jsonDocument["filename"];
                     String _data = _jsonDocument["data"];
     

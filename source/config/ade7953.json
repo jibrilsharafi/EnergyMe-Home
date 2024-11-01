@@ -1,10 +1,10 @@
 {
-    "sampleTime": 1000,
+    "sampleTime": 200,
     "aVGain": 4194304,
     "aIGain": 4194304,
-    "bIGain": 4295713,
-    "aIRmsOs": -400,
-    "bIRmsOs": -750,
+    "bIGain": 4194304,
+    "aIRmsOs": 0,
+    "bIRmsOs": 0,
     "aWGain": 4194304,
     "bWGain": 4194304,
     "aWattOs": 0,
@@ -17,6 +17,6 @@
     "bVaGain": 4194304,
     "aVaOs": 0,
     "bVaOs": 0,
-    "phCalA": 200,
-    "phCalB": 200
+    "phCalA": 10,
+    "phCalB": 10
 }
