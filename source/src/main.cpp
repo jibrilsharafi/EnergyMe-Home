@@ -18,6 +18,8 @@
 #include "utils.h"
 
 // Global variables
+// --------------------
+
 RestartConfiguration restartConfiguration;
 PublishMqtt publishMqtt;
 
@@ -35,7 +37,15 @@ PubSubClient customClientMqtt(customNet);
 
 CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;
 
-AsyncWebServer server(80);
+AsyncWebServer server(WEBSERVER_PORT);
+
+// Callback variables
+CircularBuffer<LogJson, LOG_BUFFER_SIZE> logBuffer;
+char jsonBuffer[LOG_JSON_BUFFER_SIZE];  // Pre-allocated buffer
+String deviceId;      // Pre-allocated buffer
+
+// Classes instances
+// --------------------
 
 AdvancedLogger logger(
   LOG_PATH,
@@ -63,7 +73,8 @@ Multiplexer multiplexer(
 );
 
 CustomWifi customWifi(
-  logger
+  logger,
+  led
 );
 
 CustomTime customTime(
@@ -127,10 +138,6 @@ CustomServer customServer(
 // --------------------
 // Callback 
 
-CircularBuffer<LogJson, LOG_BUFFER_SIZE> logBuffer;
-char jsonBuffer[LOG_JSON_BUFFER_SIZE];  // Pre-allocated buffer
-String deviceId;      // Pre-allocated buffer
-
 void callbackLogToMqtt(
     const char* timestamp,
     unsigned long millisEsp,
@@ -139,7 +146,7 @@ void callbackLogToMqtt(
     const char* function,
     const char* message
 ) {
-    if (strcmp(level, "debug") == 0 || strcmp(level, "verbose") == 0) return; //TODO: make this configurable
+    if (strcmp(level, "debug") == 0 || strcmp(level, "verbose") == 0) return;
 
     if (deviceId == "") {
         deviceId = WiFi.macAddress();
@@ -262,25 +269,13 @@ void setup() {
   } else {
     logger.info("ADE7953 setup done", "main::setup");
   }
-  
+
   led.setBlue();
 
-  logger.info("Setting up WiFi...", "main::setup"); // FIXME: on first setup from captive portal, it does not show any webserver
-  if (!customWifi.begin()) {
-    setRestartEsp32("main::setup", "Failed to connect to WiFi and hit timeout");
-  } else {
-    logger.info("WiFi setup done", "main::setup");
-  }
+  logger.info("Setting up WiFi...", "main::setup");
+  customWifi.begin();
+  logger.info("WiFi setup done", "main::setup");
 
-  // The mDNS has to be set up in the main setup function as it is required to be globally accessible
-  logger.info("Setting up mDNS...", "main::setupMdns");
-    if (!MDNS.begin(MDNS_HOSTNAME))
-    {
-      logger.error("Error setting up mDNS responder!", "main::setupMdns");
-    }
-  MDNS.addService("http", "tcp", 80);
-  logger.info("mDNS setup done", "main::setupMdns");
-  
   logger.info("Syncing time...", "main::setup");
   updateTimezone();
   if (!customTime.begin()) {
@@ -303,9 +298,7 @@ void setup() {
 }
 
 void loop() {
-  if (mainFlags.blockLoop) {
-    return;
-  }
+  if (mainFlags.blockLoop) return;
 
   customWifi.loop();
   mqtt.loop();

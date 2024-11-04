@@ -15,16 +15,16 @@ class Led {
         void setBrightness(int brightness);
         int getBrightness();
 
-        void setRed(bool blocking = false);
-        void setGreen(bool blocking = false);
-        void setBlue(bool blocking = false);
-        void setYellow(bool blocking = false);
-        void setPurple(bool blocking = false);
-        void setCyan(bool blocking = false);
-        void setOrange(bool blocking = false);
-        void setWhite(bool blocking = false);
+        void setRed(bool force = false);
+        void setGreen(bool force = false);
+        void setBlue(bool force = false);
+        void setYellow(bool force = false);
+        void setPurple(bool force = false);
+        void setCyan(bool force = false);
+        void setOrange(bool force = false);
+        void setWhite(bool force = false);
         
-        void setOff(bool blocking = false);
+        void setOff(bool force = false);
 
         void block();
         void unblock();
@@ -47,7 +47,7 @@ class Led {
         bool _isBlocked = false;
         
         // Set the color of the LED to the specified RGB triplet
-        void _setColor(int red, int green, int blue, bool blocking = false);
+        void _setColor(int red, int green, int blue, bool force = false);
         // Set the PWM values of the LED
         void _setPwm();
 };

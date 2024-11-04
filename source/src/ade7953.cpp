@@ -146,7 +146,7 @@ bool Ade7953::_verifyCommunication() {
             continue;
         }
 
-        _logger.debug("Attempt (%d/%d) to communicate with Ade7953", "ade7953::_verifyCommunication", _attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+        _logger.debug("Attempt (%d/%d) to communicate with Ade7953", "ade7953::_verifyCommunication", _attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
         
         _reset();
         _attempt++;

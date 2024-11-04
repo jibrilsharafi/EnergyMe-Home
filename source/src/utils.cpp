@@ -366,7 +366,7 @@ void restartEsp32() {
     led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
     led.setRed(true);
 
-    logger.fatal("Restarting ESP32 from function %s. Reason: %s", "utils::restartEsp32", restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
+    logger.warning("Restarting ESP32 from function %s. Reason: %s", "utils::restartEsp32", restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
 
     // If a firmware evaluation is in progress, set the firmware to test again
     File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
@@ -628,6 +628,8 @@ void factoryReset() {
 
     // Directly call ESP.restart() so that a fresh start is done
     ESP.restart();
+
+    mainFlags.blockLoop = false;
 }
 
 bool isLatestFirmwareInstalled() {
@@ -789,4 +791,24 @@ String readEncryptedFile(const char* path) {
 
     // return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId()); //FIXME: Uncomment this line and fix the panic in the decryptData function
     return _encryptedData;
+}
+
+bool setupMdns()
+{
+    logger.info("Setting up mDNS...", "main::setupMdns");
+    MDNS.setInstanceName(MDNS_INSTANCE_NAME);
+    if (
+        MDNS.begin(MDNS_HOSTNAME) &&
+        MDNS.addService("http", "tcp", WEBSERVER_PORT) &&
+        MDNS.addService("mqtt", "tcp", MQTT_CUSTOM_PORT_DEFAULT) &&
+        MDNS.addService("modbus", "tcp", MODBUS_TCP_PORT))
+    {
+        logger.info("mDNS setup done", "main::setupMdns");
+        return true;
+    }
+    else
+    {
+        logger.error("Error setting up mDNS", "main::setupMdns");
+        return false;
+    }
 }

@@ -12,6 +12,7 @@
 #include <esp_system.h>
 #include <rom/rtc.h>
 #include <vector>
+#include <ESPmDNS.h>
 
 #include "binaries.h"
 #include "constants.h"
@@ -84,3 +85,5 @@ void incrementCrashCounter();
 
 String decryptData(String encryptedData, String key);
 String readEncryptedFile(const char* path);
+
+bool setupMdns();

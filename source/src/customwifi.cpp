@@ -1,63 +1,74 @@
 #include "customwifi.h"
 
 CustomWifi::CustomWifi(
-    AdvancedLogger &logger) : _logger(logger) {}
+    AdvancedLogger &logger, Led &led) : _logger(logger), _led(led) {}
 
 bool CustomWifi::begin()
 {
-  _logger.debug("Setting up WiFi...", "setupWifi");
+  _logger.debug("Setting up WiFi...", "customwifi::setupWifi");
 
-  _wifiManager.setConfigPortalTimeout(WIFI_CONFIG_PORTAL_TIMEOUT);
+  _wifiManager.setConfigPortalBlocking(false);
+  _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT);
+  _wifiManager.setConfigPortalTimeoutCallback([this]() {
+    _logger.warning("WiFi configuration portal timeout. Restarting ESP32 in AP mode", "customwifi::setupWifi");
+    ESP.restart();
+  });
+  _connectToWifi();
 
-  if (_connectToWifi())
-  {
-    return true;
-  }
-
-  _logger.info("Connected to WiFi", "customwifi::setupWifi");
-  return true;
-}
-
-bool CustomWifi::_connectToWifi()
-{
-  _logger.debug("Connecting to WiFi...", "customwifi::_connectToWifi");
-
-  if (!_wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID))
-  {
-    _logger.warning("Failed to connect and hit timeout", "customwifi::_connectToWifi");
-    return false;
-  }
-
-  printWifiStatus();
-  _logger.info("Connected to WiFi", "customwifi::_connectToWifi");
+  _logger.debug("WiFi setup done", "customwifi::setupWifi");
   return true;
 }
 
 void CustomWifi::loop()
 {
-  if ((millis() - _lastMillisWifiLoop) > WIFI_LOOP_INTERVAL)
-  {
-    _lastMillisWifiLoop = millis();
-
-    if (!WiFi.isConnected())
-    {
-      _logger.warning("WiFi connection lost. Reconnecting...", "customwifi::wifiLoop");
-
-      if (!_connectToWifi())
-      {
-        setRestartEsp32("customwifi::wifiLoop", "Failed to reconnect to WiFi and hit timeout");
-      }
+  if (_wifiManager.getConfigPortalActive()) { // If it is still in the captive portal, we need to manually process the WiFiManager
+    _led.block();
+    _led.setBlue(true);
+    _led.setBrightness(max(_led.getBrightness(), 1));
+    
+    // This outputs true when the user inputs the correct credentials
+    if (_wifiManager.process()) {
+      _logger.warning("WiFi connected. Restarting...", "customwifi::loop");
+      ESP.restart();
     }
+    
+    _led.setOff(true);
+    _led.unblock();
+    return;
+  }
+
+  if (millis() - _lastMillisWifiLoop < WIFI_LOOP_INTERVAL) return;  
+
+  _lastMillisWifiLoop = millis();
+  if (WiFi.status() == WL_CONNECTED) return;
+
+  _logger.warning("WiFi connection lost. Reconnecting...", "customwifi::wifiLoop");
+  _connectToWifi();
+}
+
+bool CustomWifi::_connectToWifi()
+{
+  _logger.info("Connecting to WiFi...", "customwifi::_connectToWifi");
+
+  _led.block();
+  _led.setBlue(true);
+  if (_wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID)) {
+    _logger.info("Connected to WiFi", "customwifi::_connectToWifi");
+    setupMdns();
+    _led.unblock();
+    return true;
+  } else {
+    _logger.info("WiFi captive portal set up", "customwifi::_connectToWifi");
+    return false;
   }
 }
 
 void CustomWifi::resetWifi()
 {
-  _logger.warning("Resetting WiFi...", "resetWifi");
+  _logger.warning("Erasing WiFi credentials and restarting...", "resetWifi");
 
   _wifiManager.resetSettings();
-
-  setRestartEsp32("customwifi::resetWifi", "WiFi reset (erase credentials). Will restart ESP32 in AP mode");
+  ESP.restart();
 }
 
 void CustomWifi::getWifiStatus(JsonDocument &jsonDocument)

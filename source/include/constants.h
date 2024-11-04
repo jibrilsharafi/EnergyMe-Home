@@ -13,7 +13,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "06"
-#define FIRMWARE_BUILD_VERSION_PATCH "08"
+#define FIRMWARE_BUILD_VERSION_PATCH "09"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -38,7 +38,7 @@
 #define CRASH_DATA_JSON "/crash-data.json"
 
 // Rollback and crash
-#define STABLE_FIRMWARE "stable"
+#define STABLE_FIRMWARE "stable" // TODO: make this enum
 #define NEW_FIRMWARE_TO_BE_TESTED "new_firmware"
 #define NEW_FIRMWARE_TESTING "testing"
 #define ROLLBACK_TESTING_TIMEOUT 60000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
@@ -69,6 +69,9 @@
 #define DEFAULT_DST_OFFSET 0
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
 
+// Webserver
+#define WEBSERVER_PORT 80
+
 // LED
 #define LED_RED_PIN 38
 #define LED_GREEN_PIN 39
@@ -79,12 +82,13 @@
 #define LED_RESOLUTION 8
 
 // WiFi
-#define WIFI_CONFIG_PORTAL_TIMEOUT 300 // In seconds
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
-#define WIFI_LOOP_INTERVAL 5000 // In milliseconds
+#define WIFI_LOOP_INTERVAL 1000 // In milliseconds
+#define WIFI_CONNECT_TIMEOUT 900 // In seconds
 
 // MDNS
 #define MDNS_HOSTNAME "energyme"
+#define MDNS_INSTANCE_NAME "EnergyMe - Home"
 
 // MQTT
 #define DEFAULT_IS_CLOUD_SERVICES_ENABLED false

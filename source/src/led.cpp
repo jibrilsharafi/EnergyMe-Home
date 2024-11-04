@@ -32,44 +32,44 @@ int Led::getBrightness() {
     return _brightness;
 }
 
-void Led::setRed(bool blocking) {
-    _setColor(255, 0, 0, blocking);
+void Led::setRed(bool force) {
+    _setColor(255, 0, 0, force);
 }
 
-void Led::setGreen(bool blocking) {
-    _setColor(0, 255, 0, blocking);
+void Led::setGreen(bool force) {
+    _setColor(0, 255, 0, force);
 }
 
-void Led::setBlue(bool blocking) {
-    _setColor(0, 0, 255, blocking);
+void Led::setBlue(bool force) {
+    _setColor(0, 0, 255, force);
 }
 
-void Led::setYellow(bool blocking) {
-    _setColor(255, 255, 0, blocking);
+void Led::setYellow(bool force) {
+    _setColor(255, 255, 0, force);
 }
 
-void Led::setPurple(bool blocking) {
-    _setColor(255, 0, 255, blocking);
+void Led::setPurple(bool force) {
+    _setColor(255, 0, 255, force);
 }
 
-void Led::setCyan(bool blocking) {
-    _setColor(0, 255, 255, blocking);
+void Led::setCyan(bool force) {
+    _setColor(0, 255, 255, force);
 }
 
-void Led::setOrange(bool blocking) {
-    _setColor(255, 165, 0, blocking);
+void Led::setOrange(bool force) {
+    _setColor(255, 165, 0, force);
 }
 
-void Led::setWhite(bool blocking) {
-    _setColor(255, 255, 255, blocking);
+void Led::setWhite(bool force) {
+    _setColor(255, 255, 255, force);
 }
 
-void Led::setOff(bool blocking) {
-    _setColor(0, 0, 0, blocking);
+void Led::setOff(bool force) {
+    _setColor(0, 0, 0, force);
 }
 
-void Led::_setColor(int red, int green, int blue, bool blocking) {
-    if (_isBlocked && !blocking){
+void Led::_setColor(int red, int green, int blue, bool force) {
+    if (_isBlocked && !force){
         return;
     }
     _redValue = red;
