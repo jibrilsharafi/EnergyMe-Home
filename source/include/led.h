@@ -1,5 +1,4 @@
-#ifndef LED_H
-#define LED_H
+#pragma once
 
 #include <Arduino.h>
 
@@ -52,5 +51,3 @@ class Led {
         // Set the PWM values of the LED
         void _setPwm();
 };
-
-#endif

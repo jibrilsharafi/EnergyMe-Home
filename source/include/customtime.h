@@ -1,12 +1,11 @@
-#ifndef CUSTOMTIME_H
-#define CUSTOMTIME_H
+#pragma once
 
 #include <Arduino.h>
 #include <TimeLib.h>
 #include <AdvancedLogger.h>
 
 #include "constants.h"
-#include "global.h"
+#include "structs.h"
 
 class CustomTime
 {
@@ -36,5 +35,3 @@ private:
     GeneralConfiguration &_generalConfiguration;
     AdvancedLogger &_logger;
 };
-
-#endif

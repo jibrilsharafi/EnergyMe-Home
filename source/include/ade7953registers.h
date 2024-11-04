@@ -1,5 +1,4 @@
-#ifndef ADE7953REGISTERS_H
-#define ADE7953REGISTERS_H
+#pragma once
 
 //*****************ADE7953 Register Value Constants*****************//
 
@@ -436,5 +435,3 @@ Setting Reactive Energy Accumulation Mode (Current Channel B)
 #define WRITE_TRANSFER 0x00 // Part of the address to write a register
 
 //*******************************************************************************************
-
-#endif

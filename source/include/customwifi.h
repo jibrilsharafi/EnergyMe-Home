@@ -1,5 +1,4 @@
-#ifndef CUSTOMWIFI_H
-#define CUSTOMWIFI_H
+#pragma once
 
 #include <Arduino.h>
 #include <WiFiManager.h>
@@ -30,5 +29,3 @@ private:
 
     unsigned long _lastMillisWifiLoop = 0;
 };
-
-#endif

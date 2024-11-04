@@ -1,5 +1,4 @@
-#ifndef CUSTOMSERVER_H
-#define CUSTOMSERVER_H
+#pragma once
 
 #include <Arduino.h>
 #include <AsyncTCP.h>
@@ -15,7 +14,6 @@
 #include <ESPAsyncWebServer.h> // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
 #include "constants.h"
 #include "utils.h"
-#include "global.h"
 #include "custommqtt.h"
 #include "binaries.h"
 
@@ -23,6 +21,7 @@ class CustomServer
 {
 public:
     CustomServer(
+        AsyncWebServer &server,
         AdvancedLogger &logger,
         Led &led,
         Ade7953 &ade7953,
@@ -46,6 +45,7 @@ private:
 
     void _serverLog(const char* message, const char* function, LogLevel logLevel, AsyncWebServerRequest *request);
 
+    AsyncWebServer &_server;
     AdvancedLogger &_logger;
     Led &_led;
     Ade7953 &_ade7953;
@@ -55,5 +55,3 @@ private:
 
     String _md5;
 };
-
-#endif

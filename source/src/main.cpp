@@ -1,11 +1,12 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
 #include <WiFiManager.h> // Needs to be defined on top due to conflict between WiFiManager and ESPAsyncWebServer
+#include <CircularBuffer.hpp>
 
 // Project includes
-#include "global.h"
 #include "ade7953.h"
 #include "constants.h"
+#include "crashmonitor.h"
 #include "customwifi.h" // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
 #include "customserver.h"
 #include "led.h"
@@ -20,12 +21,7 @@
 RestartConfiguration restartConfiguration;
 PublishMqtt publishMqtt;
 
-bool isFirstSetup = false;
-bool isFirmwareUpdate = false;
-bool isCrashCounterReset = false;
-bool isfirstLinecyc = true;
-
-int currentChannel = -1;
+MainFlags mainFlags;
 
 GeneralConfiguration generalConfiguration;
 CustomMqttConfiguration customMqttConfiguration;
@@ -85,7 +81,8 @@ Ade7953 ade7953(
   MOSI_PIN,
   ADE7953_RESET_PIN,
   logger,
-  customTime
+  customTime,
+  mainFlags
 );
 
 ModbusTcp modbusTcp(
@@ -100,16 +97,24 @@ ModbusTcp modbusTcp(
 
 CustomMqtt customMqtt(
   ade7953,
-  logger
+  logger,
+  customClientMqtt,
+  customMqttConfiguration,
+  mainFlags
 );
 
 Mqtt mqtt(
   ade7953,
   logger,
-  customTime
+  customTime,
+  clientMqtt,
+  net,
+  publishMqtt,
+  payloadMeter
 );
 
 CustomServer customServer(
+  server,
   logger,
   led,
   ade7953,
@@ -120,6 +125,75 @@ CustomServer customServer(
 
 // Main functions
 // --------------------
+// Callback 
+
+CircularBuffer<LogJson, LOG_BUFFER_SIZE> logBuffer;
+char jsonBuffer[LOG_JSON_BUFFER_SIZE];  // Pre-allocated buffer
+String deviceId;      // Pre-allocated buffer
+
+void callbackLogToMqtt(
+    const char* timestamp,
+    unsigned long millisEsp,
+    const char* level,
+    unsigned int coreId,
+    const char* function,
+    const char* message
+) {
+    if (strcmp(level, "debug") == 0 || strcmp(level, "verbose") == 0) return; //TODO: make this configurable
+
+    if (deviceId == "") {
+        deviceId = WiFi.macAddress();
+        deviceId.replace(":", "");
+    }
+
+    logBuffer.push(
+      LogJson(
+        timestamp,
+        millisEsp,
+        level,
+        coreId,
+        function,
+        message
+      )
+    );
+
+    if (WiFi.status() != WL_CONNECTED) return;
+    if (!clientMqtt.connected()) return;
+
+    char topic[LOG_TOPIC_SIZE];
+    snprintf(topic, sizeof(topic), "energyme/home/%s/log/%s", deviceId.c_str(), level);   
+
+    unsigned int _loops = 0;
+    while (!logBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
+        _loops++;
+
+        LogJson _log = logBuffer.shift();
+        size_t totalLength = strlen(_log.timestamp) + strlen(_log.function) + strlen(_log.message) + 100;
+        if (totalLength > sizeof(jsonBuffer)) {
+            Serial.println("Log message too long for buffer");
+            continue;
+        }
+
+        snprintf(jsonBuffer, sizeof(jsonBuffer),
+            "{\"timestamp\":\"%s\","
+            "\"millis\":%lu,"
+            "\"core\":%u,"
+            "\"function\":\"%s\","
+            "\"message\":\"%s\"}",
+            _log.timestamp,
+            _log.millisEsp,
+            _log.coreId,
+            _log.function,
+            _log.message);
+
+        if (!clientMqtt.publish(topic, jsonBuffer)) {
+            Serial.printf("MQTT publish failed to %s. Error: %d\n", 
+                topic, clientMqtt.state());
+            logBuffer.push(_log);
+            break;
+        }
+    }
+}
 
 void setup() {
   Serial.begin(SERIAL_BAUDRATE);
@@ -148,36 +222,28 @@ void setup() {
   // Nothing is logged before this point as the logger is not yet initialized
   Serial.println("Setting up logger...");
   logger.begin();
+  logger.setCallback(callbackLogToMqtt);
   logger.debug("Logger setup done", "main::setup");
   
   logger.info("Booting...", "main::setup");  
-
   logger.info("EnergyMe - Home | Build version: %s | Build date: %s", "main::setup", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE);
 
-  crashMonitor.begin();
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 1);
+  // TODO: insert here crash check
 
-  // Check if the device has crashed more than the maximum allowed times. If so, the device will rollback to the stable firmware
-  logger.info("Checking integrity...", "main::setup");
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 4);
-  handleCrashCounter();
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 5);
-  handleFirmwareTesting();
-  logger.info("Integrity check done", "main::setup");
-  
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 6);
-  if (checkIfFirstSetup() || checkAllFiles()) {
+  logger.info("Checking for missing files...", "main::setup");
+  auto missingFiles = checkMissingFiles();
+  if (!missingFiles.empty()) {
     led.setOrange();
+    logger.warning("Missing files detected. Creating default files for missing files...", "main::setup");
+    
+    createDefaultFilesForMissingFiles(missingFiles);
 
-    logger.warning("First setup detected or not all files are present. Creating default files...", "main::setup");
-    isFirstSetup = true;
-    formatAndCreateDefaultFiles();
-    logger.info("Default files created after format", "main::setup");
+    logger.info("Default files created for missing files", "main::setup");
+  } else {
+    logger.info("No missing files detected", "main::setup");
   }
 
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 7);
   logger.info("Fetching general configuration from SPIFFS...", "main::setup");
-  setDefaultGeneralConfiguration(); // Start with default values
   if (!setGeneralConfigurationFromSpiffs()) {
     logger.warning("Failed to load configuration from SPIFFS. Using default values.", "main::setup");
   } else {
@@ -186,12 +252,10 @@ void setup() {
 
   led.setPurple();
   
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 8);
   logger.info("Setting up multiplexer...", "main::setup");
   multiplexer.begin();
   logger.info("Multiplexer setup done", "main::setup");
   
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 9);
   logger.info("Setting up ADE7953...", "main::setup");
   if (!ade7953.begin()) {
     logger.fatal("ADE7953 initialization failed!", "main::setup");
@@ -201,7 +265,6 @@ void setup() {
   
   led.setBlue();
 
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 0);
   logger.info("Setting up WiFi...", "main::setup"); // FIXME: on first setup from captive portal, it does not show any webserver
   if (!customWifi.begin()) {
     setRestartEsp32("main::setup", "Failed to connect to WiFi and hit timeout");
@@ -210,7 +273,6 @@ void setup() {
   }
 
   // The mDNS has to be set up in the main setup function as it is required to be globally accessible
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 1);
   logger.info("Setting up mDNS...", "main::setupMdns");
     if (!MDNS.begin(MDNS_HOSTNAME))
     {
@@ -219,7 +281,6 @@ void setup() {
   MDNS.addService("http", "tcp", 80);
   logger.info("mDNS setup done", "main::setupMdns");
   
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 2);
   logger.info("Syncing time...", "main::setup");
   updateTimezone();
   if (!customTime.begin()) {
@@ -228,78 +289,58 @@ void setup() {
     logger.info("Time synced", "main::setup");
   }
   
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 3);
   logger.info("Setting up server...", "main::setup");
   customServer.begin();
   logger.info("Server setup done", "main::setup");
 
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 4);
   logger.info("Setting up Modbus TCP...", "main::setup");
   modbusTcp.begin();
   logger.info("Modbus TCP setup done", "main::setup");
 
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 5);
-  if (generalConfiguration.isCloudServicesEnabled) {
-    logger.info("Setting up MQTT...", "main::setup");
-    mqtt.begin();
-    logger.info("MQTT setup done", "main::setup");
-  } else {
-    logger.info("Cloud services not enabled", "main::setup");
-  }
-
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 6);
-  logger.info("Setting up custom MQTT...", "main::setup");
-  customMqtt.setup();
-  logger.info("Custom MQTT setup done", "main::setup");
-
-  isFirstSetup = false;
-
   led.setGreen();
 
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 8);
   logger.info("Setup done", "main::setup");
 }
 
 void loop() {
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 0);
+  if (mainFlags.blockLoop) {
+    return;
+  }
+
   customWifi.loop();
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 1);
   mqtt.loop();
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 2);
   customMqtt.loop();
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 3);
   ade7953.loop();
   
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 4);
   if (ade7953.isLinecycFinished()) {
     
     led.setGreen();
 
      // Since there is a settling time after the multiplexer is switched, 
      // we let one cycle pass before we start reading the values
-    if (isfirstLinecyc) {
-      isfirstLinecyc = false;
+    if (mainFlags.isfirstLinecyc) {
+      mainFlags.isfirstLinecyc = false;
     } else {
-      isfirstLinecyc = true;
+      mainFlags.isfirstLinecyc = true;
 
-      if (currentChannel != -1) { // -1 indicates that no channel is active
-        ade7953.readMeterValues(currentChannel);
+      if (mainFlags.currentChannel != -1) { // -1 indicates that no channel is active
+        ade7953.readMeterValues(mainFlags.currentChannel);
 
-        multiplexer.setChannel(max(currentChannel-1, 0));
+        multiplexer.setChannel(max(mainFlags.currentChannel-1, 0));
 
         payloadMeter.push(
           PayloadMeter(
-            currentChannel,
+            mainFlags.currentChannel,
             customTime.getUnixTimeMilliseconds(),
-            ade7953.meterValues[currentChannel].activePower,
-            ade7953.meterValues[currentChannel].powerFactor
+            ade7953.meterValues[mainFlags.currentChannel].activePower,
+            ade7953.meterValues[mainFlags.currentChannel].powerFactor
             )
           );
         
-        printMeterValues(ade7953.meterValues[currentChannel], ade7953.channelData[currentChannel].label.c_str());
+        printMeterValues(ade7953.meterValues[mainFlags.currentChannel], ade7953.channelData[mainFlags.currentChannel].label.c_str());
       }
       
-      currentChannel = ade7953.findNextActiveChannel(currentChannel);
+      mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
     }
 
     // We always read the first channel as it is in a separate channel and is not impacted by the switching of the multiplexer
@@ -315,27 +356,19 @@ void loop() {
     printMeterValues(ade7953.meterValues[0], ade7953.channelData[0].label.c_str());
   }
 
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 5);
   if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
     printDeviceStatus();
     setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
   }
 
   // If memory is below a certain level, clear the log
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 6);
   if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
     printDeviceStatus();
     logger.clearLog();
     logger.warning("Log cleared due to low memory", "main::loop");
   }
 
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 7);
-  firmwareTestingLoop();
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 8);
-  crashCounterLoop();
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 9);
   checkIfRestartEsp32Required();
   
-  crashMonitor.leaveBreadcrumb(CustomModule::MAIN, 0);
   led.setOff();
 }

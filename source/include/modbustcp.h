@@ -1,5 +1,4 @@
-#ifndef MODBUSTCP_H
-#define MODBUSTCP_H
+#pragma once
 
 #include <WiFi.h>
 #include <ModbusServerTCPasync.h>
@@ -8,7 +7,6 @@
 #include "ade7953.h"
 #include "customtime.h"
 #include "constants.h"
-#include "global.h"
 
 class ModbusTcp
 {
@@ -47,5 +45,3 @@ private:
     int _stepChannelRegisters;
     int _upperLimitChannelRegisters;
 };
-
-#endif // MODBUS_TCP_H

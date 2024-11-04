@@ -1,5 +1,4 @@
-#ifndef ADE7953_H
-#define ADE7953_H
+#pragma once
 
 #include <AdvancedLogger.h>
 #include <Arduino.h>
@@ -12,7 +11,6 @@
 #include "customtime.h"
 #include "binaries.h"
 #include "constants.h"
-#include "global.h"
 #include "structs.h"
 #include "utils.h"
 
@@ -26,7 +24,9 @@ public:
         int mosiPin,
         int resetPin,
         AdvancedLogger &logger,
-        CustomTime &customTime); 
+        CustomTime &customTime,
+        MainFlags &mainFlags
+    );
 
     bool begin();
     void loop();
@@ -59,7 +59,7 @@ public:
     int findNextActiveChannel(int currentChannel);
 
     JsonDocument singleMeterValuesToJson(int index);
-    JsonDocument meterValuesToJson();
+    void meterValuesToJson(JsonDocument &jsonDocument);
 
     MeterValues meterValues[CHANNEL_COUNT];
     ChannelData channelData[CHANNEL_COUNT];
@@ -77,7 +77,6 @@ private:
     void _applyConfiguration(JsonDocument &jsonDocument);
     bool _validateConfigurationJson(JsonDocument &jsonDocument);
     
-    void _setDefaultCalibrationValuesOnly();
     void _setCalibrationValuesFromSpiffs();
     void _jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues);
     bool _validateCalibrationValuesJson(JsonDocument &jsonDocument);
@@ -118,8 +117,6 @@ private:
     void _setGain(long gain, int channel, int measurementType);
     void _setOffset(long offset, int channel, int measurementType);
 
-    unsigned int _getActiveChannelCount();
-
     int _ssPin;
     int _sckPin;
     int _misoPin;
@@ -130,8 +127,7 @@ private:
 
     AdvancedLogger &_logger;
     CustomTime &_customTime;
+    MainFlags &_mainFlags;
 
     unsigned long _lastMillisSaveEnergy = 0;
 };
-
-#endif

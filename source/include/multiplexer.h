@@ -1,5 +1,4 @@
-#ifndef MULTIPLEXER_H
-#define MULTIPLEXER_H
+#pragma once
 
 #include <Arduino.h>
 
@@ -17,5 +16,3 @@ private:
     int _s2;
     int _s3;
 };
-
-#endif

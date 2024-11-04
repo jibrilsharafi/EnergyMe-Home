@@ -1,5 +1,4 @@
-#ifndef CUSTOM_MQTT_H
-#define CUSTOM_MQTT_H
+#pragma once
 
 #include <AdvancedLogger.h>
 #include <Arduino.h>
@@ -7,12 +6,10 @@
 #include <PubSubClient.h>
 #include <Ticker.h>
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
 
 #include "ade7953.h"
 #include "constants.h"
 #include "customtime.h"
-#include "global.h"
 #include "structs.h"
 #include "utils.h"
 
@@ -21,9 +18,12 @@ class CustomMqtt
 public:
     CustomMqtt(
         Ade7953 &ade7953,
-        AdvancedLogger &logger);
+        AdvancedLogger &logger,
+        PubSubClient &customClientMqtt,
+        CustomMqttConfiguration &customMqttConfiguration,
+        MainFlags &mainFlags);
 
-    void setup();
+    void begin();
     void loop();
 
     bool setConfiguration(JsonDocument &jsonDocument);
@@ -45,6 +45,9 @@ private:
 
     Ade7953 &_ade7953;
     AdvancedLogger &_logger;
+    PubSubClient &_customClientMqtt;
+    CustomMqttConfiguration &_customMqttConfiguration;
+    MainFlags &_mainFlags;
 
     bool _isSetupDone = false;
 
@@ -54,5 +57,3 @@ private:
 
     unsigned long _lastMillisMeterPublish = 0;
 };
-
-#endif

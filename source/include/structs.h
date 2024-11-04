@@ -1,12 +1,36 @@
-#ifndef STRUCTS_H
-#define STRUCTS_H
+#pragma once
 
 #include <Arduino.h>
+
+struct MainFlags
+{
+  bool isFirmwareUpdate;
+  bool isCrashCounterReset;
+  bool isfirstLinecyc;
+  bool blockLoop;
+  int currentChannel;
+
+  MainFlags() : isFirmwareUpdate(false), isCrashCounterReset(false), isfirstLinecyc(true), blockLoop(false), currentChannel(-1) {}
+};
 
 enum Phase : int {
     PHASE_1 = 1,
     PHASE_2 = 2,
     PHASE_3 = 3,
+};
+
+enum Channel : int {
+    CHANNEL_A,
+    CHANNEL_B,
+};
+
+enum Measurement : int {
+    VOLTAGE,
+    CURRENT,
+    ACTIVE_POWER,
+    REACTIVE_POWER,
+    APPARENT_POWER,
+    POWER_FACTOR,
 };
 
 struct MeterValues
@@ -140,33 +164,33 @@ struct CustomMqttConfiguration {
 
 // Define module IDs - you can expand this enum as needed
 enum class CustomModule : uint8_t {
-    ADE7953 = 0,
-    CUSTOM_MQTT = 1,
-    CUSTOM_SERVER = 2,
-    CUSTOM_TIME = 3,
-    CUSTOM_WIFI = 4,
-    LED = 5,
-    MAIN = 6,
-    MODBUS_TCP = 7,
-    MQTT = 8,
-    MULTIPLER = 9,
-    UTILS = 10,
+    ADE7953,
+    CRASH_MONITOR,
+    CUSTOM_MQTT,
+    CUSTOM_SERVER,
+    CUSTOM_TIME,
+    CUSTOM_WIFI,
+    LED,
+    MAIN,
+    MODBUS_TCP,
+    MQTT,
+    MULTIPLEXER,
+    UTILS,
 };
 
 // Enhanced breadcrumb structure
 struct Breadcrumb {
-    CustomModule module;          // Which module left the breadcrumb
-    uint8_t id;            // ID within that module (can start from 0 for each module)
-    uint32_t timestamp;    // When it was recorded
-    uint32_t freeHeap;     // Heap at that point
+    const char* functionName;
+    int lineNumber;
+    uint32_t timestamp;
+    uint32_t freeHeap;
 
-    // Default constructor
     Breadcrumb()
-        : module(CustomModule::MAIN), id(0), timestamp(0), freeHeap(0) {}
+        : functionName(nullptr), lineNumber(0), timestamp(0), freeHeap(0) {}
 };
 
 struct CrashData {
-    Breadcrumb breadcrumbs[32];      // Circular buffer of breadcrumbs
+    Breadcrumb breadcrumbs[MAX_BREADCRUMBS];      // Circular buffer of breadcrumbs
     uint8_t currentIndex;            // Current position in circular buffer
     uint32_t crashCount;             // Number of crashes detected
     uint32_t lastResetReason;        // Last reset reason from ESP32
@@ -178,4 +202,42 @@ struct CrashData {
     uint32_t signature;              // To verify RTC data validity
 };
 
-#endif
+// Log callback struct
+// --------------------
+// Define maximum lengths for each field
+const size_t TIMESTAMP_LEN = 20;
+const size_t LEVEL_LEN     = 10;
+const size_t FUNCTION_LEN  = 50;
+const size_t MESSAGE_LEN   = 256;
+
+struct LogJson {
+    char timestamp[TIMESTAMP_LEN];
+    unsigned long millisEsp;
+    char level[LEVEL_LEN];
+    unsigned int coreId;
+    char function[FUNCTION_LEN];
+    char message[MESSAGE_LEN];
+
+    LogJson()
+        : millisEsp(0), coreId(0) {
+        timestamp[0] = '\0';
+        level[0] = '\0';
+        function[0] = '\0';
+        message[0] = '\0';
+    }
+
+    LogJson(const char* timestampIn, unsigned long millisEspIn, const char* levelIn, unsigned int coreIdIn, const char* functionIn, const char* messageIn)
+        : millisEsp(millisEspIn), coreId(coreIdIn) {
+        strncpy(timestamp, timestampIn, TIMESTAMP_LEN - 1);
+        timestamp[TIMESTAMP_LEN - 1] = '\0';
+
+        strncpy(level, levelIn, LEVEL_LEN - 1);
+        level[LEVEL_LEN - 1] = '\0';
+
+        strncpy(function, functionIn, FUNCTION_LEN - 1);
+        function[FUNCTION_LEN - 1] = '\0';
+
+        strncpy(message, messageIn, MESSAGE_LEN - 1);
+        message[MESSAGE_LEN - 1] = '\0';
+    }
+};

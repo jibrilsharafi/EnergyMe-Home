@@ -1,5 +1,4 @@
-#ifndef BINARIES_H
-#define BINARIES_H
+#pragma once
 
 #include <Arduino.h>
 
@@ -28,10 +27,8 @@ extern const char favicon_svg[] asm("_binary_resources_favicon_svg_start");
 
 // Default configuration files
 // --------------------------------------------------
-extern const char default_config_ade7953_json[] asm("_binary_config_ade7953_json_start");
 extern const char default_config_calibration_json[] asm("_binary_config_calibration_json_start");
 extern const char default_config_channel_json[] asm("_binary_config_channel_json_start");
-extern const char default_config_custom_mqtt_json[] asm("_binary_config_custommqtt_json_start");
 
 
 // AWS IoT Core secrets
@@ -43,5 +40,3 @@ extern const char aws_iot_core_endpoint[] asm("_binary_secrets_endpoint_txt_star
 extern const char aws_iot_core_rulemeter[] asm("_binary_secrets_rulemeter_txt_start");
 
 extern const char preshared_encryption_key[] asm("_binary_secrets_encryptionkey_txt_start");
-
-#endif

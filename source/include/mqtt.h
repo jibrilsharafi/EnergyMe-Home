@@ -1,5 +1,4 @@
-#ifndef MQTT_H
-#define MQTT_H
+#pragma once
 
 #include <AdvancedLogger.h>
 #include <Arduino.h>
@@ -8,13 +7,16 @@
 #include <Ticker.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <ArduinoJson.h>
+#include <CircularBuffer.hpp>
 
 #include "ade7953.h"
 #include "constants.h"
 #include "customtime.h"
-#include "global.h"
 #include "structs.h"
 #include "utils.h"
+
+extern MainFlags mainFlags;
 
 class Mqtt
 {
@@ -22,7 +24,12 @@ public:
     Mqtt(
         Ade7953 &ade7953,
         AdvancedLogger &logger,
-        CustomTime &customTime);
+        CustomTime &customTime,
+        PubSubClient &clientMqtt,
+        WiFiClientSecure &net,
+        PublishMqtt &publishMqtt,
+        CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter
+    );
 
     void begin();
     void loop();
@@ -69,8 +76,10 @@ private:
     Ade7953 &_ade7953;
     AdvancedLogger &_logger;
     CustomTime &_customTime;
-
-    CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> _payloadMeter;
+    PubSubClient &_clientMqtt;
+    WiFiClientSecure &_net;
+    PublishMqtt &_publishMqtt;
+    CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
 
     String _deviceId;
 
@@ -97,5 +106,3 @@ private:
     String _awsIotCoreCert;
     String _awsIotCorePrivateKey;
 };
-
-#endif

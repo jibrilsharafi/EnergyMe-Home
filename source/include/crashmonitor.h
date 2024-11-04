@@ -1,5 +1,4 @@
-#ifndef CRASHMONITOR_H
-#define CRASHMONITOR_H
+#pragma once
 
 #include <esp_attr.h>
 #include <esp_system.h>
@@ -10,9 +9,11 @@
 #include <AdvancedLogger.h>
 #include <ArduinoJson.h>
 #include <Arduino.h>
+#include <Update.h>
 
 #include "constants.h"
 #include "structs.h"
+#include "utils.h"
 
 class CrashMonitor {
 public:
@@ -20,18 +21,27 @@ public:
 
     void begin();
     void leaveBreadcrumb(CustomModule module, uint8_t id);
+    void leaveBreadcrumb(const char* functionName, int lineNumber);
     void logCrashInfo();
     void getJsonReport(JsonDocument& _jsonDocument);
     void saveJsonReport();
+
+    void handleCrashCounter();
+    void crashCounterLoop();
+    void handleFirmwareTesting();
+    void firmwareTestingLoop();
     
 private:
-    const size_t MAX_BACKTRACE = 32;
+    const size_t MAX_BACKTRACE = MAX_BREADCRUMBS;
 
     const char* _getModuleName(CustomModule module);
     const char* _getResetReasonString(esp_reset_reason_t reason);
     
-    CrashData& _crashData;
+    CrashData _crashData;
     AdvancedLogger& _logger;
+
+    bool isFirmwareUpdate = false;
+    bool isCrashCounterReset = false;
 };
 
-#endif
+#define TRACE crashMonitor.leaveBreadcrumb(__func__, __LINE__);

@@ -1,5 +1,4 @@
-#ifndef CONSTANTS_H
-#define CONSTANTS_H
+#pragma once
 
 // Project info
 #define COMPANY_NAME "EnergyMe"
@@ -14,21 +13,10 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "06"
-#define FIRMWARE_BUILD_VERSION_PATCH "07"
+#define FIRMWARE_BUILD_VERSION_PATCH "08"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
-#define FIRMWARE_BUILD_DATE_YEAR "2024"
-#define FIRMWARE_BUILD_DATE_MONTH "11"
-#define FIRMWARE_BUILD_DATE_DAY "01"
-#define FIRMWARE_BUILD_DATE FIRMWARE_BUILD_DATE_YEAR "-" FIRMWARE_BUILD_DATE_MONTH "-" FIRMWARE_BUILD_DATE_DAY
-
-// Measurements
-#define VOLTAGE_MEASUREMENT 1 // TODO: make this an enum in the ADE7953 class
-#define CURRENT_MEASUREMENT 2
-#define ACTIVE_POWER_MEASUREMENT 3
-#define REACTIVE_POWER_MEASUREMENT 4
-#define APPARENT_POWER_MEASUREMENT 5
-#define POWER_FACTOR_MEASUREMENT 6
+#define FIRMWARE_BUILD_DATE __DATE__
 
 // URL Utilities
 #define PUBLIC_LOCATION_ENDPOINT "http://ip-api.com/json/"
@@ -36,7 +24,6 @@
 #define PUBLIC_TIMEZONE_USERNAME "energymehome"
 
 // File path
-#define FIRST_SETUP_JSON_PATH "/first-setup.json"
 #define GENERAL_CONFIGURATION_JSON_PATH "/config/general.json"
 #define CONFIGURATION_ADE7953_JSON_PATH "/config/ade7953.json"
 #define CALIBRATION_JSON_PATH "/config/calibration.json"
@@ -46,16 +33,17 @@
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
 #define FW_UPDATE_INFO_JSON_PATH "/fw-update-info.json"
 #define FW_UPDATE_STATUS_JSON_PATH "/fw-update-status.json"
+#define FW_ROLLBACK_TXT "/fw-rollback-status.txt"
+#define CRASH_COUNTER_TXT "/crash-counter.txt"
+#define CRASH_DATA_JSON "/crash-data.json"
 
 // Rollback and crash
-#define FW_ROLLBACK_TXT "/fw-rollback-status.txt"
 #define STABLE_FIRMWARE "stable"
 #define NEW_FIRMWARE_TO_BE_TESTED "new_firmware"
 #define NEW_FIRMWARE_TESTING "testing"
 #define ROLLBACK_TESTING_TIMEOUT 60000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
-#define CRASH_COUNTER_TXT "/crash-counter.txt"
-#define CRASH_DATA_JSON "/crash-data.json"
-#define CRASH_TRACKER_SIGNATURE 0xDEADBEEF
+#define CRASH_DATA_INITIALIZED_FLAG 0xDEADBEEF
+#define MAX_BREADCRUMBS 32
 #define CRASH_MONITOR_WATCHDOG_TIMEOUT 300 // The watchdog timeout for the crash monitor (in seconds)
 #define MAX_CRASH_COUNT 10 // The maximum number of crashes before the firmware is rolled back and the SPIFFS is formatted
 #define CRASH_COUNTER_TIMEOUT 60000 // Interval in which the crash counter is reset
@@ -63,10 +51,16 @@
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32
 
+// While loops
+#define MAX_LOOP_ITERATIONS 1000 // The maximum number of iterations for a while loop
+
 // Logger
-#define LOG_PATH "/AdvancedLogger/log.txt"
-#define LOG_CONFIG_PATH "/AdvancedLogger/config.txt"
+#define LOG_PATH "/logger/log.txt"
+#define LOG_CONFIG_PATH "/logger/config.txt"
 #define LOG_TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
+#define LOG_BUFFER_SIZE 30
+#define LOG_JSON_BUFFER_SIZE 1024
+#define LOG_TOPIC_SIZE 64
 
 // Time
 #define NTP_SERVER "pool.ntp.org"
@@ -113,7 +107,7 @@
 #define MQTT_CUSTOM_PORT_DEFAULT 1883
 #define MQTT_CUSTOM_CLIENTID_DEFAULT "energyme-home"
 #define MQTT_CUSTOM_TOPIC_DEFAULT "topic"
-#define MQTT_CUSTOM_FREQUENCY_DEFAULT 30000 // In milliseconds
+#define MQTT_CUSTOM_FREQUENCY_DEFAULT 15 // In seconds
 #define MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT false
 #define MQTT_CUSTOM_USERNAME_DEFAULT "username"
 #define MQTT_CUSTOM_PASSWORD_DEFAULT "password"
@@ -149,12 +143,9 @@
 #define ADE7953_RESET_PIN 9
 
 // Setup
+#define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low (in milliseconds)
 #define ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS 5
 #define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500 // In milliseconds
-
-// Helper constants
-#define CHANNEL_A 0
-#define CHANNEL_B 1
 
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
@@ -166,6 +157,10 @@
 #define DEFAULT_LCYCMODE_REGISTER 0xFF // 0xFF 0b11111111 (enable accumulation mode for all channels)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1000000000001100 // Enable bit 2, bit 3 (line accumulation for PF), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
+#define DEFAULT_GAIN 4194304 // 0x400000 (default gain for the ADE7953)
+#define DEFAULT_OFFSET 0 // 0x000000 (default offset for the ADE7953)
+#define DEFAULT_PHCAL 10 // 0.02°/LSB, indicating a phase calibration of 0.2° which is needed for CTs
+#define DEFAULT_SAMPLE_TIME 200 // 200 ms is the minimum time required to settle the ADE7953 channel readings (needed as the multiplexer constantly switches)
 
 // Fixed conversion values
 #define POWER_FACTOR_CONVERSION_FACTOR 1.0 / 32768.0 // PF/LSB
@@ -218,6 +213,7 @@
 #define MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE "firmware-update"
 #define MQTT_TOPIC_SUBSCRIBE_RESTART "restart"
 #define MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE "provisioning/response"
+#define MQTT_TOPIC_SUBSCRIBE_LOG_LEVEL_CLOUD "set-log-level"
 #define MQTT_TOPIC_SUBSCRIBE_QOS 1
 
 // MQTT will
@@ -227,5 +223,3 @@
 
 // AWS IoT Core endpoint
 #define AWS_IOT_CORE_PORT 8883
-
-#endif

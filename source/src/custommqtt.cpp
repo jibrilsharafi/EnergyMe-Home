@@ -2,67 +2,60 @@
 
 CustomMqtt::CustomMqtt(
     Ade7953 &ade7953,
-    AdvancedLogger &logger) : _ade7953(ade7953), _logger(logger) {}
+    AdvancedLogger &logger,
+    PubSubClient &customClientMqtt,
+    CustomMqttConfiguration &customMqttConfiguration,
+    MainFlags &mainFlags) : _ade7953(ade7953),
+                            _logger(logger),
+                            _customClientMqtt(customClientMqtt),
+                            _customMqttConfiguration(customMqttConfiguration),
+                            _mainFlags(mainFlags) {}
 
-void CustomMqtt::setup()
+
+void CustomMqtt::begin()
 {
-    _logger.debug("Setting up custom MQTT...", "custommqtt::setup");
+    _logger.debug("Setting up custom MQTT...", "custommqtt::begin");
     
-    if (isFirstSetup) {
-        _setDefaultConfiguration();
-    } else {
-        _setConfigurationFromSpiffs();
-    }
+    _setConfigurationFromSpiffs();
 
-    customClientMqtt.setBufferSize(MQTT_CUSTOM_PAYLOAD_LIMIT);
-    
-    customClientMqtt.setServer(customMqttConfiguration.server.c_str(), customMqttConfiguration.port);
+    _customClientMqtt.setBufferSize(MQTT_CUSTOM_PAYLOAD_LIMIT);
+    _customClientMqtt.setServer(_customMqttConfiguration.server.c_str(), _customMqttConfiguration.port);
 
-    _logger.debug("MQTT setup complete", "custommqtt::setup");
+    _logger.debug("MQTT setup complete", "custommqtt::begin");
 
-    if (customMqttConfiguration.enabled) _isSetupDone = true;
+    if (_customMqttConfiguration.enabled) _isSetupDone = true;
 }
 
 void CustomMqtt::loop()
 {
-    if (!customMqttConfiguration.enabled)
+    if ((millis() - _lastMillisMqttLoop) < MQTT_CUSTOM_LOOP_INTERVAL) return;
+    _lastMillisMqttLoop = millis();
+
+    if (!_customMqttConfiguration.enabled)
     {
         if (_isSetupDone)
         {
             _logger.info("Disconnecting custom MQTT", "custommqtt::loop");
-            customClientMqtt.disconnect();
+            _customClientMqtt.disconnect();
             _isSetupDone = false;
         }
-        else
-        {
-            _logger.verbose("Custom MQTT not enabled. Skipping...", "custommqtt::loop");
-        }
-
         return;
     }
 
-    if ((millis() - _lastMillisMqttLoop) > MQTT_CUSTOM_LOOP_INTERVAL)
+    if (!_isSetupDone) { begin(); return; }
+
+    if (!_customClientMqtt.connected())
     {
-        _lastMillisMqttLoop = millis();
-        if (!customClientMqtt.connected())
-        {
-            if ((millis() - _lastMillisMqttFailed) < MQTT_CUSTOM_MIN_CONNECTION_INTERVAL)
-            {
-                _logger.verbose("MQTT connection failed recently. Skipping", "custommqtt::_connectMqtt");
-                return;
-            }
+        if ((millis() - _lastMillisMqttFailed) < MQTT_CUSTOM_MIN_CONNECTION_INTERVAL) return;
+        if (!_connectMqtt()) return;
+    }
 
-            if (!_connectMqtt())
-                return;
-        }
+    _customClientMqtt.loop();
 
-        customClientMqtt.loop();
-
-        if ((millis() - _lastMillisMeterPublish) > customMqttConfiguration.frequency * 1000)
-        {
-            _lastMillisMeterPublish = millis();
-            _publishMeter();
-        }
+    if ((millis() - _lastMillisMeterPublish) > _customMqttConfiguration.frequency * 1000)
+    {
+        _lastMillisMeterPublish = millis();
+        _publishMeter();
     }
 }
 
@@ -70,8 +63,10 @@ void CustomMqtt::_setDefaultConfiguration()
 {
     _logger.debug("Setting default custom MQTT configuration...", "custommqtt::setDefaultConfiguration");
 
+    createDefaultCustomMqttConfigurationFile();
+
     JsonDocument _jsonDocument;
-    deserializeJson(_jsonDocument, default_config_custom_mqtt_json);
+    deserializeJsonFromSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
 
     setConfiguration(_jsonDocument);
 
@@ -88,20 +83,20 @@ bool CustomMqtt::setConfiguration(JsonDocument &jsonDocument)
         return false;
     }
 
-    customMqttConfiguration.enabled = jsonDocument["enabled"].as<bool>();
-    customMqttConfiguration.server = jsonDocument["server"].as<String>();
-    customMqttConfiguration.port = jsonDocument["port"].as<int>();
-    customMqttConfiguration.clientid = jsonDocument["clientid"].as<String>();
-    customMqttConfiguration.topic = jsonDocument["topic"].as<String>();
-    customMqttConfiguration.frequency = jsonDocument["frequency"].as<int>();
-    customMqttConfiguration.useCredentials = jsonDocument["useCredentials"].as<bool>();
-    customMqttConfiguration.username = jsonDocument["username"].as<String>();
-    customMqttConfiguration.password = jsonDocument["password"].as<String>();
+    _customMqttConfiguration.enabled = jsonDocument["enabled"].as<bool>();
+    _customMqttConfiguration.server = jsonDocument["server"].as<String>();
+    _customMqttConfiguration.port = jsonDocument["port"].as<int>();
+    _customMqttConfiguration.clientid = jsonDocument["clientid"].as<String>();
+    _customMqttConfiguration.topic = jsonDocument["topic"].as<String>();
+    _customMqttConfiguration.frequency = jsonDocument["frequency"].as<int>();
+    _customMqttConfiguration.useCredentials = jsonDocument["useCredentials"].as<bool>();
+    _customMqttConfiguration.username = jsonDocument["username"].as<String>();
+    _customMqttConfiguration.password = jsonDocument["password"].as<String>();
 
     _saveConfigurationToSpiffs();
     
-    customClientMqtt.disconnect();
-    customClientMqtt.setServer(customMqttConfiguration.server.c_str(), customMqttConfiguration.port);
+    _customClientMqtt.disconnect();
+    _customClientMqtt.setServer(_customMqttConfiguration.server.c_str(), _customMqttConfiguration.port);
 
     _mqttConnectionAttempt = 0;
 
@@ -114,28 +109,15 @@ void CustomMqtt::_setConfigurationFromSpiffs()
 {
     _logger.debug("Setting custom MQTT configuration from SPIFFS...", "custommqtt::setConfigurationFromSpiffs");
 
-    File _file = SPIFFS.open(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, "r");
-    if (!_file)
-    {
-        _logger.error("Failed to open custom MQTT configuration file. Using default one", "custommqtt::setConfigurationFromSpiffs");
-        _setDefaultConfiguration();
-        return;
-    }
-
     JsonDocument _jsonDocument;
-    DeserializationError _error = deserializeJson(_jsonDocument, _file);
+    deserializeJsonFromSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
 
-    if (_error)
+    if (!setConfiguration(_jsonDocument))
     {
-        _logger.error("Failed to parse custom MQTT configuration JSON. Using default one", "custommqtt::setConfigurationFromSpiffs");
-        _file.close();
+        _logger.error("Failed to set custom MQTT configuration from SPIFFS. Using default one", "custommqtt::setConfigurationFromSpiffs");
         _setDefaultConfiguration();
         return;
     }
-
-    setConfiguration(_jsonDocument);
-
-    _file.close();
 
     _logger.debug("Successfully set custom MQTT configuration from SPIFFS", "custommqtt::setConfigurationFromSpiffs");
 }
@@ -145,15 +127,15 @@ void CustomMqtt::_saveConfigurationToSpiffs()
     _logger.debug("Saving custom MQTT configuration to SPIFFS...", "custommqtt::_saveConfigurationToSpiffs");
 
     JsonDocument _jsonDocument;
-    _jsonDocument["enabled"] = customMqttConfiguration.enabled;
-    _jsonDocument["server"] = customMqttConfiguration.server;
-    _jsonDocument["port"] = customMqttConfiguration.port;
-    _jsonDocument["clientid"] = customMqttConfiguration.clientid;
-    _jsonDocument["topic"] = customMqttConfiguration.topic;
-    _jsonDocument["frequency"] = customMqttConfiguration.frequency;
-    _jsonDocument["useCredentials"] = customMqttConfiguration.useCredentials;
-    _jsonDocument["username"] = customMqttConfiguration.username;
-    _jsonDocument["password"] = customMqttConfiguration.password;
+    _jsonDocument["enabled"] = _customMqttConfiguration.enabled;
+    _jsonDocument["server"] = _customMqttConfiguration.server;
+    _jsonDocument["port"] = _customMqttConfiguration.port;
+    _jsonDocument["clientid"] = _customMqttConfiguration.clientid;
+    _jsonDocument["topic"] = _customMqttConfiguration.topic;
+    _jsonDocument["frequency"] = _customMqttConfiguration.frequency;
+    _jsonDocument["useCredentials"] = _customMqttConfiguration.useCredentials;
+    _jsonDocument["username"] = _customMqttConfiguration.username;
+    _jsonDocument["password"] = _customMqttConfiguration.password;
 
     serializeJsonToSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
 
@@ -164,18 +146,20 @@ bool CustomMqtt::_validateJsonConfiguration(JsonDocument &jsonDocument)
 {
     if (jsonDocument.isNull() || !jsonDocument.is<JsonObject>())
     {
+        _logger.warning("Invalid JSON document", "custommqtt::_validateJsonConfiguration");
         return false;
-    }
+        }
 
-    if (!jsonDocument["enabled"] || !jsonDocument["enabled"].is<bool>()) return false;
-    if (!jsonDocument["server"] || !jsonDocument["server"].is<String>()) return false;
-    if (!jsonDocument["port"] || !jsonDocument["port"].is<int>()) return false;
-    if (!jsonDocument["clientid"] || !jsonDocument["clientid"].is<String>()) return false;
-    if (!jsonDocument["topic"] || !jsonDocument["topic"].is<String>()) return false;
-    if (!jsonDocument["frequency"] || !jsonDocument["frequency"].is<int>()) return false;
-    if (!jsonDocument["useCredentials"] || !jsonDocument["useCredentials"].is<bool>()) return false;
-    if (!jsonDocument["username"] || !jsonDocument["username"].is<String>()) return false;
-    if (!jsonDocument["password"] || !jsonDocument["password"].is<String>()) return false;
+        if (!jsonDocument["enabled"].is<bool>()) { _logger.warning("enabled field is not a boolean", "custommqtt::_validateJsonConfiguration"); return false; }
+        if (!jsonDocument["server"].is<String>()) { _logger.warning("server field is not a string", "custommqtt::_validateJsonConfiguration"); return false; }
+        if (!jsonDocument["port"].is<int>()) { _logger.warning("port field is not an integer", "custommqtt::_validateJsonConfiguration"); return false; }
+        if (!jsonDocument["clientid"].is<String>()) { _logger.warning("clientid field is not a string", "custommqtt::_validateJsonConfiguration"); return false; }
+        if (!jsonDocument["topic"].is<String>()) { _logger.warning("topic field is not a string", "custommqtt::_validateJsonConfiguration"); return false; }
+        if (!jsonDocument["frequency"].is<int>()) { _logger.warning("frequency field is not an integer", "custommqtt::_validateJsonConfiguration"); return false; }
+        if (!jsonDocument["useCredentials"].is<bool>()) { _logger.warning("useCredentials field is not a boolean", "custommqtt::_validateJsonConfiguration"); return false; }
+        if (!jsonDocument["username"].is<String>()) { _logger.warning("username field is not a string", "custommqtt::_validateJsonConfiguration"); return false; }
+        if (!jsonDocument["password"].is<String>()) { _logger.warning("password field is not a string", "custommqtt::_validateJsonConfiguration"); return false; }
+
 
     return true;
 }
@@ -208,16 +192,16 @@ bool CustomMqtt::_connectMqtt()
 
     bool res;
 
-    if (customMqttConfiguration.useCredentials)
+    if (_customMqttConfiguration.useCredentials)
     {
-        res = customClientMqtt.connect(
-            customMqttConfiguration.clientid.c_str(),
-            customMqttConfiguration.username.c_str(),
-            customMqttConfiguration.password.c_str());
+        res = _customClientMqtt.connect(
+            _customMqttConfiguration.clientid.c_str(),
+            _customMqttConfiguration.username.c_str(),
+            _customMqttConfiguration.password.c_str());
     }
     else
     {
-        res = customClientMqtt.connect(customMqttConfiguration.clientid.c_str());
+        res = _customClientMqtt.connect(_customMqttConfiguration.clientid.c_str());
     }
 
     if (res)
@@ -235,7 +219,7 @@ bool CustomMqtt::_connectMqtt()
             "custommqtt::_connectMqtt",
             _mqttConnectionAttempt + 1,
             MQTT_MAX_CONNECTION_ATTEMPT,
-            getMqttStateReason(customClientMqtt.state()));
+            getMqttStateReason(_customClientMqtt.state()));
 
         _lastMillisMqttFailed = millis();
         _mqttConnectionAttempt++;
@@ -248,11 +232,13 @@ void CustomMqtt::_publishMeter()
 {
     _logger.debug("Publishing meter data to custom MQTT...", "custommqtt::_publishMeter");
 
-    JsonDocument _jsonDocument = _ade7953.meterValuesToJson();
+    JsonDocument _jsonDocument;
+    _ade7953.meterValuesToJson(_jsonDocument);
+    
     String _meterMessage;
     serializeJson(_jsonDocument, _meterMessage);
 
-    if (_publishMessage(customMqttConfiguration.topic.c_str(), _meterMessage.c_str())) _logger.debug("Meter data published to custom MQTT", "custommqtt::_publishMeter");
+    if (_publishMessage(_customMqttConfiguration.topic.c_str(), _meterMessage.c_str())) _logger.debug("Meter data published to custom MQTT", "custommqtt::_publishMeter");
 }
 
 bool CustomMqtt::_publishMessage(const char *topic, const char *message)
@@ -269,27 +255,21 @@ bool CustomMqtt::_publishMessage(const char *topic, const char *message)
         return false;
     }
 
-    if (!customClientMqtt.connected())
+    if (!_customClientMqtt.connected())
     {
-        _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", "custommqtt::_publishMessage", getMqttStateReason(customClientMqtt.state()), topic);
+        _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", "custommqtt::_publishMessage", getMqttStateReason(_customClientMqtt.state()), topic);
         return false;
     }
 
-    // Additional debugging information
-    _logger.debug("MQTT client is connected. Attempting to publish message.", "custommqtt::_publishMessage");
-
-    // Check if the topic and message are valid
     if (strlen(topic) == 0 || strlen(message) == 0)
     {
         _logger.warning("Empty topic or message. Skipping publishing.", "custommqtt::_publishMessage");
         return false;
     }
 
-    // Attempt to publish the message
-    bool result = customClientMqtt.publish(topic, message);
-    if (!result)
+    if (!_customClientMqtt.publish(topic, message))
     {
-        _logger.warning("Failed to publish message. MQTT client state: %s", "custommqtt::_publishMessage", getMqttStateReason(customClientMqtt.state()));
+        _logger.warning("Failed to publish message. MQTT client state: %s", "custommqtt::_publishMessage", getMqttStateReason(_customClientMqtt.state()));
         return false;
     }
 

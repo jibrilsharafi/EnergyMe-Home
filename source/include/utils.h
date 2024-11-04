@@ -1,5 +1,4 @@
-#ifndef UTILS_H
-#define UTILS_H
+#pragma once
 
 #include <AdvancedLogger.h>
 #include <Arduino.h>
@@ -12,13 +11,22 @@
 #include "mbedtls/base64.h"
 #include <esp_system.h>
 #include <rom/rtc.h>
+#include <vector>
 
-#include "ade7953.h"
+#include "binaries.h"
 #include "constants.h"
 #include "customtime.h"
-#include "global.h"
 #include "led.h"
 #include "structs.h"
+
+// Only place where the extern is used
+extern AdvancedLogger logger;
+extern GeneralConfiguration generalConfiguration;
+extern CustomTime customTime;
+extern Led led;
+extern RestartConfiguration restartConfiguration;
+extern MainFlags mainFlags;
+extern PublishMqtt publishMqtt;
 
 void getJsonProjectInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
@@ -32,9 +40,16 @@ void printDeviceStatus();
 
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
-
 void createEmptyJsonFile(const char* path);
-void formatAndCreateDefaultFiles();
+
+std::vector<const char*> checkMissingFiles();
+void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles);
+bool checkAllFiles();
+
+void createDefaultCustomMqttConfigurationFile();
+void createDefaultChannelDataFile();
+void createDefaultCalibrationFile();
+void createDefaultAde7953ConfigurationFile();
 void createDefaultGeneralConfigurationFile();
 void createDefaultEnergyFile();
 void createDefaultDailyEnergyFile();
@@ -42,15 +57,12 @@ void createDefaultFirmwareUpdateInfoFile();
 void createDefaultFirmwareUpdateStatusFile();
 void createDefaultFirmwareRollbackFile();
 void createDefaultCrashCounterFile();
-void createFirstSetupFile();
-
-bool checkAllFiles();
-bool checkIfFirstSetup();
+void createDefaultCrashDataFile();
 
 void setDefaultGeneralConfiguration();
 bool setGeneralConfiguration(JsonDocument& jsonDocument);
 bool setGeneralConfigurationFromSpiffs();
-bool saveGeneralConfigurationToSpiffs();
+void saveGeneralConfigurationToSpiffs();
 void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument);
 bool validateGeneralConfigurationJson(JsonDocument& jsonDocument);
 
@@ -69,12 +81,6 @@ String getDeviceId();
 const char* getMqttStateReason(int state);
 
 void incrementCrashCounter();
-void handleCrashCounter();
-void crashCounterLoop();
-void handleFirmwareTesting();
-void firmwareTestingLoop();
 
 String decryptData(String encryptedData, String key);
 String readEncryptedFile(const char* path);
-
-#endif

@@ -1,7 +1,11 @@
 #include "crashmonitor.h"
 
-CrashMonitor::CrashMonitor(AdvancedLogger& logger, CrashData& crashData) : _logger(logger), _crashData(crashData) {}
-    
+CrashMonitor::CrashMonitor(AdvancedLogger& logger, CrashData& crashData) : _logger(logger), _crashData(crashData) {
+        if (_crashData.signature != CRASH_DATA_INITIALIZED_FLAG) {
+        memset(&_crashData, 0, sizeof(_crashData));
+        _crashData.signature = CRASH_DATA_INITIALIZED_FLAG;
+    }
+}
 
 void CrashMonitor::begin() { // FIXME: not working properly, the values are random
     // Get last reset reason
@@ -30,6 +34,9 @@ void CrashMonitor::begin() { // FIXME: not working properly, the values are rand
     esp_task_wdt_add(NULL);
 
     saveJsonReport();
+
+    handleCrashCounter();
+    handleFirmwareTesting();
 }
 
 const char* CrashMonitor::_getModuleName(CustomModule module) {
@@ -43,7 +50,7 @@ const char* CrashMonitor::_getModuleName(CustomModule module) {
         case CustomModule::MAIN: return "MAIN";
         case CustomModule::MODBUS_TCP: return "MODBUS_TCP";
         case CustomModule::MQTT: return "MQTT";
-        case CustomModule::MULTIPLER: return "MULTIPLER";
+        case CustomModule::MULTIPLEXER: return "MULTIPLER";
         case CustomModule::UTILS: return "UTILS";
         default: return "UNKNOWN";
     }
@@ -66,17 +73,17 @@ const char* CrashMonitor::_getResetReasonString(esp_reset_reason_t reason) {
     }
 }
 
-void CrashMonitor::leaveBreadcrumb(CustomModule module, uint8_t id) {
-    uint8_t idx = _crashData.currentIndex % 32;
-    
-    _crashData.breadcrumbs[idx].module = module;
-    _crashData.breadcrumbs[idx].id = id;
+void CrashMonitor::leaveBreadcrumb(const char* functionName, int lineNumber) {
+    uint8_t idx = _crashData.currentIndex % MAX_BREADCRUMBS;
+
+    _crashData.breadcrumbs[idx].functionName = functionName;
+    _crashData.breadcrumbs[idx].lineNumber = lineNumber;
     _crashData.breadcrumbs[idx].timestamp = millis();
     _crashData.breadcrumbs[idx].freeHeap = ESP.getFreeHeap();
 
-    _crashData.currentIndex++;
+    _crashData.currentIndex = (_crashData.currentIndex + 1) % MAX_BREADCRUMBS;
     _crashData.lastUptime = millis();
-    
+
     // Pat the watchdog
     esp_task_wdt_reset();
 }
@@ -91,17 +98,16 @@ void CrashMonitor::logCrashInfo() {
     _logger.error("Last Fault Address: 0x%x", "rtc::logCrashInfo", (uint32_t)_crashData.lastFaultAddress);
     _logger.error("Last Uptime: %d ms", "rtc::logCrashInfo", _crashData.lastUptime);
     
-    // Print last 32 breadcrumbs
     _logger.error("Last Breadcrumbs (most recent first):", "rtc::logCrashInfo");
-    for (int i = 0; i < 32; i++) {
-        uint8_t idx = (_crashData.currentIndex - 1 - i) % 32;
+    for (int i = 0; i < MAX_BREADCRUMBS; i++) {
+        uint8_t idx = (_crashData.currentIndex - 1 - i) % MAX_BREADCRUMBS;
         const Breadcrumb& crumb = _crashData.breadcrumbs[idx];
         if (crumb.timestamp != 0) {  // Check if breadcrumb is valid
-            _logger.error("[%d] Module: %s, ID: %d, Time: %d ms, Heap: %d bytes",
+            _logger.error("[%d] Function: %s, Line: %d, Time: %d ms, Heap: %d bytes",
                 "rtc::logCrashInfo",
                 i,
-                _getModuleName(crumb.module),
-                crumb.id,
+                crumb.functionName ? crumb.functionName : "Unknown",
+                crumb.lineNumber,
                 crumb.timestamp,
                 crumb.freeHeap
             );
@@ -120,13 +126,13 @@ void CrashMonitor::getJsonReport(JsonDocument& _jsonDocument) {
 
     JsonArray breadcrumbs = _jsonDocument["breadcrumbs"].to<JsonArray>();
     _logger.debug("Looping through breadcrumbs", "rtc::getJsonReport");
-    for (int i = 0; i < 32; i++) {
-        uint8_t idx = (_crashData.currentIndex - 1 - i) % 32;
+    for (int i = 0; i < MAX_BREADCRUMBS; i++) {
+        uint8_t idx = (_crashData.currentIndex - 1 - i) % MAX_BREADCRUMBS;
         const Breadcrumb& crumb = _crashData.breadcrumbs[idx];
         if (crumb.timestamp != 0) {
             JsonObject _jsonObject = breadcrumbs.add<JsonObject>();
-            _jsonObject["module"] = _getModuleName(crumb.module);
-            _jsonObject["id"] = crumb.id;
+            _jsonObject["function"] = crumb.functionName ? crumb.functionName : "Unknown";
+            _jsonObject["line"] = crumb.lineNumber;
             _jsonObject["time"] = crumb.timestamp;
             _jsonObject["heap"] = crumb.freeHeap;
         }
@@ -144,4 +150,93 @@ void CrashMonitor::saveJsonReport() {
     getJsonReport(_jsonDocument);
     serializeJson(_jsonDocument, file);
     file.close();
+}
+
+void CrashMonitor::handleCrashCounter() {
+    _logger.debug("Handling crash counter...", "CrashMonitor::handleCrashCounter");
+
+    if (_crashData.crashCount >= MAX_CRASH_COUNT) {
+        _logger.fatal("Crash counter reached the maximum allowed crashes. Rolling back to stable firmware...", "CrashMonitor::handleCrashCounter");
+
+        if (!Update.rollBack()) {
+            _logger.error("No firmware to rollback available. Keeping current firmware", "CrashMonitor::handleCrashCounter");
+        }
+
+        SPIFFS.format();
+
+        ESP.restart();
+    } else {
+        _logger.debug("Crash counter incremented to %d", "CrashMonitor::handleCrashCounter", _crashData.crashCount);
+    }
+}
+
+void CrashMonitor::crashCounterLoop() {
+    if (isCrashCounterReset) return;
+
+    if (millis() > CRASH_COUNTER_TIMEOUT) {
+        isCrashCounterReset = true;
+        _logger.debug("Timeout reached. Resetting crash counter...", "CrashMonitor::crashCounterLoop");
+
+        _crashData.crashCount = 0;
+    }
+}
+
+void CrashMonitor::handleFirmwareTesting() {
+    _logger.debug("Checking if rollback is needed...", "CrashMonitor::handleFirmwareTesting");
+
+    String _rollbackStatus;
+    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
+    if (!_file) {
+        _logger.error("Failed to open firmware rollback file", "CrashMonitor::handleFirmwareTesting");
+        return;
+    } else {
+        _rollbackStatus = _file.readString();
+        _file.close();
+    }
+
+    _logger.debug("Rollback status: %s", "CrashMonitor::handleFirmwareTesting", _rollbackStatus.c_str());
+    if (_rollbackStatus == NEW_FIRMWARE_TO_BE_TESTED) {
+        _logger.info("Testing new firmware", "CrashMonitor::handleFirmwareTesting");
+
+        File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+        if (_file) {
+            _file.print(NEW_FIRMWARE_TESTING);
+            _file.close();
+        }
+        isFirmwareUpdate = true;
+        return;
+    } else if (_rollbackStatus == NEW_FIRMWARE_TESTING) {
+        _logger.fatal("Testing new firmware failed. Rolling back to stable firmware", "CrashMonitor::handleFirmwareTesting");
+
+        if (!Update.rollBack()) {
+            _logger.error("No firmware to rollback available. Keeping current firmware", "CrashMonitor::handleFirmwareTesting");
+        }
+
+        File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+        if (_file) {
+            _file.print(STABLE_FIRMWARE);
+            _file.close();
+        }
+
+        setRestartEsp32("CrashMonitor::handleFirmwareTesting", "Testing new firmware failed. Rolling back to stable firmware");
+    } else {
+        _logger.debug("No rollback needed", "CrashMonitor::handleFirmwareTesting");
+    }
+}
+
+void CrashMonitor::firmwareTestingLoop() {
+    if (!isFirmwareUpdate) return;
+
+    _logger.verbose("Checking if firmware has passed the testing period...", "CrashMonitor::firmwareTestingLoop");
+
+    if (millis() > ROLLBACK_TESTING_TIMEOUT) {
+        _logger.info("Testing period of new firmware has passed. Keeping current firmware", "CrashMonitor::firmwareTestingLoop");
+        isFirmwareUpdate = false;
+
+        File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
+        if (_file) {
+            _file.print(STABLE_FIRMWARE);
+            _file.close();
+        }
+    }
 }
