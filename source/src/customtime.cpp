@@ -41,6 +41,16 @@ String CustomTime::timestampFromUnix(long unix){
     return String(_timestamp);
 }
 
+// Static method for other classes to use
+String CustomTime::timestampFromUnix(long unix, const char *timestampFormat){
+    struct tm* _timeinfo;
+    char _timestamp[26];
+
+    _timeinfo = localtime(&unix);
+    strftime(_timestamp, sizeof(_timestamp), timestampFormat, _timeinfo);
+    return String(_timestamp);
+}
+
 unsigned long CustomTime::getUnixTime(){
     return static_cast<unsigned long>(time(nullptr));
 }

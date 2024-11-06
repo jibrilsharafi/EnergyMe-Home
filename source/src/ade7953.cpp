@@ -25,10 +25,12 @@ Ade7953::Ade7953(
 bool Ade7953::begin() {
     _logger.debug("Initializing Ade7953", "ade7953::begin");
 
+    TRACE
     _logger.debug("Setting up hardware pins...", "ade7953::begin");
     _setHardwarePins();
     _logger.debug("Successfully set up hardware pins", "ade7953::begin");
 
+    TRACE
     _logger.debug("Verifying communication with Ade7953...", "ade7953::begin");
     if (!_verifyCommunication()) {
         _logger.error("Failed to communicate with Ade7953", "ade7953::begin");
@@ -36,30 +38,37 @@ bool Ade7953::begin() {
     }
     _logger.debug("Successfully initialized Ade7953", "ade7953::begin");
     
+    TRACE
     _logger.debug("Setting optimum settings...", "ade7953::begin");
     _setOptimumSettings();
     _logger.debug("Successfully set optimum settings", "ade7953::begin");
 
+    TRACE
     _logger.debug("Setting default parameters...", "ade7953::begin");
     _setDefaultParameters();
     _logger.debug("Successfully set default parameters", "ade7953::begin");
 
+    TRACE
     _logger.debug("Setting configuration from SPIFFS...", "ade7953::begin");
     _setConfigurationFromSpiffs();
     _logger.debug("Done setting configuration from SPIFFS", "ade7953::begin");
 
+    TRACE
     _logger.debug("Reading channel data from SPIFFS...", "ade7953::begin");
     _setChannelDataFromSpiffs();
     _logger.debug("Done reading channel data from SPIFFS", "ade7953::begin");
 
+    TRACE
     _logger.debug("Reading calibration values from SPIFFS...", "ade7953::begin");
     _setCalibrationValuesFromSpiffs();
     _logger.debug("Done reading calibration values from SPIFFS", "ade7953::begin");
 
+    TRACE
     _logger.debug("Reading energy from SPIFFS...", "ade7953::begin");
     _setEnergyFromSpiffs();
     _logger.debug("Done reading energy from SPIFFS", "ade7953::begin");
 
+    TRACE
     return true;
 }
 
@@ -600,6 +609,7 @@ void Ade7953::readMeterValues(int channel) {
     int _signReactivePower = 1;
 
     if (channelData[channel].phase == PHASE_1) {
+        TRACE
         _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
         _signActivePower = _readActivePowerInstantaneous(_ade7953Channel) < 0 ? -1 : 1;
         _current = _readCurrentRms(_ade7953Channel) / channelData[channel].calibrationValues.aLsb * (channelData[channel].reverse ? -1 : 1) * _signActivePower;
@@ -611,6 +621,7 @@ void Ade7953::readMeterValues(int channel) {
         _apparentPower = _current * _voltage;
         _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower;
     } else { // Assume everything is the same as channel 0 except the current
+        TRACE
         // Assume from channel 0
         _voltage = meterValues[0].voltage; // Assume the voltage is the same for all channels (weak assumption but difference usually is in the order of few volts, so less than 1%)
         
@@ -646,6 +657,7 @@ void Ade7953::readMeterValues(int channel) {
         _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower;
     }
 
+    TRACE
     meterValues[channel].voltage = _validateVoltage(meterValues[channel].voltage, _voltage);
     meterValues[channel].current = _validateCurrent(meterValues[channel].current, _current);
     meterValues[channel].activePower = _validatePower(meterValues[channel].activePower, _activePower);
@@ -653,6 +665,7 @@ void Ade7953::readMeterValues(int channel) {
     meterValues[channel].apparentPower = _validatePower(meterValues[channel].apparentPower, _apparentPower);
     meterValues[channel].powerFactor = _validatePowerFactor(meterValues[channel].powerFactor, _powerFactor);
 
+    TRACE
     // Even though the energy is not directly used, we can use the ADE7953 register for the no-load feature (enabled during setup)
     float _activeEnergy = _readActiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.whLsb * _signActivePower;
     float _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.varhLsb * _signReactivePower;

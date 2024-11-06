@@ -363,7 +363,7 @@ components:
           type: integer
         lastResetReason:
           type: string
-        lastUptime:
+        lastUnixTime:
           type: integer
         resetCount:
           type: integer
@@ -372,13 +372,17 @@ components:
           items:
             type: object
             properties:
+              file:
+                type: string
               function:
                 type: string
               line:
                 type: integer
-              time:
+              micros:
                 type: integer
               heap:
+                type: integer
+              core:
                 type: integer
 
 paths:

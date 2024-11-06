@@ -172,10 +172,10 @@ enum FirmwareState : int {
 };
 
 struct Breadcrumb {
-    const char* filename;
-    const char* functionName;
-    unsigned int lineNumber;
-    unsigned long long timestamp;
+    const char* file;
+    const char* function;
+    unsigned int line;
+    unsigned long long micros;
     unsigned int freeHeap;
     unsigned int coreId;
 };
@@ -186,7 +186,7 @@ struct CrashData {
     unsigned int crashCount;             // Number of crashes detected
     unsigned int lastResetReason;        // Last reset reason from ESP32
     unsigned int resetCount;             // Number of resets
-    unsigned int lastUptime;             // How long it ran before crash
+    unsigned long lastUnixTime;          // Last unix time before crash
     unsigned int signature;              // To verify RTC data validity
 };
 

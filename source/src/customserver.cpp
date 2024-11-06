@@ -499,15 +499,19 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get crash data", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
+        TRACE
         CrashData _crashData;
         CrashMonitor::getSavedCrashData(_crashData);
 
+        TRACE
         JsonDocument _jsonDocument;
         CrashMonitor::getJsonReport(_jsonDocument, _crashData);
 
+        TRACE // FIXME: this crashes the ESP32
         String _buffer;
         serializeJson(_jsonDocument, _buffer);
 
+        TRACE
         request->send(200, "application/json", _buffer.c_str()); });
 
     _server.on("/rest/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request)
@@ -721,7 +725,7 @@ void CustomServer::_setOtherEndpoints()
 {
     _server.onNotFound([this](AsyncWebServerRequest *request)
                        {
-        TRACE;
+        TRACE
         _serverLog(
             ("Request to get unknown page: " + request->url()).c_str(),
             "customserver::_setOtherEndpoints",
@@ -736,7 +740,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
     _led.block();
     _led.setPurple(true);
 
-    TRACE;
+    TRACE
     if (!index)
     {
         if (filename.indexOf(".bin") > -1)
@@ -758,14 +762,14 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
         Update.setMD5(_md5.c_str());
     }
 
-    TRACE;
+    TRACE
     if (Update.write(data, len) != len)
     {
         _onUpdateFailed(request, Update.errorString());
         return;
     }
 
-    TRACE;
+    TRACE
     if (final)
     {
         if (!Update.end(true))
@@ -778,7 +782,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
         }
     }
 
-    TRACE;
+    TRACE
     _led.setOff(true);
     _led.unblock();
 }
@@ -801,23 +805,26 @@ void CustomServer::_updateJsonFirmwareStatus(const char *status, const char *rea
 
 void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 {
-    TRACE;
+    TRACE
     request->send(200, "application/json", "{\"status\":\"success\", \"md5\":\"" + Update.md5String() + "\"}");
 
+    TRACE
     _logger.warning("Update complete", "customserver::handleDoUpdate");
     _updateJsonFirmwareStatus("success", "");
 
     _logger.debug("MD5 of new firmware: %s", "customserver::_onUpdateSuccessful", Update.md5String().c_str());
 
+    TRACE // FIXME: this crashes the ESP32
     _logger.debug("Setting rollback flag to %s", "customserver::_onUpdateSuccessful", NEW_TO_TEST);
     CrashMonitor::setFirmwareStatus(NEW_TO_TEST);
 
+    TRACE
     setRestartEsp32("customserver::_handleDoUpdate", "Restart needed after update");
 }
 
 void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *reason)
 {
-    TRACE;
+    TRACE
     request->send(400, "application/json", "{\"status\":\"failed\", \"reason\":\"" + String(reason) + "\"}");
 
     Update.printError(Serial);
@@ -835,7 +842,7 @@ void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *r
 }
 
 void CustomServer::_serveJsonFile(AsyncWebServerRequest *request, const char *filePath) {
-    TRACE;
+    TRACE
 
     File file = SPIFFS.open(filePath, FILE_READ);
 

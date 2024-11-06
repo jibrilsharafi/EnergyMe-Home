@@ -3,7 +3,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "06"
-#define FIRMWARE_BUILD_VERSION_PATCH "10"
+#define FIRMWARE_BUILD_VERSION_PATCH "11"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -35,10 +35,10 @@
 #define FW_UPDATE_STATUS_JSON_PATH "/fw-update-status.json"
 
 // Crash monitor
-#define PREFERENCES_NAMESPACE "crashmonitor"
-#define PREFERENCES_CRASHDATA_KEY "data"
+#define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor"
+#define PREFERENCES_NAMESPACE_CRASHDATA "crashdata"
 #define CRASH_SIGNATURE 0xDEADBEEF
-#define MAX_BREADCRUMBS 128
+#define MAX_BREADCRUMBS 64
 #define WATCHDOG_TIMER 30000
 #define PREFERENCES_FIRMWARE_STATUS_KEY "fw_status"
 #define ROLLBACK_TESTING_TIMEOUT 60000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
@@ -85,7 +85,6 @@
 
 // MDNS
 #define MDNS_HOSTNAME "energyme"
-#define MDNS_INSTANCE_NAME "EnergyMe - Home"
 
 // MQTT
 #define DEFAULT_IS_CLOUD_SERVICES_ENABLED false
@@ -98,7 +97,7 @@
 #define MQTT_TEMPORARY_DISABLE_INTERVAL 3600000 // Interval between reconnect attempts after a failed connection (in milliseconds)
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks (in milliseconds)
 #define PAYLOAD_METER_MAX_NUMBER_POINTS 30 // The maximum number of points that can be sent in a single payload
-#define MQTT_PAYLOAD_LIMIT 16384 // Increase the base limit of 256 bytes
+#define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
 #define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
 #define MQTT_PROVISIONING_TIMEOUT 60000 // The timeout for the provisioning response (in milliseconds)
 #define MQTT_PROVISIONING_LOOP_CHECK 1000 // Interval between two certificates check on memory (in milliseconds)
@@ -193,9 +192,11 @@
 #define MQTT_BASIC_INGEST AWS_TOPIC "/rules"
 
 // Certificates path
-#define CERTIFICATE_PATH "/secret/cert.pem"
-#define PRIVATE_KEY_PATH "/secret/private.pem"
+#define PREFERENCES_NAMESPACE_CERTIFICATES "certificates"
+#define PREFS_KEY_CERTIFICATE "certificate"
+#define PREFS_KEY_PRIVATE_KEY "private_key"
 #define CERTIFICATE_LENGTH 2048
+#define KEY_SIZE 256
 
 // EnergyMe - Home | Custom MQTT topics
 // Base topics

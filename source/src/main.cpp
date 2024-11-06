@@ -164,10 +164,7 @@ void callbackLogToMqtt(
     );
 
     if (WiFi.status() != WL_CONNECTED) return;
-    if (!clientMqtt.connected()) return;
-
-    char topic[LOG_TOPIC_SIZE];
-    snprintf(topic, sizeof(topic), "energyme/home/%s/log/%s", deviceId.c_str(), level);   
+    if (!clientMqtt.connected()) return; 
 
     unsigned int _loops = 0;
     while (!logBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
@@ -191,6 +188,9 @@ void callbackLogToMqtt(
             _log.coreId,
             _log.function,
             _log.message);
+
+        char topic[LOG_TOPIC_SIZE];
+        snprintf(topic, sizeof(topic), "energyme/home/%s/log/%s", deviceId.c_str(), _log.level);
 
         if (!clientMqtt.publish(topic, jsonBuffer)) {
             Serial.printf("MQTT publish failed to %s. Error: %d\n", 
@@ -233,14 +233,14 @@ void setup() {
 
     led.setCyan();
 
-    TRACE;
+    TRACE
     logger.info("Checking for missing files...", "main::setup");
     auto missingFiles = checkMissingFiles();
     if (!missingFiles.empty()) {
         led.setOrange();
         logger.warning("Missing files detected. Creating default files for missing files...", "main::setup");
         
-        TRACE;
+        TRACE
         createDefaultFilesForMissingFiles(missingFiles);
 
         logger.info("Default files created for missing files", "main::setup");
@@ -248,7 +248,7 @@ void setup() {
         logger.info("No missing files detected", "main::setup");
     }
 
-    TRACE;
+    TRACE
     logger.info("Fetching general configuration from SPIFFS...", "main::setup");
     if (!setGeneralConfigurationFromSpiffs()) {
         logger.warning("Failed to load configuration from SPIFFS. Using default values.", "main::setup");
@@ -258,12 +258,12 @@ void setup() {
 
     led.setPurple();
     
-    TRACE;
+    TRACE
     logger.info("Setting up multiplexer...", "main::setup");
     multiplexer.begin();
     logger.info("Multiplexer setup done", "main::setup");
     
-    TRACE;
+    TRACE
     logger.info("Setting up ADE7953...", "main::setup");
     if (!ade7953.begin()) {
         logger.fatal("ADE7953 initialization failed!", "main::setup");
@@ -273,12 +273,12 @@ void setup() {
 
     led.setBlue();
 
-    TRACE;
+    TRACE
     logger.info("Setting up WiFi...", "main::setup");
     customWifi.begin();
     logger.info("WiFi setup done", "main::setup");
 
-    TRACE;
+    TRACE
     logger.info("Syncing time...", "main::setup");
     updateTimezone();
     if (!customTime.begin()) {
@@ -287,43 +287,44 @@ void setup() {
         logger.info("Time synced", "main::setup");
     }
     
-    TRACE;
+    TRACE
     logger.info("Setting up server...", "main::setup");
     customServer.begin();
     logger.info("Server setup done", "main::setup");
 
-    TRACE;
+    TRACE
     logger.info("Setting up Modbus TCP...", "main::setup");
     modbusTcp.begin();
     logger.info("Modbus TCP setup done", "main::setup");
 
     led.setGreen();
 
-    TRACE;
+    TRACE
     logger.info("Setup done", "main::setup");
 }
 
 void loop() {
+    TRACE
     if (mainFlags.blockLoop) return;
 
-    TRACE;
+    TRACE
     crashMonitor.crashCounterLoop();
-    TRACE;
+    TRACE
     crashMonitor.firmwareTestingLoop();
     
-    TRACE;
+    TRACE
     customWifi.loop();
     
-    TRACE;
+    TRACE
     mqtt.loop();
     
-    TRACE;
+    TRACE
     customMqtt.loop();
     
-    TRACE;
+    TRACE
     ade7953.loop();
 
-    TRACE;
+    TRACE
     if (ade7953.isLinecycFinished()) {
     
         led.setGreen();
@@ -336,12 +337,12 @@ void loop() {
             mainFlags.isfirstLinecyc = true;
 
             if (mainFlags.currentChannel != -1) { // -1 indicates that no channel is active
-              TRACE;
+              TRACE
               ade7953.readMeterValues(mainFlags.currentChannel);
 
               multiplexer.setChannel(max(mainFlags.currentChannel-1, 0));
 
-              TRACE;
+              TRACE
               payloadMeter.push(
               PayloadMeter(
                   mainFlags.currentChannel,
@@ -358,7 +359,7 @@ void loop() {
         }
 
         // We always read the first channel as it is in a separate channel and is not impacted by the switching of the multiplexer
-        TRACE;
+        TRACE
         ade7953.readMeterValues(0);
         payloadMeter.push(
             PayloadMeter(
@@ -371,22 +372,23 @@ void loop() {
         printMeterValues(ade7953.meterValues[0], ade7953.channelData[0].label.c_str());
     }
 
-    TRACE;
+    TRACE
     if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
         printDeviceStatus();
         setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
     }
 
     // If memory is below a certain level, clear the log
-    TRACE;
+    TRACE
     if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
         printDeviceStatus();
         logger.clearLog();
         logger.warning("Log cleared due to low memory", "main::loop");
     }
 
-    TRACE;
+    TRACE
     checkIfRestartEsp32Required();
     
+    TRACE
     led.setOff();
 }

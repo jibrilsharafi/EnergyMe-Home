@@ -25,8 +25,8 @@ public:
     void crashCounterLoop();
     void firmwareTestingLoop();
 
-    static bool setFirmwareStatus(int status);
-    static int getFirmwareStatus();
+    static bool setFirmwareStatus(FirmwareState status);
+    static FirmwareState getFirmwareStatus();
 
     static void getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport);
     static void getSavedCrashData(CrashData& crashDataSaved);
@@ -52,4 +52,4 @@ private:
 };
 
 extern CrashMonitor crashMonitor;
-#define TRACE crashMonitor.leaveBreadcrumb(pathToFileName(__FILE__), __FUNCTION__, __LINE__, xPortGetCoreID()) // TODO: understand if __func__ is correct or if we should use __PRETTY_FUNCTION__ or __FUNCTION__ or __func
+#define TRACE crashMonitor.leaveBreadcrumb(pathToFileName(__FILE__), __FUNCTION__, __LINE__, xPortGetCoreID());

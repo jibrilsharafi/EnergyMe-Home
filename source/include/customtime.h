@@ -20,8 +20,9 @@ public:
     bool begin();
 
     String timestampFromUnix(long unix);
+    static String timestampFromUnix(long unix, const char *timestampFormat);
 
-    unsigned long getUnixTime();
+    static unsigned long getUnixTime();
     unsigned long long getUnixTimeMilliseconds(); 
     String getTimestamp();
 

@@ -41,14 +41,13 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     logger.debug("Deserializing JSON from SPIFFS", "utils::deserializeJsonFromSpiffs");
 
-    TRACE;
+    TRACE
     File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
         logger.error("%s Failed to open file", "utils::deserializeJsonFromSpiffs", path);
         return;
     }
 
-    TRACE;
     DeserializationError _error = deserializeJson(jsonDocument, _file);
     _file.close();
     if (_error){
@@ -60,7 +59,6 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
         logger.debug("%s JSON is null", "utils::deserializeJsonFromSpiffs", path);
     }
     
-    TRACE;
     String _jsonString;
     serializeJson(jsonDocument, _jsonString);
 
@@ -70,14 +68,13 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     logger.debug("Serializing JSON to SPIFFS...", "utils::serializeJsonToSpiffs");
 
-    TRACE;
+    TRACE
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
         logger.error("%s Failed to open file", "utils::serializeJsonToSpiffs", path);
         return false;
     }
 
-    TRACE;
     serializeJson(jsonDocument, _file);
     _file.close();
 
@@ -85,7 +82,6 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
         logger.warning("%s JSON is null", "utils::serializeJsonToSpiffs", path);
     }
 
-    TRACE;
     String _jsonString;
     serializeJson(jsonDocument, _jsonString);
     logger.debug("JSON serialized to SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
@@ -96,14 +92,13 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
 void createEmptyJsonFile(const char* path) {
     logger.debug("Creating empty JSON file %s...", "utils::createEmptyJsonFile", path);
 
-    TRACE;
+    TRACE
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file) {
         logger.error("Failed to open file %s", "utils::createEmptyJsonFile", path);
         return;
     }
 
-    TRACE;
     _file.print("{}");
     _file.close();
 
@@ -259,7 +254,7 @@ std::vector<const char*> checkMissingFiles() {
 
     const size_t CONFIG_FILE_COUNT = sizeof(CONFIG_FILE_PATHS) / sizeof(CONFIG_FILE_PATHS[0]);
 
-    TRACE;
+    TRACE
     for (size_t i = 0; i < CONFIG_FILE_COUNT; ++i) {
         const char* path = CONFIG_FILE_PATHS[i];
         if (!SPIFFS.exists(path)) {
@@ -274,7 +269,7 @@ std::vector<const char*> checkMissingFiles() {
 void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles) {
     logger.debug("Creating default files for missing files...", "utils::createDefaultFilesForMissingFiles");
 
-    TRACE;
+    TRACE
     for (const char* path : missingFiles) {
         if (strcmp(path, GENERAL_CONFIGURATION_JSON_PATH) == 0) {
             createDefaultGeneralConfigurationFile();
@@ -306,7 +301,7 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
 bool checkAllFiles() {
     logger.debug("Checking all files...", "utils::checkAllFiles");
 
-    TRACE;
+    TRACE
     std::vector<const char*> missingFiles = checkMissingFiles();
     if (!missingFiles.empty()) {
         createDefaultFilesForMissingFiles(missingFiles);
@@ -335,18 +330,22 @@ void checkIfRestartEsp32Required() {
 }
 
 void restartEsp32() {
+    TRACE
     led.block();
     led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
     led.setRed(true);
 
+    TRACE
     logger.warning("Restarting ESP32 from function %s. Reason: %s", "utils::restartEsp32", restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
 
     // If a firmware evaluation is in progress, set the firmware to test again
-    int _firmwareStatus = CrashMonitor::getFirmwareStatus();
+    TRACE
+    FirmwareState _firmwareStatus = CrashMonitor::getFirmwareStatus();
 
-    TRACE;
+    TRACE
     if (_firmwareStatus == TESTING) {
         logger.warning("Firmware evaluation is in progress. Setting firmware to test again", "utils::restartEsp32");
+        TRACE
         CrashMonitor::setFirmwareStatus(NEW_TO_TEST);
     }
 
@@ -585,10 +584,29 @@ void factoryReset() {
 
     SPIFFS.format();
 
+    clearAllPreferences();
+
     // Directly call ESP.restart() so that a fresh start is done
     ESP.restart();
 
     mainFlags.blockLoop = false;
+}
+
+void clearAllPreferences() {
+    logger.fatal("Clear all preferences requested", "utils::clearAllPreferences");
+
+    Preferences preferences;
+    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); // false = read-write mode
+    preferences.clear();
+    preferences.end();
+    
+    preferences.begin(PREFERENCES_NAMESPACE_CRASHDATA, false); // false = read-write mode
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); // false = read-write mode
+    preferences.clear();
+    preferences.end();
 }
 
 bool isLatestFirmwareInstalled() {
@@ -640,8 +658,6 @@ String getDeviceId() {
     return _macAddress;
 }
 
-
-
 const char* getMqttStateReason(int state)
 {
 
@@ -685,56 +701,92 @@ const char* getMqttStateReason(int state)
 }
 
 String decryptData(String encryptedData, String key) {
-    if (encryptedData.length() == 0) {
-        logger.error("Empty encrypted data", "utils::decryptData");
-        return String("");
-    }
-    if (key.length() == 0) {
-        logger.error("Empty key", "utils::decryptData");
-        return String("");
-    }
-
-    if (key.length() != 32) {
-        logger.error("Invalid key length: %d. Expected 32 bytes", "utils::decryptData", key.length());
-        return String("");
-    }
-
-    unsigned char _decodedData[CERTIFICATE_LENGTH];
-    size_t _decodedLength;
-    int _ret = mbedtls_base64_decode(_decodedData, CERTIFICATE_LENGTH, &_decodedLength, (const unsigned char*)encryptedData.c_str(), encryptedData.length());
-    if (_ret != 0) {
-        logger.error("Second base64 decoding failed: %d", "utils::decryptData", _ret);
-        return String("");
-    }
-    logger.info("Decoded data: %s", "utils::decryptData", _decodedData);
-    
     mbedtls_aes_context aes;
     mbedtls_aes_init(&aes);
-    mbedtls_aes_setkey_dec(&aes, (const unsigned char*)key.c_str(), 256);
-    unsigned char decryptedData[CERTIFICATE_LENGTH];
-    mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, _decodedData, decryptedData);
+    mbedtls_aes_setkey_dec(&aes, (const unsigned char *)key.c_str(), KEY_SIZE);
 
-    return String(reinterpret_cast<const char*>(decryptedData));
+    size_t decodedLength = 0;
+    size_t inputLength = encryptedData.length();
+    
+    unsigned char *decodedData = (unsigned char *)malloc(inputLength);
+    
+    int ret = mbedtls_base64_decode(decodedData, inputLength, &decodedLength, 
+                                   (const unsigned char *)encryptedData.c_str(), 
+                                   encryptedData.length());
+    
+    unsigned char *output = (unsigned char *)malloc(decodedLength + 1);
+    memset(output, 0, decodedLength + 1);
+    
+    for(size_t i = 0; i < decodedLength; i += 16) {
+        mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, &decodedData[i], &output[i]);
+    }
+    
+    uint8_t paddingLength = output[decodedLength - 1];
+    if(paddingLength <= 16) {
+        output[decodedLength - paddingLength] = '\0';
+    }
+    
+    String decryptedData = String((char *)output);
+    
+    free(output);
+    free(decodedData);
+    mbedtls_aes_free(&aes);
+
+    return decryptedData;
 }
 
-String readEncryptedFile(const char* path) {
-    File file = SPIFFS.open(path, FILE_READ);
-    if (!file) {
-        logger.error("Failed to open file for reading", "utils::readEncryptedFile");
+String readEncryptedPreferences(const char* preference_key) {
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) { // true = read-only mode
+        logger.error("Failed to open preferences", "utils::readEncryptedPreferences");
         return String("");
     }
 
-    String _encryptedData = file.readString();
-    file.close();
+    String _encryptedData = preferences.getString(preference_key, "");
+    preferences.end();
 
-    // return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId()); //FIXME: Uncomment this line and fix the panic in the decryptData function
-    return _encryptedData;
+    if (_encryptedData.isEmpty()) {
+        logger.warning("No encrypted data found for key: %s", "utils::readEncryptedPreferences", preference_key);
+        return String("");
+    }
+
+    return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId());
+}
+
+bool checkCertificatesExist() {
+    logger.debug("Checking if certificates exist...", "utils::checkCertificatesExist");
+
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) {
+        logger.error("Failed to open preferences", "utils::checkCertificatesExist");
+        return false;
+    }
+
+    bool _deviceCertExists = !preferences.getString(PREFS_KEY_CERTIFICATE, "").isEmpty(); 
+    bool _privateKeyExists = !preferences.getString(PREFS_KEY_PRIVATE_KEY, "").isEmpty();
+
+    preferences.end();
+
+    bool _allCertificatesExist = _deviceCertExists && _privateKeyExists;
+
+    logger.debug("Certificates exist: %s", "utils::checkCertificatesExist", _allCertificatesExist ? "true" : "false");
+    return _allCertificatesExist;
+}
+
+void writeEncryptedPreferences(const char* preference_key, const char* value) {
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) { // false = read-write mode
+        logger.error("Failed to open preferences", "utils::writeEncryptedPreferences");
+        return;
+    }
+
+    preferences.putString(preference_key, value);
+    preferences.end();
 }
 
 bool setupMdns()
 {
     logger.info("Setting up mDNS...", "utils::setupMdns");
-    MDNS.setInstanceName(MDNS_INSTANCE_NAME);
     if (
         MDNS.begin(MDNS_HOSTNAME) &&
         MDNS.addService("http", "tcp", WEBSERVER_PORT) &&

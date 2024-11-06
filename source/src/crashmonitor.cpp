@@ -12,14 +12,14 @@ void CrashMonitor::_initializeCrashData() {
     crashData.currentIndex = 0;
     crashData.crashCount = 0;
     crashData.resetCount = 0;
-    crashData.lastUptime = 0;
+    crashData.lastUnixTime = 0;
     crashData.lastResetReason = 0;
 
     for (int i = 0; i < MAX_BREADCRUMBS; i++) {
-        crashData.breadcrumbs[i].filename = "";
-        crashData.breadcrumbs[i].functionName = "";
-        crashData.breadcrumbs[i].lineNumber = 0;
-        crashData.breadcrumbs[i].timestamp = 0;
+        crashData.breadcrumbs[i].file = "";
+        crashData.breadcrumbs[i].function = "";
+        crashData.breadcrumbs[i].line = 0;
+        crashData.breadcrumbs[i].micros = 0;
         crashData.breadcrumbs[i].freeHeap = 0;
         crashData.breadcrumbs[i].coreId = 0;
     }
@@ -63,8 +63,8 @@ void CrashMonitor::_saveCrashData() {
     _logger.debug("Saving crash data...", "crashmonitor::_saveCrashData");
 
     Preferences _preferences;
-    _preferences.begin(PREFERENCES_NAMESPACE, false);
-    _preferences.putBytes(PREFERENCES_CRASHDATA_KEY, &crashData, sizeof(crashData));
+    if (_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false)) return;
+    _preferences.putBytes(PREFERENCES_NAMESPACE_CRASHDATA, &crashData, sizeof(crashData));
     _preferences.end();
 
     _logger.debug("Crash data saved", "crashmonitor::_saveCrashData");
@@ -72,8 +72,8 @@ void CrashMonitor::_saveCrashData() {
 
 void CrashMonitor::getSavedCrashData(CrashData& crashDataSaved) {
     Preferences _preferences;
-    _preferences.begin(PREFERENCES_NAMESPACE, true);
-    _preferences.getBytes(PREFERENCES_CRASHDATA_KEY, &crashDataSaved, sizeof(crashDataSaved));
+    if (_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, true)) return;
+    _preferences.getBytes(PREFERENCES_NAMESPACE_CRASHDATA, &crashDataSaved, sizeof(crashDataSaved));
     _preferences.end();
 }
 
@@ -97,36 +97,38 @@ const char* CrashMonitor::_getResetReasonString(esp_reset_reason_t reason) {
 void CrashMonitor::leaveBreadcrumb(const char* filename, const char* functionName, unsigned int lineNumber, unsigned int coreId) {
     unsigned int idx = crashData.currentIndex % MAX_BREADCRUMBS;
     
-    crashData.breadcrumbs[idx].filename = filename;
-    crashData.breadcrumbs[idx].functionName = functionName;
-    crashData.breadcrumbs[idx].lineNumber = lineNumber;
-    crashData.breadcrumbs[idx].timestamp = micros();
+    crashData.breadcrumbs[idx].file = filename;
+    crashData.breadcrumbs[idx].function = functionName;
+    crashData.breadcrumbs[idx].line = lineNumber;
+    crashData.breadcrumbs[idx].micros = micros();
     crashData.breadcrumbs[idx].freeHeap = ESP.getFreeHeap();
     crashData.breadcrumbs[idx].coreId = coreId;
+
     crashData.currentIndex = (crashData.currentIndex + 1) % MAX_BREADCRUMBS;
-    crashData.lastUptime = micros();
+    crashData.lastUnixTime = CustomTime::getUnixTime();
 
     esp_task_wdt_reset();
 }
 
 bool CrashMonitor::_isValidBreadcrumb(const Breadcrumb& crumb) {
-    return crumb.lineNumber != 0;
+    return crumb.line != 0;
 }
 
 void CrashMonitor::_logCrashInfo() {
-    _logger.error("Crash Report | Reset Count: %d, Crash Count: %d | Last Reset: %s, Uptime: %d us", "crashmonitor::_logCrashInfo", 
-        crashData.resetCount, 
-        crashData.crashCount, 
+    _logger.error("Crash Report | Timestamp: %s - Reason: %s - Reset Count %d - Crash Count: %d", "crashmonitor::_logCrashInfo", 
+        CustomTime::timestampFromUnix(crashData.lastUnixTime, DEFAULT_TIMESTAMP_FORMAT).c_str(),
         _getResetReasonString((esp_reset_reason_t)crashData.lastResetReason), 
-        crashData.lastUptime);
+        crashData.resetCount, 
+        crashData.crashCount
+    );
     
     // Print only most recent breadcrumb
     const Breadcrumb& lastCrumb = crashData.breadcrumbs[(crashData.currentIndex - 1 + MAX_BREADCRUMBS) % MAX_BREADCRUMBS];
     if (_isValidBreadcrumb(lastCrumb)) {
         _logger.error("Last Function | %s:%s:%d (Core %d) Heap: %d bytes", "crashmonitor::_logCrashInfo",
-            lastCrumb.filename,
-            lastCrumb.functionName,
-            lastCrumb.lineNumber, 
+            lastCrumb.file,
+            lastCrumb.function,
+            lastCrumb.line, 
             lastCrumb.coreId,
             lastCrumb.freeHeap
         );
@@ -136,7 +138,7 @@ void CrashMonitor::_logCrashInfo() {
 void CrashMonitor::getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport) {
     _jsonDocument["crashCount"] = crashDataReport.crashCount;
     _jsonDocument["lastResetReason"] = _getResetReasonString((esp_reset_reason_t)crashDataReport.lastResetReason);
-    _jsonDocument["lastUptime"] = crashDataReport.lastUptime;
+    _jsonDocument["lastUnixTime"] = crashDataReport.lastUnixTime;
     _jsonDocument["resetCount"] = crashDataReport.resetCount;
 
     JsonArray breadcrumbs = _jsonDocument["breadcrumbs"].to<JsonArray>();
@@ -145,10 +147,10 @@ void CrashMonitor::getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDa
         const Breadcrumb& crumb = crashDataReport.breadcrumbs[idx];
         if (_isValidBreadcrumb(crumb)) {
             JsonObject _jsonObject = breadcrumbs.add<JsonObject>();
-            _jsonObject["file"] = crumb.filename;
-            _jsonObject["function"] = crumb.functionName;
-            _jsonObject["line"] = crumb.lineNumber;
-            _jsonObject["time"] = crumb.timestamp;
+            _jsonObject["file"] = crumb.file;
+            _jsonObject["function"] = crumb.function;
+            _jsonObject["line"] = crumb.line;
+            _jsonObject["micros"] = crumb.micros;
             _jsonObject["heap"] = crumb.freeHeap;
             _jsonObject["core"] = crumb.coreId;
         }
@@ -186,7 +188,7 @@ void CrashMonitor::crashCounterLoop() {
 void CrashMonitor::_handleFirmwareTesting() {
     _logger.debug("Checking if rollback is needed...", "crashmonitor::_handleFirmwareTesting");
 
-    int _firmwareStatus = getFirmwareStatus();
+    FirmwareState _firmwareStatus = getFirmwareStatus();
 
     _logger.debug("Rollback status: %d", "crashmonitor::_handleFirmwareTesting", _firmwareStatus);
     
@@ -222,22 +224,22 @@ void CrashMonitor::firmwareTestingLoop() {
     }
 }
 
-bool CrashMonitor::setFirmwareStatus(int status) {
+bool CrashMonitor::setFirmwareStatus(FirmwareState status) {
     Preferences _preferences;
-    if (!_preferences.begin(PREFERENCES_NAMESPACE, false)) return false;
+    if (!_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false)) return false;
     
-    bool success = _preferences.putInt(PREFERENCES_FIRMWARE_STATUS_KEY, status);
+    bool success = _preferences.putInt(PREFERENCES_FIRMWARE_STATUS_KEY, static_cast<int>(status));
     _preferences.end();
 
     return success;
 }
 
-int CrashMonitor::getFirmwareStatus() {
+FirmwareState CrashMonitor::getFirmwareStatus() {
     Preferences _preferences;
-    if (!_preferences.begin(PREFERENCES_NAMESPACE, true)) return STABLE;
+    if (!_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, true)) 
+        return FirmwareState::STABLE;
 
-    int status = _preferences.getInt(PREFERENCES_FIRMWARE_STATUS_KEY, STABLE);
+    int status = _preferences.getInt(PREFERENCES_FIRMWARE_STATUS_KEY, static_cast<int>(FirmwareState::STABLE));
     _preferences.end();
-    log_e("Firmware status: %d", status);
-    return status;
+    return static_cast<FirmwareState>(status);
 }

@@ -70,6 +70,7 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset);
 void updateTimezone();
 
 void factoryReset();
+void clearAllPreferences();
 
 bool isLatestFirmwareInstalled();
 
@@ -78,6 +79,8 @@ String getDeviceId();
 const char* getMqttStateReason(int state);
 
 String decryptData(String encryptedData, String key);
-String readEncryptedFile(const char* path);
+String readEncryptedPreferences(const char* preference_key);
+void writeEncryptedPreferences(const char* preference_key, const char* value);
+bool checkCertificatesExist();
 
 bool setupMdns();
