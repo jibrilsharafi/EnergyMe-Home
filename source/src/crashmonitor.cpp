@@ -1,59 +1,80 @@
 #include "crashmonitor.h"
 
-CrashMonitor::CrashMonitor(AdvancedLogger& logger, CrashData& crashData) : _logger(logger), _crashData(crashData) {
-        if (_crashData.signature != CRASH_DATA_INITIALIZED_FLAG) {
-        memset(&_crashData, 0, sizeof(_crashData));
-        _crashData.signature = CRASH_DATA_INITIALIZED_FLAG;
+CrashMonitor::CrashMonitor(AdvancedLogger& logger) : _logger(logger) {
+    if (crashData.signature != CRASH_SIGNATURE) {
+        _initializeCrashData();
     }
 }
 
-void CrashMonitor::begin() { // FIXME: not working properly, the values are random
+void CrashMonitor::_initializeCrashData() {
+    memset(&crashData, 0, sizeof(crashData));
+    crashData.signature = CRASH_SIGNATURE;
+    crashData.currentIndex = 0;
+    crashData.crashCount = 0;
+    crashData.resetCount = 0;
+    crashData.lastUptime = 0;
+    crashData.lastResetReason = 0;
+
+    for (int i = 0; i < MAX_BREADCRUMBS; i++) {
+        crashData.breadcrumbs[i].filename = "";
+        crashData.breadcrumbs[i].functionName = "";
+        crashData.breadcrumbs[i].lineNumber = 0;
+        crashData.breadcrumbs[i].timestamp = 0;
+        crashData.breadcrumbs[i].freeHeap = 0;
+        crashData.breadcrumbs[i].coreId = 0;
+    }
+}
+
+bool CrashMonitor::isLastResetDueToCrash() {
+    return crashData.lastResetReason != ESP_RST_SW && 
+            crashData.lastResetReason != ESP_RST_POWERON && 
+            crashData.lastResetReason != ESP_RST_DEEPSLEEP;
+}
+
+void CrashMonitor::begin() {
+    _logger.debug("Setting up crash monitor...", "crashmonitor::begin");
+
     // Get last reset reason
-    esp_reset_reason_t hwResetReason = esp_reset_reason();
-    _crashData.lastResetReason = (uint32_t)hwResetReason;
+    esp_reset_reason_t _hwResetReason = esp_reset_reason();
+    crashData.lastResetReason = (uint32_t)_hwResetReason;
 
     // If it was a crash, increment counter
-    if (hwResetReason != ESP_RST_SW && hwResetReason != ESP_RST_POWERON && hwResetReason != ESP_RST_DEEPSLEEP) {
-        _crashData.crashCount++;
-
-            // For watchdog resets, we can add specific handling
-        if (hwResetReason == ESP_RST_TASK_WDT || hwResetReason == ESP_RST_WDT) {
-            _crashData.lastExceptionCause = 0xDEAD; // Custom code for watchdog
-            _crashData.lastFaultPC = nullptr;
-            _crashData.lastFaultAddress = nullptr;
-        }
-
-        logCrashInfo();
+    if (isLastResetDueToCrash()) {
+        crashData.crashCount++;
+        publishMqtt.crash = true;
+        _logCrashInfo();
+        _saveCrashData();
     }
 
     // Increment reset count
-    _crashData.resetCount++;
+    crashData.resetCount++;
+
+    _handleCrashCounter();
+    _handleFirmwareTesting();
 
     // Enable watchdog
-    esp_task_wdt_init(CRASH_MONITOR_WATCHDOG_TIMEOUT, true);
+    esp_task_wdt_init(WATCHDOG_TIMER, true);
     esp_task_wdt_add(NULL);
 
-    saveJsonReport();
-
-    handleCrashCounter();
-    handleFirmwareTesting();
+    _logger.debug("Crash monitor setup done", "crashmonitor::begin");
 }
 
-const char* CrashMonitor::_getModuleName(CustomModule module) {
-    switch(module) {
-        case CustomModule::ADE7953: return "ADE7953";
-        case CustomModule::CUSTOM_MQTT: return "CUSTOM_MQTT";
-        case CustomModule::CUSTOM_SERVER: return "CUSTOM_SERVER";
-        case CustomModule::CUSTOM_TIME: return "CUSTOM_TIME";
-        case CustomModule::CUSTOM_WIFI: return "CUSTOM_WIFI";
-        case CustomModule::LED: return "LED";
-        case CustomModule::MAIN: return "MAIN";
-        case CustomModule::MODBUS_TCP: return "MODBUS_TCP";
-        case CustomModule::MQTT: return "MQTT";
-        case CustomModule::MULTIPLEXER: return "MULTIPLER";
-        case CustomModule::UTILS: return "UTILS";
-        default: return "UNKNOWN";
-    }
+void CrashMonitor::_saveCrashData() {
+    _logger.debug("Saving crash data...", "crashmonitor::_saveCrashData");
+
+    Preferences _preferences;
+    _preferences.begin(PREFERENCES_NAMESPACE, false);
+    _preferences.putBytes(PREFERENCES_CRASHDATA_KEY, &crashData, sizeof(crashData));
+    _preferences.end();
+
+    _logger.debug("Crash data saved", "crashmonitor::_saveCrashData");
+}
+
+void CrashMonitor::getSavedCrashData(CrashData& crashDataSaved) {
+    Preferences _preferences;
+    _preferences.begin(PREFERENCES_NAMESPACE, true);
+    _preferences.getBytes(PREFERENCES_CRASHDATA_KEY, &crashDataSaved, sizeof(crashDataSaved));
+    _preferences.end();
 }
 
 const char* CrashMonitor::_getResetReasonString(esp_reset_reason_t reason) {
@@ -73,170 +94,150 @@ const char* CrashMonitor::_getResetReasonString(esp_reset_reason_t reason) {
     }
 }
 
-void CrashMonitor::leaveBreadcrumb(const char* functionName, int lineNumber) {
-    uint8_t idx = _crashData.currentIndex % MAX_BREADCRUMBS;
+void CrashMonitor::leaveBreadcrumb(const char* filename, const char* functionName, unsigned int lineNumber, unsigned int coreId) {
+    unsigned int idx = crashData.currentIndex % MAX_BREADCRUMBS;
+    
+    crashData.breadcrumbs[idx].filename = filename;
+    crashData.breadcrumbs[idx].functionName = functionName;
+    crashData.breadcrumbs[idx].lineNumber = lineNumber;
+    crashData.breadcrumbs[idx].timestamp = micros();
+    crashData.breadcrumbs[idx].freeHeap = ESP.getFreeHeap();
+    crashData.breadcrumbs[idx].coreId = coreId;
+    crashData.currentIndex = (crashData.currentIndex + 1) % MAX_BREADCRUMBS;
+    crashData.lastUptime = micros();
 
-    _crashData.breadcrumbs[idx].functionName = functionName;
-    _crashData.breadcrumbs[idx].lineNumber = lineNumber;
-    _crashData.breadcrumbs[idx].timestamp = millis();
-    _crashData.breadcrumbs[idx].freeHeap = ESP.getFreeHeap();
-
-    _crashData.currentIndex = (_crashData.currentIndex + 1) % MAX_BREADCRUMBS;
-    _crashData.lastUptime = millis();
-
-    // Pat the watchdog
     esp_task_wdt_reset();
 }
 
-void CrashMonitor::logCrashInfo() {
-    _logger.error("*** Crash Report ***", "rtc::logCrashInfo");
-    _logger.error("Reset Count: %d", "rtc::logCrashInfo", _crashData.resetCount);
-    _logger.error("Crash Count: %d", "rtc::logCrashInfo", _crashData.crashCount);
-    _logger.error("Last Reset Reason: %s (%d)", "rtc::logCrashInfo", _getResetReasonString((esp_reset_reason_t)_crashData.lastResetReason), _crashData.lastResetReason);
-    _logger.error("Last Exception Cause: 0x%x", "rtc::logCrashInfo", _crashData.lastExceptionCause);
-    _logger.error("Last Fault PC: 0x%x", "rtc::logCrashInfo", (uint32_t)_crashData.lastFaultPC);
-    _logger.error("Last Fault Address: 0x%x", "rtc::logCrashInfo", (uint32_t)_crashData.lastFaultAddress);
-    _logger.error("Last Uptime: %d ms", "rtc::logCrashInfo", _crashData.lastUptime);
+bool CrashMonitor::_isValidBreadcrumb(const Breadcrumb& crumb) {
+    return crumb.lineNumber != 0;
+}
+
+void CrashMonitor::_logCrashInfo() {
+    _logger.error("Crash Report | Reset Count: %d, Crash Count: %d | Last Reset: %s, Uptime: %d us", "crashmonitor::_logCrashInfo", 
+        crashData.resetCount, 
+        crashData.crashCount, 
+        _getResetReasonString((esp_reset_reason_t)crashData.lastResetReason), 
+        crashData.lastUptime);
     
-    _logger.error("Last Breadcrumbs (most recent first):", "rtc::logCrashInfo");
-    for (int i = 0; i < MAX_BREADCRUMBS; i++) {
-        uint8_t idx = (_crashData.currentIndex - 1 - i) % MAX_BREADCRUMBS;
-        const Breadcrumb& crumb = _crashData.breadcrumbs[idx];
-        if (crumb.timestamp != 0) {  // Check if breadcrumb is valid
-            _logger.error("[%d] Function: %s, Line: %d, Time: %d ms, Heap: %d bytes",
-                "rtc::logCrashInfo",
-                i,
-                crumb.functionName ? crumb.functionName : "Unknown",
-                crumb.lineNumber,
-                crumb.timestamp,
-                crumb.freeHeap
-            );
-        }
+    // Print only most recent breadcrumb
+    const Breadcrumb& lastCrumb = crashData.breadcrumbs[(crashData.currentIndex - 1 + MAX_BREADCRUMBS) % MAX_BREADCRUMBS];
+    if (_isValidBreadcrumb(lastCrumb)) {
+        _logger.error("Last Function | %s:%s:%d (Core %d) Heap: %d bytes", "crashmonitor::_logCrashInfo",
+            lastCrumb.filename,
+            lastCrumb.functionName,
+            lastCrumb.lineNumber, 
+            lastCrumb.coreId,
+            lastCrumb.freeHeap
+        );
     }
 }
 
-void CrashMonitor::getJsonReport(JsonDocument& _jsonDocument) {
-    _jsonDocument["crashCount"] = _crashData.crashCount;
-    _jsonDocument["lastResetReason"] = _getResetReasonString((esp_reset_reason_t)_crashData.lastResetReason);
-    _jsonDocument["lastExceptionCause"] = (uint32_t)_crashData.lastExceptionCause;
-    _jsonDocument["lastFaultPC"] = (uint32_t)_crashData.lastFaultPC;
-    _jsonDocument["lastFaultAddress"] = (uint32_t)_crashData.lastFaultAddress;
-    _jsonDocument["lastUptime"] = _crashData.lastUptime;
-    _jsonDocument["resetCount"] = _crashData.resetCount;
+void CrashMonitor::getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport) {
+    _jsonDocument["crashCount"] = crashDataReport.crashCount;
+    _jsonDocument["lastResetReason"] = _getResetReasonString((esp_reset_reason_t)crashDataReport.lastResetReason);
+    _jsonDocument["lastUptime"] = crashDataReport.lastUptime;
+    _jsonDocument["resetCount"] = crashDataReport.resetCount;
 
     JsonArray breadcrumbs = _jsonDocument["breadcrumbs"].to<JsonArray>();
-    _logger.debug("Looping through breadcrumbs", "rtc::getJsonReport");
     for (int i = 0; i < MAX_BREADCRUMBS; i++) {
-        uint8_t idx = (_crashData.currentIndex - 1 - i) % MAX_BREADCRUMBS;
-        const Breadcrumb& crumb = _crashData.breadcrumbs[idx];
-        if (crumb.timestamp != 0) {
+        int idx = (crashDataReport.currentIndex - 1 - i + MAX_BREADCRUMBS) % MAX_BREADCRUMBS;
+        const Breadcrumb& crumb = crashDataReport.breadcrumbs[idx];
+        if (_isValidBreadcrumb(crumb)) {
             JsonObject _jsonObject = breadcrumbs.add<JsonObject>();
-            _jsonObject["function"] = crumb.functionName ? crumb.functionName : "Unknown";
+            _jsonObject["file"] = crumb.filename;
+            _jsonObject["function"] = crumb.functionName;
             _jsonObject["line"] = crumb.lineNumber;
             _jsonObject["time"] = crumb.timestamp;
             _jsonObject["heap"] = crumb.freeHeap;
+            _jsonObject["core"] = crumb.coreId;
         }
     }
 }
 
-void CrashMonitor::saveJsonReport() {
-    File file = SPIFFS.open(CRASH_DATA_JSON, "w");
-    if (!file) {
-        _logger.error("Failed to open crash report file for writing", "rtc::saveJsonReport");
-        return;
-    }
+void CrashMonitor::_handleCrashCounter() {
+    _logger.debug("Handling crash counter...", "crashmonitor::_handleCrashCounter");
 
-    JsonDocument _jsonDocument;
-    getJsonReport(_jsonDocument);
-    serializeJson(_jsonDocument, file);
-    file.close();
-}
-
-void CrashMonitor::handleCrashCounter() {
-    _logger.debug("Handling crash counter...", "CrashMonitor::handleCrashCounter");
-
-    if (_crashData.crashCount >= MAX_CRASH_COUNT) {
-        _logger.fatal("Crash counter reached the maximum allowed crashes. Rolling back to stable firmware...", "CrashMonitor::handleCrashCounter");
-
+    if (crashData.crashCount >= MAX_CRASH_COUNT) {
+        _logger.fatal("Crash counter reached the maximum allowed crashes. Rolling back to stable firmware...", "crashmonitor::_handleCrashCounter");
+        
         if (!Update.rollBack()) {
-            _logger.error("No firmware to rollback available. Keeping current firmware", "CrashMonitor::handleCrashCounter");
+            _logger.error("No firmware to rollback available. Keeping current firmware", "crashmonitor::_handleCrashCounter");
         }
 
         SPIFFS.format();
-
         ESP.restart();
     } else {
-        _logger.debug("Crash counter incremented to %d", "CrashMonitor::handleCrashCounter", _crashData.crashCount);
+        _logger.debug("Crash counter incremented to %d", "crashmonitor::_handleCrashCounter", crashData.crashCount);
     }
 }
 
 void CrashMonitor::crashCounterLoop() {
-    if (isCrashCounterReset) return;
+    if (_isCrashCounterReset) return;
 
     if (millis() > CRASH_COUNTER_TIMEOUT) {
-        isCrashCounterReset = true;
-        _logger.debug("Timeout reached. Resetting crash counter...", "CrashMonitor::crashCounterLoop");
+        _isCrashCounterReset = true;
+        _logger.debug("Timeout reached. Resetting crash counter...", "crashmonitor::crashCounterLoop");
 
-        _crashData.crashCount = 0;
+        crashData.crashCount = 0;
     }
 }
 
-void CrashMonitor::handleFirmwareTesting() {
-    _logger.debug("Checking if rollback is needed...", "CrashMonitor::handleFirmwareTesting");
+void CrashMonitor::_handleFirmwareTesting() {
+    _logger.debug("Checking if rollback is needed...", "crashmonitor::_handleFirmwareTesting");
 
-    String _rollbackStatus;
-    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
-    if (!_file) {
-        _logger.error("Failed to open firmware rollback file", "CrashMonitor::handleFirmwareTesting");
+    int _firmwareStatus = getFirmwareStatus();
+
+    _logger.debug("Rollback status: %d", "crashmonitor::_handleFirmwareTesting", _firmwareStatus);
+    
+    if (_firmwareStatus == NEW_TO_TEST) {
+        _logger.info("Testing new firmware", "crashmonitor::_handleFirmwareTesting");
+
+        setFirmwareStatus(TESTING);
+        _isFirmwareUpdate = true;
         return;
-    } else {
-        _rollbackStatus = _file.readString();
-        _file.close();
-    }
-
-    _logger.debug("Rollback status: %s", "CrashMonitor::handleFirmwareTesting", _rollbackStatus.c_str());
-    if (_rollbackStatus == NEW_FIRMWARE_TO_BE_TESTED) {
-        _logger.info("Testing new firmware", "CrashMonitor::handleFirmwareTesting");
-
-        File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
-        if (_file) {
-            _file.print(NEW_FIRMWARE_TESTING);
-            _file.close();
-        }
-        isFirmwareUpdate = true;
-        return;
-    } else if (_rollbackStatus == NEW_FIRMWARE_TESTING) {
-        _logger.fatal("Testing new firmware failed. Rolling back to stable firmware", "CrashMonitor::handleFirmwareTesting");
+    } else if (_firmwareStatus == TESTING) {
+        _logger.fatal("Testing new firmware failed. Rolling back to stable firmware", "crashmonitor::_handleFirmwareTesting");
 
         if (!Update.rollBack()) {
-            _logger.error("No firmware to rollback available. Keeping current firmware", "CrashMonitor::handleFirmwareTesting");
+            _logger.error("No firmware to rollback available. Keeping current firmware", "crashmonitor::_handleFirmwareTesting");
+            return;
         }
 
-        File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
-        if (_file) {
-            _file.print(STABLE_FIRMWARE);
-            _file.close();
-        }
+        setFirmwareStatus(STABLE);
 
-        setRestartEsp32("CrashMonitor::handleFirmwareTesting", "Testing new firmware failed. Rolling back to stable firmware");
+        setRestartEsp32("crashmonitor::_handleFirmwareTesting", "Testing new firmware failed. Rolling back to stable firmware");
     } else {
-        _logger.debug("No rollback needed", "CrashMonitor::handleFirmwareTesting");
+        _logger.debug("No rollback needed", "crashmonitor::_handleFirmwareTesting");
     }
 }
 
 void CrashMonitor::firmwareTestingLoop() {
-    if (!isFirmwareUpdate) return;
-
-    _logger.verbose("Checking if firmware has passed the testing period...", "CrashMonitor::firmwareTestingLoop");
+    if (!_isFirmwareUpdate) return;
 
     if (millis() > ROLLBACK_TESTING_TIMEOUT) {
-        _logger.info("Testing period of new firmware has passed. Keeping current firmware", "CrashMonitor::firmwareTestingLoop");
-        isFirmwareUpdate = false;
-
-        File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
-        if (_file) {
-            _file.print(STABLE_FIRMWARE);
-            _file.close();
-        }
+        _logger.info("Testing period of new firmware has passed. Keeping current firmware", "crashmonitor::firmwareTestingLoop");
+        _isFirmwareUpdate = false;
+        setFirmwareStatus(STABLE);
     }
+}
+
+bool CrashMonitor::setFirmwareStatus(int status) {
+    Preferences _preferences;
+    if (!_preferences.begin(PREFERENCES_NAMESPACE, false)) return false;
+    
+    bool success = _preferences.putInt(PREFERENCES_FIRMWARE_STATUS_KEY, status);
+    _preferences.end();
+
+    return success;
+}
+
+int CrashMonitor::getFirmwareStatus() {
+    Preferences _preferences;
+    if (!_preferences.begin(PREFERENCES_NAMESPACE, true)) return STABLE;
+
+    int status = _preferences.getInt(PREFERENCES_FIRMWARE_STATUS_KEY, STABLE);
+    _preferences.end();
+    log_e("Firmware status: %d", status);
+    return status;
 }

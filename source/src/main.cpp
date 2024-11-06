@@ -54,8 +54,7 @@ AdvancedLogger logger(
 );
 
 CrashMonitor crashMonitor(
-  logger,
-  crashData
+  logger
 );
 
 Led led(
@@ -203,165 +202,191 @@ void callbackLogToMqtt(
 }
 
 void setup() {
-  Serial.begin(SERIAL_BAUDRATE);
-
-  Serial.println("Booting...");
-  Serial.println("EnergyMe - Home");
-
-  Serial.printf("Build version: %s\n", FIRMWARE_BUILD_VERSION);
-  Serial.printf("Build date: %s\n", FIRMWARE_BUILD_DATE);
-
-  Serial.println("Setting up LED...");
-  led.begin();
-  Serial.println("LED setup done");
-
-  led.setWhite();
-
-  Serial.println("Setting up SPIFFS...");
-  if (!SPIFFS.begin(true)) {
-    Serial.println("An Error has occurred while mounting SPIFFS");
-  } else {
-    Serial.println("SPIFFS setup done");
-  }
-
-  led.setCyan();
-  
-  // Nothing is logged before this point as the logger is not yet initialized
-  Serial.println("Setting up logger...");
-  logger.begin();
-  logger.setCallback(callbackLogToMqtt);
-  logger.debug("Logger setup done", "main::setup");
-  
-  logger.info("Booting...", "main::setup");  
-  logger.info("EnergyMe - Home | Build version: %s | Build date: %s", "main::setup", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE);
-
-  // TODO: insert here crash check
-
-  logger.info("Checking for missing files...", "main::setup");
-  auto missingFiles = checkMissingFiles();
-  if (!missingFiles.empty()) {
-    led.setOrange();
-    logger.warning("Missing files detected. Creating default files for missing files...", "main::setup");
+    Serial.begin(SERIAL_BAUDRATE);
+    Serial.printf("EnergyMe - Home\n____________________\n\n");
+    Serial.println("Booting...");
+    Serial.printf("Build version: %s\n", FIRMWARE_BUILD_VERSION);
+    Serial.printf("Build date: %s %s\n", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
     
-    createDefaultFilesForMissingFiles(missingFiles);
+    Serial.println("Setting up LED...");
+    led.begin();
+    Serial.println("LED setup done");
+    led.setYellow(); // Indicate we're in early boot/crash check
 
-    logger.info("Default files created for missing files", "main::setup");
-  } else {
-    logger.info("No missing files detected", "main::setup");
-  }
+    if (!SPIFFS.begin(true)) {
+        Serial.println("SPIFFS initialization failed!");
+        ESP.restart();
+        return;
+    }
+    led.setWhite();
+    
+    logger.begin();
+    logger.setCallback(callbackLogToMqtt);
 
-  logger.info("Fetching general configuration from SPIFFS...", "main::setup");
-  if (!setGeneralConfigurationFromSpiffs()) {
-    logger.warning("Failed to load configuration from SPIFFS. Using default values.", "main::setup");
-  } else {
-    logger.info("Configuration loaded from SPIFFS", "main::setup");
-  }
+    logger.info("Booting...", "main::setup");  
+    logger.info("EnergyMe - Home | Build version: %s | Build date: %s %s", "main::setup", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
 
-  led.setPurple();
-  
-  logger.info("Setting up multiplexer...", "main::setup");
-  multiplexer.begin();
-  logger.info("Multiplexer setup done", "main::setup");
-  
-  logger.info("Setting up ADE7953...", "main::setup");
-  if (!ade7953.begin()) {
-    logger.fatal("ADE7953 initialization failed!", "main::setup");
-  } else {
-    logger.info("ADE7953 setup done", "main::setup");
-  }
+    
+    logger.info("Setting up crash monitor...", "main::setup");
+    crashMonitor.begin();
+    logger.info("Crash monitor setup done", "main::setup");
 
-  led.setBlue();
+    led.setCyan();
 
-  logger.info("Setting up WiFi...", "main::setup");
-  customWifi.begin();
-  logger.info("WiFi setup done", "main::setup");
+    TRACE;
+    logger.info("Checking for missing files...", "main::setup");
+    auto missingFiles = checkMissingFiles();
+    if (!missingFiles.empty()) {
+        led.setOrange();
+        logger.warning("Missing files detected. Creating default files for missing files...", "main::setup");
+        
+        TRACE;
+        createDefaultFilesForMissingFiles(missingFiles);
 
-  logger.info("Syncing time...", "main::setup");
-  updateTimezone();
-  if (!customTime.begin()) {
-    logger.error("Time sync failed!", "main::setup");
-  } else {
-    logger.info("Time synced", "main::setup");
-  }
-  
-  logger.info("Setting up server...", "main::setup");
-  customServer.begin();
-  logger.info("Server setup done", "main::setup");
+        logger.info("Default files created for missing files", "main::setup");
+    } else {
+        logger.info("No missing files detected", "main::setup");
+    }
 
-  logger.info("Setting up Modbus TCP...", "main::setup");
-  modbusTcp.begin();
-  logger.info("Modbus TCP setup done", "main::setup");
+    TRACE;
+    logger.info("Fetching general configuration from SPIFFS...", "main::setup");
+    if (!setGeneralConfigurationFromSpiffs()) {
+        logger.warning("Failed to load configuration from SPIFFS. Using default values.", "main::setup");
+    } else {
+        logger.info("Configuration loaded from SPIFFS", "main::setup");
+    }
 
-  led.setGreen();
+    led.setPurple();
+    
+    TRACE;
+    logger.info("Setting up multiplexer...", "main::setup");
+    multiplexer.begin();
+    logger.info("Multiplexer setup done", "main::setup");
+    
+    TRACE;
+    logger.info("Setting up ADE7953...", "main::setup");
+    if (!ade7953.begin()) {
+        logger.fatal("ADE7953 initialization failed!", "main::setup");
+    } else {
+        logger.info("ADE7953 setup done", "main::setup");
+    }
 
-  logger.info("Setup done", "main::setup");
+    led.setBlue();
+
+    TRACE;
+    logger.info("Setting up WiFi...", "main::setup");
+    customWifi.begin();
+    logger.info("WiFi setup done", "main::setup");
+
+    TRACE;
+    logger.info("Syncing time...", "main::setup");
+    updateTimezone();
+    if (!customTime.begin()) {
+        logger.error("Time sync failed!", "main::setup");
+    } else {
+        logger.info("Time synced", "main::setup");
+    }
+    
+    TRACE;
+    logger.info("Setting up server...", "main::setup");
+    customServer.begin();
+    logger.info("Server setup done", "main::setup");
+
+    TRACE;
+    logger.info("Setting up Modbus TCP...", "main::setup");
+    modbusTcp.begin();
+    logger.info("Modbus TCP setup done", "main::setup");
+
+    led.setGreen();
+
+    TRACE;
+    logger.info("Setup done", "main::setup");
 }
 
 void loop() {
-  if (mainFlags.blockLoop) return;
+    if (mainFlags.blockLoop) return;
 
-  customWifi.loop();
-  mqtt.loop();
-  customMqtt.loop();
-  ade7953.loop();
-  
-  if (ade7953.isLinecycFinished()) {
+    TRACE;
+    crashMonitor.crashCounterLoop();
+    TRACE;
+    crashMonitor.firmwareTestingLoop();
     
-    led.setGreen();
+    TRACE;
+    customWifi.loop();
+    
+    TRACE;
+    mqtt.loop();
+    
+    TRACE;
+    customMqtt.loop();
+    
+    TRACE;
+    ade7953.loop();
 
-     // Since there is a settling time after the multiplexer is switched, 
-     // we let one cycle pass before we start reading the values
-    if (mainFlags.isfirstLinecyc) {
-      mainFlags.isfirstLinecyc = false;
-    } else {
-      mainFlags.isfirstLinecyc = true;
+    TRACE;
+    if (ade7953.isLinecycFinished()) {
+    
+        led.setGreen();
 
-      if (mainFlags.currentChannel != -1) { // -1 indicates that no channel is active
-        ade7953.readMeterValues(mainFlags.currentChannel);
+        // Since there is a settling time after the multiplexer is switched, 
+        // we let one cycle pass before we start reading the values
+        if (mainFlags.isfirstLinecyc) {
+            mainFlags.isfirstLinecyc = false;
+        } else {
+            mainFlags.isfirstLinecyc = true;
 
-        multiplexer.setChannel(max(mainFlags.currentChannel-1, 0));
+            if (mainFlags.currentChannel != -1) { // -1 indicates that no channel is active
+              TRACE;
+              ade7953.readMeterValues(mainFlags.currentChannel);
 
-        payloadMeter.push(
-          PayloadMeter(
-            mainFlags.currentChannel,
-            customTime.getUnixTimeMilliseconds(),
-            ade7953.meterValues[mainFlags.currentChannel].activePower,
-            ade7953.meterValues[mainFlags.currentChannel].powerFactor
-            )
-          );
+              multiplexer.setChannel(max(mainFlags.currentChannel-1, 0));
+
+              TRACE;
+              payloadMeter.push(
+              PayloadMeter(
+                  mainFlags.currentChannel,
+                  customTime.getUnixTimeMilliseconds(),
+                  ade7953.meterValues[mainFlags.currentChannel].activePower,
+                  ade7953.meterValues[mainFlags.currentChannel].powerFactor
+                  )
+              );
+              
+              printMeterValues(ade7953.meterValues[mainFlags.currentChannel], ade7953.channelData[mainFlags.currentChannel].label.c_str());
+            }
         
-        printMeterValues(ade7953.meterValues[mainFlags.currentChannel], ade7953.channelData[mainFlags.currentChannel].label.c_str());
-      }
-      
-      mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
+            mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
+        }
+
+        // We always read the first channel as it is in a separate channel and is not impacted by the switching of the multiplexer
+        TRACE;
+        ade7953.readMeterValues(0);
+        payloadMeter.push(
+            PayloadMeter(
+                0,
+                customTime.getUnixTimeMilliseconds(),
+                ade7953.meterValues[0].activePower,
+                ade7953.meterValues[0].powerFactor
+            )
+            );
+        printMeterValues(ade7953.meterValues[0], ade7953.channelData[0].label.c_str());
     }
 
-    // We always read the first channel as it is in a separate channel and is not impacted by the switching of the multiplexer
-    ade7953.readMeterValues(0);
-    payloadMeter.push(
-        PayloadMeter(
-            0,
-            customTime.getUnixTimeMilliseconds(),
-            ade7953.meterValues[0].activePower,
-            ade7953.meterValues[0].powerFactor
-          )
-        );
-    printMeterValues(ade7953.meterValues[0], ade7953.channelData[0].label.c_str());
-  }
+    TRACE;
+    if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
+        printDeviceStatus();
+        setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
+    }
 
-  if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
-    printDeviceStatus();
-    setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
-  }
+    // If memory is below a certain level, clear the log
+    TRACE;
+    if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
+        printDeviceStatus();
+        logger.clearLog();
+        logger.warning("Log cleared due to low memory", "main::loop");
+    }
 
-  // If memory is below a certain level, clear the log
-  if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
-    printDeviceStatus();
-    logger.clearLog();
-    logger.warning("Log cleared due to low memory", "main::loop");
-  }
-
-  checkIfRestartEsp32Required();
-  
-  led.setOff();
+    TRACE;
+    checkIfRestartEsp32Required();
+    
+    led.setOff();
 }

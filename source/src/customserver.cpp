@@ -7,7 +7,14 @@ CustomServer::CustomServer(
     Ade7953 &ade7953,
     CustomTime &customTime,
     CustomWifi &customWifi,
-    CustomMqtt &customMqtt) : _server(server), _logger(logger), _led(led), _ade7953(ade7953), _customTime(customTime), _customWifi(customWifi), _customMqtt(customMqtt) {}
+    CustomMqtt &customMqtt) :
+        _server(server), 
+        _logger(logger), 
+        _led(led), 
+        _ade7953(ade7953), 
+        _customTime(customTime), 
+        _customWifi(customWifi), 
+        _customMqtt(customMqtt) {}
 
 void CustomServer::begin()
 {
@@ -476,6 +483,33 @@ void CustomServer::_setRestApi()
             request->send(200, "application/json", "{\"latest\":false}");
         } });
 
+    _server.on("/rest/get-current-monitor-data", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get current monitor data", "customserver::_setRestApi", LogLevel::DEBUG, request);
+
+        JsonDocument _jsonDocument;
+        CrashMonitor::getJsonReport(_jsonDocument, crashData);
+
+        String _buffer;
+        serializeJson(_jsonDocument, _buffer);
+
+        request->send(200, "application/json", _buffer.c_str()); });
+
+    _server.on("/rest/get-crash-data", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get crash data", "customserver::_setRestApi", LogLevel::DEBUG, request);
+
+        CrashData _crashData;
+        CrashMonitor::getSavedCrashData(_crashData);
+
+        JsonDocument _jsonDocument;
+        CrashMonitor::getJsonReport(_jsonDocument, _crashData);
+
+        String _buffer;
+        serializeJson(_jsonDocument, _buffer);
+
+        request->send(200, "application/json", _buffer.c_str()); });
+
     _server.on("/rest/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to factory reset", "customserver::_setRestApi", LogLevel::WARNING, request);
@@ -676,6 +710,7 @@ void CustomServer::_setRestApi()
             request->send(400, "text/plain", "File not found");
         }
     });
+
     _server.serveStatic("/api-docs", SPIFFS, "/swagger-ui.html");
     _server.serveStatic("/swagger.yaml", SPIFFS, "/swagger.yaml");
     _server.serveStatic("/log-raw", SPIFFS, LOG_PATH);
@@ -686,6 +721,7 @@ void CustomServer::_setOtherEndpoints()
 {
     _server.onNotFound([this](AsyncWebServerRequest *request)
                        {
+        TRACE;
         _serverLog(
             ("Request to get unknown page: " + request->url()).c_str(),
             "customserver::_setOtherEndpoints",
@@ -700,6 +736,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
     _led.block();
     _led.setPurple(true);
 
+    TRACE;
     if (!index)
     {
         if (filename.indexOf(".bin") > -1)
@@ -721,12 +758,14 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
         Update.setMD5(_md5.c_str());
     }
 
+    TRACE;
     if (Update.write(data, len) != len)
     {
         _onUpdateFailed(request, Update.errorString());
         return;
     }
 
+    TRACE;
     if (final)
     {
         if (!Update.end(true))
@@ -739,6 +778,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
         }
     }
 
+    TRACE;
     _led.setOff(true);
     _led.unblock();
 }
@@ -761,6 +801,7 @@ void CustomServer::_updateJsonFirmwareStatus(const char *status, const char *rea
 
 void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 {
+    TRACE;
     request->send(200, "application/json", "{\"status\":\"success\", \"md5\":\"" + Update.md5String() + "\"}");
 
     _logger.warning("Update complete", "customserver::handleDoUpdate");
@@ -768,21 +809,15 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 
     _logger.debug("MD5 of new firmware: %s", "customserver::_onUpdateSuccessful", Update.md5String().c_str());
 
-    _logger.debug("Setting rollback flag to %s", "customserver::_onUpdateSuccessful", NEW_FIRMWARE_TO_BE_TESTED);
-    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
-    if (!_file) {
-        _logger.error("Failed to open rollback file at %s", "customserver::_onUpdateSuccessful", FW_ROLLBACK_TXT);
-        return;
-    } else {
-        _file.print(NEW_FIRMWARE_TO_BE_TESTED);
-        _file.close();
-    }
+    _logger.debug("Setting rollback flag to %s", "customserver::_onUpdateSuccessful", NEW_TO_TEST);
+    CrashMonitor::setFirmwareStatus(NEW_TO_TEST);
 
     setRestartEsp32("customserver::_handleDoUpdate", "Restart needed after update");
 }
 
 void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *reason)
 {
+    TRACE;
     request->send(400, "application/json", "{\"status\":\"failed\", \"reason\":\"" + String(reason) + "\"}");
 
     Update.printError(Serial);
@@ -800,6 +835,8 @@ void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *r
 }
 
 void CustomServer::_serveJsonFile(AsyncWebServerRequest *request, const char *filePath) {
+    TRACE;
+
     File file = SPIFFS.open(filePath, FILE_READ);
 
     if (file) {

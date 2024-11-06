@@ -17,6 +17,7 @@
 #include "binaries.h"
 #include "constants.h"
 #include "customtime.h"
+#include "crashmonitor.h"
 #include "led.h"
 #include "structs.h"
 
@@ -46,7 +47,6 @@ void createEmptyJsonFile(const char* path);
 std::vector<const char*> checkMissingFiles();
 void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles);
 bool checkAllFiles();
-
 void createDefaultCustomMqttConfigurationFile();
 void createDefaultChannelDataFile();
 void createDefaultCalibrationFile();
@@ -56,9 +56,6 @@ void createDefaultEnergyFile();
 void createDefaultDailyEnergyFile();
 void createDefaultFirmwareUpdateInfoFile();
 void createDefaultFirmwareUpdateStatusFile();
-void createDefaultFirmwareRollbackFile();
-void createDefaultCrashCounterFile();
-void createDefaultCrashDataFile();
 
 void setDefaultGeneralConfiguration();
 bool setGeneralConfiguration(JsonDocument& jsonDocument);
@@ -66,7 +63,6 @@ bool setGeneralConfigurationFromSpiffs();
 void saveGeneralConfigurationToSpiffs();
 void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument);
 bool validateGeneralConfigurationJson(JsonDocument& jsonDocument);
-
 void applyGeneralConfiguration();
 
 void getPublicLocation(PublicLocation* publicLocation);
@@ -80,8 +76,6 @@ bool isLatestFirmwareInstalled();
 String getDeviceId();
 
 const char* getMqttStateReason(int state);
-
-void incrementCrashCounter();
 
 String decryptData(String encryptedData, String key);
 String readEncryptedFile(const char* path);

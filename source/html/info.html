@@ -61,7 +61,6 @@
         <p><span class='list-key'>Full Product Name:</span><span id='fullProductName' class='list-value'></span></p>
         <p><span class='list-key'>Product Name:</span><span id='productName' class='list-value'></span></p>
         <p><span class='list-key'>Description:</span><span id='productDescription' class='list-value'></span></p>
-        <p><span class='list-key'>Product URL:</span><span id='productUrl' class='list-value'></span></p>
         <p><span class='list-key'>GitHub URL:</span><span id='githubUrl' class='list-value'></span></p>
         <p><span class='list-key'>Author:</span><span id='author' class='list-value'></span></p>
         <p><span class='list-key'>Author Email:</span><span id='authorEmail' class='list-value'></span></p>
@@ -198,7 +197,6 @@
             document.getElementById('fullProductName').textContent = data.fullProductName;
             document.getElementById('productName').textContent = data.productName;
             document.getElementById('productDescription').textContent = data.productDescription;
-            document.getElementById('productUrl').innerHTML = `<a href="${data.productUrl}" target="_blank">${data.productUrl}</a>`;
             document.getElementById('githubUrl').innerHTML = `<a href="${data.githubUrl}" target="_blank">${data.githubUrl}</a>`;
             document.getElementById('author').textContent = data.author;
             document.getElementById('authorEmail').textContent = data.authorEmail;

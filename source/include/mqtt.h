@@ -42,6 +42,7 @@ private:
 
     void _checkIfPublishMeterNeeded();
     void _checkIfPublishStatusNeeded();
+    void _checkIfPublishMonitorNeeded();
 
     void _checkPublishMqtt();
 
@@ -50,6 +51,8 @@ private:
     void _publishStatus();
     void _publishMetadata();
     void _publishChannel();
+    void _publishCrash();
+    void _publishMonitor();
     void _publishGeneralConfiguration();
     bool _publishProvisioningRequest();
 
@@ -59,6 +62,8 @@ private:
     void _setTopicStatus();
     void _setTopicMetadata();
     void _setTopicChannel();
+    void _setTopicCrash();
+    void _setTopicMonitor();
     void _setTopicGeneralConfiguration();
 
     bool _publishMessage(const char *topic, const char *message, bool retain = false);
@@ -88,11 +93,14 @@ private:
     char _mqttTopicStatus[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicMetadata[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicChannel[MQTT_MAX_TOPIC_LENGTH];
+    char _mqttTopicCrash[MQTT_MAX_TOPIC_LENGTH];
+    char _mqttTopicMonitor[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicGeneralConfiguration[MQTT_MAX_TOPIC_LENGTH];
 
     unsigned long _lastMillisMqttLoop = 0;
     unsigned long _lastMillisMeterPublished = 0;
     unsigned long _lastMillisStatusPublished = 0;
+    unsigned long _lastMillisMonitorPublished = 0;
     unsigned long _lastMillisMqttFailed = 0;
     unsigned long _mqttConnectionAttempt = 0;
 

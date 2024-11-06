@@ -1,22 +1,22 @@
 #pragma once
 
+// Firmware info
+#define FIRMWARE_BUILD_VERSION_MAJOR "00"
+#define FIRMWARE_BUILD_VERSION_MINOR "06"
+#define FIRMWARE_BUILD_VERSION_PATCH "10"
+#define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
+
+#define FIRMWARE_BUILD_DATE __DATE__
+#define FIRMWARE_BUILD_TIME __TIME__
+
 // Project info
 #define COMPANY_NAME "EnergyMe"
 #define PRODUCT_NAME "Home"
 #define FULL_PRODUCT_NAME "EnergyMe - Home"
 #define PRODUCT_DESCRIPTION "A open-source energy monitoring system for home use, capable of monitoring up to 17 circuits."
-#define PRODUCT_URL "https://energyme.net"
 #define GITHUB_URL "https://github.com/jibrilsharafi/EnergyMe-Home"
 #define AUTHOR "Jibril Sharafi"
 #define AUTHOR_EMAIL "jibril.sharafi@gmail.com"
-
-// Firmware info
-#define FIRMWARE_BUILD_VERSION_MAJOR "00"
-#define FIRMWARE_BUILD_VERSION_MINOR "06"
-#define FIRMWARE_BUILD_VERSION_PATCH "09"
-#define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
-
-#define FIRMWARE_BUILD_DATE __DATE__
 
 // URL Utilities
 #define PUBLIC_LOCATION_ENDPOINT "http://ip-api.com/json/"
@@ -33,20 +33,17 @@
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
 #define FW_UPDATE_INFO_JSON_PATH "/fw-update-info.json"
 #define FW_UPDATE_STATUS_JSON_PATH "/fw-update-status.json"
-#define FW_ROLLBACK_TXT "/fw-rollback-status.txt"
-#define CRASH_COUNTER_TXT "/crash-counter.txt"
-#define CRASH_DATA_JSON "/crash-data.json"
 
-// Rollback and crash
-#define STABLE_FIRMWARE "stable" // TODO: make this enum
-#define NEW_FIRMWARE_TO_BE_TESTED "new_firmware"
-#define NEW_FIRMWARE_TESTING "testing"
+// Crash monitor
+#define PREFERENCES_NAMESPACE "crashmonitor"
+#define PREFERENCES_CRASHDATA_KEY "data"
+#define CRASH_SIGNATURE 0xDEADBEEF
+#define MAX_BREADCRUMBS 128
+#define WATCHDOG_TIMER 30000
+#define PREFERENCES_FIRMWARE_STATUS_KEY "fw_status"
 #define ROLLBACK_TESTING_TIMEOUT 60000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
-#define CRASH_DATA_INITIALIZED_FLAG 0xDEADBEEF
-#define MAX_BREADCRUMBS 32
-#define CRASH_MONITOR_WATCHDOG_TIMEOUT 300 // The watchdog timeout for the crash monitor (in seconds)
-#define MAX_CRASH_COUNT 10 // The maximum number of crashes before the firmware is rolled back and the SPIFFS is formatted
-#define CRASH_COUNTER_TIMEOUT 60000 // Interval in which the crash counter is reset
+#define MAX_CRASH_COUNT 10
+#define CRASH_COUNTER_TIMEOUT 60000
 
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32
@@ -58,7 +55,7 @@
 #define LOG_PATH "/logger/log.txt"
 #define LOG_CONFIG_PATH "/logger/config.txt"
 #define LOG_TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
-#define LOG_BUFFER_SIZE 30
+#define LOG_BUFFER_SIZE 30 // Callback queue size
 #define LOG_JSON_BUFFER_SIZE 1024
 #define LOG_TOPIC_SIZE 64
 
@@ -93,14 +90,15 @@
 // MQTT
 #define DEFAULT_IS_CLOUD_SERVICES_ENABLED false
 #define MAX_INTERVAL_METER_PUBLISH 30000 // The maximum interval between two meter payloads (in milliseconds)
-#define MAX_INTERVAL_STATUS_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
+#define MAX_INTERVAL_STATUS_PUBLISH 60000 // The interval between two status publish (in milliseconds)
+#define MAX_INTERVAL_CRASH_MONITOR_PUBLISH 60000 // The interval between two status publish (in milliseconds)
 #define MQTT_MAX_CONNECTION_ATTEMPT 3 // The maximum number of attempts to connect to the MQTT server
 #define MQTT_OVERRIDE_KEEPALIVE 30 // Minimum value supported by AWS IoT Core (in seconds) 
 #define MQTT_MIN_CONNECTION_INTERVAL 5000 // Minimum interval between two connection attempts (in milliseconds)
 #define MQTT_TEMPORARY_DISABLE_INTERVAL 3600000 // Interval between reconnect attempts after a failed connection (in milliseconds)
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks (in milliseconds)
 #define PAYLOAD_METER_MAX_NUMBER_POINTS 30 // The maximum number of points that can be sent in a single payload
-#define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
+#define MQTT_PAYLOAD_LIMIT 16384 // Increase the base limit of 256 bytes
 #define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
 #define MQTT_PROVISIONING_TIMEOUT 60000 // The timeout for the provisioning response (in milliseconds)
 #define MQTT_PROVISIONING_LOOP_CHECK 1000 // Interval between two certificates check on memory (in milliseconds)
@@ -209,6 +207,8 @@
 #define MQTT_TOPIC_STATUS "status"
 #define MQTT_TOPIC_METADATA "metadata"
 #define MQTT_TOPIC_CHANNEL "channel"
+#define MQTT_TOPIC_CRASH "crash"
+#define MQTT_TOPIC_MONITOR "monitor"
 #define MQTT_TOPIC_GENERAL_CONFIGURATION "general-configuration"
 #define MQTT_TOPIC_CONNECTIVITY "connectivity"
 #define MQTT_TOPIC_PROVISIONING_REQUEST "provisioning/request"

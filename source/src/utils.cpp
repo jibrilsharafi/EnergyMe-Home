@@ -7,7 +7,6 @@ void getJsonProjectInfo(JsonDocument& jsonDocument) {
     jsonDocument["fullProductName"] = FULL_PRODUCT_NAME;
     jsonDocument["productName"] = PRODUCT_NAME;
     jsonDocument["productDescription"] = PRODUCT_DESCRIPTION;
-    jsonDocument["productUrl"] = PRODUCT_URL;
     jsonDocument["githubUrl"] = GITHUB_URL;
     jsonDocument["author"] = AUTHOR;
     jsonDocument["authorEmail"] = AUTHOR_EMAIL;
@@ -35,17 +34,21 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
     jsonDocument["chip"]["cpuFrequency"] = ESP.getCpuFreqMHz();
     jsonDocument["chip"]["sdkVersion"] = ESP.getSdkVersion();
     jsonDocument["chip"]["id"] = ESP.getEfuseMac();
+
+    logger.debug("Device info retrieved", "utils::getJsonDeviceInfo");
 }
 
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     logger.debug("Deserializing JSON from SPIFFS", "utils::deserializeJsonFromSpiffs");
 
+    TRACE;
     File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
         logger.error("%s Failed to open file", "utils::deserializeJsonFromSpiffs", path);
         return;
     }
 
+    TRACE;
     DeserializationError _error = deserializeJson(jsonDocument, _file);
     _file.close();
     if (_error){
@@ -57,6 +60,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
         logger.debug("%s JSON is null", "utils::deserializeJsonFromSpiffs", path);
     }
     
+    TRACE;
     String _jsonString;
     serializeJson(jsonDocument, _jsonString);
 
@@ -66,12 +70,14 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     logger.debug("Serializing JSON to SPIFFS...", "utils::serializeJsonToSpiffs");
 
+    TRACE;
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
         logger.error("%s Failed to open file", "utils::serializeJsonToSpiffs", path);
         return false;
     }
 
+    TRACE;
     serializeJson(jsonDocument, _file);
     _file.close();
 
@@ -79,6 +85,7 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
         logger.warning("%s JSON is null", "utils::serializeJsonToSpiffs", path);
     }
 
+    TRACE;
     String _jsonString;
     serializeJson(jsonDocument, _jsonString);
     logger.debug("JSON serialized to SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
@@ -89,12 +96,14 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
 void createEmptyJsonFile(const char* path) {
     logger.debug("Creating empty JSON file %s...", "utils::createEmptyJsonFile", path);
 
+    TRACE;
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file) {
         logger.error("Failed to open file %s", "utils::createEmptyJsonFile", path);
         return;
     }
 
+    TRACE;
     _file.print("{}");
     _file.close();
 
@@ -156,44 +165,6 @@ void createDefaultFirmwareUpdateStatusFile() {
     createEmptyJsonFile(FW_UPDATE_STATUS_JSON_PATH);
 
     logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateStatusFile", FW_UPDATE_STATUS_JSON_PATH);
-}
-
-void createDefaultFirmwareRollbackFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultFirmwareRollbackFile", FW_ROLLBACK_TXT);
-
-    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
-    if (!_file) {
-        logger.error("Failed to open file %s", "utils::createDefaultFirmwareRollbackFile", FW_ROLLBACK_TXT);
-        return;
-    }
-
-    _file.print(STABLE_FIRMWARE);
-    _file.close();
-
-    logger.debug("Default %s created", "utils::createDefaultFirmwareRollbackFile", FW_ROLLBACK_TXT);
-}
-
-void createDefaultCrashCounterFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultCrashCounterFile", CRASH_COUNTER_TXT);
-
-    File _file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_WRITE);
-    if (!_file) {
-        logger.error("Failed to open file %s", "utils::createDefaultCrashCounterFile", CRASH_COUNTER_TXT);
-        return;
-    }
-
-    _file.print(0);
-    _file.close();
-
-    logger.debug("Default %s created", "utils::createDefaultCrashCounterFile", CRASH_COUNTER_TXT);
-}
-
-void createDefaultCrashDataFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultCrashDataFile", CRASH_DATA_JSON);
-
-    createEmptyJsonFile(CRASH_DATA_JSON);
-
-    logger.debug("Default %s created", "utils::createDefaultCrashDataFile", CRASH_DATA_JSON);
 }
 
 void createDefaultAde7953ConfigurationFile() {
@@ -270,6 +241,8 @@ void createDefaultCustomMqttConfigurationFile() {
 }
 
 std::vector<const char*> checkMissingFiles() {
+    logger.debug("Checking missing files...", "utils::checkMissingFiles");
+
     std::vector<const char*> missingFiles;
     
     const char* CONFIG_FILE_PATHS[] = {
@@ -281,14 +254,12 @@ std::vector<const char*> checkMissingFiles() {
         ENERGY_JSON_PATH,
         DAILY_ENERGY_JSON_PATH,
         FW_UPDATE_INFO_JSON_PATH,
-        FW_UPDATE_STATUS_JSON_PATH,
-        FW_ROLLBACK_TXT,
-        CRASH_COUNTER_TXT,
-        CRASH_DATA_JSON
+        FW_UPDATE_STATUS_JSON_PATH
     };
 
     const size_t CONFIG_FILE_COUNT = sizeof(CONFIG_FILE_PATHS) / sizeof(CONFIG_FILE_PATHS[0]);
 
+    TRACE;
     for (size_t i = 0; i < CONFIG_FILE_COUNT; ++i) {
         const char* path = CONFIG_FILE_PATHS[i];
         if (!SPIFFS.exists(path)) {
@@ -296,10 +267,14 @@ std::vector<const char*> checkMissingFiles() {
         }
     }
 
+    logger.debug("Missing files checked", "utils::checkMissingFiles");
     return missingFiles;
 }
 
 void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles) {
+    logger.debug("Creating default files for missing files...", "utils::createDefaultFilesForMissingFiles");
+
+    TRACE;
     for (const char* path : missingFiles) {
         if (strcmp(path, GENERAL_CONFIGURATION_JSON_PATH) == 0) {
             createDefaultGeneralConfigurationFile();
@@ -319,28 +294,26 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
             createDefaultFirmwareUpdateInfoFile();
         } else if (strcmp(path, FW_UPDATE_STATUS_JSON_PATH) == 0) {
             createDefaultFirmwareUpdateStatusFile();
-        } else if (strcmp(path, FW_ROLLBACK_TXT) == 0) {
-            createDefaultFirmwareRollbackFile();
-        } else if (strcmp(path, CRASH_COUNTER_TXT) == 0) {
-            createDefaultCrashCounterFile();
-        } else if (strcmp(path, CRASH_DATA_JSON) == 0) {
-            createDefaultCrashDataFile();
         } else {
             // Handle other files if needed
             logger.warning("No default creation function for path: %s", "utils::createDefaultFilesForMissingFiles", path);
         }
     }
+
+    logger.debug("Default files created for missing files", "utils::createDefaultFilesForMissingFiles");
 }
 
 bool checkAllFiles() {
     logger.debug("Checking all files...", "utils::checkAllFiles");
 
+    TRACE;
     std::vector<const char*> missingFiles = checkMissingFiles();
     if (!missingFiles.empty()) {
         createDefaultFilesForMissingFiles(missingFiles);
         return true;
     }
 
+    logger.debug("All files checked", "utils::checkAllFiles");
     return false;
 }
 
@@ -369,26 +342,12 @@ void restartEsp32() {
     logger.warning("Restarting ESP32 from function %s. Reason: %s", "utils::restartEsp32", restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
 
     // If a firmware evaluation is in progress, set the firmware to test again
-    File _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_READ);
-    String _firmwareStatus;
-    if (_file) {
-        _firmwareStatus = _file.readString();
-        logger.debug("Firmware status: %s", "utils::restartEsp32", _firmwareStatus.c_str());
-        _file.close();
-    } else {
-        logger.error("Failed to open firmware rollback file", "utils::restartEsp32");
-    }
+    int _firmwareStatus = CrashMonitor::getFirmwareStatus();
 
-    if (_firmwareStatus == NEW_FIRMWARE_TESTING) {
+    TRACE;
+    if (_firmwareStatus == TESTING) {
         logger.warning("Firmware evaluation is in progress. Setting firmware to test again", "utils::restartEsp32");
-
-        _file = SPIFFS.open(FW_ROLLBACK_TXT, FILE_WRITE);
-        if (_file) {
-            _file.print(NEW_FIRMWARE_TO_BE_TESTED);
-            _file.close();
-        } else {
-            logger.error("Failed to open firmware rollback file for writing", "utils::restartEsp32");
-        }
+        CrashMonitor::setFirmwareStatus(NEW_TO_TEST);
     }
 
     ESP.restart();
@@ -725,27 +684,6 @@ const char* getMqttStateReason(int state)
     }
 }
 
-void incrementCrashCounter() {
-    logger.debug("Incrementing crash counter...", "utils::incrementCrashCounter");
-
-    File file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_READ);
-    int _crashCounter = 0;
-    if (file) {
-        _crashCounter = file.parseInt();
-        file.close();
-    }
-
-    _crashCounter++;
-
-    file = SPIFFS.open(CRASH_COUNTER_TXT, FILE_WRITE);
-    if (file) {
-        file.print(_crashCounter);
-        file.close();
-    }
-
-    logger.debug("Crash counter incremented to %d", "utils::incrementCrashCounter", _crashCounter);
-}
-
 String decryptData(String encryptedData, String key) {
     if (encryptedData.length() == 0) {
         logger.error("Empty encrypted data", "utils::decryptData");
@@ -795,7 +733,7 @@ String readEncryptedFile(const char* path) {
 
 bool setupMdns()
 {
-    logger.info("Setting up mDNS...", "main::setupMdns");
+    logger.info("Setting up mDNS...", "utils::setupMdns");
     MDNS.setInstanceName(MDNS_INSTANCE_NAME);
     if (
         MDNS.begin(MDNS_HOSTNAME) &&
@@ -803,12 +741,12 @@ bool setupMdns()
         MDNS.addService("mqtt", "tcp", MQTT_CUSTOM_PORT_DEFAULT) &&
         MDNS.addService("modbus", "tcp", MODBUS_TCP_PORT))
     {
-        logger.info("mDNS setup done", "main::setupMdns");
+        logger.info("mDNS setup done", "utils::setupMdns");
         return true;
     }
     else
     {
-        logger.error("Error setting up mDNS", "main::setupMdns");
+        logger.error("Error setting up mDNS", "utils::setupMdns");
         return false;
     }
 }

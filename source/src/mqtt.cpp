@@ -85,14 +85,17 @@ void Mqtt::begin() {
 }
 
 void Mqtt::loop() {
+    TRACE;
     if ((millis() - _lastMillisMqttLoop) < MQTT_LOOP_INTERVAL) return;
     _lastMillisMqttLoop = millis();
 
+    TRACE;
     if (_isClaimInProgress) { // Only wait for certificates to be claimed
         _clientMqtt.loop();
         return;
     }
 
+    TRACE;
     if (!generalConfiguration.isCloudServicesEnabled || restartConfiguration.isRequired) {
         if (_isSetupDone && _clientMqtt.connected()) {
             _logger.info("Disconnecting MQTT", "mqtt::mqttLoop");
@@ -113,8 +116,10 @@ void Mqtt::loop() {
         return;
     }
 
+    TRACE;
     if (!_isSetupDone) {begin(); return;}
 
+    TRACE;
     if (_forceDisableMqtt) {
         if ((millis() - _mqttConnectionFailedAt) < MQTT_TEMPORARY_DISABLE_INTERVAL) return;
         
@@ -122,6 +127,7 @@ void Mqtt::loop() {
         _logger.info("Retrying MQTT connection after temporary disable", "mqtt::mqttLoop");
     }
 
+    TRACE;
     if (!_clientMqtt.connected()) {
         if ((millis() - _lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) return;
         _logger.info("MQTT client not connected. Attempting to reconnect...", "mqtt::mqttLoop");
@@ -129,11 +135,15 @@ void Mqtt::loop() {
         if (!_connectMqtt()) return;
     }
 
+    TRACE;
     _clientMqtt.loop();
 
+    TRACE;
     _checkIfPublishMeterNeeded();
     _checkIfPublishStatusNeeded();
+    _checkIfPublishMonitorNeeded();
 
+    TRACE;
     _checkPublishMqtt();
 }
 
@@ -317,6 +327,8 @@ void Mqtt::_setupTopics() {
     _setTopicStatus();
     _setTopicMetadata();
     _setTopicChannel();
+    _setTopicCrash();
+    _setTopicMonitor();
     _setTopicGeneralConfiguration();
 
     _logger.debug("MQTT topics setup complete", "mqtt::_setupTopics");
@@ -345,6 +357,16 @@ void Mqtt::_setTopicMetadata() {
 void Mqtt::_setTopicChannel() {
     _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel);
     _logger.debug(_mqttTopicChannel, "mqtt::_setTopicChannel");
+}
+
+void Mqtt::_setTopicCrash() {
+    _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash);
+    _logger.debug(_mqttTopicCrash, "mqtt::_setTopicCrash");
+}
+
+void Mqtt::_setTopicMonitor() {
+    _constructMqttTopic(MQTT_TOPIC_MONITOR, _mqttTopicMonitor);
+    _logger.debug(_mqttTopicMonitor, "mqtt::_setTopicMonitor");
 }
 
 void Mqtt::_setTopicGeneralConfiguration() {
@@ -474,6 +496,55 @@ void Mqtt::_publishChannel() {
     _logger.debug("Channel data published to MQTT", "mqtt::_publishChannel");
 }
 
+void Mqtt::_publishCrash() {
+    _logger.debug("Publishing crash data to MQTT", "mqtt::_publishCrash");
+
+    TRACE;
+    CrashData _crashData;
+    CrashMonitor::getSavedCrashData(_crashData);
+
+    TRACE;
+    JsonDocument _jsonDocumentCrash;
+    crashMonitor.getJsonReport(_jsonDocumentCrash, _crashData);
+
+    TRACE;
+    JsonDocument _jsonDocument;
+    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
+    _jsonDocument["crashData"] = _jsonDocumentCrash;
+
+    TRACE;
+    String _crashMessage;
+    serializeJson(_jsonDocument, _crashMessage);
+
+    TRACE;
+    if (_publishMessage(_mqttTopicCrash, _crashMessage.c_str())) {_publishMqtt.crash = false;}
+
+    _logger.debug("Crash data published to MQTT", "mqtt::_publishCrash");
+}
+
+
+void Mqtt::_publishMonitor() {
+    _logger.debug("Publishing monitor data to MQTT", "mqtt::_publishMonitor");
+
+    TRACE;
+    JsonDocument _jsonDocumentMonitor;
+    crashMonitor.getJsonReport(_jsonDocumentMonitor, crashData);
+
+    TRACE;
+    JsonDocument _jsonDocument;
+    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
+    _jsonDocument["monitorData"] = _jsonDocumentMonitor;
+
+    TRACE;
+    String _crashMonitorMessage;
+    serializeJson(_jsonDocument, _crashMonitorMessage);
+
+    TRACE;
+    if (_publishMessage(_mqttTopicMonitor, _crashMonitorMessage.c_str())) {_publishMqtt.monitor = false;}
+
+    _logger.debug("Monitor data published to MQTT", "mqtt::_publishMonitor");
+}
+
 void Mqtt::_publishGeneralConfiguration() {
     _logger.debug("Publishing general configuration to MQTT", "mqtt::_publishGeneralConfiguration");
 
@@ -517,6 +588,7 @@ bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) 
         topic
     );
 
+    TRACE;
     if (topic == nullptr || message == nullptr) {
         _logger.warning("Null pointer or message passed, meaning MQTT not initialized yet", "mqtt::_publishMessage");
         return false;
@@ -527,8 +599,9 @@ bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) 
         return false;
     }
 
+    TRACE;
     if (!_clientMqtt.publish(topic, message, retain)) {
-        _logger.error("Failed to publish message", "mqtt::_publishMessage");
+        _logger.error("Failed to publish message on %s. MQTT client state: %s", "mqtt::_publishMessage", topic, getMqttStateReason(_clientMqtt.state()));
         return false;
     }
 
@@ -556,12 +629,24 @@ void Mqtt::_checkIfPublishStatusNeeded() {
     }
 }
 
+void Mqtt::_checkIfPublishMonitorNeeded() {
+    if ((millis() - _lastMillisMonitorPublished) > MAX_INTERVAL_CRASH_MONITOR_PUBLISH) {
+        _logger.debug("Setting flag to publish crash monitor", "mqtt::_checkIfPublishMonitorNeeded");
+        
+        _publishMqtt.monitor = true;
+        
+        _lastMillisMonitorPublished = millis();
+    }
+}
+
 void Mqtt::_checkPublishMqtt() {
     if (_publishMqtt.connectivity) {_publishConnectivity();}
     if (_publishMqtt.meter) {_publishMeter();}
     if (_publishMqtt.status) {_publishStatus();}
     if (_publishMqtt.metadata) {_publishMetadata();}
     if (_publishMqtt.channel) {_publishChannel();}
+    if (_publishMqtt.crash) {_publishCrash();}
+    if (_publishMqtt.monitor) {_publishMonitor();}
     if (_publishMqtt.generalConfiguration) {_publishGeneralConfiguration();}
 }
 

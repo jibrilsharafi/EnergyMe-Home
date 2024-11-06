@@ -435,36 +435,37 @@
 
         function doRollback() {
             if (!confirm("Are you sure you want to rollback to the previous firmware version? The device will restart.")) {
-                return;
+            return;
             }
         
             document.getElementById('loading-overlay').style.display = 'flex';
             document.getElementById('loading-message').innerHTML = getLoadingMessage();
         
-            fetch('/rest/update-rollback', {
-                method: 'POST'
+            fetch('/rest/update-rollback', {method: 'POST'})
+            .then(response => {
+                const isSuccess = response.status === 200;
+                return response.json().then(data => ({ ...data, isSuccess }));
             })
-            .then(response => response.json())
             .then(data => {
                 document.getElementById('loading-overlay').style.display = 'none';
                 const resultMessageBox = document.getElementById('result-message');
                 resultMessageBox.style.display = 'block';
-        
-                if (data.status === 'success') {
+            
+                if (data.isSuccess) {
                     resultMessageBox.style.backgroundColor = '#d4edda';
                     resultMessageBox.style.color = '#155724';
                     resultMessageBox.innerHTML = 'Rollback initiated! The device will restart. Please wait 5 seconds...';
                     
                     setTimeout(function() {
-                        window.location.reload();
-                    }, 5);
+                        window.location.href = '/';
+                    }, 5000);
                 } else {
                     resultMessageBox.style.backgroundColor = '#f8d7da';
                     resultMessageBox.style.color = '#721c24';
                     resultMessageBox.innerHTML = 'Rollback failed: ' + data.reason;
-        
+
                     setTimeout(() => {
-                        resultMessageBox.style.display = 'none';
+                    resultMessageBox.style.display = 'none';
                     }, 5000);
                 }
             })
@@ -475,7 +476,7 @@
                 resultMessageBox.style.color = '#721c24';
                 resultMessageBox.innerHTML = 'Rollback failed: ' + error.message;
                 resultMessageBox.style.display = 'block';
-        
+            
                 setTimeout(() => {
                     resultMessageBox.style.display = 'none';
                 }, 5000);

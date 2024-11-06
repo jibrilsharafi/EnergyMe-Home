@@ -134,9 +134,11 @@ struct PublishMqtt
   bool status;
   bool metadata;
   bool channel;
+  bool crash;
+  bool monitor;
   bool generalConfiguration;
 
-  PublishMqtt() : connectivity(true), meter(true), status(true), metadata(true), channel(true), generalConfiguration(true) {} // Set default to true to publish everything on first connection
+  PublishMqtt() : connectivity(true), meter(true), status(true), metadata(true), channel(true), crash(false), monitor(true), generalConfiguration(true) {} // Set default to true to publish everything on first connection
 };
 
 struct CustomMqttConfiguration {
@@ -162,44 +164,30 @@ struct CustomMqttConfiguration {
           password(String(MQTT_CUSTOM_PASSWORD_DEFAULT)) {}
 };
 
-// Define module IDs - you can expand this enum as needed
-enum class CustomModule : uint8_t {
-    ADE7953,
-    CRASH_MONITOR,
-    CUSTOM_MQTT,
-    CUSTOM_SERVER,
-    CUSTOM_TIME,
-    CUSTOM_WIFI,
-    LED,
-    MAIN,
-    MODBUS_TCP,
-    MQTT,
-    MULTIPLEXER,
-    UTILS,
+enum FirmwareState : int {
+    STABLE,
+    NEW_TO_TEST,
+    TESTING,
+    ROLLBACK
 };
 
-// Enhanced breadcrumb structure
 struct Breadcrumb {
+    const char* filename;
     const char* functionName;
-    int lineNumber;
-    uint32_t timestamp;
-    uint32_t freeHeap;
-
-    Breadcrumb()
-        : functionName(nullptr), lineNumber(0), timestamp(0), freeHeap(0) {}
+    unsigned int lineNumber;
+    unsigned long long timestamp;
+    unsigned int freeHeap;
+    unsigned int coreId;
 };
 
 struct CrashData {
     Breadcrumb breadcrumbs[MAX_BREADCRUMBS];      // Circular buffer of breadcrumbs
-    uint8_t currentIndex;            // Current position in circular buffer
-    uint32_t crashCount;             // Number of crashes detected
-    uint32_t lastResetReason;        // Last reset reason from ESP32
-    uint32_t lastExceptionCause;     // Last exception cause if crashed
-    void* lastFaultPC;               // Program counter at crash
-    void* lastFaultAddress;          // Memory address that caused fault
-    uint32_t resetCount;             // Number of resets
-    uint32_t lastUptime;             // How long it ran before crash
-    uint32_t signature;              // To verify RTC data validity
+    unsigned int currentIndex;            // Current position in circular buffer
+    unsigned int crashCount;             // Number of crashes detected
+    unsigned int lastResetReason;        // Last reset reason from ESP32
+    unsigned int resetCount;             // Number of resets
+    unsigned int lastUptime;             // How long it ran before crash
+    unsigned int signature;              // To verify RTC data validity
 };
 
 // Log callback struct

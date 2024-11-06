@@ -356,6 +356,30 @@ components:
           type: integer
         "ledBrightness":
           type: integer
+    MonitorData:
+      type: object
+      properties:
+        crashCount:
+          type: integer
+        lastResetReason:
+          type: string
+        lastUptime:
+          type: integer
+        resetCount:
+          type: integer
+        breadcrumbs:
+          type: array
+          items:
+            type: object
+            properties:
+              function:
+                type: string
+              line:
+                type: integer
+              time:
+                type: integer
+              heap:
+                type: integer
 
 paths:
   /rest/is-alive:
@@ -395,8 +419,6 @@ paths:
                   productName:
                     type: string
                   productDescription:
-                    type: string
-                  productUrl:
                     type: string
                   githubUrl:
                     type: string
@@ -551,6 +573,32 @@ paths:
                   latest:
                     type: boolean
 
+  /rest/get-current-monitor-data:
+    get:
+      summary: Get current monitor data
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorData'
+
+  /rest/get-crash-data:
+    get:
+      summary: Get crash data from file
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorData'
+                
   /do-update:
     post:
       summary: Perform an update

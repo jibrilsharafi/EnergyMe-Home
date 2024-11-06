@@ -11,6 +11,7 @@
 #include "led.h"
 #include "customtime.h"
 #include "customwifi.h"
+#include "crashmonitor.h"
 #include <ESPAsyncWebServer.h> // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
 #include "constants.h"
 #include "utils.h"
