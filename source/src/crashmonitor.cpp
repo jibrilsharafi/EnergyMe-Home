@@ -63,18 +63,44 @@ void CrashMonitor::_saveCrashData() {
     _logger.debug("Saving crash data...", "crashmonitor::_saveCrashData");
 
     Preferences _preferences;
-    if (_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false)) return;
-    _preferences.putBytes(PREFERENCES_NAMESPACE_CRASHDATA, &crashData, sizeof(crashData));
+    if (!_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false)) {
+        _logger.error("Failed to open preferences", "crashmonitor::_saveCrashData");
+        _preferences.clear();
+        _preferences.end();
+        return;
+    }
+    size_t _len = _preferences.putBytes(PREFERENCES_DATA_KEY, &crashData, sizeof(crashData));
+    if (_len != sizeof(crashData)) {
+        _logger.error("Failed to save crash data", "crashmonitor::_saveCrashData");
+        _preferences.clear();
+        _preferences.end();
+        return;
+    }
+
     _preferences.end();
 
     _logger.debug("Crash data saved", "crashmonitor::_saveCrashData");
 }
 
-void CrashMonitor::getSavedCrashData(CrashData& crashDataSaved) {
+bool CrashMonitor::getSavedCrashData(CrashData& crashDataSaved) {
     Preferences _preferences;
-    if (_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, true)) return;
-    _preferences.getBytes(PREFERENCES_NAMESPACE_CRASHDATA, &crashDataSaved, sizeof(crashDataSaved));
+    if (!_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, true)) {
+        _preferences.end();
+        return false;
+    }
+    size_t dataSize = _preferences.getBytesLength(PREFERENCES_DATA_KEY);
+    if (dataSize != sizeof(CrashData)) {
+        _preferences.end();
+        return false;
+    }
+    uint8_t buffer[dataSize];
+    size_t bytesRead = _preferences.getBytes(PREFERENCES_DATA_KEY, buffer, dataSize);
     _preferences.end();
+    if (bytesRead != dataSize) {
+        return false;
+    }
+    memcpy(&crashDataSaved, buffer, dataSize);
+    return true;
 }
 
 const char* CrashMonitor::_getResetReasonString(esp_reset_reason_t reason) {
@@ -135,7 +161,9 @@ void CrashMonitor::_logCrashInfo() {
     }
 }
 
-void CrashMonitor::getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport) {
+bool CrashMonitor::getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport) {
+    if (crashDataReport.signature != CRASH_SIGNATURE) return false;
+
     _jsonDocument["crashCount"] = crashDataReport.crashCount;
     _jsonDocument["lastResetReason"] = _getResetReasonString((esp_reset_reason_t)crashDataReport.lastResetReason);
     _jsonDocument["lastUnixTime"] = crashDataReport.lastUnixTime;
@@ -155,6 +183,8 @@ void CrashMonitor::getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDa
             _jsonObject["core"] = crumb.coreId;
         }
     }
+
+    return true;
 }
 
 void CrashMonitor::_handleCrashCounter() {
@@ -168,6 +198,8 @@ void CrashMonitor::_handleCrashCounter() {
         }
 
         SPIFFS.format();
+        crashData.crashCount = 0;
+
         ESP.restart();
     } else {
         _logger.debug("Crash counter incremented to %d", "crashmonitor::_handleCrashCounter", crashData.crashCount);
@@ -190,7 +222,7 @@ void CrashMonitor::_handleFirmwareTesting() {
 
     FirmwareState _firmwareStatus = getFirmwareStatus();
 
-    _logger.debug("Rollback status: %d", "crashmonitor::_handleFirmwareTesting", _firmwareStatus);
+    _logger.debug("Rollback status: %s", "crashmonitor::_handleFirmwareTesting", getFirmwareStatusString(_firmwareStatus));
     
     if (_firmwareStatus == NEW_TO_TEST) {
         _logger.info("Testing new firmware", "crashmonitor::_handleFirmwareTesting");
@@ -236,10 +268,23 @@ bool CrashMonitor::setFirmwareStatus(FirmwareState status) {
 
 FirmwareState CrashMonitor::getFirmwareStatus() {
     Preferences _preferences;
-    if (!_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, true)) 
+    if (!_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, true)) {
+        _preferences.clear();
+        _preferences.end();
         return FirmwareState::STABLE;
+    }
 
     int status = _preferences.getInt(PREFERENCES_FIRMWARE_STATUS_KEY, static_cast<int>(FirmwareState::STABLE));
     _preferences.end();
     return static_cast<FirmwareState>(status);
+}
+
+String CrashMonitor::getFirmwareStatusString(FirmwareState status) {
+    switch (status) {
+        case FirmwareState::STABLE: return "Stable";
+        case FirmwareState::NEW_TO_TEST: return "New to test";
+        case FirmwareState::TESTING: return "Testing";
+        case FirmwareState::ROLLBACK: return "Rollback";
+        default: return "Unknown";
+    }
 }

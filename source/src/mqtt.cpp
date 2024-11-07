@@ -168,6 +168,7 @@ bool Mqtt::_connectMqtt()
         _logger.info("Connected to MQTT", "mqtt::_connectMqtt");
 
         _mqttConnectionAttempt = 0;
+        _temporaryDisableAttempt = 0;
 
         _subscribeToTopics();
 
@@ -196,15 +197,32 @@ bool Mqtt::_connectMqtt()
         return false;
     }
 }
-
 void Mqtt::_temporaryDisable() {
     _logger.debug("Temporarely disabling MQTT...", "mqtt::_temporaryDisable");
 
     _forceDisableMqtt = true;
     _mqttConnectionFailedAt = millis();
     _mqttConnectionAttempt = 0;
+    _temporaryDisableAttempt++;
 
-    _logger.debug("MQTT temporarely disabled. Retrying connection in %d milliseconds", "mqtt::_temporaryDisable", MQTT_TEMPORARY_DISABLE_INTERVAL);
+    if (_temporaryDisableAttempt >= MQTT_TEMPORARY_DISABLE_ATTEMPTS) {
+        _logger.error("Maximum temporary disable attempts reached (%d). Erasing certificates and restarting...", 
+            "mqtt::_temporaryDisable", 
+            MQTT_TEMPORARY_DISABLE_ATTEMPTS
+        );
+
+        clearCertificates();
+
+        setRestartEsp32("mqtt::_temporaryDisable", "Maximum MQTT temporary disable attempts reached");
+        return;
+    }
+
+    _logger.info("MQTT temporarely disabled (attempt %d/%d). Retrying connection in %d seconds", 
+        "mqtt::_temporaryDisable", 
+        _temporaryDisableAttempt,
+        MQTT_TEMPORARY_DISABLE_ATTEMPTS,
+        MQTT_TEMPORARY_DISABLE_INTERVAL/1000
+    );
 }
 
 void Mqtt::_setCertificates() {
@@ -500,11 +518,17 @@ void Mqtt::_publishCrash() {
 
     TRACE
     CrashData _crashData;
-    CrashMonitor::getSavedCrashData(_crashData);
+    if (!CrashMonitor::getSavedCrashData(_crashData)) {
+        _logger.error("Error getting crash data", "mqtt::_publishCrash");
+        return;
+    }
 
     TRACE
     JsonDocument _jsonDocumentCrash;
-    crashMonitor.getJsonReport(_jsonDocumentCrash, _crashData);
+    if (!crashMonitor.getJsonReport(_jsonDocumentCrash, _crashData)) {
+        _logger.error("Error creating JSON report", "mqtt::_publishCrash");
+        return;
+    }
 
     TRACE
     JsonDocument _jsonDocument;

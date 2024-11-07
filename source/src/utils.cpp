@@ -346,9 +346,10 @@ void restartEsp32() {
     if (_firmwareStatus == TESTING) {
         logger.warning("Firmware evaluation is in progress. Setting firmware to test again", "utils::restartEsp32");
         TRACE
-        CrashMonitor::setFirmwareStatus(NEW_TO_TEST);
+        if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) logger.error("Failed to set firmware status", "utils::restartEsp32");
     }
 
+    TRACE
     ESP.restart();
 }
 
@@ -565,6 +566,11 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
 }
 
 void updateTimezone() {
+    if (!WiFi.isConnected()) {
+        logger.warning("WiFi is not connected. Cannot update timezone", "utils::updateTimezone");
+        return;
+    }
+
     logger.debug("Updating timezone...", "utils::updateTimezone");
 
     getPublicTimezone(&generalConfiguration.gmtOffset, &generalConfiguration.dstOffset);
@@ -582,9 +588,8 @@ void factoryReset() {
     led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
     led.setRed(true);
 
-    SPIFFS.format();
-
     clearAllPreferences();
+    SPIFFS.format();
 
     // Directly call ESP.restart() so that a fresh start is done
     ESP.restart();
@@ -600,7 +605,7 @@ void clearAllPreferences() {
     preferences.clear();
     preferences.end();
     
-    preferences.begin(PREFERENCES_NAMESPACE_CRASHDATA, false); // false = read-write mode
+    preferences.begin(PREFERENCES_DATA_KEY, false); // false = read-write mode
     preferences.clear();
     preferences.end();
 
@@ -782,6 +787,18 @@ void writeEncryptedPreferences(const char* preference_key, const char* value) {
 
     preferences.putString(preference_key, value);
     preferences.end();
+}
+
+void clearCertificates() {
+    logger.debug("Clearing certificates...", "utils::clearCertificates");
+
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) logger.error("Failed to open preferences", "utils::clearCertificates");
+
+    preferences.clear();
+    preferences.end();
+
+    logger.warning("Certificates cleared", "utils::clearCertificates");
 }
 
 bool setupMdns()

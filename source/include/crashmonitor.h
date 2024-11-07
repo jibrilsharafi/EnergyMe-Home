@@ -28,10 +28,12 @@ public:
     static bool setFirmwareStatus(FirmwareState status);
     static FirmwareState getFirmwareStatus();
 
-    static void getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport);
-    static void getSavedCrashData(CrashData& crashDataSaved);
+    static bool getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport);
+    static bool getSavedCrashData(CrashData& crashDataSaved);
 
     static bool isLastResetDueToCrash();
+
+    static String getFirmwareStatusString(FirmwareState status);
     
 private:
     static const char* _getResetReasonString(esp_reset_reason_t reason);

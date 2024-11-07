@@ -81,6 +81,7 @@ const char* getMqttStateReason(int state);
 String decryptData(String encryptedData, String key);
 String readEncryptedPreferences(const char* preference_key);
 void writeEncryptedPreferences(const char* preference_key, const char* value);
+void clearCertificates();
 bool checkCertificatesExist();
 
 bool setupMdns();

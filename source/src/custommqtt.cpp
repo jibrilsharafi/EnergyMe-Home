@@ -182,6 +182,12 @@ void CustomMqtt::_disable() {
 
 bool CustomMqtt::_connectMqtt()
 {
+    if (!WiFi.isConnected())
+    {
+        _logger.warning("WiFi not connected. Skipping MQTT connection", "custommqtt::_connectMqtt");
+        return false;
+    }
+
     _logger.debug("Attempt to connect to custom MQTT (%d/%d)...", "custommqtt::_connectMqtt", _mqttConnectionAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
     if (_mqttConnectionAttempt >= MQTT_CUSTOM_MAX_CONNECTION_ATTEMPT)
     {

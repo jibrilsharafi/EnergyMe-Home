@@ -488,7 +488,10 @@ void CustomServer::_setRestApi()
         _serverLog("Request to get current monitor data", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         JsonDocument _jsonDocument;
-        CrashMonitor::getJsonReport(_jsonDocument, crashData);
+        if (!CrashMonitor::getJsonReport(_jsonDocument, crashData)) {
+            request->send(500, "application/json", "{\"message\":\"Error getting crash data\"}");
+            return;
+        }
 
         String _buffer;
         serializeJson(_jsonDocument, _buffer);
@@ -501,13 +504,25 @@ void CustomServer::_setRestApi()
 
         TRACE
         CrashData _crashData;
-        CrashMonitor::getSavedCrashData(_crashData);
+        if (!CrashMonitor::getSavedCrashData(_crashData)) {
+            request->send(500, "application/json", "{\"message\":\"Could not get crash data\"}");
+            return;
+        }
 
         TRACE
         JsonDocument _jsonDocument;
-        CrashMonitor::getJsonReport(_jsonDocument, _crashData);
+        if (!CrashMonitor::getJsonReport(_jsonDocument, _crashData)) {
+            request->send(500, "application/json", "{\"message\":\"Could not create JSON report\"}");
+            return;
+        }
 
-        TRACE // FIXME: this crashes the ESP32
+        TRACE
+        if (_jsonDocument.size() > 10000) { // FIMXE: temporary
+            request->send(500, "application/json", "{\"message\":\"Crash data too big\"}");
+            return;
+        }
+
+        TRACE
         String _buffer;
         serializeJson(_jsonDocument, _buffer);
 
@@ -814,9 +829,9 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 
     _logger.debug("MD5 of new firmware: %s", "customserver::_onUpdateSuccessful", Update.md5String().c_str());
 
-    TRACE // FIXME: this crashes the ESP32
-    _logger.debug("Setting rollback flag to %s", "customserver::_onUpdateSuccessful", NEW_TO_TEST);
-    CrashMonitor::setFirmwareStatus(NEW_TO_TEST);
+    TRACE
+    _logger.debug("Setting rollback flag to %s", "customserver::_onUpdateSuccessful", CrashMonitor::getFirmwareStatusString(NEW_TO_TEST));
+    if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) _logger.error("Failed to set firmware status", "customserver::_onUpdateSuccessful");
 
     TRACE
     setRestartEsp32("customserver::_handleDoUpdate", "Restart needed after update");

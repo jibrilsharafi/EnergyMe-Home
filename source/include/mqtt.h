@@ -110,6 +110,7 @@ private:
     void _temporaryDisable();
     bool _forceDisableMqtt = false;
     unsigned long _mqttConnectionFailedAt = 0;
+    unsigned _temporaryDisableAttempt = 0;
 
     String _awsIotCoreCert;
     String _awsIotCorePrivateKey;

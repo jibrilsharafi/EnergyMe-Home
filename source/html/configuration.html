@@ -247,10 +247,10 @@
                 xhttp.onreadystatechange = function () {
                     if (this.readyState == 4) {
                         if (this.status == 200) {
-                            document.getElementById("factoryReset").innerHTML = "Reset successful! You will be redirected to the home page in 10 seconds.";
+                            document.getElementById("factoryReset").innerHTML = "Reset successful! You will be redirected to the home page in 15 seconds.";
                             setTimeout(function () {
                                 window.location.href = "/";
-                            }, 10000);
+                            }, 15000);
                         } else {
                             alert("Error resetting to factory settings. Response: " + this.responseText);
                         }

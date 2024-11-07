@@ -590,6 +590,11 @@ It the energies are 0, all the previously computed values are set to 0 as the no
 
 All the values are validated to be within the limits of the hardware/system used.
 
+There could be a way to improve the measurements by directly using the energy registers and computing the average
+power during the last line cycle. This proved to be a bit unstable and complex to calibrate with respect to the 
+direct voltage, current and power factor readings. The time limitation of 200 ms would still be present. The only
+real advantage would be an accurate value of reactive power, which now is only an approximation.
+
 */
 
 void Ade7953::readMeterValues(int channel) {
@@ -619,7 +624,7 @@ void Ade7953::readMeterValues(int channel) {
 
         _activePower = _current * _voltage * abs(_powerFactor); 
         _apparentPower = _current * _voltage;
-        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower;
+        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower; // This is incorrect but it is the best we can do
     } else { // Assume everything is the same as channel 0 except the current
         TRACE
         // Assume from channel 0

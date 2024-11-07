@@ -2,8 +2,8 @@
 
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
-#define FIRMWARE_BUILD_VERSION_MINOR "06"
-#define FIRMWARE_BUILD_VERSION_PATCH "11"
+#define FIRMWARE_BUILD_VERSION_MINOR "07"
+#define FIRMWARE_BUILD_VERSION_PATCH "00"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -36,9 +36,9 @@
 
 // Crash monitor
 #define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor"
-#define PREFERENCES_NAMESPACE_CRASHDATA "crashdata"
+#define PREFERENCES_DATA_KEY "crashdata"
 #define CRASH_SIGNATURE 0xDEADBEEF
-#define MAX_BREADCRUMBS 64
+#define MAX_BREADCRUMBS 32
 #define WATCHDOG_TIMER 30000
 #define PREFERENCES_FIRMWARE_STATUS_KEY "fw_status"
 #define ROLLBACK_TESTING_TIMEOUT 60000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
@@ -89,12 +89,13 @@
 // MQTT
 #define DEFAULT_IS_CLOUD_SERVICES_ENABLED false
 #define MAX_INTERVAL_METER_PUBLISH 30000 // The maximum interval between two meter payloads (in milliseconds)
-#define MAX_INTERVAL_STATUS_PUBLISH 60000 // The interval between two status publish (in milliseconds)
-#define MAX_INTERVAL_CRASH_MONITOR_PUBLISH 60000 // The interval between two status publish (in milliseconds)
+#define MAX_INTERVAL_STATUS_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
+#define MAX_INTERVAL_CRASH_MONITOR_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
 #define MQTT_MAX_CONNECTION_ATTEMPT 3 // The maximum number of attempts to connect to the MQTT server
 #define MQTT_OVERRIDE_KEEPALIVE 30 // Minimum value supported by AWS IoT Core (in seconds) 
 #define MQTT_MIN_CONNECTION_INTERVAL 5000 // Minimum interval between two connection attempts (in milliseconds)
 #define MQTT_TEMPORARY_DISABLE_INTERVAL 3600000 // Interval between reconnect attempts after a failed connection (in milliseconds)
+#define MQTT_TEMPORARY_DISABLE_ATTEMPTS 3 // The maximum number of temporary disable attempts before erasing the certificates and restarting the ESP32
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks (in milliseconds)
 #define PAYLOAD_METER_MAX_NUMBER_POINTS 30 // The maximum number of points that can be sent in a single payload
 #define MQTT_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
