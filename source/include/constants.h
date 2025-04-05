@@ -70,9 +70,10 @@
 #define WEBSERVER_PORT 80
 
 // LED
-#define LED_RED_PIN 38
-#define LED_GREEN_PIN 39
-#define LED_BLUE_PIN 37
+// NOTE: pins on the schematic are mixed up. Hereafter the correct pin numbers
+#define LED_RED_PIN 39
+#define LED_GREEN_PIN 40
+#define LED_BLUE_PIN 38
 #define DEFAULT_LED_BRIGHTNESS 191 // 75% of the maximum brightness
 #define LED_MAX_BRIGHTNESS 255
 #define LED_FREQUENCY 5000
@@ -81,7 +82,8 @@
 // WiFi
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
 #define WIFI_LOOP_INTERVAL 1000 // In milliseconds
-#define WIFI_CONNECT_TIMEOUT 900 // In seconds
+#define WIFI_CONNECT_TIMEOUT 30 // In seconds
+#define WIFI_PORTAL_TIMEOUT 300 // In seconds
 
 // MDNS
 #define MDNS_HOSTNAME "energyme"
@@ -128,21 +130,22 @@
 
 // Multiplexer
 // --------------------
-#define MULTIPLEXER_S0_PIN 36 
-#define MULTIPLEXER_S1_PIN 35
-#define MULTIPLEXER_S2_PIN 45
-#define MULTIPLEXER_S3_PIN 48
+#define MULTIPLEXER_S0_PIN 10
+#define MULTIPLEXER_S1_PIN 11
+#define MULTIPLEXER_S2_PIN 3
+#define MULTIPLEXER_S3_PIN 9
 #define MULTIPLEXER_CHANNEL_COUNT 16 // This cannot be defined as a constant because it is used for array initialization
 #define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // The number of channels being 1 (general) + 16 (multiplexer)
 
 // ADE7953
 // --------------------
 // Hardware pins
-#define SS_PIN 11 
-#define SCK_PIN 14
-#define MISO_PIN 13
-#define MOSI_PIN 12
-#define ADE7953_RESET_PIN 9
+#define SS_PIN 48
+#define SCK_PIN 36
+#define MISO_PIN 35
+#define MOSI_PIN 45
+#define ADE7953_RESET_PIN 21
+#define ADE7953_INTERRUPT_PIN 37 // TODO: Implement the interrupt pin
 
 // Setup
 #define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low (in milliseconds)
@@ -170,7 +173,7 @@
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.003 // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 
 // Validate values
-#define VALIDATE_VOLTAGE_MIN 150.0 // Any voltage below this value is discarded
+#define VALIDATE_VOLTAGE_MIN 50.0 // Any voltage below this value is discarded
 #define VALIDATE_VOLTAGE_MAX 300.0  // Any voltage above this value is discarded
 #define VALIDATE_CURRENT_MIN -100.0 // Any current below this value is discarded
 #define VALIDATE_CURRENT_MAX 100.0 // Any current above this value is discarded

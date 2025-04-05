@@ -1,72 +1,79 @@
 #include "customwifi.h"
 
+const char *TAG = "customwifi";
+
 CustomWifi::CustomWifi(
     AdvancedLogger &logger, Led &led) : _logger(logger), _led(led) {}
 
-//TODO: modify this code to constantly try to connect to the old WiFi while keeping the captive portal active
 bool CustomWifi::begin()
 {
-  _logger.debug("Setting up WiFi...", "customwifi::setupWifi");
+  _logger.debug("Setting up WiFi...", TAG);
 
-  _wifiManager.setConfigPortalBlocking(false);
+  // Configure WiFiManager for blocking mode
+  _wifiManager.setConfigPortalBlocking(true);
   _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT);
-  _wifiManager.setConfigPortalTimeoutCallback([this]() {
-    _logger.warning("WiFi configuration portal timeout. Restarting ESP32 in AP mode", "customwifi::setupWifi");
-    ESP.restart();
+  
+  // Set timeout callback to restart the device
+  _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT);
+  _wifiManager.setAPCallback([this](WiFiManager *wifiManager) {
+    _logger.info("WiFi configuration portal started", TAG);
+    _led.block();
+    _led.setBlue(true);
+    _led.setBrightness(max(_led.getBrightness(), 1));
   });
+  
+  // Connect to WiFi or start portal
   _connectToWifi();
 
-  _logger.debug("WiFi setup done", "customwifi::setupWifi");
+  // If we get here, we're connected
+  _led.unblock();
+  _logger.debug("WiFi setup done", TAG);
   return true;
 }
 
 void CustomWifi::loop()
 {
-  if (_wifiManager.getConfigPortalActive()) { // If it is still in the captive portal, we need to manually process the WiFiManager
-    _led.block();
-    _led.setBlue(true);
-    _led.setBrightness(max(_led.getBrightness(), 1));
-    
-    // This outputs true when the user inputs the correct credentials
-    if (_wifiManager.process()) {
-      _logger.warning("WiFi connected. Restarting...", "customwifi::loop");
-      ESP.restart();
-    }
-    
-    _led.setOff(true);
-    _led.unblock();
-    return;
-  }
-
+  // Only check periodically to reduce overhead
   if (millis() - _lastMillisWifiLoop < WIFI_LOOP_INTERVAL) return;  
 
   _lastMillisWifiLoop = millis();
   if (WiFi.isConnected()) return;
 
-  _logger.warning("WiFi connection lost. Reconnecting...", "customwifi::wifiLoop");
-  _connectToWifi();
+  // If disconnected, attempt to reconnect
+  _logger.warning("WiFi connection lost. Reconnecting...", TAG);
+  if (!WiFi.reconnect()) {
+    _logger.error("Failed to reconnect to WiFi. Restarting...", TAG);
+    delay(1000); // Give time for logs to be sent
+    ESP.restart();
+  }
 }
 
 bool CustomWifi::_connectToWifi()
 {
-  _logger.info("Connecting to WiFi...", "customwifi::_connectToWifi");
+  _logger.info("Connecting to WiFi...", TAG);
 
   _led.block();
   _led.setBlue(true);
+  
+  // This will block until connected or portal times out
   if (_wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID)) {
-    _logger.info("Connected to WiFi", "customwifi::_connectToWifi");
+    _logger.info("Connected to WiFi: %s", TAG, WiFi.SSID().c_str());
     setupMdns();
+    printWifiStatus();
     _led.unblock();
     return true;
   } else {
-    _logger.info("WiFi captive portal set up", "customwifi::_connectToWifi");
-    return false;
+    _logger.warning("Failed to connect to WiFi. Restarting device...", TAG);
+    delay(1000); // Give time for logs to be sent
+    ESP.restart();
+    return false; // This line won't be reached due to restart
   }
 }
 
+// The rest of the methods remain unchanged
 void CustomWifi::resetWifi()
 {
-  _logger.warning("Erasing WiFi credentials and restarting...", "resetWifi");
+  _logger.warning("Erasing WiFi credentials and restarting...", TAG);
 
   _wifiManager.resetSettings();
   ESP.restart();
@@ -100,7 +107,7 @@ void CustomWifi::printWifiStatus()
 
   _logger.info(
       "MAC: %s | IP: %s | Status: %s | SSID: %s | RSSI: %s",
-      "customwifi::printWifiStatus",
+      TAG,
       _jsonDocument["macAddress"].as<String>().c_str(),
       _jsonDocument["localIp"].as<String>().c_str(),
       _jsonDocument["status"].as<String>().c_str(),

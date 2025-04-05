@@ -31,7 +31,7 @@ public:
     bool begin();
     void loop();
 
-    void readMeterValues(int channel);
+    bool readMeterValues(int channel);
     void purgeEnergyRegister(int channel);
 
     bool isLinecycFinished();
@@ -109,11 +109,11 @@ private:
     long _readPowerFactor(int channel);
     long _readAngle(int channel);
 
-    float _validateValue(float oldValue, float newValue, float min, float max);
-    float _validateVoltage(float oldValue, float newValue);
-    float _validateCurrent(float oldValue, float newValue);
-    float _validatePower(float oldValue, float newValue);
-    float _validatePowerFactor(float oldValue, float newValue);
+    bool _validateValue(float newValue, float min, float max);
+    bool _validateVoltage(float newValue);
+    bool _validateCurrent(float newValue);
+    bool _validatePower(float newValue);
+    bool _validatePowerFactor(float newValue);
 
     void _setLinecyc(unsigned int linecyc);
     void _setPgaGain(long pgaGain, int channel, int measurementType);

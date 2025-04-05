@@ -340,19 +340,19 @@ void loop() {
 
             if (mainFlags.currentChannel != -1) { // -1 indicates that no channel is active
               TRACE
-              ade7953.readMeterValues(mainFlags.currentChannel);
-
-              TRACE
-              payloadMeter.push(
-              PayloadMeter(
-                  mainFlags.currentChannel,
-                  customTime.getUnixTimeMilliseconds(),
-                  ade7953.meterValues[mainFlags.currentChannel].activePower,
-                  ade7953.meterValues[mainFlags.currentChannel].powerFactor
-                  )
-              );
-              
-              printMeterValues(ade7953.meterValues[mainFlags.currentChannel], ade7953.channelData[mainFlags.currentChannel].label.c_str());
+              if (ade7953.readMeterValues(mainFlags.currentChannel)) {
+                TRACE
+                payloadMeter.push(
+                PayloadMeter(
+                    mainFlags.currentChannel,
+                    customTime.getUnixTimeMilliseconds(),
+                    ade7953.meterValues[mainFlags.currentChannel].activePower,
+                    ade7953.meterValues[mainFlags.currentChannel].powerFactor
+                    )
+                );
+                
+                printMeterValues(ade7953.meterValues[mainFlags.currentChannel], ade7953.channelData[mainFlags.currentChannel].label.c_str());
+              }
             }
 
             TRACE
@@ -360,18 +360,19 @@ void loop() {
             multiplexer.setChannel(max(mainFlags.currentChannel-1, 0));
         }
 
-        // We always read the first channel as it is in a separate channel and is not impacted by the switching of the multiplexer
+        // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
         TRACE
-        ade7953.readMeterValues(0);
-        payloadMeter.push(
-            PayloadMeter(
-                0,
-                customTime.getUnixTimeMilliseconds(),
-                ade7953.meterValues[0].activePower,
-                ade7953.meterValues[0].powerFactor
-            )
-            );
-        printMeterValues(ade7953.meterValues[0], ade7953.channelData[0].label.c_str());
+        if (ade7953.readMeterValues(0)) {
+          payloadMeter.push(
+              PayloadMeter(
+                  0,
+                  customTime.getUnixTimeMilliseconds(),
+                  ade7953.meterValues[0].activePower,
+                  ade7953.meterValues[0].powerFactor
+              )
+              );
+          printMeterValues(ade7953.meterValues[0], ade7953.channelData[0].label.c_str());
+        }
     }
 
     TRACE

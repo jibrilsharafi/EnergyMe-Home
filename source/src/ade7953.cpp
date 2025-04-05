@@ -603,9 +603,10 @@ Read all the meter values from the ADE7953.
 A detailed explanation of the inner workings and assumptions
 can be found in the function itself.
 
-@param channel The channel to read the values from
+@param channel The channel to read the values from. Returns
+false if the data reading is not ready yet or valid.
 */
-void Ade7953::readMeterValues(int channel) {
+bool Ade7953::readMeterValues(int channel) {
     long _currentMillis = millis();
     long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
 
@@ -615,7 +616,7 @@ void Ade7953::readMeterValues(int channel) {
     // probably the next line cycle was not yet finished)
     // We use the time multiplied by 0.8 to keep some headroom
     if (_deltaMillis < DEFAULT_SAMPLE_TIME * 0.8) {
-        return;
+        return false;
     } 
 
     meterValues[channel].lastMillis = _currentMillis;
@@ -694,12 +695,24 @@ void Ade7953::readMeterValues(int channel) {
     _apparentPower = abs(_apparentPower); // Apparent power must be positive
 
     TRACE
-    meterValues[channel].voltage = _validateVoltage(meterValues[channel].voltage, _voltage);
-    meterValues[channel].current = _validateCurrent(meterValues[channel].current, _current);
-    meterValues[channel].activePower = _validatePower(meterValues[channel].activePower, _activePower);
-    meterValues[channel].reactivePower = _validatePower(meterValues[channel].reactivePower, _reactivePower);
-    meterValues[channel].apparentPower = _validatePower(meterValues[channel].apparentPower, _apparentPower);
-    meterValues[channel].powerFactor = _validatePowerFactor(meterValues[channel].powerFactor, _powerFactor);
+    if (
+        _validateVoltage(_voltage) && 
+        _validateCurrent(_current) && 
+        _validatePower(_activePower) && 
+        _validatePower(_reactivePower) && 
+        _validatePower(_apparentPower) && 
+        _validatePowerFactor(_powerFactor)
+    ) {
+        meterValues[channel].voltage = _voltage;
+        meterValues[channel].current = _current;
+        meterValues[channel].activePower = _activePower;
+        meterValues[channel].reactivePower = _reactivePower;
+        meterValues[channel].apparentPower = _apparentPower;
+        meterValues[channel].powerFactor = _powerFactor;
+    } else {
+        logger.warning("Invalid reading for channel %d. Discarding data point", "ade7953::readMeterValues", channel);
+        return false;
+    }
 
     // If the phase is not Phase 1, set the energy to 1 (not 0) if the current is above 0.003 A since we cannot use the ADE7593 no-load future in this approximation
     if (channelData[channel].phase != channelData[0].phase && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
@@ -734,6 +747,8 @@ void Ade7953::readMeterValues(int channel) {
         meterValues[channel].current = 0.0;
         meterValues[channel].apparentPower = 0.0;
     }
+
+    return true;
 }
 
 
@@ -777,28 +792,28 @@ void Ade7953::purgeEnergyRegister(int channel) {
     _readApparentEnergy(_ade7953Channel);
 }
 
-float Ade7953::_validateValue(float oldValue, float newValue, float min, float max) {
+bool Ade7953::_validateValue(float newValue, float min, float max) {
     if (newValue < min || newValue > max) {
-        _logger.warning("Value %f out of range (minimum: %f, maximum: %f). Keeping old value %f", "ade7953::_validateValue", newValue, min, max, oldValue);
-        return oldValue;
+        _logger.warning("Value %f out of range (minimum: %f, maximum: %f)", "ade7953::_validateValue", newValue, min, max);
+        return false;
     }
-    return newValue;
+    return true;
 }
 
-float Ade7953::_validateVoltage(float oldValue, float newValue) {
-    return _validateValue(oldValue, newValue, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
+bool Ade7953::_validateVoltage(float newValue) {
+    return _validateValue(newValue, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
 }
 
-float Ade7953::_validateCurrent(float oldValue, float newValue) {
-    return _validateValue(oldValue, newValue, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
+bool Ade7953::_validateCurrent(float newValue) {
+    return _validateValue(newValue, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
 }
 
-float Ade7953::_validatePower(float oldValue, float newValue) {
-    return _validateValue(oldValue, newValue, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
+bool Ade7953::_validatePower(float newValue) {
+    return _validateValue(newValue, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
 }
 
-float Ade7953::_validatePowerFactor(float oldValue, float newValue) {
-    return _validateValue(oldValue, newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
+bool Ade7953::_validatePowerFactor(float newValue) {
+    return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
 }
 
 JsonDocument Ade7953::singleMeterValuesToJson(int index) {
