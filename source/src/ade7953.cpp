@@ -606,7 +606,7 @@ can be found in the function itself.
 @param channel The channel to read the values from. Returns
 false if the data reading is not ready yet or valid.
 */
-bool Ade7953::readMeterValues(int channel) {
+bool Ade7953::readMeterValues(int channel) { // TODO: test another way of reading data (faster but average RMS values, not energy register)
     long _currentMillis = millis();
     long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
 
@@ -658,21 +658,22 @@ bool Ade7953::readMeterValues(int channel) {
 
         TRACE
         // Assume from channel 0
-        _voltage = meterValues[0].voltage; // Assume the voltage is the same for all channels (weak assumption but difference usually is in the order of few volts, so less than 1%)
+        _voltage = meterValues[0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
         
         // Read wrong power factor due to the phase shift
         float _powerFactorPhaseOne = _readPowerFactor(_ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR;
 
-        // Compute the correct power factor assuming 120 degrees phase shift in voltage (solid assumption)
+        // Compute the correct power factor assuming 120 degrees phase shift in voltage (weak assumption as this is normally true)
         // The idea is to:
         // 1. Compute the angle between the voltage and the current with the arc cosine of the just read power factor
-        // 2. Add or subtract 120 degrees to the angle depending on the phase (phase is is lagging 120 degrees, phase 3 is leading 120 degrees)
+        // 2. Add or subtract 120 degrees to the angle depending on the phase (phase is lagging 120 degrees, phase 3 is leading 120 degrees)
         // 3. Compute the cosine of the new corrected angle to get the corrected power factor
         // 4. Multiply by -1 if the channel is reversed (as normal)
 
-        // Note that the direction of the current (and consequently the power) cannot be determined. This is because the only reliable reading
-        // is the power factor, while the angle only gives the angle difference of the current reading instead of the one of the whole 
-        // line cycle. As such, the power factor is the only reliable reading and it cannot provide information about the direction of the power.
+        // Note that the direction of the current (and consequently the power) cannot be determined (or at least, I couldn't manage to do it reliably). 
+        // This is because the only reliable reading is the power factor, while the angle only gives the angle difference of the current 
+        // reading instead of the one of the whole line cycle. As such, the power factor is the only reliable reading and it cannot 
+        // provide information about the direction of the power.
 
         if (channelData[channel].phase == _getLaggingPhase(_basePhase)) {
             _powerFactor = cos(acos(_powerFactorPhaseOne) - (2 * PI / 3));
@@ -681,6 +682,7 @@ bool Ade7953::readMeterValues(int channel) {
             _powerFactor = - cos(acos(_powerFactorPhaseOne) + (2 * PI / 3));
         } else {
             _logger.error("Invalid phase %d for channel %d", "ade7953::readMeterValues", channelData[channel].phase, channel);
+            return false;
         }
 
         // Read the current
@@ -689,7 +691,7 @@ bool Ade7953::readMeterValues(int channel) {
         // Compute power values
         _activePower = _current * _voltage * abs(_powerFactor);
         _apparentPower = _current * _voltage;
-        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)); // Approximation
+        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)); // Small approximation leaving out distorted power
     }
 
     _apparentPower = abs(_apparentPower); // Apparent power must be positive
@@ -714,7 +716,8 @@ bool Ade7953::readMeterValues(int channel) {
         return false;
     }
 
-    // If the phase is not Phase 1, set the energy to 1 (not 0) if the current is above 0.003 A since we cannot use the ADE7593 no-load future in this approximation
+    // If the phase is not the phase of the main channel, set the energy not to 0 if the current 
+    // is above 0.003 A since we cannot use the ADE7593 no-load feature in this approximation
     if (channelData[channel].phase != channelData[0].phase && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
         _activeEnergy = 1;
         _reactiveEnergy = 1;
@@ -787,6 +790,7 @@ Phase Ade7953::_getLeadingPhase(Phase phase) {
 void Ade7953::purgeEnergyRegister(int channel) {
     int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
 
+    // The energy registers are read with reset
     _readActiveEnergy(_ade7953Channel);
     _readReactiveEnergy(_ade7953Channel);
     _readApparentEnergy(_ade7953Channel);
