@@ -86,6 +86,8 @@ void Mqtt::begin() {
     _logger.info("MQTT setup complete", "mqtt::begin");
 
     TRACE
+    _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
+    _mqttConnectionAttempt = 0;
     _connectMqtt();
 
     _isSetupDone = true;
@@ -123,7 +125,6 @@ void Mqtt::loop() {
             _clientMqtt.disconnect();
 
             if (!restartConfiguration.isRequired) { // Meaning that the user decided to disable cloud services
-                _logger.info("Erasing certificates...", "mqtt::mqttLoop");
                 clearCertificates();
             }
 
@@ -135,41 +136,37 @@ void Mqtt::loop() {
 
     if (!_isSetupDone) {begin(); return;}
 
-    if (_forceDisableMqtt) {
-        if ((millis() - _mqttConnectionFailedAt) < MQTT_TEMPORARY_DISABLE_INTERVAL) return;
-        
-        _forceDisableMqtt = false;
-        _logger.info("Retrying MQTT connection after temporary disable", "mqtt::mqttLoop");
-    }
-
     if (!_clientMqtt.connected()) {
-        if ((millis() - _lastMillisMqttFailed) < MQTT_MIN_CONNECTION_INTERVAL) return;
-        _logger.info("MQTT client not connected. Attempting to reconnect...", "mqtt::mqttLoop");
-
-        if (!_connectMqtt()) return;
+        // Use exponential backoff timing
+        if (millis() >= _nextMqttConnectionAttemptMillis) {
+            _logger.info("MQTT client not connected. Attempting to reconnect...", "mqtt::mqttLoop");
+            _connectMqtt(); // _connectMqtt now handles setting the next attempt time
+        }
+    } else {
+        // If connected, reset connection attempts counter for backoff calculation
+        if (_mqttConnectionAttempt > 0) {
+            _logger.debug("MQTT reconnected successfully after %d attempts.", "mqtt::mqttLoop", _mqttConnectionAttempt);
+            _mqttConnectionAttempt = 0;
+        }
     }
 
-    TRACE
-    _clientMqtt.loop();
+    // Only loop if connected
+    if (_clientMqtt.connected()) {
+        TRACE
+        _clientMqtt.loop();
 
-    _checkIfPublishMeterNeeded();
-    _checkIfPublishStatusNeeded();
-    _checkIfPublishMonitorNeeded();
+        _checkIfPublishMeterNeeded();
+        _checkIfPublishStatusNeeded();
+        _checkIfPublishMonitorNeeded();
 
-    TRACE
-    _checkPublishMqtt();
+        TRACE
+        _checkPublishMqtt();
+    }
 }
 
 bool Mqtt::_connectMqtt()
 {
-    _logger.debug("Attempt to connect to MQTT (%d/%d)...", "mqtt::_connectMqtt", _mqttConnectionAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
-    if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
-        _logger.warning("Failed to connect to MQTT after %d attempts. Temporarely disabling cloud services", "mqtt::_connectMqtt", MQTT_MAX_CONNECTION_ATTEMPT);
-    
-        _temporaryDisable();
-
-        return false;
-    }
+    _logger.debug("Attempting to connect to MQTT (attempt %d)...", "mqtt::_connectMqtt", _mqttConnectionAttempt + 1);
 
     TRACE
     if (
@@ -182,8 +179,7 @@ bool Mqtt::_connectMqtt()
     {
         _logger.info("Connected to MQTT", "mqtt::_connectMqtt");
 
-        _mqttConnectionAttempt = 0;
-        _temporaryDisableAttempt = 0;
+        _mqttConnectionAttempt = 0; // Reset attempt counter on success
 
         _subscribeToTopics();
 
@@ -198,46 +194,42 @@ bool Mqtt::_connectMqtt()
     }
     else
     {
+        int _currentState = _clientMqtt.state();
         _logger.warning(
-            "Failed to connect to MQTT (%d/%d). Reason: %s. Retrying...",
+            "Failed to connect to MQTT (attempt %d). Reason: %s (%d). Retrying...",
             "mqtt::_connectMqtt",
             _mqttConnectionAttempt + 1,
-            MQTT_MAX_CONNECTION_ATTEMPT,
-            getMqttStateReason(_clientMqtt.state())
+            getMqttStateReason(_currentState),
+            _currentState
         );
 
         _lastMillisMqttFailed = millis();
         _mqttConnectionAttempt++;
 
+        // Check for specific errors that warrant clearing certificates
+        if (_currentState == MQTT_CONNECT_BAD_CREDENTIALS || _currentState == MQTT_CONNECT_UNAUTHORIZED) {
+            _logger.error("MQTT connection failed due to authorization/credentials error (%d). Erasing certificates and restarting...",
+                "mqtt::_connectMqtt",
+                _currentState);
+            clearCertificates();
+            setRestartEsp32("mqtt::_connectMqtt", "MQTT Authentication/Authorization Error");
+            _nextMqttConnectionAttemptMillis = UINT32_MAX; // Prevent further attempts before restart
+            return false; // Prevent further processing in this cycle
+        }
+
+        // Calculate next attempt time using exponential backoff
+        unsigned long _backoffDelay = MQTT_INITIAL_RECONNECT_INTERVAL;
+        for (int i = 0; i < _mqttConnectionAttempt - 1 && _backoffDelay < MQTT_MAX_RECONNECT_INTERVAL; ++i) {
+            _backoffDelay *= MQTT_RECONNECT_MULTIPLIER;
+        }
+        _backoffDelay = min(_backoffDelay, (unsigned long)MQTT_MAX_RECONNECT_INTERVAL);
+
+        _nextMqttConnectionAttemptMillis = millis() + _backoffDelay;
+
+        _logger.info("Next MQTT connection attempt in %lu ms", "mqtt::_connectMqtt", _backoffDelay);
+
         return false;
     }
-}
-void Mqtt::_temporaryDisable() {
-    _logger.debug("Temporarely disabling MQTT...", "mqtt::_temporaryDisable");
-
-    _forceDisableMqtt = true;
-    _mqttConnectionFailedAt = millis();
-    _mqttConnectionAttempt = 0;
-    _temporaryDisableAttempt++;
-
-    if (_temporaryDisableAttempt >= MQTT_TEMPORARY_DISABLE_ATTEMPTS) {
-        _logger.error("Maximum temporary disable attempts reached (%d). Erasing certificates and restarting...", 
-            "mqtt::_temporaryDisable", 
-            MQTT_TEMPORARY_DISABLE_ATTEMPTS
-        );
-
-        clearCertificates();
-
-        setRestartEsp32("mqtt::_temporaryDisable", "Maximum MQTT temporary disable attempts reached");
-        return;
-    }
-
-    _logger.info("MQTT temporarely disabled (attempt %d/%d). Retrying connection in %d seconds", 
-        "mqtt::_temporaryDisable", 
-        _temporaryDisableAttempt,
-        MQTT_TEMPORARY_DISABLE_ATTEMPTS,
-        MQTT_TEMPORARY_DISABLE_INTERVAL/1000
-    );
 }
 
 void Mqtt::_setCertificates() {
@@ -268,8 +260,8 @@ void Mqtt::_claimProcess() {
     _logger.debug("MQTT setup for claiming certificates complete", "mqtt::_claimProcess");
 
     int _connectionAttempt = 0;
-    while (_connectionAttempt < MQTT_MAX_CONNECTION_ATTEMPT) {
-        _logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", "mqtt::_claimProcess", _connectionAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
+    while (_connectionAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
+        _logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", "mqtt::_claimProcess", _connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
         TRACE
         if (_clientMqtt.connect(_deviceId.c_str())) {
@@ -281,15 +273,15 @@ void Mqtt::_claimProcess() {
             "Failed to connect to MQTT for claiming certificates (%d/%d). Reason: %s. Retrying...",
             "mqtt::_claimProcess",
             _connectionAttempt + 1,
-            MQTT_MAX_CONNECTION_ATTEMPT,
+            MQTT_CLAIM_MAX_CONNECTION_ATTEMPT,
             getMqttStateReason(_clientMqtt.state())
         );
 
         _connectionAttempt++;
     }
 
-    if (_connectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
-        _logger.error("Failed to connect to MQTT for claiming certificates after %d attempts", "mqtt::_claimProcess", MQTT_MAX_CONNECTION_ATTEMPT);
+    if (_connectionAttempt >= MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
+        _logger.error("Failed to connect to MQTT for claiming certificates after %d attempts", "mqtt::_claimProcess", MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
         setRestartEsp32("mqtt::_claimProcess", "Failed to claim certificates");
         return;
     }
@@ -298,8 +290,8 @@ void Mqtt::_claimProcess() {
     _subscribeProvisioningResponse();
     
     int _publishAttempt = 0;
-    while (_publishAttempt < MQTT_MAX_CONNECTION_ATTEMPT) {
-        _logger.debug("Attempting to publish provisioning request (%d/%d)...", "mqtt::_claimProcess", _publishAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
+    while (_publishAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
+        _logger.debug("Attempting to publish provisioning request (%d/%d)...", "mqtt::_claimProcess", _publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
         TRACE
         if (_publishProvisioningRequest()) {
@@ -311,7 +303,7 @@ void Mqtt::_claimProcess() {
             "Failed to publish provisioning request (%d/%d). Retrying...",
             "mqtt::begin",
             _publishAttempt + 1,
-            MQTT_MAX_CONNECTION_ATTEMPT
+            MQTT_CLAIM_MAX_CONNECTION_ATTEMPT
         );
 
         _publishAttempt++;

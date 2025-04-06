@@ -58,7 +58,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     }
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){
-        logger.debug("%s JSON is null", "utils::deserializeJsonFromSpiffs", path);
+        logger.debug("%s JSON being deserialized is {}", "utils::deserializeJsonFromSpiffs", path);
     }
     
     String _jsonString;
@@ -81,7 +81,7 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     _file.close();
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){ // It should never happen as createEmptyJsonFile should be used instead
-        logger.warning("%s JSON is null", "utils::serializeJsonToSpiffs", path);
+        logger.warning("%s JSON being serialized is {}", "utils::serializeJsonToSpiffs", path);
     }
 
     String _jsonString;
@@ -231,6 +231,8 @@ void createDefaultCustomMqttConfigurationFile() {
     _jsonDocument["useCredentials"] = MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT;
     _jsonDocument["username"] = MQTT_CUSTOM_USERNAME_DEFAULT;
     _jsonDocument["password"] = MQTT_CUSTOM_PASSWORD_DEFAULT;
+    _jsonDocument["lastConnectionStatus"] = "Never attempted";
+    _jsonDocument["lastConnectionAttemptTimestamp"] = "";
 
     serializeJsonToSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
 

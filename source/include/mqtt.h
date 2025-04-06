@@ -104,14 +104,10 @@ private:
     unsigned long _lastMillisMonitorPublished = 0;
     unsigned long _lastMillisMqttFailed = 0;
     unsigned long _mqttConnectionAttempt = 0;
+    unsigned long _nextMqttConnectionAttemptMillis = 0;
 
     bool _isSetupDone = false;
     bool _isClaimInProgress = false;
-
-    void _temporaryDisable();
-    bool _forceDisableMqtt = false;
-    unsigned long _mqttConnectionFailedAt = 0;
-    unsigned _temporaryDisableAttempt = 0;
 
     String _awsIotCoreCert;
     String _awsIotCorePrivateKey;

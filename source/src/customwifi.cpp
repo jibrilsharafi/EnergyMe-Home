@@ -41,7 +41,7 @@ void CustomWifi::loop()
 
   // If disconnected, attempt to reconnect
   _logger.warning("WiFi connection lost. Reconnecting...", TAG);
-  if (!WiFi.reconnect()) {
+  if (!WiFi.reconnect()) { // TODO: should we use here instead _connectToWifi?
     _logger.error("Failed to reconnect to WiFi. Restarting...", TAG);
     delay(1000); // Give time for logs to be sent
     ESP.restart();

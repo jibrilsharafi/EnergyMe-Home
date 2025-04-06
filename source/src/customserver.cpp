@@ -764,7 +764,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
     {
         if (filename.indexOf(".bin") > -1)
         {
-            _logger.warning("Update requested for firmware", "customserver::handleDoUpdate");
+            _logger.infod("Update requested for firmware", "customserver::handleDoUpdate");
         }
         else
         {

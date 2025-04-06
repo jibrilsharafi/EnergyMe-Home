@@ -1,4 +1,4 @@
-    <!DOCTYPE html>
+<!DOCTYPE html>
     <html>
 
     <head>
@@ -136,6 +136,10 @@
                 <label for="customMqttPassword">Password:</label>
                 <input type="password" id="customMqttPassword" class="config-input" placeholder="Leave empty if not required">
             </div>
+            <div id="customMqttStatus" style="margin-top: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
+                <strong>Last Status:</strong> <span id="lastConnectionStatus">Loading...</span><br>
+                <strong>Last Attempt:</strong> <span id="lastConnectionAttemptTimestamp">Loading...</span>
+            </div>
             <button class="buttonForm" onclick="setCustomMqttConfiguration()" id="setCustomMqttConfigurationButton">Set configuration</button>
 
         </div>
@@ -174,6 +178,7 @@
         <script>
             var logLevels = ["Debug", "Info", "Warning", "Error", "Fatal"];
             var generalConfig;
+            var customMqttConfig;
 
             function populateDropdown() {
                 var printLogLevel = document.getElementById("printLogLevel");
@@ -420,7 +425,7 @@
                 xhttp.onreadystatechange = function () {
                     if (this.readyState == 4) {
                         if (this.status == 200) {
-                            var customMqttConfig = JSON.parse(this.responseText);
+                            customMqttConfig = JSON.parse(this.responseText);
 
                             document.getElementById("customMqttEnabled").checked = customMqttConfig.enabled;
                             document.getElementById("customMqttServer").value = customMqttConfig.server;
@@ -431,8 +436,14 @@
                             document.getElementById("customMqttUseCredentials").checked = customMqttConfig.useCredentials;
                             document.getElementById("customMqttUsername").value = customMqttConfig.username;
                             document.getElementById("customMqttPassword").value = customMqttConfig.password;
+
+                            document.getElementById("lastConnectionStatus").textContent = customMqttConfig.lastConnectionStatus || "N/A";
+                            document.getElementById("lastConnectionAttemptTimestamp").textContent = customMqttConfig.lastConnectionAttemptTimestamp || "N/A";
+
                         } else {
                             console.log("Error getting custom MQTT configuration. Response: " + this.responseText);
+                            document.getElementById("lastConnectionStatus").textContent = "Error loading status";
+                            document.getElementById("lastConnectionAttemptTimestamp").textContent = "Error loading status";
                         }
                     }
                 };
@@ -443,7 +454,10 @@
                 document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Setting...";
                 document.getElementById("setCustomMqttConfigurationButton").disabled = true;
 
-                var customMqttConfig = {
+                var currentStatus = customMqttConfig ? customMqttConfig.lastConnectionStatus : "Unknown";
+                var currentTimestamp = customMqttConfig ? customMqttConfig.lastConnectionAttemptTimestamp : "";
+
+                var newCustomMqttConfig = {
                     "enabled": document.getElementById("customMqttEnabled").checked,
                     "server": document.getElementById("customMqttServer").value,
                     "port": parseInt(document.getElementById("customMqttPort").value),
@@ -452,7 +466,9 @@
                     "frequency": parseInt(document.getElementById("customMqttFrequency").value),
                     "useCredentials": document.getElementById("customMqttUseCredentials").checked,
                     "username": document.getElementById("customMqttUsername").value,
-                    "password": document.getElementById("customMqttPassword").value
+                    "password": document.getElementById("customMqttPassword").value,
+                    "lastConnectionStatus": currentStatus,
+                    "lastConnectionAttemptTimestamp": currentTimestamp
                 };
 
                 var xhttp = new XMLHttpRequest();
@@ -461,6 +477,7 @@
                     if (this.readyState == 4) {
                         if (this.status == 200) {
                             document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set success!";
+                            setTimeout(getCustomMqttConfiguration, 1000);
                             setTimeout(function () {
                                 document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
                                 document.getElementById("setCustomMqttConfigurationButton").disabled = false;
@@ -468,16 +485,22 @@
                         } else {
                             alert("Error setting custom MQTT configuration. Response: " + this.responseText);
                             document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set failed!";
+                            setTimeout(function () {
+                                document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
+                                document.getElementById("setCustomMqttConfigurationButton").disabled = false;
+                            }, 3000);
                         }
                     }
                 };
-                xhttp.send(JSON.stringify(customMqttConfig));
+                xhttp.send(JSON.stringify(newCustomMqttConfig));
             }
 
             document.addEventListener("DOMContentLoaded", function() {
                 getGeneralConfiguration();
                 getLogLevel();
                 getCustomMqttConfiguration();
+
+                setInterval(getCustomMqttConfiguration, 15000);
             });
 
         </script>

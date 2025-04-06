@@ -93,11 +93,12 @@
 #define MAX_INTERVAL_METER_PUBLISH 30000 // The maximum interval between two meter payloads (in milliseconds)
 #define MAX_INTERVAL_STATUS_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
 #define MAX_INTERVAL_CRASH_MONITOR_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
-#define MQTT_MAX_CONNECTION_ATTEMPT 3 // The maximum number of attempts to connect to the MQTT server
-#define MQTT_OVERRIDE_KEEPALIVE 60 // Minimum value supported by AWS IoT Core (in seconds) 
+#define MQTT_CLAIM_MAX_CONNECTION_ATTEMPT 10 // The maximum number of attempts to connect to AWS IoT Core MQTT broker for claiming certificates
+#define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
 #define MQTT_MIN_CONNECTION_INTERVAL 5000 // Minimum interval between two connection attempts (in milliseconds)
-#define MQTT_TEMPORARY_DISABLE_INTERVAL 60000 // Interval between reconnect attempts after a failed connection (in milliseconds)
-#define MQTT_TEMPORARY_DISABLE_ATTEMPTS 3 // The maximum number of temporary disable attempts before erasing the certificates and restarting the ESP32
+#define MQTT_INITIAL_RECONNECT_INTERVAL 5000 // Initial interval for MQTT reconnection attempts (milliseconds)
+#define MQTT_MAX_RECONNECT_INTERVAL 300000 // Maximum interval for MQTT reconnection attempts (milliseconds)
+#define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks (in milliseconds)
 #define PAYLOAD_METER_MAX_NUMBER_POINTS 150 // The maximum number of points that can be sent in a single payload. Going higher than about 150 leads to unstable connections
 #define MQTT_PAYLOAD_LIMIT 32768 // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
@@ -115,7 +116,9 @@
 #define MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT false
 #define MQTT_CUSTOM_USERNAME_DEFAULT "username"
 #define MQTT_CUSTOM_PASSWORD_DEFAULT "password"
-#define MQTT_CUSTOM_MAX_CONNECTION_ATTEMPT 5 // The maximum number of attempts to connect to the custom MQTT server
+#define MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL 5000 // Initial interval for custom MQTT reconnection attempts (milliseconds)
+#define MQTT_CUSTOM_MAX_RECONNECT_INTERVAL 300000 // Maximum interval for custom MQTT reconnection attempts (milliseconds)
+#define MQTT_CUSTOM_RECONNECT_MULTIPLIER 2 // Multiplier for custom MQTT exponential backoff
 #define MQTT_CUSTOM_LOOP_INTERVAL 100 // Interval between two MQTT loop checks (in milliseconds)
 #define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL 10000 // Minimum interval between two connection attempts (in milliseconds)
 #define MQTT_CUSTOM_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes

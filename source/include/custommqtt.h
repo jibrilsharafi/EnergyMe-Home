@@ -21,6 +21,7 @@ public:
         AdvancedLogger &logger,
         PubSubClient &customClientMqtt,
         CustomMqttConfiguration &customMqttConfiguration,
+        CustomTime &customTime,
         MainFlags &mainFlags);
 
     void begin();
@@ -47,6 +48,7 @@ private:
     AdvancedLogger &_logger;
     PubSubClient &_customClientMqtt;
     CustomMqttConfiguration &_customMqttConfiguration;
+    CustomTime &_customTime;
     MainFlags &_mainFlags;
 
     bool _isSetupDone = false;
@@ -54,6 +56,7 @@ private:
     unsigned long _lastMillisMqttLoop = 0;
     unsigned long _lastMillisMqttFailed = 0;
     unsigned long _mqttConnectionAttempt = 0;
+    unsigned long _nextMqttConnectionAttemptMillis = 0; // Added for exponential backoff
 
     unsigned long _lastMillisMeterPublish = 0;
 };

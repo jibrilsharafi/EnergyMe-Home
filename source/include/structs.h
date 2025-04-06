@@ -151,6 +151,8 @@ struct CustomMqttConfiguration {
     bool useCredentials;
     String username;
     String password;
+    String lastConnectionStatus; // Added
+    String lastConnectionAttemptTimestamp; // Added
 
     CustomMqttConfiguration() 
         : enabled(DEFAULT_IS_CUSTOM_MQTT_ENABLED), 
@@ -161,7 +163,9 @@ struct CustomMqttConfiguration {
           frequency(MQTT_CUSTOM_FREQUENCY_DEFAULT),
           useCredentials(MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT),
           username(String(MQTT_CUSTOM_USERNAME_DEFAULT)),
-          password(String(MQTT_CUSTOM_PASSWORD_DEFAULT)) {}
+          password(String(MQTT_CUSTOM_PASSWORD_DEFAULT)),
+          lastConnectionStatus(String("Never attempted")), // Added default
+          lastConnectionAttemptTimestamp(String("")) {} // Added default
 };
 
 enum FirmwareState : int {

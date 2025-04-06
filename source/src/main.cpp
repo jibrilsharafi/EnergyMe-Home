@@ -110,6 +110,7 @@ CustomMqtt customMqtt(
   logger,
   customClientMqtt,
   customMqttConfiguration,
+  customTime,
   mainFlags
 );
 
