@@ -1,5 +1,8 @@
 #include "customtime.h"
 
+// TAG
+static const char *TAG = "customtime";
+
 CustomTime::CustomTime(const char *ntpServer, int timeSyncInterval, const char *timestampFormat, GeneralConfiguration &generalConfiguration, AdvancedLogger &logger)
     : _ntpServer(ntpServer), _timeSyncInterval(timeSyncInterval), _timestampFormat(timestampFormat), _generalConfiguration(generalConfiguration), _logger(logger) {
 }
@@ -14,18 +17,35 @@ bool CustomTime::begin() {
     setSyncInterval(_timeSyncInterval);
 
     if (_getTime()) {
-        _logger.info("Time synchronized: %s", "customtime::begin", getTimestamp().c_str());
+        _isTimeSynched = true;
+        _logger.info("Time synchronized: %s", TAG, getTimestamp().c_str());
         return true;
     } else {
-        _logger.error("Failed to synchronize time", "customtime::begin");
+        _isTimeSynched = false;
+        _logger.error("Failed to synchronize time. Retrying in %d seconds", TAG, TIME_SYNC_RETRY_INTERVAL / 1000);
+        _lastTimeSyncAttempt = millis();
         return false;
+    }
+}
+
+void CustomTime::loop() {
+    if (!_isTimeSynched && (millis() - _lastTimeSyncAttempt > TIME_SYNC_RETRY_INTERVAL)) {
+      _logger.info("Attempting to sync time in loop...", TAG);
+      
+      _isTimeSynched = begin();
+      if (_isTimeSynched) {
+          _logger.info("Time sync successful in loop.", TAG);
+      } else {
+          _logger.warning("Time sync retry failed. Retrying in %d seconds", TAG, TIME_SYNC_RETRY_INTERVAL / 1000);
+      }
+      _lastTimeSyncAttempt = millis();
     }
 }
 
 bool CustomTime::_getTime() {
     time_t _now;
     struct tm _timeinfo;
-    if(!getLocalTime(&_timeinfo)){ 
+    if(!getLocalTime(&_timeinfo)){
         return false;
     }
     time(&_now);

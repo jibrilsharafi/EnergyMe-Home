@@ -6,11 +6,11 @@ struct MainFlags
 {
   bool isFirmwareUpdate;
   bool isCrashCounterReset;
-  bool isfirstLinecyc;
+  bool isFirstLinecyc;
   bool blockLoop;
   int currentChannel;
-
-  MainFlags() : isFirmwareUpdate(false), isCrashCounterReset(false), isfirstLinecyc(true), blockLoop(false), currentChannel(-1) {}
+  
+  MainFlags() : isFirmwareUpdate(false), isCrashCounterReset(false), isFirstLinecyc(true), blockLoop(false), currentChannel(-1) {}
 };
 
 enum Phase : int {

@@ -1,6 +1,6 @@
 #include "customwifi.h"
 
-const char *TAG = "customwifi";
+static const char *TAG = "customwifi";
 
 CustomWifi::CustomWifi(
     AdvancedLogger &logger, Led &led) : _logger(logger), _led(led) {}

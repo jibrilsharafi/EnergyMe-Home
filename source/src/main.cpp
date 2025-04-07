@@ -279,12 +279,11 @@ void setup() {
     customWifi.begin();
     logger.info("WiFi setup done", "main::setup");
 
-    // TODO: if the time syncronization fails, the MQTT cannot work. In any case, we need to retry the time syncronization every X time in the loop if it fails
     TRACE
     logger.info("Syncing time...", "main::setup");
     updateTimezone();
     if (!customTime.begin()) {
-        logger.error("Time sync failed!", "main::setup");
+      logger.error("Initial time sync failed! Will retry later.", "main::setup");
     } else {
         logger.info("Time synced", "main::setup");
     }
@@ -310,6 +309,9 @@ void loop() {
     if (mainFlags.blockLoop) return;
 
     TRACE
+    customTime.loop();
+
+    TRACE
     crashMonitor.crashCounterLoop();
     TRACE
     crashMonitor.firmwareTestingLoop();
@@ -333,24 +335,26 @@ void loop() {
 
         // Since there is a settling time after the multiplexer is switched, 
         // we let one cycle pass before we start reading the values
-        if (mainFlags.isfirstLinecyc) {
-            mainFlags.isfirstLinecyc = false;
+        if (mainFlags.isFirstLinecyc) {
+            mainFlags.isFirstLinecyc = false;
             ade7953.purgeEnergyRegister(mainFlags.currentChannel);
         } else {
-            mainFlags.isfirstLinecyc = true;
+            mainFlags.isFirstLinecyc = true;
 
             if (mainFlags.currentChannel != -1) { // -1 indicates that no channel is active
               TRACE
               if (ade7953.readMeterValues(mainFlags.currentChannel)) {
-                TRACE
-                payloadMeter.push(
-                PayloadMeter(
-                    mainFlags.currentChannel,
-                    customTime.getUnixTimeMilliseconds(),
-                    ade7953.meterValues[mainFlags.currentChannel].activePower,
-                    ade7953.meterValues[mainFlags.currentChannel].powerFactor
-                    )
-                );
+                if (customTime.isTimeSynched()) {
+                  TRACE
+                  payloadMeter.push(
+                  PayloadMeter(
+                      mainFlags.currentChannel,
+                      customTime.getUnixTimeMilliseconds(),
+                      ade7953.meterValues[mainFlags.currentChannel].activePower,
+                      ade7953.meterValues[mainFlags.currentChannel].powerFactor
+                      )
+                  );
+                }
                 
                 printMeterValues(ade7953.meterValues[mainFlags.currentChannel], ade7953.channelData[mainFlags.currentChannel].label.c_str());
               }
@@ -364,14 +368,17 @@ void loop() {
         // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
         TRACE
         if (ade7953.readMeterValues(0)) {
-          payloadMeter.push(
+          if (customTime.isTimeSynched()) {
+            TRACE
+            payloadMeter.push(
               PayloadMeter(
                   0,
                   customTime.getUnixTimeMilliseconds(),
                   ade7953.meterValues[0].activePower,
                   ade7953.meterValues[0].powerFactor
               )
-              );
+            );
+          }
           printMeterValues(ade7953.meterValues[0], ade7953.channelData[0].label.c_str());
         }
     }

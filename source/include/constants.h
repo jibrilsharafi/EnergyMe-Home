@@ -3,7 +3,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "07"
-#define FIRMWARE_BUILD_VERSION_PATCH "13"
+#define FIRMWARE_BUILD_VERSION_PATCH "14"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -64,6 +64,7 @@
 #define TIME_SYNC_INTERVAL 3600 // Sync time every hour
 #define DEFAULT_GMT_OFFSET 0
 #define DEFAULT_DST_OFFSET 0
+#define TIME_SYNC_RETRY_INTERVAL 60000 // Retry sync if failed
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
 
 // Webserver
@@ -151,7 +152,7 @@
 #define MISO_PIN 35
 #define MOSI_PIN 45
 #define ADE7953_RESET_PIN 21
-#define ADE7953_INTERRUPT_PIN 37 // TODO: Implement the interrupt pin
+#define ADE7953_INTERRUPT_PIN 37 // TODO: Implement (eventually) the interrupt pin for more functionalities
 
 // Setup
 #define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low (in milliseconds)

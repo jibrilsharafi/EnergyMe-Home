@@ -93,8 +93,6 @@ void Mqtt::begin() {
     _isSetupDone = true;
 }
 
-// TODO: modify this to just keep trying the connection without logging it. And if it keeps failing after a certain number of attempts, then just erase the certificates
-// but never disable the cloud services
 void Mqtt::loop() {
     if ((millis() - _lastMillisMqttLoop) < MQTT_LOOP_INTERVAL) return;
     _lastMillisMqttLoop = millis();
@@ -626,6 +624,12 @@ bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) 
 
     if (!_clientMqtt.connected()) {
         _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", "mqtt::_publishMessage", getMqttStateReason(_clientMqtt.state()), topic);
+        return false;
+    }
+
+    // Ensure time has been synced
+    if (!customTime.isTimeSynched()) {
+        _logger.warning("Time not synced. Skipping publishing on %s", "mqtt::_publishMessage", topic);
         return false;
     }
 
