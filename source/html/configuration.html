@@ -137,8 +137,13 @@
                 <input type="password" id="customMqttPassword" class="config-input" placeholder="Leave empty if not required">
             </div>
             <div id="customMqttStatus" style="margin-top: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
-                <strong>Last Status:</strong> <span id="lastConnectionStatus">Loading...</span><br>
-                <strong>Last Attempt:</strong> <span id="lastConnectionAttemptTimestamp">Loading...</span>
+                <div id="statusContainer" style="display: flex; align-items: center;">
+                    <span id="statusIcon" style="font-size: 1.5em; margin-right: 10px;">⚪</span>
+                    <div>
+                        <strong>Status: </strong><span id="lastConnectionStatus">Loading...</span><br>
+                        <span id="timestampContainer"><strong>Last Attempt: </strong><span id="lastConnectionAttemptTimestamp">Loading...</span></span>
+                    </div>
+                </div>
             </div>
             <button class="buttonForm" onclick="setCustomMqttConfiguration()" id="setCustomMqttConfigurationButton">Set configuration</button>
 
@@ -437,17 +442,62 @@
                             document.getElementById("customMqttUsername").value = customMqttConfig.username;
                             document.getElementById("customMqttPassword").value = customMqttConfig.password;
 
-                            document.getElementById("lastConnectionStatus").textContent = customMqttConfig.lastConnectionStatus || "N/A";
-                            document.getElementById("lastConnectionAttemptTimestamp").textContent = customMqttConfig.lastConnectionAttemptTimestamp || "N/A";
+                            // Update status with appropriate icon and colors
+                            updateStatusDisplay(customMqttConfig.lastConnectionStatus, 
+                                              customMqttConfig.lastConnectionAttemptTimestamp,
+                                              customMqttConfig.enabled);
 
                         } else {
                             console.log("Error getting custom MQTT configuration. Response: " + this.responseText);
-                            document.getElementById("lastConnectionStatus").textContent = "Error loading status";
-                            document.getElementById("lastConnectionAttemptTimestamp").textContent = "Error loading status";
+                            updateStatusDisplay("Error loading status", "", false);
                         }
                     }
                 };
                 xhttp.send();
+            }
+
+            function updateStatusDisplay(status, timestamp, isEnabled) {
+                const statusElement = document.getElementById("lastConnectionStatus");
+                const timestampElement = document.getElementById("lastConnectionAttemptTimestamp");
+                const timestampContainer = document.getElementById("timestampContainer");
+                const statusIcon = document.getElementById("statusIcon");
+                const statusContainer = document.getElementById("statusContainer");
+                
+                // Reset styles
+                statusContainer.style.color = "";
+                statusElement.style.fontWeight = "";
+                
+                // If MQTT is disabled, show disabled status
+                if (!isEnabled) {
+                    statusElement.textContent = "Disabled";
+                    timestampContainer.style.display = "none";
+                    statusIcon.innerHTML = "⚫"; // Black circle for disabled
+                    statusElement.style.color = "#757575"; // Gray color
+                    return;
+                }
+                
+                // If enabled, proceed with normal status display
+                statusElement.textContent = status || "N/A";
+                timestampElement.textContent = timestamp || "N/A";
+                
+                // Show/hide timestamp based on connection status
+                if (status === "Connected") {
+                    timestampContainer.style.display = "none";
+                    statusIcon.innerHTML = "🟢"; // Green circle for connected
+                    statusElement.style.color = "#2e7d32"; // Dark green
+                    statusElement.style.fontWeight = "bold";
+                } else if (status === "Disconnected") {
+                    timestampContainer.style.display = "block";
+                    statusIcon.innerHTML = "🔴"; // Red circle for disconnected
+                    statusElement.style.color = "#c62828"; // Dark red
+                } else if (status && status.startsWith("Error")) {
+                    timestampContainer.style.display = "block";
+                    statusIcon.innerHTML = "⚠️"; // Warning for errors
+                    statusElement.style.color = "#e65100"; // Orange
+                } else {
+                    timestampContainer.style.display = "block";
+                    statusIcon.innerHTML = "⚪"; // Default neutral circle
+                }
             }
 
             function setCustomMqttConfiguration() {
@@ -493,6 +543,9 @@
                     }
                 };
                 xhttp.send(JSON.stringify(newCustomMqttConfig));
+
+                // Call to refresh the custom MQTT configuration after setting it
+                setTimeout(getCustomMqttConfiguration, 1000);
             }
 
             document.addEventListener("DOMContentLoaded", function() {
@@ -500,7 +553,7 @@
                 getLogLevel();
                 getCustomMqttConfiguration();
 
-                setInterval(getCustomMqttConfiguration, 15000);
+                setInterval(getCustomMqttConfiguration, 10000);
             });
 
         </script>

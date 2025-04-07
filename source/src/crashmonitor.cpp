@@ -210,7 +210,8 @@ void CrashMonitor::_handleCrashCounter() {
 
         SPIFFS.format();
         crashData.crashCount = 0;
-
+        
+        // Need to reboot directly here to avoid a crash loop
         ESP.restart();
     } else {
         _logger.debug("Crash counter incremented to %d", "crashmonitor::_handleCrashCounter", crashData.crashCount);
@@ -251,7 +252,8 @@ void CrashMonitor::_handleFirmwareTesting() {
 
         setFirmwareStatus(STABLE);
 
-        setRestartEsp32("crashmonitor::_handleFirmwareTesting", "Testing new firmware failed. Rolling back to stable firmware");
+        _logger.warning("Restarting ESP32 after rollback", "crashmonitor::_handleFirmwareTesting");
+        ESP.restart();
     } else {
         _logger.debug("No rollback needed", "crashmonitor::_handleFirmwareTesting");
     }

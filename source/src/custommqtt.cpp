@@ -113,8 +113,6 @@ bool CustomMqtt::setConfiguration(JsonDocument &jsonDocument)
     _customMqttConfiguration.useCredentials = jsonDocument["useCredentials"].as<bool>();
     _customMqttConfiguration.username = jsonDocument["username"].as<String>();
     _customMqttConfiguration.password = jsonDocument["password"].as<String>();
-    _customMqttConfiguration.lastConnectionStatus = jsonDocument["lastConnectionStatus"] | "Unknown";
-    _customMqttConfiguration.lastConnectionAttemptTimestamp = jsonDocument["lastConnectionAttemptTimestamp"] | "";
 
     _saveConfigurationToSpiffs();
     
@@ -122,6 +120,9 @@ bool CustomMqtt::setConfiguration(JsonDocument &jsonDocument)
     _customClientMqtt.setServer(_customMqttConfiguration.server.c_str(), _customMqttConfiguration.port);
 
     _mqttConnectionAttempt = 0;
+    _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
+    _customMqttConfiguration.lastConnectionStatus = "Disconnected";
+    _customMqttConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
 
     _logger.debug("Custom MQTT configuration set", "custommqtt::setConfiguration");
 

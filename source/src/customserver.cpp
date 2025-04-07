@@ -764,7 +764,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
     {
         if (filename.indexOf(".bin") > -1)
         {
-            _logger.infod("Update requested for firmware", "customserver::handleDoUpdate");
+            _logger.info("Update requested for firmware", "customserver::handleDoUpdate");
         }
         else
         {
@@ -828,7 +828,7 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
     request->send(200, "application/json", "{\"status\":\"success\", \"md5\":\"" + Update.md5String() + "\"}");
 
     TRACE
-    _logger.warning("Update complete", "customserver::handleDoUpdate");
+    _logger.info("Update complete", "customserver::handleDoUpdate");
     _updateJsonFirmwareStatus("success", "");
 
     _logger.debug("MD5 of new firmware: %s", "customserver::_onUpdateSuccessful", Update.md5String().c_str());

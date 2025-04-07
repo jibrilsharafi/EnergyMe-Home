@@ -3,7 +3,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "07"
-#define FIRMWARE_BUILD_VERSION_PATCH "09"
+#define FIRMWARE_BUILD_VERSION_PATCH "12"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -13,7 +13,7 @@
 #define COMPANY_NAME "EnergyMe"
 #define PRODUCT_NAME "Home"
 #define FULL_PRODUCT_NAME "EnergyMe - Home"
-#define PRODUCT_DESCRIPTION "A open-source energy monitoring system for home use, capable of monitoring up to 17 circuits."
+#define PRODUCT_DESCRIPTION "An open-source energy monitoring system for home use, capable of monitoring up to 17 circuits."
 #define GITHUB_URL "https://github.com/jibrilsharafi/EnergyMe-Home"
 #define AUTHOR "Jibril Sharafi"
 #define AUTHOR_EMAIL "jibril.sharafi@gmail.com"
@@ -82,8 +82,11 @@
 // WiFi
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
 #define WIFI_LOOP_INTERVAL 1000 // In milliseconds
-#define WIFI_CONNECT_TIMEOUT 30 // In seconds
-#define WIFI_PORTAL_TIMEOUT 300 // In seconds
+#define WIFI_CONNECT_TIMEOUT 60 // In seconds
+#define WIFI_PORTAL_TIMEOUT 180 // In seconds
+#define WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS 5 // Maximum WiFi reconnection attempts before restart
+#define WIFI_RECONNECT_DELAY_BASE 5000 // Base delay for exponential backoff (in milliseconds)
+#define WIFI_STABLE_CONNECTION 300000 // Duration of uninterrupted WiFi connection to reset the reconnection counter (in milliseconds)
 
 // MDNS
 #define MDNS_HOSTNAME "energyme"

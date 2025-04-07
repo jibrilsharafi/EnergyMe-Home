@@ -489,8 +489,10 @@
                     document.getElementById("consumption-chart").style.fontSize = "20px";
                     document.getElementById("consumption-chart").style.color = "#808080"; // Gray color
 
-                    // Hide the download button
-                    document.getElementById("download-csv").style.display = "none";
+                    // Hide the download button if the charts are present
+                    if (document.getElementById("download-csv")) {
+                        document.getElementById("download-csv").style.display = "none";
+                    }
 
                     document.getElementById("pie-chart").innerHTML = "No data available yet. Come back in a few hours!";
                     document.getElementById("pie-chart").style.textAlign = "center";

@@ -597,8 +597,6 @@ void factoryReset() {
 
     // Directly call ESP.restart() so that a fresh start is done
     ESP.restart();
-
-    mainFlags.blockLoop = false;
 }
 
 void clearAllPreferences() {

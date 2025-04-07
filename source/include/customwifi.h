@@ -30,4 +30,6 @@ private:
     Led &_led;
 
     unsigned long _lastMillisWifiLoop = 0;
+    unsigned long _lastConnectionAttemptTime = 0;
+    int _failedConnectionAttempts = 0;
 };
