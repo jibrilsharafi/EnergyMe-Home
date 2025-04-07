@@ -1,5 +1,3 @@
-#define WM_DEBUG_LEVEL WM_DEBUG_DEV // TODO: remove me
-
 #include <Arduino.h>
 #include <SPIFFS.h>
 #include <WiFiManager.h> // Needs to be defined on top due to conflict between WiFiManager and ESPAsyncWebServer

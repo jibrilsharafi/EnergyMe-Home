@@ -11,11 +11,20 @@ bool CustomWifi::begin()
 
   _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT);
   _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT);
-  
-  // Connect to WiFi or start portal
-  _connectToWifi();
+  // _wifiManager.setHttpPort(WIFI_CONFIG_PORTAL_PORT); // Keep portal on default port 80
 
-  // If we get here, we're connected
+  // Connect to WiFi or start portal
+  if (!_connectToWifi()) {
+    // Handle the case where connection/portal failed critically after retries
+    // Depending on _connectToWifi's logic, it might have already restarted.
+    // If not, you might want to add a fallback or error state here.
+    _logger.fatal("Initial WiFi connection failed after retries.", TAG);
+    // Perhaps blink an error pattern or halt.
+    // For now, we assume _connectToWifi handles restarts on persistent failure.
+    return false; 
+  }
+
+  // If we get here, we're connected (either initially or after portal restart)
   _led.unblock();
   _logger.debug("WiFi setup done", TAG);
   return true;
@@ -46,9 +55,12 @@ void CustomWifi::loop()
   // Try simple reconnect first
   if (!WiFi.reconnect()) {
     // If we could not directly reconnect with WiFi.reconnect, try with exponential backoff
-    _connectToWifi();
+    _connectToWifi(); // This might trigger a restart if portal is needed and succeeds
   } else {
     _logger.info("Successfully reconnected to WiFi", TAG);
+    // If reconnect worked, ensure MDNS is running (it might stop on disconnects)
+    setupMdns(); 
+    printWifiStatus();
   }
 }
 
@@ -63,43 +75,73 @@ bool CustomWifi::_connectToWifi()
   _lastConnectionAttemptTime = millis();
   _failedConnectionAttempts++;
 
-  // This will block until connected or portal times out
-  if (_wifiManager.autoConnect(WIFI_CONFIG_PORTAL_SSID)) {
+  // Check if credentials exist *before* calling autoConnect.
+  // If not, the portal will likely start.
+  bool _portalWasExpected = !(_wifiManager.getWiFiIsSaved());
+  if (_portalWasExpected) {
+    _logger.info("No saved credentials found. WiFiManager portal may start.", TAG);
+  } else {
+     _logger.info("Attempting connection with saved credentials", TAG);
+  }
+
+  // This will block until connected or portal times out/exits
+  String hostname = WIFI_CONFIG_PORTAL_SSID " - " + getDeviceId();
+  bool success = _wifiManager.autoConnect(hostname.c_str());
+
+  if (success) {
     _logger.info("Connected to WiFi: %s", TAG, WiFi.SSID().c_str());
-    setupMdns();
-    printWifiStatus();
-    _led.unblock();
     
     // Reset failed attempts counter on success
     _failedConnectionAttempts = 0;
-    return true;
+
+    if (_portalWasExpected) {
+        // If the portal was expected and connection succeeded, 
+        // it means new credentials were entered via the portal.
+        // Restart the device to ensure the portal server is fully closed 
+        // and the main server can bind to port 80 cleanly.
+        _logger.warning("New WiFi credentials saved via portal. Restarting device...", TAG);
+        _led.setCyan(true); // Indicate successful save before restart
+        delay(1000); // Short delay to allow log message to potentially send
+        ESP.restart();
+        // Code execution stops here due to restart
+    } else {
+        // Connected using existing credentials, proceed normally
+        setupMdns();
+        printWifiStatus();
+        _led.unblock();
+        return true;
+    }
   } else {
+    // Connection or portal failed/timed out
     _led.setRed(true);
-    _logger.warning("Failed to connect to WiFi. Attempt %d of %d", TAG, 
+    _logger.warning("Failed to connect to WiFi or portal timed out. Attempt %d of %d", TAG, 
                    _failedConnectionAttempts, WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS);
                    
-    // Only restart if we've hit the maximum attempts
+    // Only restart if we've hit the maximum *consecutive* attempts
     if (_failedConnectionAttempts >= WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS) {
       _logger.error("Maximum reconnection attempts reached. Restarting device...", TAG);
-      
       setRestartEsp32(TAG, "Maximum WiFi reconnection attempts reached");
+      // Restart is handled by setRestartEsp32 -> checkIfRestartEsp32Required in main loop
     } else {
-      // Calculate backoff delay with exponential increase
+      // Calculate backoff delay for next retry in loop() or next explicit call
       unsigned long backoffDelay = WIFI_RECONNECT_DELAY_BASE * (1 << (_failedConnectionAttempts - 1));
-      _logger.info("Will retry connecting in %lu ms", TAG, backoffDelay);
-      _led.unblock(); // Allow LED to show other states
-      _led.setOrange();
-      delay(backoffDelay);
+      _logger.info("Will retry connecting later (delay: %lu ms)", TAG, backoffDelay);
+      // Note: The actual delay might happen implicitly before the next loop() check
+      // or explicitly if _connectToWifi is called again immediately.
+      // Consider adding a delay here if retries happen too quickly in your logic.
+      // delay(backoffDelay); // Optional: uncomment if immediate retry is needed
     }
-    
+    _led.unblock(); // Allow LED to show other states (like Orange for retry pending)
+    _led.setOrange(); 
     return false;
   }
+  // Should not reach here due to restart or return statements above
+  return false; 
 }
 
 void CustomWifi::resetWifi()
 {
   _logger.warning("Erasing WiFi credentials and restarting...", TAG);
-
   _wifiManager.resetSettings();
   ESP.restart();
 }
