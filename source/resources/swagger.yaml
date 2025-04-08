@@ -1348,6 +1348,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/GeneralConfiguration'
 
+  /rest/get-has-secrets:
+    get:
+      summary: Check if secrets are available
+      tags:
+        - Configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  has_secrets:
+                    type: boolean  
+
   /rest/set-general-configuration:
     post:
       summary: Set general configuration

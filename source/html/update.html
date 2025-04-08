@@ -351,28 +351,129 @@
         }
 
         function getFirmwareUpdateInfo() {
-            var request = new XMLHttpRequest();
-            request.open('GET', '/rest/firmware-update-info', true);
-            request.onload = function () {
-                if (request.status == 200) {
-                    var data = JSON.parse(request.responseText);
-                    if (Object.keys(data).length == 0) {
-                        document.getElementById("update-details").style.display = "none";
-                        document.getElementById("no-update").style.display = "block";
-                    } else {
-                        document.getElementById("update-version").innerHTML = data.buildVersion;
-                        document.getElementById("update-date").innerHTML = data.buildDate;
-                        document.getElementById("update-url").href = data.url;
-                        document.getElementById("update-changelog").href = data.changelog;
-                        document.getElementById("update-md5").innerHTML = data.md5;
-                        document.getElementById("update-details").style.display = "block";
-                        document.getElementById("no-update").style.display = "none";
+            // First try to fetch from GitHub API
+            fetch('https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases/latest')
+                .then(response => response.json())
+                .then(data => {
+                    try {
+                        // Process GitHub API response
+                        const firmwareInfo = {
+                            buildVersion: data.tag_name,
+                            buildDate: new Date(data.published_at).toISOString().split('T')[0],
+                            changelog: data.html_url
+                        };
+                        
+                        // Find the binary asset
+                        if (data.assets && data.assets.length > 0) {
+                            const binAsset = data.assets.find(asset => asset.name.endsWith('.bin'));
+                            if (binAsset) {
+                                firmwareInfo.url = binAsset.browser_download_url;
+                            }
+                        }
+                        
+                        // Update UI with GitHub data
+                        updateFirmwareInfoUI(firmwareInfo);
+                        
+                        // Store this info locally for easier access
+                        saveFirmwareInfoLocally(firmwareInfo);
+                    } catch (error) {
+                        console.error('Error processing GitHub response:', error);
+                        // Fall back to local file if GitHub processing fails
+                        fallbackToLocalFirmwareInfo();
                     }
-                } else {
-                    console.log("Error getting firmware update info");
-                }
+                })
+                .catch(error => {
+                    console.error('Error fetching from GitHub:', error);
+                    fallbackToLocalFirmwareInfo();
+                });
+        }
+
+        function fallbackToLocalFirmwareInfo() {
+            // Use the original approach to get firmware info from local file
+            fetch('/rest/firmware-update-info')
+                .then(response => response.json())
+                .then(data => {
+                    updateFirmwareInfoUI(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching local firmware info:', error);
+                    document.getElementById("update-details").style.display = "none";
+                    document.getElementById("no-update").style.display = "block";
+                });
+        }
+
+        function updateFirmwareInfoUI(data) {
+            if (!data || Object.keys(data).length === 0) {
+                document.getElementById("update-details").style.display = "none";
+                document.getElementById("no-update").style.display = "block";
+                return;
+            }
+            
+            document.getElementById("update-version").innerHTML = data.buildVersion || 'N/A';
+            document.getElementById("update-date").innerHTML = data.buildDate || 'N/A';
+            
+            if (data.url) {
+                document.getElementById("update-url").href = data.url;
+            } else {
+                document.getElementById("update-url").parentElement.style.display = "none";
+            }
+            
+            if (data.changelog) {
+                document.getElementById("update-changelog").href = data.changelog;
+            } else {
+                document.getElementById("update-changelog").parentElement.style.display = "none";
+            }
+            
+            document.getElementById("update-md5").innerHTML = data.md5 || 'Not available';
+            document.getElementById("update-details").style.display = "block";
+            document.getElementById("no-update").style.display = "none";
+            
+            // Check if current version is up to date
+            checkIfLatestVersion(data.buildVersion);
+        }
+
+        function saveFirmwareInfoLocally(firmwareInfo) {
+            // Optional: Save to localStorage for offline use
+            if (firmwareInfo) {
+                localStorage.setItem('latestFirmwareInfo', JSON.stringify(firmwareInfo));
+            }
+        }
+
+        function checkIfLatestVersion(latestVersion) {
+            // Get current version from the page
+            const currentVersion = document.getElementById("current-firmware-version").innerHTML;
+            
+            if (!currentVersion || !latestVersion) return;
+            
+            // Parse versions (assuming semantic versioning format x.y.z)
+            const parseVersion = (versionStr) => {
+                const parts = versionStr.split('.');
+                return {
+                    major: parseInt(parts[0]) || 0,
+                    minor: parseInt(parts[1]) || 0,
+                    patch: parseInt(parts[2]) || 0
+                };
             };
-            request.send();
+            
+            const current = parseVersion(currentVersion);
+            const latest = parseVersion(latestVersion);
+            
+            // Compare versions
+            const needsUpdate = 
+                latest.major > current.major || 
+                (latest.major === current.major && latest.minor > current.minor) ||
+                (latest.major === current.major && latest.minor === current.minor && latest.patch > current.patch);
+            
+            // Update UI based on version comparison
+            if (needsUpdate) {
+                document.getElementById("no-update").style.display = "none";
+            } else {
+                document.getElementById("update-details").style.display = "none";
+                document.getElementById("no-update").style.display = "block";
+            }
+            
+            // Update the is-latest-firmware-installed endpoint result in localStorage
+            localStorage.setItem('isLatestFirmware', !needsUpdate);
         }
 
         function getRandomHappyDay() {

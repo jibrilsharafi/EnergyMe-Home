@@ -407,6 +407,18 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", _buffer.c_str()); });
 
+    _server.on("/rest/get-has-secrets", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get has_secrets", "customserver::_setRestApi", LogLevel::DEBUG, request);
+
+        JsonDocument _jsonDocument;
+        _jsonDocument["has_secrets"] = HAS_SECRETS ? true : false;
+
+        String _buffer;
+        serializeJson(_jsonDocument, _buffer);
+
+        request->send(200, "application/json", _buffer.c_str()); });
+
     _server.on("/rest/ade7953-read-register", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog(
@@ -814,12 +826,7 @@ void CustomServer::_updateJsonFirmwareStatus(const char *status, const char *rea
     _jsonDocument["reason"] = reason;
     _jsonDocument["timestamp"] = _customTime.getTimestamp();
 
-    File _file = SPIFFS.open(FW_UPDATE_STATUS_JSON_PATH, FILE_WRITE);
-    if (_file)
-    {
-        serializeJson(_jsonDocument, _file);
-        _file.close();
-    }
+    serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);
 }
 
 void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)

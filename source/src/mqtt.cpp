@@ -1,5 +1,7 @@
 #include "mqtt.h"
 
+static const char *TAG = "mqtt";
+
 void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
     TRACE
     String message;
@@ -9,13 +11,11 @@ void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
 
     if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE)) {
         TRACE
-        File _file = SPIFFS.open(FW_UPDATE_INFO_JSON_PATH, FILE_WRITE);
-        if (!_file) {
+        JsonDocument _jsonDocument;
+        if (deserializeJson(_jsonDocument, message)) {
             return;
         }
-
-        _file.print(message);
-        _file.close();
+        serializeJsonToSpiffs(FW_UPDATE_INFO_JSON_PATH, _jsonDocument);
     } else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_RESTART)) {
         TRACE
         setRestartEsp32("subscribeCallback", "Restart requested from MQTT");
@@ -52,7 +52,8 @@ Mqtt::Mqtt(
     ) : _ade7953(ade7953), _logger(logger), _customTime(customTime), _clientMqtt(clientMqtt), _net(net), _publishMqtt(publishMqtt), _payloadMeter(payloadMeter) {}
 
 void Mqtt::begin() {
-    _logger.info("Setting up MQTT...", "mqtt::begin");
+#if HAS_SECRETS
+    _logger.info("Setting up MQTT...", TAG);
 
     _deviceId = getDeviceId();
 
@@ -83,7 +84,7 @@ void Mqtt::begin() {
     _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
     _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
 
-    _logger.info("MQTT setup complete", "mqtt::begin");
+    _logger.info("MQTT setup complete", TAG);
 
     TRACE
     _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
@@ -91,9 +92,17 @@ void Mqtt::begin() {
     _connectMqtt();
 
     _isSetupDone = true;
+#else
+    _logger.info("MQTT setup skipped - no secrets available", TAG);
+    // Skip MQTT setup when secrets are not available
+    _isSetupDone = false;
+#endif
 }
 
 void Mqtt::loop() {
+#if !HAS_SECRETS
+    return;
+#else
     if ((millis() - _lastMillisMqttLoop) < MQTT_LOOP_INTERVAL) return;
     _lastMillisMqttLoop = millis();
 
@@ -108,7 +117,7 @@ void Mqtt::loop() {
     TRACE
     if (!generalConfiguration.isCloudServicesEnabled || restartConfiguration.isRequired) {
         if (_isSetupDone && _clientMqtt.connected()) {
-            _logger.info("Disconnecting MQTT", "mqtt::mqttLoop");
+            _logger.info("Disconnecting MQTT", TAG);
 
             // Send last messages before disconnecting
             TRACE
@@ -137,13 +146,13 @@ void Mqtt::loop() {
     if (!_clientMqtt.connected()) {
         // Use exponential backoff timing
         if (millis() >= _nextMqttConnectionAttemptMillis) {
-            _logger.info("MQTT client not connected. Attempting to reconnect...", "mqtt::mqttLoop");
+            _logger.info("MQTT client not connected. Attempting to reconnect...", TAG);
             _connectMqtt(); // _connectMqtt now handles setting the next attempt time
         }
     } else {
         // If connected, reset connection attempts counter for backoff calculation
         if (_mqttConnectionAttempt > 0) {
-            _logger.debug("MQTT reconnected successfully after %d attempts.", "mqtt::mqttLoop", _mqttConnectionAttempt);
+            _logger.debug("MQTT reconnected successfully after %d attempts.", TAG, _mqttConnectionAttempt);
             _mqttConnectionAttempt = 0;
         }
     }
@@ -160,11 +169,12 @@ void Mqtt::loop() {
         TRACE
         _checkPublishMqtt();
     }
+#endif
 }
 
 bool Mqtt::_connectMqtt()
 {
-    _logger.debug("Attempting to connect to MQTT (attempt %d)...", "mqtt::_connectMqtt", _mqttConnectionAttempt + 1);
+    _logger.debug("Attempting to connect to MQTT (attempt %d)...", TAG, _mqttConnectionAttempt + 1);
 
     TRACE
     if (
@@ -175,7 +185,7 @@ bool Mqtt::_connectMqtt()
             MQTT_WILL_RETAIN,
             MQTT_WILL_MESSAGE))
     {
-        _logger.info("Connected to MQTT", "mqtt::_connectMqtt");
+        _logger.info("Connected to MQTT", TAG);
 
         _mqttConnectionAttempt = 0; // Reset attempt counter on success
 
@@ -224,24 +234,24 @@ bool Mqtt::_connectMqtt()
 
         _nextMqttConnectionAttemptMillis = millis() + _backoffDelay;
 
-        _logger.info("Next MQTT connection attempt in %lu ms", "mqtt::_connectMqtt", _backoffDelay);
+        _logger.info("Next MQTT connection attempt in %lu ms", TAG, _backoffDelay);
 
         return false;
     }
 }
 
 void Mqtt::_setCertificates() {
-    _logger.debug("Setting certificates...", "mqtt::_setCertificates");
+    _logger.debug("Setting certificates...", TAG);
 
     TRACE
     _awsIotCoreCert = readEncryptedPreferences(PREFS_KEY_CERTIFICATE);
     _awsIotCorePrivateKey = readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY);
 
-    _logger.debug("Certificates set", "mqtt::_setCertificates");
+    _logger.debug("Certificates set", TAG);
 }
 
 void Mqtt::_claimProcess() {
-    _logger.debug("Claiming certificates...", "mqtt::_claimProcess");
+    _logger.debug("Claiming certificates...", TAG);
     _isClaimInProgress = true;
 
     TRACE
@@ -255,15 +265,15 @@ void Mqtt::_claimProcess() {
     _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
     _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
 
-    _logger.debug("MQTT setup for claiming certificates complete", "mqtt::_claimProcess");
+    _logger.debug("MQTT setup for claiming certificates complete", TAG);
 
     int _connectionAttempt = 0;
     while (_connectionAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
-        _logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", "mqtt::_claimProcess", _connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
+        _logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", TAG, _connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
         TRACE
         if (_clientMqtt.connect(_deviceId.c_str())) {
-            _logger.debug("Connected to MQTT for claiming certificates", "mqtt::_claimProcess");
+            _logger.debug("Connected to MQTT for claiming certificates", TAG);
             break;
         }
 
@@ -279,7 +289,7 @@ void Mqtt::_claimProcess() {
     }
 
     if (_connectionAttempt >= MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
-        _logger.error("Failed to connect to MQTT for claiming certificates after %d attempts", "mqtt::_claimProcess", MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
+        _logger.error("Failed to connect to MQTT for claiming certificates after %d attempts", TAG, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
         setRestartEsp32("mqtt::_claimProcess", "Failed to claim certificates");
         return;
     }
@@ -289,11 +299,11 @@ void Mqtt::_claimProcess() {
     
     int _publishAttempt = 0;
     while (_publishAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
-        _logger.debug("Attempting to publish provisioning request (%d/%d)...", "mqtt::_claimProcess", _publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
+        _logger.debug("Attempting to publish provisioning request (%d/%d)...", TAG, _publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
         TRACE
         if (_publishProvisioningRequest()) {
-            _logger.debug("Provisioning request published", "mqtt::_claimProcess");
+            _logger.debug("Provisioning request published", TAG);
             break;
         }
 
@@ -309,7 +319,7 @@ void Mqtt::_claimProcess() {
 }
 
 void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topic) {
-    _logger.debug("Constructing MQTT topic with rule for %s | %s", "mqtt::_constructMqttTopicWithRule", ruleName, finalTopic);
+    _logger.debug("Constructing MQTT topic with rule for %s | %s", TAG, ruleName, finalTopic);
 
     TRACE
     snprintf(
@@ -326,7 +336,7 @@ void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTo
 }
 
 void Mqtt::_constructMqttTopic(const char* finalTopic, char* topic) {
-    _logger.debug("Constructing MQTT topic for %s", "mqtt::_constructMqttTopic", finalTopic);
+    _logger.debug("Constructing MQTT topic for %s", TAG, finalTopic);
 
     TRACE
     snprintf(
@@ -341,7 +351,7 @@ void Mqtt::_constructMqttTopic(const char* finalTopic, char* topic) {
 }
 
 void Mqtt::_setupTopics() {
-    _logger.debug("Setting up MQTT topics...", "mqtt::_setupTopics");
+    _logger.debug("Setting up MQTT topics...", TAG);
 
     TRACE
     _setTopicConnectivity();
@@ -353,51 +363,51 @@ void Mqtt::_setupTopics() {
     _setTopicMonitor();
     _setTopicGeneralConfiguration();
 
-    _logger.debug("MQTT topics setup complete", "mqtt::_setupTopics");
+    _logger.debug("MQTT topics setup complete", TAG);
 }
 
 void Mqtt::_setTopicConnectivity() {
     _constructMqttTopic(MQTT_TOPIC_CONNECTIVITY, _mqttTopicConnectivity);
-    _logger.debug(_mqttTopicConnectivity, "mqtt::_setTopicConnectivity");
+    _logger.debug(_mqttTopicConnectivity, TAG);
 }
 
 void Mqtt::_setTopicMeter() {
     _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter);
-    _logger.debug(_mqttTopicMeter, "mqtt::_setTopicMeter");
+    _logger.debug(_mqttTopicMeter, TAG);
 }
 
 void Mqtt::_setTopicStatus() {
     _constructMqttTopic(MQTT_TOPIC_STATUS, _mqttTopicStatus);
-    _logger.debug(_mqttTopicStatus, "mqtt::_setTopicStatus");
+    _logger.debug(_mqttTopicStatus, TAG);
 }
 
 void Mqtt::_setTopicMetadata() {
     _constructMqttTopic(MQTT_TOPIC_METADATA, _mqttTopicMetadata);
-    _logger.debug(_mqttTopicMetadata, "mqtt::_setTopicMetadata");
+    _logger.debug(_mqttTopicMetadata, TAG);
 }
 
 void Mqtt::_setTopicChannel() {
     _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel);
-    _logger.debug(_mqttTopicChannel, "mqtt::_setTopicChannel");
+    _logger.debug(_mqttTopicChannel, TAG);
 }
 
 void Mqtt::_setTopicCrash() {
     _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash);
-    _logger.debug(_mqttTopicCrash, "mqtt::_setTopicCrash");
+    _logger.debug(_mqttTopicCrash, TAG);
 }
 
 void Mqtt::_setTopicMonitor() {
     _constructMqttTopic(MQTT_TOPIC_MONITOR, _mqttTopicMonitor);
-    _logger.debug(_mqttTopicMonitor, "mqtt::_setTopicMonitor");
+    _logger.debug(_mqttTopicMonitor, TAG);
 }
 
 void Mqtt::_setTopicGeneralConfiguration() {
     _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration);
-    _logger.debug(_mqttTopicGeneralConfiguration, "mqtt::_setTopicGeneralConfiguration");
+    _logger.debug(_mqttTopicGeneralConfiguration, TAG);
 }
 
 void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter) {
-    _logger.debug("Converting circular buffer to JSON", "mqtt::_circularBufferToJson");
+    _logger.debug("Converting circular buffer to JSON", TAG);
 
     TRACE
     JsonArray _jsonArray = jsonDocument->to<JsonArray>();
@@ -433,11 +443,11 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
     _jsonObject["unixTime"] = _customTime.getUnixTimeMilliseconds();
     _jsonObject["voltage"] = _ade7953.meterValues[0].voltage;
 
-    _logger.debug("Circular buffer converted to JSON", "mqtt::_circularBufferToJson");
+    _logger.debug("Circular buffer converted to JSON", TAG);
 }
 
 void Mqtt::_publishConnectivity(bool isOnline) {
-    _logger.debug("Publishing connectivity to MQTT...", "mqtt::_publishConnectivity");
+    _logger.debug("Publishing connectivity to MQTT...", TAG);
 
     JsonDocument _jsonDocument;
     _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
@@ -448,11 +458,11 @@ void Mqtt::_publishConnectivity(bool isOnline) {
 
     if (_publishMessage(_mqttTopicConnectivity, _connectivityMessage.c_str(), true)) {_publishMqtt.connectivity = false;} // Publish with retain
 
-    _logger.debug("Connectivity published to MQTT", "mqtt::_publishConnectivity");
+    _logger.debug("Connectivity published to MQTT", TAG);
 }
 
 void Mqtt::_publishMeter() {
-    _logger.debug("Publishing meter data to MQTT...", "mqtt::_publishMeter");
+    _logger.debug("Publishing meter data to MQTT...", TAG);
 
     JsonDocument _jsonDocument;
     _circularBufferToJson(&_jsonDocument, _payloadMeter);
@@ -462,11 +472,11 @@ void Mqtt::_publishMeter() {
 
     if (_publishMessage(_mqttTopicMeter, _meterMessage.c_str())) {_publishMqtt.meter = false;}
 
-    _logger.debug("Meter data published to MQTT", "mqtt::_publishMeter");
+    _logger.debug("Meter data published to MQTT", TAG);
 }
 
 void Mqtt::_publishStatus() {
-    _logger.debug("Publishing status to MQTT...", "mqtt::_publishStatus");
+    _logger.debug("Publishing status to MQTT...", TAG);
 
     JsonDocument _jsonDocument;
 
@@ -481,11 +491,11 @@ void Mqtt::_publishStatus() {
 
     if (_publishMessage(_mqttTopicStatus, _statusMessage.c_str())) {_publishMqtt.status = false;}
 
-    _logger.debug("Status published to MQTT", "mqtt::_publishStatus");
+    _logger.debug("Status published to MQTT", TAG);
 }
 
 void Mqtt::_publishMetadata() {
-    _logger.debug("Publishing metadata to MQTT...", "mqtt::_publishMetadata");
+    _logger.debug("Publishing metadata to MQTT...", TAG);
 
     JsonDocument _jsonDocument;
 
@@ -498,11 +508,11 @@ void Mqtt::_publishMetadata() {
 
     if (_publishMessage(_mqttTopicMetadata, _metadataMessage.c_str())) {_publishMqtt.metadata = false;}
     
-    _logger.debug("Metadata published to MQTT", "mqtt::_publishMetadata");
+    _logger.debug("Metadata published to MQTT", TAG);
 }
 
 void Mqtt::_publishChannel() {
-    _logger.debug("Publishing channel data to MQTT", "mqtt::_publishChannel");
+    _logger.debug("Publishing channel data to MQTT", TAG);
 
     JsonDocument _jsonChannelData;
     _ade7953.channelDataToJson(_jsonChannelData);
@@ -516,23 +526,23 @@ void Mqtt::_publishChannel() {
  
     if (_publishMessage(_mqttTopicChannel, _channelMessage.c_str())) {_publishMqtt.channel = false;}
 
-    _logger.debug("Channel data published to MQTT", "mqtt::_publishChannel");
+    _logger.debug("Channel data published to MQTT", TAG);
 }
 
 void Mqtt::_publishCrash() {
-    _logger.debug("Publishing crash data to MQTT", "mqtt::_publishCrash");
+    _logger.debug("Publishing crash data to MQTT", TAG);
 
     TRACE
     CrashData _crashData;
     if (!CrashMonitor::getSavedCrashData(_crashData)) {
-        _logger.error("Error getting crash data", "mqtt::_publishCrash");
+        _logger.error("Error getting crash data", TAG);
         return;
     }
 
     TRACE
     JsonDocument _jsonDocumentCrash;
     if (!crashMonitor.getJsonReport(_jsonDocumentCrash, _crashData)) {
-        _logger.error("Error creating JSON report", "mqtt::_publishCrash");
+        _logger.error("Error creating JSON report", TAG);
         return;
     }
 
@@ -548,12 +558,12 @@ void Mqtt::_publishCrash() {
     TRACE
     if (_publishMessage(_mqttTopicCrash, _crashMessage.c_str())) {_publishMqtt.crash = false;}
 
-    _logger.debug("Crash data published to MQTT", "mqtt::_publishCrash");
+    _logger.debug("Crash data published to MQTT", TAG);
 }
 
 
 void Mqtt::_publishMonitor() {
-    _logger.debug("Publishing monitor data to MQTT", "mqtt::_publishMonitor");
+    _logger.debug("Publishing monitor data to MQTT", TAG);
 
     TRACE
     JsonDocument _jsonDocumentMonitor;
@@ -571,11 +581,11 @@ void Mqtt::_publishMonitor() {
     TRACE
     if (_publishMessage(_mqttTopicMonitor, _crashMonitorMessage.c_str())) {_publishMqtt.monitor = false;}
 
-    _logger.debug("Monitor data published to MQTT", "mqtt::_publishMonitor");
+    _logger.debug("Monitor data published to MQTT", TAG);
 }
 
 void Mqtt::_publishGeneralConfiguration() {
-    _logger.debug("Publishing general configuration to MQTT", "mqtt::_publishGeneralConfiguration");
+    _logger.debug("Publishing general configuration to MQTT", TAG);
 
     JsonDocument _jsonDocument;
 
@@ -590,11 +600,11 @@ void Mqtt::_publishGeneralConfiguration() {
 
     if (_publishMessage(_mqttTopicGeneralConfiguration, _generalConfigurationMessage.c_str())) {_publishMqtt.generalConfiguration = false;}
 
-    _logger.debug("General configuration published to MQTT", "mqtt::_publishGeneralConfiguration");
+    _logger.debug("General configuration published to MQTT", TAG);
 }
 
 bool Mqtt::_publishProvisioningRequest() {
-    _logger.debug("Publishing provisioning request to MQTT", "mqtt::_publishProvisioningRequest");
+    _logger.debug("Publishing provisioning request to MQTT", TAG);
 
     JsonDocument _jsonDocument;
 
@@ -618,34 +628,34 @@ bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) 
     );
 
     if (topic == nullptr || message == nullptr) {
-        _logger.warning("Null pointer or message passed, meaning MQTT not initialized yet", "mqtt::_publishMessage");
+        _logger.warning("Null pointer or message passed, meaning MQTT not initialized yet", TAG);
         return false;
     }
 
     if (!_clientMqtt.connected()) {
-        _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", "mqtt::_publishMessage", getMqttStateReason(_clientMqtt.state()), topic);
+        _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", TAG, getMqttStateReason(_clientMqtt.state()), topic);
         return false;
     }
 
     // Ensure time has been synced
     if (!customTime.isTimeSynched()) {
-        _logger.warning("Time not synced. Skipping publishing on %s", "mqtt::_publishMessage", topic);
+        _logger.warning("Time not synced. Skipping publishing on %s", TAG, topic);
         return false;
     }
 
     TRACE
     if (!_clientMqtt.publish(topic, message, retain)) {
-        _logger.error("Failed to publish message on %s. MQTT client state: %s", "mqtt::_publishMessage", topic, getMqttStateReason(_clientMqtt.state()));
+        _logger.error("Failed to publish message on %s. MQTT client state: %s", TAG, topic, getMqttStateReason(_clientMqtt.state()));
         return false;
     }
 
-    _logger.debug("Message published: %s", "mqtt::_publishMessage", message);
+    _logger.debug("Message published: %s", TAG, message);
     return true;
 }
 
 void Mqtt::_checkIfPublishMeterNeeded() {
     if (_payloadMeter.isFull() || (millis() - _lastMillisMeterPublished) > MAX_INTERVAL_METER_PUBLISH) { // Either buffer is full or time has passed
-        _logger.debug("Setting flag to publish %d meter data points", "mqtt::_checkIfPublishMeterNeeded", _payloadMeter.size());
+        _logger.debug("Setting flag to publish %d meter data points", TAG, _payloadMeter.size());
 
         _publishMqtt.meter = true;
         
@@ -655,7 +665,7 @@ void Mqtt::_checkIfPublishMeterNeeded() {
 
 void Mqtt::_checkIfPublishStatusNeeded() {
     if ((millis() - _lastMillisStatusPublished) > MAX_INTERVAL_STATUS_PUBLISH) {
-        _logger.debug("Setting flag to publish status", "mqtt::_checkIfPublishStatusNeeded");
+        _logger.debug("Setting flag to publish status", TAG);
         
         _publishMqtt.status = true;
         
@@ -665,7 +675,7 @@ void Mqtt::_checkIfPublishStatusNeeded() {
 
 void Mqtt::_checkIfPublishMonitorNeeded() {
     if ((millis() - _lastMillisMonitorPublished) > MAX_INTERVAL_CRASH_MONITOR_PUBLISH) {
-        _logger.debug("Setting flag to publish crash monitor", "mqtt::_checkIfPublishMonitorNeeded");
+        _logger.debug("Setting flag to publish crash monitor", TAG);
         
         _publishMqtt.monitor = true;
         
@@ -685,52 +695,52 @@ void Mqtt::_checkPublishMqtt() {
 }
 
 void Mqtt::_subscribeToTopics() {
-    _logger.debug("Subscribing to topics...", "mqtt::_subscribeToTopics");
+    _logger.debug("Subscribing to topics...", TAG);
 
     TRACE
     _subscribeUpdateFirmware();
     _subscribeRestart();
     _subscribeEraseCertificates();
 
-    _logger.debug("Subscribed to topics", "mqtt::_subscribeToTopics");
+    _logger.debug("Subscribed to topics", TAG);
 }
 
 void Mqtt::_subscribeUpdateFirmware() {
-    _logger.debug("Subscribing to firmware update topic: %s", "mqtt::_subscribeUpdateFirmware", MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE);
+    _logger.debug("Subscribing to firmware update topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE);
     char _topic[MQTT_MAX_TOPIC_LENGTH];
     _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE, _topic);
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
-        _logger.warning("Failed to subscribe to firmware update topic", "mqtt::_subscribeUpdateFirmware");
+        _logger.warning("Failed to subscribe to firmware update topic", TAG);
     }
 }
 
 void Mqtt::_subscribeRestart() {
-    _logger.debug("Subscribing to restart topic: %s", "mqtt::_subscribeRestart", MQTT_TOPIC_SUBSCRIBE_RESTART);
+    _logger.debug("Subscribing to restart topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_RESTART);
     char _topic[MQTT_MAX_TOPIC_LENGTH];
     _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_RESTART, _topic);
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
-        _logger.warning("Failed to subscribe to restart topic", "mqtt::_subscribeRestart");
+        _logger.warning("Failed to subscribe to restart topic", TAG);
     }
 }
 
 void Mqtt::_subscribeEraseCertificates() {
-    _logger.debug("Subscribing to erase certificates topic: %s", "mqtt::_subscribeEraseCertificates", MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES);
+    _logger.debug("Subscribing to erase certificates topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES);
     char _topic[MQTT_MAX_TOPIC_LENGTH];
     _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES, _topic);
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
-        _logger.warning("Failed to subscribe to erase certificates topic", "mqtt::_subscribeEraseCertificates");
+        _logger.warning("Failed to subscribe to erase certificates topic", TAG);
     }
 }
 
 void Mqtt::_subscribeProvisioningResponse() {
-    _logger.debug("Subscribing to provisioning response topic: %s", "mqtt::_subscribeProvisioningResponse", MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE);
+    _logger.debug("Subscribing to provisioning response topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE);
     char _topic[MQTT_MAX_TOPIC_LENGTH];
     _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE, _topic);
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
-        _logger.warning("Failed to subscribe to provisioning response topic", "mqtt::_subscribeProvisioningResponse");
+        _logger.warning("Failed to subscribe to provisioning response topic", TAG);
     }
 }

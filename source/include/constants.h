@@ -3,7 +3,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "07"
-#define FIRMWARE_BUILD_VERSION_PATCH "14"
+#define FIRMWARE_BUILD_VERSION_PATCH "15"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -93,7 +93,11 @@
 #define MDNS_HOSTNAME "energyme"
 
 // MQTT
+#if HAS_SECRETS
+#define DEFAULT_IS_CLOUD_SERVICES_ENABLED true // If we compile with secrets, we might as well just directly connect
+#else
 #define DEFAULT_IS_CLOUD_SERVICES_ENABLED false
+#endif
 #define MAX_INTERVAL_METER_PUBLISH 30000 // The maximum interval between two meter payloads (in milliseconds)
 #define MAX_INTERVAL_STATUS_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
 #define MAX_INTERVAL_CRASH_MONITOR_PUBLISH 3600000 // The interval between two status publish (in milliseconds)

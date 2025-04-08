@@ -409,9 +409,24 @@
                         }
                     }
                 };
+                
+                // Get has_secrets status before sending configuration
+                var checkSecretsXhttp = new XMLHttpRequest();
+                checkSecretsXhttp.open("GET", "/rest/get-has-secrets", false); // Synchronous request
+                checkSecretsXhttp.send();
+                
+                if (checkSecretsXhttp.status === 200) {
+                    var secretsResponse = JSON.parse(checkSecretsXhttp.responseText);
+                    // If no secrets but cloud services is checked, prevent that
+                    if (!secretsResponse.has_secrets && document.getElementById("cloudServices").checked) {
+                        alert("Cannot enable cloud services: This firmware build does not include secrets.");
+                        document.getElementById("cloudServices").checked = false;
+                    }
+                }
+                
                 generalConfig.isCloudServicesEnabled = document.getElementById("cloudServices").checked;
                 generalConfig.ledBrightness = parseInt(document.getElementById("ledBrightness").value);
-
+            
                 xhttp.send(JSON.stringify(generalConfig));
             }
 
@@ -548,11 +563,49 @@
                 setTimeout(getCustomMqttConfiguration, 1000);
             }
 
+            function checkHasSecrets() {
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("GET", "/rest/get-has-secrets", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            var response = JSON.parse(this.responseText);
+                            
+                            // If no secrets available, disable cloud services option
+                            if (!response.has_secrets) {
+                                var cloudServicesCheckbox = document.getElementById("cloudServices");
+                                cloudServicesCheckbox.disabled = true;
+                                cloudServicesCheckbox.checked = false;
+                                
+                                // Create warning message if it doesn't exist
+                                if (!document.getElementById("cloud-services-warning")) {
+                                    var warningDiv = document.createElement("div");
+                                    warningDiv.id = "cloud-services-warning";
+                                    warningDiv.className = "warning-box";
+                                    warningDiv.style.backgroundColor = "#fff3cd";
+                                    warningDiv.style.color = "#856404";
+                                    warningDiv.style.padding = "10px";
+                                    warningDiv.style.borderRadius = "5px";
+                                    warningDiv.style.marginTop = "10px";
+                                    warningDiv.innerHTML = "⚠️ Cloud services require secrets to be included in the firmware. This build doesn't include secrets.";
+                                    
+                                    // Insert after the cloud services label
+                                    var labelElement = document.querySelector("label[for='cloudServices']");
+                                    labelElement.parentNode.insertBefore(warningDiv, labelElement.nextSibling);
+                                }
+                            }
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+            
             document.addEventListener("DOMContentLoaded", function() {
                 getGeneralConfiguration();
                 getLogLevel();
                 getCustomMqttConfiguration();
-
+                checkHasSecrets(); // Add this line to check for secrets
+                
                 setInterval(getCustomMqttConfiguration, 10000);
             });
 

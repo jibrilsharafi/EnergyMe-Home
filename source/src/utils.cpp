@@ -81,7 +81,7 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     _file.close();
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){ // It should never happen as createEmptyJsonFile should be used instead
-        logger.warning("%s JSON being serialized is {}", "utils::serializeJsonToSpiffs", path);
+        logger.debug("%s JSON being serialized is {}", "utils::serializeJsonToSpiffs", path);
     }
 
     String _jsonString;
@@ -441,8 +441,12 @@ bool setGeneralConfiguration(JsonDocument& jsonDocument) {
         logger.error("Failed to set general configuration", "utils::setGeneralConfiguration");
         return false;
     }
-
+#if HAS_SECRETS
     generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
+#else
+    logger.info("Cloud services cannot be enabled due to missing secrets", "utils::setGeneralConfiguration");
+    generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
+#endif
     generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
     generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
     generalConfiguration.ledBrightness = jsonDocument["ledBrightness"].as<int>();
@@ -617,15 +621,9 @@ void clearAllPreferences() {
 }
 
 bool isLatestFirmwareInstalled() {
-    File _file = SPIFFS.open(FW_UPDATE_INFO_JSON_PATH, FILE_READ);
-    if (!_file) {
-        logger.error("Failed to open firmware update info file", "utils::isLatestFirmwareInstalled");
-        return false;
-    }
-
     JsonDocument _jsonDocument;
-    deserializeJson(_jsonDocument, _file);
-
+    deserializeJsonFromSpiffs(FW_UPDATE_INFO_JSON_PATH, _jsonDocument);
+    
     if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
         logger.debug("Firmware update info file is empty", "utils::isLatestFirmwareInstalled");
         return true;
@@ -654,9 +652,10 @@ bool isLatestFirmwareInstalled() {
     int _currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
 
     if (_latestMajor < _currentMajor) return true;
-    else if (_latestMinor < _currentMinor) return true;
-    else if (_latestPatch < _currentPatch) return true;
-    else return false;
+    if (_latestMajor > _currentMajor) return false;
+    if (_latestMinor < _currentMinor) return true;
+    if (_latestMinor > _currentMinor) return false;
+    return _latestPatch <= _currentPatch;
 }
 
 String getDeviceId() {
