@@ -1,5 +1,7 @@
 #include "modbustcp.h"
 
+static const char *TAG = "modbustcp";
+
 ModbusTcp* modbusTcpInstance = nullptr;
 
 ModbusTcp::ModbusTcp(
@@ -21,22 +23,22 @@ ModbusTcp::ModbusTcp(
 }
 
 void ModbusTcp::begin() {
-    _logger.debug("Initializing Modbus TCP", "modbusTcp::begin");
+    _logger.debug("Initializing Modbus TCP", TAG);
     
     _mbServer.registerWorker(_serverId, READ_HOLD_REGISTER, &ModbusTcp::_handleReadHoldingRegisters);
     _mbServer.start(_port, _maxClients, _timeout);  // Port, default server ID, timeout in ms
     
-    _logger.debug("Modbus TCP initialized", "modbusTcp::begin");
+    _logger.debug("Modbus TCP initialized", TAG);
 }
 
 ModbusMessage ModbusTcp::_handleReadHoldingRegisters(ModbusMessage request) {
     if (!modbusTcpInstance) {
-        modbusTcpInstance->_logger.error("ModbusTcp instance not initialized yet", "ModbusTcp::_handleReadHoldingRegisters");
+        modbusTcpInstance->_logger.error("ModbusTcp instance not initialized yet", TAG);
         return ModbusMessage(request.getServerID(), request.getFunctionCode(), SERVER_DEVICE_FAILURE);
     }
     
     if (request.getFunctionCode() != READ_HOLD_REGISTER) {
-        modbusTcpInstance->_logger.debug("Invalid function code: %d", "ModbusTcp::_handleReadHoldingRegisters", request.getFunctionCode());
+        modbusTcpInstance->_logger.debug("Invalid function code: %d", TAG, request.getFunctionCode());
         return ModbusMessage(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
     }
 

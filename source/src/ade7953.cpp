@@ -1,5 +1,7 @@
 #include "ade7953.h"
 
+static const char *TAG = "ade7953";
+
 Ade7953::Ade7953(
     int ssPin,
     int sckPin,
@@ -23,57 +25,57 @@ Ade7953::Ade7953(
 }
 
 bool Ade7953::begin() {
-    _logger.debug("Initializing Ade7953", "ade7953::begin");
+    _logger.debug("Initializing Ade7953", TAG);
 
     TRACE
-    _logger.debug("Setting up hardware pins...", "ade7953::begin");
+    _logger.debug("Setting up hardware pins...", TAG);
     _setHardwarePins();
-    _logger.debug("Successfully set up hardware pins", "ade7953::begin");
+    _logger.debug("Successfully set up hardware pins", TAG);
 
     TRACE
-    _logger.debug("Verifying communication with Ade7953...", "ade7953::begin");
+    _logger.debug("Verifying communication with Ade7953...", TAG);
     if (!_verifyCommunication()) {
-        _logger.error("Failed to communicate with Ade7953", "ade7953::begin");
+        _logger.error("Failed to communicate with Ade7953", TAG);
         return false;
     }
-    _logger.debug("Successfully initialized Ade7953", "ade7953::begin");
+    _logger.debug("Successfully initialized Ade7953", TAG);
     
     TRACE
-    _logger.debug("Setting optimum settings...", "ade7953::begin");
+    _logger.debug("Setting optimum settings...", TAG);
     _setOptimumSettings();
-    _logger.debug("Successfully set optimum settings", "ade7953::begin");
+    _logger.debug("Successfully set optimum settings", TAG);
 
     TRACE
-    _logger.debug("Setting default parameters...", "ade7953::begin");
+    _logger.debug("Setting default parameters...", TAG);
     _setDefaultParameters();
-    _logger.debug("Successfully set default parameters", "ade7953::begin");
+    _logger.debug("Successfully set default parameters", TAG);
 
     TRACE
-    _logger.debug("Setting configuration from SPIFFS...", "ade7953::begin");
+    _logger.debug("Setting configuration from SPIFFS...", TAG);
     _setConfigurationFromSpiffs();
-    _logger.debug("Done setting configuration from SPIFFS", "ade7953::begin");
+    _logger.debug("Done setting configuration from SPIFFS", TAG);
 
     TRACE
-    _logger.debug("Reading channel data from SPIFFS...", "ade7953::begin");
+    _logger.debug("Reading channel data from SPIFFS...", TAG);
     _setChannelDataFromSpiffs();
-    _logger.debug("Done reading channel data from SPIFFS", "ade7953::begin");
+    _logger.debug("Done reading channel data from SPIFFS", TAG);
 
     TRACE
-    _logger.debug("Reading calibration values from SPIFFS...", "ade7953::begin");
+    _logger.debug("Reading calibration values from SPIFFS...", TAG);
     _setCalibrationValuesFromSpiffs();
-    _logger.debug("Done reading calibration values from SPIFFS", "ade7953::begin");
+    _logger.debug("Done reading calibration values from SPIFFS", TAG);
 
     TRACE
-    _logger.debug("Reading energy from SPIFFS...", "ade7953::begin");
+    _logger.debug("Reading energy from SPIFFS...", TAG);
     _setEnergyFromSpiffs();
-    _logger.debug("Done reading energy from SPIFFS", "ade7953::begin");
+    _logger.debug("Done reading energy from SPIFFS", TAG);
 
     TRACE
     return true;
 }
 
 void Ade7953::_setHardwarePins() {
-    _logger.debug("Setting hardware pins...", "ade7953::_setHardwarePins");
+    _logger.debug("Setting hardware pins...", TAG);
 
     pinMode(_ssPin, OUTPUT);
     pinMode(_sckPin, OUTPUT);
@@ -87,7 +89,7 @@ void Ade7953::_setHardwarePins() {
     SPI.setBitOrder(MSBFIRST);
     digitalWrite(_ssPin, HIGH);
 
-    _logger.debug("Successfully set hardware pins", "ade7953::_setHardwarePins");
+    _logger.debug("Successfully set hardware pins", TAG);
 }
 
 void Ade7953::_setDefaultParameters()
@@ -130,7 +132,7 @@ void Ade7953::loop() {
 }
 
 void Ade7953::_reset() {
-    _logger.debug("Resetting Ade7953", "ade7953::_reset");
+    _logger.debug("Resetting Ade7953", TAG);
     digitalWrite(_resetPin, LOW);
     delay(ADE7953_RESET_LOW_DURATION);
     digitalWrite(_resetPin, HIGH);
@@ -144,7 +146,7 @@ void Ade7953::_reset() {
  * @return true if the communication with the Ade7953 is successful, false otherwise.
  */
 bool Ade7953::_verifyCommunication() {
-    _logger.debug("Verifying communication with Ade7953...", "ade7953::_verifyCommunication");
+    _logger.debug("Verifying communication with Ade7953...", TAG);
     
     int _attempt = 0;
     bool _success = false;
@@ -155,21 +157,21 @@ bool Ade7953::_verifyCommunication() {
             continue;
         }
 
-        _logger.debug("Attempt (%d/%d) to communicate with Ade7953", "ade7953::_verifyCommunication", _attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+        _logger.debug("Attempt (%d/%d) to communicate with Ade7953", TAG, _attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
         
         _reset();
         _attempt++;
         _lastMillisAttempt = millis();
 
         if ((readRegister(AP_NOLOAD_32, 32, false)) == DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
-            _logger.debug("Communication successful with Ade7953", "ade7953::_verifyCommunication");
+            _logger.debug("Communication successful with Ade7953", TAG);
             return true;
         } else {
-            _logger.warning("Failed to communicate with Ade7953 on _attempt (%d/%d). Retrying in %d ms", "ade7953::_verifyCommunication", _attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
+            _logger.warning("Failed to communicate with Ade7953 on _attempt (%d/%d). Retrying in %d ms", TAG, _attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
         }
     }
 
-    _logger.error("Failed to communicate with Ade7953 after %d attempts", "ade7953::_verifyCommunication", ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+    _logger.error("Failed to communicate with Ade7953 after %d attempts", TAG, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
     return false;
 }
 
@@ -177,40 +179,40 @@ bool Ade7953::_verifyCommunication() {
 // --------------------
 
 void Ade7953::_setConfigurationFromSpiffs() {
-    _logger.debug("Setting configuration from SPIFFS...", "ade7953::_setConfigurationFromSpiffs");
+    _logger.debug("Setting configuration from SPIFFS...", TAG);
 
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
 
     if (!setConfiguration(_jsonDocument)) {
-        _logger.error("Failed to set configuration from SPIFFS. Keeping default one", "ade7953::_setConfigurationFromSpiffs");
+        _logger.error("Failed to set configuration from SPIFFS. Keeping default one", TAG);
         setDefaultConfiguration();
         return;
     }
 
-    _logger.debug("Successfully set configuration from SPIFFS", "ade7953::_setConfigurationFromSpiffs");
+    _logger.debug("Successfully set configuration from SPIFFS", TAG);
 }
 
 bool Ade7953::setConfiguration(JsonDocument &jsonDocument) {
-    _logger.debug("Setting configuration...", "ade7953::setConfiguration");
+    _logger.debug("Setting configuration...", TAG);
 
     if (!_validateConfigurationJson(jsonDocument)) {
-        _logger.warning("Invalid configuration JSON. Keeping previous configuration", "ade7953::setConfiguration");
+        _logger.warning("Invalid configuration JSON. Keeping previous configuration", TAG);
         return false;
     }
     
     if (!serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, jsonDocument)) {
-        _logger.error("Failed to save configuration to SPIFFS. Keeping previous configuration", "ade7953::setConfiguration");
+        _logger.error("Failed to save configuration to SPIFFS. Keeping previous configuration", TAG);
         return false;
     } else {
         _applyConfiguration(jsonDocument);
-        _logger.debug("Successfully saved configuration to SPIFFS", "ade7953::setConfiguration");
+        _logger.debug("Successfully saved configuration to SPIFFS", TAG);
         return true;
     }
 }
 
 void Ade7953::setDefaultConfiguration() {
-    _logger.debug("Setting default configuration...", "ade7953::setDefaultConfiguration");
+    _logger.debug("Setting default configuration...", TAG);
 
     createDefaultAde7953ConfigurationFile();
 
@@ -219,11 +221,11 @@ void Ade7953::setDefaultConfiguration() {
 
     setConfiguration(_jsonDocument);
 
-    _logger.debug("Default configuration set", "ade7953::setDefaultConfiguration");
+    _logger.debug("Default configuration set", TAG);
 }
 
 void Ade7953::_applyConfiguration(JsonDocument &jsonDocument) {
-    _logger.debug("Applying configuration...", "ade7953::_applyConfiguration");
+    _logger.debug("Applying configuration...", TAG);
 
     _sampleTime = jsonDocument["sampleTime"].as<unsigned long>();
     _updateSampleTime();
@@ -258,32 +260,32 @@ void Ade7953::_applyConfiguration(JsonDocument &jsonDocument) {
     _setPhaseCalibration(jsonDocument["phCalA"].as<long>(), CHANNEL_A);
     _setPhaseCalibration(jsonDocument["phCalB"].as<long>(), CHANNEL_B);
 
-    _logger.debug("Successfully applied configuration", "ade7953::_applyConfiguration");
+    _logger.debug("Successfully applied configuration", TAG);
 }
 
 bool Ade7953::_validateConfigurationJson(JsonDocument& jsonDocument) {
-    if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", "ade7953::_validateConfigurationJson"); return false;}
+    if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", TAG); return false;}
 
-    if (!jsonDocument["sampleTime"].is<unsigned long>()) {_logger.warning("sampleTime is not unsigned long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["aVGain"].is<long>()) {_logger.warning("aVGain is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["aIGain"].is<long>()) {_logger.warning("aIGain is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["bIGain"].is<long>()) {_logger.warning("bIGain is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["aIRmsOs"].is<long>()) {_logger.warning("aIRmsOs is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["bIRmsOs"].is<long>()) {_logger.warning("bIRmsOs is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["aWGain"].is<long>()) {_logger.warning("aWGain is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["bWGain"].is<long>()) {_logger.warning("bWGain is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["aWattOs"].is<long>()) {_logger.warning("aWattOs is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["bWattOs"].is<long>()) {_logger.warning("bWattOs is not long", "ade7953::_validateConfigurationJson"); return false;} 
-    if (!jsonDocument["aVarGain"].is<long>()) {_logger.warning("aVarGain is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["bVarGain"].is<long>()) {_logger.warning("bVarGain is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["aVarOs"].is<long>()) {_logger.warning("aVarOs is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["bVarOs"].is<long>()) {_logger.warning("bVarOs is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["aVaGain"].is<long>()) {_logger.warning("aVaGain is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["bVaGain"].is<long>()) {_logger.warning("bVaGain is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["aVaOs"].is<long>()) {_logger.warning("aVaOs is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["bVaOs"].is<long>()) {_logger.warning("bVaOs is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["phCalA"].is<long>()) {_logger.warning("phCalA is not long", "ade7953::_validateConfigurationJson"); return false;}
-    if (!jsonDocument["phCalB"].is<long>()) {_logger.warning("phCalB is not long", "ade7953::_validateConfigurationJson"); return false;}
+    if (!jsonDocument["sampleTime"].is<unsigned long>()) {_logger.warning("sampleTime is not unsigned long", TAG); return false;}
+    if (!jsonDocument["aVGain"].is<long>()) {_logger.warning("aVGain is not long", TAG); return false;}
+    if (!jsonDocument["aIGain"].is<long>()) {_logger.warning("aIGain is not long", TAG); return false;}
+    if (!jsonDocument["bIGain"].is<long>()) {_logger.warning("bIGain is not long", TAG); return false;}
+    if (!jsonDocument["aIRmsOs"].is<long>()) {_logger.warning("aIRmsOs is not long", TAG); return false;}
+    if (!jsonDocument["bIRmsOs"].is<long>()) {_logger.warning("bIRmsOs is not long", TAG); return false;}
+    if (!jsonDocument["aWGain"].is<long>()) {_logger.warning("aWGain is not long", TAG); return false;}
+    if (!jsonDocument["bWGain"].is<long>()) {_logger.warning("bWGain is not long", TAG); return false;}
+    if (!jsonDocument["aWattOs"].is<long>()) {_logger.warning("aWattOs is not long", TAG); return false;}
+    if (!jsonDocument["bWattOs"].is<long>()) {_logger.warning("bWattOs is not long", TAG); return false;} 
+    if (!jsonDocument["aVarGain"].is<long>()) {_logger.warning("aVarGain is not long", TAG); return false;}
+    if (!jsonDocument["bVarGain"].is<long>()) {_logger.warning("bVarGain is not long", TAG); return false;}
+    if (!jsonDocument["aVarOs"].is<long>()) {_logger.warning("aVarOs is not long", TAG); return false;}
+    if (!jsonDocument["bVarOs"].is<long>()) {_logger.warning("bVarOs is not long", TAG); return false;}
+    if (!jsonDocument["aVaGain"].is<long>()) {_logger.warning("aVaGain is not long", TAG); return false;}
+    if (!jsonDocument["bVaGain"].is<long>()) {_logger.warning("bVaGain is not long", TAG); return false;}
+    if (!jsonDocument["aVaOs"].is<long>()) {_logger.warning("aVaOs is not long", TAG); return false;}
+    if (!jsonDocument["bVaOs"].is<long>()) {_logger.warning("bVaOs is not long", TAG); return false;}
+    if (!jsonDocument["phCalA"].is<long>()) {_logger.warning("phCalA is not long", TAG); return false;}
+    if (!jsonDocument["phCalB"].is<long>()) {_logger.warning("phCalB is not long", TAG); return false;}
 
     return true;
 }
@@ -292,25 +294,25 @@ bool Ade7953::_validateConfigurationJson(JsonDocument& jsonDocument) {
 // --------------------
 
 void Ade7953::_setCalibrationValuesFromSpiffs() {
-    _logger.debug("Setting calibration values from SPIFFS", "ade7953::_setCalibrationValuesFromSpiffs");
+    _logger.debug("Setting calibration values from SPIFFS", TAG);
 
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
 
     if (!setCalibrationValues(_jsonDocument)) {
-        _logger.error("Failed to set calibration values from SPIFFS. Keeping default ones", "ade7953::_setCalibrationValuesFromSpiffs");
+        _logger.error("Failed to set calibration values from SPIFFS. Keeping default ones", TAG);
         setDefaultCalibrationValues();
         return;
     }
 
-    _logger.debug("Successfully set calibration values from SPIFFS", "ade7953::_setCalibrationValuesFromSpiffs");
+    _logger.debug("Successfully set calibration values from SPIFFS", TAG);
 }
 
 bool Ade7953::setCalibrationValues(JsonDocument &jsonDocument) {
-    _logger.debug("Setting new calibration values...", "ade7953::setCalibrationValues");
+    _logger.debug("Setting new calibration values...", TAG);
 
     if (!_validateCalibrationValuesJson(jsonDocument)) {
-        _logger.warning("Invalid calibration JSON. Keeping previous calibration values", "ade7953::setCalibrationValues");
+        _logger.warning("Invalid calibration JSON. Keeping previous calibration values", TAG);
         return false;
     }
 
@@ -318,13 +320,13 @@ bool Ade7953::setCalibrationValues(JsonDocument &jsonDocument) {
 
     _updateChannelData();
 
-    _logger.debug("Successfully set new calibration values", "ade7953::setCalibrationValues");
+    _logger.debug("Successfully set new calibration values", TAG);
 
     return true;
 }
 
 void Ade7953::setDefaultCalibrationValues() {
-    _logger.debug("Setting default calibration values", "ade7953::setDefaultCalibrationValues");
+    _logger.debug("Setting default calibration values", TAG);
 
     createDefaultCalibrationFile();
     
@@ -333,11 +335,11 @@ void Ade7953::setDefaultCalibrationValues() {
 
     setCalibrationValues(_jsonDocument);
 
-    _logger.debug("Successfully set default calibration values", "ade7953::setDefaultCalibrationValues");
+    _logger.debug("Successfully set default calibration values", TAG);
 }
 
 void Ade7953::_jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues) {
-    _logger.verbose("Parsing JSON calibration values for label %s", "ade7953::_jsonToCalibrationValues", calibrationValues.label.c_str());
+    _logger.verbose("Parsing JSON calibration values for label %s", TAG, calibrationValues.label.c_str());
 
     // The label is not parsed as it is already set in the channel data
     calibrationValues.vLsb = jsonObject["vLsb"].as<float>();
@@ -351,21 +353,21 @@ void Ade7953::_jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues
 }
 
 bool Ade7953::_validateCalibrationValuesJson(JsonDocument& jsonDocument) {
-    if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", "ade7953::_validateCalibrationValuesJson"); return false;}
+    if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", TAG); return false;}
 
     for (JsonPair kv : jsonDocument.as<JsonObject>()) {
-        if (!kv.value().is<JsonObject>()) {_logger.warning("JSON pair value is not an object", "ade7953::_validateCalibrationValuesJson"); return false;}
+        if (!kv.value().is<JsonObject>()) {_logger.warning("JSON pair value is not an object", TAG); return false;}
 
         JsonObject calibrationObject = kv.value().as<JsonObject>();
 
-        if (!calibrationObject["vLsb"].is<float>() && !calibrationObject["vLsb"].is<int>()) {_logger.warning("vLsb is not float or int", "ade7953::_validateCalibrationValuesJson"); return false;}
-        if (!calibrationObject["aLsb"].is<float>() && !calibrationObject["aLsb"].is<int>()) {_logger.warning("aLsb is not float or int", "ade7953::_validateCalibrationValuesJson"); return false;}
-        if (!calibrationObject["wLsb"].is<float>() && !calibrationObject["wLsb"].is<int>()) {_logger.warning("wLsb is not float or int", "ade7953::_validateCalibrationValuesJson"); return false;}
-        if (!calibrationObject["varLsb"].is<float>() && !calibrationObject["varLsb"].is<int>()) {_logger.warning("varLsb is not float or int", "ade7953::_validateCalibrationValuesJson"); return false;}
-        if (!calibrationObject["vaLsb"].is<float>() && !calibrationObject["vaLsb"].is<int>()) {_logger.warning("vaLsb is not float or int", "ade7953::_validateCalibrationValuesJson"); return false;}
-        if (!calibrationObject["whLsb"].is<float>() && !calibrationObject["whLsb"].is<int>()) {_logger.warning("whLsb is not float or int", "ade7953::_validateCalibrationValuesJson"); return false;}
-        if (!calibrationObject["varhLsb"].is<float>() && !calibrationObject["varhLsb"].is<int>()) {_logger.warning("varhLsb is not float or int", "ade7953::_validateCalibrationValuesJson"); return false;}
-        if (!calibrationObject["vahLsb"].is<float>() && !calibrationObject["vahLsb"].is<int>()) {_logger.warning("vahLsb is or not float or int", "ade7953::_validateCalibrationValuesJson"); return false;}
+        if (!calibrationObject["vLsb"].is<float>() && !calibrationObject["vLsb"].is<int>()) {_logger.warning("vLsb is not float or int", TAG); return false;}
+        if (!calibrationObject["aLsb"].is<float>() && !calibrationObject["aLsb"].is<int>()) {_logger.warning("aLsb is not float or int", TAG); return false;}
+        if (!calibrationObject["wLsb"].is<float>() && !calibrationObject["wLsb"].is<int>()) {_logger.warning("wLsb is not float or int", TAG); return false;}
+        if (!calibrationObject["varLsb"].is<float>() && !calibrationObject["varLsb"].is<int>()) {_logger.warning("varLsb is not float or int", TAG); return false;}
+        if (!calibrationObject["vaLsb"].is<float>() && !calibrationObject["vaLsb"].is<int>()) {_logger.warning("vaLsb is not float or int", TAG); return false;}
+        if (!calibrationObject["whLsb"].is<float>() && !calibrationObject["whLsb"].is<int>()) {_logger.warning("whLsb is not float or int", TAG); return false;}
+        if (!calibrationObject["varhLsb"].is<float>() && !calibrationObject["varhLsb"].is<int>()) {_logger.warning("varhLsb is not float or int", TAG); return false;}
+        if (!calibrationObject["vahLsb"].is<float>() && !calibrationObject["vahLsb"].is<int>()) {_logger.warning("vahLsb is or not float or int", TAG); return false;}
     }
 
     return true;
@@ -375,32 +377,32 @@ bool Ade7953::_validateCalibrationValuesJson(JsonDocument& jsonDocument) {
 // --------------------
 
 void Ade7953::_setChannelDataFromSpiffs() {
-    _logger.debug("Setting data channel from SPIFFS...", "ade7953::_setChannelDataFromSpiffs");
+    _logger.debug("Setting data channel from SPIFFS...", TAG);
 
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument);
 
     if (!setChannelData(_jsonDocument)) {
-        _logger.error("Failed to set data channel from SPIFFS. Keeping default data channel", "ade7953::_setChannelDataFromSpiffs");
+        _logger.error("Failed to set data channel from SPIFFS. Keeping default data channel", TAG);
         setDefaultChannelData();
         return;
     }
 
-    _logger.debug("Successfully set data channel from SPIFFS", "ade7953::_setChannelDataFromSpiffs");
+    _logger.debug("Successfully set data channel from SPIFFS", TAG);
 }
 
 bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
-    _logger.debug("Setting channel data...", "ade7953::setChannelData");
+    _logger.debug("Setting channel data...", TAG);
 
     if (!_validateChannelDataJson(jsonDocument)) {
-        _logger.warning("Invalid JSON data channel. Keeping previous data channel", "ade7953::setChannelData");
+        _logger.warning("Invalid JSON data channel. Keeping previous data channel", TAG);
         return false;
     }
 
     for (JsonPair _kv : jsonDocument.as<JsonObject>()) {
         _logger.verbose(
             "Parsing JSON data channel %s | Active: %d | Reverse: %d | Label: %s | Phase: %d | Calibration Label: %s", 
-            "ade7953::setChannelData", 
+            TAG, 
             _kv.key().c_str(), 
             _kv.value()["active"].as<bool>(), 
             _kv.value()["reverse"].as<bool>(), 
@@ -413,7 +415,7 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
 
         // Check if _index is within bounds
         if (_index < 0 || _index >= CHANNEL_COUNT) {
-            _logger.error("Index out of bounds: %d", "ade7953::setChannelData", _index);
+            _logger.error("Index out of bounds: %d", TAG, _index);
             continue;
         }
 
@@ -424,7 +426,7 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
         channelData[_index].phase = _kv.value()["phase"].as<Phase>();
         channelData[_index].calibrationValues.label = _kv.value()["calibrationLabel"].as<String>();
     }
-    _logger.debug("Successfully set data channel properties", "ade7953::setChannelData");
+    _logger.debug("Successfully set data channel properties", TAG);
 
     // Add the calibration values to the channel data
     _updateChannelData();
@@ -433,13 +435,13 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
 
     publishMqtt.channel = true;
 
-    _logger.debug("Successfully parsed JSON data channel", "ade7953::setChannelData");
+    _logger.debug("Successfully parsed JSON data channel", TAG);
 
     return true;
 }
 
 void Ade7953::setDefaultChannelData() {
-    _logger.debug("Setting default data channel...", "ade7953::setDefaultChannelData");
+    _logger.debug("Setting default data channel...", TAG);
 
     createDefaultChannelDataFile();
 
@@ -448,26 +450,26 @@ void Ade7953::setDefaultChannelData() {
 
     setChannelData(_jsonDocument);
 
-    _logger.debug("Successfully initialized data channel", "ade7953::setDefaultChannelData");
+    _logger.debug("Successfully initialized data channel", TAG);
 }
 
 bool Ade7953::_saveChannelDataToSpiffs() {
-    _logger.debug("Saving data channel to SPIFFS...", "ade7953::_saveChannelDataToSpiffs");
+    _logger.debug("Saving data channel to SPIFFS...", TAG);
 
     JsonDocument _jsonDocument;
     channelDataToJson(_jsonDocument);
 
     if (serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument)) {
-        _logger.debug("Successfully saved data channel to SPIFFS", "ade7953::_saveChannelDataToSpiffs");
+        _logger.debug("Successfully saved data channel to SPIFFS", TAG);
         return true;
     } else {
-        _logger.error("Failed to save data channel to SPIFFS", "ade7953::_saveChannelDataToSpiffs");
+        _logger.error("Failed to save data channel to SPIFFS", TAG);
         return false;
     }
 }
 
 void Ade7953::channelDataToJson(JsonDocument &jsonDocument) {
-    _logger.debug("Converting data channel to JSON...", "ade7953::channelDataToJson");
+    _logger.debug("Converting data channel to JSON...", TAG);
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
         jsonDocument[String(i)]["active"] = channelData[i].active;
@@ -477,39 +479,39 @@ void Ade7953::channelDataToJson(JsonDocument &jsonDocument) {
         jsonDocument[String(i)]["calibrationLabel"] = channelData[i].calibrationValues.label;
     }
 
-    _logger.debug("Successfully converted data channel to JSON", "ade7953::channelDataToJson");
+    _logger.debug("Successfully converted data channel to JSON", TAG);
 }
 
 bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
-    if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", "ade7953::_validateChannelDataJson"); return false;}
+    if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", TAG); return false;}
 
     for (JsonPair kv : jsonDocument.as<JsonObject>()) {
-        if (!kv.value().is<JsonObject>()) {_logger.warning("JSON pair value is not an object", "ade7953::_validateChannelDataJson"); return false;}
+        if (!kv.value().is<JsonObject>()) {_logger.warning("JSON pair value is not an object", TAG); return false;}
 
         int _index = atoi(kv.key().c_str());
-        if (_index < 0 || _index >= CHANNEL_COUNT) {_logger.warning("Index out of bounds: %d", "ade7953::_validateChannelDataJson", _index); return false;}
+        if (_index < 0 || _index >= CHANNEL_COUNT) {_logger.warning("Index out of bounds: %d", TAG, _index); return false;}
 
         JsonObject channelObject = kv.value().as<JsonObject>();
 
-        if (!channelObject["active"].is<bool>()) {_logger.warning("active is not bool", "ade7953::_validateChannelDataJson"); return false;}
-        if (!channelObject["reverse"].is<bool>()) {_logger.warning("reverse is not bool", "ade7953::_validateChannelDataJson"); return false;}
-        if (!channelObject["label"].is<String>()) {_logger.warning("label is not string", "ade7953::_validateChannelDataJson"); return false;}
-        if (!channelObject["phase"].is<int>()) {_logger.warning("phase is not int", "ade7953::_validateChannelDataJson"); return false;}
-        if (kv.value()["phase"].as<int>() < 1 || kv.value()["phase"].as<int>() > 3) {_logger.warning("phase is not between 1 and 3", "ade7953::_validateChannelDataJson"); return false;}
-        if (!channelObject["calibrationLabel"].is<String>()) {_logger.warning("calibrationLabel is not string", "ade7953::_validateChannelDataJson"); return false;}
+        if (!channelObject["active"].is<bool>()) {_logger.warning("active is not bool", TAG); return false;}
+        if (!channelObject["reverse"].is<bool>()) {_logger.warning("reverse is not bool", TAG); return false;}
+        if (!channelObject["label"].is<String>()) {_logger.warning("label is not string", TAG); return false;}
+        if (!channelObject["phase"].is<int>()) {_logger.warning("phase is not int", TAG); return false;}
+        if (kv.value()["phase"].as<int>() < 1 || kv.value()["phase"].as<int>() > 3) {_logger.warning("phase is not between 1 and 3", TAG); return false;}
+        if (!channelObject["calibrationLabel"].is<String>()) {_logger.warning("calibrationLabel is not string", TAG); return false;}
     }
 
     return true;
 }
 
 void Ade7953::_updateChannelData() {
-    _logger.debug("Updating data channel...", "ade7953::_updateChannelData");
+    _logger.debug("Updating data channel...", TAG);
 
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
 
     if (_jsonDocument.isNull()) {
-        _logger.error("Failed to read calibration values from SPIFFS. Keeping previous values", "ade7953::_updateChannelData");
+        _logger.error("Failed to read calibration values from SPIFFS. Keeping previous values", TAG);
         return;
     }
     
@@ -523,7 +525,7 @@ void Ade7953::_updateChannelData() {
         } else {
             _logger.warning(
                 "Calibration label %s for channel %d not found in calibration JSON", 
-                "ade7953::_updateChannelData", 
+                TAG, 
                 channelData[i].calibrationValues.label.c_str(), 
                 i
             );
@@ -532,16 +534,16 @@ void Ade7953::_updateChannelData() {
     
     _updateSampleTime();
 
-    _logger.debug("Successfully updated data channel", "ade7953::_updateChannelData");
+    _logger.debug("Successfully updated data channel", TAG);
 }
 
 void Ade7953::_updateSampleTime() {
-    _logger.debug("Updating sample time", "ade7953::updateSampleTime");
+    _logger.debug("Updating sample time", TAG);
 
     unsigned int _linecyc = _sampleTime * 50 * 2 / 1000; // 1 channel at 1000 ms: 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
     _setLinecyc(_linecyc);
 
-    _logger.debug("Successfully updated sample time", "ade7953::updateSampleTime");
+    _logger.debug("Successfully updated sample time", TAG);
 }
 
 // This returns the next channel (except 0) that is active
@@ -681,7 +683,7 @@ bool Ade7953::readMeterValues(int channel) { // TODO: test another way of readin
             // I cannot prove why, but I am SURE the minus is needed if the phase is leading
             _powerFactor = - cos(acos(_powerFactorPhaseOne) + (2 * PI / 3));
         } else {
-            _logger.error("Invalid phase %d for channel %d", "ade7953::readMeterValues", channelData[channel].phase, channel);
+            _logger.error("Invalid phase %d for channel %d", TAG, channelData[channel].phase, channel);
             return false;
         }
 
@@ -712,7 +714,7 @@ bool Ade7953::readMeterValues(int channel) { // TODO: test another way of readin
         meterValues[channel].apparentPower = _apparentPower;
         meterValues[channel].powerFactor = _powerFactor;
     } else {
-        logger.warning("Invalid reading for channel %d. Discarding data point", "ade7953::readMeterValues", channel);
+        logger.warning("Invalid reading for channel %d. Discarding data point", TAG, channel);
         return false;
     }
 
@@ -798,7 +800,7 @@ void Ade7953::purgeEnergyRegister(int channel) {
 
 bool Ade7953::_validateValue(float newValue, float min, float max) {
     if (newValue < min || newValue > max) {
-        _logger.warning("Value %f out of range (minimum: %f, maximum: %f)", "ade7953::_validateValue", newValue, min, max);
+        _logger.warning("Value %f out of range (minimum: %f, maximum: %f)", TAG, newValue, min, max);
         return false;
     }
     return true;
@@ -856,13 +858,13 @@ void Ade7953::meterValuesToJson(JsonDocument &jsonDocument) {
 // --------------------
 
 void Ade7953::_setEnergyFromSpiffs() {
-    _logger.debug("Reading energy from SPIFFS", "ade7953::readEnergyFromSpiffs");
+    _logger.debug("Reading energy from SPIFFS", TAG);
     
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
 
     if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
-        _logger.error("Failed to read energy from SPIFFS", "ade7953::readEnergyFromSpiffs");
+        _logger.error("Failed to read energy from SPIFFS", TAG);
         return;
     } else {
         for (int i = 0; i < CHANNEL_COUNT; i++) {
@@ -874,20 +876,20 @@ void Ade7953::_setEnergyFromSpiffs() {
         }
     }
         
-    _logger.debug("Successfully read energy from SPIFFS", "ade7953::readEnergyFromSpiffs");
+    _logger.debug("Successfully read energy from SPIFFS", TAG);
 }
 
 void Ade7953::saveEnergy() {
-    _logger.debug("Saving energy...", "ade7953::saveEnergy");
+    _logger.debug("Saving energy...", TAG);
 
     _saveEnergyToSpiffs();
     _saveDailyEnergyToSpiffs();
 
-    _logger.debug("Successfully saved energy", "ade7953::saveEnergy");
+    _logger.debug("Successfully saved energy", TAG);
 }
 
 void Ade7953::_saveEnergyToSpiffs() {
-    _logger.debug("Saving energy to SPIFFS...", "ade7953::saveEnergyToSpiffs");
+    _logger.debug("Saving energy to SPIFFS...", TAG);
 
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
@@ -900,18 +902,18 @@ void Ade7953::_saveEnergyToSpiffs() {
         _jsonDocument[String(i)]["apparentEnergy"] = meterValues[i].apparentEnergy;
     }
 
-    if (serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument)) _logger.debug("Successfully saved energy to SPIFFS", "ade7953::saveEnergyToSpiffs");
+    if (serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument)) _logger.debug("Successfully saved energy to SPIFFS", TAG);
 }
 
 void Ade7953::_saveDailyEnergyToSpiffs() {
-    _logger.debug("Saving daily energy to SPIFFS...", "ade7953::saveDailyEnergyToSpiffs");
+    _logger.debug("Saving daily energy to SPIFFS...", TAG);
 
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument);
     
     time_t now = time(nullptr);
     if (now < 1000000000) { // Any time less than 2001-09-09 01:46:40
-        _logger.warning("Skipping saving daily energy as time is not set yet", "ade7953::saveDailyEnergyToSpiffs");
+        _logger.warning("Skipping saving daily energy as time is not set yet", TAG);
         return;
     }
     struct tm *timeinfo = localtime(&now);
@@ -928,11 +930,11 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
         }
     }
 
-    if (serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument)) _logger.debug("Successfully saved daily energy to SPIFFS", "ade7953::saveDailyEnergyToSpiffs");
+    if (serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument)) _logger.debug("Successfully saved daily energy to SPIFFS", TAG);
 }
 
 void Ade7953::resetEnergyValues() {
-    _logger.warning("Resetting energy values to 0", "ade7953::resetEnergyValues");
+    _logger.warning("Resetting energy values to 0", TAG);
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
         meterValues[i].activeEnergyImported = 0.0;
@@ -945,7 +947,7 @@ void Ade7953::resetEnergyValues() {
     createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
     saveEnergy();
 
-    _logger.info("Successfully reset energy values to 0", "ade7953::resetEnergyValues");
+    _logger.info("Successfully reset energy values to 0", TAG);
 }
 
 
@@ -961,7 +963,7 @@ void Ade7953::_setLinecyc(unsigned int linecyc) {
 
     _logger.debug(
         "Setting linecyc to %d",
-        "ade7953::_setLinecyc",
+        TAG,
         linecyc
     );
 
@@ -971,7 +973,7 @@ void Ade7953::_setLinecyc(unsigned int linecyc) {
 void Ade7953::_setPhaseCalibration(long phaseCalibration, int channel) {
     _logger.debug(
         "Setting phase calibration to %d on channel %d",
-        "ade7953::_setPhaseCalibration",
+        TAG,
         phaseCalibration,
         channel
     );
@@ -986,7 +988,7 @@ void Ade7953::_setPhaseCalibration(long phaseCalibration, int channel) {
 void Ade7953::_setPgaGain(long pgaGain, int channel, int measurementType) {
     _logger.debug(
         "Setting PGA gain to %d on channel %d for measurement type %d",
-        "ade7953::_setPgaGain",
+        TAG,
         pgaGain,
         channel,
         measurementType
@@ -1016,7 +1018,7 @@ void Ade7953::_setPgaGain(long pgaGain, int channel, int measurementType) {
 void Ade7953::_setGain(long gain, int channel, int measurementType) {
     _logger.debug(
         "Setting gain to %ld on channel %d for measurement type %d",
-        "ade7953::_setGain",
+        TAG,
         gain,
         channel,
         measurementType
@@ -1064,7 +1066,7 @@ void Ade7953::_setGain(long gain, int channel, int measurementType) {
 void Ade7953::_setOffset(long offset, int channel, int measurementType) {
     _logger.debug(
         "Setting offset to %ld on channel %d for measurement type %d",
-        "ade7953::_setOffset",
+        TAG,
         offset,
         channel,
         measurementType
@@ -1260,7 +1262,7 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData) {
     }
     _logger.verbose(
         "Read %ld from register %ld with %d bits",
-        "ade7953::readRegister",
+        TAG,
         _long_response,
         registerAddress,
         nBits
@@ -1279,7 +1281,7 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData) {
 void Ade7953::writeRegister(long registerAddress, int nBits, long data) {
     _logger.debug(
         "Writing %ld to register %ld with %d bits",
-        "ade7953::writeRegister",
+        TAG,
         data,
         registerAddress,
         nBits

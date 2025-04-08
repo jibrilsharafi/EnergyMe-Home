@@ -205,7 +205,7 @@ bool Mqtt::_connectMqtt()
         int _currentState = _clientMqtt.state();
         _logger.warning(
             "Failed to connect to MQTT (attempt %d). Reason: %s (%d). Retrying...",
-            "mqtt::_connectMqtt",
+            TAG,
             _mqttConnectionAttempt + 1,
             getMqttStateReason(_currentState),
             _currentState
@@ -217,10 +217,10 @@ bool Mqtt::_connectMqtt()
         // Check for specific errors that warrant clearing certificates
         if (_currentState == MQTT_CONNECT_BAD_CREDENTIALS || _currentState == MQTT_CONNECT_UNAUTHORIZED) {
             _logger.error("MQTT connection failed due to authorization/credentials error (%d). Erasing certificates and restarting...",
-                "mqtt::_connectMqtt",
+                TAG,
                 _currentState);
             clearCertificates();
-            setRestartEsp32("mqtt::_connectMqtt", "MQTT Authentication/Authorization Error");
+            setRestartEsp32(TAG, "MQTT Authentication/Authorization Error");
             _nextMqttConnectionAttemptMillis = UINT32_MAX; // Prevent further attempts before restart
             return false; // Prevent further processing in this cycle
         }
@@ -279,7 +279,7 @@ void Mqtt::_claimProcess() {
 
         _logger.warning(
             "Failed to connect to MQTT for claiming certificates (%d/%d). Reason: %s. Retrying...",
-            "mqtt::_claimProcess",
+            TAG,
             _connectionAttempt + 1,
             MQTT_CLAIM_MAX_CONNECTION_ATTEMPT,
             getMqttStateReason(_clientMqtt.state())
@@ -290,7 +290,7 @@ void Mqtt::_claimProcess() {
 
     if (_connectionAttempt >= MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
         _logger.error("Failed to connect to MQTT for claiming certificates after %d attempts", TAG, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
-        setRestartEsp32("mqtt::_claimProcess", "Failed to claim certificates");
+        setRestartEsp32(TAG, "Failed to claim certificates");
         return;
     }
 
@@ -309,7 +309,7 @@ void Mqtt::_claimProcess() {
 
         _logger.warning(
             "Failed to publish provisioning request (%d/%d). Retrying...",
-            "mqtt::begin",
+            TAG,
             _publishAttempt + 1,
             MQTT_CLAIM_MAX_CONNECTION_ATTEMPT
         );
@@ -623,7 +623,7 @@ bool Mqtt::_publishProvisioningRequest() {
 bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) {
     _logger.debug(
         "Publishing message to topic %s",
-        "mqtt::_publishMessage",
+        TAG,
         topic
     );
 

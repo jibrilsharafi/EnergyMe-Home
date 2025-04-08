@@ -20,6 +20,8 @@
 // Global variables
 // --------------------
 
+static const char *TAG = "main";
+
 RestartConfiguration restartConfiguration;
 PublishMqtt publishMqtt;
 
@@ -224,84 +226,84 @@ void setup() {
     logger.begin();
     logger.setCallback(callbackLogToMqtt);
 
-    logger.info("Booting...", "main::setup");  
-    logger.info("EnergyMe - Home | Build version: %s | Build date: %s %s", "main::setup", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
+    logger.info("Booting...", TAG);  
+    logger.info("EnergyMe - Home | Build version: %s | Build date: %s %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
 
     
-    logger.info("Setting up crash monitor...", "main::setup");
+    logger.info("Setting up crash monitor...", TAG);
     crashMonitor.begin();
-    logger.info("Crash monitor setup done", "main::setup");
+    logger.info("Crash monitor setup done", TAG);
 
     led.setCyan();
 
     TRACE
-    logger.info("Checking for missing files...", "main::setup");
+    logger.info("Checking for missing files...", TAG);
     auto missingFiles = checkMissingFiles();
     if (!missingFiles.empty()) {
         led.setOrange();
-        logger.warning("Missing files detected. Creating default files for missing files...", "main::setup");
+        logger.warning("Missing files detected. Creating default files for missing files...", TAG);
         
         TRACE
         createDefaultFilesForMissingFiles(missingFiles);
 
-        logger.info("Default files created for missing files", "main::setup");
+        logger.info("Default files created for missing files", TAG);
     } else {
-        logger.info("No missing files detected", "main::setup");
+        logger.info("No missing files detected", TAG);
     }
 
     TRACE
-    logger.info("Fetching general configuration from SPIFFS...", "main::setup");
+    logger.info("Fetching general configuration from SPIFFS...", TAG);
     if (!setGeneralConfigurationFromSpiffs()) {
-        logger.warning("Failed to load configuration from SPIFFS. Using default values.", "main::setup");
+        logger.warning("Failed to load configuration from SPIFFS. Using default values.", TAG);
     } else {
-        logger.info("Configuration loaded from SPIFFS", "main::setup");
+        logger.info("Configuration loaded from SPIFFS", TAG);
     }
 
     led.setPurple();
     
     TRACE
-    logger.info("Setting up multiplexer...", "main::setup");
+    logger.info("Setting up multiplexer...", TAG);
     multiplexer.begin();
-    logger.info("Multiplexer setup done", "main::setup");
+    logger.info("Multiplexer setup done", TAG);
     
     TRACE
-    logger.info("Setting up ADE7953...", "main::setup");
+    logger.info("Setting up ADE7953...", TAG);
     if (!ade7953.begin()) {
-        logger.fatal("ADE7953 initialization failed!", "main::setup");
+        logger.fatal("ADE7953 initialization failed!", TAG);
     } else {
-        logger.info("ADE7953 setup done", "main::setup");
+        logger.info("ADE7953 setup done", TAG);
     }
 
     led.setBlue();
 
     TRACE
-    logger.info("Setting up WiFi...", "main::setup");
+    logger.info("Setting up WiFi...", TAG);
     customWifi.begin();
-    logger.info("WiFi setup done", "main::setup");
+    logger.info("WiFi setup done", TAG);
 
     TRACE
-    logger.info("Syncing time...", "main::setup");
+    logger.info("Syncing time...", TAG);
     updateTimezone();
     if (!customTime.begin()) {
-      logger.error("Initial time sync failed! Will retry later.", "main::setup");
+      logger.error("Initial time sync failed! Will retry later.", TAG);
     } else {
-        logger.info("Time synced", "main::setup");
+        logger.info("Time synced", TAG);
     }
     
     TRACE
-    logger.info("Setting up server...", "main::setup");
+    logger.info("Setting up server...", TAG);
     customServer.begin();
-    logger.info("Server setup done", "main::setup");
+    logger.info("Server setup done", TAG);
 
     TRACE
-    logger.info("Setting up Modbus TCP...", "main::setup");
+    logger.info("Setting up Modbus TCP...", TAG);
     modbusTcp.begin();
-    logger.info("Modbus TCP setup done", "main::setup");
+    logger.info("Modbus TCP setup done", TAG);
 
     led.setGreen();
 
     TRACE
-    logger.info("Setup done", "main::setup");
+    logger.info("Setup done", TAG);
 }
 
 void loop() {
@@ -394,7 +396,7 @@ void loop() {
     if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
         printDeviceStatus();
         logger.clearLog();
-        logger.warning("Log cleared due to low memory", "main::loop");
+        logger.warning("Log cleared due to low memory", TAG);
     }
 
     TRACE

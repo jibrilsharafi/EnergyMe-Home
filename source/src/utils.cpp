@@ -1,7 +1,9 @@
 #include "utils.h"
 
+static const char *TAG = "utils";
+
 void getJsonProjectInfo(JsonDocument& jsonDocument) { 
-    logger.debug("Getting project info...", "utils::getJsonProjectInfo");
+    logger.debug("Getting project info...", TAG);
 
     jsonDocument["companyName"] = COMPANY_NAME;
     jsonDocument["fullProductName"] = FULL_PRODUCT_NAME;
@@ -11,12 +13,12 @@ void getJsonProjectInfo(JsonDocument& jsonDocument) {
     jsonDocument["author"] = AUTHOR;
     jsonDocument["authorEmail"] = AUTHOR_EMAIL;
 
-    logger.debug("Project info retrieved", "utils::getJsonProjectInfo");
+    logger.debug("Project info retrieved", TAG);
 }
 
 void getJsonDeviceInfo(JsonDocument& jsonDocument)
 {
-    logger.debug("Getting device info...", "utils::getJsonDeviceInfo");
+    logger.debug("Getting device info...", TAG);
 
     jsonDocument["system"]["uptime"] = millis();
     jsonDocument["system"]["systemTime"] = customTime.getTimestamp();
@@ -37,43 +39,43 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
 
     jsonDocument["device"]["id"] = getDeviceId();
 
-    logger.debug("Device info retrieved", "utils::getJsonDeviceInfo");
+    logger.debug("Device info retrieved", TAG);
 }
 
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
-    logger.debug("Deserializing JSON from SPIFFS", "utils::deserializeJsonFromSpiffs");
+    logger.debug("Deserializing JSON from SPIFFS", TAG);
 
     TRACE
     File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
-        logger.error("%s Failed to open file", "utils::deserializeJsonFromSpiffs", path);
+        logger.error("%s Failed to open file", TAG, path);
         return;
     }
 
     DeserializationError _error = deserializeJson(jsonDocument, _file);
     _file.close();
     if (_error){
-        logger.error("Failed to deserialize file %s. Error: %s", "utils::deserializeJsonFromSpiffs", path, _error.c_str());
+        logger.error("Failed to deserialize file %s. Error: %s", TAG, path, _error.c_str());
         return;
     }
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){
-        logger.debug("%s JSON being deserialized is {}", "utils::deserializeJsonFromSpiffs", path);
+        logger.debug("%s JSON being deserialized is {}", TAG, path);
     }
     
     String _jsonString;
     serializeJson(jsonDocument, _jsonString);
 
-    logger.debug("JSON deserialized from SPIFFS correctly: %s", "utils::deserializeJsonFromSpiffs", _jsonString.c_str());
+    logger.debug("JSON deserialized from SPIFFS correctly: %s", TAG, _jsonString.c_str());
 }
 
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
-    logger.debug("Serializing JSON to SPIFFS...", "utils::serializeJsonToSpiffs");
+    logger.debug("Serializing JSON to SPIFFS...", TAG);
 
     TRACE
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
-        logger.error("%s Failed to open file", "utils::serializeJsonToSpiffs", path);
+        logger.error("%s Failed to open file", TAG, path);
         return false;
     }
 
@@ -81,34 +83,34 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     _file.close();
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){ // It should never happen as createEmptyJsonFile should be used instead
-        logger.debug("%s JSON being serialized is {}", "utils::serializeJsonToSpiffs", path);
+        logger.debug("%s JSON being serialized is {}", TAG, path);
     }
 
     String _jsonString;
     serializeJson(jsonDocument, _jsonString);
-    logger.debug("JSON serialized to SPIFFS correctly: %s", "utils::serializeJsonToSpiffs", _jsonString.c_str());
+    logger.debug("JSON serialized to SPIFFS correctly: %s", TAG, _jsonString.c_str());
 
     return true;
 }
 
 void createEmptyJsonFile(const char* path) {
-    logger.debug("Creating empty JSON file %s...", "utils::createEmptyJsonFile", path);
+    logger.debug("Creating empty JSON file %s...", TAG, path);
 
     TRACE
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file) {
-        logger.error("Failed to open file %s", "utils::createEmptyJsonFile", path);
+        logger.error("Failed to open file %s", TAG, path);
         return;
     }
 
     _file.print("{}");
     _file.close();
 
-    logger.debug("Empty JSON file %s created", "utils::createEmptyJsonFile", path);
+    logger.debug("Empty JSON file %s created", TAG, path);
 }
 
 void createDefaultGeneralConfigurationFile() {
-    logger.debug("Creating default general %s...", "utils::createDefaultGeneralConfigurationFile", GENERAL_CONFIGURATION_JSON_PATH);
+    logger.debug("Creating default general %s...", TAG, GENERAL_CONFIGURATION_JSON_PATH);
 
     JsonDocument _jsonDocument;
 
@@ -119,11 +121,11 @@ void createDefaultGeneralConfigurationFile() {
 
     serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
 
-    logger.debug("Default %s created", "utils::createDefaultGeneralConfigurationFile", GENERAL_CONFIGURATION_JSON_PATH);
+    logger.debug("Default %s created", TAG, GENERAL_CONFIGURATION_JSON_PATH);
 }
 
 void createDefaultEnergyFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultEnergyFile", ENERGY_JSON_PATH);
+    logger.debug("Creating default %s...", TAG, ENERGY_JSON_PATH);
 
     JsonDocument _jsonDocument;
 
@@ -137,35 +139,35 @@ void createDefaultEnergyFile() {
 
     serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument);
 
-    logger.debug("Default %s created", "utils::createDefaultEnergyFile", ENERGY_JSON_PATH);
+    logger.debug("Default %s created", TAG, ENERGY_JSON_PATH);
 }
 
 void createDefaultDailyEnergyFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultDailyEnergyFile", DAILY_ENERGY_JSON_PATH);
+    logger.debug("Creating default %s...", TAG, DAILY_ENERGY_JSON_PATH);
 
     createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
 
-    logger.debug("Default %s created", "utils::createDefaultDailyEnergyFile", DAILY_ENERGY_JSON_PATH);
+    logger.debug("Default %s created", TAG, DAILY_ENERGY_JSON_PATH);
 }
 
 void createDefaultFirmwareUpdateInfoFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultFirmwareUpdateInfoFile", FW_UPDATE_INFO_JSON_PATH);
+    logger.debug("Creating default %s...", TAG, FW_UPDATE_INFO_JSON_PATH);
 
     createEmptyJsonFile(FW_UPDATE_INFO_JSON_PATH);
 
-    logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateInfoFile", FW_UPDATE_INFO_JSON_PATH);
+    logger.debug("Default %s created", TAG, FW_UPDATE_INFO_JSON_PATH);
 }
 
 void createDefaultFirmwareUpdateStatusFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultFirmwareUpdateStatusFile", FW_UPDATE_STATUS_JSON_PATH);
+    logger.debug("Creating default %s...", TAG, FW_UPDATE_STATUS_JSON_PATH);
 
     createEmptyJsonFile(FW_UPDATE_STATUS_JSON_PATH);
 
-    logger.debug("Default %s created", "utils::createDefaultFirmwareUpdateStatusFile", FW_UPDATE_STATUS_JSON_PATH);
+    logger.debug("Default %s created", TAG, FW_UPDATE_STATUS_JSON_PATH);
 }
 
 void createDefaultAde7953ConfigurationFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultAde7953ConfigurationFile", CONFIGURATION_ADE7953_JSON_PATH);
+    logger.debug("Creating default %s...", TAG, CONFIGURATION_ADE7953_JSON_PATH);
 
     JsonDocument _jsonDocument;
 
@@ -192,33 +194,33 @@ void createDefaultAde7953ConfigurationFile() {
 
     serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
 
-    logger.debug("Default %s created", "utils::createDefaultAde7953ConfigurationFile", CONFIGURATION_ADE7953_JSON_PATH);
+    logger.debug("Default %s created", TAG, CONFIGURATION_ADE7953_JSON_PATH);
 }
 
 void createDefaultCalibrationFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultCalibrationFile", CALIBRATION_JSON_PATH);
+    logger.debug("Creating default %s...", TAG, CALIBRATION_JSON_PATH);
 
     JsonDocument _jsonDocument;
     deserializeJson(_jsonDocument, default_config_calibration_json);
 
     serializeJsonToSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
 
-    logger.debug("Default %s created", "utils::createDefaultCalibrationFile", CALIBRATION_JSON_PATH);
+    logger.debug("Default %s created", TAG, CALIBRATION_JSON_PATH);
 }
 
 void createDefaultChannelDataFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultChannelDataFile", CHANNEL_DATA_JSON_PATH);
+    logger.debug("Creating default %s...", TAG, CHANNEL_DATA_JSON_PATH);
 
     JsonDocument _jsonDocument;
     deserializeJson(_jsonDocument, default_config_channel_json);
 
     serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument);
 
-    logger.debug("Default %s created", "utils::createDefaultChannelDataFile", CHANNEL_DATA_JSON_PATH);
+    logger.debug("Default %s created", TAG, CHANNEL_DATA_JSON_PATH);
 }
 
 void createDefaultCustomMqttConfigurationFile() {
-    logger.debug("Creating default %s...", "utils::createDefaultCustomMqttConfigurationFile", CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
+    logger.debug("Creating default %s...", TAG, CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
 
     JsonDocument _jsonDocument;
 
@@ -236,11 +238,11 @@ void createDefaultCustomMqttConfigurationFile() {
 
     serializeJsonToSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
 
-    logger.debug("Default %s created", "utils::createDefaultCustomMqttConfigurationFile", CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
+    logger.debug("Default %s created", TAG, CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
 }
 
 std::vector<const char*> checkMissingFiles() {
-    logger.debug("Checking missing files...", "utils::checkMissingFiles");
+    logger.debug("Checking missing files...", TAG);
 
     std::vector<const char*> missingFiles;
     
@@ -266,12 +268,12 @@ std::vector<const char*> checkMissingFiles() {
         }
     }
 
-    logger.debug("Missing files checked", "utils::checkMissingFiles");
+    logger.debug("Missing files checked", TAG);
     return missingFiles;
 }
 
 void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles) {
-    logger.debug("Creating default files for missing files...", "utils::createDefaultFilesForMissingFiles");
+    logger.debug("Creating default files for missing files...", TAG);
 
     TRACE
     for (const char* path : missingFiles) {
@@ -295,15 +297,15 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
             createDefaultFirmwareUpdateStatusFile();
         } else {
             // Handle other files if needed
-            logger.warning("No default creation function for path: %s", "utils::createDefaultFilesForMissingFiles", path);
+            logger.warning("No default creation function for path: %s", TAG, path);
         }
     }
 
-    logger.debug("Default files created for missing files", "utils::createDefaultFilesForMissingFiles");
+    logger.debug("Default files created for missing files", TAG);
 }
 
 bool checkAllFiles() {
-    logger.debug("Checking all files...", "utils::checkAllFiles");
+    logger.debug("Checking all files...", TAG);
 
     TRACE
     std::vector<const char*> missingFiles = checkMissingFiles();
@@ -312,12 +314,12 @@ bool checkAllFiles() {
         return true;
     }
 
-    logger.debug("All files checked", "utils::checkAllFiles");
+    logger.debug("All files checked", TAG);
     return false;
 }
 
 void setRestartEsp32(const char* functionName, const char* reason) { 
-    logger.warning("Restart required from function %s. Reason: %s", "utils::setRestartEsp32", functionName, reason);
+    logger.info("Restart required from function %s. Reason: %s", TAG, functionName, reason);
     
     restartConfiguration.isRequired = true;
     restartConfiguration.requiredAt = millis();
@@ -340,7 +342,7 @@ void restartEsp32() {
     led.setRed(true);
 
     TRACE
-    logger.warning("Restarting ESP32 from function %s. Reason: %s", "utils::restartEsp32", restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
+    logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
 
     // If a firmware evaluation is in progress, set the firmware to test again
     TRACE
@@ -348,9 +350,9 @@ void restartEsp32() {
 
     TRACE
     if (_firmwareStatus == TESTING) {
-        logger.warning("Firmware evaluation is in progress. Setting firmware to test again", "utils::restartEsp32");
+        logger.warning("Firmware evaluation is in progress. Setting firmware to test again", TAG);
         TRACE
-        if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) logger.error("Failed to set firmware status", "utils::restartEsp32");
+        if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) logger.error("Failed to set firmware status", TAG);
     }
 
     TRACE
@@ -363,7 +365,7 @@ void restartEsp32() {
 void printMeterValues(MeterValues meterValues, const char* channelLabel) {
     logger.debug(
         "%s: %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh | %.3f Wh | %.3f VARh | %.3f VARh | %.3f VAh", 
-        "utils::printMeterValues", 
+        TAG, 
         channelLabel, 
         meterValues.voltage, 
         meterValues.current, 
@@ -383,7 +385,7 @@ void printDeviceStatus()
 {
     logger.info(
         "Free heap: %d bytes | Total heap: %d bytes || Free SPIFFS: %d bytes | Total SPIFFS: %d bytes",
-        "utils::printDeviceStatus",
+        TAG,
         ESP.getFreeHeap(),
         ESP.getHeapSize(),
         SPIFFS.totalBytes() - SPIFFS.usedBytes(),
@@ -395,23 +397,23 @@ void printDeviceStatus()
 // -----------------------------
 
 bool setGeneralConfigurationFromSpiffs() {
-    logger.debug("Setting general configuration from SPIFFS...", "utils::setGeneralConfigurationFromSpiffs");
+    logger.debug("Setting general configuration from SPIFFS...", TAG);
 
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
 
     if (!setGeneralConfiguration(_jsonDocument)) {
-        logger.error("Failed to open general configuration file", "utils::setGeneralConfigurationFromSpiffs");
+        logger.error("Failed to open general configuration file", TAG);
         setDefaultGeneralConfiguration();
         return false;
     }
     
-    logger.debug("General configuration set from SPIFFS", "utils::setGeneralConfigurationFromSpiffs");
+    logger.debug("General configuration set from SPIFFS", TAG);
     return true;
 }
 
 void setDefaultGeneralConfiguration() {
-    logger.debug("Setting default general configuration...", "utils::setDefaultGeneralConfiguration");
+    logger.debug("Setting default general configuration...", TAG);
     
     createDefaultGeneralConfigurationFile();
 
@@ -420,31 +422,31 @@ void setDefaultGeneralConfiguration() {
 
     setGeneralConfiguration(_jsonDocument);
     
-    logger.debug("Default general configuration set", "utils::setDefaultGeneralConfiguration");
+    logger.debug("Default general configuration set", TAG);
 }
 
 void saveGeneralConfigurationToSpiffs() {
-    logger.debug("Saving general configuration to SPIFFS...", "utils::saveGeneralConfigurationToSpiffs");
+    logger.debug("Saving general configuration to SPIFFS...", TAG);
 
     JsonDocument _jsonDocument;
     generalConfigurationToJson(generalConfiguration, _jsonDocument);
 
     serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
 
-    logger.debug("General configuration saved to SPIFFS", "utils::saveGeneralConfigurationToSpiffs");
+    logger.debug("General configuration saved to SPIFFS", TAG);
 }
 
 bool setGeneralConfiguration(JsonDocument& jsonDocument) {
-    logger.debug("Setting general configuration...", "utils::setGeneralConfiguration");
+    logger.debug("Setting general configuration...", TAG);
 
     if (!validateGeneralConfigurationJson(jsonDocument)) {
-        logger.error("Failed to set general configuration", "utils::setGeneralConfiguration");
+        logger.error("Failed to set general configuration", TAG);
         return false;
     }
 #if HAS_SECRETS
     generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
 #else
-    logger.info("Cloud services cannot be enabled due to missing secrets", "utils::setGeneralConfiguration");
+    logger.info("Cloud services cannot be enabled due to missing secrets", TAG);
     generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
 #endif
     generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
@@ -457,39 +459,39 @@ bool setGeneralConfiguration(JsonDocument& jsonDocument) {
 
     publishMqtt.generalConfiguration = true;
 
-    logger.debug("General configuration set", "utils::setGeneralConfiguration");
+    logger.debug("General configuration set", TAG);
 
     return true;
 }
 
 void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument) {
-    logger.debug("Converting general configuration to JSON...", "utils::generalConfigurationToJson");
+    logger.debug("Converting general configuration to JSON...", TAG);
 
     jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
     jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
     jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
     jsonDocument["ledBrightness"] = generalConfiguration.ledBrightness;
 
-    logger.debug("General configuration converted to JSON", "utils::generalConfigurationToJson");
+    logger.debug("General configuration converted to JSON", TAG);
 }
 
 void applyGeneralConfiguration() {
-    logger.debug("Applying general configuration...", "utils::applyGeneralConfiguration");
+    logger.debug("Applying general configuration...", TAG);
 
     led.setBrightness(generalConfiguration.ledBrightness);
 
-    logger.debug("General configuration applied", "utils::applyGeneralConfiguration");
+    logger.debug("General configuration applied", TAG);
 }
 
 bool validateGeneralConfigurationJson(JsonDocument& jsonDocument) {
-    logger.debug("Validating general configuration JSON...", "utils::validateGeneralConfigurationJson");
+    logger.debug("Validating general configuration JSON...", TAG);
 
-    if (!jsonDocument.is<JsonObject>()) { logger.warning("JSON is not an object", "utils::validateGeneralConfigurationJson"); return false; }
+    if (!jsonDocument.is<JsonObject>()) { logger.warning("JSON is not an object", TAG); return false; }
     
-    if (!jsonDocument["isCloudServicesEnabled"].is<bool>()) { logger.warning("isCloudServicesEnabled is not a boolean", "utils::validateGeneralConfigurationJson"); return false; }
-    if (!jsonDocument["gmtOffset"].is<int>()) { logger.warning("gmtOffset is not an integer", "utils::validateGeneralConfigurationJson"); return false; }
-    if (!jsonDocument["dstOffset"].is<int>()) { logger.warning("dstOffset is not an integer", "utils::validateGeneralConfigurationJson"); return false; }
-    if (!jsonDocument["ledBrightness"].is<int>()) { logger.warning("ledBrightness is not an integer", "utils::validateGeneralConfigurationJson"); return false; }
+    if (!jsonDocument["isCloudServicesEnabled"].is<bool>()) { logger.warning("isCloudServicesEnabled is not a boolean", TAG); return false; }
+    if (!jsonDocument["gmtOffset"].is<int>()) { logger.warning("gmtOffset is not an integer", TAG); return false; }
+    if (!jsonDocument["dstOffset"].is<int>()) { logger.warning("dstOffset is not an integer", TAG); return false; }
+    if (!jsonDocument["ledBrightness"].is<int>()) { logger.warning("ledBrightness is not an integer", TAG); return false; }
 
     return true;
 }
@@ -518,7 +520,7 @@ void getPublicLocation(PublicLocation* publicLocation) {
 
             logger.debug(
                 "Location: %s, %s | Lat: %.4f | Lon: %.4f",
-                "utils::getPublicLocation",
+                TAG,
                 publicLocation->country.c_str(),
                 publicLocation->city.c_str(),
                 publicLocation->latitude.toFloat(),
@@ -526,7 +528,7 @@ void getPublicLocation(PublicLocation* publicLocation) {
             );
         }
     } else {
-        logger.error("Error on HTTP request: %d", "utils::getPublicLocation", httpCode);
+        logger.error("Error on HTTP request: %d", TAG, httpCode);
     }
 
     _http.end();
@@ -559,7 +561,7 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
 
             logger.debug(
                 "GMT offset: %d | DST offset: %d",
-                "utils::getPublicTimezone",
+                TAG,
                 _jsonDocument["rawOffset"].as<int>(),
                 _jsonDocument["dstOffset"].as<int>()
             );
@@ -567,7 +569,7 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
     } else {
         logger.error(
             "Error on HTTP request: %d", 
-            "utils::getPublicTimezone", 
+            TAG, 
             httpCode
         );
     }
@@ -575,20 +577,20 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
 
 void updateTimezone() {
     if (!WiFi.isConnected()) {
-        logger.warning("WiFi is not connected. Cannot update timezone", "utils::updateTimezone");
+        logger.warning("WiFi is not connected. Cannot update timezone", TAG);
         return;
     }
 
-    logger.debug("Updating timezone...", "utils::updateTimezone");
+    logger.debug("Updating timezone...", TAG);
 
     getPublicTimezone(&generalConfiguration.gmtOffset, &generalConfiguration.dstOffset);
     saveGeneralConfigurationToSpiffs();
 
-    logger.debug("Timezone updated", "utils::updateTimezone");
+    logger.debug("Timezone updated", TAG);
 }
 
 void factoryReset() { 
-    logger.fatal("Factory reset requested", "utils::factoryReset");
+    logger.fatal("Factory reset requested", TAG);
 
     mainFlags.blockLoop = true;
 
@@ -604,7 +606,7 @@ void factoryReset() {
 }
 
 void clearAllPreferences() {
-    logger.fatal("Clear all preferences requested", "utils::clearAllPreferences");
+    logger.fatal("Clear all preferences requested", TAG);
 
     Preferences preferences;
     preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); // false = read-write mode
@@ -625,7 +627,7 @@ bool isLatestFirmwareInstalled() {
     deserializeJsonFromSpiffs(FW_UPDATE_INFO_JSON_PATH, _jsonDocument);
     
     if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
-        logger.debug("Firmware update info file is empty", "utils::isLatestFirmwareInstalled");
+        logger.debug("Firmware update info file is empty", TAG);
         return true;
     }
 
@@ -634,13 +636,13 @@ bool isLatestFirmwareInstalled() {
 
     logger.debug(
         "Latest firmware version: %s | Current firmware version: %s",
-        "utils::isLatestFirmwareInstalled",
+        TAG,
         _latestFirmwareVersion.c_str(),
         _currentFirmwareVersion.c_str()
     );
 
     if (_latestFirmwareVersion.length() == 0 || _latestFirmwareVersion.indexOf(".") == -1) {
-        logger.warning("Latest firmware version is empty or in the wrong format", "utils::isLatestFirmwareInstalled");
+        logger.warning("Latest firmware version is empty or in the wrong format", TAG);
         return true;
     }
 
@@ -744,7 +746,7 @@ String decryptData(String encryptedData, String key) {
 String readEncryptedPreferences(const char* preference_key) {
     Preferences preferences;
     if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) { // true = read-only mode
-        logger.error("Failed to open preferences", "utils::readEncryptedPreferences");
+        logger.error("Failed to open preferences", TAG);
         return String("");
     }
 
@@ -752,7 +754,7 @@ String readEncryptedPreferences(const char* preference_key) {
     preferences.end();
 
     if (_encryptedData.isEmpty()) {
-        logger.warning("No encrypted data found for key: %s", "utils::readEncryptedPreferences", preference_key);
+        logger.warning("No encrypted data found for key: %s", TAG, preference_key);
         return String("");
     }
 
@@ -760,11 +762,11 @@ String readEncryptedPreferences(const char* preference_key) {
 }
 
 bool checkCertificatesExist() {
-    logger.debug("Checking if certificates exist...", "utils::checkCertificatesExist");
+    logger.debug("Checking if certificates exist...", TAG);
 
     Preferences preferences;
     if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) {
-        logger.error("Failed to open preferences", "utils::checkCertificatesExist");
+        logger.error("Failed to open preferences", TAG);
         return false;
     }
 
@@ -775,14 +777,14 @@ bool checkCertificatesExist() {
 
     bool _allCertificatesExist = _deviceCertExists && _privateKeyExists;
 
-    logger.debug("Certificates exist: %s", "utils::checkCertificatesExist", _allCertificatesExist ? "true" : "false");
+    logger.debug("Certificates exist: %s", TAG, _allCertificatesExist ? "true" : "false");
     return _allCertificatesExist;
 }
 
 void writeEncryptedPreferences(const char* preference_key, const char* value) {
     Preferences preferences;
     if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) { // false = read-write mode
-        logger.error("Failed to open preferences", "utils::writeEncryptedPreferences");
+        logger.error("Failed to open preferences", TAG);
         return;
     }
 
@@ -791,32 +793,32 @@ void writeEncryptedPreferences(const char* preference_key, const char* value) {
 }
 
 void clearCertificates() {
-    logger.debug("Clearing certificates...", "utils::clearCertificates");
+    logger.debug("Clearing certificates...", TAG);
 
     Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) logger.error("Failed to open preferences", "utils::clearCertificates");
+    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) logger.error("Failed to open preferences", TAG);
 
     preferences.clear();
     preferences.end();
 
-    logger.warning("Certificates cleared", "utils::clearCertificates");
+    logger.warning("Certificates cleared", TAG);
 }
 
 bool setupMdns()
 {
-    logger.info("Setting up mDNS...", "utils::setupMdns");
+    logger.info("Setting up mDNS...", TAG);
     if (
         MDNS.begin(MDNS_HOSTNAME) &&
         MDNS.addService("http", "tcp", WEBSERVER_PORT) &&
         MDNS.addService("mqtt", "tcp", MQTT_CUSTOM_PORT_DEFAULT) &&
         MDNS.addService("modbus", "tcp", MODBUS_TCP_PORT))
     {
-        logger.info("mDNS setup done", "utils::setupMdns");
+        logger.info("mDNS setup done", TAG);
         return true;
     }
     else
     {
-        logger.warning("Error setting up mDNS", "utils::setupMdns");
+        logger.warning("Error setting up mDNS", TAG);
         return false;
     }
 }

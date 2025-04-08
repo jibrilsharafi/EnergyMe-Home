@@ -1,5 +1,7 @@
 #include "crashmonitor.h"
 
+static const char *TAG = "crashmonitor";
+
 CrashMonitor::CrashMonitor(AdvancedLogger& logger) : _logger(logger) {
     if (crashData.signature != CRASH_SIGNATURE) {
         _initializeCrashData();
@@ -32,7 +34,7 @@ bool CrashMonitor::isLastResetDueToCrash() {
 }
 
 void CrashMonitor::begin() {
-    _logger.debug("Setting up crash monitor...", "crashmonitor::begin");
+    _logger.debug("Setting up crash monitor...", TAG);
 
     // Get last reset reason
     esp_reset_reason_t _hwResetReason = esp_reset_reason();
@@ -56,22 +58,22 @@ void CrashMonitor::begin() {
     esp_task_wdt_init(WATCHDOG_TIMER, true);
     esp_task_wdt_add(NULL);
 
-    _logger.debug("Crash monitor setup done", "crashmonitor::begin");
+    _logger.debug("Crash monitor setup done", TAG);
 }
 
 void CrashMonitor::_saveCrashData() {
-    _logger.debug("Saving crash data...", "crashmonitor::_saveCrashData");
+    _logger.debug("Saving crash data...", TAG);
 
     Preferences _preferences;
     if (!_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false)) {
-        _logger.error("Failed to open preferences", "crashmonitor::_saveCrashData");
+        _logger.error("Failed to open preferences", TAG);
         _preferences.clear();
         _preferences.end();
         return;
     }
     size_t _len = _preferences.putBytes(PREFERENCES_DATA_KEY, &crashData, sizeof(crashData));
     if (_len != sizeof(crashData)) {
-        _logger.error("Failed to save crash data", "crashmonitor::_saveCrashData");
+        _logger.error("Failed to save crash data", TAG);
         _preferences.clear();
         _preferences.end();
         return;
@@ -79,7 +81,7 @@ void CrashMonitor::_saveCrashData() {
 
     _preferences.end();
 
-    _logger.debug("Crash data saved", "crashmonitor::_saveCrashData");
+    _logger.debug("Crash data saved", TAG);
 }
 
 bool CrashMonitor::checkIfCrashDataExists() {
@@ -152,7 +154,7 @@ bool CrashMonitor::_isValidBreadcrumb(const Breadcrumb& crumb) {
 }
 
 void CrashMonitor::_logCrashInfo() {
-    _logger.error("Crash Report | Timestamp: %s - Reason: %s - Reset Count %d - Crash Count: %d", "crashmonitor::_logCrashInfo", 
+    _logger.error("Crash Report | Timestamp: %s - Reason: %s - Reset Count %d - Crash Count: %d", TAG, 
         CustomTime::timestampFromUnix(crashData.lastUnixTime, DEFAULT_TIMESTAMP_FORMAT).c_str(),
         _getResetReasonString((esp_reset_reason_t)crashData.lastResetReason), 
         crashData.resetCount, 
@@ -162,7 +164,7 @@ void CrashMonitor::_logCrashInfo() {
     // Print only most recent breadcrumb
     const Breadcrumb& lastCrumb = crashData.breadcrumbs[(crashData.currentIndex - 1 + MAX_BREADCRUMBS) % MAX_BREADCRUMBS];
     if (_isValidBreadcrumb(lastCrumb)) {
-        _logger.error("Last Function | %s:%s:%d (Core %d) Heap: %d bytes", "crashmonitor::_logCrashInfo",
+        _logger.error("Last Function | %s:%s:%d (Core %d) Heap: %d bytes", TAG,
             lastCrumb.file,
             lastCrumb.function,
             lastCrumb.line, 
@@ -199,13 +201,13 @@ bool CrashMonitor::getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDa
 }
 
 void CrashMonitor::_handleCrashCounter() {
-    _logger.debug("Handling crash counter...", "crashmonitor::_handleCrashCounter");
+    _logger.debug("Handling crash counter...", TAG);
 
     if (crashData.crashCount >= MAX_CRASH_COUNT) {
-        _logger.fatal("Crash counter reached the maximum allowed crashes. Rolling back to stable firmware...", "crashmonitor::_handleCrashCounter");
+        _logger.fatal("Crash counter reached the maximum allowed crashes. Rolling back to stable firmware...", TAG);
         
         if (!Update.rollBack()) {
-            _logger.error("No firmware to rollback available. Keeping current firmware", "crashmonitor::_handleCrashCounter");
+            _logger.error("No firmware to rollback available. Keeping current firmware", TAG);
         }
 
         SPIFFS.format();
@@ -214,7 +216,7 @@ void CrashMonitor::_handleCrashCounter() {
         // Need to reboot directly here to avoid a crash loop
         ESP.restart();
     } else {
-        _logger.debug("Crash counter incremented to %d", "crashmonitor::_handleCrashCounter", crashData.crashCount);
+        _logger.debug("Crash counter incremented to %d", TAG, crashData.crashCount);
     }
 }
 
@@ -223,39 +225,39 @@ void CrashMonitor::crashCounterLoop() {
 
     if (millis() > CRASH_COUNTER_TIMEOUT) {
         _isCrashCounterReset = true;
-        _logger.debug("Timeout reached. Resetting crash counter...", "crashmonitor::crashCounterLoop");
+        _logger.debug("Timeout reached. Resetting crash counter...", TAG);
 
         crashData.crashCount = 0;
     }
 }
 
 void CrashMonitor::_handleFirmwareTesting() {
-    _logger.debug("Checking if rollback is needed...", "crashmonitor::_handleFirmwareTesting");
+    _logger.debug("Checking if rollback is needed...", TAG);
 
     FirmwareState _firmwareStatus = getFirmwareStatus();
 
-    _logger.debug("Rollback status: %s", "crashmonitor::_handleFirmwareTesting", getFirmwareStatusString(_firmwareStatus));
+    _logger.debug("Rollback status: %s", TAG, getFirmwareStatusString(_firmwareStatus));
     
     if (_firmwareStatus == NEW_TO_TEST) {
-        _logger.info("Testing new firmware", "crashmonitor::_handleFirmwareTesting");
+        _logger.info("Testing new firmware", TAG);
 
         setFirmwareStatus(TESTING);
         _isFirmwareUpdate = true;
         return;
     } else if (_firmwareStatus == TESTING) {
-        _logger.fatal("Testing new firmware failed. Rolling back to stable firmware", "crashmonitor::_handleFirmwareTesting");
+        _logger.fatal("Testing new firmware failed. Rolling back to stable firmware", TAG);
 
         if (!Update.rollBack()) {
-            _logger.error("No firmware to rollback available. Keeping current firmware", "crashmonitor::_handleFirmwareTesting");
+            _logger.error("No firmware to rollback available. Keeping current firmware", TAG);
             return;
         }
 
         setFirmwareStatus(STABLE);
 
-        _logger.warning("Restarting ESP32 after rollback", "crashmonitor::_handleFirmwareTesting");
+        _logger.warning("Restarting ESP32 after rollback", TAG);
         ESP.restart();
     } else {
-        _logger.debug("No rollback needed", "crashmonitor::_handleFirmwareTesting");
+        _logger.debug("No rollback needed", TAG);
     }
 }
 
@@ -263,7 +265,7 @@ void CrashMonitor::firmwareTestingLoop() {
     if (!_isFirmwareUpdate) return;
 
     if (millis() > ROLLBACK_TESTING_TIMEOUT) {
-        _logger.info("Testing period of new firmware has passed. Keeping current firmware", "crashmonitor::firmwareTestingLoop");
+        _logger.info("Testing period of new firmware has passed. Keeping current firmware", TAG);
         _isFirmwareUpdate = false;
         setFirmwareStatus(STABLE);
     }

@@ -6,4 +6,4 @@ temp/
 
 .mypy*
 
-releases
+releases/
