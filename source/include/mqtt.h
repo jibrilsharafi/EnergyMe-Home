@@ -16,7 +16,7 @@
 #include "structs.h"
 #include "utils.h"
 
-extern MainFlags mainFlags;
+extern DebugFlagsRtc debugFlagsRtc;
 
 class Mqtt
 {
@@ -73,6 +73,7 @@ private:
     void _subscribeEraseCertificates();
     void _subscribeProvisioningResponse();
     void _subscribeSetGeneralConfiguration();
+    void _subscribeEnableDebugLogging(); 
     void _subscribeToTopics();
 
     void _constructMqttTopicWithRule(const char *ruleName, const char *finalTopic, char *topic);

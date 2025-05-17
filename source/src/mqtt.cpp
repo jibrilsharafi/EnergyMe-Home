@@ -1,4 +1,5 @@
 #include "mqtt.h"
+#include "structs.h" // Ensure structs.h is included for DebugFlagsRtc and DEBUG_FLAGS_RTC_SIGNATURE
 
 static const char *TAG = "mqtt";
 
@@ -47,6 +48,39 @@ void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
             return;
         }
         setGeneralConfiguration(_jsonDocument);        
+    } else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING)) { 
+        TRACE
+        JsonDocument _jsonDocument;
+        if (deserializeJson(_jsonDocument, message)) {
+            return;
+        }
+
+        bool enable = false;
+        if (_jsonDocument["enable"].is<bool>()) {
+            enable = _jsonDocument["enable"].as<bool>();
+        }
+
+        if (enable) {
+            int durationMinutes = MQTT_DEBUG_LOGGING_DEFAULT_DURATION / (60 * 1000);
+            if (_jsonDocument["duration_minutes"].is<int>()) {
+                durationMinutes = _jsonDocument["duration_minutes"].as<int>();
+            }
+            
+            int durationMs = durationMinutes * 60 * 1000;            
+            if (durationMs <= 0 || durationMs > MQTT_DEBUG_LOGGING_MAX_DURATION) {
+                durationMs = MQTT_DEBUG_LOGGING_DEFAULT_DURATION;
+            }
+            
+            debugFlagsRtc.enableMqttDebugLogging = true;
+            debugFlagsRtc.mqttDebugLoggingDurationMillis = durationMs;
+            debugFlagsRtc.mqttDebugLoggingEndTimeMillis = millis() + durationMs;
+            debugFlagsRtc.signature = DEBUG_FLAGS_RTC_SIGNATURE;
+        } else {
+            debugFlagsRtc.enableMqttDebugLogging = false;
+            debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
+            debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
+            debugFlagsRtc.signature = 0;
+        }
     }
 }
 
@@ -200,8 +234,8 @@ bool Mqtt::_connectMqtt()
 
         _subscribeToTopics();
 
+        // The meter flag should only be set based on buffer status or time from last publish
         _publishMqtt.connectivity = true;
-        _publishMqtt.meter = true;
         _publishMqtt.status = true;
         _publishMqtt.metadata = true;
         _publishMqtt.channel = true;
@@ -328,8 +362,6 @@ void Mqtt::_claimProcess() {
 }
 
 void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topic) {
-    _logger.debug("Constructing MQTT topic with rule for %s | %s", TAG, ruleName, finalTopic);
-
     TRACE
     snprintf(
         topic,
@@ -342,11 +374,11 @@ void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTo
         _deviceId,
         finalTopic
     );
+
+    _logger.debug("Constructing MQTT topic with rule for %s | %s", TAG, finalTopic, topic);
 }
 
 void Mqtt::_constructMqttTopic(const char* finalTopic, char* topic) {
-    _logger.debug("Constructing MQTT topic for %s", TAG, finalTopic);
-
     TRACE
     snprintf(
         topic,
@@ -357,6 +389,8 @@ void Mqtt::_constructMqttTopic(const char* finalTopic, char* topic) {
         _deviceId,
         finalTopic
     );
+
+    _logger.debug("Constructing MQTT topic for %s | %s", TAG, finalTopic, topic);
 }
 
 void Mqtt::_setupTopics() {
@@ -375,48 +409,17 @@ void Mqtt::_setupTopics() {
     _logger.debug("MQTT topics setup complete", TAG);
 }
 
-void Mqtt::_setTopicConnectivity() {
-    _constructMqttTopic(MQTT_TOPIC_CONNECTIVITY, _mqttTopicConnectivity);
-    _logger.debug(_mqttTopicConnectivity, TAG);
-}
-
-void Mqtt::_setTopicMeter() {
-    _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter);
-    _logger.debug(_mqttTopicMeter, TAG);
-}
-
-void Mqtt::_setTopicStatus() {
-    _constructMqttTopic(MQTT_TOPIC_STATUS, _mqttTopicStatus);
-    _logger.debug(_mqttTopicStatus, TAG);
-}
-
-void Mqtt::_setTopicMetadata() {
-    _constructMqttTopic(MQTT_TOPIC_METADATA, _mqttTopicMetadata);
-    _logger.debug(_mqttTopicMetadata, TAG);
-}
-
-void Mqtt::_setTopicChannel() {
-    _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel);
-    _logger.debug(_mqttTopicChannel, TAG);
-}
-
-void Mqtt::_setTopicCrash() {
-    _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash);
-    _logger.debug(_mqttTopicCrash, TAG);
-}
-
-void Mqtt::_setTopicMonitor() {
-    _constructMqttTopic(MQTT_TOPIC_MONITOR, _mqttTopicMonitor);
-    _logger.debug(_mqttTopicMonitor, TAG);
-}
-
-void Mqtt::_setTopicGeneralConfiguration() {
-    _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration);
-    _logger.debug(_mqttTopicGeneralConfiguration, TAG);
-}
+void Mqtt::_setTopicConnectivity() { _constructMqttTopic(MQTT_TOPIC_CONNECTIVITY, _mqttTopicConnectivity); }
+void Mqtt::_setTopicMeter() { _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter); }
+void Mqtt::_setTopicStatus() { _constructMqttTopic(MQTT_TOPIC_STATUS, _mqttTopicStatus); }
+void Mqtt::_setTopicMetadata() { _constructMqttTopic(MQTT_TOPIC_METADATA, _mqttTopicMetadata); }
+void Mqtt::_setTopicChannel() { _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel); }
+void Mqtt::_setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash); }
+void Mqtt::_setTopicMonitor() { _constructMqttTopic(MQTT_TOPIC_MONITOR, _mqttTopicMonitor); }
+void Mqtt::_setTopicGeneralConfiguration() { _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration); }
 
 void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter) {
-    _logger.debug("Converting circular buffer to JSON", TAG);
+    _logger.debug("Converting circular buffer to JSON...", TAG);
 
     TRACE
     JsonArray _jsonArray = jsonDocument->to<JsonArray>();
@@ -714,6 +717,7 @@ void Mqtt::_subscribeToTopics() {
     _subscribeRestart();
     _subscribeEraseCertificates();
     _subscribeSetGeneralConfiguration();
+    _subscribeEnableDebugLogging(); 
 
     _logger.debug("Subscribed to topics", TAG);
 }
@@ -755,6 +759,16 @@ void Mqtt::_subscribeSetGeneralConfiguration() {
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
         _logger.warning("Failed to subscribe to set general configuration topic", TAG);
+    }
+}
+
+void Mqtt::_subscribeEnableDebugLogging() { 
+    _logger.debug("Subscribing to enable debug logging topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING);
+    char _topic[MQTT_MAX_TOPIC_LENGTH];
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING, _topic);
+    
+    if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+        _logger.warning("Failed to subscribe to enable debug logging topic", TAG);
     }
 }
 

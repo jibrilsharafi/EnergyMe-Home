@@ -13,6 +13,14 @@ struct MainFlags
   MainFlags() : isFirmwareUpdate(false), isCrashCounterReset(false), isFirstLinecyc(true), blockLoop(false), currentChannel(-1) {}
 };
 
+struct DebugFlagsRtc {
+    bool enableMqttDebugLogging;
+    unsigned long mqttDebugLoggingDurationMillis;
+    unsigned long mqttDebugLoggingEndTimeMillis;
+    unsigned int signature;
+    // Since this struct will be used in an RTC_NOINIT_ATTR, we cannot initialize it in the constructor
+};
+
 enum Phase : int {
     PHASE_1 = 1,
     PHASE_2 = 2,
@@ -139,7 +147,8 @@ struct PublishMqtt
   bool monitor;
   bool generalConfiguration;
 
-  PublishMqtt() : connectivity(true), meter(true), status(true), metadata(true), channel(true), crash(false), monitor(true), generalConfiguration(true) {} // Set default to true to publish everything on first connection
+  // Set default to true to publish everything on first connection (except meter which needs to gather data first and crash which is needed only in case of crash)
+  PublishMqtt() : connectivity(true), meter(false), status(true), metadata(true), channel(true), crash(false), monitor(true), generalConfiguration(true) {}
 };
 
 struct CustomMqttConfiguration {
@@ -193,6 +202,7 @@ struct CrashData {
     unsigned int resetCount;             // Number of resets
     unsigned long lastUnixTime;          // Last unix time before crash
     unsigned int signature;              // To verify RTC data validity
+    // Since this struct will be used in an RTC_NOINIT_ATTR, we cannot initialize it in the constructor
 };
 
 // Log callback struct

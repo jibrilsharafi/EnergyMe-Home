@@ -30,6 +30,7 @@ MainFlags mainFlags;
 GeneralConfiguration generalConfiguration;
 CustomMqttConfiguration customMqttConfiguration;
 RTC_NOINIT_ATTR CrashData crashData;
+RTC_NOINIT_ATTR DebugFlagsRtc debugFlagsRtc;
 
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient clientMqtt(net);
@@ -148,7 +149,10 @@ void callbackLogToMqtt(
     const char* function,
     const char* message
 ) {
-    if (strcmp(level, "debug") == 0 || strcmp(level, "verbose") == 0) return;
+    if (
+      (strcmp(level, "debug") == 0 && !debugFlagsRtc.enableMqttDebugLogging) ||
+      (strcmp(level, "verbose") == 0) // Never send verbose logs via MQTT
+    ) {return; }
 
     if (deviceId == "") {
         deviceId = WiFi.macAddress();
@@ -166,6 +170,7 @@ void callbackLogToMqtt(
       )
     );
 
+    // If not connected to WiFi and MQTT, return (log is still stored in circular buffer for later) 
     if (WiFi.status() != WL_CONNECTED) return;
     if (!clientMqtt.connected()) return; 
 
@@ -229,10 +234,28 @@ void setup() {
     logger.info("Booting...", TAG);  
     logger.info("EnergyMe - Home | Build version: %s | Build date: %s %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
 
-    
     logger.info("Setting up crash monitor...", TAG);
     crashMonitor.begin();
     logger.info("Crash monitor setup done", TAG);
+
+    logger.debug(
+        "Checking RTC debug flags. Signature: 0x%X, Enabled: %d, Duration: %lu, EndTimeMillis: %lu", 
+        TAG, 
+        debugFlagsRtc.signature, 
+        debugFlagsRtc.enableMqttDebugLogging, 
+        debugFlagsRtc.mqttDebugLoggingDurationMillis, 
+        debugFlagsRtc.mqttDebugLoggingEndTimeMillis
+    );
+    if (debugFlagsRtc.signature == DEBUG_FLAGS_RTC_SIGNATURE && debugFlagsRtc.enableMqttDebugLogging) {
+        logger.info("Resuming MQTT debug logging from RTC for %lu ms.", TAG, debugFlagsRtc.mqttDebugLoggingDurationMillis);
+        debugFlagsRtc.mqttDebugLoggingEndTimeMillis = millis() + debugFlagsRtc.mqttDebugLoggingDurationMillis;
+    } else {
+        logger.debug("No valid RTC debug flags found. Resetting to default values.", TAG);
+        debugFlagsRtc.enableMqttDebugLogging = false;
+        debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
+        debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
+        debugFlagsRtc.signature = 0;
+    }
 
     led.setCyan();
 
@@ -402,6 +425,16 @@ void loop() {
     TRACE
     checkIfRestartEsp32Required();
     
+    TRACE
+    if (debugFlagsRtc.enableMqttDebugLogging && millis() >= debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
+        logger.info("MQTT debug logging period ended.", TAG);
+
+        debugFlagsRtc.enableMqttDebugLogging = false;
+        debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
+        debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
+        debugFlagsRtc.signature = 0; 
+    }
+
     TRACE
     led.setOff();
 }

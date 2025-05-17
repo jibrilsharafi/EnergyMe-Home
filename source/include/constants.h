@@ -1,9 +1,11 @@
 #pragma once
 
+// Note: all the durations hereafter are in milliseconds unless specified otherwise
+
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "07"
-#define FIRMWARE_BUILD_VERSION_PATCH "18"
+#define FIRMWARE_BUILD_VERSION_PATCH "19"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -39,11 +41,11 @@
 #define PREFERENCES_DATA_KEY "crashdata"
 #define CRASH_SIGNATURE 0xDEADBEEF
 #define MAX_BREADCRUMBS 32
-#define WATCHDOG_TIMER 30000
+#define WATCHDOG_TIMER (30 * 1000)
 #define PREFERENCES_FIRMWARE_STATUS_KEY "fw_status"
-#define ROLLBACK_TESTING_TIMEOUT 60000 // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
-#define MAX_CRASH_COUNT 10
-#define CRASH_COUNTER_TIMEOUT 60000
+#define ROLLBACK_TESTING_TIMEOUT (60 * 1000) // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
+#define MAX_CRASH_COUNT 10 // Maximum amount of consecutive crashes before triggering a rollback
+#define CRASH_COUNTER_TIMEOUT (60 * 1000)
 
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32
@@ -61,17 +63,16 @@
 
 // Time
 #define NTP_SERVER "pool.ntp.org"
-#define TIME_SYNC_INTERVAL 3600 // Sync time every hour
+#define TIME_SYNC_INTERVAL (60 * 60) // Sync time every hour (in seconds)
 #define DEFAULT_GMT_OFFSET 0
 #define DEFAULT_DST_OFFSET 0
-#define TIME_SYNC_RETRY_INTERVAL 60000 // Retry sync if failed
+#define TIME_SYNC_RETRY_INTERVAL (60 * 1000) // Retry sync if failed
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
 
 // Webserver
 #define WEBSERVER_PORT 80
 
 // LED
-// NOTE: pins on the schematic are mixed up. Hereafter the correct pin numbers
 #define LED_RED_PIN 39
 #define LED_GREEN_PIN 40
 #define LED_BLUE_PIN 38
@@ -82,12 +83,12 @@
 
 // WiFi
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
-#define WIFI_LOOP_INTERVAL 1000 // In milliseconds
+#define WIFI_LOOP_INTERVAL (1 * 1000) 
 #define WIFI_CONNECT_TIMEOUT 60 // In seconds
-#define WIFI_PORTAL_TIMEOUT 180 // In seconds
+#define WIFI_PORTAL_TIMEOUT (3 * 60) // In seconds
 #define WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS 5 // Maximum WiFi reconnection attempts before restart
-#define WIFI_RECONNECT_DELAY_BASE 5000 // Base delay for exponential backoff (in milliseconds)
-#define WIFI_STABLE_CONNECTION 300000 // Duration of uninterrupted WiFi connection to reset the reconnection counter (in milliseconds)
+#define WIFI_RECONNECT_DELAY_BASE (5 * 1000) // Base delay for exponential backoff
+#define WIFI_STABLE_CONNECTION (5 * 60 * 1000) // Duration of uninterrupted WiFi connection to reset the reconnection counter
 
 // MDNS
 #define MDNS_HOSTNAME "energyme"
@@ -98,21 +99,24 @@
 #else
 #define DEFAULT_IS_CLOUD_SERVICES_ENABLED false
 #endif
-#define MQTT_MAX_INTERVAL_METER_PUBLISH 60000 // The maximum interval between two meter payloads (in milliseconds)
-#define MQTT_MAX_INTERVAL_STATUS_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
-#define MQTT_MAX_INTERVAL_CRASH_MONITOR_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
+#define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
+#define MQTT_MAX_INTERVAL_STATUS_PUBLISH (60 * 60 * 1000) // The interval between two status publish
+#define MQTT_MAX_INTERVAL_CRASH_MONITOR_PUBLISH (60 * 60 * 1000) // The interval between two status publish
 #define MQTT_CLAIM_MAX_CONNECTION_ATTEMPT 10 // The maximum number of attempts to connect to AWS IoT Core MQTT broker for claiming certificates
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
-#define MQTT_MIN_CONNECTION_INTERVAL 5000 // Minimum interval between two connection attempts (in milliseconds)
-#define MQTT_INITIAL_RECONNECT_INTERVAL 5000 // Initial interval for MQTT reconnection attempts (milliseconds)
-#define MQTT_MAX_RECONNECT_INTERVAL 300000 // Maximum interval for MQTT reconnection attempts (milliseconds)
+#define MQTT_MIN_CONNECTION_INTERVAL (5 * 1000) // Minimum interval between two connection attempts
+#define MQTT_INITIAL_RECONNECT_INTERVAL (5 * 1000) // Initial interval for MQTT reconnection attempts
+#define MQTT_MAX_RECONNECT_INTERVAL (5 * 60 * 1000) // Maximum interval for MQTT reconnection attempts
 #define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
-#define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks (in milliseconds)
+#define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS 150 // The maximum number of points that can be sent in a single payload. Going higher than about 150 leads to unstable connections
 #define MQTT_PAYLOAD_LIMIT 32768 // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
 #define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
-#define MQTT_PROVISIONING_TIMEOUT 60000 // The timeout for the provisioning response (in milliseconds)
-#define MQTT_PROVISIONING_LOOP_CHECK 1000 // Interval between two certificates check on memory (in milliseconds)
+#define MQTT_PROVISIONING_TIMEOUT (60 * 1000) // The timeout for the provisioning response
+#define MQTT_PROVISIONING_LOOP_CHECK (1 * 1000) // Interval between two certificates check on memory
+#define MQTT_DEBUG_LOGGING_DEFAULT_DURATION (15 * 60 * 1000) 
+#define MQTT_DEBUG_LOGGING_MAX_DURATION (60 * 60 * 1000)
+#define DEBUG_FLAGS_RTC_SIGNATURE 0xDEB6F1A6 // Used to verify the RTC data validity for MQTT debugging struct
 
 // General Configuration Defaults
 #define DEFAULT_SEND_POWER_DATA true // Default for sending active power and power factor data
@@ -127,20 +131,20 @@
 #define MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT false
 #define MQTT_CUSTOM_USERNAME_DEFAULT "username"
 #define MQTT_CUSTOM_PASSWORD_DEFAULT "password"
-#define MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL 5000 // Initial interval for custom MQTT reconnection attempts (milliseconds)
-#define MQTT_CUSTOM_MAX_RECONNECT_INTERVAL 300000 // Maximum interval for custom MQTT reconnection attempts (milliseconds)
+#define MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL (5 * 1000) // Initial interval for custom MQTT reconnection attempts
+#define MQTT_CUSTOM_MAX_RECONNECT_INTERVAL (5 * 60 * 1000) // Maximum interval for custom MQTT reconnection attempts
 #define MQTT_CUSTOM_RECONNECT_MULTIPLIER 2 // Multiplier for custom MQTT exponential backoff
-#define MQTT_CUSTOM_LOOP_INTERVAL 100 // Interval between two MQTT loop checks (in milliseconds)
-#define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL 10000 // Minimum interval between two connection attempts (in milliseconds)
+#define MQTT_CUSTOM_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
+#define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL (10 * 1000) // Minimum interval between two connection attempts
 #define MQTT_CUSTOM_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
 
 // Saving date
-#define SAVE_ENERGY_INTERVAL 360000 // Time between each energy save (in milliseconds) to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
+#define SAVE_ENERGY_INTERVAL (6 * 60 * 1000) // Time between each energy save to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
 // ESP32 status
 #define MINIMUM_FREE_HEAP_SIZE 10000 // Below this value (in bytes), the ESP32 will restart
 #define MINIMUM_FREE_SPIFFS_SIZE 10000 // Below this value (in bytes), the ESP32 will clear the log
-#define ESP32_RESTART_DELAY 1000 // The delay before restarting the ESP32 (in milliseconds) after a restart request, needed to allow the ESP32 to finish the current operations
+#define ESP32_RESTART_DELAY (1 * 1000) // The delay before restarting the ESP32 after a restart request, needed to allow the ESP32 to finish the current operations
 
 // Multiplexer
 // --------------------
@@ -162,9 +166,9 @@
 #define ADE7953_INTERRUPT_PIN 37 // TODO: Implement (eventually) the interrupt pin for more functionalities
 
 // Setup
-#define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low (in milliseconds)
+#define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low
 #define ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS 5
-#define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500 // In milliseconds
+#define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500 
 
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
@@ -200,7 +204,7 @@
 // --------------------
 #define MODBUS_TCP_PORT 502 // The default port for Modbus TCP
 #define MODBUS_TCP_MAX_CLIENTS 3 // The maximum number of clients that can connect to the Modbus TCP server
-#define MODBUS_TCP_TIMEOUT 10000 // The timeout for the Modbus TCP server (in milliseconds)
+#define MODBUS_TCP_TIMEOUT (10 * 1000) // The timeout for the Modbus TCP server
 #define MODBUS_TCP_SERVER_ID 1 // The Modbus TCP server ID
 
 // Cloud services
@@ -237,7 +241,8 @@
 #define MQTT_TOPIC_SUBSCRIBE_RESTART "restart"
 #define MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE "provisioning/response"
 #define MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES "erase-certificates"
-#define MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION "set-general-configuration" // Added
+#define MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION "set-general-configuration"
+#define MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING "enable-debug-logging" 
 #define MQTT_TOPIC_SUBSCRIBE_QOS 1
 
 // MQTT will
