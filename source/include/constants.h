@@ -3,7 +3,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "07"
-#define FIRMWARE_BUILD_VERSION_PATCH "17"
+#define FIRMWARE_BUILD_VERSION_PATCH "18"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -98,9 +98,9 @@
 #else
 #define DEFAULT_IS_CLOUD_SERVICES_ENABLED false
 #endif
-#define MAX_INTERVAL_METER_PUBLISH 30000 // The maximum interval between two meter payloads (in milliseconds)
-#define MAX_INTERVAL_STATUS_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
-#define MAX_INTERVAL_CRASH_MONITOR_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
+#define MQTT_MAX_INTERVAL_METER_PUBLISH 60000 // The maximum interval between two meter payloads (in milliseconds)
+#define MQTT_MAX_INTERVAL_STATUS_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
+#define MQTT_MAX_INTERVAL_CRASH_MONITOR_PUBLISH 3600000 // The interval between two status publish (in milliseconds)
 #define MQTT_CLAIM_MAX_CONNECTION_ATTEMPT 10 // The maximum number of attempts to connect to AWS IoT Core MQTT broker for claiming certificates
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
 #define MQTT_MIN_CONNECTION_INTERVAL 5000 // Minimum interval between two connection attempts (in milliseconds)
@@ -108,11 +108,14 @@
 #define MQTT_MAX_RECONNECT_INTERVAL 300000 // Maximum interval for MQTT reconnection attempts (milliseconds)
 #define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks (in milliseconds)
-#define PAYLOAD_METER_MAX_NUMBER_POINTS 150 // The maximum number of points that can be sent in a single payload. Going higher than about 150 leads to unstable connections
+#define MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS 150 // The maximum number of points that can be sent in a single payload. Going higher than about 150 leads to unstable connections
 #define MQTT_PAYLOAD_LIMIT 32768 // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
 #define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
 #define MQTT_PROVISIONING_TIMEOUT 60000 // The timeout for the provisioning response (in milliseconds)
 #define MQTT_PROVISIONING_LOOP_CHECK 1000 // Interval between two certificates check on memory (in milliseconds)
+
+// General Configuration Defaults
+#define DEFAULT_SEND_POWER_DATA true // Default for sending active power and power factor data
 
 // Custom MQTT
 #define DEFAULT_IS_CUSTOM_MQTT_ENABLED false
@@ -234,6 +237,7 @@
 #define MQTT_TOPIC_SUBSCRIBE_RESTART "restart"
 #define MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE "provisioning/response"
 #define MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES "erase-certificates"
+#define MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION "set-general-configuration" // Added
 #define MQTT_TOPIC_SUBSCRIBE_QOS 1
 
 // MQTT will

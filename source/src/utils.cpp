@@ -118,6 +118,7 @@ void createDefaultGeneralConfigurationFile() {
     _jsonDocument["gmtOffset"] = DEFAULT_GMT_OFFSET;
     _jsonDocument["dstOffset"] = DEFAULT_DST_OFFSET;
     _jsonDocument["ledBrightness"] = DEFAULT_LED_BRIGHTNESS;
+    _jsonDocument["sendPowerData"] = DEFAULT_SEND_POWER_DATA;
 
     serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
 
@@ -440,14 +441,16 @@ bool setGeneralConfiguration(JsonDocument& jsonDocument) {
     logger.debug("Setting general configuration...", TAG);
 
     if (!validateGeneralConfigurationJson(jsonDocument)) {
-        logger.error("Failed to set general configuration", TAG);
+        logger.warning("Failed to set general configuration", TAG);
         return false;
     }
 #if HAS_SECRETS
     generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
+    generalConfiguration.sendPowerData = jsonDocument["sendPowerData"].as<bool>();
 #else
     logger.info("Cloud services cannot be enabled due to missing secrets", TAG);
     generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
+    generalConfiguration.sendPowerData = DEFAULT_SEND_POWER_DATA;
 #endif
     generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
     generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
@@ -471,6 +474,7 @@ void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, Json
     jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
     jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
     jsonDocument["ledBrightness"] = generalConfiguration.ledBrightness;
+    jsonDocument["sendPowerData"] = generalConfiguration.sendPowerData;
 
     logger.debug("General configuration converted to JSON", TAG);
 }
@@ -492,6 +496,7 @@ bool validateGeneralConfigurationJson(JsonDocument& jsonDocument) {
     if (!jsonDocument["gmtOffset"].is<int>()) { logger.warning("gmtOffset is not an integer", TAG); return false; }
     if (!jsonDocument["dstOffset"].is<int>()) { logger.warning("dstOffset is not an integer", TAG); return false; }
     if (!jsonDocument["ledBrightness"].is<int>()) { logger.warning("ledBrightness is not an integer", TAG); return false; }
+    if (!jsonDocument["sendPowerData"].is<bool>()) { logger.warning("sendPowerData is not a boolean", TAG); return false; }
 
     return true;
 }

@@ -37,7 +37,7 @@ PubSubClient clientMqtt(net);
 WiFiClient customNet;
 PubSubClient customClientMqtt(customNet);
 
-CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;
+CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;
 
 AsyncWebServer server(WEBSERVER_PORT);
 

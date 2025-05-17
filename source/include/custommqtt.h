@@ -56,7 +56,7 @@ private:
     unsigned long _lastMillisMqttLoop = 0;
     unsigned long _lastMillisMqttFailed = 0;
     unsigned long _mqttConnectionAttempt = 0;
-    unsigned long _nextMqttConnectionAttemptMillis = 0; // Added for exponential backoff
+    unsigned long _nextMqttConnectionAttemptMillis = 0;
 
     unsigned long _lastMillisMeterPublish = 0;
 };

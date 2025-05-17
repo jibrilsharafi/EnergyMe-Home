@@ -28,7 +28,7 @@ public:
         PubSubClient &clientMqtt,
         WiFiClientSecure &net,
         PublishMqtt &publishMqtt,
-        CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter
+        CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter
     );
 
     void begin();
@@ -72,12 +72,13 @@ private:
     void _subscribeRestart();
     void _subscribeEraseCertificates();
     void _subscribeProvisioningResponse();
+    void _subscribeSetGeneralConfiguration();
     void _subscribeToTopics();
 
     void _constructMqttTopicWithRule(const char *ruleName, const char *finalTopic, char *topic);
     void _constructMqttTopic(const char *finalTopic, char *topic);
 
-    void _circularBufferToJson(JsonDocument *jsonDocument, CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &buffer);
+    void _circularBufferToJson(JsonDocument *jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &buffer);
 
     Ade7953 &_ade7953;
     AdvancedLogger &_logger;
@@ -85,7 +86,7 @@ private:
     PubSubClient &_clientMqtt;
     WiFiClientSecure &_net;
     PublishMqtt &_publishMqtt;
-    CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
+    CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
 
     String _deviceId;
 

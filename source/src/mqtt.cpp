@@ -22,7 +22,9 @@ void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
     } else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE)) {
         TRACE
         JsonDocument _jsonDocument;
-        deserializeJson(_jsonDocument, message);
+        if (deserializeJson(_jsonDocument, message)) {
+            return;
+        }
 
         if (_jsonDocument["status"] == "success") {
             String _encryptedCertPem = _jsonDocument["encryptedCertificatePem"];
@@ -38,6 +40,13 @@ void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
         TRACE
         clearCertificates();
         setRestartEsp32("subscribeCallback", "Certificates erase requested from MQTT");
+    } else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION)) {
+        TRACE
+        JsonDocument _jsonDocument;
+        if (deserializeJson(_jsonDocument, message)) {
+            return;
+        }
+        setGeneralConfiguration(_jsonDocument);        
     }
 }
 
@@ -48,7 +57,7 @@ Mqtt::Mqtt(
     PubSubClient &clientMqtt,
     WiFiClientSecure &net,
     PublishMqtt &publishMqtt,
-    CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter
+    CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter
     ) : _ade7953(ade7953), _logger(logger), _customTime(customTime), _clientMqtt(clientMqtt), _net(net), _publishMqtt(publishMqtt), _payloadMeter(payloadMeter) {}
 
 void Mqtt::begin() {
@@ -406,14 +415,14 @@ void Mqtt::_setTopicGeneralConfiguration() {
     _logger.debug(_mqttTopicGeneralConfiguration, TAG);
 }
 
-void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter) {
+void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter) {
     _logger.debug("Converting circular buffer to JSON", TAG);
 
     TRACE
     JsonArray _jsonArray = jsonDocument->to<JsonArray>();
     
     unsigned int _loops = 0;
-    while (!_payloadMeter.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
+    while (!_payloadMeter.isEmpty() && _loops < MAX_LOOP_ITERATIONS && generalConfiguration.sendPowerData) {
         _loops++;
         JsonObject _jsonObject = _jsonArray.add<JsonObject>();
 
@@ -654,7 +663,10 @@ bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) 
 }
 
 void Mqtt::_checkIfPublishMeterNeeded() {
-    if (_payloadMeter.isFull() || (millis() - _lastMillisMeterPublished) > MAX_INTERVAL_METER_PUBLISH) { // Either buffer is full or time has passed
+    if (
+        (_payloadMeter.isFull() && generalConfiguration.sendPowerData) || 
+        (millis() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH
+    ) { // Either buffer is full (and we are sending power data) or time has passed
         _logger.debug("Setting flag to publish %d meter data points", TAG, _payloadMeter.size());
 
         _publishMqtt.meter = true;
@@ -664,7 +676,7 @@ void Mqtt::_checkIfPublishMeterNeeded() {
 }
 
 void Mqtt::_checkIfPublishStatusNeeded() {
-    if ((millis() - _lastMillisStatusPublished) > MAX_INTERVAL_STATUS_PUBLISH) {
+    if ((millis() - _lastMillisStatusPublished) > MQTT_MAX_INTERVAL_STATUS_PUBLISH) {
         _logger.debug("Setting flag to publish status", TAG);
         
         _publishMqtt.status = true;
@@ -674,7 +686,7 @@ void Mqtt::_checkIfPublishStatusNeeded() {
 }
 
 void Mqtt::_checkIfPublishMonitorNeeded() {
-    if ((millis() - _lastMillisMonitorPublished) > MAX_INTERVAL_CRASH_MONITOR_PUBLISH) {
+    if ((millis() - _lastMillisMonitorPublished) > MQTT_MAX_INTERVAL_CRASH_MONITOR_PUBLISH) {
         _logger.debug("Setting flag to publish crash monitor", TAG);
         
         _publishMqtt.monitor = true;
@@ -701,6 +713,7 @@ void Mqtt::_subscribeToTopics() {
     _subscribeUpdateFirmware();
     _subscribeRestart();
     _subscribeEraseCertificates();
+    _subscribeSetGeneralConfiguration();
 
     _logger.debug("Subscribed to topics", TAG);
 }
@@ -732,6 +745,16 @@ void Mqtt::_subscribeEraseCertificates() {
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
         _logger.warning("Failed to subscribe to erase certificates topic", TAG);
+    }
+}
+
+void Mqtt::_subscribeSetGeneralConfiguration() {
+    _logger.debug("Subscribing to set general configuration topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION);
+    char _topic[MQTT_MAX_TOPIC_LENGTH];
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION, _topic);
+    
+    if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+        _logger.warning("Failed to subscribe to set general configuration topic", TAG);
     }
 }
 

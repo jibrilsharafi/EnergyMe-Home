@@ -103,8 +103,9 @@ struct GeneralConfiguration
   int gmtOffset;
   int dstOffset;
   int ledBrightness;
+  bool sendPowerData; // Flag to control sending of power data. This can only be modified via MQTT
 
-  GeneralConfiguration() : isCloudServicesEnabled(false), gmtOffset(0), dstOffset(0), ledBrightness(127) {}
+  GeneralConfiguration() : isCloudServicesEnabled(DEFAULT_IS_CLOUD_SERVICES_ENABLED), gmtOffset(DEFAULT_GMT_OFFSET), dstOffset(DEFAULT_DST_OFFSET), ledBrightness(DEFAULT_LED_BRIGHTNESS), sendPowerData(DEFAULT_SEND_POWER_DATA) {} // Updated constructor
 };
 
 struct PublicLocation
@@ -151,8 +152,8 @@ struct CustomMqttConfiguration {
     bool useCredentials;
     String username;
     String password;
-    String lastConnectionStatus; // Added
-    String lastConnectionAttemptTimestamp; // Added
+    String lastConnectionStatus;
+    String lastConnectionAttemptTimestamp;
 
     CustomMqttConfiguration() 
         : enabled(DEFAULT_IS_CUSTOM_MQTT_ENABLED), 
@@ -164,8 +165,8 @@ struct CustomMqttConfiguration {
           useCredentials(MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT),
           username(String(MQTT_CUSTOM_USERNAME_DEFAULT)),
           password(String(MQTT_CUSTOM_PASSWORD_DEFAULT)),
-          lastConnectionStatus(String("Never attempted")), // Added default
-          lastConnectionAttemptTimestamp(String("")) {} // Added default
+          lastConnectionStatus(String("Never attempted")),
+          lastConnectionAttemptTimestamp(String("")) {}
 };
 
 enum FirmwareState : int {

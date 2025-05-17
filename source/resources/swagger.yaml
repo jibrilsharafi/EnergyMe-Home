@@ -356,6 +356,8 @@ components:
           type: integer
         "ledBrightness":
           type: integer
+        "sendPowerData":
+          type: boolean
     MonitorData:
       type: object
       properties:
@@ -1367,6 +1369,7 @@ paths:
   /rest/set-general-configuration:
     post:
       summary: Set general configuration
+      description: "Sets general configuration. The 'sendPowerData' field is ignored if provided in the request body, as it is exclusively controlled via MQTT."
       tags:
         - Configuration
       requestBody:

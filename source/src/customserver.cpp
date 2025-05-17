@@ -627,8 +627,12 @@ void CustomServer::_setRestApi()
             } else if (request->url() == "/rest/set-general-configuration") {
                 _serverLog("Request to set general configuration", TAG, LogLevel::INFO, request);
     
+                // Weird thing we have to do here: to ensure the generalConfiguration.sendPowerData 
+                // is not settable by API, we force here to be like the existing value.
+                if (_jsonDocument["sendPowerData"].is<bool>()) {_jsonDocument["sendPowerData"] = generalConfiguration.sendPowerData; }
+
                 if (setGeneralConfiguration(_jsonDocument)) {
-                    request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
+                    request->send(200, "application/json", "{\"message\":\"Configuration updated (sendPowerData ignored)\"}");
                 } else {
                     request->send(400, "application/json", "{\"message\":\"Invalid configuration\"}");
                 }    
