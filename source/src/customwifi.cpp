@@ -34,49 +34,69 @@ void CustomWifi::loop()
 {
   // Only check periodically to reduce overhead
   if (millis() - _lastMillisWifiLoop < WIFI_LOOP_INTERVAL) return;  
-
   _lastMillisWifiLoop = millis();
   
-  // If already connected, nothing to do
-  if (WiFi.isConnected()) {
-    // Reset counter when we have a stable connection
+  // If already connected and IP is valid, reset failure counter and return
+  if (WiFi.isConnected() && WiFi.localIP() != IPAddress(0,0,0,0)) {
     if (_failedConnectionAttempts > 0 && 
-        (millis() - _lastConnectionAttemptTime) > 300000) { // 5 minutes stable connection
+        (millis() - _lastConnectionAttemptTime) > WIFI_STABLE_CONNECTION) { 
       _failedConnectionAttempts = 0;
-      _logger.debug("WiFi connection stable for 5 minutes, resetting failure counter", TAG);
+      _logger.debug("WiFi connection stable, resetting failure counter", TAG);
     }
     return;
   }
 
-  // If disconnected, attempt to reconnect
-  _logger.warning("WiFi connection lost. Reconnecting...", TAG);
-  _led.setBlue();
-  
-  // Try simple reconnect first
-  if (!WiFi.reconnect()) {
-    // If we could not directly reconnect with WiFi.reconnect, try with exponential backoff
-    _connectToWifi(); // This might trigger a restart if portal is needed and succeeds
-  } else {
-    _logger.info("Successfully reconnected to WiFi", TAG);
-    // If reconnect worked, ensure MDNS is running (it might stop on disconnects)
-    setupMdns(); 
-    printWifiStatus();
+  // If disconnected or IP is not yet assigned.
+  // WiFi.isConnected() checks if WiFi.status() == WL_CONNECTED.
+  // Logs show "Idle Status" (WL_IDLE_STATUS) when IP is 0.0.0.0, where WiFi.isConnected() would be false.
+  if (!WiFi.isConnected() || WiFi.localIP() == IPAddress(0,0,0,0)) {
+    _logger.warning("WiFi connection lost or IP not assigned. Current status: %d. Attempting reconnection...", TAG, WiFi.status());
+    _led.setBlue();
+    
+    // Try simple reconnect first
+    if (WiFi.reconnect()) { // This attempts to reconnect using the last known credentials.
+      _logger.info("WiFi.reconnect() call initiated. Waiting for connection and IP address...", TAG);
+      
+      unsigned long _reconnectWaitStart = millis();
+      bool _fullyConnected = false;
+      // Wait for a short period for the connection to establish and an IP to be assigned.
+      while (millis() - _reconnectWaitStart < 5000) { // Wait up to 5 seconds
+        if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0,0,0,0)) {
+          _logger.info("Successfully reconnected to WiFi: %s, IP: %s", TAG, WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+          setupMdns();
+          printWifiStatus(); // Should now show correct IP and status
+          _failedConnectionAttempts = 0; // Reset counter on successful full reconnection
+          _lastConnectionAttemptTime = millis(); // Update timestamp for stable connection tracking
+          _fullyConnected = true;
+          _led.unblock(); // Unblock LED after successful connection
+          break;
+        }
+        delay(250); // Check status periodically
+      }
+
+      if (!_fullyConnected) {
+        _logger.warning("WiFi.reconnect() initiated but connection not fully established (no IP or not WL_CONNECTED) within timeout. Current status: %d, IP: %s. Falling back to _connectToWifi().", TAG, WiFi.status(), WiFi.localIP().toString().c_str());
+        _connectToWifi(); // Fallback to the more robust WiFiManager method
+      }
+    } else {
+      // If WiFi.reconnect() itself returns false (e.g., no credentials, immediate failure)
+      _logger.warning("WiFi.reconnect() call failed immediately. Using _connectToWifi().", TAG);
+      _connectToWifi(); // Fallback to the more robust WiFiManager method
+    }
   }
 }
 
 bool CustomWifi::_connectToWifi()
 {
-  _logger.info("Connecting to WiFi...", TAG);
+  _logger.info("Connecting to WiFi (using WiFiManager)...", TAG);
 
   _led.block();
   _led.setBlue(true);
   
-  // Track connection attempt
-  _lastConnectionAttemptTime = millis();
+  _lastConnectionAttemptTime = millis(); // Record the start of this connection attempt
   _failedConnectionAttempts++;
 
   // Check if credentials exist *before* calling autoConnect.
-  // If not, the portal will likely start.
   bool _portalWasExpected = !(_wifiManager.getWiFiIsSaved());
   if (_portalWasExpected) {
     _logger.info("No saved credentials found. WiFiManager portal may start.", TAG);
@@ -93,6 +113,7 @@ bool CustomWifi::_connectToWifi()
     
     // Reset failed attempts counter on success
     _failedConnectionAttempts = 0;
+    _lastConnectionAttemptTime = millis(); // Update timestamp on successful connection
 
     if (_portalWasExpected) {
         // If the portal was expected and connection succeeded, 

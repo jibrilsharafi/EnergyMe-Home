@@ -812,6 +812,11 @@ void clearCertificates() {
 bool setupMdns()
 {
     logger.info("Setting up mDNS...", TAG);
+    
+    // Ensure mDNS is stopped before starting
+    MDNS.end();
+    delay(100);
+
     if (
         MDNS.begin(MDNS_HOSTNAME) &&
         MDNS.addService("http", "tcp", WEBSERVER_PORT) &&
