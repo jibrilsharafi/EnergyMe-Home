@@ -1,5 +1,7 @@
 # EnergyMe - Home | Source Code
 
+**Note:** This source code is for hardware revision **v5** and represents a significantly more stable version of the firmware.
+
 ## Technical Overview
 
 The system consists of an ESP32 microcontroller interfacing with an ADE7953 energy measurement IC via SPI, capable of monitoring:
@@ -24,27 +26,63 @@ Handles energy measurements with features like:
 
 - **Multiplexer**: Manages channel switching for the 16 secondary channels
 - **SPIFFS**: Stores configuration and calibration data
-- **Web Interface**: Provides configuration and monitoring capabilities
-- **MQTT**: Enables remote data logging and device management
+- **Web Interface**: Provides configuration, monitoring, and firmware update capabilities
+- **MQTT**: Enables remote data logging and device management (including optional AWS IoT Core integration)
 - **Modbus TCP**: Industrial protocol support
+- **Crash Reporting**: Utilizes ESP32's RTC memory for post-crash diagnostics.
+
+## Code Structure and Design
+
+This section provides an overview of the source code organization and the design principles behind the EnergyMe-Home firmware.
+
+### Directory Layout (within `source/`)
+
+- `src/`: Contains the main application logic (`main.cpp`) and implementations of custom classes.
+- `include/`: Header files for all custom classes and definitions (e.g., `constants.h`, `structs.h`).
+- `html/`, `css/`: Web interface files (HTML, CSS). JavaScript, if used externally, would typically reside in a `js/` directory.
+- `config/`: Default or example configuration files (e.g., `calibration.json`, `channel.json`).
+- `resources/`: Non-code assets like images or, in this project, the `swagger.yaml` file.
+
+### Key Software Modules
+
+The firmware is built around several key modules/classes, typically found in `include/` and `src/`:
+
+- `Ade7953`: Manages all interactions with the ADE7953 energy measurement IC.
+- `Multiplexer`: Controls the analog multiplexers to switch between CT channels.
+- `CustomServer`: Handles HTTP requests, serves web pages, and manages Restful API endpoints.
+- `CustomMQTT`: Manages MQTT broker connections, data formatting, and publishing (supports local and AWS IoT).
+- `ModbusTCP`: Implements the Modbus TCP server, defining registers and handling client requests.
+- `CustomWifi`: Manages Wi-Fi connectivity, including the captive portal for initial setup.
+- `CrashMonitor`: Implements the crash reporting feature using RTC memory.
+- `Led`: Controls status LEDs.
+- **Configuration Management**: Loads, saves, and applies system settings from JSON files on SPIFFS.
+- **Data Logging/Storage**: Handles storage and retrieval of energy data.
+
+### Design Principles
+
+- **Modularity**: Code is organized into distinct classes/modules for maintainability and reusability.
+- **Asynchronous Operations**: Leveraged for responsive network operations and sensor readings.
+- **Configuration-driven**: System behavior is largely controlled by configuration files.
+- **Robustness**: Features like crash reporting and MD5-checked firmware updates enhance stability.
 
 ## Secrets Management
 
-The codebase includes critical security elements:
+The codebase includes support for integrating with AWS IoT Core and for local data encryption. This involves the use of several secret files, typically stored in a `secrets/` directory (which should be added to `.gitignore` if you create it):
 
-secrets/
-  ├── ca.pem           # AWS IoT Root CA
-  ├── certclaim.pem    # Device certificate for AWS IoT
-  ├── privateclaim.pem # Device private key
-  ├── endpoint.txt     # AWS IoT endpoint
-  ├── rulemeter.txt    # AWS IoT rule configuration
+```text
+secrets/ (if used)
+  ├── ca.pem            # AWS IoT Root CA (for AWS IoT integration)
+  ├── certclaim.pem     # Device certificate for AWS IoT (for AWS IoT integration)
+  ├── privateclaim.pem  # Device private key (for AWS IoT integration)
+  ├── endpoint.txt      # AWS IoT endpoint (for AWS IoT integration)
+  ├── rulemeter.txt     # AWS IoT rule configuration (for AWS IoT integration)
   └── encryptionkey.txt # Local data encryption key
+```
 
-These are used for:
+**Important Note on Open-Source Distribution:**
 
-- Secure MQTT communication with AWS IoT Core
-- Device provisioning and authentication
-- Local data encryption
+- **AWS IoT Core Secrets**: The files `ca.pem`, `certclaim.pem`, `privateclaim.pem`, `endpoint.txt`, and `rulemeter.txt` are required **only** if you intend to use the AWS IoT Core integration. These files are typically part of privately compiled and distributed versions of the firmware and are **not included in this open-source repository**.
+- **Functionality Without AWS Secrets**: The open-source firmware is designed to function fully without these AWS-specific secret files. If these files are not present, the AWS IoT Core integration features will be disabled, but all other functionalities, including local MQTT, web server, Modbus, etc., will operate normally.
 
 ## Data Storage
 
@@ -65,10 +103,105 @@ Configuration data is stored in JSON files:
   - Reactive power calculated from apparent and active power
   - Power factor compensation for three-phase loads
 
+## Detailed Communication Interfaces
+
+This section provides more specific details about the various communication interfaces supported by EnergyMe-Home.
+
+### Restful API
+
+The system exposes a comprehensive Restful API for configuration, data retrieval, and system control. All API responses are in JSON format.
+
+- **Swagger Documentation**: The primary source for API details is `source/resources/swagger.yaml`, viewable with Swagger UI tools.
+- **Base URL**: API endpoints are generally under `/rest/` (e.g., `http://<device_ip>/rest/...`). Utility endpoints like firmware update (`/do-update`) or Wi-Fi setup (`/wifisave` in AP mode) may have dedicated paths.
+- **Key Capabilities:**
+  - **System Management**: Device status, project/device info, Wi-Fi status, firmware updates (info, status, execution with MD5 check), crash data/logs, restart, factory reset, Wi-Fi reset.
+  - **Meter Readings**: All meter values, single channel data, specific values (e.g., active power), direct ADE7953 register access.
+  - **Configuration**: Get/Set for general settings, ADE7953 parameters, channels, custom MQTT, calibration.
+  - **File Management**: List, retrieve, delete files on the device.
+- **Authentication**: Most `/rest/` endpoints are unprotected for local network ease of use. `/wifisave` is specific to AP mode.
+
+### MQTT Interface
+
+The `CustomMQTT` module in EnergyMe-Home handles publishing data to an MQTT broker. It supports standard MQTT for local communication and includes optional integration with AWS IoT Core (contingent on the presence of necessary secrets, as detailed in the Secrets Management section).
+
+- **Topic Structure**: The base topic is configurable via the `CustomMQTT` settings. Data is published to subtopics indicating its nature (e.g., real-time measurements, status). Refer to `custommqtt.h` and its implementation (`custommqtt.cpp`) for specifics on topic construction.
+- **Data Payload**: Typically JSON, with measurements, timestamps, and channel identifiers, as formatted by `CustomMQTT`.
+- **Authentication (managed by `CustomMQTT`)**:
+  - Standard MQTT: Supports unprotected and username/password authentication, configurable through the system.
+  - AWS IoT Core: If enabled by providing the necessary secrets, `CustomMQTT` will use X.509 certificates for authentication.
+- **QoS (Quality of Service)**: `CustomMQTT` uses QoS 0 or 1 for data publishing. Details can be found by examining its usage of the `PubSubClient` library within `custommqtt.cpp`.
+- **Will Message**: The `CustomMQTT` module can be configured to set a Will Message, notifying the broker if the device disconnects unexpectedly.
+
+### Modbus TCP Server
+
+The device acts as a Modbus TCP server for integration with SCADA systems and industrial equipment.
+
+- **Port**: Configurable (default: 502).
+- **Function Codes Supported**: Primarily "Read Holding Registers" (FC03). Refer to `modbustcp.h` and implementation for exact codes.
+- **Register Mapping**:
+  - Registers are 16-bit. Floating-point values span two registers.
+  - Includes: system information, per-channel data (Voltage, Current, Powers, PF, Energy), and aggregated data.
+  - Specific addresses and organization are in `modbustcp.h` and its `.cpp` file.
+- **Data Types**: Integers or IEEE754 floating-point numbers. Byte order follows Modbus standards.
+
+## System Specifications
+
+This section outlines the key technical specifications and capabilities of the EnergyMe-Home system.
+
+### Measurement Capabilities
+
+- **Monitored Circuits**: 1 direct channel (typically main incomer) + 16 multiplexed channels.
+- **Measured Electrical Parameters**:
+  - Voltage (RMS)
+  - Current (RMS)
+  - Active Power (W)
+  - Reactive Power (VAR)
+  - Apparent Power (VA)
+  - Power Factor
+  - Active Energy (Wh/kWh)
+  - Reactive Energy (VARh/kVARh)
+  - Apparent Energy (VAh/kVAh)
+- **Accuracy**: Dependent on CT sensor quality, proper calibration, and ADE7953 configuration.
+- **Voltage Measurement Range**: universal AC voltage range (e.g., 90-265V AC RMS).
+- **Current Measurement Range**: Dependent on selected Current Transformers (CTs), but output voltage should be always 333 mV or lower.
+- **Sampling Rate**: The ADE7953 has high-frequency sampling (channel 0 is always sampled every 200 ms, while the others depend on the amount of active channels).
+- **Phase Support**: Single-phase measurements per channel. Can be used in three-phase systems by monitoring each phase individually, by assuming a constant phase shift of 120 degrees between phases and same voltage reference.
+
+### Hardware Interfaces
+
+- **Microcontroller**: ESP32-S3.
+- **Energy Measurement IC**: ADE7953 (communicates via SPI).
+- **Multiplexer Control**: Via GPIOs from the ESP32-S3.
+- **User Interface**: Onboard LEDs for status, web interface.
+
+### Data Management
+
+- **Local Storage**: SPIFFS (Serial Peripheral Interface Flash File System) on ESP32 flash.
+- **Configuration Storage**: JSON files (e.g., `calibration.json`, `channel.json`).
+- **Energy Data Storage**: JSON files (e.g., `energy.json`, `daily-energy.json`).
+- **Data Update Rates**:
+  - Web Interface: (e.g., Real-time data updated every 1-5 seconds).
+  - MQTT Publishing: (e.g., Configurable, typically every 5-60 seconds).
+  - Modbus TCP: Data available on poll.
+
+### Power Supply
+
+- **Input Voltage**: universal AC voltage range (e.g., 90-265V AC RMS).
+- **Power Consumption**: less than 1VA
+
 ## Calibration
+
+Calibration is a critical step to ensure accurate energy readings. The system allows for calibration of various parameters, which can be adjusted via the web interface.
 
 Calibration parameters include:
 
 - LSB values for voltage, current, power measurements
 - Phase calibration for accurate power factor readings
 - No-load thresholds to eliminate noise
+
+## Crash Reporting
+
+To aid in debugging and improve long-term stability, the system features a crash reporting mechanism.
+If the ESP32 encounters a critical error and reboots, details about the crash (such as the call stack and error type) are stored in the RTC (Real-Time Clock) memory. This memory persists across reboots (but not power cycles).
+The crash information can then be retrieved and viewed, typically through the web interface or via serial monitor, allowing developers to diagnose the cause of unexpected resets.
+This system is invaluable for identifying and fixing bugs in the firmware.

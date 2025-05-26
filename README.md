@@ -14,7 +14,7 @@ By combining hardware and software, this project empowers you to take control of
 
 ![PCB](resources/pcb_1.jpg)
 
-The hardware consists of both the PCB design and the components used to build the energy monitoring system.
+The hardware (currently at **v5**) consists of both the PCB design and the components used to build the energy monitoring system.
 
 The key components include:
 
@@ -23,7 +23,7 @@ The key components include:
 - Multiplexers: used to monitor multiple circuits at once
 - 3.5 mm jack connectors: used to easily connect current transformers
 
-Detailed PCB schematics and BOMs are available in the `documentation/EasyEDA`(documentation/EasyEDA) directory, while datasheets for the key components are available in the `documentation`(documentation) directory.
+Detailed PCB schematics and BOMs are available in the `documentation/Schematics` directory, while datasheets for the key components are available in the `documentation/Components` directory.
 
 ## Software
 
@@ -32,14 +32,20 @@ The software is written in C++ and uses the *PlatformIO* ecosystem and the *Ardu
 The main features of the software include:
 
 - **ADE7953** class for configuring and reading data from the IC
-- **Crash reporting** system leveraging the RTC memory of the ESP32
+- **Crash reporting** system leveraging the RTC memory of the ESP32 for enhanced debugging and stability. (More details in `source/README.md`)
 - **Custom MQTT** for publishing data to an MQTT broker
-- **Web server** for real-time monitoring, historical data, updating firmware, and configuring the system
-- **Captive Wi-Fi portal** for easy configuration
-- **LED control** for status indication
+- **Web server** for real-time monitoring, historical data, updating firmware (with MD5 integrity check), and configuring the system
+- **Captive Wi-Fi portal** for easy initial Wi-Fi configuration
+- **LED control** for visual status indication
 - **Modbus TCP server** for serving data to Modbus clients
 - **MQTT** support for cloud services and remote monitoring
 - **Multiplexer** for reading multiple circuits at once
+- **mDNS Support** for local network discovery
+- **Logging** system with multiple levels (INFO, WARNING, ERROR, FATAL, DEBUG) and the ability to view/download logs via the web interface.
+- **Secure Firmware Updates:** Firmware updates are handled via the web interface and include MD5 hash checking to ensure integrity.
+- **Secrets Management:** Secure handling of credentials for AWS IoT and local data encryption. (More details in `source/README.md`)
+- **Data Storage:** Configuration and energy data are stored locally in JSON files. (More details in `source/README.md`)
+- **Detailed Calibration Process:** The system allows for calibration of measurements for accuracy. (More details in `source/README.md`)
 
 ## Integration
 
