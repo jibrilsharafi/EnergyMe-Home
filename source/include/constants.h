@@ -2,6 +2,8 @@
 
 // Note: all the durations hereafter are in milliseconds unless specified otherwise
 
+// Hardware revision: EnergyMe - Home v5 (02-12-2024)
+
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "07"
@@ -73,9 +75,11 @@
 #define WEBSERVER_PORT 80
 
 // LED
+// Hardware pins (check hardware revision)
 #define LED_RED_PIN 39
 #define LED_GREEN_PIN 40
 #define LED_BLUE_PIN 38
+
 #define DEFAULT_LED_BRIGHTNESS 191 // 75% of the maximum brightness
 #define LED_MAX_BRIGHTNESS 255
 #define LED_FREQUENCY 5000
@@ -148,16 +152,17 @@
 
 // Multiplexer
 // --------------------
+// Hardware pins (check hardware revision)
 #define MULTIPLEXER_S0_PIN 10
 #define MULTIPLEXER_S1_PIN 11
 #define MULTIPLEXER_S2_PIN 3
 #define MULTIPLEXER_S3_PIN 9
 #define MULTIPLEXER_CHANNEL_COUNT 16 // This cannot be defined as a constant because it is used for array initialization
-#define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // The number of channels being 1 (general) + 16 (multiplexer)
+#define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // The number of channels being 1 (general, ADE7953 channel A) + 16 (multiplexer, ADE7953 channel B)
 
 // ADE7953
 // --------------------
-// Hardware pins
+// Hardware pins (check hardware revision)
 #define SS_PIN 48
 #define SCK_PIN 36
 #define MISO_PIN 35
@@ -193,8 +198,8 @@
 // Validate values
 #define VALIDATE_VOLTAGE_MIN 50.0 // Any voltage below this value is discarded
 #define VALIDATE_VOLTAGE_MAX 300.0  // Any voltage above this value is discarded
-#define VALIDATE_CURRENT_MIN -100.0 // Any current below this value is discarded
-#define VALIDATE_CURRENT_MAX 100.0 // Any current above this value is discarded
+#define VALIDATE_CURRENT_MIN -300.0 // Any current below this value is discarded
+#define VALIDATE_CURRENT_MAX 300.0 // Any current above this value is discarded
 #define VALIDATE_POWER_MIN -100000.0 // Any power below this value is discarded
 #define VALIDATE_POWER_MAX 100000.0 // Any power above this value is discarded
 #define VALIDATE_POWER_FACTOR_MIN -1.0 // Any power factor below this value is discarded
