@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "08"
-#define FIRMWARE_BUILD_VERSION_PATCH "01"
+#define FIRMWARE_BUILD_VERSION_PATCH "02"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -26,6 +26,12 @@
 #define PUBLIC_LOCATION_ENDPOINT "http://ip-api.com/json/"
 #define PUBLIC_TIMEZONE_ENDPOINT "http://api.geonames.org/timezoneJSON?"
 #define PUBLIC_TIMEZONE_USERNAME "energymehome"
+
+// Time utilities
+#define MINIMUM_UNIX_TIME 1000000000 // In seconds, corresponds to 2001
+#define MINIMUM_UNIX_TIME_MILLISECONDS 1000000000000 // In milliseconds, corresponds to 2001
+#define MAXIMUM_UNIX_TIME 4102444800 // In seconds, corresponds to 2100
+#define MAXIMUM_UNIX_TIME_MILLISECONDS 4102444800000 // In milliseconds, corresponds to 2100
 
 // File path
 #define GENERAL_CONFIGURATION_JSON_PATH "/config/general.json"

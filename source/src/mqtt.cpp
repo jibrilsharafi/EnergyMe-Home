@@ -431,9 +431,14 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
 
         PayloadMeter _oldestPayloadMeter = _payloadMeter.shift();
 
-        if (_oldestPayloadMeter.unixTime < 1000000000000) { // Before 2001
+        if (_oldestPayloadMeter.unixTime == 0) {
+            _logger.debug("Payload meter has zero unixTime, skipping...", TAG);
+            continue;
+        }
+
+        if (!validateUnixTime(_oldestPayloadMeter.unixTime)) {
             _logger.warning("Invalid unixTime in payload meter: %llu", TAG, _oldestPayloadMeter.unixTime);
-            continue; // Skip invalid payloads
+            continue;
         }
 
         _jsonObject["unixTime"] = _oldestPayloadMeter.unixTime;
@@ -446,9 +451,14 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
         if (_ade7953.channelData[i].active) {
             JsonObject _jsonObject = _jsonArray.add<JsonObject>();
 
-            if (_ade7953.meterValues[i].lastUnixTimeMilliseconds < 1000000000000) { // Before 2001
+            if (_ade7953.meterValues[i].lastUnixTimeMilliseconds == 0) {
+                _logger.debug("Meter values for channel %d have zero unixTime, skipping...", TAG, i);
+                continue;
+            }
+
+            if (!validateUnixTime(_ade7953.meterValues[i].lastUnixTimeMilliseconds)) {
                 _logger.warning("Invalid unixTime in meter values for channel %d: %llu", TAG, i, _ade7953.meterValues[i].lastUnixTimeMilliseconds);
-                continue; // Skip invalid meter values
+                continue;
             }
 
             _jsonObject["unixTime"] = _ade7953.meterValues[i].lastUnixTimeMilliseconds;
@@ -463,9 +473,14 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
 
     JsonObject _jsonObject = _jsonArray.add<JsonObject>();
 
-    if (_ade7953.meterValues[0].lastUnixTimeMilliseconds < 1000000000000) { // Before 2001
+    if (_ade7953.meterValues[0].lastUnixTimeMilliseconds == 0) {
+        _logger.debug("Meter values have zero unixTime, skipping...", TAG);
+        return;
+    }
+
+    if (!validateUnixTime(_ade7953.meterValues[0].lastUnixTimeMilliseconds)) {
         _logger.warning("Invalid unixTime in meter values: %llu", TAG, _ade7953.meterValues[0].lastUnixTimeMilliseconds);
-        return; // Skip invalid meter values
+        return;
     }
 
     _jsonObject["unixTime"] = _ade7953.meterValues[0].lastUnixTimeMilliseconds;

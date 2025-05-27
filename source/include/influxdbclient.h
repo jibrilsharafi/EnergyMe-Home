@@ -70,6 +70,6 @@ private:
     unsigned long _influxDbConnectionAttempt = 0;
     unsigned long _nextInfluxDbConnectionAttemptMillis = 0;
 
-    unsigned long _lastMillisMeterPublish = 10000; // Do not publish before 10 seconds after setup
-    unsigned long _lastMillisMeterBuffer = 10000;
+    unsigned long _lastMillisMeterPublish = 15000; // Do not publish before 10 seconds after setup
+    unsigned long _lastMillisMeterBuffer = 15000;
 };

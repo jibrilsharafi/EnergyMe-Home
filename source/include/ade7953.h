@@ -45,6 +45,7 @@ public:
     float getAggregatedPowerFactor(bool includeChannel0 = true);
     
     void resetEnergyValues();
+    bool setEnergyValues(JsonDocument &jsonDocument);
     void saveEnergy();
 
     void setDefaultConfiguration();

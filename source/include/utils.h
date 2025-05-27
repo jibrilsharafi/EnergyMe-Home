@@ -86,3 +86,5 @@ void clearCertificates();
 bool checkCertificatesExist();
 
 bool setupMdns();
+
+bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds = true);

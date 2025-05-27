@@ -1121,6 +1121,88 @@ paths:
                   message:
                     type: string
 
+  /rest/get-energy:
+    get:
+      summary: Get current energy values for all active channels
+      tags:
+        - Meter
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    activeEnergyImported:
+                      type: number
+                    activeEnergyExported:
+                      type: number
+                    reactiveEnergyImported:
+                      type: number
+                    reactiveEnergyExported:
+                      type: number
+                    apparentEnergy:
+                      type: number
+
+  /rest/set-energy:
+    post:
+      summary: Set selective energy values for specific channels
+      description: "Sets energy values for specified channels. This will clear all historical daily energy data. Only provided values will be updated."
+      tags:
+        - Meter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  activeEnergyImported:
+                    type: number
+                    description: Active energy imported in kWh
+                  activeEnergyExported:
+                    type: number
+                    description: Active energy exported in kWh
+                  reactiveEnergyImported:
+                    type: number
+                    description: Reactive energy imported in kVArh
+                  reactiveEnergyExported:
+                    type: number
+                    description: Reactive energy exported in kVArh
+                  apparentEnergy:
+                    type: number
+                    description: Apparent energy in kVAh
+            example:
+              "0":
+                activeEnergyImported: 123.456
+                activeEnergyExported: 78.910
+              "1":
+                activeEnergyImported: 234.567
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
   /rest/get-ade7953-configuration:
     get:
       summary: Get ADE7953 configuration

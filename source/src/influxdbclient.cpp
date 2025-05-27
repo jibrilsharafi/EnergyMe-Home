@@ -207,9 +207,16 @@ void InfluxDbClient::_bufferMeterData()
     {
         if (_ade7953.channelData[i].active)
         {
-            if (_ade7953.meterValues[i].lastUnixTimeMilliseconds < 1000000000000) { // Before 2001
+            if (_ade7953.meterValues[i].lastUnixTimeMilliseconds == 0) // Default value when initialized
+            {
+                _logger.debug("Channel does not have real measurements yet, skipping channel %d", TAG, i);
+                continue;
+            }
+
+            if (!validateUnixTime(_ade7953.meterValues[i].lastUnixTimeMilliseconds))
+            {
                 _logger.warning("Invalid unixTime for channel %d in payload meter: %llu", TAG, i, _ade7953.meterValues[i].lastUnixTimeMilliseconds);
-                continue; // Skip invalid data
+                continue;
             }
 
             // Create a simplified point with only real-time measurements

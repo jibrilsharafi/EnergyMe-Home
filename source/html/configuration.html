@@ -223,6 +223,23 @@
         </div>
 
         <div class="section-box">
+            <h2>Energy Management</h2>
+            <p><i>Manage energy counters for all channels. Changes will clear historical daily energy data.</i></p>
+            
+            <div class="warning-box" style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                ⚠️ Warning: Modifying energy values will permanently erase all historical daily energy data. This action cannot be undone.
+            </div>
+
+            <div id="energyChannels">
+                <!-- Energy channels will be populated here -->
+            </div>
+
+            <button class="buttonForm" onclick="loadEnergyValues()" id="loadEnergyButton">🔄 Load Current Values</button>
+            <button class="buttonForm" onclick="setEnergyValues()" id="setEnergyButton">Set Energy Values</button>
+            <button class="buttonForm" onclick="resetAllEnergy()" id="resetAllEnergyButton" style="background-color: #dc3545; border-color: #dc3545;">Reset All to Zero</button>
+        </div>
+
+        <div class="section-box">
             <h2>Disconnect from WiFi</h2>
             <p><i>This will erase the WiFi credentials.</i></p>
             <p><i>The device will create a WiFi network called "EnergyMe" with no password.
@@ -252,6 +269,8 @@
             var generalConfig;
             var customMqttConfig;
             var influxDbConfig;
+            var energyData = {};
+            var channelData = {};
 
             function populateDropdown() {
                 var printLogLevel = document.getElementById("printLogLevel");
@@ -814,14 +833,230 @@
                 setTimeout(getInfluxDbConfiguration, 1000);
             }
 
+            function loadChannelData() {
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("GET", "/rest/get-channel", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            channelData = JSON.parse(this.responseText);
+                            createEnergyChannelInputs();
+                        } else {
+                            console.log("Error getting channel data. Response: " + this.responseText);
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function createEnergyChannelInputs() {
+                const container = document.getElementById("energyChannels");
+                container.innerHTML = "";
+
+                for (let channelIndex in channelData) {
+                    const channel = channelData[channelIndex];
+                    if (channel.active) {
+                        const channelDiv = document.createElement("div");
+                        channelDiv.style.marginBottom = "20px";
+                        channelDiv.style.padding = "15px";
+                        channelDiv.style.border = "1px solid #ddd";
+                        channelDiv.style.borderRadius = "5px";
+                        channelDiv.style.backgroundColor = "#f9f9f9";
+
+                        channelDiv.innerHTML = `
+                            <h4>Channel ${channelIndex}: ${channel.label}</h4>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                                <div>
+                                    <label for="activeEnergyImported_${channelIndex}">Active Energy Imported (Wh):</label>
+                                    <input type="number" step="0.001" id="activeEnergyImported_${channelIndex}" class="config-input" placeholder="0.000">
+                                </div>
+                                <div>
+                                    <label for="activeEnergyExported_${channelIndex}">Active Energy Exported (Wh):</label>
+                                    <input type="number" step="0.001" id="activeEnergyExported_${channelIndex}" class="config-input" placeholder="0.000">
+                                </div>
+                                <div>
+                                    <label for="reactiveEnergyImported_${channelIndex}">Reactive Energy Imported (VArh):</label>
+                                    <input type="number" step="0.001" id="reactiveEnergyImported_${channelIndex}" class="config-input" placeholder="0.000">
+                                </div>
+                                <div>
+                                    <label for="reactiveEnergyExported_${channelIndex}">Reactive Energy Exported (VArh):</label>
+                                    <input type="number" step="0.001" id="reactiveEnergyExported_${channelIndex}" class="config-input" placeholder="0.000">
+                                </div>
+                                <div>
+                                    <label for="apparentEnergy_${channelIndex}">Apparent Energy (VAh):</label>
+                                    <input type="number" step="0.001" id="apparentEnergy_${channelIndex}" class="config-input" placeholder="0.000">
+                                </div>
+                            </div>
+                        `;
+
+                        container.appendChild(channelDiv);
+                    }
+                }
+            }
+
+            function loadEnergyValues() {
+                document.getElementById("loadEnergyButton").innerHTML = "Loading...";
+                document.getElementById("loadEnergyButton").disabled = true;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("GET", "/rest/get-energy", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            energyData = JSON.parse(this.responseText);
+
+                            // Populate the form with current values
+                            for (let channelIndex in energyData) {
+                                const channel = energyData[channelIndex];
+                                
+                                const activeImportedEl = document.getElementById(`activeEnergyImported_${channelIndex}`);
+                                if (activeImportedEl) activeImportedEl.value = channel.activeEnergyImported || 0;
+                                
+                                const activeExportedEl = document.getElementById(`activeEnergyExported_${channelIndex}`);
+                                if (activeExportedEl) activeExportedEl.value = channel.activeEnergyExported || 0;
+                                
+                                const reactiveImportedEl = document.getElementById(`reactiveEnergyImported_${channelIndex}`);
+                                if (reactiveImportedEl) reactiveImportedEl.value = channel.reactiveEnergyImported || 0;
+                                
+                                const reactiveExportedEl = document.getElementById(`reactiveEnergyExported_${channelIndex}`);
+                                if (reactiveExportedEl) reactiveExportedEl.value = channel.reactiveEnergyExported || 0;
+                                
+                                const apparentEl = document.getElementById(`apparentEnergy_${channelIndex}`);
+                                if (apparentEl) apparentEl.value = channel.apparentEnergy || 0;
+                            }
+
+                            document.getElementById("loadEnergyButton").innerHTML = "✓ Values Loaded";
+                        } else {
+                            alert("Error loading energy values. Response: " + this.responseText);
+                            document.getElementById("loadEnergyButton").innerHTML = "❌ Load Failed";
+                        }
+
+                        setTimeout(function () {
+                            document.getElementById("loadEnergyButton").innerHTML = "🔄 Load Current Values";
+                            document.getElementById("loadEnergyButton").disabled = false;
+                        }, 3000);
+                    }
+                };
+                xhttp.send();
+            }
+
+            function setEnergyValues() {
+                var confirm = window.confirm("Are you sure you want to set these energy values? This will permanently erase all historical daily energy data.");
+                if (!confirm) {
+                    return;
+                }
+
+                document.getElementById("setEnergyButton").innerHTML = "Setting...";
+                document.getElementById("setEnergyButton").disabled = true;
+
+                var energyPayload = {};
+
+                // Collect values from all active channels
+                for (let channelIndex in channelData) {
+                    const channel = channelData[channelIndex];
+                    if (channel.active) {
+                        const activeImported = document.getElementById(`activeEnergyImported_${channelIndex}`);
+                        const activeExported = document.getElementById(`activeEnergyExported_${channelIndex}`);
+                        const reactiveImported = document.getElementById(`reactiveEnergyImported_${channelIndex}`);
+                        const reactiveExported = document.getElementById(`reactiveEnergyExported_${channelIndex}`);
+                        const apparent = document.getElementById(`apparentEnergy_${channelIndex}`);
+
+                        if (activeImported && activeImported.value !== "") {
+                            if (!energyPayload[channelIndex]) energyPayload[channelIndex] = {};
+                            energyPayload[channelIndex].activeEnergyImported = parseFloat(activeImported.value);
+                        }
+                        if (activeExported && activeExported.value !== "") {
+                            if (!energyPayload[channelIndex]) energyPayload[channelIndex] = {};
+                            energyPayload[channelIndex].activeEnergyExported = parseFloat(activeExported.value);
+                        }
+                        if (reactiveImported && reactiveImported.value !== "") {
+                            if (!energyPayload[channelIndex]) energyPayload[channelIndex] = {};
+                            energyPayload[channelIndex].reactiveEnergyImported = parseFloat(reactiveImported.value);
+                        }
+                        if (reactiveExported && reactiveExported.value !== "") {
+                            if (!energyPayload[channelIndex]) energyPayload[channelIndex] = {};
+                            energyPayload[channelIndex].reactiveEnergyExported = parseFloat(reactiveExported.value);
+                        }
+                        if (apparent && apparent.value !== "") {
+                            if (!energyPayload[channelIndex]) energyPayload[channelIndex] = {};
+                            energyPayload[channelIndex].apparentEnergy = parseFloat(apparent.value);
+                        }
+                    }
+                }
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/set-energy", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            document.getElementById("setEnergyButton").innerHTML = "✓ Values Set";
+                        } else {
+                            alert("Error setting energy values. Response: " + this.responseText);
+                            document.getElementById("setEnergyButton").innerHTML = "❌ Set Failed";
+                        }
+
+                        setTimeout(function () {
+                            document.getElementById("setEnergyButton").innerHTML = "Set Energy Values";
+                            document.getElementById("setEnergyButton").disabled = false;
+                        }, 3000);
+                    }
+                };
+                xhttp.send(JSON.stringify(energyPayload));
+            }
+
+            function resetAllEnergy() {
+                var confirm = window.confirm("Are you sure you want to reset ALL energy values to zero? This will permanently erase all historical data.");
+                if (!confirm) {
+                    return;
+                }
+
+                document.getElementById("resetAllEnergyButton").innerHTML = "Resetting...";
+                document.getElementById("resetAllEnergyButton").disabled = true;
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/reset-energy", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            document.getElementById("resetAllEnergyButton").innerHTML = "✓ Reset Complete";
+                            // Clear all input fields
+                            for (let channelIndex in channelData) {
+                                const channel = channelData[channelIndex];
+                                if (channel.active) {
+                                    const inputs = [
+                                        `activeEnergyImported_${channelIndex}`,
+                                        `activeEnergyExported_${channelIndex}`,
+                                        `reactiveEnergyImported_${channelIndex}`,
+                                        `reactiveEnergyExported_${channelIndex}`,
+                                        `apparentEnergy_${channelIndex}`
+                                    ];
+                                    inputs.forEach(id => {
+                                        const el = document.getElementById(id);
+                                        if (el) el.value = "0.000";
+                                    });
+                                }
+                            }
+                        } else {
+                            alert("Error resetting energy values. Response: " + this.responseText);
+                            document.getElementById("resetAllEnergyButton").innerHTML = "❌ Reset Failed";
+                        }
+
+                        setTimeout(function () {
+                            document.getElementById("resetAllEnergyButton").innerHTML = "Reset All to Zero";
+                            document.getElementById("resetAllEnergyButton").disabled = false;
+                        }, 3000);
+                    }
+                };
+                xhttp.send();
+            }
+
             document.addEventListener("DOMContentLoaded", function() {
                 getGeneralConfiguration();
                 getLogLevel();
                 getCustomMqttConfiguration();
                 getInfluxDbConfiguration();
                 checkHasSecrets();
-                
-                // No more automatic refreshes - users will click the reload button when they want updates
+                loadChannelData();
                 
                 // Add event listener for version change
                 document.getElementById("influxDbVersion").addEventListener("change", toggleInfluxDbVersionSettings);

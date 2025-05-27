@@ -861,3 +861,11 @@ bool setupMdns()
         return false;
     }
 }
+
+bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds) {
+    if (isMilliseconds) {
+        return (unixTime >= MINIMUM_UNIX_TIME_MILLISECONDS && unixTime <= MAXIMUM_UNIX_TIME_MILLISECONDS);
+    } else {
+        return (unixTime >= MINIMUM_UNIX_TIME && unixTime <= MAXIMUM_UNIX_TIME);
+    }
+}

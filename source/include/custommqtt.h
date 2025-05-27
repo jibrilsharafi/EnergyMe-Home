@@ -56,5 +56,5 @@ private:
     unsigned long _mqttConnectionAttempt = 0;
     unsigned long _nextMqttConnectionAttemptMillis = 0;
 
-    unsigned long _lastMillisMeterPublish = 0;
+    unsigned long _lastMillisMeterPublish = 15000; // Do not publish before 15 seconds after setup
 };

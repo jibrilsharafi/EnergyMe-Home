@@ -362,6 +362,26 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", "{\"message\":\"Energy counters reset\"}"); });
 
+    _server.on("/rest/get-energy", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get energy values", TAG, LogLevel::DEBUG, request);
+
+        JsonDocument _jsonDocument;
+        for (int i = 0; i < CHANNEL_COUNT; i++) {
+            if (_ade7953.channelData[i].active) {
+                _jsonDocument[String(i)]["activeEnergyImported"] = _ade7953.meterValues[i].activeEnergyImported;
+                _jsonDocument[String(i)]["activeEnergyExported"] = _ade7953.meterValues[i].activeEnergyExported;
+                _jsonDocument[String(i)]["reactiveEnergyImported"] = _ade7953.meterValues[i].reactiveEnergyImported;
+                _jsonDocument[String(i)]["reactiveEnergyExported"] = _ade7953.meterValues[i].reactiveEnergyExported;
+                _jsonDocument[String(i)]["apparentEnergy"] = _ade7953.meterValues[i].apparentEnergy;
+            }
+        }
+
+        String _buffer;
+        serializeJson(_jsonDocument, _buffer);
+
+        request->send(200, "application/json", _buffer.c_str()); });
+
     _server.on("/rest/get-log-level", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get log level", TAG, LogLevel::DEBUG, request);
@@ -669,6 +689,14 @@ void CustomServer::_setRestApi()
                 } else {
                     request->send(400, "application/json", "{\"message\":\"Invalid configuration\"}");
                 }         
+            } else if (request->url() == "/rest/set-energy") {
+                _serverLog("Request to set selective energy values", TAG, LogLevel::WARNING, request);
+    
+                if (_ade7953.setEnergyValues(_jsonDocument)) {
+                    request->send(200, "application/json", "{\"message\":\"Energy values updated\"}");
+                } else {
+                    request->send(400, "application/json", "{\"message\":\"Invalid energy values\"}");
+                }
             } else if (request->url() == "/rest/upload-file") {
                 _serverLog("Request to upload file", TAG, LogLevel::INFO, request);
     

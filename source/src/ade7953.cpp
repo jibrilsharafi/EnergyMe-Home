@@ -614,8 +614,8 @@ can be found in the function itself.
 @param channel The channel to read the values from. Returns
 false if the data reading is not ready yet or valid.
 */
-bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTime) { // TODO: test another way of reading data (faster but average RMS values, not energy register)
-    unsigned long long _deltaMillis = linecycUnixTime - meterValues[channel].lastUnixTimeMilliseconds;
+bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) { // TODO: test another way of reading data (faster but average RMS values, not energy register)
+    unsigned long long _deltaMillis = linecycUnixTimeMillis - meterValues[channel].lastUnixTimeMilliseconds;
 
     // Ensure the reading is not being called too early (should not happen anyway)
     // This was introduced as in channel 0 it was noticed that sometimes two meter values
@@ -624,9 +624,16 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTime) {
     // We use the time multiplied by 0.8 to keep some headroom
     if (_deltaMillis < DEFAULT_SAMPLE_TIME * 0.8) {
         return false;
-    } 
-
-    meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTime;
+    }
+    
+    // If the lastUnixTimeMilliseconds is 0 (like at boot), the reading is not valid
+    // since we need first to set the correct unix time
+    if (meterValues[channel].lastUnixTimeMilliseconds == 0) {
+        meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
+        return false;
+    }
+    
+    meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
 
     int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
 
@@ -917,9 +924,8 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
     deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument);
     
     time_t now = time(nullptr);
-    if (now < 1000000000) { // Any time less than 2001-09-09 01:46:40
-        _logger.warning("Skipping saving daily energy as time is not set yet", TAG);
-        return;
+    if (!validateUnixTime(now, false)) {
+        _logger.warning("Saving daily energy even if time is invalid: %ld", TAG, now);
     }
     struct tm *timeinfo = localtime(&now);
     char _currentDate[11];
@@ -955,6 +961,73 @@ void Ade7953::resetEnergyValues() {
     _logger.info("Successfully reset energy values to 0", TAG);
 }
 
+bool Ade7953::setEnergyValues(JsonDocument &jsonDocument) {
+    _logger.warning("Setting selective energy values", TAG);
+
+    if (!jsonDocument.is<JsonObject>()) {
+        _logger.error("Invalid JSON format for energy values", TAG);
+        return false;
+    }
+
+    bool hasChanges = false;
+    bool clearDailyEnergy = false;
+
+    for (JsonPair kv : jsonDocument.as<JsonObject>()) {
+        String channelStr = kv.key().c_str();
+        int channel = channelStr.toInt();
+        
+        if (channel < 0 || channel >= CHANNEL_COUNT) {
+            _logger.warning("Invalid channel index %d", TAG, channel);
+            continue;
+        }
+
+        JsonObject energyData = kv.value().as<JsonObject>();
+        
+        if (energyData["activeEnergyImported"].is<float>()) {
+            meterValues[channel].activeEnergyImported = energyData["activeEnergyImported"];
+            hasChanges = true;
+            clearDailyEnergy = true;
+        }
+        
+        if (energyData["activeEnergyExported"].is<float>()) {
+            meterValues[channel].activeEnergyExported = energyData["activeEnergyExported"];
+            hasChanges = true;
+            clearDailyEnergy = true;
+        }
+        
+        if (energyData["reactiveEnergyImported"].is<float>()) {
+            meterValues[channel].reactiveEnergyImported = energyData["reactiveEnergyImported"];
+            hasChanges = true;
+            clearDailyEnergy = true;
+        }
+        
+        if (energyData["reactiveEnergyExported"].is<float>()) {
+            meterValues[channel].reactiveEnergyExported = energyData["reactiveEnergyExported"];
+            hasChanges = true;
+            clearDailyEnergy = true;
+        }
+        
+        if (energyData["apparentEnergy"].is<float>()) {
+            meterValues[channel].apparentEnergy = energyData["apparentEnergy"];
+            hasChanges = true;
+            clearDailyEnergy = true;
+        }
+    }
+
+    if (hasChanges) {
+        if (clearDailyEnergy) {
+            _logger.warning("Clearing daily energy data due to energy value changes", TAG);
+            createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
+        }
+        
+        saveEnergy();
+        _logger.info("Successfully set selective energy values", TAG);
+        return true;
+    }
+
+    _logger.warning("No valid energy values found to set", TAG);
+    return false;
+}
 
 // Others
 // --------------------
