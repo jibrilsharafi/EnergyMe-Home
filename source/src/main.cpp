@@ -13,6 +13,7 @@
 #include "modbustcp.h"
 #include "mqtt.h"
 #include "custommqtt.h"
+#include "influxdbclient.h"
 #include "multiplexer.h"
 #include "structs.h"
 #include "utils.h"
@@ -29,6 +30,7 @@ MainFlags mainFlags;
 
 GeneralConfiguration generalConfiguration;
 CustomMqttConfiguration customMqttConfiguration;
+InfluxDbConfiguration influxDbConfiguration;
 RTC_NOINIT_ATTR CrashData crashData;
 RTC_NOINIT_ATTR DebugFlagsRtc debugFlagsRtc;
 
@@ -113,8 +115,14 @@ CustomMqtt customMqtt(
   logger,
   customClientMqtt,
   customMqttConfiguration,
-  customTime,
-  mainFlags
+  customTime
+);
+
+InfluxDbClient influxDbClient(
+  ade7953,
+  logger,
+  influxDbConfiguration,
+  customTime
 );
 
 Mqtt mqtt(
@@ -134,7 +142,8 @@ CustomServer customServer(
   ade7953,
   customTime,
   customWifi,
-  customMqtt
+  customMqtt,
+  influxDbClient
 );
 
 // Main functions
@@ -349,6 +358,9 @@ void loop() {
     
     TRACE
     customMqtt.loop();
+    
+    TRACE
+    influxDbClient.loop();
     
     TRACE
     ade7953.loop();

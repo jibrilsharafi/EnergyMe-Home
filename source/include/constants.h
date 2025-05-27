@@ -6,8 +6,8 @@
 
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
-#define FIRMWARE_BUILD_VERSION_MINOR "07"
-#define FIRMWARE_BUILD_VERSION_PATCH "20"
+#define FIRMWARE_BUILD_VERSION_MINOR "08"
+#define FIRMWARE_BUILD_VERSION_PATCH "00"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -33,6 +33,7 @@
 #define CALIBRATION_JSON_PATH "/config/calibration.json"
 #define CHANNEL_DATA_JSON_PATH "/config/channel.json"
 #define CUSTOM_MQTT_CONFIGURATION_JSON_PATH "/config/custommqtt.json"
+#define INFLUXDB_CONFIGURATION_JSON_PATH "/config/influxdb.json"
 #define ENERGY_JSON_PATH "/energy.json"
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
 #define FW_UPDATE_INFO_JSON_PATH "/fw-update-info.json"
@@ -141,6 +142,23 @@
 #define MQTT_CUSTOM_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL (10 * 1000) // Minimum interval between two connection attempts
 #define MQTT_CUSTOM_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
+
+// InfluxDB Configuration Defaults
+#define DEFAULT_IS_INFLUXDB_ENABLED false
+#define INFLUXDB_SERVER_DEFAULT "localhost"
+#define INFLUXDB_PORT_DEFAULT 8086
+#define INFLUXDB_VERSION_DEFAULT 2
+#define INFLUXDB_DATABASE_DEFAULT "energyme-home"
+#define INFLUXDB_USERNAME_DEFAULT ""
+#define INFLUXDB_PASSWORD_DEFAULT ""
+#define INFLUXDB_ORGANIZATION_DEFAULT "my-org"
+#define INFLUXDB_BUCKET_DEFAULT "energyme-home"
+#define INFLUXDB_TOKEN_DEFAULT ""
+#define INFLUXDB_MEASUREMENT_DEFAULT "meter"
+#define INFLUXDB_FREQUENCY_DEFAULT 30  // In seconds
+#define INFLUXDB_BUFFER_SIZE 100 // The number of points to buffer before sending to InfluxDB
+#define INFLUXDB_USE_SSL_DEFAULT false
+#define INFLUXDB_LOOP_INTERVAL 100 // Interval between two InfluxDB loop checks
 
 // Saving date
 #define SAVE_ENERGY_INTERVAL (6 * 60 * 1000) // Time between each energy save to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 

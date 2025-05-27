@@ -146,7 +146,74 @@
                 </div>
             </div>
             <button class="buttonForm" onclick="setCustomMqttConfiguration()" id="setCustomMqttConfigurationButton">Set configuration</button>
+            <button class="buttonForm" onclick="getCustomMqttConfiguration()" id="reloadCustomMqttButton" style="float: right;">🔄 Reload Status</button>
+        </div>
 
+        <div class="section-box">
+            <h2>InfluxDB</h2>
+            <p><i>
+                InfluxDB is used to send meter data to an InfluxDB time-series database. This is useful for storing historical data and creating dashboards with Grafana.
+                <br>
+                <br>
+                The data will be sent in InfluxDB Line Protocol format with all meter values as fields.
+            </i></p>
+            <input type="checkbox" id="influxDbEnabled" class="config-input">
+            <label for="influxDbEnabled">Enable InfluxDB</label>
+            <div id="influxDbSettings">
+                <label for="influxDbServer">Server:</label>
+                <input type="text" id="influxDbServer" class="config-input" placeholder="e.g., localhost or influxdb.example.com">
+                <br>
+                <label for="influxDbPort">Port:</label>
+                <input type="number" id="influxDbPort" class="config-input" placeholder="e.g., 8086">
+                <br> 
+                <label for="influxDbVersion">Version:</label>
+                <select id="influxDbVersion" class="config-input">
+                    <option value="1">InfluxDB v1.x</option>
+                    <option value="2">InfluxDB v2.x</option>
+                </select>
+                <br>
+                <input type="checkbox" id="influxDbUseSSL" class="config-input">
+                <label for="influxDbUseSSL">Use SSL (HTTPS)</label>
+                <br>
+                <div id="influxDbV1Settings">
+                    <h4>InfluxDB v1.x Settings</h4>
+                    <label for="influxDbDatabase">Database:</label>
+                    <input type="text" id="influxDbDatabase" class="config-input" placeholder="e.g., energyme-home">
+                    <br> 
+                    <label for="influxDbUsername">Username:</label>
+                    <input type="text" id="influxDbUsername" class="config-input" placeholder="Leave empty if not required">
+                    <br> 
+                    <label for="influxDbPassword">Password:</label>
+                    <input type="password" id="influxDbPassword" class="config-input" placeholder="Leave empty if not required">
+                </div>
+                <div id="influxDbV2Settings">
+                    <h4>InfluxDB v2.x Settings</h4>
+                    <label for="influxDbOrganization">Organization:</label>
+                    <input type="text" id="influxDbOrganization" class="config-input" placeholder="e.g., my-org">
+                    <br> 
+                    <label for="influxDbBucket">Bucket:</label>
+                    <input type="text" id="influxDbBucket" class="config-input" placeholder="e.g., energyme-home">
+                    <br> 
+                    <label for="influxDbToken">Token:</label>
+                    <input type="password" id="influxDbToken" class="config-input" placeholder="API token">
+                </div>
+                <label for="influxDbMeasurement">Measurement:</label>
+                <input type="text" id="influxDbMeasurement" class="config-input" placeholder="e.g., meter">
+                <br> 
+                <label for="influxDbFrequency">Frequency (in seconds):</label>
+                <input type="number" id="influxDbFrequency" class="config-input" placeholder="e.g., 30" min="1" max="3600">
+            </div>
+            <div id="influxDbStatus" style="margin-top: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
+                <div id="influxDbStatusContainer" style="display: flex; align-items: center;">
+                    <span id="influxDbStatusIcon" style="font-size: 1.5em; margin-right: 10px;">⚪</span>
+                    <div>
+                        <strong>Status: </strong><span id="influxDbLastConnectionStatus">Loading...</span><br>
+                        <span id="influxDbTimestampContainer"><strong>Last Attempt: </strong><span id="influxDbLastConnectionAttemptTimestamp">Loading...</span></span>
+                    </div>
+                </div>
+            </div>
+            <button class="buttonForm" onclick="setInfluxDbConfiguration()" id="setInfluxDbConfigurationButton">Set configuration</button>
+            <button class="buttonForm" onclick="getInfluxDbConfiguration()" id="reloadInfluxDbButton" style="float: right;">🔄 Reload Status</button>
         </div>
 
         <div class="section-box">
@@ -184,6 +251,7 @@
             var logLevels = ["Debug", "Info", "Warning", "Error", "Fatal"];
             var generalConfig;
             var customMqttConfig;
+            var influxDbConfig;
 
             function populateDropdown() {
                 var printLogLevel = document.getElementById("printLogLevel");
@@ -599,14 +667,164 @@
                 };
                 xhttp.send();
             }
-            
+
+            function updateInfluxDbStatusDisplay(status, timestamp, isEnabled) {
+                const statusElement = document.getElementById("influxDbLastConnectionStatus");
+                const timestampElement = document.getElementById("influxDbLastConnectionAttemptTimestamp");
+                const timestampContainer = document.getElementById("influxDbTimestampContainer");
+                const statusIcon = document.getElementById("influxDbStatusIcon");
+                const statusContainer = document.getElementById("influxDbStatusContainer");
+                
+                // Reset styles
+                statusContainer.style.color = "";
+                statusElement.style.fontWeight = "";
+                
+                // If InfluxDB is disabled, show disabled status
+                if (!isEnabled) {
+                    statusElement.textContent = "Disabled";
+                    timestampContainer.style.display = "none";
+                    statusIcon.innerHTML = "⚫"; // Black circle for disabled
+                    statusElement.style.color = "#757575"; // Gray color
+                    return;
+                }
+                
+                // If enabled, proceed with normal status display
+                statusElement.textContent = status || "N/A";
+                timestampElement.textContent = timestamp || "N/A";
+                
+                // Show/hide timestamp based on connection status
+                if (status === "Upload successful" || status === "Credentials valid") {
+                    timestampContainer.style.display = "block";
+                    statusIcon.innerHTML = "🟢"; // Green circle for successful
+                    statusElement.style.color = "#2e7d32"; // Dark green
+                    statusElement.style.fontWeight = "bold";
+                } else if (status && status.includes("Failed")) {
+                    timestampContainer.style.display = "block";
+                    statusIcon.innerHTML = "🔴"; // Red circle for failed
+                    statusElement.style.color = "#c62828"; // Dark red
+                } else if (status && status.includes("Error")) {
+                    timestampContainer.style.display = "block";
+                    statusIcon.innerHTML = "⚠️"; // Warning for errors
+                    statusElement.style.color = "#e65100"; // Orange
+                } else {
+                    timestampContainer.style.display = "block";
+                    statusIcon.innerHTML = "⚪"; // Default neutral circle
+                }
+            }
+
+            function toggleInfluxDbVersionSettings() {
+                const version = document.getElementById("influxDbVersion").value;
+                const v1Settings = document.getElementById("influxDbV1Settings");
+                const v2Settings = document.getElementById("influxDbV2Settings");
+                
+                if (version === "1") {
+                    v1Settings.style.display = "block";
+                    v2Settings.style.display = "none";
+                } else {
+                    v1Settings.style.display = "none";
+                    v2Settings.style.display = "block";
+                }
+            }
+
+            function getInfluxDbConfiguration() {
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("GET", "/rest/get-influxdb-configuration", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            influxDbConfig = JSON.parse(this.responseText);
+
+                            document.getElementById("influxDbEnabled").checked = influxDbConfig.enabled;
+                            document.getElementById("influxDbServer").value = influxDbConfig.server;
+                            document.getElementById("influxDbPort").value = influxDbConfig.port;
+                            document.getElementById("influxDbVersion").value = influxDbConfig.version;
+                            document.getElementById("influxDbDatabase").value = influxDbConfig.database;
+                            document.getElementById("influxDbUsername").value = influxDbConfig.username;
+                            document.getElementById("influxDbPassword").value = influxDbConfig.password;
+                            document.getElementById("influxDbOrganization").value = influxDbConfig.organization;
+                            document.getElementById("influxDbBucket").value = influxDbConfig.bucket;
+                            document.getElementById("influxDbToken").value = influxDbConfig.token;
+                            document.getElementById("influxDbMeasurement").value = influxDbConfig.measurement;
+                            document.getElementById("influxDbFrequency").value = influxDbConfig.frequency;
+                            document.getElementById("influxDbUseSSL").checked = influxDbConfig.useSSL;
+
+                            toggleInfluxDbVersionSettings();
+                            updateInfluxDbStatusDisplay(influxDbConfig.lastConnectionStatus, 
+                                                      influxDbConfig.lastConnectionAttemptTimestamp,
+                                                      influxDbConfig.enabled);
+
+                        } else {
+                            console.log("Error getting InfluxDB configuration. Response: " + this.responseText);
+                            updateInfluxDbStatusDisplay("Error loading status", "", false);
+                        }
+                    }
+                };
+                xhttp.send();
+            }
+
+            function setInfluxDbConfiguration() {
+                document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Setting...";
+                document.getElementById("setInfluxDbConfigurationButton").disabled = true;
+
+                var currentStatus = influxDbConfig ? influxDbConfig.lastConnectionStatus : "Unknown";
+                var currentTimestamp = influxDbConfig ? influxDbConfig.lastConnectionAttemptTimestamp : "";
+
+                var newInfluxDbConfig = {
+                    "enabled": document.getElementById("influxDbEnabled").checked,
+                    "server": document.getElementById("influxDbServer").value,
+                    "port": parseInt(document.getElementById("influxDbPort").value),
+                    "version": parseInt(document.getElementById("influxDbVersion").value),
+                    "database": document.getElementById("influxDbDatabase").value,
+                    "username": document.getElementById("influxDbUsername").value,
+                    "password": document.getElementById("influxDbPassword").value,
+                    "organization": document.getElementById("influxDbOrganization").value,
+                    "bucket": document.getElementById("influxDbBucket").value,
+                    "token": document.getElementById("influxDbToken").value,
+                    "measurement": document.getElementById("influxDbMeasurement").value,
+                    "frequency": parseInt(document.getElementById("influxDbFrequency").value),
+                    "useSSL": document.getElementById("influxDbUseSSL").checked,
+                    "lastConnectionStatus": currentStatus,
+                    "lastConnectionAttemptTimestamp": currentTimestamp
+                };
+
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", "/rest/set-influxdb-configuration", true);
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set success!";
+                            setTimeout(getInfluxDbConfiguration, 1000);
+                            setTimeout(function () {
+                                document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
+                                document.getElementById("setInfluxDbConfigurationButton").disabled = false;
+                            }, 3000);
+                        } else {
+                            alert("Error setting InfluxDB configuration. Response: " + this.responseText);
+                            document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set failed!";
+                            setTimeout(function () {
+                                document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
+                                document.getElementById("setInfluxDbConfigurationButton").disabled = false;
+                            }, 3000);
+                        }
+                    }
+                };
+                xhttp.send(JSON.stringify(newInfluxDbConfig));
+
+                // Call to refresh the InfluxDB configuration after setting it
+                setTimeout(getInfluxDbConfiguration, 1000);
+            }
+
             document.addEventListener("DOMContentLoaded", function() {
                 getGeneralConfiguration();
                 getLogLevel();
                 getCustomMqttConfiguration();
-                checkHasSecrets(); // Add this line to check for secrets
+                getInfluxDbConfiguration();
+                checkHasSecrets();
                 
-                setInterval(getCustomMqttConfiguration, 10000);
+                // No more automatic refreshes - users will click the reload button when they want updates
+                
+                // Add event listener for version change
+                document.getElementById("influxDbVersion").addEventListener("change", toggleInfluxDbVersionSettings);
             });
 
         </script>

@@ -242,6 +242,32 @@ void createDefaultCustomMqttConfigurationFile() {
     logger.debug("Default %s created", TAG, CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
 }
 
+void createDefaultInfluxDbConfigurationFile() {
+    logger.debug("Creating default %s...", TAG, INFLUXDB_CONFIGURATION_JSON_PATH);
+
+    JsonDocument _jsonDocument;
+
+    _jsonDocument["enabled"] = DEFAULT_IS_INFLUXDB_ENABLED;
+    _jsonDocument["server"] = INFLUXDB_SERVER_DEFAULT;
+    _jsonDocument["port"] = INFLUXDB_PORT_DEFAULT;
+    _jsonDocument["version"] = INFLUXDB_VERSION_DEFAULT; // Default to v2
+    _jsonDocument["database"] = INFLUXDB_DATABASE_DEFAULT;
+    _jsonDocument["username"] = INFLUXDB_USERNAME_DEFAULT;
+    _jsonDocument["password"] = INFLUXDB_PASSWORD_DEFAULT;
+    _jsonDocument["organization"] = INFLUXDB_ORGANIZATION_DEFAULT;
+    _jsonDocument["bucket"] = INFLUXDB_BUCKET_DEFAULT;
+    _jsonDocument["token"] = INFLUXDB_TOKEN_DEFAULT;
+    _jsonDocument["measurement"] = INFLUXDB_MEASUREMENT_DEFAULT;
+    _jsonDocument["frequency"] = INFLUXDB_FREQUENCY_DEFAULT;
+    _jsonDocument["useSSL"] = INFLUXDB_USE_SSL_DEFAULT;
+    _jsonDocument["lastConnectionStatus"] = "Never attempted";
+    _jsonDocument["lastConnectionAttemptTimestamp"] = "";
+
+    serializeJsonToSpiffs(INFLUXDB_CONFIGURATION_JSON_PATH, _jsonDocument);
+
+    logger.debug("Default %s created", TAG, INFLUXDB_CONFIGURATION_JSON_PATH);
+}
+
 std::vector<const char*> checkMissingFiles() {
     logger.debug("Checking missing files...", TAG);
 
@@ -253,6 +279,7 @@ std::vector<const char*> checkMissingFiles() {
         CALIBRATION_JSON_PATH,
         CHANNEL_DATA_JSON_PATH,
         CUSTOM_MQTT_CONFIGURATION_JSON_PATH,
+        INFLUXDB_CONFIGURATION_JSON_PATH,
         ENERGY_JSON_PATH,
         DAILY_ENERGY_JSON_PATH,
         FW_UPDATE_INFO_JSON_PATH,
@@ -288,6 +315,8 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
             createDefaultChannelDataFile();
         } else if (strcmp(path, CUSTOM_MQTT_CONFIGURATION_JSON_PATH) == 0) {
             createDefaultCustomMqttConfigurationFile();
+        } else if (strcmp(path, INFLUXDB_CONFIGURATION_JSON_PATH) == 0) {
+            createDefaultInfluxDbConfigurationFile();
         } else if (strcmp(path, ENERGY_JSON_PATH) == 0) {
             createDefaultEnergyFile();
         } else if (strcmp(path, DAILY_ENERGY_JSON_PATH) == 0) {

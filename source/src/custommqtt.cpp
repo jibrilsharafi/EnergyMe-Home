@@ -7,13 +7,11 @@ CustomMqtt::CustomMqtt(
     AdvancedLogger &logger,
     PubSubClient &customClientMqtt,
     CustomMqttConfiguration &customMqttConfiguration,
-    CustomTime &customTime,
-    MainFlags &mainFlags) : _ade7953(ade7953),
+    CustomTime &CustomTime) : _ade7953(ade7953),
                             _logger(logger),
                             _customClientMqtt(customClientMqtt),
                             _customMqttConfiguration(customMqttConfiguration),
-                            _customTime(customTime),
-                            _mainFlags(mainFlags) {}
+                            _customTime(customTime) {}
 
 
 void CustomMqtt::begin()

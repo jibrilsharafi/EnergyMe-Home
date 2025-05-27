@@ -9,14 +9,16 @@ CustomServer::CustomServer(
     Ade7953 &ade7953,
     CustomTime &customTime,
     CustomWifi &customWifi,
-    CustomMqtt &customMqtt) :
+    CustomMqtt &customMqtt,
+    InfluxDbClient &influxDbClient) :
         _server(server), 
         _logger(logger), 
         _led(led), 
         _ade7953(ade7953), 
         _customTime(customTime), 
         _customWifi(customWifi), 
-        _customMqtt(customMqtt) {}
+        _customMqtt(customMqtt),
+        _influxDbClient(influxDbClient) {}
 
 void CustomServer::begin()
 {
@@ -583,6 +585,12 @@ void CustomServer::_setRestApi()
 
         _serveJsonFile(request, CUSTOM_MQTT_CONFIGURATION_JSON_PATH); });
 
+    _server.on("/rest/get-influxdb-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get InfluxDB configuration", TAG, LogLevel::DEBUG, request);
+
+        _serveJsonFile(request, INFLUXDB_CONFIGURATION_JSON_PATH); });
+
     _server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
         if (index == 0) {
             // This is the first chunk of data, initialize the buffer
@@ -649,6 +657,14 @@ void CustomServer::_setRestApi()
                 _serverLog("Request to set custom MQTT configuration", TAG, LogLevel::INFO, request);
     
                 if (_customMqtt.setConfiguration(_jsonDocument)) {
+                    request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
+                } else {
+                    request->send(400, "application/json", "{\"message\":\"Invalid configuration\"}");
+                }         
+            } else if (request->url() == "/rest/set-influxdb-configuration") {
+                _serverLog("Request to set InfluxDB configuration", TAG, LogLevel::INFO, request);
+    
+                if (_influxDbClient.setConfiguration(_jsonDocument)) {
                     request->send(200, "application/json", "{\"message\":\"Configuration updated\"}");
                 } else {
                     request->send(400, "application/json", "{\"message\":\"Invalid configuration\"}");

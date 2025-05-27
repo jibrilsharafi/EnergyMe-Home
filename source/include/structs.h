@@ -178,6 +178,46 @@ struct CustomMqttConfiguration {
           lastConnectionAttemptTimestamp(String("")) {}
 };
 
+struct InfluxDbConfiguration {
+    bool enabled;
+    String server;
+    int port;
+    int version;  // 1 or 2
+    
+    // v1 fields
+    String database;
+    String username;
+    String password;
+    
+    // v2 fields
+    String organization;
+    String bucket;
+    String token;
+    
+    String measurement;
+    int frequency;
+    bool useSSL;
+    String lastConnectionStatus;
+    String lastConnectionAttemptTimestamp;
+
+    InfluxDbConfiguration() 
+        : enabled(DEFAULT_IS_INFLUXDB_ENABLED), 
+          server(String(INFLUXDB_SERVER_DEFAULT)), 
+          port(INFLUXDB_PORT_DEFAULT),
+          version(INFLUXDB_VERSION_DEFAULT),  // Default to v2
+          database(String(INFLUXDB_DATABASE_DEFAULT)),
+          username(String(INFLUXDB_USERNAME_DEFAULT)),
+          password(String(INFLUXDB_PASSWORD_DEFAULT)),
+          organization(String(INFLUXDB_ORGANIZATION_DEFAULT)),
+          bucket(String(INFLUXDB_BUCKET_DEFAULT)),
+          token(String(INFLUXDB_TOKEN_DEFAULT)),
+          measurement(String(INFLUXDB_MEASUREMENT_DEFAULT)),
+          frequency(INFLUXDB_FREQUENCY_DEFAULT),
+          useSSL(INFLUXDB_USE_SSL_DEFAULT),
+          lastConnectionStatus(String("Never attempted")),
+          lastConnectionAttemptTimestamp(String("")) {}
+};
+
 enum FirmwareState : int {
     STABLE,
     NEW_TO_TEST,

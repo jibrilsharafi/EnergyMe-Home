@@ -14,6 +14,7 @@
 #include "crashmonitor.h"
 #include <ESPAsyncWebServer.h> // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
 #include "constants.h"
+#include "influxdbclient.h"
 #include "utils.h"
 #include "custommqtt.h"
 #include "binaries.h"
@@ -28,7 +29,8 @@ public:
         Ade7953 &ade7953,
         CustomTime &customTime,
         CustomWifi &customWifi,
-        CustomMqtt &customMqtt
+        CustomMqtt &customMqtt,
+        InfluxDbClient &influxDbClient
     );
 
     void begin();
@@ -53,6 +55,7 @@ private:
     CustomTime &_customTime;
     CustomWifi &_customWifi;
     CustomMqtt &_customMqtt;
+    InfluxDbClient &_influxDbClient;
 
     String _md5;
 };

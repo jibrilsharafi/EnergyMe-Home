@@ -21,8 +21,7 @@ public:
         AdvancedLogger &logger,
         PubSubClient &customClientMqtt,
         CustomMqttConfiguration &customMqttConfiguration,
-        CustomTime &customTime,
-        MainFlags &mainFlags);
+        CustomTime &customTime);
 
     void begin();
     void loop();
@@ -49,7 +48,6 @@ private:
     PubSubClient &_customClientMqtt;
     CustomMqttConfiguration &_customMqttConfiguration;
     CustomTime &_customTime;
-    MainFlags &_mainFlags;
 
     bool _isSetupDone = false;
 
