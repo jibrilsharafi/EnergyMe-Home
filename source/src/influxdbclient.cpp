@@ -194,11 +194,9 @@ void InfluxDbClient::_disable()
 
 void InfluxDbClient::_bufferMeterData()
 {
-    _logger.debug("Buffering meter data for InfluxDB...", TAG);
-
-    if (!_customTime.isTimeSynched())
+    if (!_customTime.isTimeSynched() || millis() < MINIMUM_TIME_BEFORE_VALID_METER)
     {
-        _logger.debug("Time not synced, skipping data buffering", TAG);
+        _logger.debug("Time not synced or not enough time passed, skipping data buffering", TAG);
         return;
     }
 

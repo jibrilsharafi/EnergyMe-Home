@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "08"
-#define FIRMWARE_BUILD_VERSION_PATCH "02"
+#define FIRMWARE_BUILD_VERSION_PATCH "03"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -29,9 +29,10 @@
 
 // Time utilities
 #define MINIMUM_UNIX_TIME 1000000000 // In seconds, corresponds to 2001
-#define MINIMUM_UNIX_TIME_MILLISECONDS 1000000000000 // In milliseconds, corresponds to 2001
+#define MINIMUM_UNIX_TIME_MILLISECONDS 1000000000000 // Corresponds to 2001
 #define MAXIMUM_UNIX_TIME 4102444800 // In seconds, corresponds to 2100
-#define MAXIMUM_UNIX_TIME_MILLISECONDS 4102444800000 // In milliseconds, corresponds to 2100
+#define MAXIMUM_UNIX_TIME_MILLISECONDS 4102444800000 // Corresponds to 2100
+#define MINIMUM_TIME_BEFORE_VALID_METER 15000 // Before this millis(), do not buffer or upload meter values
 
 // File path
 #define GENERAL_CONFIGURATION_JSON_PATH "/config/general.json"
@@ -235,6 +236,10 @@
 #define VALIDATE_POWER_MAX 100000.0 // Any power above this value is discarded
 #define VALIDATE_POWER_FACTOR_MIN -1.0 // Any power factor below this value is discarded
 #define VALIDATE_POWER_FACTOR_MAX 1.0 // Any power factor above this value is discarded
+
+// Check for incorrect readings
+#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0 // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
+#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.05 // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 
 // Modbus TCP
 // --------------------

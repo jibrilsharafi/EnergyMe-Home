@@ -385,7 +385,7 @@ void loop() {
             if (mainFlags.currentChannel != -1) { // -1 indicates that no channel is active
               TRACE
               if (ade7953.readMeterValues(mainFlags.currentChannel, _linecycUnix)) {
-                if (customTime.isTimeSynched()) {
+                if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER) { // Wait after the first time boot
                   TRACE
                   payloadMeter.push(
                     PayloadMeter(
@@ -409,7 +409,7 @@ void loop() {
         // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
         TRACE
         if (ade7953.readMeterValues(0, _linecycUnix)) {
-          if (customTime.isTimeSynched()) {
+          if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER) {
             TRACE
             payloadMeter.push(
               PayloadMeter(

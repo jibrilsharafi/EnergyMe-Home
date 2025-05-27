@@ -615,25 +615,28 @@ can be found in the function itself.
 false if the data reading is not ready yet or valid.
 */
 bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) { // TODO: test another way of reading data (faster but average RMS values, not energy register)
-    unsigned long long _deltaMillis = linecycUnixTimeMillis - meterValues[channel].lastUnixTimeMilliseconds;
+    unsigned long long previousLastUnixTimeMilliseconds = meterValues[channel].lastUnixTimeMilliseconds;
+    unsigned long long _deltaMillis; // This will be used for energy accumulation
 
-    // Ensure the reading is not being called too early (should not happen anyway)
-    // This was introduced as in channel 0 it was noticed that sometimes two meter values
-    // were sent with 1 ms difference, where the second one had 0 active power (since most
-    // probably the next line cycle was not yet finished)
-    // We use the time multiplied by 0.8 to keep some headroom
-    if (_deltaMillis < DEFAULT_SAMPLE_TIME * 0.8) {
-        return false;
+    // Ensure the reading is not being called too early if a previous valid reading exists
+    if (previousLastUnixTimeMilliseconds != 0) {
+        unsigned long long timeSinceLastRead = linecycUnixTimeMillis - previousLastUnixTimeMilliseconds;
+        
+        // Ensure the reading is not being called too early (should not happen anyway)
+        // This was introduced as in channel 0 it was noticed that sometimes two meter values
+        // were sent with 1 ms difference, where the second one had 0 active power (since most
+        // probably the next line cycle was not yet finished)
+        // We use the time multiplied by 0.8 to keep some headroom
+        if (timeSinceLastRead < _sampleTime * 0.8) {
+            return false;
+        }
+        _deltaMillis = timeSinceLastRead;
+    } else {
+        // This is the first attempt to get a valid reading for this channel,
+        // or previous attempts failed before setting the timestamp.
+        // For energy accumulation of the first valid point, the period is _sampleTime.
+        _deltaMillis = _sampleTime; 
     }
-    
-    // If the lastUnixTimeMilliseconds is 0 (like at boot), the reading is not valid
-    // since we need first to set the correct unix time
-    if (meterValues[channel].lastUnixTimeMilliseconds == 0) {
-        meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
-        return false;
-    }
-    
-    meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
 
     int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
 
@@ -712,23 +715,38 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
 
     TRACE
     if (
-        _validateVoltage(_voltage) && 
-        _validateCurrent(_current) && 
-        _validatePower(_activePower) && 
-        _validatePower(_reactivePower) && 
-        _validatePower(_apparentPower) && 
-        _validatePowerFactor(_powerFactor)
+        !_validateVoltage(_voltage) || 
+        !_validateCurrent(_current) || 
+        !_validatePower(_activePower) || 
+        !_validatePower(_reactivePower) || 
+        !_validatePower(_apparentPower) || 
+        !_validatePowerFactor(_powerFactor)
     ) {
-        meterValues[channel].voltage = _voltage;
-        meterValues[channel].current = _current;
-        meterValues[channel].activePower = _activePower;
-        meterValues[channel].reactivePower = _reactivePower;
-        meterValues[channel].apparentPower = _apparentPower;
-        meterValues[channel].powerFactor = _powerFactor;
-    } else {
+        // TODO: add a counter to set a restart if too many incorrect readings
         logger.warning("Invalid reading for channel %d. Discarding data point", TAG, channel);
         return false;
     }
+
+    // Ensure the current * voltage is not too different from the apparent power (both in absolute and relative terms)
+    // Ensure the current * voltage is not too different from the apparent power (both in absolute and relative terms)
+    // Skip this check if apparent power is below 1 to avoid issues with low power readings
+    // Channel 0 does not have this problem since it has a dedicated ADC on the ADE7953, while the other channels
+    // use a multiplexer and some weird behavior can happen sometimes
+    if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != 0 &&
+        (abs(_current * _voltage - _apparentPower) > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE || 
+         abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) {
+        _logger.debug("Current * Voltage (%f) is too different from Apparent Power (%f) for channel %d", TAG, 
+            _current * _voltage, _apparentPower, channel);
+        return false;
+    }
+    
+    // Enough checks, now we can set the values
+    meterValues[channel].voltage = _voltage;
+    meterValues[channel].current = _current;
+    meterValues[channel].activePower = _activePower;
+    meterValues[channel].reactivePower = _reactivePower;
+    meterValues[channel].apparentPower = _apparentPower;
+    meterValues[channel].powerFactor = _powerFactor;
 
     // If the phase is not the phase of the main channel, set the energy not to 0 if the current 
     // is above 0.003 A since we cannot use the ADE7593 no-load feature in this approximation
@@ -765,6 +783,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         meterValues[channel].apparentPower = 0.0;
     }
 
+    meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
     return true;
 }
 

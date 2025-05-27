@@ -101,7 +101,7 @@ private:
     char _mqttTopicGeneralConfiguration[MQTT_MAX_TOPIC_LENGTH];
 
     unsigned long _lastMillisMqttLoop = 0;
-    unsigned long _lastMillisMeterPublished = 15000; // Start with 15 seconds to allow initial setup
+    unsigned long _lastMillisMeterPublished = MINIMUM_TIME_BEFORE_VALID_METER; // Do not publish immediately after setup
     unsigned long _lastMillisStatusPublished = 0;
     unsigned long _lastMillisMonitorPublished = 0;
     unsigned long _lastMillisMqttFailed = 0;
