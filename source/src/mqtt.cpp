@@ -431,6 +431,11 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
 
         PayloadMeter _oldestPayloadMeter = _payloadMeter.shift();
 
+        if (_oldestPayloadMeter.unixTime < 1000000000000) { // Before 2001
+            _logger.warning("Invalid unixTime in payload meter: %llu", TAG, _oldestPayloadMeter.unixTime);
+            continue; // Skip invalid payloads
+        }
+
         _jsonObject["unixTime"] = _oldestPayloadMeter.unixTime;
         _jsonObject["channel"] = _oldestPayloadMeter.channel;
         _jsonObject["activePower"] = _oldestPayloadMeter.activePower;
@@ -441,7 +446,12 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
         if (_ade7953.channelData[i].active) {
             JsonObject _jsonObject = _jsonArray.add<JsonObject>();
 
-            _jsonObject["unixTime"] = _customTime.getUnixTimeMilliseconds();
+            if (_ade7953.meterValues[i].lastUnixTimeMilliseconds < 1000000000000) { // Before 2001
+                _logger.warning("Invalid unixTime in meter values for channel %d: %llu", TAG, i, _ade7953.meterValues[i].lastUnixTimeMilliseconds);
+                continue; // Skip invalid meter values
+            }
+
+            _jsonObject["unixTime"] = _ade7953.meterValues[i].lastUnixTimeMilliseconds;
             _jsonObject["channel"] = i;
             _jsonObject["activeEnergyImported"] = _ade7953.meterValues[i].activeEnergyImported;
             _jsonObject["activeEnergyExported"] = _ade7953.meterValues[i].activeEnergyExported;
@@ -452,7 +462,13 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
     }
 
     JsonObject _jsonObject = _jsonArray.add<JsonObject>();
-    _jsonObject["unixTime"] = _customTime.getUnixTimeMilliseconds();
+
+    if (_ade7953.meterValues[0].lastUnixTimeMilliseconds < 1000000000000) { // Before 2001
+        _logger.warning("Invalid unixTime in meter values: %llu", TAG, _ade7953.meterValues[0].lastUnixTimeMilliseconds);
+        return; // Skip invalid meter values
+    }
+
+    _jsonObject["unixTime"] = _ade7953.meterValues[0].lastUnixTimeMilliseconds;
     _jsonObject["voltage"] = _ade7953.meterValues[0].voltage;
 
     _logger.debug("Circular buffer converted to JSON", TAG);

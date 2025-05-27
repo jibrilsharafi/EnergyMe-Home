@@ -31,7 +31,7 @@ public:
     bool begin();
     void loop();
 
-    bool readMeterValues(int channel);
+    bool readMeterValues(int channel, unsigned long long linecycUnixTime);
     void purgeEnergyRegister(int channel);
 
     bool isLinecycFinished();

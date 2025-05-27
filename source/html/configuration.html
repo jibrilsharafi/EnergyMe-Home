@@ -152,7 +152,7 @@
         <div class="section-box">
             <h2>InfluxDB</h2>
             <p><i>
-                InfluxDB is used to send meter data to an InfluxDB time-series database. This is useful for storing historical data and creating dashboards with Grafana.
+                InfluxDB is used to send meter data to an InfluxDB time-series database. This is useful for storing historical data and creating dashboards with tools like Grafana.
                 <br>
                 <br>
                 The data will be sent in InfluxDB Line Protocol format with all meter values as fields.
@@ -693,8 +693,8 @@
                 timestampElement.textContent = timestamp || "N/A";
                 
                 // Show/hide timestamp based on connection status
-                if (status === "Upload successful" || status === "Credentials valid") {
-                    timestampContainer.style.display = "block";
+                if (status === "Upload successful" || status === "Connection successful" || status === "Credentials valid") {
+                    timestampContainer.style.display = "none"; // Hide timestamp for successful connections
                     statusIcon.innerHTML = "🟢"; // Green circle for successful
                     statusElement.style.color = "#2e7d32"; // Dark green
                     statusElement.style.fontWeight = "bold";
@@ -781,7 +781,7 @@
                     "bucket": document.getElementById("influxDbBucket").value,
                     "token": document.getElementById("influxDbToken").value,
                     "measurement": document.getElementById("influxDbMeasurement").value,
-                    "frequency": parseInt(document.getElementById("influxDbFrequency").value),
+                    "frequency": Math.max(1, Math.min(3600, parseInt(document.getElementById("influxDbFrequency").value))),
                     "useSSL": document.getElementById("influxDbUseSSL").checked,
                     "lastConnectionStatus": currentStatus,
                     "lastConnectionAttemptTimestamp": currentTimestamp

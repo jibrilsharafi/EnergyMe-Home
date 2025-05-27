@@ -49,6 +49,9 @@ CircularBuffer<LogJson, LOG_BUFFER_SIZE> logBuffer;
 char jsonBuffer[LOG_JSON_BUFFER_SIZE];  // Pre-allocated buffer
 String deviceId;      // Pre-allocated buffer
 
+// Utils variables
+unsigned long long _linecycUnix = 0;   // Used to track the Unix time when the linecycle ended (for MQTT payloads)
+
 // Classes instances
 // --------------------
 
@@ -367,6 +370,7 @@ void loop() {
 
     TRACE
     if (ade7953.isLinecycFinished()) {
+        _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
     
         led.setGreen();
 
@@ -380,16 +384,16 @@ void loop() {
 
             if (mainFlags.currentChannel != -1) { // -1 indicates that no channel is active
               TRACE
-              if (ade7953.readMeterValues(mainFlags.currentChannel)) {
+              if (ade7953.readMeterValues(mainFlags.currentChannel, _linecycUnix)) {
                 if (customTime.isTimeSynched()) {
                   TRACE
                   payloadMeter.push(
-                  PayloadMeter(
+                    PayloadMeter(
                       mainFlags.currentChannel,
-                      customTime.getUnixTimeMilliseconds(),
+                      _linecycUnix,
                       ade7953.meterValues[mainFlags.currentChannel].activePower,
                       ade7953.meterValues[mainFlags.currentChannel].powerFactor
-                      )
+                    )
                   );
                 }
                 
@@ -404,15 +408,15 @@ void loop() {
 
         // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
         TRACE
-        if (ade7953.readMeterValues(0)) {
+        if (ade7953.readMeterValues(0, _linecycUnix)) {
           if (customTime.isTimeSynched()) {
             TRACE
             payloadMeter.push(
               PayloadMeter(
-                  0,
-                  customTime.getUnixTimeMilliseconds(),
-                  ade7953.meterValues[0].activePower,
-                  ade7953.meterValues[0].powerFactor
+                0,
+                _linecycUnix,
+                ade7953.meterValues[0].activePower,
+                ade7953.meterValues[0].powerFactor
               )
             );
           }
@@ -423,7 +427,8 @@ void loop() {
     TRACE
     if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
         printDeviceStatus();
-        setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
+        logger.fatal("Heap memory has degraded below safe minimum: %d bytes", TAG, ESP.getFreeHeap());
+        setRestartEsp32(TAG, "Heap memory has degraded below safe minimum");
     }
 
     // If memory is below a certain level, clear the log

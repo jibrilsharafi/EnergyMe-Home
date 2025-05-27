@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "08"
-#define FIRMWARE_BUILD_VERSION_PATCH "00"
+#define FIRMWARE_BUILD_VERSION_PATCH "01"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -155,16 +155,23 @@
 #define INFLUXDB_BUCKET_DEFAULT "energyme-home"
 #define INFLUXDB_TOKEN_DEFAULT ""
 #define INFLUXDB_MEASUREMENT_DEFAULT "meter"
-#define INFLUXDB_FREQUENCY_DEFAULT 30  // In seconds
-#define INFLUXDB_BUFFER_SIZE 100 // The number of points to buffer before sending to InfluxDB
+#define INFLUXDB_FREQUENCY_DEFAULT 15  // In seconds
+#define INFLUXDB_BUFFER_SIZE 50 // The number of points to buffer before sending to InfluxDB
 #define INFLUXDB_USE_SSL_DEFAULT false
 #define INFLUXDB_LOOP_INTERVAL 100 // Interval between two InfluxDB loop checks
+#define INFLUXDB_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
+#define INFLUXDB_FREQUENCY_UPLOAD_MULTIPLIER 10 // This is to upload the data only every 10x the frequency set in the InfluxDB configuration, to avoid doing too many HTTP requests and slowing down the ESP32
+#define INFLUXDB_INITIAL_RECONNECT_INTERVAL (30 * 1000) // Initial interval for InfluxDB reconnection attempts
+#define INFLUXDB_MAX_RECONNECT_INTERVAL (15 * 60 * 1000) // Maximum interval for InfluxDB reconnection attempts
+#define INFLUXDB_RECONNECT_MULTIPLIER 2 // Multiplier for InfluxDB exponential backoff
+#define INFLUXDB_MIN_CONNECTION_INTERVAL (30 * 1000) // Minimum interval between two connection attempts
+#define INFLUXDB_MAX_CONNECTION_ATTEMPTS 10 // Maximum number of failed attempts before disabling InfluxDB
 
 // Saving date
 #define SAVE_ENERGY_INTERVAL (6 * 60 * 1000) // Time between each energy save to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
 // ESP32 status
-#define MINIMUM_FREE_HEAP_SIZE 10000 // Below this value (in bytes), the ESP32 will restart
+#define MINIMUM_FREE_HEAP_SIZE 30000 // Below this value (in bytes), the ESP32 will restart
 #define MINIMUM_FREE_SPIFFS_SIZE 10000 // Below this value (in bytes), the ESP32 will clear the log
 #define ESP32_RESTART_DELAY (1 * 1000) // The delay before restarting the ESP32 after a restart request, needed to allow the ESP32 to finish the current operations
 

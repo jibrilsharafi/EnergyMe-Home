@@ -35,10 +35,12 @@ private:
 
     bool _testConnection();
     bool _testCredentials();
+    bool _connectInfluxDb();
 
     void _bufferMeterData();
     void _uploadBufferedData();
-    String _formatLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp);
+    String _formatRealtimeLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp);
+    String _formatEnergyLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp);
 
     bool _validateJsonConfiguration(JsonDocument &jsonDocument);
 
@@ -50,16 +52,17 @@ private:
     struct BufferedPoint {
         MeterValues meterValues;
         int channel;
-        unsigned long long timestamp;
+        unsigned long long unixTimeMilliseconds;
         
-        BufferedPoint() : channel(0), timestamp(0) {}
+        BufferedPoint() : channel(0), unixTimeMilliseconds(0) {}
         BufferedPoint(const MeterValues &values, int ch, unsigned long long ts) 
-            : meterValues(values), channel(ch), timestamp(ts) {}
+            : meterValues(values), channel(ch), unixTimeMilliseconds(ts) {}
     };
 
     CircularBuffer<BufferedPoint, INFLUXDB_BUFFER_SIZE> _bufferMeterValues;
 
     bool _isSetupDone = false;
+    bool _isConnected = false;
     String _baseUrl = "";
 
     unsigned long _lastMillisInfluxDbLoop = 0;
@@ -67,5 +70,6 @@ private:
     unsigned long _influxDbConnectionAttempt = 0;
     unsigned long _nextInfluxDbConnectionAttemptMillis = 0;
 
-    unsigned long _lastMillisMeterPublish = 0;
+    unsigned long _lastMillisMeterPublish = 10000; // Do not publish before 10 seconds after setup
+    unsigned long _lastMillisMeterBuffer = 10000;
 };

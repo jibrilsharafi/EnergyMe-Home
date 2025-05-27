@@ -267,6 +267,12 @@ bool Ade7953::_validateConfigurationJson(JsonDocument& jsonDocument) {
     if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", TAG); return false;}
 
     if (!jsonDocument["sampleTime"].is<unsigned long>()) {_logger.warning("sampleTime is not unsigned long", TAG); return false;}
+    // Ensure sampleTime is not below DEFAULT_SAMPLE_TIME
+    if (jsonDocument["sampleTime"].as<unsigned long>() < DEFAULT_SAMPLE_TIME) {
+        _logger.warning("sampleTime %lu is below the minimum value of %lu", TAG, 
+            jsonDocument["sampleTime"].as<unsigned long>(), DEFAULT_SAMPLE_TIME);
+        return false;
+    }
     if (!jsonDocument["aVGain"].is<long>()) {_logger.warning("aVGain is not long", TAG); return false;}
     if (!jsonDocument["aIGain"].is<long>()) {_logger.warning("aIGain is not long", TAG); return false;}
     if (!jsonDocument["bIGain"].is<long>()) {_logger.warning("bIGain is not long", TAG); return false;}
@@ -608,9 +614,8 @@ can be found in the function itself.
 @param channel The channel to read the values from. Returns
 false if the data reading is not ready yet or valid.
 */
-bool Ade7953::readMeterValues(int channel) { // TODO: test another way of reading data (faster but average RMS values, not energy register)
-    long _currentMillis = millis();
-    long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
+bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTime) { // TODO: test another way of reading data (faster but average RMS values, not energy register)
+    unsigned long long _deltaMillis = linecycUnixTime - meterValues[channel].lastUnixTimeMilliseconds;
 
     // Ensure the reading is not being called too early (should not happen anyway)
     // This was introduced as in channel 0 it was noticed that sometimes two meter values
@@ -621,7 +626,7 @@ bool Ade7953::readMeterValues(int channel) { // TODO: test another way of readin
         return false;
     } 
 
-    meterValues[channel].lastMillis = _currentMillis;
+    meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTime;
 
     int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
 
