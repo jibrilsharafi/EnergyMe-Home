@@ -9,8 +9,8 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
-
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <script src="/html/auth.js"></script>
 
     <title>Channel</title>
     <style>
@@ -52,7 +52,7 @@
         if (activeRequests.has(endpoint)) {
             return Promise.reject('Request already in progress');
         }
-        
+
         activeRequests.add(endpoint);
         return fetch(`/rest/${endpoint}`)
             .then(response => response.json())
@@ -167,13 +167,13 @@
                 phase: document.getElementById(`phase${index}`).value,
                 active: document.getElementById(`active${index}`).checked
             };
-            
+
             return; // Exit and wait for the throttle timeout
         }
 
         // Clear any pending update for this index
         delete pendingUpdates[index];
-        
+
         const channel = {};
         channel[index] = {
             label: document.getElementById(`label${index}`).value,
@@ -207,20 +207,20 @@
             },
             body: JSON.stringify(updatedChannel)
         })
-        .then(response => response.json())
-        .then(data => {
-            console.log('Success:', data);
-            
-            // After successful update, process any pending updates
-            processPendingUpdates();
-        })
-        .catch((error) => {
-            console.error('Error:', error);
-            processPendingUpdates();
-        })
-        .finally(() => {
-            activeRequests.delete('set-channel');
-        });
+            .then(response => response.json())
+            .then(data => {
+                console.log('Success:', data);
+
+                // After successful update, process any pending updates
+                processPendingUpdates();
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+                processPendingUpdates();
+            })
+            .finally(() => {
+                activeRequests.delete('set-channel');
+            });
     }
 
     // New function to process pending updates
@@ -232,14 +232,14 @@
             const channel = {};
             channel[index] = pendingUpdates[index];
             delete pendingUpdates[index];
-            
+
             // Update active status if needed
             if (channel[index].active) {
                 startPowerUpdate(index);
             } else {
                 stopPowerUpdate(index);
             }
-            
+
             sendChannelUpdate(channel);
         }
     }

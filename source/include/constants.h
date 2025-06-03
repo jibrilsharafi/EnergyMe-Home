@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "08"
-#define FIRMWARE_BUILD_VERSION_PATCH "03"
+#define FIRMWARE_BUILD_VERSION_PATCH "04"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -56,6 +56,16 @@
 #define ROLLBACK_TESTING_TIMEOUT (60 * 1000) // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
 #define MAX_CRASH_COUNT 10 // Maximum amount of consecutive crashes before triggering a rollback
 #define CRASH_COUNTER_TIMEOUT (60 * 1000)
+
+// Authentication
+#define PREFERENCES_NAMESPACE_AUTH "auth"
+#define PREFERENCES_KEY_PASSWORD "password"
+#define DEFAULT_WEB_PASSWORD "energyme"
+#define DEFAULT_WEB_USERNAME "admin"
+#define MAX_PASSWORD_LENGTH 64
+#define MIN_PASSWORD_LENGTH 4
+#define AUTH_SESSION_TIMEOUT (24 * 60 * 60 * 1000) // 24 hours in milliseconds
+#define AUTH_TOKEN_LENGTH 32
 
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32

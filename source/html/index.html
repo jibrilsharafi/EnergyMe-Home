@@ -9,12 +9,12 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
-
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    
+
     <title>EnergyMe</title>
-    
+
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="/html/auth.js"></script>
     <style>
         .header {
             font-size: 96px;
@@ -71,12 +71,15 @@
 
     <div class="header">EnergyMe</div>
     <div class="subheader">Home</div>
-
     <div class="buttonNavigation-container">
         <a class="buttonNavigation" type="inner" href="/info">Info</a>
         <a class="buttonNavigation" type="inner" href="/configuration">Configuration</a>
         <a class="buttonNavigation" type="inner" href="/update"> Update</a>
         <a class="buttonNavigationExternal" type="inner" href="/swagger-ui" target="_blank">API Docs</a>
+        <a class="buttonNavigation logout-btn" href="#" onclick="authAPI.logout(); return false;"
+            style="float: right; background-color: #dc3545; border-color: #dc3545; color: white; transition: background-color 0.3s ease;"
+            onmouseover="this.style.backgroundColor='#c82333'" onmouseout="this.style.backgroundColor='#dc3545'">
+            <i class="fas fa-sign-out-alt" style="margin-right: 5px;"></i>Logout
         </a>
     </div>
 
@@ -211,13 +214,13 @@
         for (var i = 0; i < dates.length; i++) {
             var date = dates[i];
             var previousDate = dates[i - 1];
-        
+
             dailyActiveEnergyDifference[date] = {};
-        
+
             for (var channel in dailyActiveEnergy[date]) {
                 var currentDayEnergy = dailyActiveEnergy[date][channel];
                 var previousDayEnergy = i > 0 ? dailyActiveEnergy[previousDate][channel] || 0 : 0;
-        
+
                 dailyActiveEnergyDifference[date][channel] = currentDayEnergy - previousDayEnergy;
             }
         }
@@ -247,7 +250,7 @@
 
         return dailyActiveEnergyDifference;
     }
-    
+
     function renameDailyActiveEnergyDifference(dailyActiveEnergyDifference, channelData) {
 
         for (var date in dailyActiveEnergyDifference) {
@@ -317,7 +320,7 @@
 
         return totalActiveEnergy;
     }
-    
+
     function getActiveChannels() {
         // Get channels that have non-zero power consumption
         const activeChannels = [];
@@ -335,14 +338,14 @@
 
     function plotConsumptionChart(consumptionData) {
         var labels = Object.keys(consumptionData);
-        
+
         // Get active channels
         const activeChannels = getActiveChannels();
-        
+
         var datasets = [];
         var channels = Object.keys(consumptionData[labels[0]])
             .filter(channel => activeChannels.includes(channel));
-        
+
         channels.forEach(function (channel, i) {
             var data = labels.map(function (label) {
                 var value = consumptionData[label][channel];
@@ -359,7 +362,7 @@
                     return value.toFixed(3);
                 }
             });
-        
+
             datasets.push({
                 label: channel,
                 data: data,
@@ -391,7 +394,7 @@
                 }
             }
         });
-        
+
         // Update CSV download functionality
         document.getElementById('download-csv').addEventListener('click', function () {
             var csvContent = "data:text/csv;charset=utf-8,";
@@ -426,12 +429,12 @@
         var totalConsumption = data.reduce(function (acc, value) {
             return acc + value;
         }, 0);
-    
+
         labels = labels.map(function (label, i) {
             var percentage = ((data[i] / totalConsumption) * 100).toFixed(1);
             return label + ' (' + percentage + '%)';
         });
-    
+
         var ctx = document.getElementById('pie-chart-canvas').getContext('2d');
         new Chart(ctx, {
             type: 'doughnut', // Use 'doughnut' type for a pie chart with a hole inside
@@ -448,23 +451,24 @@
                 maintainAspectRatio: false
             }
         });
-    }
+    } function fetchData(endpoint) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                const response = await window.authManager.apiCall(`/${endpoint}`, {
+                    method: 'GET'
+                });
 
-    function fetchData(endpoint) {
-        return new Promise((resolve, reject) => {
-            var xhttp = new XMLHttpRequest();
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        resolve(JSON.parse(this.responseText));
-                    } else {
-                        console.error(`Error fetching data from ${endpoint}. Status: ${this.status}`);
-                        reject();
-                    }
+                if (response && response.ok) {
+                    const data = await response.json();
+                    resolve(data);
+                } else {
+                    console.error(`Error fetching data from ${endpoint}. Status: ${response?.status}`);
+                    reject();
                 }
-            };
-            xhttp.open("GET", `/${endpoint}`, true);
-            xhttp.send();
+            } catch (error) {
+                console.error(`Error fetching data from ${endpoint}:`, error);
+                reject();
+            }
         });
     }
 
@@ -480,7 +484,7 @@
                 if (Object.keys(dailyEnergy).length !== 0) {
                     dailyActiveEnergy = parseDailyEnergy();
                     plotConsumptionChart(dailyActiveEnergy);
-                    
+
                     totalActiveEnergy = getTotalActiveEnergy();
                     plotPieChart(totalActiveEnergy);
                 } else {
@@ -502,17 +506,21 @@
 
             })
             .catch(error => console.error('Error:', error));
-    }
+    } async function fetchFirmwareUpdateInfo() {
+        try {
+            const response = await window.authManager.apiCall('/rest/is-latest-firmware-installed', {
+                method: 'GET'
+            });
 
-    function fetchFirmwareUpdateInfo() {
-        fetch('/rest/is-latest-firmware-installed')
-            .then(response => response.json())
-            .then(data => {
+            if (response && response.ok) {
+                const data = await response.json();
                 if (data.latest == false) {
                     document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
                 }
-            })
-            .catch(error => console.error('Error:', error));
+            }
+        } catch (error) {
+            console.error('Error:', error);
+        }
     }
 
     plotCharts();

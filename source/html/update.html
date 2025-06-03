@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
+
     <link rel="stylesheet" type="text/css" href="/css/button.css">
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
-
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    
+    <script src="/html/auth.js"></script>
+
     <title>Update</title>
     <style>
         #loading-overlay {
@@ -26,7 +26,7 @@
             align-items: center;
             z-index: 1000;
         }
-        
+
         .loading-content {
             text-align: center;
             color: white;
@@ -37,10 +37,15 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
-        
+
         #loading-message {
             font-style: italic;
             color: grey;
@@ -53,7 +58,8 @@
 
         /* Add this to your existing CSS */
         .progress-circle {
-            stroke-dasharray: 565.48; /* 2 * PI * 90 (radius) */
+            stroke-dasharray: 565.48;
+            /* 2 * PI * 90 (radius) */
             stroke-dashoffset: 565.48;
             transform: rotate(-90deg);
             transform-origin: center;
@@ -68,7 +74,7 @@
             font-family: Arial, sans-serif;
             font-weight: bold;
         }
-        
+
         #result-message {
             text-align: center;
             padding: 10px;
@@ -96,7 +102,8 @@
         <h2>Update</h2>
         <p>Upload a new firmware to the device (only <i>.bin</i> files are allowed)</p>
         <form method='POST' action='/do-update' enctype='multipart/form-data' onsubmit="return formSubmitted(event)">
-            <input type='file' id='file' name='update' accept='.bin' required title="Select the firmware .bin file to upload">
+            <input type='file' id='file' name='update' accept='.bin' required
+                title="Select the firmware .bin file to upload">
             <input type='submit' id='submit' value='Update' title="Click to start the firmware update process">
         </form>
     </div>
@@ -112,8 +119,11 @@
         <div id="update-details" style="display: none;">
             <p><span class='list-key'>Version:</span><span id='update-version' class='list-value'></span></p>
             <p><span class='list-key'>Date:</span><span id='update-date' class='list-value'></span></p>
-            <p><span class='list-key'>URL:</span><a id='update-url' href='' target='_blank' title="Click to download the firmware update. Then, choose the file and click 'Update'">Download</a></p>
-            <p><span class='list-key'>Changelog:</span><a id='update-changelog' href='' target='_blank' title="Click to see the changelog">Changelog</a></p>
+            <p><span class='list-key'>URL:</span><a id='update-url' href='' target='_blank'
+                    title="Click to download the firmware update. Then, choose the file and click 'Update'">Download</a>
+            </p>
+            <p><span class='list-key'>Changelog:</span><a id='update-changelog' href='' target='_blank'
+                    title="Click to see the changelog">Changelog</a></p>
             <p><span class='list-key'>MD5:</span><span id='update-md5' class='list-value'></span></p>
         </div>
         <p id="no-update" class="light-grey-box">Latest version installed</p>
@@ -131,11 +141,14 @@
 
     <div id="rollback" class="section-box">
         <h2>Firmware Rollback</h2>
-        <p>You can revert to the previous firmware version stored in the other partition. This is useful if the current firmware has issues.</p>
-        <div class="warning-box" style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
+        <p>You can revert to the previous firmware version stored in the other partition. This is useful if the current
+            firmware has issues.</p>
+        <div class="warning-box"
+            style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
             ⚠️ Warning: This will restart the device and switch to the previous firmware version.
         </div>
-        <button class="buttonForm" onclick="doRollback()" id="updateRollbackButton">Click to rollback to the previous firmware version</button>
+        <button class="buttonForm" onclick="doRollback()" id="updateRollbackButton">Click to rollback to the previous
+            firmware version</button>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
@@ -146,7 +159,7 @@
         function getLoadingMessage() {
             return "Please wait, this operation usually takes 10-20 seconds.<br>In the meantime, did you know that...<br><br>" + getRandomFact();
         }
-        
+
         function getRandomFact() {
             var facts = [
                 "The bugs are called bugs because the first computer bug was an actual moth found inside a computer.",
@@ -198,7 +211,7 @@
             event.preventDefault(); // Prevent the form from submitting the traditional way
 
             var resultMessageBox = document.getElementById('result-message');
-            resultMessageBox.style.display = 'none';                    
+            resultMessageBox.style.display = 'none';
 
             document.getElementById("submit").value = "Updating...";
             document.getElementById("submit").disabled = true;
@@ -251,7 +264,7 @@
 
                 // Start progress tracking
                 updateProgress();
-                
+
                 document.getElementById('loading-overlay').style.display = 'flex';
                 document.getElementById('loading-message').innerHTML = getLoadingMessage();
 
@@ -259,70 +272,70 @@
                     method: 'POST',
                     body: formData
                 })
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('loading-overlay').style.display = 'none';
-                    resultMessageBox.style.display = 'block';     
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('loading-overlay').style.display = 'none';
+                        resultMessageBox.style.display = 'block';
 
-                    if (data.status === 'success') {
-                        resultMessageBox.style.backgroundColor = '#d4edda';
-                        resultMessageBox.style.color = '#155724';
-                        resultMessageBox.innerHTML = 'Update successful! Redirecting in 5 seconds...';
+                        if (data.status === 'success') {
+                            resultMessageBox.style.backgroundColor = '#d4edda';
+                            resultMessageBox.style.color = '#155724';
+                            resultMessageBox.innerHTML = 'Update successful! Redirecting in 5 seconds...';
 
-                        document.getElementById("submit").value = "Update successful";
-                        document.getElementById("submit").style.backgroundColor = '#28a74550';
+                            document.getElementById("submit").value = "Update successful";
+                            document.getElementById("submit").style.backgroundColor = '#28a74550';
 
-                        setTimeout(function() {
-                            window.location.href = '/';
-                        }, 7000);
-                    } else {
+                            setTimeout(function () {
+                                window.location.href = '/';
+                            }, 7000);
+                        } else {
+                            resultMessageBox.style.backgroundColor = '#f8d7da';
+                            resultMessageBox.style.color = '#721c24';
+                            resultMessageBox.innerHTML = 'Update failed: ' + data.reason;
+
+                            document.getElementById("submit").value = "Update failed";
+                            document.getElementById("submit").style.backgroundColor = '#dc354550';
+
+                            setTimeout(function () {
+                                document.getElementById("submit").value = "Update";
+                                document.getElementById("submit").disabled = false;
+                                document.getElementById("submit").style.backgroundColor = previousColor;
+
+                                resultMessageBox.style.display = 'none';
+                            }, 5000);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        document.getElementById('loading-overlay').style.display = 'none';
+
                         resultMessageBox.style.backgroundColor = '#f8d7da';
                         resultMessageBox.style.color = '#721c24';
-                        resultMessageBox.innerHTML = 'Update failed: ' + data.reason;
+                        resultMessageBox.innerHTML = 'Update failed: ' + error.message;
 
                         document.getElementById("submit").value = "Update failed";
                         document.getElementById("submit").style.backgroundColor = '#dc354550';
 
-                        setTimeout(function() {
+                        setTimeout(function () {
                             document.getElementById("submit").value = "Update";
                             document.getElementById("submit").disabled = false;
                             document.getElementById("submit").style.backgroundColor = previousColor;
 
                             resultMessageBox.style.display = 'none';
                         }, 5000);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    document.getElementById('loading-overlay').style.display = 'none';
-                    
-                    resultMessageBox.style.backgroundColor = '#f8d7da';
-                    resultMessageBox.style.color = '#721c24';
-                    resultMessageBox.innerHTML = 'Update failed: ' + error.message;
-
-                    document.getElementById("submit").value = "Update failed";
-                    document.getElementById("submit").style.backgroundColor = '#dc354550';
-
-                    setTimeout(function() {
-                        document.getElementById("submit").value = "Update";
-                        document.getElementById("submit").disabled = false;
-                        document.getElementById("submit").style.backgroundColor = previousColor;
-
-                        resultMessageBox.style.display = 'none';
-                    }, 5000);
-                });
+                    });
             }
 
             file_size = file.size;
 
             if (typeof SparkMD5 !== 'undefined') {
                 var reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = function (e) {
                     var binary = e.target.result;
                     var md5 = SparkMD5.ArrayBuffer.hash(binary);
                     proceedWithUpdate(md5);
                 };
-                reader.onerror = function() {
+                reader.onerror = function () {
                     console.warn('Failed to read file for MD5 calculation. Proceeding without MD5.');
                     proceedWithUpdate('');
                 };
@@ -362,7 +375,7 @@
                             buildDate: new Date(data.published_at).toISOString().split('T')[0],
                             changelog: data.html_url
                         };
-                        
+
                         // Find the binary asset
                         if (data.assets && data.assets.length > 0) {
                             const binAsset = data.assets.find(asset => asset.name.endsWith('.bin'));
@@ -370,10 +383,10 @@
                                 firmwareInfo.url = binAsset.browser_download_url;
                             }
                         }
-                        
+
                         // Update UI with GitHub data
                         updateFirmwareInfoUI(firmwareInfo);
-                        
+
                         // Store this info locally for easier access
                         saveFirmwareInfoLocally(firmwareInfo);
                     } catch (error) {
@@ -408,26 +421,26 @@
                 document.getElementById("no-update").style.display = "block";
                 return;
             }
-            
+
             document.getElementById("update-version").innerHTML = data.buildVersion || 'N/A';
             document.getElementById("update-date").innerHTML = data.buildDate || 'N/A';
-            
+
             if (data.url) {
                 document.getElementById("update-url").href = data.url;
             } else {
                 document.getElementById("update-url").parentElement.style.display = "none";
             }
-            
+
             if (data.changelog) {
                 document.getElementById("update-changelog").href = data.changelog;
             } else {
                 document.getElementById("update-changelog").parentElement.style.display = "none";
             }
-            
+
             document.getElementById("update-md5").innerHTML = data.md5 || 'Not available';
             document.getElementById("update-details").style.display = "block";
             document.getElementById("no-update").style.display = "none";
-            
+
             // Check if current version is up to date
             checkIfLatestVersion(data.buildVersion);
         }
@@ -442,9 +455,9 @@
         function checkIfLatestVersion(latestVersion) {
             // Get current version from the page
             const currentVersion = document.getElementById("current-firmware-version").innerHTML;
-            
+
             if (!currentVersion || !latestVersion) return;
-            
+
             // Parse versions (assuming semantic versioning format x.y.z)
             const parseVersion = (versionStr) => {
                 const parts = versionStr.split('.');
@@ -454,16 +467,16 @@
                     patch: parseInt(parts[2]) || 0
                 };
             };
-            
+
             const current = parseVersion(currentVersion);
             const latest = parseVersion(latestVersion);
-            
+
             // Compare versions
-            const needsUpdate = 
-                latest.major > current.major || 
+            const needsUpdate =
+                latest.major > current.major ||
                 (latest.major === current.major && latest.minor > current.minor) ||
                 (latest.major === current.major && latest.minor === current.minor && latest.patch > current.patch);
-            
+
             // Update UI based on version comparison
             if (needsUpdate) {
                 document.getElementById("no-update").style.display = "none";
@@ -471,7 +484,7 @@
                 document.getElementById("update-details").style.display = "none";
                 document.getElementById("no-update").style.display = "block";
             }
-            
+
             // Update the is-latest-firmware-installed endpoint result in localStorage
             localStorage.setItem('isLatestFirmware', !needsUpdate);
         }
@@ -536,55 +549,55 @@
 
         function doRollback() {
             if (!confirm("Are you sure you want to rollback to the previous firmware version? The device will restart.")) {
-            return;
+                return;
             }
-        
+
             document.getElementById('loading-overlay').style.display = 'flex';
             document.getElementById('loading-message').innerHTML = getLoadingMessage();
-        
-            fetch('/rest/update-rollback', {method: 'POST'})
-            .then(response => {
-                const isSuccess = response.status === 200;
-                return response.json().then(data => ({ ...data, isSuccess }));
-            })
-            .then(data => {
-                document.getElementById('loading-overlay').style.display = 'none';
-                const resultMessageBox = document.getElementById('result-message');
-                resultMessageBox.style.display = 'block';
-            
-                if (data.isSuccess) {
-                    resultMessageBox.style.backgroundColor = '#d4edda';
-                    resultMessageBox.style.color = '#155724';
-                    resultMessageBox.innerHTML = 'Rollback initiated! The device will restart. Please wait 5 seconds...';
-                    
-                    setTimeout(function() {
-                        window.location.href = '/';
-                    }, 5000);
-                } else {
+
+            fetch('/rest/update-rollback', { method: 'POST' })
+                .then(response => {
+                    const isSuccess = response.status === 200;
+                    return response.json().then(data => ({ ...data, isSuccess }));
+                })
+                .then(data => {
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    const resultMessageBox = document.getElementById('result-message');
+                    resultMessageBox.style.display = 'block';
+
+                    if (data.isSuccess) {
+                        resultMessageBox.style.backgroundColor = '#d4edda';
+                        resultMessageBox.style.color = '#155724';
+                        resultMessageBox.innerHTML = 'Rollback initiated! The device will restart. Please wait 5 seconds...';
+
+                        setTimeout(function () {
+                            window.location.href = '/';
+                        }, 5000);
+                    } else {
+                        resultMessageBox.style.backgroundColor = '#f8d7da';
+                        resultMessageBox.style.color = '#721c24';
+                        resultMessageBox.innerHTML = 'Rollback failed: ' + data.reason;
+
+                        setTimeout(() => {
+                            resultMessageBox.style.display = 'none';
+                        }, 5000);
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    const resultMessageBox = document.getElementById('result-message');
                     resultMessageBox.style.backgroundColor = '#f8d7da';
                     resultMessageBox.style.color = '#721c24';
-                    resultMessageBox.innerHTML = 'Rollback failed: ' + data.reason;
+                    resultMessageBox.innerHTML = 'Rollback failed: ' + error.message;
+                    resultMessageBox.style.display = 'block';
 
                     setTimeout(() => {
-                    resultMessageBox.style.display = 'none';
+                        resultMessageBox.style.display = 'none';
                     }, 5000);
-                }
-            })
-            .catch(error => {
-                document.getElementById('loading-overlay').style.display = 'none';
-                const resultMessageBox = document.getElementById('result-message');
-                resultMessageBox.style.backgroundColor = '#f8d7da';
-                resultMessageBox.style.color = '#721c24';
-                resultMessageBox.innerHTML = 'Rollback failed: ' + error.message;
-                resultMessageBox.style.display = 'block';
-            
-                setTimeout(() => {
-                    resultMessageBox.style.display = 'none';
-                }, 5000);
-            });
+                });
         }
 
-        document.addEventListener("DOMContentLoaded", function() {
+        document.addEventListener("DOMContentLoaded", function () {
             getDeviceInfo();
             getFirmwareUpdateInfo();
             getFirmwareUpdateStatus();

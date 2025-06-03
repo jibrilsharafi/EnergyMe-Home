@@ -5,6 +5,8 @@ info:
   version: 1.0.0
         
 tags:
+  - name: Authentication
+    description: Authentication endpoints
   - name: System
     description: System-related endpoints
   - name: Meter
@@ -15,6 +17,15 @@ tags:
     description: File management endpoints
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: auth_token
   schemas:
     CalibrationValues:
       type: object
@@ -421,6 +432,172 @@ components:
                 type: integer
 
 paths:
+  /rest/auth/login:
+    post:
+      summary: Authenticate user and get access token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                  description: The password for authentication
+              required:
+                - password
+      responses:
+        '200':
+          description: Login successful
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: auth_token=jwt_token_here; HttpOnly; Path=/; Max-Age=86400
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  token:
+                    type: string
+                    description: JWT token for authentication
+                  message:
+                    type: string
+                    example: "Login successful"
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid password"
+
+  /rest/auth/logout:
+    post:
+      summary: Logout user and invalidate token
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: auth_token=; HttpOnly; Path=/; Max-Age=0
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Logout successful"
+
+  /rest/auth/status:
+    get:
+      summary: Get authentication status
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Authentication status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                    example: true
+                  username:
+                    type: string
+                    example: "admin"
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                    example: false
+
+  /rest/auth/change-password:
+    post:
+      summary: Change user password
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                currentPassword:
+                  type: string
+                  description: Current password
+                newPassword:
+                  type: string
+                  description: New password
+              required:
+                - currentPassword
+                - newPassword
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Password changed successfully"
+        '401':
+          description: Invalid current password
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid current password"
+
   /rest/is-alive:
     get:
       summary: Check if the ESP32 is alive
@@ -776,12 +953,14 @@ paths:
                 properties:
                   message:
                     type: string
-
   /rest/factory-reset:
     post:
       summary: Perform a factory reset
       tags:
         - System
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
       responses:
         '200':
           description: Successful response
@@ -792,6 +971,8 @@ paths:
                 properties:
                   message:
                     type: string
+        '401':
+          description: Unauthorized
 
   /rest/clear-log:
     post:
@@ -808,12 +989,14 @@ paths:
                 properties:
                   message:
                     type: string
-
   /rest/restart:
     post:
       summary: Restart the ESP32
       tags:
         - System
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
       responses:
         '200':
           description: Successful response
@@ -824,12 +1007,17 @@ paths:
                 properties:
                   message:
                     type: string
+        '401':
+          description: Unauthorized
 
   /rest/reset-wifi:
     post:
       summary: Reset WiFi credentials
       tags:
         - System
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
       responses:
         '200':
           description: Successful response

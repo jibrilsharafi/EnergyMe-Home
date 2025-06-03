@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
+
     <link rel="stylesheet" type="text/css" href="/css/button.css">
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
-
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    
+    <script src="/html/auth.js"></script>
+
     <title>Info</title>
     <style>
     </style>
@@ -141,18 +141,18 @@
 
             document.getElementById('firmwareBuildVersion').textContent = data.firmware.buildVersion;
             document.getElementById('firmwareBuildDate').textContent = data.firmware.buildDate;
-            
+
             var heapFree = data.memory.heap.free;
             var heapTotal = data.memory.heap.total;
-            var heapFreeStr = (heapFree/1000.0).toFixed(1) + " kB (" + ((heapFree/heapTotal)*100).toFixed(1) + "%)";
+            var heapFreeStr = (heapFree / 1000.0).toFixed(1) + " kB (" + ((heapFree / heapTotal) * 100).toFixed(1) + "%)";
             document.getElementById('heapFree').textContent = heapFreeStr;
-            document.getElementById('heapTotal').textContent = (heapTotal/1000.0).toFixed(1) + " kB";
+            document.getElementById('heapTotal').textContent = (heapTotal / 1000.0).toFixed(1) + " kB";
 
             var spiffsFree = data.memory.spiffs.free;
             var spiffsTotal = data.memory.spiffs.total;
-            var spiffsFreeStr = (spiffsFree/1000.0).toFixed(1) + " kB (" + ((spiffsFree/spiffsTotal)*100).toFixed(1) + "%)";
+            var spiffsFreeStr = (spiffsFree / 1000.0).toFixed(1) + " kB (" + ((spiffsFree / spiffsTotal) * 100).toFixed(1) + "%)";
             document.getElementById('spiffsFree').textContent = spiffsFreeStr;
-            document.getElementById('spiffsTotal').textContent = (spiffsTotal/1000.0).toFixed(1) + " kB";
+            document.getElementById('spiffsTotal').textContent = (spiffsTotal / 1000.0).toFixed(1) + " kB";
 
             document.getElementById('chipModel').textContent = data.chip.model;
             document.getElementById('chipRevision').textContent = data.chip.revision;

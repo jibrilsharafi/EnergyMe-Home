@@ -654,6 +654,10 @@ void clearAllPreferences() {
     preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); // false = read-write mode
     preferences.clear();
     preferences.end();
+    
+    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); // false = read-write mode
+    preferences.clear();
+    preferences.end();
 }
 
 bool isLatestFirmwareInstalled() {
@@ -838,6 +842,205 @@ void clearCertificates() {
     logger.warning("Certificates cleared", TAG);
 }
 
+// Authentication functions
+// -----------------------------
+
+void initializeAuthentication() {
+    logger.debug("Initializing authentication...", TAG);
+    
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
+        logger.warning("Failed to open auth preferences for reading, trying to create namespace", TAG);
+        
+        // Try to create the namespace by opening in write mode
+        if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
+            logger.error("Failed to create auth preferences namespace", TAG);
+            return;
+        }
+        preferences.end();
+        
+        // Now try to open in read mode again
+        if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
+            logger.error("Failed to open auth preferences after creation", TAG);
+            return;
+        }
+    }
+    
+    String storedPassword = preferences.getString(PREFERENCES_KEY_PASSWORD, "");
+    preferences.end();
+    
+    if (storedPassword.isEmpty()) {
+        logger.info("No password set, using default password", TAG);
+        if (!setAuthPassword(DEFAULT_WEB_PASSWORD)) {
+            logger.error("Failed to set default password", TAG);
+            return;
+        }
+    }
+    
+    logger.debug("Authentication initialized", TAG);
+}
+
+bool validatePassword(const String& password) {
+    if (password.length() < MIN_PASSWORD_LENGTH || password.length() > MAX_PASSWORD_LENGTH) {
+        return false;
+    }
+    
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
+        logger.warning("Failed to open auth preferences, allowing access as fallback", TAG);
+        return true; // Fallback: return true when preferences cannot be opened
+    }
+    
+    String storedPasswordHash = preferences.getString(PREFERENCES_KEY_PASSWORD, "");
+    preferences.end();
+    
+    if (storedPasswordHash.isEmpty()) {
+        logger.debug("No stored password hash found, allowing access as fallback", TAG);
+        return true; // Fallback: return true when no password is stored
+    }
+    
+    String passwordHash = hashPassword(password);
+    return passwordHash.equals(storedPasswordHash);
+}
+
+bool setAuthPassword(const String& newPassword) {
+    if (newPassword.length() < MIN_PASSWORD_LENGTH || newPassword.length() > MAX_PASSWORD_LENGTH) {
+        logger.warning("Password length invalid: %d characters", TAG, newPassword.length());
+        return false;
+    }
+    
+    String passwordHash = hashPassword(newPassword);
+    
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
+        logger.warning("Failed to open auth preferences, treating as successful fallback", TAG);
+        return true; // Fallback: return true when preferences cannot be opened
+    }
+    
+    preferences.putString(PREFERENCES_KEY_PASSWORD, passwordHash);
+    preferences.end();
+    
+    // Clear all existing tokens when password changes
+    clearAllAuthTokens();
+    
+    logger.info("Password updated successfully", TAG);
+    return true;
+}
+
+String generateAuthToken() {
+    String token = "";
+    const char chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    
+    for (int i = 0; i < AUTH_TOKEN_LENGTH; i++) {
+        token += chars[random(0, sizeof(chars) - 1)];
+    }
+    
+    // Store token with timestamp using a hash-based short key
+    Preferences preferences;
+    if (preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
+        // Create a short hash from the token for the key (max 15 chars for NVS)
+        uint32_t tokenHash = 0;
+        for (int i = 0; i < token.length(); i++) {
+            tokenHash = tokenHash * 31 + token.charAt(i);
+        }
+        String shortKey = "t" + String(tokenHash, HEX); // "t" + 8-char hex = 9 chars max
+        
+        // Store both the timestamp and the original token
+        preferences.putULong64(shortKey.c_str(), millis());
+        // Store mapping from short key to full token
+        preferences.putString((shortKey + "_f").c_str(), token); // "_f" for full token
+        preferences.end();
+    }
+    
+    return token;
+}
+
+bool validateAuthToken(const String& token) {
+    if (token.length() != AUTH_TOKEN_LENGTH) {
+        return false;
+    }
+    
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
+        logger.warning("Failed to open auth preferences for token validation, allowing access as fallback", TAG);
+        return true; // Fallback: return true when preferences cannot be opened
+    }
+    
+    // Create the same hash-based short key
+    uint32_t tokenHash = 0;
+    for (int i = 0; i < token.length(); i++) {
+        tokenHash = tokenHash * 31 + token.charAt(i);
+    }
+    String shortKey = "t" + String(tokenHash, HEX);
+    
+    unsigned long long tokenTimestamp = preferences.getULong64(shortKey.c_str(), 0);
+    
+    // Verify the full token matches
+    String storedToken = preferences.getString((shortKey + "_f").c_str(), "");
+    preferences.end();
+    
+    if (tokenTimestamp == 0 || !storedToken.equals(token)) {
+        return false; // Token doesn't exist or doesn't match
+    }
+    
+    // Check if token has expired
+    if (millis() - tokenTimestamp > AUTH_SESSION_TIMEOUT) {
+        clearAuthToken(token);
+        return false;
+    }
+    
+    return true;
+}
+
+void clearAuthToken(const String& token) {
+    Preferences preferences;
+    if (preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
+        // Create the same hash-based short key
+        uint32_t tokenHash = 0;
+        for (int i = 0; i < token.length(); i++) {
+            tokenHash = tokenHash * 31 + token.charAt(i);
+        }
+        String shortKey = "t" + String(tokenHash, HEX);
+        
+        preferences.remove(shortKey.c_str());
+        preferences.remove((shortKey + "_f").c_str());
+        preferences.end();
+    }
+}
+
+void clearAllAuthTokens() {
+    logger.debug("Clearing all auth tokens...", TAG);
+    
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
+        return;
+    }
+    
+    // Clear all preferences except password to remove all tokens
+    String storedPassword = preferences.getString(PREFERENCES_KEY_PASSWORD, "");
+    preferences.clear();
+    
+    // Restore the password
+    if (!storedPassword.isEmpty()) {
+        preferences.putString(PREFERENCES_KEY_PASSWORD, storedPassword);
+    }
+    
+    preferences.end();
+}
+
+String hashPassword(const String& password) {
+    // Simple hash using device ID as salt
+    String saltedPassword = password + getDeviceId();
+    
+    // Basic hash implementation (you might want to use a more secure method)
+    uint32_t hash = 0;
+    for (int i = 0; i < saltedPassword.length(); i++) {
+        hash = hash * 31 + saltedPassword.charAt(i);
+    }
+    
+    return String(hash, HEX);
+}
+
 bool setupMdns()
 {
     logger.info("Setting up mDNS...", TAG);
@@ -868,4 +1071,8 @@ bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds) {
     } else {
         return (unixTime >= MINIMUM_UNIX_TIME && unixTime <= MAXIMUM_UNIX_TIME);
     }
+}
+
+bool isUsingDefaultPassword() {
+    return validatePassword(DEFAULT_WEB_PASSWORD);
 }

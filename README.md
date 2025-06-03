@@ -25,7 +25,7 @@ The key components include:
 
 PCB schematics and BOMs are available in the `documentation/Schematics` directory, while datasheets for key components are in the `documentation/Components` directory. Additional hardware specifications and technical details can be found in the [`documentation/README.md`](documentation/README.md).
 
-The project is published on *EasyEDA* for easy access to the PCB design files. You can find the project [here](https://oshwlab.com/jabrillo/multiple-channel-energy-meter).
+The project is published on *EasyEDA* for easy access to the PCB design files. You can find the project on [EasyEDA OSHWLab](https://oshwlab.com/jabrillo/multiple-channel-energy-meter).
 
 ## Software
 
@@ -34,6 +34,7 @@ The software is written in C++ using the *PlatformIO* ecosystem and *Arduino fra
 The main features of the software include:
 
 - **ADE7953** class for configuring and reading data from the IC
+- **Authentication System** with token-based security, HTTP-only cookies, password hashing, and session management
 - **Crash reporting** system leveraging the RTC memory of the ESP32 for enhanced debugging and stability
 - **Custom MQTT** for publishing data to an MQTT broker
 - **InfluxDB Integration** for seamless time-series data storage with support for both v1.x and v2.x, SSL/TLS, buffering, and automatic retry logic
@@ -84,6 +85,51 @@ EnergyMe-Home now includes native InfluxDB integration for seamless time-series 
 - **RESTful API**: Complete API endpoints for InfluxDB configuration and management
 
 The InfluxDB client automatically formats energy data using the line protocol and handles both real-time measurements and energy accumulations. Configuration is available through the web interface with real-time status monitoring and connection testing. Implementation details are documented in [`source/include/influxdbclient.h`](source/include/influxdbclient.h).
+
+## Security & Authentication
+
+EnergyMe-Home features a comprehensive authentication system to secure access to the web interface and protect critical system operations. The authentication system provides enterprise-grade security while maintaining ease of use.
+
+### Authentication Features
+
+- **Token-Based Authentication**: Secure JWT-style token generation with configurable expiration times
+- **HTTP-Only Cookies**: Session tokens stored in secure, HTTP-only cookies to prevent XSS attacks
+- **Password Hashing**: Strong bcrypt-based password hashing with salt for credential security
+- **Session Management**: Automatic session expiration and renewal with configurable timeouts
+- **Protected Endpoints**: All critical API endpoints require authentication including:
+  - System configuration changes
+  - Factory reset operations
+  - Firmware updates and system restart
+  - Log access and management
+  - Calibration modifications
+  - File system operations
+
+### Security Implementation
+
+The authentication system protects against common web vulnerabilities:
+
+- **Cross-Site Scripting (XSS)**: HTTP-only cookies prevent JavaScript access to session tokens
+- **Cross-Site Request Forgery (CSRF)**: Token validation on all state-changing operations
+- **Session Hijacking**: Secure token generation with proper entropy and expiration
+- **Brute Force Attacks**: Rate limiting and secure password storage
+- **Unauthorized Access**: Comprehensive endpoint protection with authentication middleware
+
+### Default Credentials
+
+- **Username**: `admin`
+- **Password**: `admin123`
+
+**Important**: Change the default credentials immediately after first login for security.
+
+### Usage
+
+1. **Initial Access**: Navigate to the device IP address - you'll be redirected to the login page
+2. **Login**: Enter your credentials to receive an authentication token
+3. **Automatic Redirect**: Successfully authenticated users are redirected to the main interface
+4. **Session Management**: Sessions automatically renew during active use
+5. **Logout**: Use the logout button available on all pages to securely end your session
+
+The authentication system is fully integrated with the REST API and documented in the Swagger specification. Implementation details are available in [`source/include/customserver.h`](source/include/customserver.h) and [`source/include/utils.h`](source/include/utils.h).
 
 ### Home Assistant Integration
 

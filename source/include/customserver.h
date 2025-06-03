@@ -46,6 +46,11 @@ private:
     void _updateJsonFirmwareStatus(const char* status, const char* reason);
     void _serveJsonFile(AsyncWebServerRequest *request, const char* filePath);
 
+    // Authentication methods
+    bool _requireAuth(AsyncWebServerRequest *request);
+    bool _checkAuth(AsyncWebServerRequest *request);
+    void _sendUnauthorized(AsyncWebServerRequest *request);
+
     void _serverLog(const char* message, const char* function, LogLevel logLevel, AsyncWebServerRequest *request);
 
     AsyncWebServer &_server;

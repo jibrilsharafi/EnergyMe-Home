@@ -85,6 +85,17 @@ void writeEncryptedPreferences(const char* preference_key, const char* value);
 void clearCertificates();
 bool checkCertificatesExist();
 
+// Authentication functions
+void initializeAuthentication();
+bool validatePassword(const String& password);
+bool setAuthPassword(const String& newPassword);
+bool isUsingDefaultPassword();
+String generateAuthToken();
+bool validateAuthToken(const String& token);
+void clearAuthToken(const String& token);
+void clearAllAuthTokens();
+String hashPassword(const String& password);
+
 bool setupMdns();
 
 bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds = true);
