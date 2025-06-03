@@ -27,6 +27,7 @@ Handles energy measurements with features like:
 - **Multiplexer**: Manages channel switching for the 16 secondary channels
 - **SPIFFS**: Stores configuration and calibration data
 - **Web Interface**: Provides configuration, monitoring, and firmware update capabilities
+- **Authentication System**: Token-based security with HTTP-only cookies, password hashing, and comprehensive endpoint protection
 - **MQTT**: Enables remote data logging and device management (including optional AWS IoT Core integration)
 - **InfluxDB Client**: Native time-series database integration with support for both v1.x and v2.x, buffering, and automatic retry logic
 - **Modbus TCP**: Industrial protocol support
@@ -51,6 +52,7 @@ The firmware is built around several key modules/classes, typically found in `in
 - `Ade7953`: Manages all interactions with the ADE7953 energy measurement IC.
 - `Multiplexer`: Controls the analog multiplexers to switch between CT channels.
 - `CustomServer`: Handles HTTP requests, serves web pages, and manages Restful API endpoints.
+- `Authentication System`: Provides secure login, token management, password hashing, and session control.
 - `CustomMQTT`: Manages MQTT broker connections, data formatting, and publishing (supports local and AWS IoT).
 - `InfluxDBClient`: Handles connections to InfluxDB databases with support for both v1.x and v2.x, SSL/TLS, buffering, retry logic, and line protocol formatting.
 - `ModbusTCP`: Implements the Modbus TCP server, defining registers and handling client requests.
@@ -116,13 +118,17 @@ The system exposes a comprehensive Restful API for configuration, data retrieval
 
 - **Swagger Documentation**: The primary source for API details is `source/resources/swagger.yaml`, viewable with Swagger UI tools.
 - **Base URL**: API endpoints are generally under `/rest/` (e.g., `http://<device_ip>/rest/...`). Utility endpoints like firmware update (`/do-update`) or Wi-Fi setup (`/wifisave` in AP mode) may have dedicated paths.
+- **Authentication**: Most protected endpoints require authentication via Bearer token or HTTP-only cookie. Authentication endpoints include:
+  - `POST /rest/auth/login` - User authentication
+  - `POST /rest/auth/logout` - Session termination
+  - `GET /rest/auth/status` - Authentication status check
+  - `POST /rest/auth/change-password` - Password modification
 - **Key Capabilities:**
   - **System Management**: Device status, project/device info, Wi-Fi status, firmware updates (info, status, execution with MD5 check), crash data/logs, restart, factory reset, Wi-Fi reset.
   - **Meter Readings**: All meter values, single channel data, specific values (e.g., active power), direct ADE7953 register access.
   - **Configuration**: Get/Set for general settings, ADE7953 parameters, channels, custom MQTT, InfluxDB configuration, calibration.
   - **InfluxDB Management**: Get/Set InfluxDB configuration, connection status, write statistics, connection testing.
   - **File Management**: List, retrieve, delete files on the device.
-- **Authentication**: Most `/rest/` endpoints are unprotected for local network ease of use. `/wifisave` is specific to AP mode.
 
 ### MQTT Interface
 
@@ -227,3 +233,39 @@ To aid in debugging and improve long-term stability, the system features a crash
 If the ESP32 encounters a critical error and reboots, details about the crash (such as the call stack and error type) are stored in the RTC (Real-Time Clock) memory. This memory persists across reboots (but not power cycles).
 The crash information can then be retrieved and viewed, typically through the web interface or via serial monitor, allowing developers to diagnose the cause of unexpected resets.
 This system is invaluable for identifying and fixing bugs in the firmware.
+
+## Security & Authentication
+
+EnergyMe-Home implements a comprehensive authentication system to secure access to the web interface and protect critical system operations.
+
+### Authentication Features
+
+- **Token-Based Authentication**: Secure JWT-style token generation with configurable expiration
+- **HTTP-Only Cookies**: Session tokens stored securely to prevent XSS attacks
+- **Password Hashing**: Strong bcrypt-based password hashing with salt
+- **Session Management**: Automatic session expiration and renewal
+- **Protected Endpoints**: Critical API endpoints require authentication including:
+  - System configuration changes
+  - Factory reset operations
+  - Firmware updates and system restart
+  - Log access and management
+  - Calibration modifications
+  - File system operations
+
+### Default Credentials
+
+- **Username**: `admin`
+- **Password**: `admin123`
+
+**Important**: Change the default credentials immediately after first login for security.
+
+### Implementation Details
+
+Authentication implementation spans multiple modules:
+
+- **`CustomServer`**: Handles login/logout endpoints, session validation, and endpoint protection
+- **`utils.h/cpp`**: Contains core authentication functions (password hashing, token generation, validation)
+- **`auth.js`**: Client-side authentication manager with automatic token handling
+- **Configuration Files**: Secure storage of hashed passwords and session data
+
+The system uses ESP32 Preferences for secure credential storage and implements comprehensive error handling with fallback mechanisms for enhanced reliability.

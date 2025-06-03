@@ -34,7 +34,7 @@ The software is written in C++ using the *PlatformIO* ecosystem and *Arduino fra
 The main features of the software include:
 
 - **ADE7953** class for configuring and reading data from the IC
-- **Authentication System** with token-based security, HTTP-only cookies, password hashing, and session management
+- **Comprehensive Authentication System** with token-based security, HTTP-only cookies, password hashing, session management, and protected endpoints
 - **Crash reporting** system leveraging the RTC memory of the ESP32 for enhanced debugging and stability
 - **Custom MQTT** for publishing data to an MQTT broker
 - **InfluxDB Integration** for seamless time-series data storage with support for both v1.x and v2.x, SSL/TLS, buffering, and automatic retry logic
@@ -88,31 +88,15 @@ The InfluxDB client automatically formats energy data using the line protocol an
 
 ## Security & Authentication
 
-EnergyMe-Home features a comprehensive authentication system to secure access to the web interface and protect critical system operations. The authentication system provides enterprise-grade security while maintaining ease of use.
+EnergyMe-Home features a comprehensive authentication system to secure access to the web interface and protect critical system operations. The system provides enterprise-grade security while maintaining ease of use.
 
-### Authentication Features
+### Key Security Features
 
-- **Token-Based Authentication**: Secure JWT-style token generation with configurable expiration times
-- **HTTP-Only Cookies**: Session tokens stored in secure, HTTP-only cookies to prevent XSS attacks
-- **Password Hashing**: Strong bcrypt-based password hashing with salt for credential security
-- **Session Management**: Automatic session expiration and renewal with configurable timeouts
-- **Protected Endpoints**: All critical API endpoints require authentication including:
-  - System configuration changes
-  - Factory reset operations
-  - Firmware updates and system restart
-  - Log access and management
-  - Calibration modifications
-  - File system operations
-
-### Security Implementation
-
-The authentication system protects against common web vulnerabilities:
-
-- **Cross-Site Scripting (XSS)**: HTTP-only cookies prevent JavaScript access to session tokens
-- **Cross-Site Request Forgery (CSRF)**: Token validation on all state-changing operations
-- **Session Hijacking**: Secure token generation with proper entropy and expiration
-- **Brute Force Attacks**: Rate limiting and secure password storage
-- **Unauthorized Access**: Comprehensive endpoint protection with authentication middleware
+- **Token-Based Authentication**: Secure session management with automatic expiration
+- **Password Protection**: Strong password hashing and secure credential storage
+- **Protected Operations**: All critical system functions require authentication
+- **Session Security**: HTTP-only cookies and automatic session renewal
+- **Vulnerability Protection**: Built-in protection against common web security threats
 
 ### Default Credentials
 
@@ -121,15 +105,14 @@ The authentication system protects against common web vulnerabilities:
 
 **Important**: Change the default credentials immediately after first login for security.
 
-### Usage
+### Getting Started
 
-1. **Initial Access**: Navigate to the device IP address - you'll be redirected to the login page
-2. **Login**: Enter your credentials to receive an authentication token
-3. **Automatic Redirect**: Successfully authenticated users are redirected to the main interface
-4. **Session Management**: Sessions automatically renew during active use
-5. **Logout**: Use the logout button available on all pages to securely end your session
+1. Navigate to your device's IP address
+2. Use the default credentials to log in
+3. Change the default password when prompted
+4. Access all system features through the authenticated web interface
 
-The authentication system is fully integrated with the REST API and documented in the Swagger specification. Implementation details are available in [`source/include/customserver.h`](source/include/customserver.h) and [`source/include/utils.h`](source/include/utils.h).
+The authentication system is fully integrated with the REST API and supports secure session management across all device features. For detailed technical implementation information, see the [source code documentation](source/README.md#security--authentication).
 
 ### Home Assistant Integration
 
