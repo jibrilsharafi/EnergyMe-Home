@@ -12,7 +12,7 @@ By combining hardware and software, this project empowers you to take control of
 
 ## Hardware
 
-![PCB](resources/pcb_1.jpg)
+![PCB](resources/PCB%20top%20view.jpg)
 
 The hardware (currently at **v5**) consists of both the PCB design and the components used to build the energy monitoring system.
 
@@ -23,29 +23,35 @@ The key components include:
 - Multiplexers: used to monitor multiple circuits at once
 - 3.5 mm jack connectors: used to easily connect current transformers
 
-Detailed PCB schematics and BOMs are available in the `documentation/Schematics` directory, while datasheets for the key components are available in the `documentation/Components` directory.
+PCB schematics and BOMs are available in the `documentation/Schematics` directory, while datasheets for key components are in the `documentation/Components` directory. Additional hardware specifications and technical details can be found in the [`documentation/README.md`](documentation/README.md).
+
+The project is published on *EasyEDA* for easy access to the PCB design files. You can find the project [here](https://oshwlab.com/jabrillo/multiple-channel-energy-meter).
 
 ## Software
 
-The software is written in C++ and uses the *PlatformIO* ecosystem and the *Arduino framework* for development. All the code is available in the [`source`](source) directory.
+The software is written in C++ using the *PlatformIO* ecosystem and *Arduino framework*. All source code is available in the [`source`](source) directory with build instructions provided by PlatformIO.
 
 The main features of the software include:
 
 - **ADE7953** class for configuring and reading data from the IC
-- **Crash reporting** system leveraging the RTC memory of the ESP32 for enhanced debugging and stability. (More details in `source/README.md`)
+- **Crash reporting** system leveraging the RTC memory of the ESP32 for enhanced debugging and stability
 - **Custom MQTT** for publishing data to an MQTT broker
-- **Web server** for real-time monitoring, historical data, updating firmware (with MD5 integrity check), and configuring the system
+- **InfluxDB Integration** for seamless time-series data storage with support for both v1.x and v2.x, SSL/TLS, buffering, and automatic retry logic
+- **Web server** for real-time monitoring, historical data, firmware updates (with MD5 integrity check), and system configuration
 - **Captive Wi-Fi portal** for easy initial Wi-Fi configuration
 - **LED control** for visual status indication
 - **Modbus TCP server** for serving data to Modbus clients
 - **MQTT** support for cloud services and remote monitoring
 - **Multiplexer** for reading multiple circuits at once
 - **mDNS Support** for local network discovery
-- **Logging** system with multiple levels (INFO, WARNING, ERROR, FATAL, DEBUG) and the ability to view/download logs via the web interface.
-- **Secure Firmware Updates:** Firmware updates are handled via the web interface and include MD5 hash checking to ensure integrity.
-- **Secrets Management:** Secure handling of credentials for AWS IoT and local data encryption. (More details in `source/README.md`)
-- **Data Storage:** Configuration and energy data are stored locally in JSON files. (More details in `source/README.md`)
-- **Detailed Calibration Process:** The system allows for calibration of measurements for accuracy. (More details in `source/README.md`)
+- **Enhanced Stability Features** including crash monitoring, memory management, watchdog timers, and automatic firmware rollback
+- **Logging** system with multiple levels and web interface access
+- **Secure Firmware Updates** with MD5 hash verification
+- **Secrets Management** for secure credential handling
+- **Local Data Storage** with JSON configuration files
+- **Detailed Calibration Process** for measurement accuracy
+
+Implementation details are documented in the source code headers and comments. Key components have dedicated header files with comprehensive documentation.
 
 ## Integration
 
@@ -53,17 +59,43 @@ The main features of the software include:
 
 All the data collected by the energy monitoring system, as well as the configuration settings, can be accessed through the Restful API.
 
-![alt text](resources/swagger.png)
+![Swagger](resources/swagger.png)
 
-A full swagger documentation of the Restful API is available in the [`swagger.yaml`](source/resources/swagger.yaml).
+A complete swagger documentation of the Restful API is available in the [`swagger.yaml`](source/resources/swagger.yaml) file.
 
 ### MQTT
 
-The energy monitoring system can also publish data to an MQTT broker (unprotected and protected with username and password). More info at [`source/include/custommqtt.h`](source/include/custommqtt.h).
+The energy monitoring system can also publish data to an MQTT broker (unprotected and protected with username and password). Implementation details are documented in [`source/include/custommqtt.h`](source/include/custommqtt.h).
 
 ### Modbus TCP
 
-The energy monitoring system can also act as a Modbus TCP server, exposing many registers for reading the data (single channel and aggregated data). More info at [`source/include/modbustcp.h`](source/include/modbustcp.h).
+The energy monitoring system can also act as a Modbus TCP server, exposing many registers for reading the data (single channel and aggregated data). Implementation details are documented in [`source/include/modbustcp.h`](source/include/modbustcp.h).
+
+### InfluxDB Integration
+
+EnergyMe-Home now includes native InfluxDB integration for seamless time-series data storage and visualization. The system supports both InfluxDB v1.x and v2.x with the following features:
+
+- **Universal InfluxDB Support**: Compatible with both InfluxDB v1.x (username/password) and v2.x (token-based authentication)
+- **SSL/TLS Security**: Secure connections with configurable SSL certificate validation
+- **Intelligent Buffering**: Local data buffering with configurable batch sizes and automatic retry logic
+- **Connection Management**: Automatic reconnection with exponential backoff for enhanced reliability
+- **Flexible Configuration**: Configurable measurement names, field mapping, and write frequency
+- **Real-time Monitoring**: Web interface shows connection status and write statistics
+- **RESTful API**: Complete API endpoints for InfluxDB configuration and management
+
+The InfluxDB client automatically formats energy data using the line protocol and handles both real-time measurements and energy accumulations. Configuration is available through the web interface with real-time status monitoring and connection testing. Implementation details are documented in [`source/include/influxdbclient.h`](source/include/influxdbclient.h).
+
+### Home Assistant Integration
+
+EnergyMe-Home integrates with Home Assistant through a dedicated custom integration for convenient energy monitoring directly in your dashboard.
+
+![Home Assistant Integration](resources/Home%20Assistant%20integration.png)
+
+- **Simple Setup**: Only requires the device IP address (automatic discovery via mDNS coming soon)
+- **Real-time Data**: All energy measurements and system information as Home Assistant entities
+- **Complete Access**: Monitor all circuits and aggregate data within Home Assistant
+
+Get started at [homeassistant-energyme](https://github.com/jibrilsharafi/homeassistant-energyme).
 
 ## Contributing
 

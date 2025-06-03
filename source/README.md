@@ -28,6 +28,7 @@ Handles energy measurements with features like:
 - **SPIFFS**: Stores configuration and calibration data
 - **Web Interface**: Provides configuration, monitoring, and firmware update capabilities
 - **MQTT**: Enables remote data logging and device management (including optional AWS IoT Core integration)
+- **InfluxDB Client**: Native time-series database integration with support for both v1.x and v2.x, buffering, and automatic retry logic
 - **Modbus TCP**: Industrial protocol support
 - **Crash Reporting**: Utilizes ESP32's RTC memory for post-crash diagnostics.
 
@@ -51,6 +52,7 @@ The firmware is built around several key modules/classes, typically found in `in
 - `Multiplexer`: Controls the analog multiplexers to switch between CT channels.
 - `CustomServer`: Handles HTTP requests, serves web pages, and manages Restful API endpoints.
 - `CustomMQTT`: Manages MQTT broker connections, data formatting, and publishing (supports local and AWS IoT).
+- `InfluxDBClient`: Handles connections to InfluxDB databases with support for both v1.x and v2.x, SSL/TLS, buffering, retry logic, and line protocol formatting.
 - `ModbusTCP`: Implements the Modbus TCP server, defining registers and handling client requests.
 - `CustomWifi`: Manages Wi-Fi connectivity, including the captive portal for initial setup.
 - `CrashMonitor`: Implements the crash reporting feature using RTC memory.
@@ -92,6 +94,7 @@ Configuration data is stored in JSON files:
 - **channel.json**: Channel configuration
 - **energy.json**: Energy accumulation data
 - **daily-energy.json**: Daily energy statistics
+- **influxdb.json**: InfluxDB connection and configuration settings
 
 ## Measurement Process
 
@@ -116,7 +119,8 @@ The system exposes a comprehensive Restful API for configuration, data retrieval
 - **Key Capabilities:**
   - **System Management**: Device status, project/device info, Wi-Fi status, firmware updates (info, status, execution with MD5 check), crash data/logs, restart, factory reset, Wi-Fi reset.
   - **Meter Readings**: All meter values, single channel data, specific values (e.g., active power), direct ADE7953 register access.
-  - **Configuration**: Get/Set for general settings, ADE7953 parameters, channels, custom MQTT, calibration.
+  - **Configuration**: Get/Set for general settings, ADE7953 parameters, channels, custom MQTT, InfluxDB configuration, calibration.
+  - **InfluxDB Management**: Get/Set InfluxDB configuration, connection status, write statistics, connection testing.
   - **File Management**: List, retrieve, delete files on the device.
 - **Authentication**: Most `/rest/` endpoints are unprotected for local network ease of use. `/wifisave` is specific to AP mode.
 
@@ -143,6 +147,24 @@ The device acts as a Modbus TCP server for integration with SCADA systems and in
   - Includes: system information, per-channel data (Voltage, Current, Powers, PF, Energy), and aggregated data.
   - Specific addresses and organization are in `modbustcp.h` and its `.cpp` file.
 - **Data Types**: Integers or IEEE754 floating-point numbers. Byte order follows Modbus standards.
+
+### InfluxDB Interface
+
+The InfluxDB client provides seamless integration with InfluxDB time-series databases for long-term data storage and analysis.
+
+- **API Endpoints**:
+  - `GET /rest/get-influxdb-configuration` - Retrieve current InfluxDB configuration
+  - `POST /rest/set-influxdb-configuration` - Update InfluxDB configuration settings
+  - `GET /rest/influxdb-status` - Get connection status and write statistics (if implemented)
+  - `POST /rest/influxdb-test` - Test connection with current settings (if implemented)
+- **Configuration Parameters**:
+  - **Server Settings**: Host, port, database/organization name, SSL/TLS settings
+  - **Authentication**: Username/password (v1.x) or API token (v2.x)
+  - **Data Settings**: Measurement names, write frequency, buffer settings
+  - **Advanced**: Retry logic, timeout values, batch sizes
+- **Data Format**: Automatic conversion to InfluxDB line protocol with configurable field mapping
+- **Status Monitoring**: Real-time connection status and write statistics available through web interface
+- **Error Handling**: Comprehensive error logging and automatic retry with exponential backoff
 
 ## System Specifications
 
