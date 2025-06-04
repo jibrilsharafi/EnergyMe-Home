@@ -5,6 +5,7 @@
 
 // Project includes
 #include "ade7953.h"
+#include "buttonhandler.h"
 #include "constants.h"
 #include "crashmonitor.h"
 #include "customwifi.h" // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
@@ -82,6 +83,13 @@ Multiplexer multiplexer(
 CustomWifi customWifi(
   logger,
   led
+);
+
+ButtonHandler buttonHandler(
+  BUTTON_GPIO0_PIN,
+  logger,
+  led,
+  customWifi
 );
 
 CustomTime customTime(
@@ -309,12 +317,15 @@ void setup() {
         logger.info("ADE7953 setup done", TAG);
     }
 
-    led.setBlue();
-
-    TRACE
+    led.setBlue();    TRACE
     logger.info("Setting up WiFi...", TAG);
     customWifi.begin();
     logger.info("WiFi setup done", TAG);
+
+    TRACE
+    logger.info("Setting up button handler...", TAG);
+    buttonHandler.begin();
+    logger.info("Button handler setup done", TAG);
 
     TRACE
     logger.info("Syncing time...", TAG);
@@ -352,9 +363,11 @@ void loop() {
     crashMonitor.crashCounterLoop();
     TRACE
     crashMonitor.firmwareTestingLoop();
+      TRACE
+    customWifi.loop();
     
     TRACE
-    customWifi.loop();
+    buttonHandler.loop();
     
     TRACE
     mqtt.loop();

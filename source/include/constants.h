@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "08"
-#define FIRMWARE_BUILD_VERSION_PATCH "04"
+#define FIRMWARE_BUILD_VERSION_PATCH "05"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -102,6 +102,26 @@
 #define LED_MAX_BRIGHTNESS 255
 #define LED_FREQUENCY 5000
 #define LED_RESOLUTION 8
+
+// Button
+// Hardware pins (check hardware revision)
+#define BUTTON_GPIO0_PIN 0 // GPIO0 button for critical functionality control
+
+// Button timing constants
+#define BUTTON_DEBOUNCE_TIME 50 // Debounce time in milliseconds
+#define BUTTON_SHORT_PRESS_TIME 1000 // Short press duration (WiFi reset)
+#define BUTTON_MEDIUM_PRESS_TIME 3000 // Medium press duration (Password reset)
+#define BUTTON_LONG_PRESS_TIME 10000 // Long press duration (Factory reset)
+#define BUTTON_VERY_LONG_PRESS_TIME 15000 // Very long press duration (Force restart)
+
+// Button press patterns
+#define BUTTON_DOUBLE_PRESS_INTERVAL 500 // Maximum time between presses for double press detection
+#define BUTTON_TRIPLE_PRESS_INTERVAL 500 // Maximum time between presses for triple press detection
+
+// LED feedback patterns for button operations
+#define BUTTON_FEEDBACK_BLINK_FAST 100 // Fast blink for active operations
+#define BUTTON_FEEDBACK_BLINK_SLOW 500 // Slow blink for waiting states
+#define BUTTON_FEEDBACK_PULSE_DURATION 2000 // Duration for status indication pulses
 
 // WiFi
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
