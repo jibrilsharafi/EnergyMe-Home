@@ -109,10 +109,11 @@
 
 // Button timing constants
 #define BUTTON_DEBOUNCE_TIME 50 // Debounce time in milliseconds
-#define BUTTON_SHORT_PRESS_TIME 1000 // Short press duration (WiFi reset)
-#define BUTTON_MEDIUM_PRESS_TIME 3000 // Medium press duration (Password reset)
-#define BUTTON_LONG_PRESS_TIME 10000 // Long press duration (Factory reset)
-#define BUTTON_VERY_LONG_PRESS_TIME 15000 // Very long press duration (Force restart)
+#define BUTTON_SHORT_PRESS_TIME 3000 // Short press duration (Restart)
+#define BUTTON_MEDIUM_PRESS_TIME 7000 // Medium press duration (Password reset)
+#define BUTTON_LONG_PRESS_TIME 10000 // Long press duration (WiFi reset)
+#define BUTTON_VERY_LONG_PRESS_TIME 15000 // Very long press duration (Factory reset)
+#define BUTTON_MAX_PRESS_TIME 20000 // Maximum press duration
 
 // Button press patterns
 #define BUTTON_DOUBLE_PRESS_INTERVAL 500 // Maximum time between presses for double press detection

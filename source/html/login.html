@@ -83,7 +83,9 @@
             text-align: center;
             margin-top: 10px;
             display: none;
-        }        .success-message {
+        }
+
+        .success-message {
             color: #28a745;
             text-align: center;
             margin-top: 10px;
@@ -97,9 +99,125 @@
         }
 
         @keyframes successPulse {
-            0% { transform: scale(0.95); opacity: 0; }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); opacity: 1; }
+            0% {
+                transform: scale(0.95);
+                opacity: 0;
+            }
+
+            50% {
+                transform: scale(1.05);
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .info-section {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .info-button {
+            background: none;
+            border: none;
+            color: #6c757d;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: underline;
+            padding: 5px;
+            transition: color 0.3s;
+        }
+
+        .info-button:hover {
+            color: #007bff;
+        }
+
+        .info-icon {
+            margin-right: 5px;
+        }
+
+        .info-content {
+            margin-top: 15px;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .info-box {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: left;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .info-box h3 {
+            margin: 0 0 15px 0;
+            color: #495057;
+            font-size: 18px;
+        }
+
+        .info-box p {
+            margin: 0 0 15px 0;
+            line-height: 1.5;
+            color: #6c757d;
+        }
+
+        .recovery-steps {
+            margin: 15px 0;
+            padding-left: 20px;
+        }
+
+        .recovery-steps li {
+            margin-bottom: 8px;
+            line-height: 1.4;
+            color: #495057;
+        }
+
+        .recovery-steps strong {
+            color: #007bff;
+        }
+
+        .recovery-steps code {
+            background-color: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #e83e8c;
+        }
+
+        .security-note,
+        .warning-note {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 13px;
+        }
+
+        .security-note {
+            background-color: #d1ecf1;
+            border-left: 4px solid #bee5eb;
+            color: #0c5460;
+        }
+
+        .warning-note {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffeaa7;
+            color: #856404;
         }
     </style>
 </head>
@@ -118,14 +236,42 @@
             <div class="form-group">
                 <label for="password">Password:</label>
                 <input type="password" id="password" name="password" required>
-            </div>
-
-            <button type="submit" class="login-button" id="loginButton">Sign In</button>
+            </div> <button type="submit" class="login-button" id="loginButton">🔐 Sign In</button>
 
             <div class="error-message" id="errorMessage"></div>
             <div class="success-message" id="successMessage"></div>
         </form>
-    </div>    <script>
+
+        <div class="info-section">
+            <button type="button" class="info-button" id="infoButton">
+                <span class="info-icon">ℹ️</span> Forgot Password?
+            </button>
+            <div class="info-content" id="infoContent" style="display: none;">
+                <div class="info-box">
+                    <h3>🔐 Password Recovery</h3>
+                    <p>If you've forgotten your password, you can reset it using the <strong>physical button</strong> on
+                        your device:</p>
+                    <ol class="recovery-steps">
+                        <li><strong>Locate</strong> the GPIO0 button on your EnergyMe device (labelled "FLASH")</li>
+                        <li><strong>Press and hold</strong> the button for <strong>7-10 seconds</strong></li>
+                        <li><strong>Watch</strong> for the LED to turn yellow</li>
+                        <li><strong>Release</strong> the button</li>
+                        <li><strong>Now log in</strong> with the default password: <code>energyme</code></li>
+                    </ol>
+                    <div class="warning-note">
+                        <strong>⚠️ Button held too long?</strong> If you pressed the button for more than 10 seconds,
+                        continue holding it for 30 seconds until the LED turns white, then release. Nothing will happen,
+                        and you can repeat the process from step 2.
+                    </div>
+                    <div class="security-note">
+                        <strong>🛡️ Security:</strong> This reset requires physical access to your device, ensuring only
+                        authorized users can reset the password.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
         // Array of fun login success messages
         const funLoginMessages = [
             "Welcome back, you electricity hoarder! 🔌",
@@ -169,7 +315,7 @@
                     password: password
                 })
             })
-                .then(response => response.json())                .then(data => {
+                .then(response => response.json()).then(data => {
                     if (data.success) {
                         successMessage.textContent = getRandomLoginMessage();
                         successMessage.style.display = 'block';
@@ -198,9 +344,7 @@
                     loginButton.disabled = false;
                     loginButton.textContent = 'Sign In';
                 });
-        });
-
-        // Check if already authenticated
+        });        // Check if already authenticated
         window.addEventListener('load', function () {
             fetch('/rest/auth/status')
                 .then(response => response.json())
@@ -212,6 +356,20 @@
                 .catch(error => {
                     console.log('Auth check failed:', error);
                 });
+        });
+
+        // Handle info button toggle
+        document.getElementById('infoButton').addEventListener('click', function () {
+            const infoContent = document.getElementById('infoContent');
+            const isVisible = infoContent.style.display !== 'none';
+
+            if (isVisible) {
+                infoContent.style.display = 'none';
+                this.innerHTML = '<span class="info-icon">ℹ️</span> Forgot Password?';
+            } else {
+                infoContent.style.display = 'block';
+                this.innerHTML = '<span class="info-icon">❌</span> Close Info';
+            }
         });
     </script>
 </body>

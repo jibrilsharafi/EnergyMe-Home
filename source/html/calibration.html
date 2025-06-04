@@ -38,13 +38,13 @@
 
 <body>
     <div class="buttonNavigation-container">
-        <a class="buttonNavigation" type="outer" href="/configuration">Configuration</a>
+        <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
     </div>
     <div id="calibrationBox" class="section-box">
         <h1>Calibration</h1>
         <select id="calibrationDropdown" onchange="fillCalibrationBox()"></select>
         <p id="dropdownError" style="color: red; display: none;"></p>
-        <button id="addButton" class="buttonForm" onclick="addNewCalibration()">Add</button>
+        <button id="addButton" class="buttonForm" onclick="addNewCalibration()">➕ Add</button>
         <form id="calibrationForm">
             <h3>Values</h3>
             <p><span class="list-key">Voltage:</span> <input id="vLsb" name="vLsb" type="number" required> <span
@@ -69,9 +69,10 @@
             </p>
         </form>
         <div style="display: flex; justify-content: space-between;">
-            <button class="buttonForm" type="submit" onclick="submitCalibrationData()" id="submitButton">Submit</button>
-            <button class="buttonForm" onclick="repopulateFields()">Reload</button>
-            <button class="buttonForm" type="default" onclick="resetDefaultCalibration()">Reset default
+            <button class="buttonForm" type="submit" onclick="submitCalibrationData()" id="submitButton">✅
+                Submit</button>
+            <button class="buttonForm" onclick="repopulateFields()">🔄 Reload</button>
+            <button class="buttonForm" type="default" onclick="resetDefaultCalibration()">🔄 Reset default
                 calibration</button>
         </div>
     </div>

@@ -255,7 +255,7 @@ EnergyMe-Home implements a comprehensive authentication system to secure access 
 ### Default Credentials
 
 - **Username**: `admin`
-- **Password**: `admin123`
+- **Password**: `energyme`
 
 **Important**: Change the default credentials immediately after first login for security.
 

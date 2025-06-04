@@ -12,70 +12,379 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="/html/auth.js"></script>
 
-    <title>Info</title>
+    <title>📊 Device Information</title>
     <style>
+        /* Modern Info Page Styles */
+        .info-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            width: 100%;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-top: 20px;
+        }
+
+        .info-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafb 100%);
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .info-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .card-icon {
+            font-size: 2.5rem;
+            margin-right: 15px;
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin: 0;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f5f5f5;
+        }
+
+        .info-item:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+            color: #555;
+            font-size: 0.95rem;
+        }
+
+        .info-label .emoji {
+            margin-right: 8px;
+            font-size: 1.1rem;
+        }
+
+        .info-value {
+            font-weight: 600;
+            color: #2c3e50;
+            text-align: right;
+            font-size: 0.95rem;
+        }
+
+        .status-indicator {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-excellent { background: #d4f5d4; color: #2d7d32; }
+        .status-good { background: #e8f5e8; color: #388e3c; }
+        .status-warning { background: #fff3cd; color: #f57c00; }
+        .status-critical { background: #f8d7da; color: #d32f2f; }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+
+        .progress-good { background: linear-gradient(90deg, #4caf50, #66bb6a); }
+        .progress-warning { background: linear-gradient(90deg, #ff9800, #ffb74d); }
+        .progress-critical { background: linear-gradient(90deg, #f44336, #ef5350); }
+
+        .update-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4caf50;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .update-indicator.show {
+            opacity: 1;
+        }
+
+        .page-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .page-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .page-subtitle {
+            font-size: 1.1rem;
+            color: #7f8c8d;
+            margin: 0;
+        }
+
+        @media (max-width: 768px) {
+            .info-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .info-container {
+                padding: 15px;
+            }
+            
+            .page-title {
+                font-size: 2rem;
+            }
+        }
     </style>
 </head>
 
 <body>
     <div class="buttonNavigation-container">
-        <a class="buttonNavigation" type="home" href="/">Home</a>
-    </div>
-    <div id="deviceInfo" class="section-box">
-        <h2>Device Info</h2>
-        <h3>System</h3>
-        <p><span class='list-key'>Uptime:</span><span id='uptime' class='list-value'></span></p>
-        <p><span class='list-key'>System time:</span><span id='systemTime' class='list-value'></span></p>
-        <h3>Firmware</h3>
-        <p><span class='list-key'>Version:</span><span id='firmwareBuildVersion' class='list-value'></span></p>
-        <p><span class='list-key'>Date:</span><span id='firmwareBuildDate' class='list-value'></span></p>
-        <h3>Memory</h3>
-        <h4>Heap</h4>
-        <p><span class='list-key'>Free:</span><span id='heapFree' class='list-value'></span></p>
-        <p><span class='list-key'>Total:</span><span id='heapTotal' class='list-value'></span></p>
-        <h4>Spiffs</h4>
-        <p><span class='list-key'>Free:</span><span id='spiffsFree' class='list-value'></span></p>
-        <p><span class='list-key'>Total:</span><span id='spiffsTotal' class='list-value'></span></p>
-        <h3>Chip</h3>
-        <p><span class='list-key'>Model:</span><span id='chipModel' class='list-value'></span></p>
-        <p><span class='list-key'>Revision:</span><span id='chipRevision' class='list-value'></span></p>
-        <p><span class='list-key'>CPU Frequency:</span><span id='chipCpuFrequency' class='list-value'></span> MHz</p>
-        <p><span class='list-key'>SDK Version:</span><span id='chipSdkVersion' class='list-value'></span></p>
-        <p><span class='list-key'>Flash Chip ID:</span><span id='chipFlashChipId' class='list-value'></span></p>
-        <h3>Device</h3>
-        <p><span class='list-key'>ID:</span><span id='deviceId' class='list-value'></span></p>
-    </div>
-    <div id="wifiInfo" class="section-box">
-        <h2>WiFi Info</h2>
-        <p><span class='list-key'>MAC Address:</span><span id='macAddress' class='list-value'></span></p>
-        <p><span class='list-key'>Local IP:</span><span id='localIp' class='list-value'></span></p>
-        <p><span class='list-key'>Subnet Mask:</span><span id='subnetMask' class='list-value'></span></p>
-        <p><span class='list-key'>Gateway IP:</span><span id='gatewayIp' class='list-value'></span></p>
-        <p><span class='list-key'>DNS IP:</span><span id='dnsIp' class='list-value'></span></p>
-        <p><span class='list-key'>Status:</span><span id='status' class='list-value'></span></p>
-        <p><span class='list-key'>SSID:</span><span id='ssid' class='list-value'></span></p>
-        <p><span class='list-key'>BSSID:</span><span id='bssid' class='list-value'></span></p>
-        <p><span class='list-key'>RSSI:</span><span id='rssi' class='list-value'></span></p>
-    </div>
-    <div id="projectInfo" class="section-box">
-        <h2>Project Info</h2>
-        <p><span class='list-key'>Company Name:</span><span id='companyName' class='list-value'></span></p>
-        <p><span class='list-key'>Full Product Name:</span><span id='fullProductName' class='list-value'></span></p>
-        <p><span class='list-key'>Product Name:</span><span id='productName' class='list-value'></span></p>
-        <p><span class='list-key'>Description:</span><span id='productDescription' class='list-value'></span></p>
-        <p><span class='list-key'>GitHub URL:</span><span id='githubUrl' class='list-value'></span></p>
-        <p><span class='list-key'>Author:</span><span id='author' class='list-value'></span></p>
-        <p><span class='list-key'>Author Email:</span><span id='authorEmail' class='list-value'></span></p>
+        <a class="buttonNavigation" type="home" href="/">🏠 Home</a>
     </div>
 
-    <script>
+    <div class="update-indicator" id="updateIndicator">
+        ✅ Data Updated
+    </div>
+
+    <div class="info-container">
+        <div class="page-header">
+            <h1 class="page-title">📊 Device Information</h1>
+            <p class="page-subtitle">Real-time system status and configuration details</p>
+        </div>
+
+        <div class="info-grid">
+            <!-- System Information Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <span class="card-icon">🖥️</span>
+                    <h2 class="card-title">System Status</h2>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">⏱️</span>Uptime</span>
+                    <span id="uptime" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🕐</span>System Time</span>
+                    <span id="systemTime" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔖</span>Firmware Version</span>
+                    <span id="firmwareBuildVersion" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📅</span>Build Date</span>
+                    <span id="firmwareBuildDate" class="info-value">Loading...</span>
+                </div>
+            </div>
+
+            <!-- Memory Information Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <span class="card-icon">💾</span>
+                    <h2 class="card-title">Memory Usage</h2>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🧠</span>Heap Memory</span>
+                    <div style="text-align: right;">
+                        <div id="heapFree" class="info-value">Loading...</div>
+                        <div class="progress-bar">
+                            <div id="heapProgress" class="progress-fill progress-good" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📊</span>Total Heap</span>
+                    <span id="heapTotal" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">💿</span>SPIFFS Storage</span>
+                    <div style="text-align: right;">
+                        <div id="spiffsFree" class="info-value">Loading...</div>
+                        <div class="progress-bar">
+                            <div id="spiffsProgress" class="progress-fill progress-good" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📈</span>Total SPIFFS</span>
+                    <span id="spiffsTotal" class="info-value">Loading...</span>
+                </div>
+            </div>
+
+            <!-- Hardware Information Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <span class="card-icon">🔧</span>
+                    <h2 class="card-title">Hardware Details</h2>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">💻</span>Chip Model</span>
+                    <span id="chipModel" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔄</span>Revision</span>
+                    <span id="chipRevision" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">⚡</span>CPU Frequency</span>
+                    <span id="chipCpuFrequency" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📦</span>SDK Version</span>
+                    <span id="chipSdkVersion" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🆔</span>Flash Chip ID</span>
+                    <span id="chipFlashChipId" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🏷️</span>Device ID</span>
+                    <span id="deviceId" class="info-value">Loading...</span>
+                </div>
+            </div>
+
+            <!-- WiFi Information Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <span class="card-icon">📶</span>
+                    <h2 class="card-title">Network Status</h2>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🌐</span>Connection Status</span>
+                    <span id="status" class="info-value status-indicator">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📡</span>WiFi Network</span>
+                    <span id="ssid" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📊</span>Signal Strength</span>
+                    <div style="text-align: right;">
+                        <div id="rssi" class="info-value">Loading...</div>
+                        <div class="progress-bar">
+                            <div id="rssiProgress" class="progress-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🏠</span>Local IP</span>
+                    <span id="localIp" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🚪</span>Gateway</span>
+                    <span id="gatewayIp" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔍</span>DNS Server</span>
+                    <span id="dnsIp" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔖</span>MAC Address</span>
+                    <span id="macAddress" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📍</span>BSSID</span>
+                    <span id="bssid" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🌐</span>Subnet Mask</span>
+                    <span id="subnetMask" class="info-value">Loading...</span>
+                </div>
+            </div>
+
+            <!-- Project Information Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <span class="card-icon">🚀</span>
+                    <h2 class="card-title">Project Details</h2>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🏢</span>Company</span>
+                    <span id="companyName" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📦</span>Product Name</span>
+                    <span id="fullProductName" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🏷️</span>Short Name</span>
+                    <span id="productName" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📝</span>Description</span>
+                    <span id="productDescription" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📂</span>Repository</span>
+                    <span id="githubUrl" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">👨‍💻</span>Author</span>
+                    <span id="author" class="info-value">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📧</span>Contact</span>
+                    <span id="authorEmail" class="info-value">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>    <script>
+        function showUpdateIndicator() {
+            const indicator = document.getElementById('updateIndicator');
+            indicator.classList.add('show');
+            setTimeout(() => {
+                indicator.classList.remove('show');
+            }, 2000);
+        }
+
         function fetchData() {
-            var deviceInfo, wifiInfo, projectInfo;
-
             function handleRequest() {
                 if (this.readyState == 4 && this.status == 200) {
                     var data = JSON.parse(this.responseText);
                     displayData(data, this.responseURL);
+                    showUpdateIndicator();
                 }
             }
 
@@ -108,107 +417,150 @@
             }
         }
 
-        function displayDeviceInfo(data) {
-            var uptime = data.system.uptime / 1000; // Convert milliseconds to seconds
-
-            var days = Math.floor(uptime / 86400); // 86400 seconds in a day
+        function formatUptime(milliseconds) {
+            var uptime = milliseconds / 1000;
+            var days = Math.floor(uptime / 86400);
             uptime %= 86400;
-
-            var hours = Math.floor(uptime / 3600); // 3600 seconds in an hour
+            var hours = Math.floor(uptime / 3600);
             uptime %= 3600;
-
-            var minutes = Math.floor(uptime / 60); // 60 seconds in a minute
+            var minutes = Math.floor(uptime / 60);
             var seconds = Math.floor(uptime % 60);
 
-            var uptimeStr = "";
-            if (days > 0) {
-                uptimeStr += days + " days ";
-            }
-            if (hours > 0) {
-                uptimeStr += hours + " hours ";
-            }
-            if (minutes > 0) {
-                uptimeStr += minutes + " minutes ";
-            }
-            if (seconds > 0) {
-                uptimeStr += seconds + " seconds";
-            }
+            var parts = [];
+            if (days > 0) parts.push(`${days}d`);
+            if (hours > 0) parts.push(`${hours}h`);
+            if (minutes > 0) parts.push(`${minutes}m`);
+            if (seconds > 0) parts.push(`${seconds}s`);
 
-            uptimeStr = uptimeStr.trim();
+            return parts.length > 0 ? parts.join(' ') : '0s';
+        }
 
-            document.getElementById('uptime').textContent = uptimeStr;
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        function getMemoryStatus(freeBytes, totalBytes) {
+            const percentage = (freeBytes / totalBytes) * 100;
+            if (percentage > 50) return { class: 'progress-good', status: 'Excellent' };
+            if (percentage > 25) return { class: 'progress-warning', status: 'Warning' };
+            return { class: 'progress-critical', status: 'Critical' };
+        }
+
+        function displayDeviceInfo(data) {
+            // System information
+            document.getElementById('uptime').textContent = formatUptime(data.system.uptime);
             document.getElementById('systemTime').textContent = data.system.systemTime;
-
             document.getElementById('firmwareBuildVersion').textContent = data.firmware.buildVersion;
             document.getElementById('firmwareBuildDate').textContent = data.firmware.buildDate;
 
+            // Memory information with progress bars
             var heapFree = data.memory.heap.free;
             var heapTotal = data.memory.heap.total;
-            var heapFreeStr = (heapFree / 1000.0).toFixed(1) + " kB (" + ((heapFree / heapTotal) * 100).toFixed(1) + "%)";
-            document.getElementById('heapFree').textContent = heapFreeStr;
-            document.getElementById('heapTotal').textContent = (heapTotal / 1000.0).toFixed(1) + " kB";
+            var heapUsedPercentage = ((heapTotal - heapFree) / heapTotal) * 100;
+            var heapStatus = getMemoryStatus(heapFree, heapTotal);
+            
+            document.getElementById('heapFree').textContent = 
+                `${formatBytes(heapFree)} free (${(100 - heapUsedPercentage).toFixed(1)}%)`;
+            document.getElementById('heapTotal').textContent = formatBytes(heapTotal);
+            
+            const heapProgress = document.getElementById('heapProgress');
+            heapProgress.style.width = `${100 - heapUsedPercentage}%`;
+            heapProgress.className = `progress-fill ${heapStatus.class}`;
 
             var spiffsFree = data.memory.spiffs.free;
             var spiffsTotal = data.memory.spiffs.total;
-            var spiffsFreeStr = (spiffsFree / 1000.0).toFixed(1) + " kB (" + ((spiffsFree / spiffsTotal) * 100).toFixed(1) + "%)";
-            document.getElementById('spiffsFree').textContent = spiffsFreeStr;
-            document.getElementById('spiffsTotal').textContent = (spiffsTotal / 1000.0).toFixed(1) + " kB";
+            var spiffsUsedPercentage = ((spiffsTotal - spiffsFree) / spiffsTotal) * 100;
+            var spiffsStatus = getMemoryStatus(spiffsFree, spiffsTotal);
+            
+            document.getElementById('spiffsFree').textContent = 
+                `${formatBytes(spiffsFree)} free (${(100 - spiffsUsedPercentage).toFixed(1)}%)`;
+            document.getElementById('spiffsTotal').textContent = formatBytes(spiffsTotal);
+            
+            const spiffsProgress = document.getElementById('spiffsProgress');
+            spiffsProgress.style.width = `${100 - spiffsUsedPercentage}%`;
+            spiffsProgress.className = `progress-fill ${spiffsStatus.class}`;
 
+            // Hardware information
             document.getElementById('chipModel').textContent = data.chip.model;
-            document.getElementById('chipRevision').textContent = data.chip.revision;
-            document.getElementById('chipCpuFrequency').textContent = data.chip.cpuFrequency;
+            document.getElementById('chipRevision').textContent = `Rev ${data.chip.revision}`;
+            document.getElementById('chipCpuFrequency').textContent = `${data.chip.cpuFrequency} MHz`;
             document.getElementById('chipSdkVersion').textContent = data.chip.sdkVersion;
-            document.getElementById('chipFlashChipId').textContent = data.chip.id;
-
+            document.getElementById('chipFlashChipId').textContent = `0x${data.chip.id.toString(16).toUpperCase()}`;
             document.getElementById('deviceId').textContent = data.device.id;
         }
 
-        function displayWifiInfo(data) {
-            document.getElementById('macAddress').textContent = data.macAddress;
-            document.getElementById('localIp').textContent = data.localIp;
-            document.getElementById('subnetMask').textContent = data.subnetMask;
-            document.getElementById('gatewayIp').textContent = data.gatewayIp;
-            document.getElementById('dnsIp').textContent = data.dnsIp;
-            document.getElementById('status').textContent = data.status;
-            document.getElementById('ssid').textContent = data.ssid;
-            document.getElementById('bssid').textContent = data.bssid;
+        function getSignalQuality(rssi) {
+            if (rssi >= -30) return { quality: 'Amazing', class: 'progress-good', percentage: 100 };
+            if (rssi >= -50) return { quality: 'Excellent', class: 'progress-good', percentage: 90 };
+            if (rssi >= -60) return { quality: 'Very Good', class: 'progress-good', percentage: 75 };
+            if (rssi >= -70) return { quality: 'Good', class: 'progress-good', percentage: 60 };
+            if (rssi >= -80) return { quality: 'Fair', class: 'progress-warning', percentage: 40 };
+            if (rssi >= -90) return { quality: 'Poor', class: 'progress-critical', percentage: 20 };
+            return { quality: 'Very Poor', class: 'progress-critical', percentage: 5 };
+        }
 
+        function getConnectionStatus(status) {
+            const statusMap = {
+                'Connected': { class: 'status-excellent', text: '🟢 Connected' },
+                'Connecting': { class: 'status-warning', text: '🟡 Connecting' },
+                'Disconnected': { class: 'status-critical', text: '🔴 Disconnected' },
+                'Failed': { class: 'status-critical', text: '❌ Failed' }
+            };
+            return statusMap[status] || { class: 'status-warning', text: `⚠️ ${status}` };
+        }
+
+        function displayWifiInfo(data) {
+            // Connection status
+            const connectionStatus = getConnectionStatus(data.status);
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = connectionStatus.text;
+            statusElement.className = `info-value status-indicator ${connectionStatus.class}`;
+
+            // Signal strength with progress bar
             var rssi = data.rssi;
-            var rssiStr = rssi + " dB";
-            var color = document.getElementById('rssi').style.color;
-            if (rssi >= -30) {
-                rssiStr += " (Amazing)";
-                color = 'green';
-            } else if (rssi >= -60) {
-                rssiStr += " (Very Good)";
-                color = 'green';
-            } else if (rssi >= -70) {
-                rssiStr += " (Good)";
-                color = 'green';
-            } else if (rssi >= -80) {
-                rssiStr += " (Not Good)";
-                color = 'orange';
-            } else {
-                rssiStr += " (Unusable)";
-                color = 'red';
-            }
-            document.getElementById('rssi').textContent = rssiStr;
-            document.getElementById('rssi').style.color = color;
+            var signalInfo = getSignalQuality(rssi);
+            
+            document.getElementById('rssi').textContent = `${rssi} dBm (${signalInfo.quality})`;
+            
+            const rssiProgress = document.getElementById('rssiProgress');
+            rssiProgress.style.width = `${signalInfo.percentage}%`;
+            rssiProgress.className = `progress-fill ${signalInfo.class}`;
+
+            // Network information
+            document.getElementById('ssid').textContent = data.ssid || 'Not connected';
+            document.getElementById('localIp').textContent = data.localIp || 'N/A';
+            document.getElementById('gatewayIp').textContent = data.gatewayIp || 'N/A';
+            document.getElementById('dnsIp').textContent = data.dnsIp || 'N/A';
+            document.getElementById('macAddress').textContent = data.macAddress || 'N/A';
+            document.getElementById('bssid').textContent = data.bssid || 'N/A';
+            document.getElementById('subnetMask').textContent = data.subnetMask || 'N/A';
         }
 
         function displayProjectInfo(data) {
-            document.getElementById('companyName').textContent = data.companyName;
-            document.getElementById('fullProductName').textContent = data.fullProductName;
-            document.getElementById('productName').textContent = data.productName;
-            document.getElementById('productDescription').textContent = data.productDescription;
-            document.getElementById('githubUrl').innerHTML = `<a href="${data.githubUrl}" target="_blank">${data.githubUrl}</a>`;
-            document.getElementById('author').textContent = data.author;
-            document.getElementById('authorEmail').textContent = data.authorEmail;
+            document.getElementById('companyName').textContent = data.companyName || 'N/A';
+            document.getElementById('fullProductName').textContent = data.fullProductName || 'N/A';
+            document.getElementById('productName').textContent = data.productName || 'N/A';
+            document.getElementById('productDescription').textContent = data.productDescription || 'N/A';
+            
+            // Format GitHub URL as clickable link
+            if (data.githubUrl) {
+                document.getElementById('githubUrl').innerHTML = 
+                    `<a href="${data.githubUrl}" target="_blank" style="color: #2196F3; text-decoration: none;">🔗 View Repository</a>`;
+            } else {
+                document.getElementById('githubUrl').textContent = 'N/A';
+            }
+            
+            document.getElementById('author').textContent = data.author || 'N/A';
+            document.getElementById('authorEmail').textContent = data.authorEmail || 'N/A';
         }
 
-        // On page load and every 1 second
+        // Initial load and periodic updates
         fetchData();
-        setInterval(fetchData, 1000);
+        setInterval(fetchData, 5000); // Update every 5 seconds instead of 1 second for better performance
     </script>
 </body>
 

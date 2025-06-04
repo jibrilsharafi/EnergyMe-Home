@@ -87,7 +87,7 @@
 
 <body>
     <div class="buttonNavigation-container">
-        <a class="buttonNavigation" type="home" href="/">Home</a>
+        <a class="buttonNavigation" type="home" href="/">🏠 Home</a>
     </div>
 
     <div id="loading-overlay" style="display: none;">
@@ -104,7 +104,7 @@
         <form method='POST' action='/do-update' enctype='multipart/form-data' onsubmit="return formSubmitted(event)">
             <input type='file' id='file' name='update' accept='.bin' required
                 title="Select the firmware .bin file to upload">
-            <input type='submit' id='submit' value='Update' title="Click to start the firmware update process">
+            <input type='submit' id='submit' value='⬆️ Update' title="Click to start the firmware update process">
         </form>
     </div>
 
@@ -146,8 +146,8 @@
         <div class="warning-box"
             style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
             ⚠️ Warning: This will restart the device and switch to the previous firmware version.
-        </div>
-        <button class="buttonForm" onclick="doRollback()" id="updateRollbackButton">Click to rollback to the previous
+        </div> <button class="buttonForm" onclick="doRollback()" id="updateRollbackButton">🔄 Click to rollback to the
+            previous
             firmware version</button>
     </div>
 

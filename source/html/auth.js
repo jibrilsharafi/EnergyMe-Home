@@ -201,31 +201,35 @@ function showPasswordChangeModal() {
     `;
 
     modal.innerHTML = `
-        <div style="background: white; padding: 30px; border-radius: 10px; max-width: 400px; width: 90%;">
+        <div style="background: white; padding: 30px; border-radius: 10px; max-width: 400px; width: 90%; box-shadow: 0 0 20px rgba(255,68,68,0.3);">
             <h2 style="color: #ff4444; margin-bottom: 20px; text-align: center;">
-                <i class="fas fa-exclamation-triangle"></i> Password Change Required
+                <i class="fas fa-exclamation-triangle"></i> 🚨 Password Intervention Required! 🚨
             </h2>
-            <p style="margin-bottom: 20px; text-align: center;">
-                You must change the default password before continuing.
+            <p style="margin-bottom: 20px; text-align: center; font-style: italic;">
+                Your password is more predictable than a rom-com ending! 🎬<br>
+                Time to upgrade from your terrible password to something your cat can't guess! 🐱
             </p>
             <form id="password-change-form">
                 <div style="margin-bottom: 15px;">
-                    <label for="current-pwd" style="display: block; margin-bottom: 5px;">Current Password:</label>
-                    <input type="password" id="current-pwd" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
+                    <label for="current-pwd" style="display: block; margin-bottom: 5px;">Current Password (aka "The Obvious One"):</label>
+                    <input type="password" id="current-pwd" required placeholder="Let me guess... 'admin'?" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
                 </div>
                 <div style="margin-bottom: 15px;">
-                    <label for="new-pwd" style="display: block; margin-bottom: 5px;">New Password:</label>
-                    <input type="password" id="new-pwd" required minlength="8" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
+                    <label for="new-pwd" style="display: block; margin-bottom: 5px;">New Password (Make it spicy! 🌶️):</label>
+                    <input type="password" id="new-pwd" required minlength="8" placeholder="Something your goldfish won't remember" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
                 </div>
                 <div style="margin-bottom: 20px;">
-                    <label for="confirm-pwd" style="display: block; margin-bottom: 5px;">Confirm New Password:</label>
-                    <input type="password" id="confirm-pwd" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
+                    <label for="confirm-pwd" style="display: block; margin-bottom: 5px;">Confirm New Password (Yes, again! 🙄):</label>
+                    <input type="password" id="confirm-pwd" required placeholder="Copy-paste is your friend!" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
                 </div>
-                <div id="pwd-error" style="color: red; margin-bottom: 15px; text-align: center; display: none;"></div>
-                <button type="submit" style="width: 100%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    Change Password
+                <div id="pwd-error" style="color: red; margin-bottom: 15px; text-align: center; display: none; font-weight: bold;"></div>
+                <button type="submit" style="width: 100%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                    🎯 Upgrade My Digital Fort Knox!
                 </button>
             </form>
+            <p style="margin-top: 15px; text-align: center; font-size: 12px; color: #666; font-style: italic;">
+                Pro tip: Your birthday + "123" is NOT a secure password! 🤦‍♂️
+            </p>
         </div>
     `;
 
@@ -243,16 +247,16 @@ function showPasswordChangeModal() {
         errorDiv.style.display = 'none';
 
         if (newPwd !== confirmPwd) {
-            errorDiv.textContent = 'New passwords do not match';
+            errorDiv.textContent = 'Oops! Your passwords are having an identity crisis - they don\'t match! 🤪';
             errorDiv.style.display = 'block';
             return;
         }
 
         if (newPwd.length < 8) {
-            errorDiv.textContent = 'Password must be at least 8 characters long';
+            errorDiv.textContent = 'Come on, your password needs to hit the gym! At least 8 characters, please! 💪';
             errorDiv.style.display = 'block';
             return;
-        }        try {
+        } try {
             await window.authAPI.post('/rest/auth/change-password', {
                 currentPassword: currentPwd,
                 newPassword: newPwd
@@ -261,7 +265,7 @@ function showPasswordChangeModal() {
             // Show success message briefly
             const successDiv = document.createElement('div');
             successDiv.style.cssText = 'background: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center;';
-            successDiv.textContent = 'Password changed successfully! Redirecting to login...';
+            successDiv.textContent = '🎉 Password upgraded! Time to forget this new one too... Redirecting to login in 3... 2... 1... 🚀';
 
             const form = document.getElementById('password-change-form');
             form.insertBefore(successDiv, form.firstChild);
@@ -269,9 +273,9 @@ function showPasswordChangeModal() {
             // Clear all auth tokens and redirect to login after password change
             setTimeout(async () => {
                 await window.authManager.logout(); // This clears tokens and redirects to login
-            }, 1500);
+            }, 2000);
         } catch (error) {
-            errorDiv.textContent = 'Failed to change password. Please check your current password.';
+            errorDiv.textContent = 'Password change failed! Your password is apparently as stubborn as you are. Maybe try "elephantMemory" for your current password? 🤷‍♂️';
             errorDiv.style.display = 'block';
         }
     });

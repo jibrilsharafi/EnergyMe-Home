@@ -54,9 +54,9 @@
 
 <body>
     <div class="buttonNavigation-container">
-        <a class="buttonNavigation" type="home" href="/">Home</a>
-        <a class="buttonNavigation" type="inner" href="/calibration">Calibration</a>
-        <a class="buttonNavigation" type="inner" href="/channel">Channel</a>
+        <a class="buttonNavigation" type="home" href="/">🏠 Home</a>
+        <a class="buttonNavigation" type="inner" href="/calibration">⚖️ Calibration</a>
+        <a class="buttonNavigation" type="inner" href="/channel">📺 Channel</a>
     </div>
 
     <div class="section-box">
@@ -76,9 +76,8 @@
                 <input type="range" id="ledBrightness" class="config-input slider" min="0" max="255"
                     oninput="updateBrightnessValue()">
                 <span id="ledBrightnessValue">50%</span>
-            </div>
-            <br>
-            <button class="buttonForm" onclick="setGeneralConfiguration()" id="setGeneralConfigurationButton">Set
+            </div> <br>
+            <button class="buttonForm" onclick="setGeneralConfiguration()" id="setGeneralConfigurationButton">⚙️ Set
                 configuration</button>
         </form>
     </div>
@@ -100,9 +99,9 @@
             <select id="saveLogLevel" class="config-input"></select>
         </div>
         <br>
-        <button class="buttonForm" onclick="setLogLevel()" id="setLogLevel">Set logging level</button>
-        <button class="buttonForm" onclick="clearLogs()" id="clearLogs">Clear log</button>
-        <a class="buttonForm" href="/log" id="log" style="float: right;">Explore log</a>
+        <button class="buttonForm" onclick="setLogLevel()" id="setLogLevel">📝 Set logging level</button>
+        <button class="buttonForm" onclick="clearLogs()" id="clearLogs">🗑️ Clear log</button>
+        <a class="buttonForm" href="/log" id="log" style="float: right;">📋 Explore log</a>
     </div>
 
     <div class="section-box">
@@ -155,8 +154,8 @@
                             id="lastConnectionAttemptTimestamp">Loading...</span></span>
                 </div>
             </div>
-        </div>
-        <button class="buttonForm" onclick="setCustomMqttConfiguration()" id="setCustomMqttConfigurationButton">Set
+        </div> <button class="buttonForm" onclick="setCustomMqttConfiguration()"
+            id="setCustomMqttConfigurationButton">💾 Set
             configuration</button>
         <button class="buttonForm" onclick="getCustomMqttConfiguration()" id="reloadCustomMqttButton"
             style="float: right;">🔄 Reload Status</button>
@@ -229,8 +228,8 @@
                             id="influxDbLastConnectionAttemptTimestamp">Loading...</span></span>
                 </div>
             </div>
-        </div>
-        <button class="buttonForm" onclick="setInfluxDbConfiguration()" id="setInfluxDbConfigurationButton">Set
+        </div> <button class="buttonForm" onclick="setInfluxDbConfiguration()" id="setInfluxDbConfigurationButton">💾
+            Set
             configuration</button>
         <button class="buttonForm" onclick="getInfluxDbConfiguration()" id="reloadInfluxDbButton"
             style="float: right;">🔄 Reload Status</button>
@@ -239,7 +238,7 @@
     <div class="section-box">
         <h2>Restart Device</h2>
         <p><i>This will take a few seconds.</i></p>
-        <button class="buttonForm" onclick="restart()" id="restart">Restart</button>
+        <button class="buttonForm" onclick="restart()" id="restart">🔄 Restart</button>
     </div>
 
     <div class="section-box">
@@ -254,13 +253,13 @@
 
         <div id="energyChannels">
             <!-- Energy channels will be populated here -->
-        </div>
-
-        <button class="buttonForm" onclick="loadEnergyValues()" id="loadEnergyButton">🔄 Load Current Values</button>
-        <button class="buttonForm" onclick="setEnergyValues()" id="setEnergyButton">Set Energy Values</button>
+        </div> <button class="buttonForm" onclick="loadEnergyValues()" id="loadEnergyButton">🔄 Load Current
+            Values</button>
+        <button class="buttonForm" onclick="setEnergyValues()" id="setEnergyButton">💾 Set Energy Values</button>
         <button class="buttonForm" onclick="resetAllEnergy()" id="resetAllEnergyButton"
             style="background-color: #dc3545; border-color: #dc3545; color: white; transition: background-color 0.3s ease;"
-            onmouseover="this.style.backgroundColor='#c82333'" onmouseout="this.style.backgroundColor='#dc3545'">Reset
+            onmouseover="this.style.backgroundColor='#c82333'" onmouseout="this.style.backgroundColor='#dc3545'">🗑️
+            Reset
             All to Zero</button>
     </div>
     <div class="section-box">
@@ -281,7 +280,7 @@
             <br>
             <div id="passwordError" style="color: red; margin: 10px 0; display: none;"></div>
             <div id="passwordSuccess" style="color: green; margin: 10px 0; display: none;"></div>
-            <button type="submit" class="buttonForm" id="changePasswordButton">Change Password</button>
+            <button type="submit" class="buttonForm" id="changePasswordButton">🔐 Change Password</button>
         </form>
     </div>
 
@@ -295,10 +294,10 @@
                 if the device does not redirect you automatically.
                 You can then configure the device to connect to your WiFi network.</i></p>
         <div class="warning-box"
-            style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
-            ⚠️ Warning: You will lose access to the device until you reconnect it to WiFi.
+            style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;"> ⚠️
+            Warning: You will lose access to the device until you reconnect it to WiFi.
         </div>
-        <button class="buttonForm" onclick="disconnectWifi()" id="disconnect">Disconnect</button>
+        <button class="buttonForm" onclick="disconnectWifi()" id="disconnect">📶 Disconnect</button>
     </div>
 
     <div class="section-box">
@@ -307,10 +306,10 @@
                 want to start fresh.</i></p>
         <p><i>WiFi credentials will be kept.</i></p>
         <div class="warning-box"
-            style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
-            ⚠️ Warning: This will erase all configurations and data. This action cannot be undone.
+            style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;"> ⚠️
+            Warning: This will erase all configurations and data. This action cannot be undone.
         </div>
-        <button class="buttonForm" onclick="factoryReset()" id="factoryReset">Reset</button>
+        <button class="buttonForm" onclick="factoryReset()" id="factoryReset">🏭 Reset</button>
     </div>
 
     <script>
@@ -892,6 +891,7 @@
                     if (this.status == 200) {
                         channelData = JSON.parse(this.responseText);
                         createEnergyChannelInputs();
+                        loadEnergyValues();
                     } else {
                         console.log("Error getting channel data. Response: " + this.responseText);
                     }
