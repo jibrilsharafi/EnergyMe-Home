@@ -252,31 +252,24 @@ function showPasswordChangeModal() {
             errorDiv.textContent = 'Password must be at least 8 characters long';
             errorDiv.style.display = 'block';
             return;
-        }
-
-        try {
+        }        try {
             await window.authAPI.post('/rest/auth/change-password', {
                 currentPassword: currentPwd,
                 newPassword: newPwd
             });
 
-            // Show success message in the modal instead of popup
+            // Show success message briefly
             const successDiv = document.createElement('div');
             successDiv.style.cssText = 'background: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center;';
-            successDiv.textContent = 'Password changed successfully!';
+            successDiv.textContent = 'Password changed successfully! Redirecting to login...';
 
             const form = document.getElementById('password-change-form');
             form.insertBefore(successDiv, form.firstChild);
 
-            // Reset form
-            form.reset();
-
-            // Remove modal after 2 seconds
-            setTimeout(() => {
-                if (document.body.contains(modal)) {
-                    document.body.removeChild(modal);
-                }
-            }, 2000);
+            // Clear all auth tokens and redirect to login after password change
+            setTimeout(async () => {
+                await window.authManager.logout(); // This clears tokens and redirects to login
+            }, 1500);
         } catch (error) {
             errorDiv.textContent = 'Failed to change password. Please check your current password.';
             errorDiv.style.display = 'block';

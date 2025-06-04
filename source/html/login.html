@@ -83,13 +83,23 @@
             text-align: center;
             margin-top: 10px;
             display: none;
-        }
-
-        .success-message {
+        }        .success-message {
             color: #28a745;
             text-align: center;
             margin-top: 10px;
             display: none;
+            font-weight: bold;
+            padding: 10px;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 5px;
+            animation: successPulse 0.6s ease-in-out;
+        }
+
+        @keyframes successPulse {
+            0% { transform: scale(0.95); opacity: 0; }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
         }
     </style>
 </head>
@@ -115,9 +125,25 @@
             <div class="error-message" id="errorMessage"></div>
             <div class="success-message" id="successMessage"></div>
         </form>
-    </div>
+    </div>    <script>
+        // Array of fun login success messages
+        const funLoginMessages = [
+            "Welcome back, you electricity hoarder! 🔌",
+            "Oh look who's back to stalk their power bill! 💸",
+            "Successfully logged in to judge your energy habits! 📈",
+            "Welcome! Time to see how much you spent on leaving lights on! 💡",
+            "Access granted! Ready to cringe at your usage stats? 😬",
+            "You're in! Prepare for some shocking revelations! ⚡",
+            "Login successful! Your wallet is already trembling! 💰",
+            "Welcome back, energy detective! Time to solve the mystery of the high bill! 🕵️",
+            "Successfully connected! Your appliances have been gossiping about you! 📱",
+            "You're in! Ready to play 'Guess Which Device Ate My Money'? 🎰"
+        ];
 
-    <script>
+        function getRandomLoginMessage() {
+            return funLoginMessages[Math.floor(Math.random() * funLoginMessages.length)];
+        }
+
         document.getElementById('loginForm').addEventListener('submit', function (e) {
             e.preventDefault();
 
@@ -143,10 +169,9 @@
                     password: password
                 })
             })
-                .then(response => response.json())
-                .then(data => {
+                .then(response => response.json())                .then(data => {
                     if (data.success) {
-                        successMessage.textContent = 'Login successful! Redirecting...';
+                        successMessage.textContent = getRandomLoginMessage();
                         successMessage.style.display = 'block';
 
                         // Store token in localStorage as backup
@@ -157,7 +182,7 @@
                         // Redirect to main page
                         setTimeout(() => {
                             window.location.href = '/';
-                        }, 1000);
+                        }, 2000);
                     } else {
                         errorMessage.textContent = data.message || 'Login failed';
                         errorMessage.style.display = 'block';
