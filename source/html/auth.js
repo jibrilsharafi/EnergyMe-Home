@@ -206,13 +206,12 @@ function showPasswordChangeModal() {
                 <i class="fas fa-exclamation-triangle"></i> 🚨 Password Intervention Required! 🚨
             </h2>
             <p style="margin-bottom: 20px; text-align: center; font-style: italic;">
-                Your password is more predictable than a rom-com ending! 🎬<br>
                 Time to upgrade from your terrible password to something your cat can't guess! 🐱
             </p>
             <form id="password-change-form">
                 <div style="margin-bottom: 15px;">
                     <label for="current-pwd" style="display: block; margin-bottom: 5px;">Current Password (aka "The Obvious One"):</label>
-                    <input type="password" id="current-pwd" required placeholder="Let me guess... 'admin'?" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
+                    <input type="password" id="current-pwd" required placeholder="Let me guess... 'energyme'?" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
                 </div>
                 <div style="margin-bottom: 15px;">
                     <label for="new-pwd" style="display: block; margin-bottom: 5px;">New Password (Make it spicy! 🌶️):</label>

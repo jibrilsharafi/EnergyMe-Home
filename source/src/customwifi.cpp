@@ -86,9 +86,9 @@ void CustomWifi::loop()
   }
 }
 
-bool CustomWifi::_connectToWifi()
+bool CustomWifi::_connectToWifi() // FIXME: if a reset occurs, we still get _portalWasExpected to true, leading to no restert and incorrect webserver binding
 {
-  _logger.info("Connecting to WiFi (using WiFiManager)...", TAG);
+  _logger.debug("Connecting to WiFi (using WiFiManager)...", TAG);
 
   _led.block();
   _led.setBlue(true);

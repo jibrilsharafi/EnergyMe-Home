@@ -57,7 +57,7 @@ void Led::setCyan(bool force) {
 }
 
 void Led::setOrange(bool force) {
-    _setColor(255, 165, 0, force);
+    _setColor(255, 128, 0, force);
 }
 
 void Led::setWhite(bool force) {
