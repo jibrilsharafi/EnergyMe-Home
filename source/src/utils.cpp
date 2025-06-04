@@ -372,6 +372,9 @@ void restartEsp32() {
     led.setRed(true);
 
     TRACE
+    clearAllAuthTokens();
+
+    TRACE
     logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
 
     // If a firmware evaluation is in progress, set the firmware to test again

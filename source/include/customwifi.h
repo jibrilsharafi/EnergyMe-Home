@@ -32,4 +32,7 @@ private:
     unsigned long _lastMillisWifiLoop = 0;
     unsigned long _lastConnectionAttemptTime = 0;
     int _failedConnectionAttempts = 0;
+    
+    // Track if portal was actually used in this session
+    bool _portalWasStarted = false;
 };

@@ -812,7 +812,7 @@ void CustomServer::_setRestApi()
         request->send(200, "application/json", "{\"message\":\"Restarting...\"}");
         setRestartEsp32(TAG, "Request to restart the ESP32 from REST API"); });
 
-    _server.on("/rest/reset-wifi", HTTP_POST, [this](AsyncWebServerRequest *request)
+    _server.on("/rest/reset-wifi", HTTP_POST, [this](AsyncWebServerRequest *request) // TODO: add the possibility to set the new wifi at the same time here
                {
         if (_requireAuth(request)) {
             _sendUnauthorized(request);

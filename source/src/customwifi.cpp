@@ -86,7 +86,7 @@ void CustomWifi::loop()
   }
 }
 
-bool CustomWifi::_connectToWifi() // FIXME: if a reset occurs, we still get _portalWasExpected to true, leading to no restert and incorrect webserver binding
+bool CustomWifi::_connectToWifi()
 {
   _logger.debug("Connecting to WiFi (using WiFiManager)...", TAG);
 
@@ -95,14 +95,15 @@ bool CustomWifi::_connectToWifi() // FIXME: if a reset occurs, we still get _por
   
   _lastConnectionAttemptTime = millis(); // Record the start of this connection attempt
   _failedConnectionAttempts++;
-
-  // Check if credentials exist *before* calling autoConnect.
-  bool _portalWasExpected = !(_wifiManager.getWiFiIsSaved());
-  if (_portalWasExpected) {
-    _logger.info("No saved credentials found. WiFiManager portal may start.", TAG);
-  } else {
-     _logger.info("Attempting connection with saved credentials", TAG);
-  }
+  
+  // Reset portal tracking flag
+  _portalWasStarted = false;
+  
+  // Set up callback to detect when portal starts
+  _wifiManager.setAPCallback([this](WiFiManager* myWiFiManager) {
+    _logger.info("WiFi configuration portal started", TAG);
+    _portalWasStarted = true;
+  });
 
   // This will block until connected or portal times out/exits
   String hostname = WIFI_CONFIG_PORTAL_SSID " - " + getDeviceId();
@@ -115,18 +116,15 @@ bool CustomWifi::_connectToWifi() // FIXME: if a reset occurs, we still get _por
     _failedConnectionAttempts = 0;
     _lastConnectionAttemptTime = millis(); // Update timestamp on successful connection
 
-    if (_portalWasExpected) {
-        // If the portal was expected and connection succeeded, 
-        // it means new credentials were entered via the portal.
-        // Restart the device to ensure the portal server is fully closed 
-        // and the main server can bind to port 80 cleanly.
-        _logger.warning("New WiFi credentials saved via portal. Restarting device...", TAG);
+    if (_portalWasStarted) {
+        // Portal was actually started and used during this session
+        _logger.warning("WiFi credentials configured via portal. Restarting device...", TAG);
         _led.setCyan(true); // Indicate successful save before restart
         delay(1000); // Short delay to allow log message to potentially send
         ESP.restart();
         // Code execution stops here due to restart
     } else {
-        // Connected using existing credentials, proceed normally
+        // Connected using existing credentials without portal, proceed normally
         setupMdns();
         printWifiStatus();
         _led.unblock();
