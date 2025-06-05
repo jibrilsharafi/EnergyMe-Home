@@ -3,6 +3,7 @@
 
 secrets
 temp/
+.env
 
 .mypy*
 

@@ -6,6 +6,8 @@ import requests
 from datetime import datetime, timedelta
 import time
 import getpass
+import re
+from dotenv import load_dotenv
 
 # ANSI color codes for colorized output
 class Colors:
@@ -124,22 +126,73 @@ def get_user_confirmation(prompt):
             return False
         print_warning("Please enter 'y' or 'n'")
 
+def parse_version_from_constants():
+    """Parse version information from constants.h file"""
+    constants_path = os.path.join('include', 'constants.h')
+    if not os.path.exists(constants_path):
+        print_error(f"Constants file {constants_path} not found")
+        return None, None, None
+    
+    try:
+        with open(constants_path, 'r') as f:
+            content = f.read()
+        
+        # Extract version numbers using regex
+        major_match = re.search(r'#define\s+FIRMWARE_BUILD_VERSION_MAJOR\s+"(\d+)"', content)
+        minor_match = re.search(r'#define\s+FIRMWARE_BUILD_VERSION_MINOR\s+"(\d+)"', content)
+        patch_match = re.search(r'#define\s+FIRMWARE_BUILD_VERSION_PATCH\s+"(\d+)"', content)
+        
+        if major_match and minor_match and patch_match:
+            major = int(major_match.group(1))
+            minor = int(minor_match.group(1))
+            patch = int(patch_match.group(1))
+            return major, minor, patch
+        else:
+            print_error("Could not parse version from constants.h")
+            return None, None, None
+    except Exception as e:
+        print_error(f"Error reading constants.h: {e}")
+        return None, None, None
+
 def main():
     print_header("EnergyMe Firmware Release Tool")
     
-    if len(sys.argv) not in [4, 5]:
-        print_error("Usage: python set_release.py <major> <minor> <patch> [ip_address]")
+    # Load environment variables from .env file
+    load_dotenv()
+    
+    # Parse version from constants.h
+    major, minor, patch = parse_version_from_constants()
+    
+    # Check if version was provided via command line arguments
+    if len(sys.argv) >= 4:
+        try:
+            major = int(sys.argv[1])
+            minor = int(sys.argv[2])
+            patch = int(sys.argv[3])
+            print_info("Using version from command line arguments")
+        except ValueError:
+            print_error("Invalid version numbers. Please provide integers for major, minor, and patch.")
+            sys.exit(1)
+    elif major is None or minor is None or patch is None:
+        print_error("Could not determine version. Please provide version as arguments or ensure constants.h is available.")
+        print_error("Usage: python set_release.py [major] [minor] [patch] [ip_address]")
         sys.exit(1)
+    else:
+        print_info(f"Using version from constants.h: {major}.{minor}.{patch}")
 
-    try:
-        major = int(sys.argv[1])
-        minor = int(sys.argv[2])
-        patch = int(sys.argv[3])
-    except ValueError:
-        print_error("Invalid version numbers. Please provide integers for major, minor, and patch.")
-        sys.exit(1)
+    # Get IP address from command line, environment variable, or default
+    ip_address = None
+    if len(sys.argv) == 5:
+        ip_address = sys.argv[4]
+        print_info("Using IP address from command line arguments")
+    else:
+        ip_address = os.getenv('ENERGYME_IP_ADDRESS')
+        if ip_address:
+            print_info(f"Using IP address from environment: {ip_address}")
 
-    ip_address = sys.argv[4] if len(sys.argv) == 5 else None
+    # Get other environment variables
+    force_update = os.getenv('ENERGYME_FORCE_UPDATE', '0').lower() in ['1', 'true', 'yes']
+    env_password = os.getenv('ENERGYME_PASSWORD')
 
     next_version = f"energyme_home_{major:02}_{minor:02}_{patch:02}.bin"
     firmware_src = '.pio/build/esp32dev/firmware.bin'
@@ -157,7 +210,7 @@ def main():
     # Check if firmware is older than 1 day
     if datetime.now() - modified_datetime > timedelta(days=1):
         print_warning("Firmware was last modified more than a day ago.")
-        if not get_user_confirmation("Do you want to continue with this old firmware?"):
+        if not force_update and not get_user_confirmation("Do you want to continue with this old firmware?"):
             print_info("Operation cancelled by user.")
             sys.exit(0)
 
@@ -166,7 +219,7 @@ def main():
     print_step(2, f"Preparing release v{major}.{minor}.{patch}")
     # Check if release already exists
     if os.path.exists(firmware_dst):
-        if not get_user_confirmation(f"Release {next_version} already exists. Do you want to replace it?"):
+        if not force_update and not get_user_confirmation(f"Release {next_version} already exists. Do you want to replace it?"):
             print_info("Operation cancelled by user.")
             sys.exit(0)    
             
@@ -177,8 +230,12 @@ def main():
     if ip_address:
         print_step(3, f"Uploading to device at {ip_address}")
         
-        # Get password for authentication
-        password = getpass.getpass(f"{Colors.OKCYAN}🔐 Enter device password: {Colors.ENDC}")
+        # Get password from environment or prompt user
+        if env_password:
+            password = env_password
+            print_info("Using password from environment variable")
+        else:
+            password = getpass.getpass(f"{Colors.OKCYAN}🔐 Enter device password: {Colors.ENDC}")
         
         # Login and get token
         token = login(ip_address, password)
@@ -204,7 +261,8 @@ def main():
             print_error("Failed to set MD5")
     else:
         print_success("Firmware release created successfully! 🎊")
-        print_info("To upload to device, run with: python set_release.py <major> <minor> <patch> <ip_address>")
+        print_info("To upload to device, run with: python set_release.py [major] [minor] [patch] [ip_address]")
+        print_info("Or set environment variables: ENERGYME_IP_ADDRESS, ENERGYME_PASSWORD, ENERGYME_FORCE_UPDATE")
 
 if __name__ == "__main__":
     main()
