@@ -3,6 +3,10 @@ info:
   title: EnergyMe - Home | API
   description: API documentation for EnergyMe - Home
   version: 1.0.0
+
+servers:
+  - url: http://energyme.local
+    description: EnergyMe Home Device (Default)
         
 tags:
   - name: Authentication
@@ -1009,7 +1013,6 @@ paths:
                     type: string
         '401':
           description: Unauthorized
-
   /rest/reset-wifi:
     post:
       summary: Reset WiFi credentials
@@ -1020,7 +1023,42 @@ paths:
         - CookieAuth: []
       responses:
         '200':
-          description: Successful response
+
+  /rest/get-button-operation:
+    get:
+      summary: Get the last button operation information
+      description: Returns the name and timestamp of the last button operation performed
+      tags:
+        - System
+      responses:
+        '200':
+          description: Last button operation information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operationName:
+                    type: string
+                    description: Name of the last operation (e.g., "Restart", "WiFi Reset")
+                  operationTimestamp:
+                    type: integer
+                    description: Unix timestamp when the operation was performed
+                  operationTimestampFormatted:
+                    type: string
+                    description: Human-readable timestamp (only present if timestamp > 0)
+
+  /rest/clear-button-operation:
+    post:
+      summary: Clear the last button operation history
+      tags:
+        - System
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Operation history cleared successfully
           content:
             application/json:
               schema:

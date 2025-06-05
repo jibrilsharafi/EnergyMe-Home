@@ -13,7 +13,6 @@ public:
     CustomTime(
         const char *ntpServer,
         int timeSyncInterval,
-        const char *timestampFormat,
         GeneralConfiguration &generalConfiguration,
         AdvancedLogger &logger);
 
@@ -22,19 +21,18 @@ public:
 
     bool isTimeSynched() { return _isTimeSynched; }
 
-    String timestampFromUnix(long unix);
+    static String timestampFromUnix(long unix);
     static String timestampFromUnix(long unix, const char *timestampFormat);
 
     static unsigned long getUnixTime();
-    unsigned long long getUnixTimeMilliseconds();
-    String getTimestamp();
+    static unsigned long long getUnixTimeMilliseconds();
+    static String getTimestamp();
 
 private:
     bool _getTime();
 
     const char *_ntpServer;
     int _timeSyncInterval;
-    const char *_timestampFormat;
 
     bool _isTimeSynched = false;
     unsigned long _lastTimeSyncAttempt = 0;

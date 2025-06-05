@@ -18,6 +18,7 @@
 #include "utils.h"
 #include "custommqtt.h"
 #include "binaries.h"
+#include "buttonhandler.h"
 
 class CustomServer
 {
@@ -27,40 +28,39 @@ public:
         AdvancedLogger &logger,
         Led &led,
         Ade7953 &ade7953,
-        CustomTime &customTime,
         CustomWifi &customWifi,
         CustomMqtt &customMqtt,
-        InfluxDbClient &influxDbClient
-    );
+        InfluxDbClient &influxDbClient,
+        ButtonHandler &buttonHandler);
 
     void begin();
 
-private:  
+private:
     void _setHtmlPages();
     void _setOta();
     void _setRestApi();
     void _setOtherEndpoints();
-    void _handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final);
+    void _handleDoUpdate(AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final);
     void _onUpdateSuccessful(AsyncWebServerRequest *request);
-    void _onUpdateFailed(AsyncWebServerRequest *request, const char* reason);
-    void _updateJsonFirmwareStatus(const char* status, const char* reason);
-    void _serveJsonFile(AsyncWebServerRequest *request, const char* filePath);
+    void _onUpdateFailed(AsyncWebServerRequest *request, const char *reason);
+    void _updateJsonFirmwareStatus(const char *status, const char *reason);
+    void _serveJsonFile(AsyncWebServerRequest *request, const char *filePath);
 
     // Authentication methods
     bool _requireAuth(AsyncWebServerRequest *request);
     bool _checkAuth(AsyncWebServerRequest *request);
     void _sendUnauthorized(AsyncWebServerRequest *request);
 
-    void _serverLog(const char* message, const char* function, LogLevel logLevel, AsyncWebServerRequest *request);
+    void _serverLog(const char *message, const char *function, LogLevel logLevel, AsyncWebServerRequest *request);
 
     AsyncWebServer &_server;
     AdvancedLogger &_logger;
     Led &_led;
     Ade7953 &_ade7953;
-    CustomTime &_customTime;
     CustomWifi &_customWifi;
     CustomMqtt &_customMqtt;
     InfluxDbClient &_influxDbClient;
+    ButtonHandler &_buttonHandler;
 
     String _md5;
 };

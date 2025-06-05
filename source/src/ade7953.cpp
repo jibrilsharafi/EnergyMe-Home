@@ -9,14 +9,12 @@ Ade7953::Ade7953(
     int mosiPin,
     int resetPin,
     AdvancedLogger &logger,
-    CustomTime &customTime,
     MainFlags &mainFlags) : _ssPin(ssPin),
                             _sckPin(sckPin),
                             _misoPin(misoPin),
                             _mosiPin(mosiPin),
                             _resetPin(resetPin),
                             _logger(logger),
-                            _customTime(customTime),
                             _mainFlags(mainFlags)
 {
 

@@ -24,7 +24,6 @@ public:
         int mosiPin,
         int resetPin,
         AdvancedLogger &logger,
-        CustomTime &customTime,
         MainFlags &mainFlags
     );
 
@@ -131,7 +130,6 @@ private:
     unsigned int _sampleTime;
 
     AdvancedLogger &_logger;
-    CustomTime &_customTime;
     MainFlags &_mainFlags;
 
     unsigned long _lastMillisSaveEnergy = 0;

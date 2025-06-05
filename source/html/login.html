@@ -212,20 +212,79 @@
             background-color: #d1ecf1;
             border-left: 4px solid #bee5eb;
             color: #0c5460;
-        }
-
-        .warning-note {
+        }        .warning-note {
             background-color: #fff3cd;
             border-left: 4px solid #ffeaa7;
             color: #856404;
         }
+
+        .button-notification {
+            background: linear-gradient(135deg, #e3f2fd 0%, #f1f8ff 100%);
+            border: 1px solid #2196f3;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            animation: slideIn 0.5s ease-out;
+            box-shadow: 0 2px 8px rgba(33, 150, 243, 0.2);
+        }
+
+        .notification-icon {
+            font-size: 24px;
+            margin-right: 15px;
+            color: #1976d2;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        .notification-title {
+            font-weight: bold;
+            color: #1565c0;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .notification-message {
+            color: #1976d2;
+            margin-bottom: 3px;
+            font-size: 16px;
+        }
+
+        .notification-time {
+            color: #666;
+            font-size: 12px;
+            font-style: italic;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
     </style>
 </head>
 
-<body>
-    <div class="login-container">
+<body>    <div class="login-container">
         <div class="login-header">EnergyMe</div>
         <div class="login-subheader">Please sign in to continue</div>
+
+        <!-- Button Operation Notification -->
+        <div class="button-notification" id="buttonNotification" style="display: none;">
+            <div class="notification-icon">🔘</div>
+            <div class="notification-content">
+                <div class="notification-title">Recent Device Activity</div>
+                <div class="notification-message" id="notificationMessage"></div>
+                <div class="notification-time" id="notificationTime"></div>
+            </div>
+        </div>
 
         <form id="loginForm">
             <div class="form-group">
@@ -346,6 +405,9 @@
                 });
         });        // Check if already authenticated
         window.addEventListener('load', function () {
+            // Check button operation first
+            checkButtonOperation();
+            
             fetch('/rest/auth/status')
                 .then(response => response.json())
                 .then(data => {
@@ -357,6 +419,58 @@
                     console.log('Auth check failed:', error);
                 });
         });
+
+        // Function to check and display button operation
+        function checkButtonOperation() {
+            fetch('/rest/get-button-operation')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.operationName && data.operationName.trim() !== '') {
+                        showButtonNotification(data);
+                    }
+                })
+                .catch(error => {
+                    console.log('Button operation check failed:', error);
+                });
+        }
+
+        function showButtonNotification(data) {
+            const notification = document.getElementById('buttonNotification');
+            const message = document.getElementById('notificationMessage');
+            const time = document.getElementById('notificationTime');
+            
+            // Set operation icon based on type
+            const icon = document.querySelector('.notification-icon');
+            switch(data.operationName) {
+                case 'Restart':
+                    icon.textContent = '🔄';
+                    break;
+                case 'Password Reset':
+                    icon.textContent = '🔑';
+                    break;
+                case 'WiFi Reset':
+                    icon.textContent = '📶';
+                    break;
+                case 'Factory Reset':
+                    icon.textContent = '🏭';
+                    break;
+                default:
+                    icon.textContent = '🔘';
+            }
+            
+            message.textContent = `Last operation: ${data.operationName}`;
+            
+            if (data.operationTimestampFormatted) {
+                time.textContent = `Performed: ${data.operationTimestampFormatted}`;
+            } else if (data.operationTimestamp > 0) {
+                const date = new Date(data.operationTimestamp * 1000);
+                time.textContent = `Performed: ${date.toLocaleString()}`;
+            } else {
+                time.textContent = '';
+            }
+            
+            notification.style.display = 'flex';
+        }
 
         // Handle info button toggle
         document.getElementById('infoButton').addEventListener('click', function () {

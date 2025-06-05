@@ -3,8 +3,8 @@
 // TAG
 static const char *TAG = "customtime";
 
-CustomTime::CustomTime(const char *ntpServer, int timeSyncInterval, const char *timestampFormat, GeneralConfiguration &generalConfiguration, AdvancedLogger &logger)
-    : _ntpServer(ntpServer), _timeSyncInterval(timeSyncInterval), _timestampFormat(timestampFormat), _generalConfiguration(generalConfiguration), _logger(logger) {
+CustomTime::CustomTime(const char *ntpServer, int timeSyncInterval, GeneralConfiguration &generalConfiguration, AdvancedLogger &logger)
+    : _ntpServer(ntpServer), _timeSyncInterval(timeSyncInterval), _generalConfiguration(generalConfiguration), _logger(logger) {
 }
 
 bool CustomTime::begin() {
@@ -57,7 +57,7 @@ String CustomTime::timestampFromUnix(long unix){
     char _timestamp[26];
 
     _timeinfo = localtime(&unix);
-    strftime(_timestamp, sizeof(_timestamp), _timestampFormat, _timeinfo);
+    strftime(_timestamp, sizeof(_timestamp), TIMESTAMP_FORMAT, _timeinfo);
     return String(_timestamp);
 }
 

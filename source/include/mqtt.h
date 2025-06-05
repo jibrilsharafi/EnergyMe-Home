@@ -24,7 +24,6 @@ public:
     Mqtt(
         Ade7953 &ade7953,
         AdvancedLogger &logger,
-        CustomTime &customTime,
         PubSubClient &clientMqtt,
         WiFiClientSecure &net,
         PublishMqtt &publishMqtt,
@@ -83,7 +82,6 @@ private:
 
     Ade7953 &_ade7953;
     AdvancedLogger &_logger;
-    CustomTime &_customTime;
     PubSubClient &_clientMqtt;
     WiFiClientSecure &_net;
     PublishMqtt &_publishMqtt;

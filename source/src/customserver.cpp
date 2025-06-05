@@ -7,18 +7,17 @@ CustomServer::CustomServer(
     AdvancedLogger &logger,
     Led &led,
     Ade7953 &ade7953,
-    CustomTime &customTime,
     CustomWifi &customWifi,
     CustomMqtt &customMqtt,
-    InfluxDbClient &influxDbClient) :
-        _server(server), 
-        _logger(logger), 
-        _led(led), 
-        _ade7953(ade7953), 
-        _customTime(customTime), 
-        _customWifi(customWifi), 
-        _customMqtt(customMqtt),
-        _influxDbClient(influxDbClient) {}
+    InfluxDbClient &influxDbClient,
+    ButtonHandler &buttonHandler) : _server(server),
+                                    _logger(logger),
+                                    _led(led),
+                                    _ade7953(ade7953),
+                                    _customWifi(customWifi),
+                                    _customMqtt(customMqtt),
+                                    _influxDbClient(influxDbClient),
+                                    _buttonHandler(buttonHandler) {}
 
 void CustomServer::begin()
 {
@@ -31,7 +30,7 @@ void CustomServer::begin()
 
     Update.onProgress([](size_t progress, size_t total) {});
     _md5 = "";
-    
+
     // Initialize authentication system
     initializeAuthentication();
 }
@@ -76,12 +75,11 @@ void CustomServer::_serverLog(const char *message, const char *function, LogLeve
 
 void CustomServer::_setHtmlPages()
 {
-    // Login page (no authentication required)   
+    // Login page (no authentication required)
     _server.on("/login", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get login page", TAG, LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", login_html); 
-    });
+        request->send_P(200, "text/html", login_html); });
 
     // Protected HTML pages
     _server.on("/", HTTP_GET, [this](AsyncWebServerRequest *request)
@@ -92,8 +90,7 @@ void CustomServer::_setHtmlPages()
             request->send(response);
             return;        }
         _serverLog("Request to get index page", TAG, LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", index_html); 
-    });
+        request->send_P(200, "text/html", index_html); });
 
     _server.on("/configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -104,8 +101,7 @@ void CustomServer::_setHtmlPages()
             return;
                 }
         _serverLog("Request to get configuration page", TAG, LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", configuration_html); 
-    });
+        request->send_P(200, "text/html", configuration_html); });
 
     _server.on("/calibration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -116,8 +112,7 @@ void CustomServer::_setHtmlPages()
             return;
         }
         _serverLog("Request to get calibration page", TAG, LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", calibration_html); 
-    });
+        request->send_P(200, "text/html", calibration_html); });
 
     _server.on("/channel", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -128,8 +123,7 @@ void CustomServer::_setHtmlPages()
             return;
         }
         _serverLog("Request to get channel page", TAG, LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", channel_html); 
-    });
+        request->send_P(200, "text/html", channel_html); });
 
     _server.on("/info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -140,8 +134,7 @@ void CustomServer::_setHtmlPages()
             return;
         }
         _serverLog("Request to get info page", TAG, LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", info_html); 
-    });
+        request->send_P(200, "text/html", info_html); });
 
     _server.on("/log", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -152,9 +145,8 @@ void CustomServer::_setHtmlPages()
             return;
         }
         _serverLog("Request to get log page", TAG, LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", log_html); 
-    });
-    
+        request->send_P(200, "text/html", log_html); });
+
     _server.on("/update", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         if (_requireAuth(request)) {
@@ -163,62 +155,53 @@ void CustomServer::_setHtmlPages()
             request->send(response);
             return;
         }        _serverLog("Request to get update page", TAG, LogLevel::DEBUG, request);
-        request->send_P(200, "text/html", update_html); 
-    });
+        request->send_P(200, "text/html", update_html); });
 
     // CSS
     _server.on("/css/styles.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {        _serverLog("Request to get custom CSS", TAG, LogLevel::VERBOSE, request);
-        request->send_P(200, "text/css", styles_css); 
-    });
+        request->send_P(200, "text/css", styles_css); });
 
     _server.on("/css/button.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {        _serverLog("Request to get custom CSS", TAG, LogLevel::VERBOSE, request);
-        request->send_P(200, "text/css", button_css); 
-    });
+        request->send_P(200, "text/css", button_css); });
 
     _server.on("/css/section.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {        _serverLog("Request to get custom CSS", TAG, LogLevel::VERBOSE, request);
-        request->send_P(200, "text/css", section_css); 
-    });
+        request->send_P(200, "text/css", section_css); });
 
     _server.on("/css/typography.css", HTTP_GET, [this](AsyncWebServerRequest *request)
                {        _serverLog("Request to get custom CSS", TAG, LogLevel::VERBOSE, request);
-        request->send_P(200, "text/css", typography_css); 
-    });
+        request->send_P(200, "text/css", typography_css); });
 
     // Swagger UI
     _server.on("/swagger-ui", HTTP_GET, [this](AsyncWebServerRequest *request)
                {        _serverLog("Request to get Swagger UI", TAG, LogLevel::VERBOSE, request);
-        request->send_P(200, "text/html", swagger_ui_html); 
-    });
+        request->send_P(200, "text/html", swagger_ui_html); });
 
     _server.on("/swagger.yaml", HTTP_GET, [this](AsyncWebServerRequest *request)
                {        _serverLog("Request to get Swagger YAML", TAG, LogLevel::VERBOSE, request);
-        request->send_P(200, "text/yaml", swagger_yaml); 
-    });// Favicon - SVG format seems to be the only one working with embedded binary data
+        request->send_P(200, "text/yaml", swagger_yaml); }); // Favicon - SVG format seems to be the only one working with embedded binary data
     _server.on("/favicon.svg", HTTP_GET, [this](AsyncWebServerRequest *request)
                {        _serverLog("Request to get favicon", TAG, LogLevel::VERBOSE, request);
-        request->send_P(200, "image/svg+xml", favicon_svg); 
-    });
+        request->send_P(200, "image/svg+xml", favicon_svg); });
 
     // JavaScript files
     _server.on("/html/auth.js", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to get auth JavaScript", TAG, LogLevel::VERBOSE, request);
-        request->send_P(200, "application/javascript", auth_js); 
-    });
+        request->send_P(200, "application/javascript", auth_js); });
 }
 
 void CustomServer::_setOta()
 {
-    _server.on("/do-update", HTTP_POST, [this](AsyncWebServerRequest *request) {
+    _server.on("/do-update", HTTP_POST, [this](AsyncWebServerRequest *request)
+               {
         if (_requireAuth(request)) {
             _sendUnauthorized(request);
             return;
-        }
-    }, [this](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
-               {_handleDoUpdate(request, filename, index, data, len, final);});
+        } }, [this](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
+               { _handleDoUpdate(request, filename, index, data, len, final); });
 
     // This had to be a GET request as otherwise I could not manage to use a query
     // parameter in a POST request. This is a workaround to set the MD5 hash for the
@@ -252,8 +235,7 @@ void CustomServer::_setOta()
         else
         {
             request->send(400, "application/json", "{\"message\":\"Missing MD5 parameter\"}");
-        }
-    });
+        } });
 
     _server.on("/rest/update-status", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -269,8 +251,7 @@ void CustomServer::_setOta()
         }        else
         {
             request->send(200, "application/json", "{\"status\":\"idle\"}");
-        }
-    });
+        } });
 
     _server.on("/rest/update-rollback", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
@@ -295,14 +276,14 @@ void CustomServer::_setOta()
         {
             _logger.error("Rollback not possible. Reason: %s", TAG, Update.errorString());
             request->send(500, "application/json", "{\"message\":\"Rollback not possible\"}");
-        }
-    });
+        } });
 }
 
 void CustomServer::_setRestApi()
 {
     // Authentication endpoints
-    _server.on("/rest/auth/login", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    _server.on("/rest/auth/login", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+               {
         if (index == 0) {
             request->_tempObject = new std::vector<uint8_t>();
         }
@@ -338,10 +319,10 @@ void CustomServer::_setRestApi()
             
             delete buffer;
             request->_tempObject = nullptr;
-        }
-    });
+        } });
 
-    _server.on("/rest/auth/logout", HTTP_POST, [this](AsyncWebServerRequest *request) {
+    _server.on("/rest/auth/logout", HTTP_POST, [this](AsyncWebServerRequest *request)
+               {
         if (_checkAuth(request)) {
             // Extract token and clear it
             if (request->hasHeader("Authorization")) {
@@ -359,10 +340,10 @@ void CustomServer::_setRestApi()
             _serverLog("User logged out", TAG, LogLevel::INFO, request);
         } else {
             _sendUnauthorized(request);
-        }
-    });
+        } });
 
-    _server.on("/rest/auth/change-password", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    _server.on("/rest/auth/change-password", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL, [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+               {
         if (_requireAuth(request)) {
             _sendUnauthorized(request);
             return;
@@ -395,8 +376,9 @@ void CustomServer::_setRestApi()
             
             delete buffer;
             request->_tempObject = nullptr;
-        }
-    });    _server.on("/rest/auth/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        } });
+    _server.on("/rest/auth/status", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
         JsonDocument response;
         bool isAuthenticated = _checkAuth(request);
         response["authenticated"] = isAuthenticated;
@@ -409,8 +391,7 @@ void CustomServer::_setRestApi()
         
         String responseBuffer;
         serializeJson(response, responseBuffer);
-        request->send(200, "application/json", responseBuffer);
-    });
+        request->send(200, "application/json", responseBuffer); });
 
     _server.on("/rest/is-alive", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -531,9 +512,8 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get configuration", TAG, LogLevel::DEBUG, request);
 
-        _serveJsonFile(request, CALIBRATION_JSON_PATH); 
-    });
-    
+        _serveJsonFile(request, CALIBRATION_JSON_PATH); });
+
     _server.on("/rest/calibration-reset", HTTP_POST, [&](AsyncWebServerRequest *request)
                {
         if (_requireAuth(request)) {
@@ -545,9 +525,8 @@ void CustomServer::_setRestApi()
         _ade7953.setDefaultCalibrationValues();
         _ade7953.setDefaultChannelData();
 
-        request->send(200, "application/json", "{\"message\":\"Calibration values reset\"}");
-    });
-    
+        request->send(200, "application/json", "{\"message\":\"Calibration values reset\"}"); });
+
     _server.on("/rest/reset-energy", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         if (_requireAuth(request)) {
@@ -591,9 +570,8 @@ void CustomServer::_setRestApi()
         String _buffer;
         serializeJson(_jsonDocument, _buffer);
 
-        request->send(200, "application/json", _buffer.c_str()); 
-    });
-    
+        request->send(200, "application/json", _buffer.c_str()); });
+
     _server.on("/rest/set-log-level", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         if (_requireAuth(request)) {
@@ -673,9 +651,8 @@ void CustomServer::_setRestApi()
             }
         } else {
             request->send(400, "application/json", "{\"message\":\"Missing parameter. Required: address (int), nBits (int), signed (bool)\"}");
-        } 
-    });
-    
+        } });
+
     _server.on("/rest/ade7953-write-register", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         if (_requireAuth(request)) {
@@ -777,7 +754,6 @@ void CustomServer::_setRestApi()
         TRACE
         request->send(200, "application/json", _buffer.c_str()); });
 
-    
     _server.on("/rest/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
         if (_requireAuth(request)) {
@@ -811,7 +787,6 @@ void CustomServer::_setRestApi()
 
         request->send(200, "application/json", "{\"message\":\"Restarting...\"}");
         setRestartEsp32(TAG, "Request to restart the ESP32 from REST API"); });
-
     _server.on("/rest/reset-wifi", HTTP_POST, [this](AsyncWebServerRequest *request) // TODO: add the possibility to set the new wifi at the same time here
                {
         if (_requireAuth(request)) {
@@ -821,8 +796,36 @@ void CustomServer::_setRestApi()
         _serverLog("Request to erase WiFi credentials", TAG, LogLevel::WARNING, request);
 
         request->send(200, "application/json", "{\"message\":\"Erasing WiFi credentials and restarting...\"}");
-        _customWifi.resetWifi();
-    });
+        _customWifi.resetWifi(); });
+
+    _server.on("/rest/get-button-operation", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get last button operation", TAG, LogLevel::DEBUG, request);
+
+        String operationName = _buttonHandler.getCurrentOperationName();
+        unsigned long operationTimestamp = _buttonHandler.getCurrentOperationTimestamp();
+        
+        String response = "{";
+        response += "\"operationName\":\"" + operationName + "\",";
+        response += "\"operationTimestamp\":" + String(operationTimestamp);
+        if (operationTimestamp > 0) {
+            String timestampStr = CustomTime::timestampFromUnix(operationTimestamp);
+            response += ",\"operationTimestampFormatted\":\"" + timestampStr + "\"";
+        }
+        response += "}";
+        
+        request->send(200, "application/json", response); });
+
+    _server.on("/rest/clear-button-operation", HTTP_POST, [this](AsyncWebServerRequest *request)
+               {
+        if (_requireAuth(request)) {
+            _sendUnauthorized(request);
+            return;
+        }
+        _serverLog("Request to clear last button operation", TAG, LogLevel::DEBUG, request);
+
+        _buttonHandler.clearCurrentOperationName();
+        request->send(200, "application/json", "{\"message\":\"Button operation history cleared\"}"); });
 
     _server.on("/rest/get-custom-mqtt-configuration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -834,10 +837,10 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get InfluxDB configuration", TAG, LogLevel::DEBUG, request);
 
-        _serveJsonFile(request, INFLUXDB_CONFIGURATION_JSON_PATH); 
-    });
-    
-    _server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        _serveJsonFile(request, INFLUXDB_CONFIGURATION_JSON_PATH); });
+
+    _server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+                          {
         // Check authentication for sensitive POST endpoints
         if (request->url().startsWith("/rest/set-") || 
             request->url() == "/rest/upload-file") {
@@ -967,11 +970,10 @@ void CustomServer::_setRestApi()
             request->_tempObject = nullptr;
         } else {
             _serverLog("Getting more data...", TAG, LogLevel::DEBUG, request);
-        }
-    });
-    
+        } });
+
     _server.on("/rest/list-files", HTTP_GET, [this](AsyncWebServerRequest *request)
-    {
+               {
         if (_requireAuth(request)) {
             _sendUnauthorized(request);
             return;
@@ -999,11 +1001,10 @@ void CustomServer::_setRestApi()
         String _buffer;
         serializeJson(_jsonDocument, _buffer);
 
-        request->send(200, "application/json", _buffer.c_str());
-    });
-    
+        request->send(200, "application/json", _buffer.c_str()); });
+
     _server.on("/rest/file/*", HTTP_GET, [this](AsyncWebServerRequest *request)
-    {
+               {
         if (_requireAuth(request)) {
             _sendUnauthorized(request);
             return;
@@ -1036,8 +1037,7 @@ void CustomServer::_setRestApi()
         }
         else {
             request->send(400, "text/plain", "File not found");
-        }
-    });
+        } });
 
     _server.serveStatic("/api-docs", SPIFFS, "/swagger-ui.html");
     _server.serveStatic("/swagger.yaml", SPIFFS, "/swagger.yaml");
@@ -1117,7 +1117,7 @@ void CustomServer::_updateJsonFirmwareStatus(const char *status, const char *rea
 
     _jsonDocument["status"] = status;
     _jsonDocument["reason"] = reason;
-    _jsonDocument["timestamp"] = _customTime.getTimestamp();
+    _jsonDocument["timestamp"] = CustomTime::getTimestamp();
 
     serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);
 }
@@ -1135,7 +1135,8 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 
     TRACE
     _logger.debug("Setting rollback flag to %s", TAG, CrashMonitor::getFirmwareStatusString(NEW_TO_TEST));
-    if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) _logger.error("Failed to set firmware status", TAG);
+    if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST))
+        _logger.error("Failed to set firmware status", TAG);
 
     TRACE
     setRestartEsp32(TAG, "Restart needed after update");
@@ -1160,15 +1161,19 @@ void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *r
     }
 }
 
-void CustomServer::_serveJsonFile(AsyncWebServerRequest *request, const char *filePath) {
+void CustomServer::_serveJsonFile(AsyncWebServerRequest *request, const char *filePath)
+{
     TRACE
 
     File file = SPIFFS.open(filePath, FILE_READ);
 
-    if (file) {
+    if (file)
+    {
         request->send(file, filePath, "application/json");
         file.close();
-    } else {
+    }
+    else
+    {
         request->send(404, "application/json", "{\"error\":\"File not found\"}");
     }
 }
@@ -1176,41 +1181,50 @@ void CustomServer::_serveJsonFile(AsyncWebServerRequest *request, const char *fi
 // Authentication methods
 // -----------------------------
 
-bool CustomServer::_requireAuth(AsyncWebServerRequest *request) {
+bool CustomServer::_requireAuth(AsyncWebServerRequest *request)
+{
     // Allow login endpoint without authentication
-    if (request->url().equals("/rest/auth/login")) {
+    if (request->url().equals("/rest/auth/login"))
+    {
         return false;
     }
-    
+
     return !_checkAuth(request);
 }
 
-bool CustomServer::_checkAuth(AsyncWebServerRequest *request) {
+bool CustomServer::_checkAuth(AsyncWebServerRequest *request)
+{
     // Check for auth token in header
-    if (request->hasHeader("Authorization")) {
+    if (request->hasHeader("Authorization"))
+    {
         String authHeader = request->getHeader("Authorization")->value();
-        if (authHeader.startsWith("Bearer ")) {
+        if (authHeader.startsWith("Bearer "))
+        {
             String token = authHeader.substring(7);
             return validateAuthToken(token);
         }
     }
-    
+
     // Check for auth token in cookie
-    if (request->hasHeader("Cookie")) {
+    if (request->hasHeader("Cookie"))
+    {
         String cookieHeader = request->getHeader("Cookie")->value();
         int tokenStart = cookieHeader.indexOf("auth_token=");
-        if (tokenStart != -1) {
+        if (tokenStart != -1)
+        {
             tokenStart += 11; // Length of "auth_token="
             int tokenEnd = cookieHeader.indexOf(";", tokenStart);
-            if (tokenEnd == -1) tokenEnd = cookieHeader.length();
+            if (tokenEnd == -1)
+                tokenEnd = cookieHeader.length();
             String token = cookieHeader.substring(tokenStart, tokenEnd);
             return validateAuthToken(token);
         }
     }
-    
+
     return false;
 }
 
-void CustomServer::_sendUnauthorized(AsyncWebServerRequest *request) {
+void CustomServer::_sendUnauthorized(AsyncWebServerRequest *request)
+{
     request->send(401, "application/json", "{\"error\":\"Authentication required\"}");
 }

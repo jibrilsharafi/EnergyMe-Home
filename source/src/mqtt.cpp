@@ -87,12 +87,11 @@ void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
 Mqtt::Mqtt(
     Ade7953 &ade7953,
     AdvancedLogger &logger,
-    CustomTime &customTime,
     PubSubClient &clientMqtt,
     WiFiClientSecure &net,
     PublishMqtt &publishMqtt,
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter
-    ) : _ade7953(ade7953), _logger(logger), _customTime(customTime), _clientMqtt(clientMqtt), _net(net), _publishMqtt(publishMqtt), _payloadMeter(payloadMeter) {}
+    ) : _ade7953(ade7953), _logger(logger), _clientMqtt(clientMqtt), _net(net), _publishMqtt(publishMqtt), _payloadMeter(payloadMeter) {}
 
 void Mqtt::begin() {
 #if HAS_SECRETS
@@ -493,7 +492,7 @@ void Mqtt::_publishConnectivity(bool isOnline) {
     _logger.debug("Publishing connectivity to MQTT...", TAG);
 
     JsonDocument _jsonDocument;
-    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
+    _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["connectivity"] = isOnline ? "online" : "offline";
 
     String _connectivityMessage;
@@ -523,7 +522,7 @@ void Mqtt::_publishStatus() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
+    _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["rssi"] = WiFi.RSSI();
     _jsonDocument["uptime"] = millis();
     _jsonDocument["freeHeap"] = ESP.getFreeHeap();
@@ -542,7 +541,7 @@ void Mqtt::_publishMetadata() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
+    _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["firmwareBuildVersion"] = FIRMWARE_BUILD_VERSION;
     _jsonDocument["firmwareBuildDate"] = FIRMWARE_BUILD_DATE;
 
@@ -561,7 +560,7 @@ void Mqtt::_publishChannel() {
     _ade7953.channelDataToJson(_jsonChannelData);
     
     JsonDocument _jsonDocument;
-    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
+    _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["data"] = _jsonChannelData;
 
     String _channelMessage;
@@ -591,7 +590,7 @@ void Mqtt::_publishCrash() {
 
     TRACE
     JsonDocument _jsonDocument;
-    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
+    _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["crashData"] = _jsonDocumentCrash;
 
     TRACE
@@ -614,7 +613,7 @@ void Mqtt::_publishMonitor() {
 
     TRACE
     JsonDocument _jsonDocument;
-    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
+    _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["monitorData"] = _jsonDocumentMonitor;
 
     TRACE
@@ -632,7 +631,7 @@ void Mqtt::_publishGeneralConfiguration() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
+    _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
 
     JsonDocument _jsonDocumentConfiguration;
     generalConfigurationToJson(generalConfiguration, _jsonDocumentConfiguration);
@@ -651,7 +650,7 @@ bool Mqtt::_publishProvisioningRequest() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["unixTime"] = _customTime.getUnixTimeMilliseconds();
+    _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
 
     String _provisioningRequestMessage;

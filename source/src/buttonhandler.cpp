@@ -17,14 +17,22 @@ ButtonHandler::ButtonHandler(
                               _buttonPressStartTime(0),
                               _lastDebounceTime(0),
                               _currentPressType(ButtonPressType::NONE),
-                              _operationInProgress(false)
+                              _operationName(""),
+                              _operationInProgress(false),
+                              _operationTimestamp(0)
 {
 }
 
 void ButtonHandler::begin()
 {
     pinMode(_buttonPin, INPUT_PULLUP);
-    _logger.info("Button handler initialized on GPIO%d", TAG, _buttonPin);
+
+    // Initialize NVS and load last operation if any
+    _preferences.begin("buttonhandler", false);
+    _loadLastOperationFromNVS();
+    _loadOperationTimestampFromNVS();
+
+    _logger.debug("Button handler initialized on GPIO%d", TAG, _buttonPin);
 }
 
 void ButtonHandler::loop()
@@ -78,7 +86,7 @@ void ButtonHandler::_handleButtonPress()
     // Start immediate visual feedback
     _led.block();
     _led.setBrightness(max(_led.getBrightness(), 1)); // Show a faint light even if it is off
-    _led.setWhite(true); // Initial press indication
+    _led.setWhite(true);                              // Initial press indication
 }
 
 void ButtonHandler::_handleButtonRelease()
@@ -122,15 +130,19 @@ void ButtonHandler::_processButtonPressType()
     switch (_currentPressType)
     {
     case ButtonPressType::SINGLE_SHORT:
+        _operationName = "Restart";
         _handleRestart();
         break;
     case ButtonPressType::SINGLE_MEDIUM:
+        _operationName = "Password Reset";
         _handlePasswordReset();
         break;
     case ButtonPressType::SINGLE_LONG:
+        _operationName = "WiFi Reset";
         _handleWifiReset();
         break;
     case ButtonPressType::SINGLE_VERY_LONG:
+        _operationName = "Factory Reset";
         _handleFactoryReset();
         break;
     default:
@@ -141,6 +153,10 @@ void ButtonHandler::_processButtonPressType()
 void ButtonHandler::_handleRestart()
 {
     _logger.info("Restart initiated", TAG);
+    _operationName = "Restart";
+    _operationTimestamp = CustomTime::getUnixTime();
+    _saveLastOperationToNVS();
+    _saveOperationTimestampToNVS();
 
     // Block LED from other operations and set feedback color
     _led.block();
@@ -159,6 +175,10 @@ void ButtonHandler::_handleRestart()
 void ButtonHandler::_handlePasswordReset() // TODO: it would be nice here to report then a feedback on the web interface that the password has been reset
 {
     _logger.debug("Password reset to default initiated", TAG);
+    _operationName = "Password Reset";
+    _operationTimestamp = CustomTime::getUnixTime();
+    _saveLastOperationToNVS();
+    _saveOperationTimestampToNVS();
 
     // Block LED from other operations
     _led.block();
@@ -204,6 +224,10 @@ void ButtonHandler::_handlePasswordReset() // TODO: it would be nice here to rep
 void ButtonHandler::_handleWifiReset()
 {
     _logger.info("WiFi reset initiated", TAG);
+    _operationName = "WiFi Reset";
+    _operationTimestamp = CustomTime::getUnixTime();
+    _saveLastOperationToNVS();
+    _saveOperationTimestampToNVS();
 
     // Block LED from other operations
     _led.block();
@@ -225,6 +249,10 @@ void ButtonHandler::_handleWifiReset()
 void ButtonHandler::_handleFactoryReset()
 {
     _logger.info("Factory reset initiated", TAG);
+    _operationName = "Factory Reset";
+    _operationTimestamp = CustomTime::getUnixTime();
+    _saveLastOperationToNVS();
+    _saveOperationTimestampToNVS();
 
     // Block LED from other operations
     _led.block();
@@ -283,4 +311,43 @@ void ButtonHandler::_updatePressVisualFeedback()
 bool ButtonHandler::_readButton()
 {
     return digitalRead(_buttonPin);
+}
+
+void ButtonHandler::clearCurrentOperationName()
+{
+    _operationName = "";
+    _operationTimestamp = 0;
+    _saveLastOperationToNVS();
+    _saveOperationTimestampToNVS();
+}
+
+void ButtonHandler::_saveLastOperationToNVS()
+{
+    _preferences.putString("lastOperation", _operationName);
+    _logger.debug("Saved last operation to NVS: %s", TAG, _operationName.c_str());
+}
+
+void ButtonHandler::_loadLastOperationFromNVS()
+{
+    _operationName = _preferences.getString("lastOperation", "");
+    if (!_operationName.isEmpty())
+    {
+        _logger.info("Loaded last button operation from NVS: %s", TAG, _operationName.c_str());
+    }
+}
+
+void ButtonHandler::_saveOperationTimestampToNVS()
+{
+    _preferences.putULong("lastOpTimestamp", _operationTimestamp);
+    _logger.debug("Saved operation timestamp to NVS: %lu", TAG, _operationTimestamp);
+}
+
+void ButtonHandler::_loadOperationTimestampFromNVS()
+{
+    _operationTimestamp = _preferences.getULong("lastOpTimestamp", 0);
+    if (_operationTimestamp > 0)
+    {
+        String timestampStr = CustomTime::timestampFromUnix(_operationTimestamp);
+        _logger.info("Loaded operation timestamp from NVS: %s", TAG, timestampStr.c_str());
+    }
 }

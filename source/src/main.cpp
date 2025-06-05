@@ -95,7 +95,6 @@ ButtonHandler buttonHandler(
 CustomTime customTime(
   NTP_SERVER,
   TIME_SYNC_INTERVAL,
-  TIMESTAMP_FORMAT,
   generalConfiguration,
   logger
 );
@@ -107,7 +106,6 @@ Ade7953 ade7953(
   MOSI_PIN,
   ADE7953_RESET_PIN,
   logger,
-  customTime,
   mainFlags
 );
 
@@ -139,7 +137,6 @@ InfluxDbClient influxDbClient(
 Mqtt mqtt(
   ade7953,
   logger,
-  customTime,
   clientMqtt,
   net,
   publishMqtt,
@@ -151,10 +148,10 @@ CustomServer customServer(
   logger,
   led,
   ade7953,
-  customTime,
   customWifi,
   customMqtt,
-  influxDbClient
+  influxDbClient,
+  buttonHandler
 );
 
 // Main functions
