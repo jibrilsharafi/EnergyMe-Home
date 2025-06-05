@@ -21,9 +21,9 @@ enum class ButtonPressType {
 
 /**
  * Button handler class for managing critical functionality control
- * via GPIO0 button with comprehensive LED feedback system
+ * via GPIO0 button with immediate visual feedback during press
  */
-class ButtonHandler {
+class ButtonHandler { // TODO: add this to the readme
 public:
     /**
      * Constructor
@@ -80,11 +80,7 @@ private:
     // Operation state
     ButtonPressType _currentPressType;
     bool _operationInProgress;
-    
-    // LED feedback state
-    bool _ledFeedbackActive;
-    unsigned long _lastLedToggle;
-    bool _ledState;
+  
       // Private methods
     void _updateButtonState();
     void _handleButtonPress();
@@ -97,12 +93,7 @@ private:
     void _handlePasswordReset();
     void _handleWifiReset();
     void _handleFactoryReset();
-    
-    // LED feedback methods
-    void _startLedFeedback(ButtonPressType pressType);
-    void _updateLedFeedback();
-    void _stopLedFeedback();
-    void _blinkLed(unsigned long interval);
+  
     
     // Utility methods
     bool _readButton();

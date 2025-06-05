@@ -17,10 +17,7 @@ ButtonHandler::ButtonHandler(
                               _buttonPressStartTime(0),
                               _lastDebounceTime(0),
                               _currentPressType(ButtonPressType::NONE),
-                              _operationInProgress(false),
-                              _ledFeedbackActive(false),
-                              _lastLedToggle(0),
-                              _ledState(false)
+                              _operationInProgress(false)
 {
 }
 
@@ -33,7 +30,6 @@ void ButtonHandler::begin()
 void ButtonHandler::loop()
 {
     _updateButtonState();
-    _updateLedFeedback(); // TODO: remove this and related as the operations are so quick (and have their own led control) that no blink is actually needed
     _updatePressVisualFeedback();
 
     // Handle ongoing operations
@@ -80,8 +76,9 @@ void ButtonHandler::_handleButtonPress()
     _logger.debug("Button pressed", TAG);
 
     // Start immediate visual feedback
-    _led.block();       // Block LED from other operations
-    _led.setBlue(true); // Initial press indication
+    _led.block();
+    _led.setBrightness(max(_led.getBrightness(), 1)); // Show a faint light even if it is off
+    _led.setWhite(true); // Initial press indication
 }
 
 void ButtonHandler::_handleButtonRelease()
@@ -118,10 +115,6 @@ void ButtonHandler::_handleButtonRelease()
     }
 
     _led.unblock(); // Unblock LED for other operations
-    if (_operationInProgress)
-    {
-        _startLedFeedback(_currentPressType);
-    }
 }
 
 void ButtonHandler::_processButtonPressType()
@@ -155,7 +148,8 @@ void ButtonHandler::_handleRestart()
 
     setRestartEsp32(TAG, "Restart via button");
 
-    // Unblock LED before restart (won't matter much due to restart)
+    // Anything below here is useless like a chocolate teapot
+    // -----------------------------------------------------
     _led.unblock();
 
     _operationInProgress = false;
@@ -168,26 +162,40 @@ void ButtonHandler::_handlePasswordReset() // TODO: it would be nice here to rep
 
     // Block LED from other operations
     _led.block();
-    _led.setPurple(true);
+    _led.setYellow(true);
 
     // Reset password to default
     if (setAuthPassword(DEFAULT_WEB_PASSWORD))
     {
         _logger.warning("Password reset to default successfully", TAG);
-        // Success - Green
-        _led.setGreen(true);
-        delay(1000); // Brief success indication
+
+        // Success - Green - 3 slow blinks green
+        for (int i = 0; i < 3; ++i)
+        {
+            _led.setGreen(true);
+            delay(500); // Brief success indication
+            _led.setOff(true);
+            delay(500);
+        }
     }
     else
     {
         _logger.error("Failed to reset password to default", TAG);
-        _led.setRed(true);
-        delay(1000); // Brief error indication
+
+        // Failure - Red - 3 slow blinks red
+        for (int i = 0; i < 3; ++i)
+        {
+            _led.setRed(true); // Indicate failure
+            delay(500);
+            _led.setOff(true);
+            delay(500);
+        }
     }
 
     // Unblock LED
     _led.setOff(true);
     _led.unblock();
+    delay(1000); // Ensure proper feedback to the user
 
     _operationInProgress = false;
     _currentPressType = ButtonPressType::NONE;
@@ -207,10 +215,6 @@ void ButtonHandler::_handleWifiReset()
     // -----------------------------------------------------
     _logger.info("WiFi reset completed successfully", TAG);
 
-    // Success - Green
-    _led.setGreen(true);
-    delay(1000); // Brief success indication
-
     // Unblock LED
     _led.unblock();
 
@@ -224,7 +228,7 @@ void ButtonHandler::_handleFactoryReset()
 
     // Block LED from other operations
     _led.block();
-    _led.setWhite(true);
+    _led.setRed(true);
 
     factoryReset(); // Format and restart
 
@@ -232,51 +236,11 @@ void ButtonHandler::_handleFactoryReset()
     // -----------------------------------------------------
     _logger.info("Factory reset initiated - device will restart", TAG);
 
-    // Success indication - won't be seen due to restart
-    _led.setGreen(true);
-
     // Unblock LED (won't matter due to restart)
     _led.unblock();
 
     _operationInProgress = false;
     _currentPressType = ButtonPressType::NONE;
-}
-
-void ButtonHandler::_startLedFeedback(ButtonPressType pressType)
-{
-    _ledFeedbackActive = true;
-    _lastLedToggle = millis();
-    _ledState = false;
-    _led.setOff(true); // Start with LED off
-    _led.block();      // Block LED from other operations
-}
-
-void ButtonHandler::_updateLedFeedback()
-{
-    if (!_ledFeedbackActive || !_operationInProgress)
-    {
-        return;
-    }
-
-    unsigned long currentTime = millis();
-    unsigned long interval = BUTTON_FEEDBACK_BLINK_SLOW;
-
-    // Adjust blink speed based on operation type
-    switch (_currentPressType)
-    {
-    case ButtonPressType::SINGLE_MEDIUM:
-    case ButtonPressType::SINGLE_LONG:
-        interval = BUTTON_FEEDBACK_BLINK_SLOW;
-        break;
-    case ButtonPressType::SINGLE_VERY_LONG:
-        interval = BUTTON_FEEDBACK_BLINK_FAST;
-        break;
-    default:
-        interval = BUTTON_FEEDBACK_BLINK_SLOW;
-        break;
-    }
-
-    _blinkLed(interval);
 }
 
 void ButtonHandler::_updatePressVisualFeedback()
@@ -312,34 +276,7 @@ void ButtonHandler::_updatePressVisualFeedback()
     }
     else
     {
-        _led.setBlue(true); // Initial press indication
-    }
-}
-
-void ButtonHandler::_stopLedFeedback()
-{
-    _ledFeedbackActive = false;
-    _led.setOff(true);
-    _led.unblock(); // Unblock LED for other operations
-}
-
-void ButtonHandler::_blinkLed(unsigned long interval)
-{
-    unsigned long currentTime = millis();
-
-    if (currentTime - _lastLedToggle >= interval)
-    {
-        _ledState = !_ledState;
-        _lastLedToggle = currentTime;
-
-        if (_ledState)
-        {
-            _led.setYellow(true); // Default feedback color
-        }
-        else
-        {
-            _led.setOff(true);
-        }
+        _led.setWhite(true); // Initial press indication
     }
 }
 

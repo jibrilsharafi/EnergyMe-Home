@@ -369,7 +369,7 @@ void restartEsp32() {
     TRACE
     led.block();
     led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
-    led.setRed(true);
+    led.setWhite(true);
 
     TRACE
     clearAllAuthTokens();

@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "08"
-#define FIRMWARE_BUILD_VERSION_PATCH "05"
+#define FIRMWARE_BUILD_VERSION_PATCH "06"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -118,11 +118,6 @@
 // Button press patterns
 #define BUTTON_DOUBLE_PRESS_INTERVAL 500 // Maximum time between presses for double press detection
 #define BUTTON_TRIPLE_PRESS_INTERVAL 500 // Maximum time between presses for triple press detection
-
-// LED feedback patterns for button operations
-#define BUTTON_FEEDBACK_BLINK_FAST 100 // Fast blink for active operations
-#define BUTTON_FEEDBACK_BLINK_SLOW 500 // Slow blink for waiting states
-#define BUTTON_FEEDBACK_PULSE_DURATION 2000 // Duration for status indication pulses
 
 // WiFi
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
