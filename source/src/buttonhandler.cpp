@@ -172,7 +172,7 @@ void ButtonHandler::_handleRestart()
     _currentPressType = ButtonPressType::NONE;
 }
 
-void ButtonHandler::_handlePasswordReset() // TODO: it would be nice here to report then a feedback on the web interface that the password has been reset
+void ButtonHandler::_handlePasswordReset()
 {
     _logger.debug("Password reset to default initiated", TAG);
     _operationName = "Password Reset";

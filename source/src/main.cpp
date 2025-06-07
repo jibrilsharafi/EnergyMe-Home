@@ -167,7 +167,7 @@ void callbackLogToMqtt(
     const char* message
 ) {
     if (
-      (strcmp(level, "debug") == 0 && !debugFlagsRtc.enableMqttDebugLogging) ||
+      (strcmp(level, "debug") == 0 && !debugFlagsRtc.enableMqttDebugLogging) || // Only send debug logs if MQTT debug logging is enabled
       (strcmp(level, "verbose") == 0) // Never send verbose logs via MQTT
     ) {return; }
 

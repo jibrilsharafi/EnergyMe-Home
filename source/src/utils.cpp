@@ -848,7 +848,7 @@ void clearCertificates() {
 // Authentication functions
 // -----------------------------
 
-void initializeAuthentication() {
+void initializeAuthentication() { // TODO: do we really need the use of preferences if we clear all auth tokens on reboot?
     logger.debug("Initializing authentication...", TAG);
     
     Preferences preferences;

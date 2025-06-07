@@ -448,12 +448,28 @@
             document.getElementById("setLogLevel").innerHTML = "Setting...";
             document.getElementById("setLogLevel").disabled = true;
 
-            var logLevelPayload = {
-                printLogLevel: document.getElementById("printLogLevel").value.toUpperCase(),
-                saveLogLevel: document.getElementById("saveLogLevel").value.toUpperCase()
+            var printLogLevel = document.getElementById("printLogLevel").value.toUpperCase();
+            var saveLogLevel = document.getElementById("saveLogLevel").value.toUpperCase();
+
+            // Convert log level names to integers
+            var logLevelMap = {
+                "VERBOSE": 0,
+                "DEBUG": 1,
+                "INFO": 2,
+                "WARNING": 3,
+                "ERROR": 4,
+                "FATAL": 5
             };
 
-            authAPI.post("/rest/set-log-level", logLevelPayload)
+            var printLevel = logLevelMap[printLogLevel];
+            var saveLevel = logLevelMap[saveLogLevel];
+
+            // Set print log level first
+            authAPI.post(`/rest/set-log-level?level=${printLevel}&type=print`)
+                .then(response => {
+                    // Set save log level second
+                    return authAPI.post(`/rest/set-log-level?level=${saveLevel}&type=save`);
+                })
                 .then(response => {
                     document.getElementById("setLogLevel").innerHTML = "Set success!";
                     setTimeout(function () {
