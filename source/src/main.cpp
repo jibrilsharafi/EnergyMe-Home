@@ -266,10 +266,10 @@ void setup() {
     logger.begin();
     logger.setCallback(callbackLogToMqtt);
 
-    logger.info("Booting...", TAG);  
+    logger.info("Guess who's back, back again! EnergyMe - Home is starting up...", TAG);
     logger.info("EnergyMe - Home | Build version: %s | Build date: %s %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
 
-    logger.info("Setting up crash monitor...", TAG);
+    logger.debug("Setting up crash monitor...", TAG);
     crashMonitor.begin();
     logger.info("Crash monitor setup done", TAG);
 
@@ -295,12 +295,12 @@ void setup() {
     led.setCyan();
 
     TRACE
-    logger.info("Checking for missing files...", TAG);
+    logger.debug("Checking for missing files...", TAG);
     auto missingFiles = checkMissingFiles();
     if (!missingFiles.empty()) {
         led.setOrange();
-        logger.warning("Missing files detected. Creating default files for missing files...", TAG);
-        
+        logger.warning("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
+
         TRACE
         createDefaultFilesForMissingFiles(missingFiles);
 
@@ -310,7 +310,7 @@ void setup() {
     }
 
     TRACE
-    logger.info("Fetching general configuration from SPIFFS...", TAG);
+    logger.debug("Fetching general configuration from SPIFFS...", TAG);
     if (!setGeneralConfigurationFromSpiffs()) {
         logger.warning("Failed to load configuration from SPIFFS. Using default values.", TAG);
     } else {
@@ -320,15 +320,15 @@ void setup() {
     led.setPurple();
     
     TRACE
-    logger.info("Setting up multiplexer...", TAG);
+    logger.debug("Setting up multiplexer...", TAG);
     multiplexer.begin();
     logger.info("Multiplexer setup done", TAG);
 
     TRACE
-    logger.info("Setting up ADE7953...", TAG);
+    logger.debug("Setting up ADE7953...", TAG);
     attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING); // This has to be done before ade7953.begin() 
     if (!ade7953.begin()) {
-      logger.fatal("ADE7953 initialization failed!", TAG);
+      logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG);
     } else {
       logger.info("ADE7953 setup done", TAG);
     }
@@ -336,38 +336,38 @@ void setup() {
     led.setBlue();    
     
     TRACE
-    logger.info("Setting up WiFi...", TAG);
+    logger.debug("Setting up WiFi...", TAG);
     customWifi.begin();
     logger.info("WiFi setup done", TAG);
 
     TRACE
-    logger.info("Setting up button handler...", TAG);
+    logger.debug("Setting up button handler...", TAG);
     buttonHandler.begin();
     logger.info("Button handler setup done", TAG);
 
     TRACE
-    logger.info("Syncing time...", TAG);
+    logger.debug("Syncing time...", TAG);
     updateTimezone();
     if (!customTime.begin()) {
       logger.error("Initial time sync failed! Will retry later.", TAG);
     } else {
-        logger.info("Time synced", TAG);
+      logger.info("Time synced. We're on time pal!", TAG);
     }
     
     TRACE
-    logger.info("Setting up server...", TAG);
+    logger.debug("Setting up server...", TAG);
     customServer.begin();
     logger.info("Server setup done", TAG);
 
     TRACE
-    logger.info("Setting up Modbus TCP...", TAG);
+    logger.debug("Setting up Modbus TCP...", TAG);
     modbusTcp.begin();
     logger.info("Modbus TCP setup done", TAG);
 
     led.setGreen();
 
     TRACE
-    logger.info("Setup done", TAG);
+    logger.info("Setup done! Let's get this energetic party started!", TAG);
 }
 
 void loop() {
@@ -474,9 +474,6 @@ void loop() {
         logger.clearLog();
         logger.warning("Log cleared due to low memory", TAG);
     }
-
-    TRACE
-    checkIfRestartEsp32Required();
     
     TRACE
     if (debugFlagsRtc.enableMqttDebugLogging && millis() >= debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
@@ -487,6 +484,9 @@ void loop() {
         debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
         debugFlagsRtc.signature = 0; 
     }
+
+    TRACE
+    checkIfRestartEsp32Required();
 
     TRACE
     led.setOff();

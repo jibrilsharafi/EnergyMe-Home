@@ -1,5 +1,4 @@
 #include "mqtt.h"
-#include "structs.h" // Ensure structs.h is included for DebugFlagsRtc and DEBUG_FLAGS_RTC_SIGNATURE
 
 static const char *TAG = "mqtt";
 
@@ -95,7 +94,7 @@ Mqtt::Mqtt(
 
 void Mqtt::begin() {
 #if HAS_SECRETS
-    _logger.info("Setting up MQTT...", TAG);
+    _logger.debug("Setting up MQTT...", TAG);
 
     _deviceId = getDeviceId();
 
@@ -127,12 +126,6 @@ void Mqtt::begin() {
     _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
 
     _logger.info("MQTT setup complete", TAG);
-
-    TRACE
-    _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
-    _mqttConnectionAttempt = 0;
-    _connectMqtt();
-
     _isSetupDone = true;
 #else
     _logger.info("MQTT setup skipped - no secrets available", TAG);
@@ -155,6 +148,8 @@ void Mqtt::loop() {
         _clientMqtt.loop();
         return;
     }
+
+    if (!_isSetupDone) {begin(); }
 
     TRACE
     if (!generalConfiguration.isCloudServicesEnabled || restartConfiguration.isRequired) {
@@ -183,12 +178,11 @@ void Mqtt::loop() {
         return;
     }
 
-    if (!_isSetupDone) {begin(); return;}
-
+    TRACE
     if (!_clientMqtt.connected()) {
         // Use exponential backoff timing
         if (millis() >= _nextMqttConnectionAttemptMillis) {
-            _logger.info("MQTT client not connected. Attempting to reconnect...", TAG);
+            _logger.debug("MQTT client not connected. Attempting to reconnect...", TAG);
             _connectMqtt(); // _connectMqtt now handles setting the next attempt time
         }
     } else {
@@ -199,6 +193,7 @@ void Mqtt::loop() {
         }
     }
 
+    TRACE
     // Only loop if connected
     if (_clientMqtt.connected()) {
         TRACE

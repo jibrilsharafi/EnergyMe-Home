@@ -837,12 +837,15 @@ void clearCertificates() {
     logger.debug("Clearing certificates...", TAG);
 
     Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) logger.error("Failed to open preferences", TAG);
+    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) {
+        logger.error("Failed to open preferences", TAG);
+        return;
+    }
 
     preferences.clear();
     preferences.end();
 
-    logger.warning("Certificates cleared", TAG);
+    logger.warning("Certificates for cloud services cleared", TAG);
 }
 
 // Authentication functions

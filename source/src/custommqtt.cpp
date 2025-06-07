@@ -37,19 +37,23 @@ void CustomMqtt::loop()
     if (!WiFi.isConnected()) return;
 
     // Ensure configuration is loaded from SPIFFS on first run
+    TRACE
     if (!_isSetupDone) { begin(); }
     
+    TRACE
     if (!_customMqttConfiguration.enabled)
     {
         // If MQTT was previously connected but is now disabled, disconnect
         if (_customClientMqtt.state() >= MQTT_CONNECTED) // Anything above 0 is connected
         {
+            TRACE
             _logger.info("Custom MQTT is disabled. Disconnecting...", TAG);
             _customClientMqtt.disconnect();
         }
         return;
     }
 
+    TRACE
     if (!_customClientMqtt.connected())
     {
         // Use exponential backoff timing
@@ -65,12 +69,15 @@ void CustomMqtt::loop()
         }
     }
 
+    TRACE
     // Only loop and publish if connected
     if (_customClientMqtt.connected()) {
+        TRACE
         _customClientMqtt.loop();
 
         if ((millis() - _lastMillisMeterPublish) > _customMqttConfiguration.frequency * 1000)
         {
+            TRACE
             _lastMillisMeterPublish = millis();
             _publishMeter();
         }

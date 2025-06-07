@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "09"
-#define FIRMWARE_BUILD_VERSION_PATCH "01"
+#define FIRMWARE_BUILD_VERSION_PATCH "02"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -51,7 +51,7 @@
 #define PREFERENCES_DATA_KEY "crashdata"
 #define CRASH_SIGNATURE 0xDEADBEEF
 #define MAX_BREADCRUMBS 32
-#define WATCHDOG_TIMER (30 * 1000)
+#define WATCHDOG_TIMER (30 * 1000) // If the esp_task_wdt_reset() is not called within this time, the ESP32 panic
 #define PREFERENCES_FIRMWARE_STATUS_KEY "fw_status"
 #define ROLLBACK_TESTING_TIMEOUT (60 * 1000) // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
 #define MAX_CRASH_COUNT 10 // Maximum amount of consecutive crashes before triggering a rollback
