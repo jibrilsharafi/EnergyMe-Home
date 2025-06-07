@@ -267,6 +267,8 @@
 #define VALIDATE_POWER_FACTOR_MIN -1.0 // Any power factor below this value is discarded
 #define VALIDATE_POWER_FACTOR_MAX 1.0 // Any power factor above this value is discarded
 
+#define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
+
 // Check for incorrect readings
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0 // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.05 // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded

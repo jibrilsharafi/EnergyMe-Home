@@ -38,8 +38,8 @@ public:
 
     bool isLinecycFinished();
 
-    long readRegister(long registerAddress, int nBits, bool signedData);
-    void writeRegister(long registerAddress, int nBits, long data);
+    long readRegister(long registerAddress, int nBits, bool signedData, bool verifyLastCommunication = true);
+    void writeRegister(long registerAddress, int nBits, long data, bool verifyLastCommunication = true);
 
     float getAggregatedActivePower(bool includeChannel0 = true);
     float getAggregatedReactivePower(bool includeChannel0 = true);
@@ -100,6 +100,8 @@ private:
     void _setEnergyFromSpiffs();
     void _saveEnergyToSpiffs();
     void _saveDailyEnergyToSpiffs();
+    
+    bool _verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool wasWrite);
     
     long _readApparentPowerInstantaneous(int channel);
     long _readActivePowerInstantaneous(int channel);

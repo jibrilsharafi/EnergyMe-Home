@@ -1333,9 +1333,10 @@ bool Ade7953::isLinecycFinished() {
  * @param registerAddress The address of the register to read from. Expected range: 0 to 65535
  * @param numBits The number of bits to read from the register. Expected values: 8, 16, 24 or 32.
  * @param isSignedData Flag indicating whether the data is signed (true) or unsigned (false).
+ * @param verifyLastCommunication Flag indicating whether to verify the last communication.
  * @return The value read from the register.
  */
-long Ade7953::readRegister(long registerAddress, int nBits, bool signedData) {
+long Ade7953::readRegister(long registerAddress, int nBits, bool signedData, bool verifyLastCommunication) {
     digitalWrite(_ssPin, LOW);
 
     SPI.transfer(registerAddress >> 8);
@@ -1366,6 +1367,11 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData) {
         nBits
     );
 
+    if (!verifyLastCommunication || !_verifyLastCommunication(registerAddress, nBits, _long_response, false)) {
+        _logger.warning("Failed to verify last communication for register %ld", TAG, registerAddress);
+        return INVALID_SPI_READ_WRITE; // Return an invalid value if verification fails
+    }
+
     return _long_response;
 }
 
@@ -1375,8 +1381,9 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData) {
  * @param registerAddress The address of the register to write to. (16-bit value)
  * @param nBits The number of bits in the register. (8, 16, 24, or 32)
  * @param data The data to write to the register. (nBits-bit value)
+ * @param verifyLastCommunication Flag indicating whether to verify the last communication.
  */
-void Ade7953::writeRegister(long registerAddress, int nBits, long data) {
+void Ade7953::writeRegister(long registerAddress, int nBits, long data, bool verifyLastCommunication) {
     _logger.debug(
         "Writing %ld to register %ld with %d bits",
         TAG,
@@ -1408,6 +1415,56 @@ void Ade7953::writeRegister(long registerAddress, int nBits, long data) {
     }
 
     digitalWrite(_ssPin, HIGH);
+
+    if (!verifyLastCommunication || !_verifyLastCommunication(registerAddress, nBits, data, true)) {
+        _logger.warning("Failed to verify last communication for register %ld", TAG, registerAddress);
+    }
+}
+
+bool Ade7953::_verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool wasWrite) {    
+    
+    long lastAddress = readRegister(LAST_ADD_16, 16, false, false);
+    if (lastAddress != expectedAddress) {
+        _logger.warning("Last address %ld does not match expected %ld", TAG, lastAddress, expectedAddress);
+        return false;
+    }
+    
+    long lastOp = readRegister(LAST_OP_8, 8, false, false);
+    if (wasWrite && lastOp != LAST_OP_WRITE_VALUE) {
+        _logger.warning("Last operation was not a write (expected %d, got %ld)", TAG, LAST_OP_WRITE_VALUE, lastOp);
+        return false;
+    } else if (!wasWrite && lastOp != LAST_OP_READ_VALUE) {
+        _logger.warning("Last operation was not a read (expected %d, got %ld)", TAG, LAST_OP_READ_VALUE, lastOp);
+        return false;
+    }    
+    
+    // Select the appropriate LAST_RWDATA register based on the bit size
+    long dataRegister;
+    int dataRegisterBits;
+    bool dataIsSigned = false; // LAST_RWDATA registers are always unsigned according to datasheet
+    
+    if (expectedBits == 8) {
+        dataRegister = LAST_RWDATA_8;
+        dataRegisterBits = 8;
+    } else if (expectedBits == 16) {
+        dataRegister = LAST_RWDATA_16;
+        dataRegisterBits = 16;
+    } else if (expectedBits == 24) {
+        dataRegister = LAST_RWDATA_24;
+        dataRegisterBits = 24;
+    } else { // 32 bits or any other value defaults to 32-bit register
+        dataRegister = LAST_RWDATA_32;
+        dataRegisterBits = 32;
+    }
+    
+    long lastData = readRegister(dataRegister, dataRegisterBits, dataIsSigned, false);
+    if (lastData != expectedData) {
+        _logger.warning("Last data %ld does not match expected %ld", TAG, lastData, expectedData);
+        return false;
+    }
+
+    _logger.verbose("Last communication verified successfully", TAG);
+    return true;
 }
 
 // Helper functions

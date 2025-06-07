@@ -435,3 +435,7 @@ Setting Reactive Energy Accumulation Mode (Current Channel B)
 #define WRITE_TRANSFER 0x00 // Part of the address to write a register
 
 //*******************************************************************************************
+
+// Communication verification constants
+#define LAST_OP_READ_VALUE 0x35    // Value stored in LAST_OP register after a read operation
+#define LAST_OP_WRITE_VALUE 0xCA   // Value stored in LAST_OP register after a write operation
