@@ -23,12 +23,15 @@ public:
         int misoPin,
         int mosiPin,
         int resetPin,
+        int interruptPin,
         AdvancedLogger &logger,
         MainFlags &mainFlags
     );
 
     bool begin();
     void loop();
+    
+    void handleInterrupt();
 
     bool readMeterValues(int channel, unsigned long long linecycUnixTime);
     void purgeEnergyRegister(int channel);
@@ -74,6 +77,8 @@ private:
 
     void _setDefaultParameters();
 
+    void _setupInterrupts();
+    
     void _setConfigurationFromSpiffs();
     void _applyConfiguration(JsonDocument &jsonDocument);
     bool _validateConfigurationJson(JsonDocument &jsonDocument);
@@ -126,6 +131,7 @@ private:
     int _misoPin;
     int _mosiPin;
     int _resetPin;
+    int _interruptPin;
 
     unsigned int _sampleTime;
 

@@ -6,8 +6,8 @@
 
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
-#define FIRMWARE_BUILD_VERSION_MINOR "08"
-#define FIRMWARE_BUILD_VERSION_PATCH "08"
+#define FIRMWARE_BUILD_VERSION_MINOR "09"
+#define FIRMWARE_BUILD_VERSION_PATCH "00"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -248,6 +248,10 @@
 #define DEFAULT_PHCAL 10 // 0.02°/LSB, indicating a phase calibration of 0.2° which is needed for CTs
 #define DEFAULT_SAMPLE_TIME 200 // 200 ms is the minimum time required to settle the ADE7953 channel readings (needed as the multiplexer constantly switches)
 
+// Interrupt configuration for ADE7953
+#define DEFAULT_IRQENA_REGISTER 0b000101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) for line cycle end detection
+#define IRQENA_CYCEND_BIT 18 // Bit position for CYCEND interrupt
+
 // Fixed conversion values
 #define POWER_FACTOR_CONVERSION_FACTOR 1.0 / 32768.0 // PF/LSB
 #define ANGLE_CONVERSION_FACTOR 360.0 * 50.0 / 223000.0 // 0.0807 °/LSB
@@ -299,6 +303,7 @@
 #define MQTT_TOPIC_CHANNEL "channel"
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_MONITOR "monitor"
+#define MQTT_TOPIC_LOG "log"
 #define MQTT_TOPIC_GENERAL_CONFIGURATION "general-configuration"
 #define MQTT_TOPIC_CONNECTIVITY "connectivity"
 #define MQTT_TOPIC_PROVISIONING_REQUEST "provisioning/request"

@@ -8,12 +8,14 @@ Ade7953::Ade7953(
     int misoPin,
     int mosiPin,
     int resetPin,
+    int interruptPin,
     AdvancedLogger &logger,
     MainFlags &mainFlags) : _ssPin(ssPin),
                             _sckPin(sckPin),
                             _misoPin(misoPin),
                             _mosiPin(mosiPin),
                             _resetPin(resetPin),
+                            _interruptPin(interruptPin),
                             _logger(logger),
                             _mainFlags(mainFlags)
 {
@@ -80,6 +82,7 @@ void Ade7953::_setHardwarePins() {
     pinMode(_misoPin, INPUT);
     pinMode(_mosiPin, OUTPUT);
     pinMode(_resetPin, OUTPUT);
+    pinMode(_interruptPin, INPUT);
 
     SPI.begin(_sckPin, _misoPin, _mosiPin, _ssPin);
     SPI.setClockDivider(SPI_CLOCK_DIV64); // 64div -> 250kHz on 16MHz clock, but on 80MHz clock it's 1.25MHz. Max Ade7953 clock is 2MHz
@@ -105,6 +108,8 @@ void Ade7953::_setDefaultParameters()
     writeRegister(LCYCMODE_8, 8, DEFAULT_LCYCMODE_REGISTER);
 
     writeRegister(CONFIG_16, 16, DEFAULT_CONFIG_REGISTER);
+    
+    _setupInterrupts();
 }
 
 /*
@@ -1235,10 +1240,8 @@ long Ade7953::_readReactivePowerInstantaneous(int channel) {
 /*
 Reads the actual instantaneous current. 
 
-This allows you to
-see the actual sinusoidal waveform, so both positive and
-negative values. At full scale (so 500 mV), the value
-returned is 9032007d.
+This allows you see the actual sinusoidal waveform, so both positive and 
+negative values. At full scale (so 500 mV), the value returned is 9032007d.
 
 @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
 @return The actual instantaneous current in LSB.
@@ -1456,4 +1459,33 @@ float Ade7953::getAggregatedPowerFactor(bool includeChannel0) {
     float _aggregatedApparentPower = getAggregatedApparentPower(includeChannel0);
 
     return _aggregatedApparentPower > 0 ? _aggregatedActivePower / _aggregatedApparentPower : 0.0f;
+}
+
+// Interrupt handling methods
+// --------------------
+
+void Ade7953::_setupInterrupts() {
+    _logger.debug("Setting up ADE7953 interrupts...", TAG);
+    
+    // Enable only CYCEND interrupt for line cycle end detection (bit 18)
+    writeRegister(IRQENA_32, 32, DEFAULT_IRQENA_REGISTER);
+    
+    // Clear any existing interrupt status
+    readRegister(RSTIRQSTATA_32, 32, false);
+    readRegister(RSTIRQSTATB_32, 32, false);
+
+    _logger.debug("ADE7953 interrupts enabled: CYCEND, RESET", TAG);
+}
+
+void Ade7953::handleInterrupt() {
+    _logger.debug("ADE7953 interrupt triggered", TAG);
+    
+    // Read interrupt status for both channels
+    long statusA = readRegister(RSTIRQSTATA_32, 32, false);
+    long statusB = readRegister(RSTIRQSTATB_32, 32, false);
+    
+    // Check for CYCEND interrupt (bit 18) - Line cycle end
+    if (statusA & (1 << IRQENA_CYCEND_BIT)) {
+        _logger.debug("Line cycle end detected on Channel A", TAG);
+    }
 }
