@@ -25,12 +25,8 @@ void CustomMqtt::begin()
 
     _logger.debug("MQTT setup complete", TAG);
 
-    if (_customMqttConfiguration.enabled) {
-        _isSetupDone = true;
-        _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
-        _mqttConnectionAttempt = 0;
-        _connectMqtt(); // Initial connection attempt
-    }
+    // Mark setup as done regardless of enabled state - configuration has been loaded
+    _isSetupDone = true;
 }
 
 void CustomMqtt::loop()
@@ -40,24 +36,25 @@ void CustomMqtt::loop()
 
     if (!WiFi.isConnected()) return;
 
+    // Ensure configuration is loaded from SPIFFS on first run
+    if (!_isSetupDone) { begin(); }
+    
     if (!_customMqttConfiguration.enabled)
     {
-        if (_isSetupDone)
+        // If MQTT was previously connected but is now disabled, disconnect
+        if (_customClientMqtt.state() >= MQTT_CONNECTED) // Anything above 0 is connected
         {
-            _logger.info("Disconnecting custom MQTT", TAG);
+            _logger.info("Custom MQTT is disabled. Disconnecting...", TAG);
             _customClientMqtt.disconnect();
-            _isSetupDone = false;
         }
         return;
     }
-
-    if (!_isSetupDone) { begin(); return; }
 
     if (!_customClientMqtt.connected())
     {
         // Use exponential backoff timing
         if (millis() >= _nextMqttConnectionAttemptMillis) {
-            _logger.info("Custom MQTT client not connected. Attempting to reconnect...", TAG);
+            _logger.debug("Custom MQTT client not connected. Attempting to reconnect...", TAG);
             _connectMqtt(); // _connectMqtt now handles setting the next attempt time
         }
     } else {
@@ -112,17 +109,17 @@ bool CustomMqtt::setConfiguration(JsonDocument &jsonDocument)
     _customMqttConfiguration.frequency = jsonDocument["frequency"].as<int>();
     _customMqttConfiguration.useCredentials = jsonDocument["useCredentials"].as<bool>();
     _customMqttConfiguration.username = jsonDocument["username"].as<String>();
-    _customMqttConfiguration.password = jsonDocument["password"].as<String>();
-
-    _saveConfigurationToSpiffs();
-    
-    _customClientMqtt.disconnect();
-    _customClientMqtt.setServer(_customMqttConfiguration.server.c_str(), _customMqttConfiguration.port);
-
-    _mqttConnectionAttempt = 0;
-    _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
+    _customMqttConfiguration.password = jsonDocument["password"].as<String>();    
     _customMqttConfiguration.lastConnectionStatus = "Disconnected";
     _customMqttConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+    
+    _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
+    _mqttConnectionAttempt = 0;
+
+    _customClientMqtt.disconnect();
+    _customClientMqtt.setServer(_customMqttConfiguration.server.c_str(), _customMqttConfiguration.port);
+    
+    _saveConfigurationToSpiffs();
 
     _logger.debug("Custom MQTT configuration set", TAG);
 
@@ -151,6 +148,7 @@ void CustomMqtt::_saveConfigurationToSpiffs()
     _logger.debug("Saving custom MQTT configuration to SPIFFS...", TAG);
 
     JsonDocument _jsonDocument;
+
     _jsonDocument["enabled"] = _customMqttConfiguration.enabled;
     _jsonDocument["server"] = _customMqttConfiguration.server;
     _jsonDocument["port"] = _customMqttConfiguration.port;
@@ -174,17 +172,17 @@ bool CustomMqtt::_validateJsonConfiguration(JsonDocument &jsonDocument)
     {
         _logger.warning("Invalid JSON document", TAG);
         return false;
-        }
+    }
 
-        if (!jsonDocument["enabled"].is<bool>()) { _logger.warning("enabled field is not a boolean", TAG); return false; }
-        if (!jsonDocument["server"].is<String>()) { _logger.warning("server field is not a string", TAG); return false; }
-        if (!jsonDocument["port"].is<int>()) { _logger.warning("port field is not an integer", TAG); return false; }
-        if (!jsonDocument["clientid"].is<String>()) { _logger.warning("clientid field is not a string", TAG); return false; }
-        if (!jsonDocument["topic"].is<String>()) { _logger.warning("topic field is not a string", TAG); return false; }
-        if (!jsonDocument["frequency"].is<int>()) { _logger.warning("frequency field is not an integer", TAG); return false; }
-        if (!jsonDocument["useCredentials"].is<bool>()) { _logger.warning("useCredentials field is not a boolean", TAG); return false; }
-        if (!jsonDocument["username"].is<String>()) { _logger.warning("username field is not a string", TAG); return false; }
-        if (!jsonDocument["password"].is<String>()) { _logger.warning("password field is not a string", TAG); return false; }
+    if (!jsonDocument["enabled"].is<bool>()) { _logger.warning("enabled field is not a boolean", TAG); return false; }
+    if (!jsonDocument["server"].is<String>()) { _logger.warning("server field is not a string", TAG); return false; }
+    if (!jsonDocument["port"].is<int>()) { _logger.warning("port field is not an integer", TAG); return false; }
+    if (!jsonDocument["clientid"].is<String>()) { _logger.warning("clientid field is not a string", TAG); return false; }
+    if (!jsonDocument["topic"].is<String>()) { _logger.warning("topic field is not a string", TAG); return false; }
+    if (!jsonDocument["frequency"].is<int>()) { _logger.warning("frequency field is not an integer", TAG); return false; }
+    if (!jsonDocument["useCredentials"].is<bool>()) { _logger.warning("useCredentials field is not a boolean", TAG); return false; }
+    if (!jsonDocument["username"].is<String>()) { _logger.warning("username field is not a string", TAG); return false; }
+    if (!jsonDocument["password"].is<String>()) { _logger.warning("password field is not a string", TAG); return false; }
 
     return true;
 }
@@ -199,7 +197,7 @@ void CustomMqtt::_disable() {
 
     setConfiguration(_jsonDocument);
     
-    _isSetupDone = false;
+    // Don't reset _isSetupDone - configuration is still loaded, just disabled
     _mqttConnectionAttempt = 0;
 
     _logger.debug("Custom MQTT disabled", TAG);
@@ -211,31 +209,29 @@ bool CustomMqtt::_connectMqtt()
 
     bool res;
 
-    if (_customMqttConfiguration.useCredentials)
-    {
+    if (_customMqttConfiguration.useCredentials) {
         res = _customClientMqtt.connect(
             _customMqttConfiguration.clientid.c_str(),
             _customMqttConfiguration.username.c_str(),
             _customMqttConfiguration.password.c_str());
-    }
-    else
-    {
+    } else {
         res = _customClientMqtt.connect(_customMqttConfiguration.clientid.c_str());
     }
 
-    if (res)
-    {
+    if (res) {
         _logger.info("Connected to custom MQTT", TAG);
+
         _mqttConnectionAttempt = 0; // Reset attempt counter on success
         _customMqttConfiguration.lastConnectionStatus = "Connected";
         _customMqttConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+
         _saveConfigurationToSpiffs();
+
         return true;
-    }
-    else
-    {
+    } else {
         int _currentState = _customClientMqtt.state();
         const char* _reason = getMqttStateReason(_currentState);
+
         _logger.warning(
             "Failed to connect to custom MQTT (attempt %d). Reason: %s (%d). Retrying...",
             TAG,
@@ -248,6 +244,7 @@ bool CustomMqtt::_connectMqtt()
 
         _customMqttConfiguration.lastConnectionStatus = String(_reason) + " (Attempt " + String(_mqttConnectionAttempt) + ")";
         _customMqttConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+
         _saveConfigurationToSpiffs();
 
         // Check for specific errors that warrant disabling custom MQTT

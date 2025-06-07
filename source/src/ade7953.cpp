@@ -1478,14 +1478,14 @@ void Ade7953::_setupInterrupts() {
 }
 
 void Ade7953::handleInterrupt() {
-    _logger.debug("ADE7953 interrupt triggered", TAG);
-    
-    // Read interrupt status for both channels
+    // Read interrupt status for both channels to clear the interrupt flags
     long statusA = readRegister(RSTIRQSTATA_32, 32, false);
     long statusB = readRegister(RSTIRQSTATB_32, 32, false);
+
+    _logger.debug("ADE7953 interrupt triggered", TAG);
     
     // Check for CYCEND interrupt (bit 18) - Line cycle end
     if (statusA & (1 << IRQENA_CYCEND_BIT)) {
-        _logger.debug("Line cycle end detected on Channel A", TAG);
+        _logger.verbose("Line cycle end detected on Channel A", TAG);
     }
 }

@@ -326,7 +326,7 @@ void setup() {
 
     TRACE
     logger.info("Setting up ADE7953...", TAG);
-    attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING);
+    attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING); // This has to be done before ade7953.begin() 
     if (!ade7953.begin()) {
       logger.fatal("ADE7953 initialization failed!", TAG);
     } else {
