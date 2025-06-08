@@ -1049,7 +1049,7 @@ String hashPassword(const String& password) {
 
 bool setupMdns()
 {
-    logger.info("Setting up mDNS...", TAG);
+    logger.debug("Setting up mDNS...", TAG);
     
     // Ensure mDNS is stopped before starting
     MDNS.end();

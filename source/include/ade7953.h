@@ -38,8 +38,8 @@ public:
 
     bool isLinecycFinished();
 
-    long readRegister(long registerAddress, int nBits, bool signedData, bool verifyLastCommunication = true);
-    void writeRegister(long registerAddress, int nBits, long data, bool verifyLastCommunication = true);
+    long readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired = true);
+    void writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired = true);
 
     float getAggregatedActivePower(bool includeChannel0 = true);
     float getAggregatedReactivePower(bool includeChannel0 = true);
@@ -64,6 +64,8 @@ public:
 
     JsonDocument singleMeterValuesToJson(int index);
     void meterValuesToJson(JsonDocument &jsonDocument);
+
+    unsigned long getLongTermFailureCount() const { return _longTermFailureCount; }
 
     MeterValues meterValues[CHANNEL_COUNT];
     ChannelData channelData[CHANNEL_COUNT];
@@ -101,7 +103,7 @@ private:
     void _saveEnergyToSpiffs();
     void _saveDailyEnergyToSpiffs();
     
-    bool _verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool wasWrite);
+    bool _verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool signedData, bool wasWrite);
     
     long _readApparentPowerInstantaneous(int channel);
     long _readActivePowerInstantaneous(int channel);
@@ -128,6 +130,9 @@ private:
     void _setGain(long gain, int channel, int measurementType);
     void _setOffset(long offset, int channel, int measurementType);
 
+    void _recordFailure();
+    void _checkForTooManyFailures();
+
     int _ssPin;
     int _sckPin;
     int _misoPin;
@@ -139,6 +144,10 @@ private:
 
     AdvancedLogger &_logger;
     MainFlags &_mainFlags;
+
+    int _failureCount = 0;
+    unsigned long _firstFailureTime = 0;
+    unsigned long _longTermFailureCount = 0;
 
     unsigned long _lastMillisSaveEnergy = 0;
 };

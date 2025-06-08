@@ -60,7 +60,10 @@ void CustomWifi::loop()
       unsigned long _reconnectWaitStart = millis();
       bool _fullyConnected = false;
       // Wait for a short period for the connection to establish and an IP to be assigned.
-      while (millis() - _reconnectWaitStart < 5000) { // Wait up to 5 seconds
+
+      unsigned int _loops = 0;
+      while (millis() - _reconnectWaitStart < 5000 && _loops < MAX_LOOP_ITERATIONS) { // Wait up to 5 seconds
+        _loops++;
         if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0,0,0,0)) {
           _logger.info("Successfully reconnected to WiFi: %s, IP: %s", TAG, WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
           setupMdns();

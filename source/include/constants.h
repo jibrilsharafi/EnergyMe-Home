@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "09"
-#define FIRMWARE_BUILD_VERSION_PATCH "02"
+#define FIRMWARE_BUILD_VERSION_PATCH "03"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -54,8 +54,8 @@
 #define WATCHDOG_TIMER (30 * 1000) // If the esp_task_wdt_reset() is not called within this time, the ESP32 panic
 #define PREFERENCES_FIRMWARE_STATUS_KEY "fw_status"
 #define ROLLBACK_TESTING_TIMEOUT (60 * 1000) // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
-#define MAX_CRASH_COUNT 10 // Maximum amount of consecutive crashes before triggering a rollback
-#define CRASH_COUNTER_TIMEOUT (60 * 1000)
+#define MAX_CRASH_COUNT 5 // Maximum amount of consecutive crashes before triggering a rollback
+#define CRASH_COUNTER_TIMEOUT (180 * 1000)
 
 // Authentication
 #define PREFERENCES_NAMESPACE_AUTH "auth"
@@ -268,6 +268,10 @@
 #define VALIDATE_POWER_FACTOR_MAX 1.0 // Any power factor above this value is discarded
 
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
+
+// ADE7953 Smart Failure Detection
+#define ADE7953_MAX_FAILURES_BEFORE_RESTART 100
+#define ADE7953_FAILURE_RESET_TIMEOUT_MS (1 * 60 * 1000)
 
 // Check for incorrect readings
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0 // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded

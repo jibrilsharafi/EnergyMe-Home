@@ -305,7 +305,9 @@ void Mqtt::_claimProcess() {
     _logger.debug("MQTT setup for claiming certificates complete", TAG);
 
     int _connectionAttempt = 0;
-    while (_connectionAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
+    unsigned int _loops = 0;
+    while (_connectionAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT && _loops < MAX_LOOP_ITERATIONS) {
+        _loops++;
         _logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", TAG, _connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
         TRACE
@@ -335,7 +337,9 @@ void Mqtt::_claimProcess() {
     _subscribeProvisioningResponse();
     
     int _publishAttempt = 0;
-    while (_publishAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
+    _loops = 0;
+    while (_publishAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT && _loops < MAX_LOOP_ITERATIONS) {
+        _loops++;
         _logger.debug("Attempting to publish provisioning request (%d/%d)...", TAG, _publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
         TRACE

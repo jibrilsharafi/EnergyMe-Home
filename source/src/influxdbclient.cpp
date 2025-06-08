@@ -279,8 +279,10 @@ void InfluxDbClient::_uploadBufferedData()
     unsigned int pointCount = 0;
 
     // First, add all buffered real-time data points
-    while (!_bufferMeterValues.isEmpty() && pointCount < _bufferMeterValues.size())
+    unsigned int _loops = 0;
+    while (!_bufferMeterValues.isEmpty() && pointCount < _bufferMeterValues.size() && _loops < MAX_LOOP_ITERATIONS)
     {
+        _loops++;
         BufferedPoint point = _bufferMeterValues.shift();
         String lineProtocol = _formatRealtimeLineProtocol(point.meterValues, point.channel, point.unixTimeMilliseconds);
 
@@ -346,8 +348,10 @@ void InfluxDbClient::_uploadBufferedData()
         _nextInfluxDbConnectionAttemptMillis = millis() + INFLUXDB_MIN_CONNECTION_INTERVAL;
 
         // Put points back in buffer for retry (if there's space)
-        while (pointCount-- > 0 && !_bufferMeterValues.isFull())
+        unsigned int _loops = 0;
+        while (pointCount-- > 0 && !_bufferMeterValues.isFull() && _loops < MAX_LOOP_ITERATIONS)
         {
+            _loops++;
             BufferedPoint point = _bufferMeterValues.shift();
             _bufferMeterValues.push(point);
         }

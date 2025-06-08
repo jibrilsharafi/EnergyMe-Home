@@ -155,7 +155,9 @@ bool Ade7953::_verifyCommunication() {
     bool _success = false;
     unsigned long _lastMillisAttempt = 0;
 
-    while (_attempt < ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS && !_success) {
+    unsigned int _loops = 0;
+    while (_attempt < ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS && !_success && _loops < MAX_LOOP_ITERATIONS) {
+        _loops++;
         if (millis() - _lastMillisAttempt < ADE7953_VERIFY_COMMUNICATION_INTERVAL) {
             continue;
         }
@@ -592,7 +594,7 @@ other will need 400 ms per channel.
 The read values from which everything is computed afterwards are:
 - Voltage RMS
 - Current RMS (needs 200 ms to settle, and is computed by the ADE7953 at every zero crossing)
-- Sign of the active power (as we use RMS values, the sign will indicate the direction of the power)
+- Sign of the active power (as we use RMS values, the signedData will indicate the direction of the power)
 - Power factor (computed by the ADE7953 by averaging on the whole line cycle, thus why we need to read only every other line cycle)
 - Active energy, reactive energy, apparent energy (only to make use of the no-load feature)
 
@@ -631,6 +633,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         // probably the next line cycle was not yet finished)
         // We use the time multiplied by 0.8 to keep some headroom
         if (timeSinceLastRead < _sampleTime * 0.8) {
+            _logger.debug("Reading too early for channel %d: %llu ms since last read, expected at least %lu ms", TAG, channel, timeSinceLastRead, _sampleTime * 0.8);
             return false;
         }
         _deltaMillis = timeSinceLastRead;
@@ -702,6 +705,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
             _powerFactor = - cos(acos(_powerFactorPhaseOne) + (2 * PI / 3));
         } else {
             _logger.error("Invalid phase %d for channel %d", TAG, channelData[channel].phase, channel);
+            _recordFailure();
             return false;
         }
 
@@ -725,8 +729,8 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         !_validatePower(_apparentPower) || 
         !_validatePowerFactor(_powerFactor)
     ) {
-        // TODO: add a counter to set a restart if too many incorrect readings
         logger.warning("Invalid reading for channel %d. Discarding data point", TAG, channel);
+        _recordFailure();
         return false;
     }
 
@@ -737,9 +741,16 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
     // use a multiplexer and some weird behavior can happen sometimes
     if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != 0 &&
         (abs(_current * _voltage - _apparentPower) > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE || 
-         abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) {
-        _logger.debug("Current * Voltage (%f) is too different from Apparent Power (%f) for channel %d", TAG, 
-            _current * _voltage, _apparentPower, channel);
+         abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) 
+    {
+        _logger.debug(
+            "Current * Voltage (%f) is too different from Apparent Power (%f) for channel %d", 
+            TAG, 
+            _current * _voltage, 
+            _apparentPower, 
+            channel
+        );
+        _recordFailure();
         return false;
     }
     
@@ -1333,10 +1344,10 @@ bool Ade7953::isLinecycFinished() {
  * @param registerAddress The address of the register to read from. Expected range: 0 to 65535
  * @param numBits The number of bits to read from the register. Expected values: 8, 16, 24 or 32.
  * @param isSignedData Flag indicating whether the data is signed (true) or unsigned (false).
- * @param verifyLastCommunication Flag indicating whether to verify the last communication.
+ * @param isVerificationRequired Flag indicating whether to verify the last communication.
  * @return The value read from the register.
  */
-long Ade7953::readRegister(long registerAddress, int nBits, bool signedData, bool verifyLastCommunication) {
+long Ade7953::readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired) {
     digitalWrite(_ssPin, LOW);
 
     SPI.transfer(registerAddress >> 8);
@@ -1367,8 +1378,9 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData, boo
         nBits
     );
 
-    if (!verifyLastCommunication || !_verifyLastCommunication(registerAddress, nBits, _long_response, false)) {
-        _logger.warning("Failed to verify last communication for register %ld", TAG, registerAddress);
+    if (isVerificationRequired && !_verifyLastCommunication(registerAddress, nBits, _long_response, signedData, false)) {
+        _logger.debug("Failed to verify last read communication for register %ld", TAG, registerAddress);
+        _recordFailure();
         return INVALID_SPI_READ_WRITE; // Return an invalid value if verification fails
     }
 
@@ -1381,9 +1393,9 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData, boo
  * @param registerAddress The address of the register to write to. (16-bit value)
  * @param nBits The number of bits in the register. (8, 16, 24, or 32)
  * @param data The data to write to the register. (nBits-bit value)
- * @param verifyLastCommunication Flag indicating whether to verify the last communication.
+ * @param isVerificationRequired Flag indicating whether to verify the last communication.
  */
-void Ade7953::writeRegister(long registerAddress, int nBits, long data, bool verifyLastCommunication) {
+void Ade7953::writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired) {
     _logger.debug(
         "Writing %ld to register %ld with %d bits",
         TAG,
@@ -1416,12 +1428,13 @@ void Ade7953::writeRegister(long registerAddress, int nBits, long data, bool ver
 
     digitalWrite(_ssPin, HIGH);
 
-    if (!verifyLastCommunication || !_verifyLastCommunication(registerAddress, nBits, data, true)) {
-        _logger.warning("Failed to verify last communication for register %ld", TAG, registerAddress);
+    if (isVerificationRequired && !_verifyLastCommunication(registerAddress, nBits, data, false, true)) {
+        _logger.warning("Failed to verify last write communication for register %ld", TAG, registerAddress);
+        _recordFailure();
     }
 }
 
-bool Ade7953::_verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool wasWrite) {    
+bool Ade7953::_verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool signedData, bool wasWrite) {    
     
     long lastAddress = readRegister(LAST_ADD_16, 16, false, false);
     if (lastAddress != expectedAddress) {
@@ -1441,7 +1454,6 @@ bool Ade7953::_verifyLastCommunication(long expectedAddress, int expectedBits, l
     // Select the appropriate LAST_RWDATA register based on the bit size
     long dataRegister;
     int dataRegisterBits;
-    bool dataIsSigned = false; // LAST_RWDATA registers are always unsigned according to datasheet
     
     if (expectedBits == 8) {
         dataRegister = LAST_RWDATA_8;
@@ -1457,7 +1469,7 @@ bool Ade7953::_verifyLastCommunication(long expectedAddress, int expectedBits, l
         dataRegisterBits = 32;
     }
     
-    long lastData = readRegister(dataRegister, dataRegisterBits, dataIsSigned, false);
+    long lastData = readRegister(dataRegister, dataRegisterBits, signedData, false);
     if (lastData != expectedData) {
         _logger.warning("Last data %ld does not match expected %ld", TAG, lastData, expectedData);
         return false;
@@ -1465,6 +1477,38 @@ bool Ade7953::_verifyLastCommunication(long expectedAddress, int expectedBits, l
 
     _logger.verbose("Last communication verified successfully", TAG);
     return true;
+}
+
+void Ade7953::_recordFailure() {
+    _logger.debug("Recording failure for ADE7953 communication", TAG);
+
+    if (_failureCount == 0) {
+        _firstFailureTime = millis();
+    }
+
+    _failureCount++;
+    _longTermFailureCount++;
+    _checkForTooManyFailures();
+}
+
+void Ade7953::_checkForTooManyFailures() {
+    if (millis() - _firstFailureTime > ADE7953_FAILURE_RESET_TIMEOUT_MS && _failureCount > 0) {
+        _logger.info("Failure timeout exceeded (%lu ms). Resetting failure count (reached %d)", TAG, millis() - _firstFailureTime, _failureCount);
+        
+        _failureCount = 0;
+        _firstFailureTime = 0;
+        
+        return;
+    }
+
+    if (_failureCount >= ADE7953_MAX_FAILURES_BEFORE_RESTART) {
+        _logger.fatal("Too many failures (%d) in ADE7953 communication. Resetting device...", TAG, _failureCount);
+        setRestartEsp32(TAG, "Too many failures in ADE7953 communication");
+
+        // Reset the failure count and first failure time to avoid infinite loop of setting the restart
+        _failureCount = 0;
+        _firstFailureTime = 0;
+    }
 }
 
 // Helper functions

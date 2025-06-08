@@ -552,9 +552,6 @@
                 return;
             }
 
-            document.getElementById('loading-overlay').style.display = 'flex';
-            document.getElementById('loading-message').innerHTML = getLoadingMessage();
-
             fetch('/rest/update-rollback', { method: 'POST' })
                 .then(response => {
                     const isSuccess = response.status === 200;
