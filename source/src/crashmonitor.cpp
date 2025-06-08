@@ -154,7 +154,7 @@ bool CrashMonitor::_isValidBreadcrumb(const Breadcrumb& crumb) {
 }
 
 void CrashMonitor::_logCrashInfo() {
-    _logger.error("Crash Report | Timestamp: %s - Reason: %s - Reset Count %d - Crash Count: %d", TAG, 
+    _logger.fatal("Oh no!!! Crash Report | Timestamp: %s - Reason: %s - Reset Count %d - Crash Count: %d", TAG, 
         CustomTime::timestampFromUnix(crashData.lastUnixTime, DEFAULT_TIMESTAMP_FORMAT).c_str(),
         _getResetReasonString((esp_reset_reason_t)crashData.lastResetReason), 
         crashData.resetCount, 
@@ -164,7 +164,7 @@ void CrashMonitor::_logCrashInfo() {
     // Print only most recent breadcrumb
     const Breadcrumb& lastCrumb = crashData.breadcrumbs[(crashData.currentIndex - 1 + MAX_BREADCRUMBS) % MAX_BREADCRUMBS];
     if (_isValidBreadcrumb(lastCrumb)) {
-        _logger.error("Last Function | %s:%s:%d (Core %d) Heap: %d bytes", TAG,
+        _logger.fatal("Last Function | %s:%s:%d (Core %d) Heap: %d bytes", TAG,
             lastCrumb.file,
             lastCrumb.function,
             lastCrumb.line, 
@@ -206,12 +206,17 @@ void CrashMonitor::_handleCrashCounter() {
     if (crashData.crashCount >= MAX_CRASH_COUNT) {
         _logger.fatal("Crash counter reached the maximum allowed crashes. Rolling back to stable firmware...", TAG);
         
+        // Probably this is a firmware issue, so we need to rollback
         if (!Update.rollBack()) {
             _logger.error("No firmware to rollback available. Keeping current firmware", TAG);
         }
 
+        // To be completely sure, format also SPIFFS
         SPIFFS.format();
+        clearAllPreferences();
         crashData.crashCount = 0;
+
+        _logger.fatal("Crash counter reached maximum allowed crashes. Formatted SPIFFS and cleared preferences", TAG);
         
         // Need to reboot directly here to avoid a crash loop
         ESP.restart();
@@ -239,7 +244,7 @@ void CrashMonitor::_handleFirmwareTesting() {
     _logger.debug("Rollback status: %s", TAG, getFirmwareStatusString(_firmwareStatus));
     
     if (_firmwareStatus == NEW_TO_TEST) {
-        _logger.info("Testing new firmware", TAG);
+        _logger.info("Testing new firmware!!! Are you excited of the new features? :D", TAG);
 
         setFirmwareStatus(TESTING);
         _isFirmwareUpdate = true;

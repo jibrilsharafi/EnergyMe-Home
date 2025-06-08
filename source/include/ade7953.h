@@ -66,6 +66,7 @@ public:
     void meterValuesToJson(JsonDocument &jsonDocument);
 
     unsigned long getLongTermFailureCount() const { return _longTermFailureCount; }
+    unsigned long getTotalHandledInterrupts() const { return _totalHandledInterrupts; }
 
     MeterValues meterValues[CHANNEL_COUNT];
     ChannelData channelData[CHANNEL_COUNT];
@@ -124,6 +125,8 @@ private:
     bool _validatePower(float newValue);
     bool _validatePowerFactor(float newValue);
 
+    bool _isSpuriousZeroReading(int channel, float current, float activePower, float powerFactor);
+
     void _setLinecyc(unsigned int linecyc);
     void _setPgaGain(long pgaGain, int channel, int measurementType);
     void _setPhaseCalibration(long phaseCalibration, int channel);
@@ -145,9 +148,13 @@ private:
     AdvancedLogger &_logger;
     MainFlags &_mainFlags;
 
+    ChannelState _channelStates[CHANNEL_COUNT];
+
     int _failureCount = 0;
     unsigned long _firstFailureTime = 0;
     unsigned long _longTermFailureCount = 0;
 
     unsigned long _lastMillisSaveEnergy = 0;
+
+    unsigned long _totalHandledInterrupts = 0;
 };

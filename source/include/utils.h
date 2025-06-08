@@ -37,7 +37,7 @@ void setRestartEsp32(const char* functionName, const char* reason);
 void checkIfRestartEsp32Required();
 void restartEsp32();
 
-void printMeterValues(MeterValues meterValues, const char* channelLabel);
+void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
 void printDeviceStatus();
 
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);

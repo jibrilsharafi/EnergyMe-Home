@@ -32,6 +32,26 @@ enum Channel : int {
     CHANNEL_B,
 };
 
+enum ChannelNumber : int {
+  CHANNEL_0 = 0,
+  CHANNEL_1 = 1,
+  CHANNEL_2 = 2,
+  CHANNEL_3 = 3,
+  CHANNEL_4 = 4,
+  CHANNEL_5 = 5,
+  CHANNEL_6 = 6,
+  CHANNEL_7 = 7,
+  CHANNEL_8 = 8,
+  CHANNEL_9 = 9,
+  CHANNEL_10 = 10,
+  CHANNEL_11 = 11,
+  CHANNEL_12 = 12,
+  CHANNEL_13 = 13,
+  CHANNEL_14 = 14,
+  CHANNEL_15 = 15,
+  CHANNEL_16 = 16,
+};
+
 enum Measurement : int {
     VOLTAGE,
     CURRENT,
@@ -41,6 +61,22 @@ enum Measurement : int {
     POWER_FACTOR,
 };
 
+/*
+ * Struct to hold the real-time meter values for a specific channel
+  * Contains:
+  * - voltage: Voltage in Volts
+  * - current: Current in Amperes
+  * - activePower: Active power in Watts
+  * - reactivePower: Reactive power in VAR
+  * - apparentPower: Apparent power in VA
+  * - powerFactor: Power factor (-1 to 1, where negative values indicate capacitive load while positive values indicate inductive load)
+  * - activeEnergyImported: Active energy imported in Wh
+  * - activeEnergyExported: Active energy exported in Wh
+  * - reactiveEnergyImported: Reactive energy imported in VArh
+  * - reactiveEnergyExported: Reactive energy exported in VArh
+  * - apparentEnergy: Apparent energy in VAh (only absolute value)
+  * - lastUnixTimeMilliseconds: Last time the values were updated in milliseconds since epoch. Useful for absolute time tracking
+ */
 struct MeterValues
 {
   float voltage;
@@ -103,6 +139,18 @@ struct ChannelData
 
   ChannelData()
     : index(0), active(false), reverse(false), label(String("Channel")), phase(PHASE_1), calibrationValues(CalibrationValues()) {}
+};
+
+// Used to track the state of a channel during readings
+// and discard spurious readings
+struct ChannelState {
+    unsigned long lastValidReadingTime = 0;
+    unsigned long consecutiveZeroCount = 0;
+    bool hasHadValidReading = false;
+    float lastValidCurrent = 0.0;
+    float lastValidActivePower = 0.0;
+    float lastValidPowerFactor = 0.0;
+    bool isInLegitimateZeroState = false;
 };
 
 struct GeneralConfiguration

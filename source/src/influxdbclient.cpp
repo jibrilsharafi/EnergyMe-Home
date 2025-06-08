@@ -20,15 +20,10 @@ void InfluxDbClient::begin()
 
     _baseUrl = String("http") + (_influxDbConfiguration.useSSL ? "s" : "") + "://" + _influxDbConfiguration.server + ":" + String(_influxDbConfiguration.port);
     _logger.debug("Base URL set to: %s", TAG, _baseUrl.c_str());
-
-    if (_influxDbConfiguration.enabled)
-    {
-        _isSetupDone = true;
-        _nextInfluxDbConnectionAttemptMillis = millis(); // Try connecting immediately
-        _influxDbConnectionAttempt = 0;
-        _isConnected = false;
-        _connectInfluxDb(); // Initial connection attempt
-    }
+    
+    _isConnected = false;
+    _bufferMeterValues.clear();
+    _isSetupDone = true;
 }
 
 void InfluxDbClient::loop()
@@ -37,30 +32,13 @@ void InfluxDbClient::loop()
     _lastMillisInfluxDbLoop = millis();
 
     if (!WiFi.isConnected()) return;
-
-    if (!_isSetupDone) 
-    { 
-        begin(); 
-        return; 
-    }
-
-    if (!_influxDbConfiguration.enabled)
-    {
-        if (_isSetupDone)
-        {
-            _logger.info("InfluxDB disabled, clearing buffer", TAG);
-            _bufferMeterValues.clear();
-            _isSetupDone = false;
-            _isConnected = false;
-        }
-        return;
-    }
+    if (!_isSetupDone) begin();
+    if (!_influxDbConfiguration.enabled) return;
 
     if (!_isConnected)
     {
         // Use exponential backoff timing
         if (millis() >= _nextInfluxDbConnectionAttemptMillis) {
-            _logger.info("InfluxDB not connected. Attempting to reconnect...", TAG);
             _connectInfluxDb(); // _connectInfluxDb handles setting the next attempt time
         }
     } else {

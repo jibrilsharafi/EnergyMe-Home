@@ -53,14 +53,17 @@ String deviceId;      // Pre-allocated buffer
 // Interrupt handling
 // --------------------
 volatile bool ade7953InterruptFlag = false;
+volatile unsigned long ade7953TotalInterrupts = 0;
 
 // Interrupt Service Routine for ADE7953
 void IRAM_ATTR ade7953ISR() {
     ade7953InterruptFlag = true;
+    ade7953TotalInterrupts++;
 }
 
 // Utils variables
 unsigned long long _linecycUnix = 0;   // Used to track the Unix time when the linecycle ended (for MQTT payloads)
+unsigned long lastMaintenanceCheck = 0;
 
 // Classes instances
 // --------------------
@@ -199,7 +202,7 @@ void callbackLogToMqtt(
 
     // If not connected to WiFi and MQTT, return (log is still stored in circular buffer for later) 
     if (WiFi.status() != WL_CONNECTED) return;
-    if (!clientMqtt.connected()) return; 
+    if (clientMqtt.state() != MQTT_CONNECTED) return;
 
     unsigned int _loops = 0;
     while (!logBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
@@ -374,35 +377,37 @@ void loop() {
     TRACE
     if (mainFlags.blockLoop) return;
 
-    TRACE
-    customTime.loop();
+    // Give priority to the readings if a new one is available
+    if (!ade7953InterruptFlag) {
+      TRACE
+      customTime.loop();
 
-    TRACE
-    crashMonitor.crashCounterLoop();
+      TRACE
+      crashMonitor.crashCounterLoop();
 
-    TRACE
-    crashMonitor.firmwareTestingLoop();
+      TRACE
+      crashMonitor.firmwareTestingLoop();
+        
+      TRACE
+      customWifi.loop();
       
-    TRACE
-    customWifi.loop();
-    
-    TRACE
-    buttonHandler.loop();
-    
-    TRACE
-    mqtt.loop();
-    
-    TRACE
-    customMqtt.loop();
-    
-    TRACE
-    influxDbClient.loop();
+      TRACE
+      buttonHandler.loop();
+      
+      TRACE
+      mqtt.loop();
+      
+      TRACE
+      customMqtt.loop();
+      
+      TRACE
+      influxDbClient.loop();
 
-    TRACE
-    ade7953.loop();
+      TRACE
+      ade7953.loop();
     
-    TRACE
-    if (ade7953InterruptFlag) {
+    } else {
+      TRACE
       _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
 
       ade7953InterruptFlag = false;
@@ -433,7 +438,7 @@ void loop() {
                 );
               }
               
-              printMeterValues(ade7953.meterValues[mainFlags.currentChannel], ade7953.channelData[mainFlags.currentChannel].label.c_str());
+              printMeterValues(&ade7953.meterValues[mainFlags.currentChannel], &ade7953.channelData[mainFlags.currentChannel]);
             }
           }
 
@@ -444,45 +449,59 @@ void loop() {
 
       // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
       TRACE
-      if (ade7953.readMeterValues(0, _linecycUnix)) {
+      if (ade7953.readMeterValues(CHANNEL_0, _linecycUnix)) {
         if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER) {
           TRACE
           payloadMeter.push(
             PayloadMeter(
-              0,
+              CHANNEL_0,
               _linecycUnix,
-              ade7953.meterValues[0].activePower,
-              ade7953.meterValues[0].powerFactor
+              ade7953.meterValues[CHANNEL_0].activePower,
+              ade7953.meterValues[CHANNEL_0].powerFactor
             )
           );
         }
-        printMeterValues(ade7953.meterValues[0], ade7953.channelData[0].label.c_str());
+        printMeterValues(&ade7953.meterValues[CHANNEL_0], &ade7953.channelData[CHANNEL_0]);
       }
     }
+    
+    if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {
+      lastMaintenanceCheck = millis();
+      
+      if (ade7953TotalInterrupts > ade7953.getTotalHandledInterrupts() * 2 + 10) {
+        logger.info("Total interrupts received: %lu | Total handled: %lu. Resetting difference.", 
+          TAG, 
+          ade7953TotalInterrupts, 
+          ade7953.getTotalHandledInterrupts()
+        );
 
-    TRACE
-    if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
+        ade7953TotalInterrupts = ade7953.getTotalHandledInterrupts();
+      }
+
+      TRACE
+      if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
         printDeviceStatus();
         logger.fatal("Heap memory has degraded below safe minimum: %d bytes", TAG, ESP.getFreeHeap());
         setRestartEsp32(TAG, "Heap memory has degraded below safe minimum");
-    }
+      }
 
-    // If memory is below a certain level, clear the log
-    TRACE
-    if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
+      // If memory is below a certain level, clear the log
+      TRACE
+      if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
         printDeviceStatus();
         logger.clearLog();
         logger.warning("Log cleared due to low memory", TAG);
-    }
-    
-    TRACE
-    if (debugFlagsRtc.enableMqttDebugLogging && millis() >= debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
+      }
+      
+      TRACE
+      if (debugFlagsRtc.enableMqttDebugLogging && millis() >= debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
         logger.info("MQTT debug logging period ended.", TAG);
 
         debugFlagsRtc.enableMqttDebugLogging = false;
         debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
         debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
         debugFlagsRtc.signature = 0; 
+      }
     }
 
     TRACE

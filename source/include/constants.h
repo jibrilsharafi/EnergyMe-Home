@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "09"
-#define FIRMWARE_BUILD_VERSION_PATCH "03"
+#define FIRMWARE_BUILD_VERSION_PATCH "04"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -32,7 +32,7 @@
 #define MINIMUM_UNIX_TIME_MILLISECONDS 1000000000000 // Corresponds to 2001
 #define MAXIMUM_UNIX_TIME 4102444800 // In seconds, corresponds to 2100
 #define MAXIMUM_UNIX_TIME_MILLISECONDS 4102444800000 // Corresponds to 2100
-#define MINIMUM_TIME_BEFORE_VALID_METER 15000 // Before this millis(), do not buffer or upload meter values
+#define MINIMUM_TIME_BEFORE_VALID_METER 15000 // Before this do not buffer or upload meter values (avoid incorrect readings just after boot)
 
 // File path
 #define GENERAL_CONFIGURATION_JSON_PATH "/config/general.json"
@@ -72,6 +72,9 @@
 
 // While loops
 #define MAX_LOOP_ITERATIONS 1000 // The maximum number of iterations for a while loop
+
+// Main
+#define MAINTENANCE_CHECK_INTERVAL (10 * 1000) // Interval to check main parameters, to avoid overloading the loop
 
 // Logger
 #define LOG_PATH "/logger/log.txt"
@@ -152,7 +155,7 @@
 #define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
 #define MQTT_PROVISIONING_TIMEOUT (60 * 1000) // The timeout for the provisioning response
 #define MQTT_PROVISIONING_LOOP_CHECK (1 * 1000) // Interval between two certificates check on memory
-#define MQTT_DEBUG_LOGGING_DEFAULT_DURATION (15 * 60 * 1000) 
+#define MQTT_DEBUG_LOGGING_DEFAULT_DURATION (3 * 60 * 1000) 
 #define MQTT_DEBUG_LOGGING_MAX_DURATION (60 * 60 * 1000)
 #define DEBUG_FLAGS_RTC_SIGNATURE 0xDEB6F1A6 // Used to verify the RTC data validity for MQTT debugging struct
 
@@ -227,6 +230,7 @@
 #define MOSI_PIN 45
 #define ADE7953_RESET_PIN 21
 #define ADE7953_INTERRUPT_PIN 37 // TODO: Implement (eventually) the interrupt pin for more functionalities
+#define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz
 
 // Setup
 #define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low
@@ -250,7 +254,8 @@
 
 // Interrupt configuration for ADE7953
 #define DEFAULT_IRQENA_REGISTER 0b000101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) for line cycle end detection
-#define IRQENA_CYCEND_BIT 18 // Bit position for CYCEND interrupt
+#define IRQENA_CYCEND_IRQ_BIT 18 // Bit position for CYCEND interrupt
+#define RESET_IRQ_BIT 20 // Bit position for Reset interrupt
 
 // Fixed conversion values
 #define POWER_FACTOR_CONVERSION_FACTOR 1.0 / 32768.0 // PF/LSB
@@ -267,6 +272,9 @@
 #define VALIDATE_POWER_FACTOR_MIN -1.0 // Any power factor below this value is discarded
 #define VALIDATE_POWER_FACTOR_MAX 1.0 // Any power factor above this value is discarded
 
+#define SPURIOUS_ZERO_MAX_DURATION 5000 // Time after a valid reading to consider a reading as spurious zero
+#define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 10 // Threshold to transition to a legitimate zero state for a channel
+
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
 
 // ADE7953 Smart Failure Detection
@@ -275,7 +283,7 @@
 
 // Check for incorrect readings
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0 // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
-#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.05 // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
+#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20 // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 
 // Modbus TCP
 // --------------------

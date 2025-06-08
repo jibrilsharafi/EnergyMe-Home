@@ -85,7 +85,7 @@ void Ade7953::_setHardwarePins() {
     pinMode(_interruptPin, INPUT);
 
     SPI.begin(_sckPin, _misoPin, _mosiPin, _ssPin);
-    SPI.setClockDivider(SPI_CLOCK_DIV64); // 64div -> 250kHz on 16MHz clock, but on 80MHz clock it's 1.25MHz. Max Ade7953 clock is 2MHz
+    SPI.setFrequency(ADE7953_SPI_FREQUENCY); //  Max ADE7953 clock is 2MHz
     SPI.setDataMode(SPI_MODE0);
     SPI.setBitOrder(MSBFIRST);
     digitalWrite(_ssPin, HIGH);
@@ -124,10 +124,7 @@ void Ade7953::_setOptimumSettings()
 void Ade7953::loop() {
     if (
         millis() - _lastMillisSaveEnergy > SAVE_ENERGY_INTERVAL || 
-        (
-            restartConfiguration.isRequired && 
-            restartConfiguration.functionName != "utils::factoryReset"
-        )
+        restartConfiguration.isRequired
     ) {
         _lastMillisSaveEnergy = millis();
         saveEnergy();
@@ -619,7 +616,9 @@ can be found in the function itself.
 @param channel The channel to read the values from. Returns
 false if the data reading is not ready yet or valid.
 */
-bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) { // TODO: test another way of reading data (faster but average RMS values, not energy register)
+// TODO: we could test another way of reading data (faster but average RMS values, not energy register)
+// but most likely this is the best way to do this so we offload the constant burden of sampling.
+bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) {
     unsigned long long previousLastUnixTimeMilliseconds = meterValues[channel].lastUnixTimeMilliseconds;
     unsigned long long _deltaMillis; // This will be used for energy accumulation
 
@@ -627,21 +626,31 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
     if (previousLastUnixTimeMilliseconds != 0) {
         unsigned long long timeSinceLastRead = linecycUnixTimeMillis - previousLastUnixTimeMilliseconds;
         
-        // Ensure the reading is not being called too early (should not happen anyway)
-        // This was introduced as in channel 0 it was noticed that sometimes two meter values
-        // were sent with 1 ms difference, where the second one had 0 active power (since most
-        // probably the next line cycle was not yet finished)
-        // We use the time multiplied by 0.8 to keep some headroom
-        if (timeSinceLastRead < _sampleTime * 0.8) {
-            _logger.debug("Reading too early for channel %d: %llu ms since last read, expected at least %lu ms", TAG, channel, timeSinceLastRead, _sampleTime * 0.8);
-            return false;
-        }
+        // Not useful anymore since the measurement timing (_sampleTime) is handled indipendently
+        // by the linecyc of the ADE7953. The actual reading of the data may be not coordinated,
+        // and that is ok
+        // // Ensure the reading is not being called too early (should not happen anyway)
+        // // This was introduced as in channel 0 it was noticed that sometimes two meter values
+        // // were sent with 1 ms difference, where the second one had 0 active power (since most
+        // // probably the next line cycle was not yet finished)
+        // // We use the time multiplied by 0.8 to keep some headroom
+        // if (timeSinceLastRead < _sampleTime * 0.8) {
+        //     _logger.warning("Reading too early for channel %d: %llu ms since last read, expected at least %0.0f ms", TAG, channel, timeSinceLastRead, _sampleTime * 0.8);
+        //     _recordFailure();
+        //     return false;
+        // }
         _deltaMillis = timeSinceLastRead;
     } else {
         // This is the first attempt to get a valid reading for this channel,
         // or previous attempts failed before setting the timestamp.
         // For energy accumulation of the first valid point, the period is _sampleTime.
         _deltaMillis = _sampleTime; 
+    }
+
+    if (_deltaMillis == 0) {
+        _logger.warning("Delta millis is 0 for %s (%d). Discarding reading", TAG, channelData[channel].label.c_str(), channel);
+        _recordFailure();
+        return false;
     }
 
     int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
@@ -721,6 +730,13 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
     _apparentPower = abs(_apparentPower); // Apparent power must be positive
 
     TRACE
+    // Check for spurious zero readings BEFORE other validations
+    if (_isSpuriousZeroReading(channel, _current, _activePower, _powerFactor)) {
+        _recordFailure();
+        return false;
+    }
+
+    TRACE
     if (
         !_validateVoltage(_voltage) || 
         !_validateCurrent(_current) || 
@@ -735,20 +751,23 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
     }
 
     // Ensure the current * voltage is not too different from the apparent power (both in absolute and relative terms)
-    // Ensure the current * voltage is not too different from the apparent power (both in absolute and relative terms)
     // Skip this check if apparent power is below 1 to avoid issues with low power readings
     // Channel 0 does not have this problem since it has a dedicated ADC on the ADE7953, while the other channels
     // use a multiplexer and some weird behavior can happen sometimes
+    TRACE
     if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != 0 &&
         (abs(_current * _voltage - _apparentPower) > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE || 
          abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) 
     {
-        _logger.debug(
-            "Current * Voltage (%f) is too different from Apparent Power (%f) for channel %d", 
-            TAG, 
+        _logger.warning(
+            "%s (%D): Current (%.3f * Voltage %.1f = %.1f) is too different from measured Apparent Power (%.1f). Discarding data point", 
+            TAG,
+            channelData[channel].label.c_str(),
+            channel, 
+            _current, 
+            _voltage,
             _current * _voltage, 
-            _apparentPower, 
-            channel
+            _apparentPower
         );
         _recordFailure();
         return false;
@@ -797,6 +816,9 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         meterValues[channel].apparentPower = 0.0;
     }
 
+    // We actually set the timestamp of the channel (used for the energy calculations)
+    // only if we actually reached the end. Otherwise it would mean the point had to be
+    // discarded
     meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
     return true;
 }
@@ -865,6 +887,68 @@ bool Ade7953::_validatePower(float newValue) {
 
 bool Ade7953::_validatePowerFactor(float newValue) {
     return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
+}
+
+bool Ade7953::_isSpuriousZeroReading(int channel, float current, float activePower, float powerFactor) {
+    // Check if all critical measurements are near zero
+    bool isZeroReading = (abs(activePower) == 0 && 
+                         abs(powerFactor) == 0);
+    
+    if (!isZeroReading) {
+        // Not a zero reading - reset zero tracking and update state
+        _channelStates[channel].consecutiveZeroCount = 0;
+        _channelStates[channel].isInLegitimateZeroState = false;
+        _channelStates[channel].lastValidReadingTime = millis();
+        _channelStates[channel].hasHadValidReading = true;
+        _channelStates[channel].lastValidCurrent = current;
+        _channelStates[channel].lastValidActivePower = activePower;
+        _channelStates[channel].lastValidPowerFactor = powerFactor;
+        return false;
+    }
+    
+    // It's a zero reading - now determine if it's spurious or legitimate
+    _channelStates[channel].consecutiveZeroCount++;
+    
+    // If we've never had a valid reading, assume it's legitimate (device actually off)
+    if (!_channelStates[channel].hasHadValidReading) {
+        _logger.debug("%s (%D): No previous valid readings, accepting zero reading", TAG, channelData[channel].label.c_str(), channel);
+        _channelStates[channel].isInLegitimateZeroState = true;
+        return false;
+    }
+    
+    // If we're already in a legitimate zero state, continue accepting zeros
+    if (_channelStates[channel].isInLegitimateZeroState) {
+        return false;
+    }
+    
+    // Check if we've had too many consecutive zeros (transition to legitimate zero state)
+    if (_channelStates[channel].consecutiveZeroCount >= MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
+        _logger.info("%s (%D): %d consecutive zero readings, assuming device turned off", 
+                    TAG, channelData[channel].label.c_str(), channel, _channelStates[channel].consecutiveZeroCount);
+        _channelStates[channel].isInLegitimateZeroState = true;
+        return false; // Accept this reading as the start of legitimate zero state
+    }
+    
+    // Check if the previous reading was significant enough that this zero is likely spurious
+    unsigned long timeSinceLastValid = millis() - _channelStates[channel].lastValidReadingTime;
+    
+    if (timeSinceLastValid < SPURIOUS_ZERO_MAX_DURATION) {
+        // Recent valid reading + isolated zero = likely spurious
+        bool hadSignificantLoad = (_channelStates[channel].lastValidCurrent > 0.2 || 
+                                  abs(_channelStates[channel].lastValidActivePower) > 10.0 || 
+                                  abs(_channelStates[channel].lastValidPowerFactor) > 0.1);
+
+        if (hadSignificantLoad) {
+            _logger.warning("%s (%D): Spurious zero reading detected: %.2fA, %.1fW (had %.2fA, %.1fW just %lums ago)", 
+                           TAG, channelData[channel].label.c_str(), channel,
+                            current, activePower,
+                           _channelStates[channel].lastValidCurrent, 
+                           _channelStates[channel].lastValidActivePower, timeSinceLastValid);
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 JsonDocument Ade7953::singleMeterValuesToJson(int index) {
@@ -1502,6 +1586,7 @@ void Ade7953::_checkForTooManyFailures() {
     }
 
     if (_failureCount >= ADE7953_MAX_FAILURES_BEFORE_RESTART) {
+        TRACE
         _logger.fatal("Too many failures (%d) in ADE7953 communication. Resetting device...", TAG, _failureCount);
         setRestartEsp32(TAG, "Too many failures in ADE7953 communication");
 
@@ -1579,14 +1664,20 @@ void Ade7953::_setupInterrupts() {
 }
 
 void Ade7953::handleInterrupt() {
+    _totalHandledInterrupts++;
     // Read interrupt status for both channels to clear the interrupt flags
     long statusA = readRegister(RSTIRQSTATA_32, 32, false);
     long statusB = readRegister(RSTIRQSTATB_32, 32, false);
 
     _logger.debug("ADE7953 interrupt triggered", TAG);
     
+    // Very important: if we detected a reset, we must reinitialize the device
+    // Check for RESET interrupt (bit 0) - Device reset
+    if (statusA & (1 << RESET_IRQ_BIT)) {
+        _logger.warning("Reset interrupt detected. Doing setup again", TAG);
+        begin();
     // Check for CYCEND interrupt (bit 18) - Line cycle end
-    if (statusA & (1 << IRQENA_CYCEND_BIT)) {
+    } else if (statusA & (1 << IRQENA_CYCEND_IRQ_BIT)) {
         _logger.verbose("Line cycle end detected on Channel A", TAG);
     }
 }

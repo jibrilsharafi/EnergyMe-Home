@@ -6,7 +6,13 @@ info:
 
 servers:
   - url: http://energyme.local
-    description: EnergyMe Home Device (Default)
+    description: Local server (using mDNS)
+  - url: http://{customHost}
+    description: Custom server
+    variables:
+      customHost:
+        default: 192.168.1.100
+        description: Custom hostname or IP address
         
 tags:
   - name: Authentication

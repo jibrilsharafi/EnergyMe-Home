@@ -395,22 +395,23 @@ void restartEsp32() {
 // Print functions
 // -----------------------------
 
-void printMeterValues(MeterValues meterValues, const char* channelLabel) {
+void printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
     logger.debug(
-        "%s: %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh | %.3f Wh | %.3f VARh | %.3f VARh | %.3f VAh", 
+        "%s (%D): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh | %.3f Wh | %.3f VARh | %.3f VARh | %.3f VAh", 
         TAG, 
-        channelLabel, 
-        meterValues.voltage, 
-        meterValues.current, 
-        meterValues.activePower, 
-        meterValues.reactivePower, 
-        meterValues.apparentPower, 
-        meterValues.powerFactor, 
-        meterValues.activeEnergyImported,
-        meterValues.activeEnergyExported,
-        meterValues.reactiveEnergyImported, 
-        meterValues.reactiveEnergyExported, 
-        meterValues.apparentEnergy
+        channelData->label.c_str(),
+        channelData->index,
+        meterValues->voltage, 
+        meterValues->current, 
+        meterValues->activePower, 
+        meterValues->reactivePower, 
+        meterValues->apparentPower, 
+        meterValues->powerFactor, 
+        meterValues->activeEnergyImported,
+        meterValues->activeEnergyExported,
+        meterValues->reactiveEnergyImported, 
+        meterValues->reactiveEnergyExported, 
+        meterValues->apparentEnergy
     );
 }
 
@@ -851,7 +852,7 @@ void clearCertificates() {
 // Authentication functions
 // -----------------------------
 
-void initializeAuthentication() { // TODO: do we really need the use of preferences if we clear all auth tokens on reboot?
+void initializeAuthentication() {
     logger.debug("Initializing authentication...", TAG);
     
     Preferences preferences;
@@ -932,7 +933,7 @@ bool setAuthPassword(const String& newPassword) {
     logger.info("Password updated successfully", TAG);
     return true;
 }
-
+// TODO: add a function to return how many saved tokens we have, and if we can accept more
 String generateAuthToken() {
     String token = "";
     const char chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
