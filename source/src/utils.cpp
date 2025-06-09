@@ -399,7 +399,7 @@ void restartEsp32() {
 
 void printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
     logger.debug(
-        "%s (%D): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh | %.3f Wh | %.3f VARh | %.3f VARh | %.3f VAh", 
+        "%s (%D): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
         TAG, 
         channelData->label.c_str(),
         channelData->index,
@@ -529,6 +529,32 @@ void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, Json
     jsonDocument["sendPowerData"] = generalConfiguration.sendPowerData;
 
     logger.debug("General configuration converted to JSON", TAG);
+}
+
+void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
+    logger.debug("Converting statistics to JSON...", TAG);
+
+    jsonDocument["ade7953TotalInterrupts"] = statistics.ade7953TotalInterrupts;
+    jsonDocument["ade7953TotalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;
+    jsonDocument["ade7953ReadingCount"] = statistics.ade7953ReadingCount;
+    jsonDocument["ade7953ReadingCountFailure"] = statistics.ade7953ReadingCountFailure;
+    
+    jsonDocument["mqttMessagesPublished"] = statistics.mqttMessagesPublished;
+    jsonDocument["mqttMessagesPublishedError"] = statistics.mqttMessagesPublishedError;
+    
+    jsonDocument["customMqttMessagesPublished"] = statistics.customMqttMessagesPublished;
+    jsonDocument["customMqttMessagesPublishedError"] = statistics.customMqttMessagesPublishedError;
+    
+    jsonDocument["modbusRequests"] = statistics.modbusRequests;
+    jsonDocument["modbusRequestsError"] = statistics.modbusRequestsError;
+    
+    jsonDocument["influxdbUploadCount"] = statistics.influxdbUploadCount;
+    jsonDocument["influxdbUploadCountError"] = statistics.influxdbUploadCountError;
+    
+    jsonDocument["wifiConnection"] = statistics.wifiConnection;
+    jsonDocument["wifiConnectionError"] = statistics.wifiConnectionError;
+
+    logger.debug("Statistics converted to JSON", TAG);
 }
 
 void applyGeneralConfiguration() {

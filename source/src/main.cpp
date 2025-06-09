@@ -28,6 +28,7 @@ RestartConfiguration restartConfiguration;
 PublishMqtt publishMqtt;
 
 MainFlags mainFlags;
+Statistics statistics;
 
 GeneralConfiguration generalConfiguration;
 CustomMqttConfiguration customMqttConfiguration;
@@ -60,15 +61,14 @@ volatile unsigned long ade7953LastInterruptTime = 0;
 
 // Interrupt Service Routine for ADE7953
 void IRAM_ATTR ade7953ISR() {
-    ade7953InterruptFlag = true;
-    ade7953TotalInterrupts++;
-    ade7953LastInterruptTime = millis();
+  ade7953InterruptFlag = true;
+  statistics.ade7953TotalInterrupts++;
+  ade7953LastInterruptTime = millis();
 }
 
 // Utils variables
 unsigned long long _linecycUnix = 0;   // Used to track the Unix time when the linecycle ended (for MQTT payloads)
 unsigned long lastMaintenanceCheck = 0;
-float averageDeltaMillisInterrupts = 0.0; // Used to calculate the average time between interrupts for the ADE7953
 
 // Classes instances
 // --------------------
@@ -417,8 +417,16 @@ void loop() {
     } else {
       TRACE
       _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
-      // Weighted average of the time between interrupts
-      averageDeltaMillisInterrupts = ((millis() - ade7953LastInterruptTime) + averageDeltaMillisInterrupts * (ade7953TotalInterrupts - 1)) / ade7953TotalInterrupts;
+      if (
+        millis() > MINIMUM_TIME_BEFORE_VALID_METER && 
+        millis() - ade7953LastInterruptTime >= ade7953.getSampleTime()
+      ) {
+        logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).",
+          TAG,
+          millis() - ade7953LastInterruptTime,
+          ade7953.getSampleTime()
+        );
+      }
 
       TRACE
       ade7953InterruptFlag = false;
@@ -431,7 +439,6 @@ void loop() {
       TRACE
       if (mainFlags.isFirstLinecyc) {
           mainFlags.isFirstLinecyc = false;
-          ade7953.purgeEnergyRegister(mainFlags.currentChannel);
       } else {
           mainFlags.isFirstLinecyc = true;
 
@@ -481,11 +488,10 @@ void loop() {
     if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {
       TRACE
       lastMaintenanceCheck = millis();
-      logger.debug("Total interrupts received: %lu | Total handled: %lu. Average delta millis between interrupts: %lu ms", 
+      logger.debug("Total interrupts received: %lu | Total handled: %lu",
         TAG, 
         ade7953TotalInterrupts, 
-        ade7953.getTotalHandledInterrupts(),
-        averageDeltaMillisInterrupts
+        ade7953.getTotalHandledInterrupts()
       );
 
       TRACE

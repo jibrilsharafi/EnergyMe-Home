@@ -72,6 +72,7 @@ void CustomWifi::loop()
           _lastConnectionAttemptTime = millis(); // Update timestamp for stable connection tracking
           _fullyConnected = true;
           _led.unblock(); // Unblock LED after successful connection
+          statistics.wifiConnection++; // Increment successful connection counter
           break;
         }
         delay(250); // Check status periodically
@@ -79,11 +80,13 @@ void CustomWifi::loop()
 
       if (!_fullyConnected) {
         _logger.warning("WiFi.reconnect() initiated but connection not fully established (no IP or not WL_CONNECTED) within timeout. Current status: %d, IP: %s. Falling back to _connectToWifi().", TAG, WiFi.status(), WiFi.localIP().toString().c_str());
+        statistics.wifiConnectionError++; // Increment error counter
         _connectToWifi(); // Fallback to the more robust WiFiManager method
       }
     } else {
       // If WiFi.reconnect() itself returns false (e.g., no credentials, immediate failure)
       _logger.warning("WiFi.reconnect() call failed immediately. Using _connectToWifi().", TAG);
+      statistics.wifiConnectionError++; // Increment error counter
       _connectToWifi(); // Fallback to the more robust WiFiManager method
     }
   }
@@ -118,6 +121,7 @@ bool CustomWifi::_connectToWifi()
     // Reset failed attempts counter on success
     _failedConnectionAttempts = 0;
     _lastConnectionAttemptTime = millis(); // Update timestamp on successful connection
+    statistics.wifiConnection++; // Increment successful connection counter
 
     if (_portalWasStarted) {
         // Portal was actually started and used during this session
@@ -136,6 +140,7 @@ bool CustomWifi::_connectToWifi()
   } else {
     // Connection or portal failed/timed out
     _led.setRed(true);
+    statistics.wifiConnectionError++; // Increment error counter
     _logger.warning("Failed to connect to WiFi or portal timed out. Attempt %d of %d", TAG, 
                    _failedConnectionAttempts, WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS);
                    

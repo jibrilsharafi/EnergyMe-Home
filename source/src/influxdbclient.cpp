@@ -312,6 +312,7 @@ void InfluxDbClient::_uploadBufferedData()
         _influxDbConnectionAttempt = 0;
 
         _lastMillisMeterPublish = millis();
+        statistics.influxdbUploadCount++;
     }
     else
     {
@@ -326,6 +327,7 @@ void InfluxDbClient::_uploadBufferedData()
         // Mark as disconnected to trigger reconnection attempts
         _isConnected = false;
         _nextInfluxDbConnectionAttemptMillis = millis() + INFLUXDB_MIN_CONNECTION_INTERVAL;
+        statistics.influxdbUploadCountError++;
 
         // Put points back in buffer for retry (if there's space)
         unsigned int _loops = 0;

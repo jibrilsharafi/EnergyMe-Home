@@ -157,6 +157,7 @@ void Mqtt::loop() {
             _publishMetadata();
             _publishChannel();
             _publishGeneralConfiguration();
+            _publishStatistics();
             _clientMqtt.loop();
 
             _clientMqtt.disconnect();
@@ -210,6 +211,7 @@ void Mqtt::loop() {
         _checkIfPublishMeterNeeded();
         _checkIfPublishStatusNeeded();
         _checkIfPublishMonitorNeeded();
+        _checkIfPublishStatisticsNeeded();
 
         TRACE
         _checkPublishMqtt();
@@ -262,14 +264,13 @@ bool Mqtt::_connectMqtt()
 
         _mqttConnectionAttempt = 0; // Reset attempt counter on success
 
-        _subscribeToTopics();
-
-        // The meter flag should only be set based on buffer status or time from last publish
+        _subscribeToTopics();        // The meter flag should only be set based on buffer status or time from last publish
         _publishMqtt.connectivity = true;
         _publishMqtt.status = true;
         _publishMqtt.metadata = true;
         _publishMqtt.channel = true;
         _publishMqtt.generalConfiguration = true;
+        _publishMqtt.statistics = true;
 
         return true;
     }
@@ -435,10 +436,10 @@ void Mqtt::_setupTopics() {
     _setTopicMeter();
     _setTopicStatus();
     _setTopicMetadata();
-    _setTopicChannel();
-    _setTopicCrash();
+    _setTopicChannel();    _setTopicCrash();
     _setTopicMonitor();
     _setTopicGeneralConfiguration();
+    _setTopicStatistics();
 
     _logger.debug("MQTT topics setup complete", TAG);
 }
@@ -451,6 +452,7 @@ void Mqtt::_setTopicChannel() { _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTop
 void Mqtt::_setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash); }
 void Mqtt::_setTopicMonitor() { _constructMqttTopic(MQTT_TOPIC_MONITOR, _mqttTopicMonitor); }
 void Mqtt::_setTopicGeneralConfiguration() { _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration); }
+void Mqtt::_setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics); }
 
 void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter) {
     _logger.debug("Converting circular buffer to JSON...", TAG);
@@ -680,6 +682,24 @@ void Mqtt::_publishGeneralConfiguration() {
     _logger.debug("General configuration published to MQTT", TAG);
 }
 
+void Mqtt::_publishStatistics() {
+    _logger.debug("Publishing statistics to MQTT", TAG);
+
+    JsonDocument _jsonDocument;
+    _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+    
+    JsonDocument _jsonDocumentStatistics;
+    statisticsToJson(statistics, _jsonDocumentStatistics);
+    _jsonDocument["statistics"] = _jsonDocumentStatistics;
+
+    String _statisticsMessage;
+    serializeJson(_jsonDocument, _statisticsMessage);
+
+    if (_publishMessage(_mqttTopicStatistics, _statisticsMessage.c_str())) {_publishMqtt.statistics = false;}
+
+    _logger.debug("Statistics published to MQTT", TAG);
+}
+
 bool Mqtt::_publishProvisioningRequest() {
     _logger.debug("Publishing provisioning request to MQTT", TAG);
 
@@ -706,26 +726,31 @@ bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) 
 
     if (topic == nullptr || message == nullptr) {
         _logger.warning("Null pointer or message passed, meaning MQTT not initialized yet", TAG);
+        statistics.mqttMessagesPublishedError++;
         return false;
     }
 
     if (!_clientMqtt.connected()) {
         _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", TAG, getMqttStateReason(_clientMqtt.state()), topic);
+        statistics.mqttMessagesPublishedError++;
         return false;
     }
 
     // Ensure time has been synced
     if (!customTime.isTimeSynched()) {
         _logger.warning("Time not synced. Skipping publishing on %s", TAG, topic);
+        statistics.mqttMessagesPublishedError++;
         return false;
     }
 
     TRACE
     if (!_clientMqtt.publish(topic, message, retain)) {
         _logger.error("Failed to publish message on %s. MQTT client state: %s", TAG, topic, getMqttStateReason(_clientMqtt.state()));
+        statistics.mqttMessagesPublishedError++;
         return false;
     }
 
+    statistics.mqttMessagesPublished++;
     _logger.debug("Message published: %s", TAG, message);
     return true;
 }
@@ -763,6 +788,16 @@ void Mqtt::_checkIfPublishMonitorNeeded() {
     }
 }
 
+void Mqtt::_checkIfPublishStatisticsNeeded() {
+    if ((millis() - _lastMillisStatisticsPublished) > MQTT_MAX_INTERVAL_STATISTICS_PUBLISH) {
+        _logger.debug("Setting flag to publish statistics", TAG);
+        
+        _publishMqtt.statistics = true;
+        
+        _lastMillisStatisticsPublished = millis();
+    }
+}
+
 void Mqtt::_checkPublishMqtt() {
     if (_publishMqtt.connectivity) {_publishConnectivity();}
     if (_publishMqtt.meter) {_publishMeter();}
@@ -772,6 +807,7 @@ void Mqtt::_checkPublishMqtt() {
     if (_publishMqtt.crash) {_publishCrash();}
     if (_publishMqtt.monitor) {_publishMonitor();}
     if (_publishMqtt.generalConfiguration) {_publishGeneralConfiguration();}
+    if (_publishMqtt.statistics) {_publishStatistics();}
 }
 
 void Mqtt::_subscribeToTopics() {

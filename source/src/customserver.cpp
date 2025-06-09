@@ -29,11 +29,8 @@ void CustomServer::begin()
     _server.begin();
 
     Update.onProgress([](size_t progress, size_t total) {});
-    
-    // Initialize authentication system
-    initializeAuthentication();
-    
-    // Initialize rate limiting for DoS protection
+
+    initializeAuthentication();    
     initializeRateLimiting();
 }
 
@@ -865,6 +862,18 @@ void CustomServer::_setRestApi()
         _serverLog("Request to get InfluxDB configuration", TAG, LogLevel::DEBUG, request);
 
         _serveJsonFile(request, INFLUXDB_CONFIGURATION_JSON_PATH); });
+
+    _server.on("/rest/get-statistics", HTTP_GET, [this](AsyncWebServerRequest *request)
+               {
+        _serverLog("Request to get statistics", TAG, LogLevel::DEBUG, request);
+
+        JsonDocument _jsonDocument;
+        statisticsToJson(statistics, _jsonDocument);
+
+        String _buffer;
+        serializeJson(_jsonDocument, _buffer);
+
+        request->send(200, "application/json", _buffer.c_str()); });
 
     _server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
                           {

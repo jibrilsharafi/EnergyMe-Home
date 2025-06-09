@@ -1,11 +1,16 @@
 #pragma once
 
 #include <Arduino.h>
+#include <AdvancedLogger.h>
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
 
 #include "constants.h"
+#include "led.h"
+#include "structs.h"
 #include "utils.h"
+
+extern Statistics statistics;
 
 class CustomWifi
 {

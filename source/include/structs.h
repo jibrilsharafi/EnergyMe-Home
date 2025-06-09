@@ -2,8 +2,7 @@
 
 #include <Arduino.h>
 
-struct MainFlags
-{
+struct MainFlags {
   bool isFirmwareUpdate;
   bool isCrashCounterReset;
   bool isFirstLinecyc;
@@ -11,6 +10,33 @@ struct MainFlags
   int currentChannel;
   
   MainFlags() : isFirmwareUpdate(false), isCrashCounterReset(false), isFirstLinecyc(true), blockLoop(false), currentChannel(-1) {}
+};
+
+struct Statistics {
+  unsigned long ade7953TotalInterrupts;
+  unsigned long ade7953TotalHandledInterrupts;
+  unsigned long ade7953ReadingCount;
+  unsigned long ade7953ReadingCountFailure;
+
+  unsigned long mqttMessagesPublished;
+  unsigned long mqttMessagesPublishedError;
+  
+  unsigned long customMqttMessagesPublished;
+  unsigned long customMqttMessagesPublishedError;
+  
+  unsigned long modbusRequests;
+  unsigned long modbusRequestsError;
+  
+  unsigned long influxdbUploadCount;
+  unsigned long influxdbUploadCountError;
+
+  unsigned long wifiConnection;
+  unsigned long wifiConnectionError;
+
+  Statistics() 
+    : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0), 
+    mqttMessagesPublished(0), customMqttMessagesPublished(0), modbusRequests(0), modbusRequestsError(0), 
+    influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0) {}
 };
 
 struct DebugFlagsRtc {
@@ -147,7 +173,6 @@ struct ChannelState {
     unsigned long lastValidReadingTime = 0;
     unsigned long consecutiveZeroCount = 0;
     bool hasHadValidReading = false;
-    float lastValidCurrent = 0.0;
     float lastValidActivePower = 0.0;
     float lastValidPowerFactor = 0.0;
     bool isInLegitimateZeroState = false;
@@ -181,7 +206,7 @@ struct RestartConfiguration
   String functionName;
   String reason;
 
-  RestartConfiguration() : isRequired(false), functionName(String("Unknown")), reason(String("Unknown")) {}
+  RestartConfiguration() : isRequired(false), requiredAt(0xFFFFFFFF), functionName(String("Unknown")), reason(String("Unknown")) {}
 };
 
 struct PublishMqtt
@@ -194,9 +219,10 @@ struct PublishMqtt
   bool crash;
   bool monitor;
   bool generalConfiguration;
+  bool statistics;
 
   // Set default to true to publish everything on first connection (except meter which needs to gather data first and crash which is needed only in case of crash)
-  PublishMqtt() : connectivity(true), meter(false), status(true), metadata(true), channel(true), crash(false), monitor(true), generalConfiguration(true) {}
+  PublishMqtt() : connectivity(true), meter(false), status(true), metadata(true), channel(true), crash(false), monitor(true), generalConfiguration(true), statistics(true) {}
 };
 
 struct CustomMqttConfiguration {
@@ -344,6 +370,5 @@ struct RateLimitEntry {
     unsigned long blockedUntil;
     
     RateLimitEntry() : ipAddress(""), failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {}
-    
     RateLimitEntry(const String& ip) : ipAddress(ip), failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {}
 };

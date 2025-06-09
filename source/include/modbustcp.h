@@ -7,6 +7,9 @@
 #include "ade7953.h"
 #include "customtime.h"
 #include "constants.h"
+#include "structs.h"
+
+extern Statistics statistics;
 
 class ModbusTcp
 {

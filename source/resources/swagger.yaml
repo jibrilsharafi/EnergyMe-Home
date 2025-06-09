@@ -412,6 +412,51 @@ components:
           type: integer
         "sendPowerData":
           type: boolean
+    Statistics:
+      type: object
+      properties:
+        ade7953TotalInterrupts:
+          type: integer
+          description: Total number of ADE7953 interrupts
+        ade7953TotalHandledInterrupts:
+          type: integer
+          description: Total number of handled ADE7953 interrupts
+        ade7953ReadingCount:
+          type: integer
+          description: Total number of ADE7953 readings
+        ade7953ReadingCountFailure:
+          type: integer
+          description: Total number of failed ADE7953 readings
+        mqttMessagesPublished:
+          type: integer
+          description: Total number of MQTT messages published
+        mqttMessagesPublishedError:
+          type: integer
+          description: Total number of MQTT message publish errors
+        customMqttMessagesPublished:
+          type: integer
+          description: Total number of custom MQTT messages published
+        customMqttMessagesPublishedError:
+          type: integer
+          description: Total number of custom MQTT message publish errors
+        modbusRequests:
+          type: integer
+          description: Total number of Modbus requests
+        modbusRequestsError:
+          type: integer
+          description: Total number of Modbus request errors
+        influxdbUploadCount:
+          type: integer
+          description: Total number of InfluxDB uploads
+        influxdbUploadCountError:
+          type: integer
+          description: Total number of InfluxDB upload errors
+        wifiConnection:
+          type: integer
+          description: Total number of WiFi connections
+        wifiConnectionError:
+          type: integer
+          description: Total number of WiFi connection errors
     MonitorData:
       type: object
       properties:
@@ -1740,6 +1785,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GeneralConfiguration'
+
+  /rest/get-statistics:
+    get:
+      summary: Get system statistics
+      description: Returns comprehensive statistics about the device's operation including MQTT, ADE7953, Modbus, InfluxDB, and WiFi metrics
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response with system statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Statistics'
 
   /rest/get-has-secrets:
     get:

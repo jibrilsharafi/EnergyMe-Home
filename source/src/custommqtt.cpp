@@ -303,27 +303,32 @@ bool CustomMqtt::_publishMessage(const char *topic, const char *message)
     if (topic == nullptr || message == nullptr)
     {
         _logger.warning("Null pointer or message passed, meaning MQTT not initialized yet", TAG);
+        statistics.customMqttMessagesPublishedError++;
         return false;
     }
 
     if (!_customClientMqtt.connected())
     {
         _logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", TAG, getMqttStateReason(_customClientMqtt.state()), topic);
+        statistics.customMqttMessagesPublishedError++;
         return false;
     }
 
     if (strlen(topic) == 0 || strlen(message) == 0)
     {
         _logger.warning("Empty topic or message. Skipping publishing.", TAG);
+        statistics.customMqttMessagesPublishedError++;
         return false;
     }
 
     if (!_customClientMqtt.publish(topic, message))
     {
         _logger.warning("Failed to publish message. MQTT client state: %s", TAG, getMqttStateReason(_customClientMqtt.state()));
+        statistics.customMqttMessagesPublishedError++;
         return false;
     }
 
+    statistics.customMqttMessagesPublished++;
     _logger.debug("Message published: %s", TAG, message);
     return true;
 }

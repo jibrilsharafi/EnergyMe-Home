@@ -142,10 +142,10 @@ void Ade7953::_reset() {
 }
 
 /**
- * Verifies the communication with the Ade7953 device.
+ * Verifies the communication with the ADE7953 device.
  * This function reads a specific register from the device and checks if it matches the default value.
  * 
- * @return true if the communication with the Ade7953 is successful, false otherwise.
+ * @return true if the communication with the ADE7953 is successful, false otherwise.
  */
 bool Ade7953::_verifyCommunication() {
     _logger.debug("Verifying communication with Ade7953...", TAG);
@@ -161,21 +161,21 @@ bool Ade7953::_verifyCommunication() {
             continue;
         }
 
-        _logger.debug("Attempt (%d/%d) to communicate with Ade7953", TAG, _attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+        _logger.debug("Attempt (%d/%d) to communicate with ADE7953", TAG, _attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
         
         _reset();
         _attempt++;
         _lastMillisAttempt = millis();
 
         if ((readRegister(AP_NOLOAD_32, 32, false)) == DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
-            _logger.debug("Communication successful with Ade7953", TAG);
+            _logger.debug("Communication successful with ADE7953", TAG);
             return true;
         } else {
-            _logger.warning("Failed to communicate with Ade7953 on _attempt (%d/%d). Retrying in %d ms", TAG, _attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
+            _logger.warning("Failed to communicate with ADE7953 on _attempt (%d/%d). Retrying in %d ms", TAG, _attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
         }
     }
 
-    _logger.error("Failed to communicate with Ade7953 after %d attempts", TAG, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+    _logger.error("Failed to communicate with ADE7953 after %d attempts", TAG, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
     return false;
 }
 
@@ -575,8 +575,8 @@ int Ade7953::findNextActiveChannel(int currentChannel) {
 
 // Meter values
 // --------------------
-/*
 
+/*
 There is no better way to read the values from the ADE7953 
 than this. Since we use a multiplexer, we cannot read the data
 more often than 200 ms as that is the settling time for the
@@ -618,8 +618,6 @@ can be found in the function itself.
 @param channel The channel to read the values from. Returns
 false if the data reading is not ready yet or valid.
 */
-// TODO: we could test another way of reading data (faster but average RMS values, not energy register)
-// but most likely this is the best way to do this so we offload the constant burden of sampling.
 bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) {
     unsigned long long previousLastUnixTimeMilliseconds = meterValues[channel].lastUnixTimeMilliseconds;
     unsigned long long _deltaMillis; // This will be used for energy accumulation
@@ -671,21 +669,24 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
 
     if (channelData[channel].phase == _basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
         TRACE
-        _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
-        _current = _readCurrentRms(_ade7953Channel) / channelData[channel].calibrationValues.aLsb;
-        
-        _powerFactor = _readPowerFactor(_ade7953Channel) * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
-        
+        // These are the three most important values to read
         _activeEnergy = _readActiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.whLsb * (channelData[channel].reverse ? -1 : 1);
         _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.varhLsb * (channelData[channel].reverse ? -1 : 1);
         _apparentEnergy = _readApparentEnergy(_ade7953Channel) / channelData[channel].calibrationValues.vahLsb;
-
+    
+        _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
+        
         // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
         // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
         _activePower = _activeEnergy / (_sampleTime / 1000.0 / 3600.0); // W
         _reactivePower = _reactiveEnergy / (_sampleTime / 1000.0 / 3600.0); // var
         _apparentPower = _apparentEnergy / (_sampleTime / 1000.0 / 3600.0); // VA
-
+        
+        // It is faster and more consistent to compute the values rather than reading them from the ADE7953
+        _powerFactor = _activeEnergy / _apparentEnergy * (_reactiveEnergy >= 0 ? 1 : -1); // Apply sign as by datasheet (page 38)
+        if (_apparentEnergy == 0) _powerFactor = 0.0; // Avoid division by zero
+        
+        _current = _apparentPower / _voltage; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
     } else { // Assume everything is the same as channel 0 except the current
         // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
         // It is easier just to ensure during installation that the CTs are installed correctly
@@ -745,7 +746,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
 
     TRACE
     // Check for spurious zero readings BEFORE other validations
-    if (_isSpuriousZeroReading(channel, _current, _activePower, _powerFactor)) {
+    if (_isSpuriousZeroReading(channel, _activePower, _powerFactor)) {
         _recordFailure();
         return false;
     }
@@ -769,7 +770,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
     // Channel 0 does not have this problem since it has a dedicated ADC on the ADE7953, while the other channels
     // use a multiplexer and some weird behavior can happen sometimes
     TRACE
-    if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != 0 &&
+    if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != CHANNEL_0 &&
         (abs(_current * _voltage - _apparentPower) > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE || 
          abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) 
     {
@@ -811,6 +812,12 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
     } else if (_activeEnergy < 0) {
         meterValues[channel].activeEnergyExported += abs(meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0); // W * ms * s / 1000 ms * h / 3600 s = Wh
     } else {
+        _logger.debug(
+            "%s (%d): No load active energy reading. Setting active power and power factor to 0", 
+            TAG,
+            channelData[channel].label.c_str(),
+            channel
+        );
         meterValues[channel].activePower = 0.0;
         meterValues[channel].powerFactor = 0.0;
     }
@@ -820,12 +827,24 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
     } else if (_reactiveEnergy < 0) {
         meterValues[channel].reactiveEnergyExported += abs(meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0); // var * ms * s / 1000 ms * h / 3600 s = VArh
     } else {
+        _logger.debug(
+            "%s (%d): No load reactive energy reading. Setting reactive power to 0", 
+            TAG,
+            channelData[channel].label.c_str(),
+            channel
+        );
         meterValues[channel].reactivePower = 0.0;
     }
 
     if (_apparentEnergy != 0) {
         meterValues[channel].apparentEnergy += meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
     } else {
+        _logger.debug(
+            "%s (%d): No load apparent energy reading. Setting apparent power and current to 0", 
+            TAG,
+            channelData[channel].label.c_str(),
+            channel
+        );
         meterValues[channel].current = 0.0;
         meterValues[channel].apparentPower = 0.0;
     }
@@ -834,6 +853,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
     // only if we actually reached the end. Otherwise it would mean the point had to be
     // discarded
     meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
+    statistics.ade7953ReadingCount++;
     return true;
 }
 
@@ -903,7 +923,7 @@ bool Ade7953::_validatePowerFactor(float newValue) {
     return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
 }
 
-bool Ade7953::_isSpuriousZeroReading(int channel, float current, float activePower, float powerFactor) {
+bool Ade7953::_isSpuriousZeroReading(int channel, float activePower, float powerFactor) {
     // Check if all critical measurements are near zero
     bool isZeroReading = (abs(activePower) == 0 && 
                          abs(powerFactor) == 0);
@@ -914,7 +934,6 @@ bool Ade7953::_isSpuriousZeroReading(int channel, float current, float activePow
         _channelStates[channel].isInLegitimateZeroState = false;
         _channelStates[channel].lastValidReadingTime = millis();
         _channelStates[channel].hasHadValidReading = true;
-        _channelStates[channel].lastValidCurrent = current;
         _channelStates[channel].lastValidActivePower = activePower;
         _channelStates[channel].lastValidPowerFactor = powerFactor;
         return false;
@@ -925,7 +944,6 @@ bool Ade7953::_isSpuriousZeroReading(int channel, float current, float activePow
     
     // If we've never had a valid reading, assume it's legitimate (device actually off)
     if (!_channelStates[channel].hasHadValidReading) {
-        _logger.debug("%s (%D): No previous valid readings, accepting zero reading", TAG, channelData[channel].label.c_str(), channel);
         _channelStates[channel].isInLegitimateZeroState = true;
         return false;
     }
@@ -945,23 +963,28 @@ bool Ade7953::_isSpuriousZeroReading(int channel, float current, float activePow
     
     // Check if the previous reading was significant enough that this zero is likely spurious
     unsigned long timeSinceLastValid = millis() - _channelStates[channel].lastValidReadingTime;
-    
-    if (timeSinceLastValid < SPURIOUS_ZERO_MAX_DURATION) { // TODO: understand why when active power on channel 0 is 0, this is not triggered
-        // Recent valid reading + isolated zero = likely spurious
-        bool hadSignificantLoad = (_channelStates[channel].lastValidCurrent > 0.2 || 
-                                  abs(_channelStates[channel].lastValidActivePower) > 10.0 || 
-                                  abs(_channelStates[channel].lastValidPowerFactor) > 0.1);
 
-        if (hadSignificantLoad) {
-            _logger.warning("%s (%D): Spurious zero reading detected: %.2fA, %.1fW (had %.2fA, %.1fW just %lums ago)", 
-                           TAG, channelData[channel].label.c_str(), channel,
-                            current, activePower,
-                           _channelStates[channel].lastValidCurrent, 
-                           _channelStates[channel].lastValidActivePower, timeSinceLastValid);
+    if (timeSinceLastValid < SPURIOUS_ZERO_MAX_DURATION)
+    {
+        // Recent valid reading + isolated zero = likely spurious
+        bool hadSignificantLoad = (abs(_channelStates[channel].lastValidActivePower) > 10.0 ||
+                                   abs(_channelStates[channel].lastValidPowerFactor) > 0.1);
+
+        if (hadSignificantLoad)
+        {
+            _logger.warning("%s (%D): Spurious zero reading detected: %.1fW (last valid: %.1fW) | %.2f PF (last valid: %.2f) | Time since last valid: %lu ms",
+                            TAG,
+                            channelData[channel].label.c_str(),
+                            channel,
+                            activePower,
+                            _channelStates[channel].lastValidActivePower,
+                            powerFactor,
+                            _channelStates[channel].lastValidPowerFactor,
+                            timeSinceLastValid);
             return true;
         }
     }
-    
+
     return false;
 }
 
@@ -1585,7 +1608,7 @@ void Ade7953::_recordFailure() {
     }
 
     _failureCount++;
-    _longTermFailureCount++;
+    statistics.ade7953ReadingCountFailure++;
     _checkForTooManyFailures();
 }
 
@@ -1678,7 +1701,8 @@ void Ade7953::_setupInterrupts() {
 }
 
 void Ade7953::handleInterrupt() {
-    _totalHandledInterrupts++;
+    statistics.ade7953TotalHandledInterrupts++;
+
     // Read interrupt status for both channels to clear the interrupt flags
     long statusA = readRegister(RSTIRQSTATA_32, 32, false);
     long statusB = readRegister(RSTIRQSTATB_32, 32, false);

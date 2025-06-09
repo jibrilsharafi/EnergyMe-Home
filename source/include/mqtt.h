@@ -17,6 +17,7 @@
 #include "utils.h"
 
 extern DebugFlagsRtc debugFlagsRtc;
+extern Statistics statistics;
 
 class Mqtt
 {
@@ -42,6 +43,7 @@ private:
     void _checkIfPublishMeterNeeded();
     void _checkIfPublishStatusNeeded();
     void _checkIfPublishMonitorNeeded();
+    void _checkIfPublishStatisticsNeeded();
 
     void _checkPublishMqtt();
 
@@ -53,6 +55,7 @@ private:
     void _publishCrash();
     void _publishMonitor();
     void _publishGeneralConfiguration();
+    void _publishStatistics();
     bool _publishProvisioningRequest();
 
     void _setupTopics();
@@ -64,6 +67,7 @@ private:
     void _setTopicCrash();
     void _setTopicMonitor();
     void _setTopicGeneralConfiguration();
+    void _setTopicStatistics();
 
     bool _publishMessage(const char *topic, const char *message, bool retain = false);
 
@@ -97,11 +101,13 @@ private:
     char _mqttTopicCrash[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicMonitor[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicGeneralConfiguration[MQTT_MAX_TOPIC_LENGTH];
+    char _mqttTopicStatistics[MQTT_MAX_TOPIC_LENGTH];
 
     unsigned long _lastMillisMqttLoop = 0;
     unsigned long _lastMillisMeterPublished = MINIMUM_TIME_BEFORE_VALID_METER; // Do not publish immediately after setup
     unsigned long _lastMillisStatusPublished = 0;
     unsigned long _lastMillisMonitorPublished = 0;
+    unsigned long _lastMillisStatisticsPublished = 0;
     unsigned long _lastMillisMqttFailed = 0;
     unsigned long _mqttConnectionAttempt = 0;
     unsigned long _nextMqttConnectionAttemptMillis = 0;

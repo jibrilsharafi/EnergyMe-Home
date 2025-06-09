@@ -149,6 +149,7 @@
 #endif
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
 #define MQTT_MAX_INTERVAL_STATUS_PUBLISH (60 * 60 * 1000) // The interval between two status publish
+#define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (60 * 1000) // The interval between two statistics publish (1 minute)
 #define MQTT_MAX_INTERVAL_CRASH_MONITOR_PUBLISH (60 * 60 * 1000) // The interval between two status publish
 #define MQTT_CLAIM_MAX_CONNECTION_ATTEMPT 10 // The maximum number of attempts to connect to AWS IoT Core MQTT broker for claiming certificates
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
@@ -251,9 +252,9 @@
 #define DEFAULT_EXPECTED_AP_NOLOAD_REGISTER 0x00E419 // Default expected value for AP_NOLOAD_32 
 #define DEFAULT_X_NOLOAD_REGISTER 0x00E419 // Value for AP_NOLOAD_32, VAR_NOLOAD_32 and VA_NOLOAD_32 register. Represents a scale of 10000:1, meaning that the no-load threshold is 0.01% of the full-scale value
 #define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (enable all no-load detection)
-#define DEFAULT_LCYCMODE_REGISTER 0xFF // 0xFF 0b11111111 (enable accumulation mode for all channels)
+#define DEFAULT_LCYCMODE_REGISTER 0x7F // 0xFF 0b01111111 (enable accumulation mode for all channels, disable read with reset)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
-#define DEFAULT_CONFIG_REGISTER 0b1000000000001100 // Enable bit 2, bit 3 (line accumulation for PF), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
+#define DEFAULT_CONFIG_REGISTER 0b1000000100001100 // Enable bit 2, bit 3 (line accumulation for PF), 8 (CRC is enabled), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
 #define DEFAULT_GAIN 4194304 // 0x400000 (default gain for the ADE7953)
 #define DEFAULT_OFFSET 0 // 0x000000 (default offset for the ADE7953)
 #define DEFAULT_PHCAL 10 // 0.02°/LSB, indicating a phase calibration of 0.2° which is needed for CTs
@@ -282,8 +283,8 @@
 // Guardrails and thresholds
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01 // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_POWER_FACTOR 0.05 // Measuring such low power factors is virtually impossible with such CTs
-#define SPURIOUS_ZERO_MAX_DURATION 5000 // Time after a valid reading to consider a reading as spurious zero
-#define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 10 // Threshold to transition to a legitimate zero state for a channel
+#define SPURIOUS_ZERO_MAX_DURATION 5000 // Time after a valid reading to consider a reading not anymore a spurious zero
+#define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 3 // Threshold to transition to a legitimate zero state for a channel
 
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
 
@@ -330,6 +331,7 @@
 #define MQTT_TOPIC_LOG "log"
 #define MQTT_TOPIC_GENERAL_CONFIGURATION "general-configuration"
 #define MQTT_TOPIC_CONNECTIVITY "connectivity"
+#define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_PROVISIONING_REQUEST "provisioning/request"
 
 // Subscribe topics

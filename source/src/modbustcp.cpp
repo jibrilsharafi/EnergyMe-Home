@@ -34,11 +34,13 @@ void ModbusTcp::begin() {
 ModbusMessage ModbusTcp::_handleReadHoldingRegisters(ModbusMessage request) {
     if (!modbusTcpInstance) {
         modbusTcpInstance->_logger.error("ModbusTcp instance not initialized yet", TAG);
+        statistics.modbusRequestsError++;
         return ModbusMessage(request.getServerID(), request.getFunctionCode(), SERVER_DEVICE_FAILURE);
     }
     
     if (request.getFunctionCode() != READ_HOLD_REGISTER) {
         modbusTcpInstance->_logger.debug("Invalid function code: %d", TAG, request.getFunctionCode());
+        statistics.modbusRequestsError++;
         return ModbusMessage(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
     }
 
@@ -64,6 +66,7 @@ ModbusMessage ModbusTcp::_handleReadHoldingRegisters(ModbusMessage request) {
         response.add(value);
     }
     
+    statistics.modbusRequests++;
     return response;
 }
 

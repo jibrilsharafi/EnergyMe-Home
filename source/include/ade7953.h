@@ -14,6 +14,8 @@
 #include "structs.h"
 #include "utils.h"
 
+extern Statistics statistics;
+
 class Ade7953
 {
 public:
@@ -37,6 +39,7 @@ public:
     void purgeEnergyRegister(int channel);
 
     bool isLinecycFinished();
+    unsigned int getSampleTime() const { return _sampleTime; }
 
     long readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired = true);
     void writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired = true);
@@ -125,7 +128,7 @@ private:
     bool _validatePower(float newValue);
     bool _validatePowerFactor(float newValue);
 
-    bool _isSpuriousZeroReading(int channel, float current, float activePower, float powerFactor);
+    bool _isSpuriousZeroReading(int channel, float activePower, float powerFactor);
 
     void _setLinecyc(unsigned int linecyc);
     void _setPgaGain(long pgaGain, int channel, int measurementType);

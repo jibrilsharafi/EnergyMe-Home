@@ -21,7 +21,7 @@
 #include "led.h"
 #include "structs.h"
 
-// Only place where the extern is used
+// Only place where the extern is used a lot
 extern AdvancedLogger logger;
 extern GeneralConfiguration generalConfiguration;
 extern CustomTime customTime;
@@ -76,6 +76,9 @@ void clearAllPreferences();
 bool isLatestFirmwareInstalled();
 
 String getDeviceId();
+
+// Statistics functions
+void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
 
 const char* getMqttStateReason(int state);
 
