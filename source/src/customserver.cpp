@@ -296,22 +296,27 @@ void CustomServer::_setRestApi()
             deserializeJson(jsonDoc, buffer->data(), buffer->size());
             
             String password = jsonDoc["password"].as<String>();
-            
-            if (validatePassword(password)) {
+              if (validatePassword(password)) {
                 String token = generateAuthToken();
-                JsonDocument response;
-                response["success"] = true;
-                response["token"] = token;
-                response["message"] = "Login successful";
-                
-                String responseBuffer;
-                serializeJson(response, responseBuffer);
-                
-                AsyncWebServerResponse *resp = request->beginResponse(200, "application/json", responseBuffer);
-                resp->addHeader("Set-Cookie", "auth_token=" + token + "; Path=/; Max-Age=86400; HttpOnly");
-                request->send(resp);
-                
-                _serverLog("Successful login", TAG, LogLevel::INFO, request);
+                if (token.isEmpty()) {
+                    // Maximum concurrent sessions reached
+                    request->send(429, "application/json", "{\"success\":false,\"message\":\"Maximum concurrent sessions reached. Please try again later or ask another user to logout.\"}");
+                    _serverLog("Login rejected - maximum sessions reached", TAG, LogLevel::WARNING, request);
+                } else {
+                    JsonDocument response;
+                    response["success"] = true;
+                    response["token"] = token;
+                    response["message"] = "Login successful";
+                    
+                    String responseBuffer;
+                    serializeJson(response, responseBuffer);
+                    
+                    AsyncWebServerResponse *resp = request->beginResponse(200, "application/json", responseBuffer);
+                    resp->addHeader("Set-Cookie", "auth_token=" + token + "; Path=/; Max-Age=86400; HttpOnly");
+                    request->send(resp);
+                    
+                    _serverLog("Successful login", TAG, LogLevel::INFO, request);
+                }
             } else {
                 request->send(401, "application/json", "{\"success\":false,\"message\":\"Invalid password\"}");
                 _serverLog("Failed login attempt", TAG, LogLevel::WARNING, request);
@@ -376,13 +381,17 @@ void CustomServer::_setRestApi()
             
             delete buffer;
             request->_tempObject = nullptr;
-        } });
-    _server.on("/rest/auth/status", HTTP_GET, [this](AsyncWebServerRequest *request)
+        } });    _server.on("/rest/auth/status", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         JsonDocument response;
         bool isAuthenticated = _checkAuth(request);
         response["authenticated"] = isAuthenticated;
         response["username"] = DEFAULT_WEB_USERNAME;
+        
+        // Add session management information
+        response["activeSessions"] = getActiveTokenCount();
+        response["maxSessions"] = MAX_CONCURRENT_SESSIONS;
+        response["canAcceptMoreSessions"] = canAcceptMoreTokens();
         
         // Check if user must change default password
         if (isAuthenticated) {

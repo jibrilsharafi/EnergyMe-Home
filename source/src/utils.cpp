@@ -871,8 +871,14 @@ void clearCertificates() {
 // Authentication functions
 // -----------------------------
 
+// Static variables for token management
+static int activeTokenCount = 0;
+
 void initializeAuthentication() {
     logger.debug("Initializing authentication...", TAG);
+    
+    clearAllAuthTokens();
+    activeTokenCount = 0;
     
     Preferences preferences;
     if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
@@ -952,8 +958,13 @@ bool setAuthPassword(const String& newPassword) {
     logger.info("Password updated successfully", TAG);
     return true;
 }
-// TODO: add a function to return how many saved tokens we have, and if we can accept more
 String generateAuthToken() {
+    // Check if we can accept more tokens
+    if (!canAcceptMoreTokens()) {
+        logger.warning("Cannot generate new token: maximum concurrent sessions reached (%d)", TAG, MAX_CONCURRENT_SESSIONS);
+        return "";
+    }
+    
     String token = "";
     const char chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     
@@ -976,6 +987,10 @@ String generateAuthToken() {
         // Store mapping from short key to full token
         preferences.putString((shortKey + "_f").c_str(), token); // "_f" for full token
         preferences.end();
+        
+        // Increment the active token count
+        activeTokenCount++;
+        logger.debug("Token generated successfully. Active tokens: %d/%d", TAG, activeTokenCount, MAX_CONCURRENT_SESSIONS);
     }
     
     return token;
@@ -1011,6 +1026,7 @@ bool validateAuthToken(const String& token) {
     
     // Check if token has expired
     if (millis() - tokenTimestamp > AUTH_SESSION_TIMEOUT) {
+        logger.debug("Token expired, removing it", TAG);
         clearAuthToken(token);
         return false;
     }
@@ -1028,8 +1044,17 @@ void clearAuthToken(const String& token) {
         }
         String shortKey = "t" + String(tokenHash, HEX);
         
-        preferences.remove(shortKey.c_str());
-        preferences.remove((shortKey + "_f").c_str());
+        // Check if token exists before removing
+        if (preferences.getULong64(shortKey.c_str(), 0) != 0) {
+            preferences.remove(shortKey.c_str());
+            preferences.remove((shortKey + "_f").c_str());
+            
+            // Decrement the active token count
+            if (activeTokenCount > 0) {
+                activeTokenCount--;
+                logger.debug("Token cleared. Active tokens: %d/%d", TAG, activeTokenCount, MAX_CONCURRENT_SESSIONS);
+            }
+        }
         preferences.end();
     }
 }
@@ -1052,6 +1077,10 @@ void clearAllAuthTokens() {
     }
     
     preferences.end();
+    
+    // Reset the token count
+    activeTokenCount = 0;
+    logger.debug("All tokens cleared. Active tokens: %d", TAG, activeTokenCount);
 }
 
 String hashPassword(const String& password) {
@@ -1065,6 +1094,14 @@ String hashPassword(const String& password) {
     }
     
     return String(hash, HEX);
+}
+
+int getActiveTokenCount() {
+    return activeTokenCount;
+}
+
+bool canAcceptMoreTokens() {
+    return activeTokenCount < MAX_CONCURRENT_SESSIONS;
 }
 
 bool setupMdns()

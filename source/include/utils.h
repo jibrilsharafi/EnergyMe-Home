@@ -95,6 +95,8 @@ bool validateAuthToken(const String& token);
 void clearAuthToken(const String& token);
 void clearAllAuthTokens();
 String hashPassword(const String& password);
+int getActiveTokenCount();
+bool canAcceptMoreTokens();
 
 bool setupMdns();
 
