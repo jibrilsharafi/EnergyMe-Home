@@ -383,10 +383,12 @@ void restartEsp32() {
 
     TRACE
     if (_firmwareStatus == TESTING) {
-        logger.warning("Firmware evaluation is in progress. Setting firmware to test again", TAG);
+        logger.info("Firmware evaluation is in progress. Setting firmware to test again", TAG);
         TRACE
         if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) logger.error("Failed to set firmware status", TAG);
     }
+
+    logger.end();
 
     TRACE
     ESP.restart();
@@ -417,13 +419,30 @@ void printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
 
 void printDeviceStatus()
 {
-    logger.info(
-        "Free heap: %d bytes | Total heap: %d bytes || Free SPIFFS: %d bytes | Total SPIFFS: %d bytes",
+    unsigned int heapSize = ESP.getHeapSize();
+    unsigned int freeHeap = ESP.getFreeHeap();
+    unsigned int minFreeHeap = ESP.getMinFreeHeap();
+    unsigned int maxAllocHeap = ESP.getMaxAllocHeap();
+
+    unsigned int SpiffsTotalBytes = SPIFFS.totalBytes();
+    unsigned int SpiffsUsedBytes = SPIFFS.usedBytes();
+    unsigned int SpiffsFreeBytes = SpiffsTotalBytes - SpiffsUsedBytes;
+    
+    float heapUsedPercentage = ((heapSize - freeHeap) / heapSize) * 100.0;
+    float spiffsUsedPercentage = ((float)SpiffsUsedBytes / SpiffsTotalBytes) * 100.0;
+
+    logger.debug(
+        "Heap: %.1f%% (%u/%u bytes) (min: %u bytes, max alloc: %u bytes) | SPIFFS: %.1f%% (%u/%u bytes) (free: %u bytes)",
         TAG,
-        ESP.getFreeHeap(),
-        ESP.getHeapSize(),
-        SPIFFS.totalBytes() - SPIFFS.usedBytes(),
-        SPIFFS.totalBytes()
+        heapUsedPercentage,
+        freeHeap,
+        heapSize,
+        minFreeHeap,
+        maxAllocHeap,
+        spiffsUsedPercentage,
+        SpiffsUsedBytes,
+        SpiffsTotalBytes,
+        SpiffsFreeBytes
     );
 }
 
@@ -846,7 +865,7 @@ void clearCertificates() {
     preferences.clear();
     preferences.end();
 
-    logger.warning("Certificates for cloud services cleared", TAG);
+    logger.info("Certificates for cloud services cleared", TAG);
 }
 
 // Authentication functions

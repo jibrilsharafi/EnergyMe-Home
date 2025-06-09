@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "09"
-#define FIRMWARE_BUILD_VERSION_PATCH "04"
+#define FIRMWARE_BUILD_VERSION_PATCH "05"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -229,7 +229,7 @@
 #define MISO_PIN 35
 #define MOSI_PIN 45
 #define ADE7953_RESET_PIN 21
-#define ADE7953_INTERRUPT_PIN 37 // TODO: Implement (eventually) the interrupt pin for more functionalities
+#define ADE7953_INTERRUPT_PIN 37
 #define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz
 
 // Setup
@@ -253,14 +253,14 @@
 #define DEFAULT_SAMPLE_TIME 200 // 200 ms is the minimum time required to settle the ADE7953 channel readings (needed as the multiplexer constantly switches)
 
 // Interrupt configuration for ADE7953
-#define DEFAULT_IRQENA_REGISTER 0b000101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) for line cycle end detection
+#define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) for line cycle end detection
 #define IRQENA_CYCEND_IRQ_BIT 18 // Bit position for CYCEND interrupt
 #define RESET_IRQ_BIT 20 // Bit position for Reset interrupt
+#define CRC_IRQ_BIT 21 // Bit position for CRC error interrupt
 
 // Fixed conversion values
 #define POWER_FACTOR_CONVERSION_FACTOR 1.0 / 32768.0 // PF/LSB
 #define ANGLE_CONVERSION_FACTOR 360.0 * 50.0 / 223000.0 // 0.0807 °/LSB
-#define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.003 // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 
 // Validate values
 #define VALIDATE_VOLTAGE_MIN 50.0 // Any voltage below this value is discarded
@@ -272,6 +272,9 @@
 #define VALIDATE_POWER_FACTOR_MIN -1.0 // Any power factor below this value is discarded
 #define VALIDATE_POWER_FACTOR_MAX 1.0 // Any power factor above this value is discarded
 
+// Guardrails and thresholds
+#define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01 // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
+#define MINIMUM_POWER_FACTOR 0.05 // Measuring such low power factors is virtually impossible with such CTs
 #define SPURIOUS_ZERO_MAX_DURATION 5000 // Time after a valid reading to consider a reading as spurious zero
 #define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 10 // Threshold to transition to a legitimate zero state for a channel
 

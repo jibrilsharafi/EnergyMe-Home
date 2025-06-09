@@ -90,46 +90,18 @@ Mqtt::Mqtt(
     WiFiClientSecure &net,
     PublishMqtt &publishMqtt,
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter
-    ) : _ade7953(ade7953), _logger(logger), _clientMqtt(clientMqtt), _net(net), _publishMqtt(publishMqtt), _payloadMeter(payloadMeter) {}
+    ) : _ade7953(ade7953), _logger(logger), _clientMqtt(clientMqtt), _net(net), _publishMqtt(publishMqtt), _payloadMeter(payloadMeter) {
+        _deviceId = getDeviceId();
+    }
 
 void Mqtt::begin() {
 #if HAS_SECRETS
-    _logger.debug("Setting up MQTT...", TAG);
-
-    _deviceId = getDeviceId();
-
-    TRACE
-    if (!checkCertificatesExist()) {
-        _claimProcess();
-        return;
-    }
-    
-    TRACE
-    _setupTopics();
-
-    TRACE
-    _clientMqtt.setCallback(subscribeCallback);
-
-    TRACE
-    _setCertificates();
-
-    TRACE
-    _net.setCACert(aws_iot_core_cert_ca);
-    _net.setCertificate(_awsIotCoreCert.c_str());
-    _net.setPrivateKey(_awsIotCorePrivateKey.c_str());
-
-    TRACE
-    _clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
-
-    TRACE
-    _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
-    _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
-
-    _logger.info("MQTT setup complete", TAG);
-    _isSetupDone = true;
+    // This method is now only called from setup() for early initialization
+    // The actual MQTT setup is handled in loop() based on cloud services state
+    _logger.debug("MQTT begin called - actual setup will be handled in loop()", TAG);
+    _isSetupDone = false;
 #else
     _logger.info("MQTT setup skipped - no secrets available", TAG);
-    // Skip MQTT setup when secrets are not available
     _isSetupDone = false;
 #endif
 }
@@ -144,38 +116,74 @@ void Mqtt::loop() {
     if (!WiFi.isConnected()) return;
 
     TRACE
-    if (_isClaimInProgress) { // Only wait for certificates to be claimed
-        _clientMqtt.loop();
+    // Handle cloud services being disabled
+    if (!generalConfiguration.isCloudServicesEnabled) {
+        if (_isSetupDone || _isClaimInProgress) {
+            _logger.warning("Cloud services disabled. Disconnecting MQTT and clearing certificates", TAG);
+            
+            if (_clientMqtt.connected()) {
+                // Send last messages before disconnecting
+                _clientMqtt.loop();
+                _publishConnectivity(false);
+                _publishMeter();
+                _publishStatus();
+                _publishMetadata();
+                _publishChannel();
+                _publishGeneralConfiguration();
+                _clientMqtt.loop();
+                
+                _clientMqtt.disconnect();
+            }
+            
+            // Clear certificates since cloud services are disabled
+            clearCertificates();
+            _isSetupDone = false;
+            _isClaimInProgress = false;
+        }
         return;
     }
 
-    if (!_isSetupDone) {begin(); }
-
     TRACE
-    if (!generalConfiguration.isCloudServicesEnabled || restartConfiguration.isRequired) {
-        if (_isSetupDone && _clientMqtt.connected()) {
-            _logger.info("Disconnecting MQTT", TAG);
-
+    // Handle restart requirement
+    if (restartConfiguration.isRequired) {
+        if (_isSetupDone) {
+            _logger.info("Restart required. Disconnecting MQTT", TAG);
+            
             // Send last messages before disconnecting
-            TRACE
             _clientMqtt.loop();
-            _publishConnectivity(false); // Send offline connectivity as the last will message is not sent with graceful disconnect
+            _publishConnectivity(false);
             _publishMeter();
             _publishStatus();
             _publishMetadata();
             _publishChannel();
             _publishGeneralConfiguration();
+            _clientMqtt.loop();
 
             _clientMqtt.disconnect();
-
-            if (!restartConfiguration.isRequired) { // Meaning that the user decided to disable cloud services
-                clearCertificates();
-            }
-
+            
             _isSetupDone = false;
         }
-
         return;
+    }
+
+    TRACE
+    // If cloud services are enabled but we're in claim process, just loop the client
+    if (_isClaimInProgress) {
+        _clientMqtt.loop();
+        return;
+    }
+
+    TRACE
+    // If cloud services are enabled but setup not done, check certificates and setup
+    if (!_isSetupDone) {
+        if (!checkCertificatesExist()) {
+            // Start claim process only if cloud services are enabled
+            _claimProcess();
+            return;
+        } else {
+            // Certificates exist and cloud services enabled, do setup
+            _setupMqttWithCertificates();
+        }
     }
 
     TRACE
@@ -207,6 +215,34 @@ void Mqtt::loop() {
         _checkPublishMqtt();
     }
 #endif
+}
+
+void Mqtt::_setupMqttWithCertificates() {
+    _logger.debug("Setting up MQTT with existing certificates...", TAG);
+
+    TRACE
+    _setupTopics();
+
+    TRACE
+    _clientMqtt.setCallback(subscribeCallback);
+
+    TRACE
+    _setCertificates();
+
+    TRACE
+    _net.setCACert(aws_iot_core_cert_ca);
+    _net.setCertificate(_awsIotCoreCert.c_str());
+    _net.setPrivateKey(_awsIotCorePrivateKey.c_str());
+
+    TRACE
+    _clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
+
+    TRACE
+    _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
+    _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
+
+    _logger.info("MQTT setup complete", TAG);
+    _isSetupDone = true;
 }
 
 bool Mqtt::_connectMqtt()

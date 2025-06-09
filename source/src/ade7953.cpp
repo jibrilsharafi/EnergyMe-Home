@@ -70,6 +70,10 @@ bool Ade7953::begin() {
     _setEnergyFromSpiffs();
     _logger.debug("Done reading energy from SPIFFS", TAG);
 
+    // Set it up only at the end to avoid premature interrupts
+    TRACE
+    _setupInterrupts();
+
     TRACE
     return true;
 }
@@ -108,8 +112,6 @@ void Ade7953::_setDefaultParameters()
     writeRegister(LCYCMODE_8, 8, DEFAULT_LCYCMODE_REGISTER);
 
     writeRegister(CONFIG_16, 16, DEFAULT_CONFIG_REGISTER);
-    
-    _setupInterrupts();
 }
 
 /*
@@ -729,6 +731,18 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
 
     _apparentPower = abs(_apparentPower); // Apparent power must be positive
 
+    // If the power factor is below a certain threshold, assume everything is 0 to avoid weird readings
+    if (abs(_powerFactor) < MINIMUM_POWER_FACTOR) {
+        _current = 0.0;
+        _activePower = 0.0;
+        _reactivePower = 0.0;
+        _apparentPower = 0.0;
+        _powerFactor = 0.0;
+        _activeEnergy = 0.0;
+        _reactiveEnergy = 0.0;
+        _apparentEnergy = 0.0;
+    }
+
     TRACE
     // Check for spurious zero readings BEFORE other validations
     if (_isSpuriousZeroReading(channel, _current, _activePower, _powerFactor)) {
@@ -781,8 +795,8 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
     meterValues[channel].apparentPower = _apparentPower;
     meterValues[channel].powerFactor = _powerFactor;
 
-    // If the phase is not the phase of the main channel, set the energy not to 0 if the current 
-    // is above 0.003 A since we cannot use the ADE7593 no-load feature in this approximation
+    // If the phase is not the phase of the main channel, set the energy not to 0 if the current
+    // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation
     if (channelData[channel].phase != channelData[0].phase && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
         _activeEnergy = 1;
         _reactiveEnergy = 1;
@@ -923,7 +937,7 @@ bool Ade7953::_isSpuriousZeroReading(int channel, float current, float activePow
     
     // Check if we've had too many consecutive zeros (transition to legitimate zero state)
     if (_channelStates[channel].consecutiveZeroCount >= MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
-        _logger.info("%s (%D): %d consecutive zero readings, assuming device turned off", 
+        _logger.debug("%s (%D): %d consecutive zero readings, assuming device turned off", 
                     TAG, channelData[channel].label.c_str(), channel, _channelStates[channel].consecutiveZeroCount);
         _channelStates[channel].isInLegitimateZeroState = true;
         return false; // Accept this reading as the start of legitimate zero state
@@ -932,7 +946,7 @@ bool Ade7953::_isSpuriousZeroReading(int channel, float current, float activePow
     // Check if the previous reading was significant enough that this zero is likely spurious
     unsigned long timeSinceLastValid = millis() - _channelStates[channel].lastValidReadingTime;
     
-    if (timeSinceLastValid < SPURIOUS_ZERO_MAX_DURATION) {
+    if (timeSinceLastValid < SPURIOUS_ZERO_MAX_DURATION) { // TODO: understand why when active power on channel 0 is 0, this is not triggered
         // Recent valid reading + isolated zero = likely spurious
         bool hadSignificantLoad = (_channelStates[channel].lastValidCurrent > 0.2 || 
                                   abs(_channelStates[channel].lastValidActivePower) > 10.0 || 
@@ -1671,10 +1685,15 @@ void Ade7953::handleInterrupt() {
 
     _logger.debug("ADE7953 interrupt triggered", TAG);
     
-    // Very important: if we detected a reset, we must reinitialize the device
-    // Check for RESET interrupt (bit 0) - Device reset
-    if (statusA & (1 << RESET_IRQ_BIT)) {
-        _logger.warning("Reset interrupt detected. Doing setup again", TAG);
+    // Very important: if we detected a reset or a CRC change in the configurations, 
+    // we must reinitialize the device
+    // Check for both the RESET interrupt (bit 0) - Device reset and CRC changes (bit 21)
+    if (
+        statusA & (1 << RESET_IRQ_BIT) ||
+        statusA & (1 << CRC_IRQ_BIT)
+    ) {
+        TRACE
+        _logger.warning("Reset interrupt or CRC changed detected. Doing setup again", TAG);
         begin();
     // Check for CYCEND interrupt (bit 18) - Line cycle end
     } else if (statusA & (1 << IRQENA_CYCEND_IRQ_BIT)) {

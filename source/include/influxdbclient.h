@@ -63,7 +63,7 @@ private:
 
     bool _isSetupDone = false;
     bool _isConnected = false;
-    String _baseUrl = "";
+    String _baseUrl;
 
     unsigned long _lastMillisInfluxDbLoop = 0;
     unsigned long _lastMillisInfluxDbFailed = 0;
@@ -72,4 +72,6 @@ private:
 
     unsigned long _lastMillisMeterPublish = MINIMUM_TIME_BEFORE_VALID_METER; // Do not publish immediately after setup
     unsigned long _lastMillisMeterBuffer = MINIMUM_TIME_BEFORE_VALID_METER; // Do not buffer immediately after setup
+
+    String _deviceId;
 };

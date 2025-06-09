@@ -36,8 +36,8 @@ public:
 private:
     bool _connectMqtt();
     void _setCertificates();
-    bool _checkCertificates();
     void _claimProcess();
+    void _setupMqttWithCertificates();
 
     void _checkIfPublishMeterNeeded();
     void _checkIfPublishStatusNeeded();
@@ -87,7 +87,7 @@ private:
     PublishMqtt &_publishMqtt;
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
 
-    String _deviceId;
+    String _deviceId = "";
 
     char _mqttTopicConnectivity[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicMeter[MQTT_MAX_TOPIC_LENGTH];

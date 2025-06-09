@@ -10,7 +10,9 @@ InfluxDbClient::InfluxDbClient(
     CustomTime &customTime) : _ade7953(ade7953),
                               _logger(logger),
                               _influxDbConfiguration(influxDbConfiguration),
-                              _customTime(customTime) {}
+                              _customTime(customTime) {
+                                _deviceId = getDeviceId();
+                              }
 
 void InfluxDbClient::begin()
 {
@@ -353,7 +355,7 @@ String InfluxDbClient::_formatRealtimeLineProtocol(const MeterValues &meterValue
         _influxDbConfiguration.measurement.c_str(),
         channel,
         channelLabel.c_str(),
-        getDeviceId().c_str(),
+        _deviceId.c_str(),
         meterValues.voltage,
         meterValues.current,
         meterValues.activePower,
@@ -381,7 +383,7 @@ String InfluxDbClient::_formatEnergyLineProtocol(const MeterValues &meterValues,
         _influxDbConfiguration.measurement.c_str(),
         channel,
         channelLabel.c_str(),
-        getDeviceId().c_str(),
+        _deviceId.c_str(),
         meterValues.activeEnergyImported,
         meterValues.activeEnergyExported,
         meterValues.reactiveEnergyImported,

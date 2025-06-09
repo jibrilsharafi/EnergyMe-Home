@@ -48,22 +48,27 @@ AsyncWebServer server(WEBSERVER_PORT);
 // Callback variables
 CircularBuffer<LogJson, LOG_BUFFER_SIZE> logBuffer;
 char jsonBuffer[LOG_JSON_BUFFER_SIZE];  // Pre-allocated buffer
-String deviceId;      // Pre-allocated buffer
+char baseMqttTopicLogs[LOG_TOPIC_SIZE];
+char fullMqttTopic[LOG_TOPIC_SIZE];
+String deviceId;
 
 // Interrupt handling
 // --------------------
 volatile bool ade7953InterruptFlag = false;
 volatile unsigned long ade7953TotalInterrupts = 0;
+volatile unsigned long ade7953LastInterruptTime = 0;
 
 // Interrupt Service Routine for ADE7953
 void IRAM_ATTR ade7953ISR() {
     ade7953InterruptFlag = true;
     ade7953TotalInterrupts++;
+    ade7953LastInterruptTime = millis();
 }
 
 // Utils variables
 unsigned long long _linecycUnix = 0;   // Used to track the Unix time when the linecycle ended (for MQTT payloads)
 unsigned long lastMaintenanceCheck = 0;
+float averageDeltaMillisInterrupts = 0.0; // Used to calculate the average time between interrupts for the ADE7953
 
 // Classes instances
 // --------------------
@@ -182,12 +187,7 @@ void callbackLogToMqtt(
     if (
       (strcmp(level, "debug") == 0 && !debugFlagsRtc.enableMqttDebugLogging) || // Only send debug logs if MQTT debug logging is enabled
       (strcmp(level, "verbose") == 0) // Never send verbose logs via MQTT
-    ) {return; }
-
-    if (deviceId == "") {
-        deviceId = WiFi.macAddress();
-        deviceId.replace(":", "");
-    }
+    ) return;
 
     logBuffer.push(
       LogJson(
@@ -209,11 +209,8 @@ void callbackLogToMqtt(
         _loops++;
 
         LogJson _log = logBuffer.shift();
-        size_t totalLength = strlen(_log.timestamp) + strlen(_log.function) + strlen(_log.message) + 100;
-        if (totalLength > sizeof(jsonBuffer)) {
-            Serial.println("Log message too long for buffer");
-            continue;
-        }
+        size_t totalLength = strlen(_log.timestamp) + strlen(_log.function) + strlen(_log.message) + 100; // Leave overhead
+        if (totalLength > sizeof(jsonBuffer)) continue;
 
         snprintf(jsonBuffer, sizeof(jsonBuffer),
             "{\"timestamp\":\"%s\","
@@ -227,20 +224,17 @@ void callbackLogToMqtt(
             _log.function,
             _log.message);
 
-        char topic[LOG_TOPIC_SIZE];
         snprintf(
-          topic, 
-          sizeof(topic), 
-          "%s/%s/%s/%s/%s", 
-          MQTT_TOPIC_1, 
-          MQTT_TOPIC_2, 
-          deviceId.c_str(), 
-          MQTT_TOPIC_LOG, 
-        _log.level);
+          fullMqttTopic, 
+          sizeof(fullMqttTopic), 
+          "%s/%s", 
+          baseMqttTopicLogs, 
+          _log.level
+        );
 
-        if (!clientMqtt.publish(topic, jsonBuffer)) {
+        if (!clientMqtt.publish(fullMqttTopic, jsonBuffer)) {
             Serial.printf("MQTT publish failed to %s. Error: %d\n", 
-                topic, clientMqtt.state());
+                fullMqttTopic, clientMqtt.state());
             logBuffer.push(_log);
             break;
         }
@@ -302,7 +296,7 @@ void setup() {
     auto missingFiles = checkMissingFiles();
     if (!missingFiles.empty()) {
         led.setOrange();
-        logger.warning("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
+        logger.info("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
 
         TRACE
         createDefaultFilesForMissingFiles(missingFiles);
@@ -369,6 +363,20 @@ void setup() {
 
     led.setGreen();
 
+    // Generate the device ID for the callback (pre-allocation makes everything quicker)
+    TRACE
+    deviceId = getDeviceId();
+    snprintf(
+      baseMqttTopicLogs, 
+      sizeof(baseMqttTopicLogs), 
+      "%s/%s/%s/%s", 
+      MQTT_TOPIC_1, 
+      MQTT_TOPIC_2, 
+      deviceId.c_str(), 
+      MQTT_TOPIC_LOG
+    );
+    logger.debug("Base MQTT topic for logs: %s", TAG, baseMqttTopicLogs);
+
     TRACE
     logger.info("Setup done! Let's get this energetic party started!", TAG);
 }
@@ -409,7 +417,10 @@ void loop() {
     } else {
       TRACE
       _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
+      // Weighted average of the time between interrupts
+      averageDeltaMillisInterrupts = ((millis() - ade7953LastInterruptTime) + averageDeltaMillisInterrupts * (ade7953TotalInterrupts - 1)) / ade7953TotalInterrupts;
 
+      TRACE
       ade7953InterruptFlag = false;
       ade7953.handleInterrupt();
   
@@ -417,6 +428,7 @@ void loop() {
 
       // Since there is a settling time after the multiplexer is switched, 
       // we let one cycle pass before we start reading the values
+      TRACE
       if (mainFlags.isFirstLinecyc) {
           mainFlags.isFirstLinecyc = false;
           ade7953.purgeEnergyRegister(mainFlags.currentChannel);
@@ -464,23 +476,23 @@ void loop() {
         printMeterValues(&ade7953.meterValues[CHANNEL_0], &ade7953.channelData[CHANNEL_0]);
       }
     }
-    
-    if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {
-      lastMaintenanceCheck = millis();
-      
-      if (ade7953TotalInterrupts > ade7953.getTotalHandledInterrupts() * 2 + 10) {
-        logger.info("Total interrupts received: %lu | Total handled: %lu. Resetting difference.", 
-          TAG, 
-          ade7953TotalInterrupts, 
-          ade7953.getTotalHandledInterrupts()
-        );
 
-        ade7953TotalInterrupts = ade7953.getTotalHandledInterrupts();
-      }
+    TRACE
+    if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {
+      TRACE
+      lastMaintenanceCheck = millis();
+      logger.debug("Total interrupts received: %lu | Total handled: %lu. Average delta millis between interrupts: %lu ms", 
+        TAG, 
+        ade7953TotalInterrupts, 
+        ade7953.getTotalHandledInterrupts(),
+        averageDeltaMillisInterrupts
+      );
+
+      TRACE
+      printDeviceStatus();
 
       TRACE
       if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
-        printDeviceStatus();
         logger.fatal("Heap memory has degraded below safe minimum: %d bytes", TAG, ESP.getFreeHeap());
         setRestartEsp32(TAG, "Heap memory has degraded below safe minimum");
       }
@@ -488,7 +500,6 @@ void loop() {
       // If memory is below a certain level, clear the log
       TRACE
       if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
-        printDeviceStatus();
         logger.clearLog();
         logger.warning("Log cleared due to low memory", TAG);
       }
