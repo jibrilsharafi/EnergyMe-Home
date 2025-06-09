@@ -29,10 +29,12 @@ void CustomServer::begin()
     _server.begin();
 
     Update.onProgress([](size_t progress, size_t total) {});
-    _md5 = "";
-
+    
     // Initialize authentication system
     initializeAuthentication();
+    
+    // Initialize rate limiting for DoS protection
+    initializeRateLimiting();
 }
 
 void CustomServer::_serverLog(const char *message, const char *function, LogLevel logLevel, AsyncWebServerRequest *request)
@@ -290,13 +292,26 @@ void CustomServer::_setRestApi()
         
         std::vector<uint8_t> *buffer = static_cast<std::vector<uint8_t> *>(request->_tempObject);
         buffer->insert(buffer->end(), data, data + len);
-        
-        if (index + len == total) {
+          if (index + len == total) {
             JsonDocument jsonDoc;
             deserializeJson(jsonDoc, buffer->data(), buffer->size());
             
+            String clientIp = request->client()->remoteIP().toString();
+            
+            // Check if IP is blocked due to too many failed attempts
+            if (isIpBlocked(clientIp)) {
+                request->send(429, "application/json", "{\"success\":false,\"message\":\"Too many failed login attempts. Please try again later.\"}");
+                _serverLog("Login blocked - IP rate limited", TAG, LogLevel::WARNING, request);
+                delete buffer;
+                request->_tempObject = nullptr;
+                return;
+            }
+            
             String password = jsonDoc["password"].as<String>();
               if (validatePassword(password)) {
+                // Record successful login to reset rate limiting for this IP
+                recordSuccessfulLogin(clientIp);
+                
                 String token = generateAuthToken();
                 if (token.isEmpty()) {
                     // Maximum concurrent sessions reached
@@ -318,6 +333,9 @@ void CustomServer::_setRestApi()
                     _serverLog("Successful login", TAG, LogLevel::INFO, request);
                 }
             } else {
+                // Record failed login attempt for rate limiting
+                recordFailedLogin(clientIp);
+                
                 request->send(401, "application/json", "{\"success\":false,\"message\":\"Invalid password\"}");
                 _serverLog("Failed login attempt", TAG, LogLevel::WARNING, request);
             }

@@ -68,6 +68,12 @@
 #define AUTH_TOKEN_LENGTH 32
 #define MAX_CONCURRENT_SESSIONS 10 // Maximum number of concurrent login sessions
 
+// Rate limiting for DoS protection
+#define MAX_LOGIN_ATTEMPTS 10 // Maximum failed login attempts before IP is blocked
+#define LOGIN_BLOCK_DURATION (15 * 60 * 1000) // 15 minutes in milliseconds
+#define RATE_LIMIT_CLEANUP_INTERVAL (5 * 60 * 1000) // 5 minutes - cleanup old entries
+#define MAX_TRACKED_IPS 20 // Maximum number of IP addresses to track (memory constraint)
+
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32
 

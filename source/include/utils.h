@@ -98,6 +98,13 @@ String hashPassword(const String& password);
 int getActiveTokenCount();
 bool canAcceptMoreTokens();
 
+// Rate limiting functions for DoS protection
+void initializeRateLimiting();
+bool isIpBlocked(const String& clientIp);
+void recordFailedLogin(const String& clientIp);
+void recordSuccessfulLogin(const String& clientIp);
+void cleanupOldRateLimitEntries();
+
 bool setupMdns();
 
 bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds = true);

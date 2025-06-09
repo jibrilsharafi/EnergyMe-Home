@@ -1139,3 +1139,160 @@ bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds) {
 bool isUsingDefaultPassword() {
     return validatePassword(DEFAULT_WEB_PASSWORD);
 }
+
+// Rate limiting functions for DoS protection
+// -----------------------------
+
+// Static array to store rate limit entries (ESP32 memory constraint)
+static RateLimitEntry rateLimitEntries[MAX_TRACKED_IPS];
+static int rateLimitEntryCount = 0;
+static unsigned long lastCleanupTime = 0;
+
+void initializeRateLimiting() {
+    logger.debug("Initializing rate limiting...", TAG);
+    
+    // Clear all rate limit entries
+    for (int i = 0; i < MAX_TRACKED_IPS; i++) {
+        rateLimitEntries[i] = RateLimitEntry();
+    }
+    rateLimitEntryCount = 0;
+    lastCleanupTime = millis();
+    
+    logger.debug("Rate limiting initialized", TAG);
+}
+
+bool isIpBlocked(const String& clientIp) {
+    if (clientIp.isEmpty()) {
+        return false; // Don't block if IP is unknown
+    }
+    
+    // Clean up old entries periodically
+    if (millis() - lastCleanupTime > RATE_LIMIT_CLEANUP_INTERVAL) {
+        cleanupOldRateLimitEntries();
+        lastCleanupTime = millis();
+    }
+    
+    // Look for existing entry for this IP
+    for (int i = 0; i < rateLimitEntryCount; i++) {
+        if (rateLimitEntries[i].ipAddress.equals(clientIp)) {
+            // Check if IP is currently blocked
+            if (rateLimitEntries[i].blockedUntil > millis()) {
+                logger.debug("IP %s is blocked until %lu (current: %lu)", TAG, 
+                           clientIp.c_str(), rateLimitEntries[i].blockedUntil, millis());
+                return true;
+            }
+            break;
+        }
+    }
+    
+    return false;
+}
+
+void recordFailedLogin(const String& clientIp) {
+    if (clientIp.isEmpty()) {
+        return; // Can't track empty IP
+    }
+    
+    logger.debug("Recording failed login for IP: %s", TAG, clientIp.c_str());
+    
+    // Look for existing entry for this IP
+    for (int i = 0; i < rateLimitEntryCount; i++) {
+        if (rateLimitEntries[i].ipAddress.equals(clientIp)) {
+            rateLimitEntries[i].failedAttempts++;
+            rateLimitEntries[i].lastFailedAttempt = millis();
+            
+            // Block IP if too many failed attempts
+            if (rateLimitEntries[i].failedAttempts >= MAX_LOGIN_ATTEMPTS) {
+                rateLimitEntries[i].blockedUntil = millis() + LOGIN_BLOCK_DURATION;
+                logger.warning("IP %s blocked for %d minutes after %d failed login attempts", TAG,
+                             clientIp.c_str(), LOGIN_BLOCK_DURATION / (60 * 1000), rateLimitEntries[i].failedAttempts);
+            } else {
+                logger.debug("IP %s has %d failed attempts", TAG, clientIp.c_str(), rateLimitEntries[i].failedAttempts);
+            }
+            return;
+        }
+    }
+    
+    // Create new entry if we have space
+    if (rateLimitEntryCount < MAX_TRACKED_IPS) {
+        rateLimitEntries[rateLimitEntryCount] = RateLimitEntry(clientIp);
+        rateLimitEntries[rateLimitEntryCount].failedAttempts = 1;
+        rateLimitEntries[rateLimitEntryCount].lastFailedAttempt = millis();
+        rateLimitEntryCount++;
+        logger.debug("New rate limit entry created for IP: %s", TAG, clientIp.c_str());
+    } else {
+        // Array is full, replace oldest entry
+        int oldestIndex = 0;
+        unsigned long oldestTime = rateLimitEntries[0].lastFailedAttempt;
+        
+        for (int i = 1; i < MAX_TRACKED_IPS; i++) {
+            if (rateLimitEntries[i].lastFailedAttempt < oldestTime) {
+                oldestTime = rateLimitEntries[i].lastFailedAttempt;
+                oldestIndex = i;
+            }
+        }
+        
+        logger.debug("Rate limit array full, replacing oldest entry (IP: %s) with new IP: %s", TAG, 
+                   rateLimitEntries[oldestIndex].ipAddress.c_str(), clientIp.c_str());
+        
+        rateLimitEntries[oldestIndex] = RateLimitEntry(clientIp);
+        rateLimitEntries[oldestIndex].failedAttempts = 1;
+        rateLimitEntries[oldestIndex].lastFailedAttempt = millis();
+    }
+}
+
+void recordSuccessfulLogin(const String& clientIp) {
+    if (clientIp.isEmpty()) {
+        return; // Can't track empty IP
+    }
+    
+    // Reset failed attempts for this IP on successful login
+    for (int i = 0; i < rateLimitEntryCount; i++) {
+        if (rateLimitEntries[i].ipAddress.equals(clientIp)) {
+            logger.debug("Resetting failed attempts for IP %s after successful login", TAG, clientIp.c_str());
+            rateLimitEntries[i].failedAttempts = 0;
+            rateLimitEntries[i].blockedUntil = 0;
+            return;
+        }
+    }
+}
+
+void cleanupOldRateLimitEntries() {
+    unsigned long currentTime = millis();
+    int newCount = 0;
+    
+    // Remove entries that are no longer blocked and haven't had recent activity
+    for (int i = 0; i < rateLimitEntryCount; i++) {
+        bool shouldKeep = false;
+        
+        // Keep if currently blocked
+        if (rateLimitEntries[i].blockedUntil > currentTime) {
+            shouldKeep = true;
+        }
+        // Keep if had recent failed attempts (within cleanup interval)
+        else if (currentTime - rateLimitEntries[i].lastFailedAttempt < RATE_LIMIT_CLEANUP_INTERVAL) {
+            shouldKeep = true;
+        }
+        
+        if (shouldKeep) {
+            if (newCount != i) {
+                rateLimitEntries[newCount] = rateLimitEntries[i];
+            }
+            newCount++;
+        } else {
+            logger.debug("Cleaning up old rate limit entry for IP: %s", TAG, rateLimitEntries[i].ipAddress.c_str());
+        }
+    }
+    
+    // Clear remaining entries
+    for (int i = newCount; i < rateLimitEntryCount; i++) {
+        rateLimitEntries[i] = RateLimitEntry();
+    }
+    
+    int removedCount = rateLimitEntryCount - newCount;
+    rateLimitEntryCount = newCount;
+    
+    if (removedCount > 0) {
+        logger.debug("Rate limit cleanup completed. Removed %d entries, %d entries remaining", TAG, removedCount, rateLimitEntryCount);
+    }
+}

@@ -328,7 +328,22 @@ struct LogJson {
         strncpy(function, functionIn, FUNCTION_LEN - 1);
         function[FUNCTION_LEN - 1] = '\0';
 
+        
+        
         strncpy(message, messageIn, MESSAGE_LEN - 1);
         message[MESSAGE_LEN - 1] = '\0';
     }
+};
+
+// Rate limiting structure for DoS protection
+// --------------------
+struct RateLimitEntry {
+    String ipAddress;
+    int failedAttempts;
+    unsigned long lastFailedAttempt;
+    unsigned long blockedUntil;
+    
+    RateLimitEntry() : ipAddress(""), failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {}
+    
+    RateLimitEntry(const String& ip) : ipAddress(ip), failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {}
 };
