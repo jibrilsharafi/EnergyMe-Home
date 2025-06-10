@@ -172,7 +172,7 @@ void createDefaultAde7953ConfigurationFile() {
 
     JsonDocument _jsonDocument;
 
-    _jsonDocument["sampleTime"] = DEFAULT_SAMPLE_TIME;
+    _jsonDocument["sampleTime"] = MINIMUM_SAMPLE_TIME;
     _jsonDocument["aVGain"] = DEFAULT_GAIN;
     _jsonDocument["aIGain"] = DEFAULT_GAIN;
     _jsonDocument["bIGain"] = DEFAULT_GAIN;

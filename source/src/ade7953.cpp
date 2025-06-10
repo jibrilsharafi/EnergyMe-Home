@@ -271,10 +271,10 @@ bool Ade7953::_validateConfigurationJson(JsonDocument& jsonDocument) {
     if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", TAG); return false;}
 
     if (!jsonDocument["sampleTime"].is<unsigned long>()) {_logger.warning("sampleTime is not unsigned long", TAG); return false;}
-    // Ensure sampleTime is not below DEFAULT_SAMPLE_TIME
-    if (jsonDocument["sampleTime"].as<unsigned long>() < DEFAULT_SAMPLE_TIME) {
+    // Ensure sampleTime is not below MINIMUM_SAMPLE_TIME
+    if (jsonDocument["sampleTime"].as<unsigned long>() < MINIMUM_SAMPLE_TIME) {
         _logger.warning("sampleTime %lu is below the minimum value of %lu", TAG, 
-            jsonDocument["sampleTime"].as<unsigned long>(), DEFAULT_SAMPLE_TIME);
+            jsonDocument["sampleTime"].as<unsigned long>(), MINIMUM_SAMPLE_TIME);
         return false;
     }
     if (!jsonDocument["aVGain"].is<long>()) {_logger.warning("aVGain is not long", TAG); return false;}
@@ -760,7 +760,8 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         !_validatePower(_apparentPower) || 
         !_validatePowerFactor(_powerFactor)
     ) {
-        logger.warning("Invalid reading for channel %d. Discarding data point", TAG, channel);
+        logger.warning("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", 
+            TAG, channelData[channel].label.c_str(), channel, _activePower, _current, _reactivePower, _apparentPower, _powerFactor);
         _recordFailure();
         return false;
     }
@@ -972,7 +973,7 @@ bool Ade7953::_isSpuriousZeroReading(int channel, float activePower, float power
 
         if (hadSignificantLoad)
         {
-            _logger.warning("%s (%D): Spurious zero reading detected: %.1fW (last valid: %.1fW) | %.2f PF (last valid: %.2f) | Time since last valid: %lu ms",
+            _logger.debug("%s (%D): Spurious zero reading detected: %.1fW (last valid: %.1fW) | %.2f PF (last valid: %.2f) | Time since last valid: %lu ms",
                             TAG,
                             channelData[channel].label.c_str(),
                             channel,
@@ -1614,7 +1615,7 @@ void Ade7953::_recordFailure() {
 
 void Ade7953::_checkForTooManyFailures() {
     if (millis() - _firstFailureTime > ADE7953_FAILURE_RESET_TIMEOUT_MS && _failureCount > 0) {
-        _logger.info("Failure timeout exceeded (%lu ms). Resetting failure count (reached %d)", TAG, millis() - _firstFailureTime, _failureCount);
+        _logger.debug("Failure timeout exceeded (%lu ms). Resetting failure count (reached %d)", TAG, millis() - _firstFailureTime, _failureCount);
         
         _failureCount = 0;
         _firstFailureTime = 0;
@@ -1624,8 +1625,8 @@ void Ade7953::_checkForTooManyFailures() {
 
     if (_failureCount >= ADE7953_MAX_FAILURES_BEFORE_RESTART) {
         TRACE
-        _logger.fatal("Too many failures (%d) in ADE7953 communication. Resetting device...", TAG, _failureCount);
-        setRestartEsp32(TAG, "Too many failures in ADE7953 communication");
+        _logger.fatal("Too many failures (%d) in ADE7953 communication or readings. Resetting device...", TAG, _failureCount);
+        setRestartEsp32(TAG, "Too many failures in ADE7953 communication or readings");
 
         // Reset the failure count and first failure time to avoid infinite loop of setting the restart
         _failureCount = 0;

@@ -130,6 +130,8 @@ void Mqtt::loop() {
                 _publishMetadata();
                 _publishChannel();
                 _publishGeneralConfiguration();
+                _publishMonitor();
+                _publishStatistics();
                 _clientMqtt.loop();
                 
                 _clientMqtt.disconnect();
@@ -157,6 +159,7 @@ void Mqtt::loop() {
             _publishMetadata();
             _publishChannel();
             _publishGeneralConfiguration();
+            _publishMonitor();
             _publishStatistics();
             _clientMqtt.loop();
 
@@ -646,7 +649,7 @@ void Mqtt::_publishMonitor() {
 
     TRACE
     JsonDocument _jsonDocumentMonitor;
-    crashMonitor.getJsonReport(_jsonDocumentMonitor, crashData);
+    CrashMonitor::getJsonReport(_jsonDocumentMonitor, crashData);
 
     TRACE
     JsonDocument _jsonDocument;
