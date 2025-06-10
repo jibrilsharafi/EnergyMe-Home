@@ -424,7 +424,7 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
         int _index = atoi(_kv.key().c_str());
 
         // Check if _index is within bounds
-        if (_index < 0 || _index >= CHANNEL_COUNT) {
+        if (_index < CHANNEL_0 || _index >= CHANNEL_COUNT) {
             _logger.error("Index out of bounds: %d", TAG, _index);
             continue;
         }
@@ -481,7 +481,7 @@ bool Ade7953::_saveChannelDataToSpiffs() {
 void Ade7953::channelDataToJson(JsonDocument &jsonDocument) {
     _logger.debug("Converting data channel to JSON...", TAG);
 
-    for (int i = 0; i < CHANNEL_COUNT; i++) {
+    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
         jsonDocument[String(i)]["active"] = channelData[i].active;
         jsonDocument[String(i)]["reverse"] = channelData[i].reverse;
         jsonDocument[String(i)]["label"] = channelData[i].label;
@@ -499,7 +499,7 @@ bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
         if (!kv.value().is<JsonObject>()) {_logger.warning("JSON pair value is not an object", TAG); return false;}
 
         int _index = atoi(kv.key().c_str());
-        if (_index < 0 || _index >= CHANNEL_COUNT) {_logger.warning("Index out of bounds: %d", TAG, _index); return false;}
+        if (_index < CHANNEL_0 || _index >= CHANNEL_COUNT) {_logger.warning("Index out of bounds: %d", TAG, _index); return false;}
 
         JsonObject channelObject = kv.value().as<JsonObject>();
 
@@ -525,7 +525,7 @@ void Ade7953::_updateChannelData() {
         return;
     }
     
-    for (int i = 0; i < CHANNEL_COUNT; i++) {        
+    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {        
         if (_jsonDocument[channelData[i].calibrationValues.label]) {
             // Extract the corresponding calibration values from the JSON
             JsonObject _jsonCalibrationValues = _jsonDocument[channelData[i].calibrationValues.label].as<JsonObject>();
@@ -556,15 +556,15 @@ void Ade7953::_updateSampleTime() {
     _logger.debug("Successfully updated sample time", TAG);
 }
 
-// This returns the next channel (except 0) that is active
+// This returns the next channel (except CHANNEL_0) that is active
 int Ade7953::findNextActiveChannel(int currentChannel) {
     for (int i = currentChannel + 1; i < CHANNEL_COUNT; i++) {
-        if (channelData[i].active && i != 0) {
+        if (channelData[i].active && i != CHANNEL_0) {
             return i;
         }
     }
     for (int i = 1; i < currentChannel; i++) {
-        if (channelData[i].active && i != 0) {
+        if (channelData[i].active && i != CHANNEL_0) {
             return i;
         }
     }
@@ -647,13 +647,13 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         _deltaMillis = _sampleTime; 
     }
 
-    if (_deltaMillis == 0) {
-        _logger.warning("Delta millis is 0 for %s (%d). Discarding reading", TAG, channelData[channel].label.c_str(), channel);
+    if (_deltaMillis == 0 || _deltaMillis > 30000) {
+        _logger.warning("%s (%d): delta millis (%llu) is invalid. Discarding reading", TAG, channelData[channel].label.c_str(), channel, _deltaMillis);
         _recordFailure();
         return false;
     }
 
-    int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
+    int _ade7953Channel = (channel == CHANNEL_0) ? CHANNEL_A : CHANNEL_B;
 
     float _voltage = 0.0;
     float _current = 0.0;
@@ -665,7 +665,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
     float _reactiveEnergy = 0.0;
     float _apparentEnergy = 0.0;
 
-    Phase _basePhase = channelData[0].phase;
+    Phase _basePhase = channelData[CHANNEL_0].phase;
 
     if (channelData[channel].phase == _basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
         TRACE
@@ -693,7 +693,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
 
         TRACE
         // Assume from channel 0
-        _voltage = meterValues[0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
+        _voltage = meterValues[CHANNEL_0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
         
         // Read wrong power factor due to the phase shift
         float _powerFactorPhaseOne = _readPowerFactor(_ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR;
@@ -799,7 +799,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
 
     // If the phase is not the phase of the main channel, set the energy not to 0 if the current
     // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation
-    if (channelData[channel].phase != channelData[0].phase && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
+    if (channelData[channel].phase != channelData[CHANNEL_0].phase && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
         _activeEnergy = 1;
         _reactiveEnergy = 1;
         _apparentEnergy = 1;
@@ -891,8 +891,10 @@ Phase Ade7953::_getLeadingPhase(Phase phase) {
 // the first linecyc when switching channels in the multiplexer. This is due
 // to the fact that the ADE7953 needs to settle for 200 ms before we can 
 // properly read the the meter values
+// Update: this is not needed anymore as (thanks to a deeper dive in the datasheet)
+// I found out that every line cycle the energy registers are reset anyway
 void Ade7953::purgeEnergyRegister(int channel) {
-    int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
+    int _ade7953Channel = (channel == CHANNEL_0) ? CHANNEL_A : CHANNEL_B;
 
     // The energy registers are read with reset
     _readActiveEnergy(_ade7953Channel);
@@ -1011,7 +1013,7 @@ JsonDocument Ade7953::singleMeterValuesToJson(int index) {
 
 
 void Ade7953::meterValuesToJson(JsonDocument &jsonDocument) {
-    for (int i = 0; i < CHANNEL_COUNT; i++) {
+    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active) {
             JsonObject _jsonChannel = jsonDocument.add<JsonObject>();
             _jsonChannel["index"] = i;
@@ -1034,7 +1036,7 @@ void Ade7953::_setEnergyFromSpiffs() {
         _logger.error("Failed to read energy from SPIFFS", TAG);
         return;
     } else {
-        for (int i = 0; i < CHANNEL_COUNT; i++) {
+        for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
             meterValues[i].activeEnergyImported = _jsonDocument[String(i)]["activeEnergyImported"].as<float>();
             meterValues[i].activeEnergyExported = _jsonDocument[String(i)]["activeEnergyExported"].as<float>();
             meterValues[i].reactiveEnergyImported = _jsonDocument[String(i)]["reactiveEnergyImported"].as<float>();
@@ -1061,7 +1063,7 @@ void Ade7953::_saveEnergyToSpiffs() {
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
 
-    for (int i = 0; i < CHANNEL_COUNT; i++) {
+    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
         _jsonDocument[String(i)]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
         _jsonDocument[String(i)]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
         _jsonDocument[String(i)]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
@@ -1086,7 +1088,7 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
     char _currentDate[11];
     strftime(_currentDate, sizeof(_currentDate), "%Y-%m-%d", timeinfo);
 
-    for (int i = 0; i < CHANNEL_COUNT; i++) {
+    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active) {
             if (meterValues[i].activeEnergyImported > 1) _jsonDocument[_currentDate][String(i)]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
             if (meterValues[i].activeEnergyExported > 1) _jsonDocument[_currentDate][String(i)]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
@@ -1102,7 +1104,7 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
 void Ade7953::resetEnergyValues() {
     _logger.warning("Resetting energy values to 0", TAG);
 
-    for (int i = 0; i < CHANNEL_COUNT; i++) {
+    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
         meterValues[i].activeEnergyImported = 0.0;
         meterValues[i].activeEnergyExported = 0.0;
         meterValues[i].reactiveEnergyImported = 0.0;
@@ -1131,7 +1133,7 @@ bool Ade7953::setEnergyValues(JsonDocument &jsonDocument) {
         String channelStr = kv.key().c_str();
         int channel = channelStr.toInt();
         
-        if (channel < 0 || channel >= CHANNEL_COUNT) {
+        if (channel < CHANNEL_0 || channel >= CHANNEL_COUNT) {
             _logger.warning("Invalid channel index %d", TAG, channel);
             continue;
         }

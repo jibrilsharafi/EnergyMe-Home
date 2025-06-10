@@ -127,6 +127,20 @@
         .progress-warning { background: linear-gradient(90deg, #ff9800, #ffb74d); }
         .progress-critical { background: linear-gradient(90deg, #f44336, #ef5350); }
 
+        .statistics-detail {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .statistics-detail.error {
+            color: #f44336;
+        }
+
+        .statistics-detail.success {
+            color: #4caf50;
+        }
+
         .update-indicator {
             position: fixed;
             top: 20px;
@@ -369,6 +383,77 @@
                     <span id="authorEmail" class="info-value">Loading...</span>
                 </div>
             </div>
+
+            <!-- Statistics Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <span class="card-icon">📈</span>
+                    <h2 class="card-title">System Statistics</h2>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">⚡</span>ADE7953 Interrupts</span>
+                    <div style="text-align: right;">
+                        <div id="ade7953Interrupts" class="info-value">Loading...</div>
+                        <small style="color: #666; font-size: 0.8rem;">
+                            <span id="ade7953HandledInterrupts">0</span> handled
+                        </small>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📊</span>ADE7953 Readings</span>
+                    <div style="text-align: right;">
+                        <div id="ade7953Readings" class="info-value">Loading...</div>
+                        <small style="color: #666; font-size: 0.8rem;">
+                            <span id="ade7953ReadingFailures">0</span> failures
+                        </small>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📡</span>MQTT Messages</span>
+                    <div style="text-align: right;">
+                        <div id="mqttMessages" class="info-value">Loading...</div>
+                        <small style="color: #666; font-size: 0.8rem;">
+                            <span id="mqttErrors">0</span> errors
+                        </small>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔧</span>Custom MQTT</span>
+                    <div style="text-align: right;">
+                        <div id="customMqttMessages" class="info-value">Loading...</div>
+                        <small style="color: #666; font-size: 0.8rem;">
+                            <span id="customMqttErrors">0</span> errors
+                        </small>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔗</span>Modbus Requests</span>
+                    <div style="text-align: right;">
+                        <div id="modbusRequests" class="info-value">Loading...</div>
+                        <small style="color: #666; font-size: 0.8rem;">
+                            <span id="modbusErrors">0</span> errors
+                        </small>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🗃️</span>InfluxDB Uploads</span>
+                    <div style="text-align: right;">
+                        <div id="influxdbUploads" class="info-value">Loading...</div>
+                        <small style="color: #666; font-size: 0.8rem;">
+                            <span id="influxdbErrors">0</span> errors
+                        </small>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📶</span>WiFi Connections</span>
+                    <div style="text-align: right;">
+                        <div id="wifiConnections" class="info-value">Loading...</div>
+                        <small style="color: #666; font-size: 0.8rem;">
+                            <span id="wifiConnectionErrors">0</span> errors
+                        </small>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>    <script>
         function showUpdateIndicator() {
@@ -396,21 +481,24 @@
             var wifiXhttp = new XMLHttpRequest();
             wifiXhttp.onreadystatechange = handleRequest;
             wifiXhttp.open("GET", "/rest/wifi-info", true);
-            wifiXhttp.send();
-
-            var projectXhttp = new XMLHttpRequest();
+            wifiXhttp.send();            var projectXhttp = new XMLHttpRequest();
             projectXhttp.onreadystatechange = handleRequest;
             projectXhttp.open("GET", "/rest/project-info", true);
             projectXhttp.send();
-        }
 
-        function displayData(data, responseUrl) {
+            var statisticsXhttp = new XMLHttpRequest();
+            statisticsXhttp.onreadystatechange = handleRequest;
+            statisticsXhttp.open("GET", "/rest/get-statistics", true);
+            statisticsXhttp.send();
+        }        function displayData(data, responseUrl) {
             if (responseUrl.includes("device-info")) {
                 displayDeviceInfo(data);
             } else if (responseUrl.includes("wifi-info")) {
                 displayWifiInfo(data);
             } else if (responseUrl.includes("project-info")) {
                 displayProjectInfo(data);
+            } else if (responseUrl.includes("get-statistics")) {
+                displayStatistics(data);
             } else {
                 console.log("Unknown response URL: " + responseUrl);
                 return;
@@ -443,11 +531,70 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toString();
+        }
+
         function getMemoryStatus(freeBytes, totalBytes) {
             const percentage = (freeBytes / totalBytes) * 100;
             if (percentage > 50) return { class: 'progress-good', status: 'Excellent' };
             if (percentage > 25) return { class: 'progress-warning', status: 'Warning' };
             return { class: 'progress-critical', status: 'Critical' };
+        }        function displayStatistics(data) {
+            // ADE7953 Statistics
+            document.getElementById('ade7953Interrupts').textContent = formatNumber(data.ade7953TotalInterrupts || 0);
+            document.getElementById('ade7953HandledInterrupts').textContent = formatNumber(data.ade7953TotalHandledInterrupts || 0);
+            document.getElementById('ade7953Readings').textContent = formatNumber(data.ade7953ReadingCount || 0);
+            
+            const ade7953Failures = data.ade7953ReadingCountFailure || 0;
+            const ade7953FailureElement = document.getElementById('ade7953ReadingFailures');
+            ade7953FailureElement.textContent = formatNumber(ade7953Failures);
+            ade7953FailureElement.parentElement.className = ade7953Failures > 0 ? 'statistics-detail error' : 'statistics-detail';
+
+            // MQTT Statistics
+            document.getElementById('mqttMessages').textContent = formatNumber(data.mqttMessagesPublished || 0);
+            
+            const mqttErrors = data.mqttMessagesPublishedError || 0;
+            const mqttErrorElement = document.getElementById('mqttErrors');
+            mqttErrorElement.textContent = formatNumber(mqttErrors);
+            mqttErrorElement.parentElement.className = mqttErrors > 0 ? 'statistics-detail error' : 'statistics-detail';
+
+            // Custom MQTT Statistics
+            document.getElementById('customMqttMessages').textContent = formatNumber(data.customMqttMessagesPublished || 0);
+            
+            const customMqttErrors = data.customMqttMessagesPublishedError || 0;
+            const customMqttErrorElement = document.getElementById('customMqttErrors');
+            customMqttErrorElement.textContent = formatNumber(customMqttErrors);
+            customMqttErrorElement.parentElement.className = customMqttErrors > 0 ? 'statistics-detail error' : 'statistics-detail';
+
+            // Modbus Statistics
+            document.getElementById('modbusRequests').textContent = formatNumber(data.modbusRequests || 0);
+            
+            const modbusErrors = data.modbusRequestsError || 0;
+            const modbusErrorElement = document.getElementById('modbusErrors');
+            modbusErrorElement.textContent = formatNumber(modbusErrors);
+            modbusErrorElement.parentElement.className = modbusErrors > 0 ? 'statistics-detail error' : 'statistics-detail';
+
+            // InfluxDB Statistics
+            document.getElementById('influxdbUploads').textContent = formatNumber(data.influxdbUploadCount || 0);
+            
+            const influxdbErrors = data.influxdbUploadCountError || 0;
+            const influxdbErrorElement = document.getElementById('influxdbErrors');
+            influxdbErrorElement.textContent = formatNumber(influxdbErrors);
+            influxdbErrorElement.parentElement.className = influxdbErrors > 0 ? 'statistics-detail error' : 'statistics-detail';
+
+            // WiFi Statistics
+            document.getElementById('wifiConnections').textContent = formatNumber(data.wifiConnection || 0);
+            
+            const wifiErrors = data.wifiConnectionError || 0;
+            const wifiErrorElement = document.getElementById('wifiConnectionErrors');
+            wifiErrorElement.textContent = formatNumber(wifiErrors);
+            wifiErrorElement.parentElement.className = wifiErrors > 0 ? 'statistics-detail error' : 'statistics-detail';
         }
 
         function displayDeviceInfo(data) {
@@ -553,8 +700,7 @@
             } else {
                 document.getElementById('githubUrl').textContent = 'N/A';
             }
-            
-            document.getElementById('author').textContent = data.author || 'N/A';
+              document.getElementById('author').textContent = data.author || 'N/A';
             document.getElementById('authorEmail').textContent = data.authorEmail || 'N/A';
         }
 

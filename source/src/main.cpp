@@ -417,6 +417,7 @@ void loop() {
     } else {
       TRACE
       _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
+      
       if (
         millis() > MINIMUM_TIME_BEFORE_VALID_METER && 
         millis() - ade7953LastInterruptTime >= ade7953.getSampleTime()
