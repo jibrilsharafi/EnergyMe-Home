@@ -19,6 +19,8 @@
 extern DebugFlagsRtc debugFlagsRtc;
 extern Statistics statistics;
 
+extern SemaphoreHandle_t payloadMeterMutex;
+
 class Mqtt
 {
 public:

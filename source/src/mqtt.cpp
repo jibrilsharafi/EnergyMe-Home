@@ -463,6 +463,7 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
     TRACE
     JsonArray _jsonArray = jsonDocument->to<JsonArray>();
     
+    PAYLOAD_METER_LOCK();
     unsigned int _loops = 0;
     while (!_payloadMeter.isEmpty() && _loops < MAX_LOOP_ITERATIONS && generalConfiguration.sendPowerData) {
         _loops++;
@@ -485,6 +486,7 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
         _jsonObject["activePower"] = _oldestPayloadMeter.activePower;
         _jsonObject["powerFactor"] = _oldestPayloadMeter.powerFactor;
     }
+    PAYLOAD_METER_UNLOCK();
 
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT; i++) {
         if (_ade7953.channelData[i].active) {

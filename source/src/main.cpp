@@ -2,6 +2,9 @@
 #include <SPIFFS.h>
 #include <WiFiManager.h> // Needs to be defined on top due to conflict between WiFiManager and ESPAsyncWebServer
 #include <CircularBuffer.hpp>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 
 // Project includes
 #include "ade7953.h"
@@ -69,6 +72,10 @@ void IRAM_ATTR ade7953ISR() {
 // Utils variables
 unsigned long long _linecycUnix = 0;   // Used to track the Unix time when the linecycle ended (for MQTT payloads)
 unsigned long lastMaintenanceCheck = 0;
+
+// FreeRTOS task variables
+TaskHandle_t meterReadingTaskHandle = NULL;
+SemaphoreHandle_t payloadMeterMutex = NULL;
 
 // Classes instances
 // --------------------
@@ -173,6 +180,87 @@ CustomServer customServer(
 );
 
 // Main functions
+// Tasks
+// --------------------
+
+void meterReadingTask(void *parameter)
+{
+  while (true)
+  {
+    // Wait for interrupt flag to be set
+    if (ade7953InterruptFlag)
+    {
+      _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
+
+      if (
+          millis() > MINIMUM_TIME_BEFORE_VALID_METER &&
+          millis() - ade7953LastInterruptTime >= ade7953.getSampleTime())
+      {
+        logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).",
+                       TAG,
+                       millis() - ade7953LastInterruptTime,
+                       ade7953.getSampleTime());
+      }
+
+      ade7953InterruptFlag = false;
+      ade7953.handleInterrupt();
+
+      led.setGreen();
+
+      // Since there is a settling time after the multiplexer is switched,
+      // we let one cycle pass before we start reading the values
+      if (mainFlags.isFirstLinecyc)
+      {
+        mainFlags.isFirstLinecyc = false;
+      }
+      else
+      {
+        mainFlags.isFirstLinecyc = true;
+
+        if (mainFlags.currentChannel != -1)
+        { // -1 indicates that no channel is active            if (ade7953.readMeterValues(mainFlags.currentChannel, _linecycUnix)) {
+          if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
+          { // Wait after the first time boot
+            PAYLOAD_METER_LOCK();
+            payloadMeter.push(
+                PayloadMeter(
+                    mainFlags.currentChannel,
+                    _linecycUnix,
+                    ade7953.meterValues[mainFlags.currentChannel].activePower,
+                    ade7953.meterValues[mainFlags.currentChannel].powerFactor));
+            PAYLOAD_METER_UNLOCK();
+          }
+
+          printMeterValues(&ade7953.meterValues[mainFlags.currentChannel], &ade7953.channelData[mainFlags.currentChannel]);
+        }
+      }
+
+      mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
+      multiplexer.setChannel(max(mainFlags.currentChannel - 1, 0));
+    }
+
+    // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
+    if (ade7953.readMeterValues(CHANNEL_0, _linecycUnix))
+    {
+      if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
+      {
+        PAYLOAD_METER_LOCK();
+        payloadMeter.push(
+            PayloadMeter(
+                CHANNEL_0,
+                _linecycUnix,
+                ade7953.meterValues[CHANNEL_0].activePower,
+                ade7953.meterValues[CHANNEL_0].powerFactor));
+        PAYLOAD_METER_UNLOCK();
+      }
+      printMeterValues(&ade7953.meterValues[CHANNEL_0], &ade7953.channelData[CHANNEL_0]);
+    }
+
+    // Small delay to prevent task from consuming too much CPU
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+}
+
 // --------------------
 // Callback 
 
@@ -375,7 +463,32 @@ void setup() {
       deviceId.c_str(), 
       MQTT_TOPIC_LOG
     );
-    logger.debug("Base MQTT topic for logs: %s", TAG, baseMqttTopicLogs);
+    logger.debug("Base MQTT topic for logs: %s", TAG, baseMqttTopicLogs);    
+    
+    TRACE
+    logger.debug("Creating meter reading task...", TAG);
+    
+    // Create semaphore for protecting payloadMeter buffer
+    payloadMeterMutex = xSemaphoreCreateMutex();
+    if (payloadMeterMutex == NULL) {
+        logger.error("Failed to create payloadMeter mutex", TAG);
+    } else {
+        logger.debug("PayloadMeter mutex created successfully", TAG);
+    }
+    
+    xTaskCreate(
+        meterReadingTask,          // Task function
+        ADE7953_TASK_NAME,         // Task name
+        ADE7953_TASK_STACK_SIZE,   // Stack size (bytes)
+        NULL,                      // Task parameter
+        ADE7953_TASK_PRIORITY,     // Priority (higher than normal)
+        &meterReadingTaskHandle    // Task handle
+    );
+    if (meterReadingTaskHandle != NULL) {
+        logger.info("Meter reading task created successfully", TAG);
+    } else {
+        logger.error("Failed to create meter reading task", TAG);
+    }
 
     TRACE
     logger.info("Setup done! Let's get this energetic party started!", TAG);
@@ -385,105 +498,34 @@ void loop() {
     TRACE
     if (mainFlags.blockLoop) return;
 
-    // Give priority to the readings if a new one is available
-    if (!ade7953InterruptFlag) {
-      TRACE
-      customTime.loop();
+    // Main loop now only handles non-critical operations
+    // Meter reading is handled by dedicated task
+    TRACE
+    customTime.loop();
 
-      TRACE
-      crashMonitor.crashCounterLoop();
+    TRACE
+    crashMonitor.crashCounterLoop();
 
-      TRACE
-      crashMonitor.firmwareTestingLoop();
-        
-      TRACE
-      customWifi.loop();
+    TRACE
+    crashMonitor.firmwareTestingLoop();
       
-      TRACE
-      buttonHandler.loop();
-      
-      TRACE
-      mqtt.loop();
-      
-      TRACE
-      customMqtt.loop();
-      
-      TRACE
-      influxDbClient.loop();
-
-      TRACE
-      ade7953.loop();
+    TRACE
+    customWifi.loop();
     
-    } else {
-      TRACE
-      _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
-      
-      if (
-        millis() > MINIMUM_TIME_BEFORE_VALID_METER && 
-        millis() - ade7953LastInterruptTime >= ade7953.getSampleTime()
-      ) {
-        logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).",
-          TAG,
-          millis() - ade7953LastInterruptTime,
-          ade7953.getSampleTime()
-        );
-      }
+    TRACE
+    buttonHandler.loop();
+    
+    TRACE
+    mqtt.loop();
+    
+    TRACE
+    customMqtt.loop();
+    
+    TRACE
+    influxDbClient.loop();
 
-      TRACE
-      ade7953InterruptFlag = false;
-      ade7953.handleInterrupt();
-  
-      led.setGreen();
-
-      // Since there is a settling time after the multiplexer is switched, 
-      // we let one cycle pass before we start reading the values
-      TRACE
-      if (mainFlags.isFirstLinecyc) {
-          mainFlags.isFirstLinecyc = false;
-      } else {
-          mainFlags.isFirstLinecyc = true;
-
-          if (mainFlags.currentChannel != -1) { // -1 indicates that no channel is active
-            TRACE
-            if (ade7953.readMeterValues(mainFlags.currentChannel, _linecycUnix)) {
-              if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER) { // Wait after the first time boot
-                TRACE
-                payloadMeter.push(
-                  PayloadMeter(
-                    mainFlags.currentChannel,
-                    _linecycUnix,
-                    ade7953.meterValues[mainFlags.currentChannel].activePower,
-                    ade7953.meterValues[mainFlags.currentChannel].powerFactor
-                  )
-                );
-              }
-              
-              printMeterValues(&ade7953.meterValues[mainFlags.currentChannel], &ade7953.channelData[mainFlags.currentChannel]);
-            }
-          }
-
-          TRACE
-          mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
-          multiplexer.setChannel(max(mainFlags.currentChannel-1, 0));
-      }
-
-      // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
-      TRACE
-      if (ade7953.readMeterValues(CHANNEL_0, _linecycUnix)) {
-        if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER) {
-          TRACE
-          payloadMeter.push(
-            PayloadMeter(
-              CHANNEL_0,
-              _linecycUnix,
-              ade7953.meterValues[CHANNEL_0].activePower,
-              ade7953.meterValues[CHANNEL_0].powerFactor
-            )
-          );
-        }
-        printMeterValues(&ade7953.meterValues[CHANNEL_0], &ade7953.channelData[CHANNEL_0]);
-      }
-    }
+    TRACE
+    ade7953.loop();
 
     TRACE
     if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {

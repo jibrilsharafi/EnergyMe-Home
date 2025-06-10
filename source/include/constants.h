@@ -6,8 +6,8 @@
 
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
-#define FIRMWARE_BUILD_VERSION_MINOR "09"
-#define FIRMWARE_BUILD_VERSION_PATCH "07"
+#define FIRMWARE_BUILD_VERSION_MINOR "10"
+#define FIRMWARE_BUILD_VERSION_PATCH "00"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -239,6 +239,15 @@
 #define ADE7953_RESET_PIN 21
 #define ADE7953_INTERRUPT_PIN 37
 #define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz
+
+// Task
+#define ADE7953_TASK_NAME "ade7953_task" // The name of the ADE7953 task
+#define ADE7953_TASK_STACK_SIZE 8192 // The stack size for the ADE7953 task
+#define ADE7953_TASK_PRIORITY 2 // The priority for the ADE7953 task
+
+// Macros
+#define PAYLOAD_METER_LOCK() xSemaphoreTake(payloadMeterMutex, portMAX_DELAY)
+#define PAYLOAD_METER_UNLOCK() xSemaphoreGive(payloadMeterMutex)
 
 // Setup
 #define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low
