@@ -355,6 +355,8 @@ void setRestartEsp32(const char* functionName, const char* reason) {
     restartConfiguration.requiredAt = millis();
     restartConfiguration.functionName = String(functionName);
     restartConfiguration.reason = String(reason);
+
+    cleanupInterruptHandling();
 }
 
 void checkIfRestartEsp32Required() {
@@ -393,6 +395,30 @@ void restartEsp32() {
     TRACE
     ESP.restart();
 }
+
+void cleanupInterruptHandling() {
+  // Detach interrupt to prevent new interrupts
+  detachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN));
+  
+  // Give task a chance to finish current processing
+  if (meterReadingTaskHandle != NULL) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  
+  // Clean up semaphores
+  if (ade7953InterruptSemaphore != NULL) {
+    vSemaphoreDelete(ade7953InterruptSemaphore);
+    ade7953InterruptSemaphore = NULL;
+  }
+  
+  if (payloadMeterMutex != NULL) {
+    vSemaphoreDelete(payloadMeterMutex);
+    payloadMeterMutex = NULL;
+  }
+  
+  logger.debug("Interrupt handling cleanup completed", TAG);
+}
+
 
 // Print functions
 // -----------------------------

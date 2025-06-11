@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "10"
-#define FIRMWARE_BUILD_VERSION_PATCH "00"
+#define FIRMWARE_BUILD_VERSION_PATCH "01"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -244,6 +244,9 @@
 #define ADE7953_TASK_NAME "ade7953_task" // The name of the ADE7953 task
 #define ADE7953_TASK_STACK_SIZE 8192 // The stack size for the ADE7953 task
 #define ADE7953_TASK_PRIORITY 2 // The priority for the ADE7953 task
+
+// Interrupt handling
+#define ADE7953_INTERRUPT_TIMEOUT_MS 1000 // Timeout for waiting on interrupt semaphore (in ms)
 
 // Macros
 #define PAYLOAD_METER_LOCK() xSemaphoreTake(payloadMeterMutex, portMAX_DELAY)

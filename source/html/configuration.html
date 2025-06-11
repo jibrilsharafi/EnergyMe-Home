@@ -783,7 +783,7 @@
                 statusIcon.innerHTML = "🟢"; // Green circle for successful
                 statusElement.style.color = "#2e7d32"; // Dark green
                 statusElement.style.fontWeight = "bold";
-            } else if (status && status.includes("Failed")) {
+            } else if (status && status.toLowerCase().includes("failed")) {
                 timestampContainer.style.display = "block";
                 statusIcon.innerHTML = "🔴"; // Red circle for failed
                 statusElement.style.color = "#c62828"; // Dark red

@@ -647,7 +647,9 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         _deltaMillis = _sampleTime; 
     }
 
-    if (_deltaMillis == 0 || _deltaMillis > 30000) {
+    // We cannot put an higher limit here because if the channel happened to be disabled, then
+    // enabled again, this would result in an infinite error.
+    if (_deltaMillis == 0) {
         _logger.warning("%s (%d): delta millis (%llu) is invalid. Discarding reading", TAG, channelData[channel].label.c_str(), channel, _deltaMillis);
         _recordFailure();
         return false;

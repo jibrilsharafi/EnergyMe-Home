@@ -20,6 +20,7 @@ extern DebugFlagsRtc debugFlagsRtc;
 extern Statistics statistics;
 
 extern SemaphoreHandle_t payloadMeterMutex;
+extern SemaphoreHandle_t ade7953InterruptSemaphore;
 
 class Mqtt
 {

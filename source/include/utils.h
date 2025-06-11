@@ -30,12 +30,17 @@ extern RestartConfiguration restartConfiguration;
 extern MainFlags mainFlags;
 extern PublishMqtt publishMqtt;
 
+extern TaskHandle_t meterReadingTaskHandle;
+extern SemaphoreHandle_t ade7953InterruptSemaphore;
+extern SemaphoreHandle_t payloadMeterMutex;
+
 void getJsonProjectInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
 
 void setRestartEsp32(const char* functionName, const char* reason);
 void checkIfRestartEsp32Required();
 void restartEsp32();
+void cleanupInterruptHandling();
 
 void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
 void printDeviceStatus();

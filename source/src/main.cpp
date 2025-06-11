@@ -58,16 +58,8 @@ String deviceId;
 
 // Interrupt handling
 // --------------------
-volatile bool ade7953InterruptFlag = false;
 volatile unsigned long ade7953TotalInterrupts = 0;
 volatile unsigned long ade7953LastInterruptTime = 0;
-
-// Interrupt Service Routine for ADE7953
-void IRAM_ATTR ade7953ISR() {
-  ade7953InterruptFlag = true;
-  statistics.ade7953TotalInterrupts++;
-  ade7953LastInterruptTime = millis();
-}
 
 // Utils variables
 unsigned long long _linecycUnix = 0;   // Used to track the Unix time when the linecycle ended (for MQTT payloads)
@@ -76,6 +68,7 @@ unsigned long lastMaintenanceCheck = 0;
 // FreeRTOS task variables
 TaskHandle_t meterReadingTaskHandle = NULL;
 SemaphoreHandle_t payloadMeterMutex = NULL;
+SemaphoreHandle_t ade7953InterruptSemaphore = NULL;
 
 // Classes instances
 // --------------------
@@ -183,12 +176,33 @@ CustomServer customServer(
 // Tasks
 // --------------------
 
+// Interrupt Service Routine for ADE7953
+void IRAM_ATTR ade7953ISR() {
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  
+  statistics.ade7953TotalInterrupts++;
+  ade7953LastInterruptTime = millis();
+  
+  // Give binary semaphore from ISR - this will wake up the waiting task
+  // Check if semaphore exists to prevent crashes during shutdown/startup
+  // If semaphore is already given, this call will be ignored (no queuing needed)
+  if (ade7953InterruptSemaphore != NULL) {
+    xSemaphoreGiveFromISR(ade7953InterruptSemaphore, &xHigherPriorityTaskWoken);
+  }
+  
+  // Request context switch if a higher priority task was woken
+  if (xHigherPriorityTaskWoken == pdTRUE) {
+    portYIELD_FROM_ISR();
+  }
+}
+
 void meterReadingTask(void *parameter)
 {
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+
   while (true)
-  {
-    // Wait for interrupt flag to be set
-    if (ade7953InterruptFlag)
+  { // Wait for interrupt semaphore with timeout
+    if (xSemaphoreTake(ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS)) == pdTRUE)
     {
       _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
 
@@ -202,7 +216,6 @@ void meterReadingTask(void *parameter)
                        ade7953.getSampleTime());
       }
 
-      ade7953InterruptFlag = false;
       ade7953.handleInterrupt();
 
       led.setGreen();
@@ -218,46 +231,53 @@ void meterReadingTask(void *parameter)
         mainFlags.isFirstLinecyc = true;
 
         if (mainFlags.currentChannel != -1)
-        { // -1 indicates that no channel is active            if (ade7953.readMeterValues(mainFlags.currentChannel, _linecycUnix)) {
-          if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
-          { // Wait after the first time boot
-            PAYLOAD_METER_LOCK();
-            payloadMeter.push(
-                PayloadMeter(
-                    mainFlags.currentChannel,
-                    _linecycUnix,
-                    ade7953.meterValues[mainFlags.currentChannel].activePower,
-                    ade7953.meterValues[mainFlags.currentChannel].powerFactor));
-            PAYLOAD_METER_UNLOCK();
+        { // -1 indicates that no channel is active
+          if (ade7953.readMeterValues(mainFlags.currentChannel, _linecycUnix))
+          {
+            if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
+            { // Wait after the first time boot
+              PAYLOAD_METER_LOCK();
+              payloadMeter.push(
+                  PayloadMeter(
+                      mainFlags.currentChannel,
+                      _linecycUnix,
+                      ade7953.meterValues[mainFlags.currentChannel].activePower,
+                      ade7953.meterValues[mainFlags.currentChannel].powerFactor));
+              PAYLOAD_METER_UNLOCK();
+            }
+
+            printMeterValues(&ade7953.meterValues[mainFlags.currentChannel], &ade7953.channelData[mainFlags.currentChannel]);
           }
-
-          printMeterValues(&ade7953.meterValues[mainFlags.currentChannel], &ade7953.channelData[mainFlags.currentChannel]);
         }
+
+        mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
+        multiplexer.setChannel(max(mainFlags.currentChannel - 1, 0));
       }
 
-      mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
-      multiplexer.setChannel(max(mainFlags.currentChannel - 1, 0));
-    }
-
-    // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
-    if (ade7953.readMeterValues(CHANNEL_0, _linecycUnix))
-    {
-      if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
+      // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
+      if (ade7953.readMeterValues(CHANNEL_0, _linecycUnix))
       {
-        PAYLOAD_METER_LOCK();
-        payloadMeter.push(
-            PayloadMeter(
-                CHANNEL_0,
-                _linecycUnix,
-                ade7953.meterValues[CHANNEL_0].activePower,
-                ade7953.meterValues[CHANNEL_0].powerFactor));
-        PAYLOAD_METER_UNLOCK();
+        if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
+        {
+          PAYLOAD_METER_LOCK();
+          payloadMeter.push(
+              PayloadMeter(
+                  CHANNEL_0,
+                  _linecycUnix,
+                  ade7953.meterValues[CHANNEL_0].activePower,
+                  ade7953.meterValues[CHANNEL_0].powerFactor));
+          PAYLOAD_METER_UNLOCK();
+        }
+        printMeterValues(&ade7953.meterValues[CHANNEL_0], &ade7953.channelData[CHANNEL_0]);
       }
-      printMeterValues(&ade7953.meterValues[CHANNEL_0], &ade7953.channelData[CHANNEL_0]);
     }
-
-    // Small delay to prevent task from consuming too much CPU
-    vTaskDelay(pdMS_TO_TICKS(1));
+    else
+    {
+      // Timeout occurred - this means no interrupt was received within the timeout period
+      // This is normal behavior when no energy flow is detected or during low activity periods
+      // Use vTaskDelayUntil for precise timing to prevent drift
+      vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100));
+    }
   }
 }
 
@@ -410,11 +430,40 @@ void setup() {
     logger.info("Multiplexer setup done", TAG);
 
     TRACE
+    logger.debug("Creating meter reading task...", TAG);
+    ade7953InterruptSemaphore = xSemaphoreCreateBinary();
+    if (ade7953InterruptSemaphore == NULL) {
+        logger.error("Failed to create ADE7953 interrupt semaphore", TAG);
+    } else {
+        logger.debug("ADE7953 interrupt semaphore created successfully", TAG);
+    }
+    
+    payloadMeterMutex = xSemaphoreCreateMutex();
+    if (payloadMeterMutex == NULL) {
+        logger.error("Failed to create payloadMeter mutex", TAG);
+    } else {
+        logger.debug("PayloadMeter mutex created successfully", TAG);
+    }
+
+    TRACE
     logger.debug("Setting up ADE7953...", TAG);
     attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING); // This has to be done before ade7953.begin() 
     if (!ade7953.begin()) {
       logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG);
     } else {
+      xTaskCreate(
+          meterReadingTask,          // Task function
+          ADE7953_TASK_NAME,         // Task name
+          ADE7953_TASK_STACK_SIZE,   // Stack size (bytes)
+          NULL,                      // Task parameter
+          ADE7953_TASK_PRIORITY,     // Priority (higher than normal)
+          &meterReadingTaskHandle    // Task handle
+      );
+      if (meterReadingTaskHandle != NULL) {
+          logger.info("Meter reading task created successfully", TAG);
+      } else {
+          logger.error("Failed to create meter reading task", TAG);
+      }
       logger.info("ADE7953 setup done", TAG);
     }
 
@@ -464,31 +513,6 @@ void setup() {
       MQTT_TOPIC_LOG
     );
     logger.debug("Base MQTT topic for logs: %s", TAG, baseMqttTopicLogs);    
-    
-    TRACE
-    logger.debug("Creating meter reading task...", TAG);
-    
-    // Create semaphore for protecting payloadMeter buffer
-    payloadMeterMutex = xSemaphoreCreateMutex();
-    if (payloadMeterMutex == NULL) {
-        logger.error("Failed to create payloadMeter mutex", TAG);
-    } else {
-        logger.debug("PayloadMeter mutex created successfully", TAG);
-    }
-    
-    xTaskCreate(
-        meterReadingTask,          // Task function
-        ADE7953_TASK_NAME,         // Task name
-        ADE7953_TASK_STACK_SIZE,   // Stack size (bytes)
-        NULL,                      // Task parameter
-        ADE7953_TASK_PRIORITY,     // Priority (higher than normal)
-        &meterReadingTaskHandle    // Task handle
-    );
-    if (meterReadingTaskHandle != NULL) {
-        logger.info("Meter reading task created successfully", TAG);
-    } else {
-        logger.error("Failed to create meter reading task", TAG);
-    }
 
     TRACE
     logger.info("Setup done! Let's get this energetic party started!", TAG);
@@ -528,9 +552,9 @@ void loop() {
     ade7953.loop();
 
     TRACE
-    if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {
+    if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {      
       TRACE
-      lastMaintenanceCheck = millis();
+      lastMaintenanceCheck = millis();      
       logger.debug("Total interrupts received: %lu | Total handled: %lu",
         TAG, 
         ade7953TotalInterrupts, 

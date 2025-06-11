@@ -286,7 +286,7 @@ void InfluxDbClient::_uploadBufferedData()
         if (_ade7953.channelData[i].active)
         {
             String energyLineProtocol = _formatEnergyLineProtocol(_ade7953.meterValues[i], i, currentTimestamp);
-            
+
             if (payload.length() + energyLineProtocol.length() > 30000)
             { // Check if adding energy data would exceed limit
                 _logger.warning("Payload too large to include energy data for channel %d", TAG, i);
@@ -306,7 +306,7 @@ void InfluxDbClient::_uploadBufferedData()
         _logger.debug("Successfully uploaded %d real-time points + energy data to InfluxDB", TAG, pointCount);
         _influxDbConfiguration.lastConnectionStatus = "Upload successful";
         _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
-        
+
         // Reset connection state on successful upload
         _isConnected = true;
         _influxDbConnectionAttempt = 0;
@@ -318,16 +318,38 @@ void InfluxDbClient::_uploadBufferedData()
     {
         String response = http.getString();
         _logger.error("Failed to upload to InfluxDB. HTTP code: %d, Response: %.100s", TAG, httpCode, response.c_str()); // Limit response logging
-        response = ""; // Explicitly clear
+        response = "";                                                                                                   // Explicitly clear
         _lastMillisInfluxDbFailed = millis();
-        _influxDbConfiguration.lastConnectionStatus = "Upload failed (HTTP " + String(httpCode) + ")";
+        _influxDbConnectionAttempt++;
+
+        _influxDbConfiguration.lastConnectionStatus = "Upload failed (HTTP " + String(httpCode) + ") (Attempt " + String(_influxDbConnectionAttempt) + ")";
         _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
         _saveConfigurationToSpiffs();
 
         // Mark as disconnected to trigger reconnection attempts
         _isConnected = false;
-        _nextInfluxDbConnectionAttemptMillis = millis() + INFLUXDB_MIN_CONNECTION_INTERVAL;
         statistics.influxdbUploadCountError++;
+
+        // Check if we've exceeded max attempts for persistent errors like 404 (wrong bucket/org)
+        if (_influxDbConnectionAttempt >= INFLUXDB_MAX_CONNECTION_ATTEMPTS)
+        {
+            _logger.error("InfluxDB upload failed after %d attempts. Disabling InfluxDB.", TAG, _influxDbConnectionAttempt);
+            _disable();
+            _nextInfluxDbConnectionAttemptMillis = UINT32_MAX; // Prevent further attempts until re-enabled
+        }
+        else
+        {
+            // Calculate next attempt time using exponential backoff (same as connection failures)
+            unsigned long _backoffDelay = INFLUXDB_INITIAL_RECONNECT_INTERVAL;
+            for (int i = 0; i < _influxDbConnectionAttempt - 1 && _backoffDelay < INFLUXDB_MAX_RECONNECT_INTERVAL; ++i)
+            {
+                _backoffDelay *= INFLUXDB_RECONNECT_MULTIPLIER;
+            }
+            _backoffDelay = min(_backoffDelay, (unsigned long)INFLUXDB_MAX_RECONNECT_INTERVAL);
+
+            _nextInfluxDbConnectionAttemptMillis = millis() + _backoffDelay;
+            _logger.info("Next InfluxDB connection attempt in %lu ms", TAG, _backoffDelay);
+        }
 
         // Put points back in buffer for retry (if there's space)
         unsigned int _loops = 0;
