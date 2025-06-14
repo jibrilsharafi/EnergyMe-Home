@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "10"
-#define FIRMWARE_BUILD_VERSION_PATCH "01"
+#define FIRMWARE_BUILD_VERSION_PATCH "02"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -90,6 +90,11 @@
 #define LOG_BUFFER_SIZE 30 // Callback queue size
 #define LOG_JSON_BUFFER_SIZE 1024
 #define LOG_TOPIC_SIZE 64
+
+// UDP Logging
+#define UDP_LOG_PORT 514 // Standard syslog port
+#define UDP_LOG_BUFFER_SIZE 512 // Smaller buffer for UDP packets
+#define DEFAULT_IS_UDP_LOGGING_ENABLED true
 
 // Time
 #define NTP_SERVER "pool.ntp.org"
@@ -242,8 +247,12 @@
 
 // Task
 #define ADE7953_TASK_NAME "ade7953_task" // The name of the ADE7953 task
-#define ADE7953_TASK_STACK_SIZE 8192 // The stack size for the ADE7953 task
+#define ADE7953_TASK_STACK_SIZE (16 * 1024) // The stack size for the ADE7953 task (increased from 8192 to prevent stack overflow in JSON operations)
 #define ADE7953_TASK_PRIORITY 2 // The priority for the ADE7953 task
+
+// Memory safety for JSON operations
+#define JSON_SAFE_MIN_HEAP_SIZE (8 * 1024) // Minimum free heap required for JSON operations (8KB)
+#define JSON_LOW_MEMORY_BATCH_LIMIT 250 // Reduced batch size when memory is low
 
 // Interrupt handling
 #define ADE7953_INTERRUPT_TIMEOUT_MS 1000 // Timeout for waiting on interrupt semaphore (in ms)

@@ -55,4 +55,4 @@ private:
 };
 
 extern CrashMonitor crashMonitor;
-#define TRACE crashMonitor.leaveBreadcrumb(pathToFileName(__FILE__), __FUNCTION__, __LINE__, xPortGetCoreID());
+#define TRACE(); crashMonitor.leaveBreadcrumb(pathToFileName(__FILE__), __FUNCTION__, __LINE__, xPortGetCoreID());

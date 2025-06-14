@@ -5,11 +5,10 @@
 struct MainFlags {
   bool isFirmwareUpdate;
   bool isCrashCounterReset;
-  bool isFirstLinecyc;
   bool blockLoop;
   int currentChannel;
   
-  MainFlags() : isFirmwareUpdate(false), isCrashCounterReset(false), isFirstLinecyc(true), blockLoop(false), currentChannel(-1) {}
+  MainFlags() : isFirmwareUpdate(false), isCrashCounterReset(false), blockLoop(false), currentChannel(-1) {}
 };
 
 struct Statistics {
@@ -117,11 +116,12 @@ struct MeterValues
   float reactiveEnergyExported;
   float apparentEnergy;
   unsigned long long lastUnixTimeMilliseconds;
+  unsigned long lastMillis;
 
   MeterValues()
-    : voltage(230.0), current(0.0), activePower(0.0), reactivePower(0.0), apparentPower(0.0), powerFactor(0.0),
-      activeEnergyImported(0.0), activeEnergyExported(0.0), reactiveEnergyImported(0.0), 
-      reactiveEnergyExported(0.0), apparentEnergy(0.0), lastUnixTimeMilliseconds(0) {}
+    : voltage(230.0), current(0.0f), activePower(0.0f), reactivePower(0.0f), apparentPower(0.0f), powerFactor(0.0f),
+      activeEnergyImported(0.0f), activeEnergyExported(0.0f), reactiveEnergyImported(0.0f), 
+      reactiveEnergyExported(0.0f), apparentEnergy(0.0f), lastUnixTimeMilliseconds(0), lastMillis(0) {}
 };
 
 struct PayloadMeter
@@ -131,7 +131,7 @@ struct PayloadMeter
   float activePower;
   float powerFactor;
 
-  PayloadMeter() : channel(0), unixTime(0), activePower(0.0), powerFactor(0.0) {}
+  PayloadMeter() : channel(0), unixTime(0), activePower(0.0f), powerFactor(0.0f) {}
 
   PayloadMeter(int channel, unsigned long long unixTime, float activePower, float powerFactor)
       : channel(channel), unixTime(unixTime), activePower(activePower), powerFactor(powerFactor) {}
@@ -173,8 +173,8 @@ struct ChannelState {
     unsigned long lastValidReadingTime = 0;
     unsigned long consecutiveZeroCount = 0;
     bool hasHadValidReading = false;
-    float lastValidActivePower = 0.0;
-    float lastValidPowerFactor = 0.0;
+    float lastValidActivePower = 0.0f;
+    float lastValidPowerFactor = 0.0f;
     bool isInLegitimateZeroState = false;
 };
 

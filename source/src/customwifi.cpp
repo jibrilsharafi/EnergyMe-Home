@@ -48,7 +48,7 @@ void CustomWifi::loop()
 
   // If disconnected or IP is not yet assigned.
   // WiFi.isConnected() checks if WiFi.status() == WL_CONNECTED.
-  // Logs show "Idle Status" (WL_IDLE_STATUS) when IP is 0.0.0.0, where WiFi.isConnected() would be false.
+  // Logs show "Idle Status" (WL_IDLE_STATUS) when IP is 0.0f.0.0f, where WiFi.isConnected() would be false.
   if (!WiFi.isConnected() || WiFi.localIP() == IPAddress(0,0,0,0)) {
     _logger.warning("WiFi connection lost or IP not assigned. Current status: %d. Attempting reconnection...", TAG, WiFi.status());
     _led.setBlue();

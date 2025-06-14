@@ -8,3 +8,5 @@ temp/
 .mypy*
 
 releases/
+
+logs/

@@ -751,31 +751,31 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get crash data", TAG, LogLevel::DEBUG, request);
 
-        TRACE
+        TRACE();
         if (!CrashMonitor::checkIfCrashDataExists()) {
             request->send(404, "application/json", "{\"message\":\"LUCKILY, no crash data is available, YET. Come back when the device goes loco.\"}");
             return;
         }
 
-        TRACE
+        TRACE();
         CrashData _crashData;
         if (!CrashMonitor::getSavedCrashData(_crashData)) {
             request->send(500, "application/json", "{\"message\":\"Could not get crash data\"}");
             return;
         }
 
-        TRACE
+        TRACE();
         JsonDocument _jsonDocument;
         if (!CrashMonitor::getJsonReport(_jsonDocument, _crashData)) {
             request->send(500, "application/json", "{\"message\":\"Could not create JSON report\"}");
             return;
         }
 
-        TRACE
+        TRACE();
         String _buffer;
         serializeJson(_jsonDocument, _buffer);
 
-        TRACE
+        TRACE();
         request->send(200, "application/json", _buffer.c_str()); });
 
     _server.on("/rest/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request)
@@ -1085,7 +1085,7 @@ void CustomServer::_setOtherEndpoints()
 {
     _server.onNotFound([this](AsyncWebServerRequest *request)
                        {
-        TRACE
+        TRACE();
         _serverLog(
             ("Request to get unknown page: " + request->url()).c_str(),
             TAG,
@@ -1100,7 +1100,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
     _led.block();
     _led.setPurple(true);
 
-    TRACE
+    TRACE();
     if (!index)
     {
         if (filename.indexOf(".bin") > -1)
@@ -1122,14 +1122,14 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
         Update.setMD5(_md5.c_str());
     }
 
-    TRACE
+    TRACE();
     if (Update.write(data, len) != len)
     {
         _onUpdateFailed(request, Update.errorString());
         return;
     }
 
-    TRACE
+    TRACE();
     if (final)
     {
         if (!Update.end(true))
@@ -1142,7 +1142,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
         }
     }
 
-    TRACE
+    TRACE();
     _led.setOff(true);
     _led.unblock();
 }
@@ -1160,27 +1160,27 @@ void CustomServer::_updateJsonFirmwareStatus(const char *status, const char *rea
 
 void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 {
-    TRACE
+    TRACE();
     request->send(200, "application/json", "{\"status\":\"success\", \"md5\":\"" + Update.md5String() + "\"}");
 
-    TRACE
+    TRACE();
     _logger.info("Update complete", TAG);
     _updateJsonFirmwareStatus("success", "");
 
     _logger.debug("MD5 of new firmware: %s", TAG, Update.md5String().c_str());
 
-    TRACE
+    TRACE();
     _logger.debug("Setting rollback flag to %s", TAG, CrashMonitor::getFirmwareStatusString(NEW_TO_TEST));
     if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST))
         _logger.error("Failed to set firmware status", TAG);
 
-    TRACE
+    TRACE();
     setRestartEsp32(TAG, "Restart needed after update");
 }
 
 void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *reason)
 {
-    TRACE
+    TRACE();
     request->send(400, "application/json", "{\"status\":\"failed\", \"reason\":\"" + String(reason) + "\"}");
 
     Update.printError(Serial);
@@ -1199,7 +1199,7 @@ void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *r
 
 void CustomServer::_serveJsonFile(AsyncWebServerRequest *request, const char *filePath)
 {
-    TRACE
+    TRACE();
 
     File file = SPIFFS.open(filePath, FILE_READ);
 

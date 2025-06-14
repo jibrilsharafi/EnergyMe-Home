@@ -62,7 +62,7 @@ void InfluxDbClient::loop()
 
         // Upload data if buffer is full or enough time has passed since last upload
         bool bufferEmpty = _bufferMeterValues.isEmpty();
-        bool bufferFull = _bufferMeterValues.isFull();
+        bool bufferFull = _bufferMeterValues.size() >= (INFLUXDB_BUFFER_SIZE * 0.9);
         bool timeToUpload = (millis() - _lastMillisMeterPublish) > (_influxDbConfiguration.frequency * 1000 * INFLUXDB_FREQUENCY_UPLOAD_MULTIPLIER) ||
                             (millis() - _lastMillisMeterPublish) > INFLUXDB_MAX_INTERVAL_METER_PUBLISH;
 

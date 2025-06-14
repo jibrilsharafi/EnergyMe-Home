@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include <WiFiUdp.h>
 
 // Project includes
 #include "ade7953.h"
@@ -55,6 +56,12 @@ char jsonBuffer[LOG_JSON_BUFFER_SIZE];  // Pre-allocated buffer
 char baseMqttTopicLogs[LOG_TOPIC_SIZE];
 char fullMqttTopic[LOG_TOPIC_SIZE];
 String deviceId;
+
+// UDP logging variables
+WiFiUDP udpClient;
+IPAddress broadcastIP;
+char udpBuffer[UDP_LOG_BUFFER_SIZE];  // Separate buffer for UDP
+bool isUdpLoggingEnabled = DEFAULT_IS_UDP_LOGGING_ENABLED;
 
 // Interrupt handling
 // --------------------
@@ -178,6 +185,9 @@ CustomServer customServer(
 
 // Interrupt Service Routine for ADE7953
 void IRAM_ATTR ade7953ISR() {
+  mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
+  multiplexer.setChannel(max(mainFlags.currentChannel - 1, 0));
+
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   
   statistics.ade7953TotalInterrupts++;
@@ -199,9 +209,11 @@ void IRAM_ATTR ade7953ISR() {
 void meterReadingTask(void *parameter)
 {
   TickType_t xLastWakeTime = xTaskGetTickCount();
-
+  
   while (true)
-  { // Wait for interrupt semaphore with timeout
+  {
+    
+    // Wait for interrupt semaphore with timeout
     if (xSemaphoreTake(ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS)) == pdTRUE)
     {
       _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
@@ -220,38 +232,24 @@ void meterReadingTask(void *parameter)
 
       led.setGreen();
 
-      // Since there is a settling time after the multiplexer is switched,
-      // we let one cycle pass before we start reading the values
-      if (mainFlags.isFirstLinecyc)
-      {
-        mainFlags.isFirstLinecyc = false;
-      }
-      else
-      {
-        mainFlags.isFirstLinecyc = true;
-
-        if (mainFlags.currentChannel != -1)
-        { // -1 indicates that no channel is active
-          if (ade7953.readMeterValues(mainFlags.currentChannel, _linecycUnix))
-          {
-            if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
-            { // Wait after the first time boot
-              PAYLOAD_METER_LOCK();
-              payloadMeter.push(
-                  PayloadMeter(
-                      mainFlags.currentChannel,
-                      _linecycUnix,
-                      ade7953.meterValues[mainFlags.currentChannel].activePower,
-                      ade7953.meterValues[mainFlags.currentChannel].powerFactor));
-              PAYLOAD_METER_UNLOCK();
-            }
-
-            printMeterValues(&ade7953.meterValues[mainFlags.currentChannel], &ade7953.channelData[mainFlags.currentChannel]);
+      if (mainFlags.currentChannel != -1)
+      { // -1 indicates that no channel is active
+        if (ade7953.readMeterValues(mainFlags.currentChannel, _linecycUnix))
+        {
+          if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
+          { // Wait after the first time boot
+            PAYLOAD_METER_LOCK();
+            payloadMeter.push(
+                PayloadMeter(
+                    mainFlags.currentChannel,
+                    _linecycUnix,
+                    ade7953.meterValues[mainFlags.currentChannel].activePower,
+                    ade7953.meterValues[mainFlags.currentChannel].powerFactor));
+            PAYLOAD_METER_UNLOCK();
           }
-        }
 
-        mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
-        multiplexer.setChannel(max(mainFlags.currentChannel - 1, 0));
+          printMeterValues(&ade7953.meterValues[mainFlags.currentChannel], &ade7953.channelData[mainFlags.currentChannel]);
+        }
       }
 
       // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
@@ -349,6 +347,47 @@ void callbackLogToMqtt(
     }
 }
 
+void callbackLogToUdp(
+    const char* timestamp,
+    unsigned long millisEsp,
+    const char* level,
+    unsigned int coreId,
+    const char* function,
+    const char* message
+) {
+    if (!isUdpLoggingEnabled) return;
+    if (strcmp(level, "verbose") == 0) return;
+    if (WiFi.status() != WL_CONNECTED) return;
+    
+    // Format as simplified syslog message
+    snprintf(udpBuffer, sizeof(udpBuffer),
+        "<%d>%s %s[%lu]: [%s][Core%u] %s: %s",
+        16, // Facility.Severity (local0.info)
+        timestamp,
+        deviceId.c_str(),
+        millisEsp,
+        level,
+        coreId,
+        function,
+        message);
+    
+    udpClient.beginPacket(broadcastIP, UDP_LOG_PORT);
+    udpClient.write((const uint8_t*)udpBuffer, strlen(udpBuffer));
+    udpClient.endPacket();
+}
+
+void callbackLogMultiple(
+    const char* timestamp,
+    unsigned long millisEsp,
+    const char* level,
+    unsigned int coreId,
+    const char* function,
+    const char* message
+) {
+  callbackLogToUdp(timestamp, millisEsp, level, coreId, function, message);
+  callbackLogToMqtt(timestamp, millisEsp, level, coreId, function, message);
+}
+
 void setup() {
     Serial.begin(SERIAL_BAUDRATE);
     Serial.printf("EnergyMe - Home\n____________________\n\n");
@@ -369,7 +408,7 @@ void setup() {
     led.setWhite();
     
     logger.begin();
-    logger.setCallback(callbackLogToMqtt);
+    logger.setCallback(callbackLogMultiple);
 
     logger.info("Guess who's back, back again! EnergyMe - Home is starting up...", TAG);
     logger.info("EnergyMe - Home | Build version: %s | Build date: %s %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
@@ -399,14 +438,14 @@ void setup() {
 
     led.setCyan();
 
-    TRACE
+    TRACE();
     logger.debug("Checking for missing files...", TAG);
     auto missingFiles = checkMissingFiles();
     if (!missingFiles.empty()) {
         led.setOrange();
         logger.info("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
 
-        TRACE
+        TRACE();
         createDefaultFilesForMissingFiles(missingFiles);
 
         logger.info("Default files created for missing files", TAG);
@@ -414,7 +453,7 @@ void setup() {
         logger.info("No missing files detected", TAG);
     }
 
-    TRACE
+    TRACE();
     logger.debug("Fetching general configuration from SPIFFS...", TAG);
     if (!setGeneralConfigurationFromSpiffs()) {
         logger.warning("Failed to load configuration from SPIFFS. Using default values.", TAG);
@@ -424,12 +463,12 @@ void setup() {
 
     led.setPurple();
     
-    TRACE
+    TRACE();
     logger.debug("Setting up multiplexer...", TAG);
     multiplexer.begin();
     logger.info("Multiplexer setup done", TAG);
 
-    TRACE
+    TRACE();
     logger.debug("Creating meter reading task...", TAG);
     ade7953InterruptSemaphore = xSemaphoreCreateBinary();
     if (ade7953InterruptSemaphore == NULL) {
@@ -445,9 +484,9 @@ void setup() {
         logger.debug("PayloadMeter mutex created successfully", TAG);
     }
 
-    TRACE
+    TRACE();
     logger.debug("Setting up ADE7953...", TAG);
-    attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING); // This has to be done before ade7953.begin() 
+    attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING); // This has to be done before ade7953.begin() for some mysterious reason
     if (!ade7953.begin()) {
       logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG);
     } else {
@@ -464,22 +503,35 @@ void setup() {
       } else {
           logger.error("Failed to create meter reading task", TAG);
       }
+      ade7953.handleInterrupt(); // Clear any bit that was set to ensure we are now ready to handle the interrupts coming
       logger.info("ADE7953 setup done", TAG);
     }
 
     led.setBlue();    
     
-    TRACE
+    TRACE();
     logger.debug("Setting up WiFi...", TAG);
     customWifi.begin();
     logger.info("WiFi setup done", TAG);
 
-    TRACE
+    // Add UDP logging setup after WiFi
+    TRACE();
+    logger.debug("Setting up UDP logging...", TAG);
+    if (WiFi.status() == WL_CONNECTED) {
+        broadcastIP = WiFi.localIP();
+        broadcastIP[3] = 255; // Convert to broadcast address
+        udpClient.begin(UDP_LOG_PORT);
+        logger.info("UDP broadcast logging configured for %s:%d", TAG, broadcastIP.toString().c_str(), UDP_LOG_PORT);
+    } else {
+        logger.warning("UDP logging setup skipped - WiFi not connected", TAG);
+    }
+
+    TRACE();
     logger.debug("Setting up button handler...", TAG);
     buttonHandler.begin();
     logger.info("Button handler setup done", TAG);
 
-    TRACE
+    TRACE();
     logger.debug("Syncing time...", TAG);
     updateTimezone();
     if (!customTime.begin()) {
@@ -488,12 +540,12 @@ void setup() {
       logger.info("Time synced. We're on time pal!", TAG);
     }
     
-    TRACE
+    TRACE();
     logger.debug("Setting up server...", TAG);
     customServer.begin();
     logger.info("Server setup done", TAG);
 
-    TRACE
+    TRACE();
     logger.debug("Setting up Modbus TCP...", TAG);
     modbusTcp.begin();
     logger.info("Modbus TCP setup done", TAG);
@@ -501,7 +553,7 @@ void setup() {
     led.setGreen();
 
     // Generate the device ID for the callback (pre-allocation makes everything quicker)
-    TRACE
+    TRACE();
     deviceId = getDeviceId();
     snprintf(
       baseMqttTopicLogs, 
@@ -514,46 +566,46 @@ void setup() {
     );
     logger.debug("Base MQTT topic for logs: %s", TAG, baseMqttTopicLogs);    
 
-    TRACE
+    TRACE();
     logger.info("Setup done! Let's get this energetic party started!", TAG);
 }
 
 void loop() {
-    TRACE
+    TRACE();
     if (mainFlags.blockLoop) return;
 
     // Main loop now only handles non-critical operations
     // Meter reading is handled by dedicated task
-    TRACE
+    TRACE();
     customTime.loop();
 
-    TRACE
+    TRACE();
     crashMonitor.crashCounterLoop();
 
-    TRACE
+    TRACE();
     crashMonitor.firmwareTestingLoop();
       
-    TRACE
+    TRACE();
     customWifi.loop();
     
-    TRACE
+    TRACE();
     buttonHandler.loop();
     
-    TRACE
+    TRACE();
     mqtt.loop();
     
-    TRACE
+    TRACE();
     customMqtt.loop();
     
-    TRACE
+    TRACE();
     influxDbClient.loop();
 
-    TRACE
+    TRACE();
     ade7953.loop();
 
-    TRACE
+    TRACE();
     if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {      
-      TRACE
+      TRACE();
       lastMaintenanceCheck = millis();      
       logger.debug("Total interrupts received: %lu | Total handled: %lu",
         TAG, 
@@ -561,23 +613,23 @@ void loop() {
         ade7953.getTotalHandledInterrupts()
       );
 
-      TRACE
+      TRACE();
       printDeviceStatus();
 
-      TRACE
+      TRACE();
       if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
         logger.fatal("Heap memory has degraded below safe minimum: %d bytes", TAG, ESP.getFreeHeap());
         setRestartEsp32(TAG, "Heap memory has degraded below safe minimum");
       }
 
       // If memory is below a certain level, clear the log
-      TRACE
+      TRACE();
       if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
         logger.clearLog();
         logger.warning("Log cleared due to low memory", TAG);
       }
       
-      TRACE
+      TRACE();
       if (debugFlagsRtc.enableMqttDebugLogging && millis() >= debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
         logger.info("MQTT debug logging period ended.", TAG);
 
@@ -588,9 +640,9 @@ void loop() {
       }
     }
 
-    TRACE
+    TRACE();
     checkIfRestartEsp32Required();
 
-    TRACE
+    TRACE();
     led.setOff();
 }

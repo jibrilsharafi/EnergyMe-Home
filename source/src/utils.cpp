@@ -25,11 +25,20 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
 
     jsonDocument["firmware"]["buildVersion"] = FIRMWARE_BUILD_VERSION;
     jsonDocument["firmware"]["buildDate"] = FIRMWARE_BUILD_DATE;
+    jsonDocument["firmware"]["buildTime"] = FIRMWARE_BUILD_TIME;
 
     jsonDocument["memory"]["heap"]["free"] = ESP.getFreeHeap();
     jsonDocument["memory"]["heap"]["total"] = ESP.getHeapSize();
+    jsonDocument["memory"]["heap"]["used"] = ESP.getHeapSize() - ESP.getFreeHeap();
+    jsonDocument["memory"]["heap"]["freePercentage"] = ((float)ESP.getFreeHeap() / ESP.getHeapSize()) * 100.0;
+    jsonDocument["memory"]["heap"]["usedPercentage"] = ((float)(ESP.getHeapSize() - ESP.getFreeHeap()) / ESP.getHeapSize()) * 100.0;
+    
     jsonDocument["memory"]["spiffs"]["free"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
     jsonDocument["memory"]["spiffs"]["total"] = SPIFFS.totalBytes();
+    jsonDocument["memory"]["spiffs"]["used"] = SPIFFS.usedBytes();
+    jsonDocument["memory"]["spiffs"]["freePercentage"] = ((float)(SPIFFS.totalBytes() - SPIFFS.usedBytes()) / SPIFFS.totalBytes()) * 100.0;
+    jsonDocument["memory"]["spiffs"]["usedPercentage"] = ((float)SPIFFS.usedBytes() / SPIFFS.totalBytes()) * 100.0;
+
 
     jsonDocument["chip"]["model"] = ESP.getChipModel();
     jsonDocument["chip"]["revision"] = ESP.getChipRevision();
@@ -45,7 +54,7 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     logger.debug("Deserializing JSON from SPIFFS", TAG);
 
-    TRACE
+    TRACE();
     File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
         logger.error("%s Failed to open file", TAG, path);
@@ -72,7 +81,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     logger.debug("Serializing JSON to SPIFFS...", TAG);
 
-    TRACE
+    TRACE();
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
         logger.error("%s Failed to open file", TAG, path);
@@ -96,7 +105,7 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
 void createEmptyJsonFile(const char* path) {
     logger.debug("Creating empty JSON file %s...", TAG, path);
 
-    TRACE
+    TRACE();
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file) {
         logger.error("Failed to open file %s", TAG, path);
@@ -288,7 +297,7 @@ std::vector<const char*> checkMissingFiles() {
 
     const size_t CONFIG_FILE_COUNT = sizeof(CONFIG_FILE_PATHS) / sizeof(CONFIG_FILE_PATHS[0]);
 
-    TRACE
+    TRACE();
     for (size_t i = 0; i < CONFIG_FILE_COUNT; ++i) {
         const char* path = CONFIG_FILE_PATHS[i];
         if (!SPIFFS.exists(path)) {
@@ -303,7 +312,7 @@ std::vector<const char*> checkMissingFiles() {
 void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles) {
     logger.debug("Creating default files for missing files...", TAG);
 
-    TRACE
+    TRACE();
     for (const char* path : missingFiles) {
         if (strcmp(path, GENERAL_CONFIGURATION_JSON_PATH) == 0) {
             createDefaultGeneralConfigurationFile();
@@ -337,7 +346,7 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
 bool checkAllFiles() {
     logger.debug("Checking all files...", TAG);
 
-    TRACE
+    TRACE();
     std::vector<const char*> missingFiles = checkMissingFiles();
     if (!missingFiles.empty()) {
         createDefaultFilesForMissingFiles(missingFiles);
@@ -368,31 +377,31 @@ void checkIfRestartEsp32Required() {
 }
 
 void restartEsp32() {
-    TRACE
+    TRACE();
     led.block();
     led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
     led.setWhite(true);
 
-    TRACE
+    TRACE();
     clearAllAuthTokens();
 
-    TRACE
+    TRACE();
     logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
 
     // If a firmware evaluation is in progress, set the firmware to test again
-    TRACE
+    TRACE();
     FirmwareState _firmwareStatus = CrashMonitor::getFirmwareStatus();
 
-    TRACE
+    TRACE();
     if (_firmwareStatus == TESTING) {
         logger.info("Firmware evaluation is in progress. Setting firmware to test again", TAG);
-        TRACE
+        TRACE();
         if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) logger.error("Failed to set firmware status", TAG);
     }
 
     logger.end();
 
-    TRACE
+    TRACE();
     ESP.restart();
 }
 
@@ -454,21 +463,24 @@ void printDeviceStatus()
     unsigned int SpiffsUsedBytes = SPIFFS.usedBytes();
     unsigned int SpiffsFreeBytes = SpiffsTotalBytes - SpiffsUsedBytes;
     
-    float heapUsedPercentage = ((heapSize - freeHeap) / heapSize) * 100.0;
+    float heapUsedPercentage = ((float)(heapSize - freeHeap) / heapSize) * 100.0;
+    float heapFreePercentage = ((float)freeHeap / heapSize) * 100.0;
     float spiffsUsedPercentage = ((float)SpiffsUsedBytes / SpiffsTotalBytes) * 100.0;
+    float spiffsFreePercentage = ((float)SpiffsFreeBytes / SpiffsTotalBytes) * 100.0;
 
     logger.debug(
-        "Heap: %.1f%% (%u/%u bytes) (min: %u bytes, max alloc: %u bytes) | SPIFFS: %.1f%% (%u/%u bytes) (free: %u bytes)",
+        "Heap: %.1f%% used, %.1f%% free (%u free / %u total bytes) (min: %u bytes, max alloc: %u bytes) | SPIFFS: %.1f%% used, %.1f%% free (%u free / %u total bytes)",
         TAG,
         heapUsedPercentage,
+        heapFreePercentage,
         freeHeap,
         heapSize,
         minFreeHeap,
         maxAllocHeap,
         spiffsUsedPercentage,
-        SpiffsUsedBytes,
-        SpiffsTotalBytes,
-        SpiffsFreeBytes
+        spiffsFreePercentage,
+        SpiffsFreeBytes,
+        SpiffsTotalBytes
     );
 }
 

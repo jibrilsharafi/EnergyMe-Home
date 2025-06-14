@@ -27,12 +27,12 @@ Ade7953::Ade7953(
 bool Ade7953::begin() {
     _logger.debug("Initializing Ade7953", TAG);
 
-    TRACE
+    TRACE();
     _logger.debug("Setting up hardware pins...", TAG);
     _setHardwarePins();
     _logger.debug("Successfully set up hardware pins", TAG);
 
-    TRACE
+    TRACE();
     _logger.debug("Verifying communication with Ade7953...", TAG);
     if (!_verifyCommunication()) {
         _logger.error("Failed to communicate with Ade7953", TAG);
@@ -40,41 +40,41 @@ bool Ade7953::begin() {
     }
     _logger.debug("Successfully initialized Ade7953", TAG);
     
-    TRACE
+    TRACE();
     _logger.debug("Setting optimum settings...", TAG);
     _setOptimumSettings();
     _logger.debug("Successfully set optimum settings", TAG);
 
-    TRACE
+    TRACE();
     _logger.debug("Setting default parameters...", TAG);
     _setDefaultParameters();
     _logger.debug("Successfully set default parameters", TAG);
 
-    TRACE
+    TRACE();
     _logger.debug("Setting configuration from SPIFFS...", TAG);
     _setConfigurationFromSpiffs();
     _logger.debug("Done setting configuration from SPIFFS", TAG);
 
-    TRACE
+    TRACE();
     _logger.debug("Reading channel data from SPIFFS...", TAG);
     _setChannelDataFromSpiffs();
     _logger.debug("Done reading channel data from SPIFFS", TAG);
 
-    TRACE
+    TRACE();
     _logger.debug("Reading calibration values from SPIFFS...", TAG);
     _setCalibrationValuesFromSpiffs();
     _logger.debug("Done reading calibration values from SPIFFS", TAG);
 
-    TRACE
+    TRACE();
     _logger.debug("Reading energy from SPIFFS...", TAG);
     _setEnergyFromSpiffs();
     _logger.debug("Done reading energy from SPIFFS", TAG);
 
     // Set it up only at the end to avoid premature interrupts
-    TRACE
+    TRACE();
     _setupInterrupts();
 
-    TRACE
+    TRACE();
     return true;
 }
 
@@ -619,64 +619,67 @@ can be found in the function itself.
 false if the data reading is not ready yet or valid.
 */
 bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) {
-    unsigned long long previousLastUnixTimeMilliseconds = meterValues[channel].lastUnixTimeMilliseconds;
-    unsigned long long _deltaMillis; // This will be used for energy accumulation
+    unsigned long _millisRead = millis();
+    unsigned long _deltaMillis = _millisRead - meterValues[channel].lastMillis;
 
-    // Ensure the reading is not being called too early if a previous valid reading exists
-    if (previousLastUnixTimeMilliseconds != 0) {
-        unsigned long long timeSinceLastRead = linecycUnixTimeMillis - previousLastUnixTimeMilliseconds;
+    // // Ensure the reading is not being called too early if a previous valid reading exists
+    // if (previousLastUnixTimeMilliseconds != 0) {
+    //     unsigned long long timeSinceLastRead = linecycUnixTimeMillis - previousLastUnixTimeMilliseconds;
         
-        // Not useful anymore since the measurement timing (_sampleTime) is handled indipendently
-        // by the linecyc of the ADE7953. The actual reading of the data may be not coordinated,
-        // and that is ok
-        // // Ensure the reading is not being called too early (should not happen anyway)
-        // // This was introduced as in channel 0 it was noticed that sometimes two meter values
-        // // were sent with 1 ms difference, where the second one had 0 active power (since most
-        // // probably the next line cycle was not yet finished)
-        // // We use the time multiplied by 0.8 to keep some headroom
-        // if (timeSinceLastRead < _sampleTime * 0.8) {
-        //     _logger.warning("Reading too early for channel %d: %llu ms since last read, expected at least %0.0f ms", TAG, channel, timeSinceLastRead, _sampleTime * 0.8);
-        //     _recordFailure();
-        //     return false;
-        // }
-        _deltaMillis = timeSinceLastRead;
-    } else {
-        // This is the first attempt to get a valid reading for this channel,
-        // or previous attempts failed before setting the timestamp.
-        // For energy accumulation of the first valid point, the period is _sampleTime.
-        _deltaMillis = _sampleTime; 
-    }
+    //     // Not useful anymore since the measurement timing (_sampleTime) is handled indipendently
+    //     // by the linecyc of the ADE7953. The actual reading of the data may be not coordinated,
+    //     // and that is ok
+    //     // // Ensure the reading is not being called too early (should not happen anyway)
+    //     // // This was introduced as in channel 0 it was noticed that sometimes two meter values
+    //     // // were sent with 1 ms difference, where the second one had 0 active power (since most
+    //     // // probably the next line cycle was not yet finished)
+    //     // // We use the time multiplied by 0.8 to keep some headroom
+    //     // if (timeSinceLastRead < _sampleTime * 0.8) {
+    //     //     _logger.warning("Reading too early for channel %d: %llu ms since last read, expected at least %0.0f ms", TAG, channel, timeSinceLastRead, _sampleTime * 0.8);
+    //     //     _recordFailure();
+    //     //     return false;
+    //     // }
+    //     _deltaMillis = timeSinceLastRead;
+    // } else {
+    //     // This is the first attempt to get a valid reading for this channel,
+    //     // or previous attempts failed before setting the timestamp.
+    //     // For energy accumulation of the first valid point, the period is _sampleTime.
+    //     _deltaMillis = _sampleTime; 
+    // }
 
     // We cannot put an higher limit here because if the channel happened to be disabled, then
     // enabled again, this would result in an infinite error.
-    if (_deltaMillis == 0) {
+    if (meterValues[channel].lastMillis != 0 && _deltaMillis == 0) {
         _logger.warning("%s (%d): delta millis (%llu) is invalid. Discarding reading", TAG, channelData[channel].label.c_str(), channel, _deltaMillis);
-        _recordFailure();
+        // _recordFailure();
         return false;
     }
 
     int _ade7953Channel = (channel == CHANNEL_0) ? CHANNEL_A : CHANNEL_B;
 
-    float _voltage = 0.0;
-    float _current = 0.0;
-    float _activePower = 0.0;
-    float _reactivePower = 0.0;
-    float _apparentPower = 0.0;
-    float _powerFactor = 0.0;
-    float _activeEnergy = 0.0;
-    float _reactiveEnergy = 0.0;
-    float _apparentEnergy = 0.0;
+    float _voltage = 0.0f;
+    float _current = 0.0f;
+    float _activePower = 0.0f;
+    float _reactivePower = 0.0f;
+    float _apparentPower = 0.0f;
+    float _powerFactor = 0.0f;
+    float _activeEnergy = 0.0f;
+    float _reactiveEnergy = 0.0f;
+    float _apparentEnergy = 0.0f;
 
     Phase _basePhase = channelData[CHANNEL_0].phase;
 
     if (channelData[channel].phase == _basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
-        TRACE
+        TRACE();
         // These are the three most important values to read
         _activeEnergy = _readActiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.whLsb * (channelData[channel].reverse ? -1 : 1);
         _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.varhLsb * (channelData[channel].reverse ? -1 : 1);
         _apparentEnergy = _readApparentEnergy(_ade7953Channel) / channelData[channel].calibrationValues.vahLsb;
     
-        _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
+        // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
+        // as channel 0 (sampled 100s of milliseconds before only)
+        if (channel == CHANNEL_0) _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
+        else _voltage = meterValues[CHANNEL_0].voltage;
         
         // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
         // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
@@ -686,14 +689,16 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         
         // It is faster and more consistent to compute the values rather than reading them from the ADE7953
         _powerFactor = _activeEnergy / _apparentEnergy * (_reactiveEnergy >= 0 ? 1 : -1); // Apply sign as by datasheet (page 38)
-        if (_apparentEnergy == 0) _powerFactor = 0.0; // Avoid division by zero
+        if (_apparentEnergy == 0) _powerFactor = 0.0f; // Avoid division by zero
         
         _current = _apparentPower / _voltage; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
-    } else { // Assume everything is the same as channel 0 except the current
+    } else { 
+        // TODO: understand if this can be improved using the energy registers
+        // Assume everything is the same as channel 0 except the current
         // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
         // It is easier just to ensure during installation that the CTs are installed correctly
 
-        TRACE
+        TRACE();
         // Assume from channel 0
         _voltage = meterValues[CHANNEL_0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
         
@@ -736,24 +741,25 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
 
     // If the power factor is below a certain threshold, assume everything is 0 to avoid weird readings
     if (abs(_powerFactor) < MINIMUM_POWER_FACTOR) {
-        _current = 0.0;
-        _activePower = 0.0;
-        _reactivePower = 0.0;
-        _apparentPower = 0.0;
-        _powerFactor = 0.0;
-        _activeEnergy = 0.0;
-        _reactiveEnergy = 0.0;
-        _apparentEnergy = 0.0;
+        _current = 0.0f;
+        _activePower = 0.0f;
+        _reactivePower = 0.0f;
+        _apparentPower = 0.0f;
+        _powerFactor = 0.0f;
+        _activeEnergy = 0.0f;
+        _reactiveEnergy = 0.0f;
+        _apparentEnergy = 0.0f;
     }
 
-    TRACE
+    TRACE();
+    //TODO: i really don't like this, remove it as soon as we understand the cause of the spurious zero readings
     // Check for spurious zero readings BEFORE other validations
     if (_isSpuriousZeroReading(channel, _activePower, _powerFactor)) {
         _recordFailure();
         return false;
     }
 
-    TRACE
+    TRACE();
     if (
         !_validateVoltage(_voltage) || 
         !_validateCurrent(_current) || 
@@ -768,28 +774,29 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         return false;
     }
 
-    // Ensure the current * voltage is not too different from the apparent power (both in absolute and relative terms)
-    // Skip this check if apparent power is below 1 to avoid issues with low power readings
-    // Channel 0 does not have this problem since it has a dedicated ADC on the ADE7953, while the other channels
-    // use a multiplexer and some weird behavior can happen sometimes
-    TRACE
-    if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != CHANNEL_0 &&
-        (abs(_current * _voltage - _apparentPower) > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE || 
-         abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) 
-    {
-        _logger.warning(
-            "%s (%D): Current (%.3f * Voltage %.1f = %.1f) is too different from measured Apparent Power (%.1f). Discarding data point", 
-            TAG,
-            channelData[channel].label.c_str(),
-            channel, 
-            _current, 
-            _voltage,
-            _current * _voltage, 
-            _apparentPower
-        );
-        _recordFailure();
-        return false;
-    }
+    // This part makes no sense to use anymore as the current is computed from the apparent power and voltage
+    // // Ensure the current * voltage is not too different from the apparent power (both in absolute and relative terms)
+    // // Skip this check if apparent power is below 1 to avoid issues with low power readings
+    // // Channel 0 does not have this problem since it has a dedicated ADC on the ADE7953, while the other channels
+    // // use a multiplexer and some weird behavior can happen sometimes
+    // TRACE();
+    // if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != CHANNEL_0 &&
+    //     (abs(_current * _voltage - _apparentPower) > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE || 
+    //      abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) 
+    // {
+    //     _logger.warning(
+    //         "%s (%D): Current (%.3f * Voltage %.1f = %.1f) is too different from measured Apparent Power (%.1f). Discarding data point", 
+    //         TAG,
+    //         channelData[channel].label.c_str(),
+    //         channel, 
+    //         _current, 
+    //         _voltage,
+    //         _current * _voltage, 
+    //         _apparentPower
+    //     );
+    //     _recordFailure();
+    //     return false;
+    // }
     
     // Enough checks, now we can set the values
     meterValues[channel].voltage = _voltage;
@@ -821,8 +828,8 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
             channelData[channel].label.c_str(),
             channel
         );
-        meterValues[channel].activePower = 0.0;
-        meterValues[channel].powerFactor = 0.0;
+        meterValues[channel].activePower = 0.0f;
+        meterValues[channel].powerFactor = 0.0f;
     }
 
     if (_reactiveEnergy > 0) {
@@ -836,7 +843,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
             channelData[channel].label.c_str(),
             channel
         );
-        meterValues[channel].reactivePower = 0.0;
+        meterValues[channel].reactivePower = 0.0f;
     }
 
     if (_apparentEnergy != 0) {
@@ -848,15 +855,16 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
             channelData[channel].label.c_str(),
             channel
         );
-        meterValues[channel].current = 0.0;
-        meterValues[channel].apparentPower = 0.0;
+        meterValues[channel].current = 0.0f;
+        meterValues[channel].apparentPower = 0.0f;
     }
 
     // We actually set the timestamp of the channel (used for the energy calculations)
     // only if we actually reached the end. Otherwise it would mean the point had to be
     // discarded
-    meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
     statistics.ade7953ReadingCount++;
+    meterValues[channel].lastMillis = _millisRead;
+    meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
     return true;
 }
 
@@ -1053,6 +1061,7 @@ void Ade7953::_setEnergyFromSpiffs() {
 void Ade7953::saveEnergy() {
     _logger.debug("Saving energy...", TAG);
 
+    TRACE();
     _saveEnergyToSpiffs();
     _saveDailyEnergyToSpiffs();
 
@@ -1062,6 +1071,7 @@ void Ade7953::saveEnergy() {
 void Ade7953::_saveEnergyToSpiffs() {
     _logger.debug("Saving energy to SPIFFS...", TAG);
 
+    TRACE();
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
 
@@ -1079,6 +1089,7 @@ void Ade7953::_saveEnergyToSpiffs() {
 void Ade7953::_saveDailyEnergyToSpiffs() {
     _logger.debug("Saving daily energy to SPIFFS...", TAG);
 
+    TRACE();
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument);
     
@@ -1107,11 +1118,11 @@ void Ade7953::resetEnergyValues() {
     _logger.warning("Resetting energy values to 0", TAG);
 
     for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-        meterValues[i].activeEnergyImported = 0.0;
-        meterValues[i].activeEnergyExported = 0.0;
-        meterValues[i].reactiveEnergyImported = 0.0;
-        meterValues[i].reactiveEnergyExported = 0.0;
-        meterValues[i].apparentEnergy = 0.0;
+        meterValues[i].activeEnergyImported = 0.0f;
+        meterValues[i].activeEnergyExported = 0.0f;
+        meterValues[i].reactiveEnergyImported = 0.0f;
+        meterValues[i].reactiveEnergyExported = 0.0f;
+        meterValues[i].apparentEnergy = 0.0f;
     }
 
     createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
@@ -1628,7 +1639,7 @@ void Ade7953::_checkForTooManyFailures() {
     }
 
     if (_failureCount >= ADE7953_MAX_FAILURES_BEFORE_RESTART) {
-        TRACE
+        TRACE();
         _logger.fatal("Too many failures (%d) in ADE7953 communication or readings. Resetting device...", TAG, _failureCount);
         setRestartEsp32(TAG, "Too many failures in ADE7953 communication or readings");
 
@@ -1712,20 +1723,23 @@ void Ade7953::handleInterrupt() {
     long statusA = readRegister(RSTIRQSTATA_32, 32, false);
     long statusB = readRegister(RSTIRQSTATB_32, 32, false);
 
-    _logger.debug("ADE7953 interrupt triggered", TAG);
-    
     // Very important: if we detected a reset or a CRC change in the configurations, 
     // we must reinitialize the device
-    // Check for both the RESET interrupt (bit 0) - Device reset and CRC changes (bit 21)
+    // Check for both the RESET interrupt (bit 20) - Device reset and CRC changes (bit 21)
     if (
         statusA & (1 << RESET_IRQ_BIT) ||
         statusA & (1 << CRC_IRQ_BIT)
     ) {
-        TRACE
+        TRACE();
         _logger.warning("Reset interrupt or CRC changed detected. Doing setup again", TAG);
         begin();
     // Check for CYCEND interrupt (bit 18) - Line cycle end
     } else if (statusA & (1 << IRQENA_CYCEND_IRQ_BIT)) {
         _logger.verbose("Line cycle end detected on Channel A", TAG);
+    } else {
+        _logger.warning("Unhandled ADE7953 interrupt status: A=0x%08lX, B=0x%08lX", 
+                        TAG, 
+                        statusA, 
+                        statusB);
     }
 }
