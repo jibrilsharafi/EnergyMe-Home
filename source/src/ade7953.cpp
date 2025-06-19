@@ -751,6 +751,19 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         _apparentEnergy = 0.0f;
     }
 
+    // Sometimes the power factor is very close to 1 but above 1. If so, clamp it to 1 as the measure is still valid
+    if (abs(_powerFactor) > VALIDATE_POWER_FACTOR_MAX && abs(_powerFactor) < MAXIMUM_POWER_FACTOR_CLAMP) {
+        _logger.debug(
+            "%s (%d): Power factor %.3f is above %.3f, clamping it", 
+            TAG,
+            channelData[channel].label.c_str(), 
+            channel, 
+            _powerFactor,
+            MAXIMUM_POWER_FACTOR_CLAMP
+        );
+        _powerFactor = (_powerFactor > 0) ? VALIDATE_POWER_FACTOR_MAX : VALIDATE_POWER_FACTOR_MIN; // Keep the sign of the power factor
+    }
+
     TRACE();
     //TODO: i really don't like this, remove it as soon as we understand the cause of the spurious zero readings
     // Check for spurious zero readings BEFORE other validations
@@ -759,7 +772,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         return false;
     }
 
-    TRACE();
+    TRACE(); // FIXME: it crashes here sometimes
     if (
         !_validateVoltage(_voltage) || 
         !_validateCurrent(_current) || 
@@ -768,6 +781,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         !_validatePower(_apparentPower) || 
         !_validatePowerFactor(_powerFactor)
     ) {
+        TRACE(); // FIXME: it crashes here sometimes
         logger.warning("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", 
             TAG, channelData[channel].label.c_str(), channel, _activePower, _current, _reactivePower, _apparentPower, _powerFactor);
         _recordFailure();
@@ -814,6 +828,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         _apparentEnergy = 1;
     }
 
+    TRACE();
     // Leverage the no-load feature of the ADE7953 to discard the noise
     // As such, when the energy read by the ADE7953 in the given linecycle is below
     // a certain threshold (set during setup), the read value is 0
@@ -1730,6 +1745,8 @@ void Ade7953::handleInterrupt() {
         statusA & (1 << RESET_IRQ_BIT) ||
         statusA & (1 << CRC_IRQ_BIT)
     ) {
+        // FIXME: if we change a setting in the ADE7953, we should expect a CRC change
+        // and avoid a loop. Account for this
         TRACE();
         _logger.warning("Reset interrupt or CRC changed detected. Doing setup again", TAG);
         begin();

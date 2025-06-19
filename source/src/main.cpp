@@ -185,6 +185,12 @@ CustomServer customServer(
 
 // Interrupt Service Routine for ADE7953
 void IRAM_ATTR ade7953ISR() {
+  
+  // Check if semaphore exists to prevent crashes during shutdown/startup
+  if (ade7953InterruptSemaphore == NULL) {
+    return; // Exit early if semaphore doesn't exist
+  }
+  
   mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
   multiplexer.setChannel(max(mainFlags.currentChannel - 1, 0));
 
@@ -192,13 +198,10 @@ void IRAM_ATTR ade7953ISR() {
   
   statistics.ade7953TotalInterrupts++;
   ade7953LastInterruptTime = millis();
-  
+    
   // Give binary semaphore from ISR - this will wake up the waiting task
-  // Check if semaphore exists to prevent crashes during shutdown/startup
   // If semaphore is already given, this call will be ignored (no queuing needed)
-  if (ade7953InterruptSemaphore != NULL) {
-    xSemaphoreGiveFromISR(ade7953InterruptSemaphore, &xHigherPriorityTaskWoken);
-  }
+  xSemaphoreGiveFromISR(ade7953InterruptSemaphore, &xHigherPriorityTaskWoken);
   
   // Request context switch if a higher priority task was woken
   if (xHigherPriorityTaskWoken == pdTRUE) {
@@ -209,12 +212,15 @@ void IRAM_ATTR ade7953ISR() {
 void meterReadingTask(void *parameter)
 {
   TickType_t xLastWakeTime = xTaskGetTickCount();
-  
+
   while (true)
   {
-    
+
     // Wait for interrupt semaphore with timeout
-    if (xSemaphoreTake(ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS)) == pdTRUE)
+    // Check if semaphore still exists to prevent crashes during shutdown
+    if (
+        ade7953InterruptSemaphore != NULL &&
+        xSemaphoreTake(ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS)) == pdTRUE)
     {
       _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
 
@@ -271,11 +277,20 @@ void meterReadingTask(void *parameter)
     }
     else
     {
+      // Check if semaphore is NULL (during shutdown) and exit gracefully
+      if (ade7953InterruptSemaphore == NULL)
+      {
+        logger.debug("Semaphore is NULL, task exiting...", TAG);
+        break;
+      }
+
       // Timeout occurred - this means no interrupt was received within the timeout period
       // This is normal behavior when no energy flow is detected or during low activity periods
       // Use vTaskDelayUntil for precise timing to prevent drift
       vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100));
     }
+
+    led.setOff(); // Turn off the LED after processing the interrupt
   }
 }
 
@@ -394,7 +409,9 @@ void setup() {
     Serial.println("Booting...");
     Serial.printf("Build version: %s\n", FIRMWARE_BUILD_VERSION);
     Serial.printf("Build date: %s %s\n", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
-    
+    deviceId = getDeviceId();
+    Serial.printf("Device ID: %s\n", deviceId.c_str());
+
     Serial.println("Setting up LED...");
     led.begin();
     Serial.println("LED setup done");
@@ -411,7 +428,7 @@ void setup() {
     logger.setCallback(callbackLogMultiple);
 
     logger.info("Guess who's back, back again! EnergyMe - Home is starting up...", TAG);
-    logger.info("EnergyMe - Home | Build version: %s | Build date: %s %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
+    logger.info("Build version: %s | Build date: %s %s | Device ID: %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, deviceId.c_str());
 
     logger.debug("Setting up crash monitor...", TAG);
     crashMonitor.begin();
@@ -554,7 +571,6 @@ void setup() {
 
     // Generate the device ID for the callback (pre-allocation makes everything quicker)
     TRACE();
-    deviceId = getDeviceId();
     snprintf(
       baseMqttTopicLogs, 
       sizeof(baseMqttTopicLogs), 
@@ -609,8 +625,8 @@ void loop() {
       lastMaintenanceCheck = millis();      
       logger.debug("Total interrupts received: %lu | Total handled: %lu",
         TAG, 
-        ade7953TotalInterrupts, 
-        ade7953.getTotalHandledInterrupts()
+        statistics.ade7953TotalInterrupts,
+        statistics.ade7953TotalHandledInterrupts
       );
 
       TRACE();
@@ -642,7 +658,4 @@ void loop() {
 
     TRACE();
     checkIfRestartEsp32Required();
-
-    TRACE();
-    led.setOff();
 }

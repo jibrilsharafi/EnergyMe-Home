@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "10"
-#define FIRMWARE_BUILD_VERSION_PATCH "02"
+#define FIRMWARE_BUILD_VERSION_PATCH "03"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -258,8 +258,8 @@
 #define ADE7953_INTERRUPT_TIMEOUT_MS 1000 // Timeout for waiting on interrupt semaphore (in ms)
 
 // Macros
-#define PAYLOAD_METER_LOCK() xSemaphoreTake(payloadMeterMutex, portMAX_DELAY)
-#define PAYLOAD_METER_UNLOCK() xSemaphoreGive(payloadMeterMutex)
+#define PAYLOAD_METER_LOCK() do { if (payloadMeterMutex != NULL) xSemaphoreTake(payloadMeterMutex, portMAX_DELAY); } while(0)
+#define PAYLOAD_METER_UNLOCK() do { if (payloadMeterMutex != NULL) xSemaphoreGive(payloadMeterMutex); } while(0)
 
 // Setup
 #define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low
@@ -288,22 +288,23 @@
 #define CRC_IRQ_BIT 21 // Bit position for CRC error interrupt
 
 // Fixed conversion values
-#define POWER_FACTOR_CONVERSION_FACTOR 1.0 / 32768.0 // PF/LSB
-#define ANGLE_CONVERSION_FACTOR 360.0 * 50.0 / 223000.0 // 0.0807 °/LSB
+#define POWER_FACTOR_CONVERSION_FACTOR 1.0f / 32768.0f // PF/LSB
+#define ANGLE_CONVERSION_FACTOR 360.0f * 50.0f / 223000.0f // 0.0807 °/LSB
 
 // Validate values
-#define VALIDATE_VOLTAGE_MIN 50.0 // Any voltage below this value is discarded
-#define VALIDATE_VOLTAGE_MAX 300.0  // Any voltage above this value is discarded
-#define VALIDATE_CURRENT_MIN -300.0 // Any current below this value is discarded
-#define VALIDATE_CURRENT_MAX 300.0 // Any current above this value is discarded
-#define VALIDATE_POWER_MIN -100000.0 // Any power below this value is discarded
-#define VALIDATE_POWER_MAX 100000.0 // Any power above this value is discarded
-#define VALIDATE_POWER_FACTOR_MIN -1.0 // Any power factor below this value is discarded
-#define VALIDATE_POWER_FACTOR_MAX 1.0 // Any power factor above this value is discarded
+#define VALIDATE_VOLTAGE_MIN 50.0f // Any voltage below this value is discarded
+#define VALIDATE_VOLTAGE_MAX 300.0f  // Any voltage above this value is discarded
+#define VALIDATE_CURRENT_MIN -300.0f // Any current below this value is discarded
+#define VALIDATE_CURRENT_MAX 300.0f // Any current above this value is discarded
+#define VALIDATE_POWER_MIN -100000.0f // Any power below this value is discarded
+#define VALIDATE_POWER_MAX 100000.0f // Any power above this value is discarded
+#define VALIDATE_POWER_FACTOR_MIN -1.0f // Any power factor below this value is discarded
+#define VALIDATE_POWER_FACTOR_MAX 1.0f // Any power factor above this value is discarded
 
 // Guardrails and thresholds
-#define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01 // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
-#define MINIMUM_POWER_FACTOR 0.05 // Measuring such low power factors is virtually impossible with such CTs
+#define MAXIMUM_POWER_FACTOR_CLAMP 1.05f // Values above 1 but below this are still accepted
+#define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
+#define MINIMUM_POWER_FACTOR 0.05f // Measuring such low power factors is virtually impossible with such CTs
 #define SPURIOUS_ZERO_MAX_DURATION 5000 // Time after a valid reading to consider a reading not anymore a spurious zero
 #define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 3 // Threshold to transition to a legitimate zero state for a channel
 
@@ -314,8 +315,8 @@
 #define ADE7953_FAILURE_RESET_TIMEOUT_MS (1 * 60 * 1000)
 
 // Check for incorrect readings
-#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0 // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
-#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20 // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
+#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0f // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
+#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20f // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 
 // Modbus TCP
 // --------------------

@@ -1,5 +1,8 @@
 #include "mqtt.h"
 
+extern SemaphoreHandle_t payloadMeterMutex;
+extern RestartConfiguration restartConfiguration;
+
 static const char *TAG = "mqtt";
 
 void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
@@ -459,7 +462,22 @@ void Mqtt::_setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _m
 
 void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter) {
     _logger.debug("Converting circular buffer to JSON...", TAG);
-      
+    
+    TRACE();  
+    // Check if mutex is still available (not deleted during shutdown)
+    if (payloadMeterMutex == NULL) {
+        _logger.warning("PayloadMeter mutex is NULL, skipping circular buffer to JSON conversion", TAG);
+        return;
+    }
+    
+    // Additional safety check - if restart is in progress and enough time has passed, 
+    // avoid operations that might conflict with cleanup
+    if (restartConfiguration.isRequired && 
+        (millis() - restartConfiguration.requiredAt) > (ESP32_RESTART_DELAY - 1000)) {
+        _logger.warning("Restart imminent, skipping circular buffer to JSON conversion", TAG);
+        return;
+    }
+    
     // Log memory usage before JSON operations
     size_t freeHeap = ESP.getFreeHeap();
     size_t minFreeHeap = ESP.getMinFreeHeap();
@@ -482,6 +500,7 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
         _logger.debug("Moderate memory pressure, reducing JSON batch size to %u items", TAG, maxIterations);
     }
     
+    TRACE();  
     PAYLOAD_METER_LOCK();
     unsigned int _loops = 0;
     while (!_payloadMeter.isEmpty() && _loops < maxIterations && generalConfiguration.sendPowerData) {
@@ -507,6 +526,7 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
     }
     PAYLOAD_METER_UNLOCK();
 
+    TRACE();  
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT; i++) {
         if (_ade7953.channelData[i].active) {
             JsonObject _jsonObject = _jsonArray.add<JsonObject>();
@@ -531,6 +551,7 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
         }
     }
 
+    TRACE();  
     JsonObject _jsonObject = _jsonArray.add<JsonObject>();
 
     if (_ade7953.meterValues[0].lastUnixTimeMilliseconds == 0) {

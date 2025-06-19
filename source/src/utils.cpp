@@ -81,7 +81,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     logger.debug("Serializing JSON to SPIFFS...", TAG);
 
-    TRACE();
+    TRACE(); // FIXME: here sometimes it crashes when saving the daily spiffs energy (like when restarting)
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
         logger.error("%s Failed to open file", TAG, path);
@@ -365,7 +365,7 @@ void setRestartEsp32(const char* functionName, const char* reason) {
     restartConfiguration.functionName = String(functionName);
     restartConfiguration.reason = String(reason);
 
-    cleanupInterruptHandling();
+    // Don't cleanup interrupts immediately - let MQTT finish final operations first
 }
 
 void checkIfRestartEsp32Required() {
@@ -381,12 +381,15 @@ void restartEsp32() {
     led.block();
     led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
     led.setWhite(true);
-
-    TRACE();
-    clearAllAuthTokens();
-
-    TRACE();
+    
     logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
+    
+    TRACE();
+    clearAllAuthTokens();    
+
+    // Clean up interrupts and tasks before restart
+    TRACE();
+    cleanupInterruptHandling();
 
     // If a firmware evaluation is in progress, set the firmware to test again
     TRACE();
@@ -399,6 +402,7 @@ void restartEsp32() {
         if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) logger.error("Failed to set firmware status", TAG);
     }
 
+    TRACE();
     logger.end();
 
     TRACE();
@@ -409,12 +413,17 @@ void cleanupInterruptHandling() {
   // Detach interrupt to prevent new interrupts
   detachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN));
   
-  // Give task a chance to finish current processing
+  // Stop the meter reading task first to prevent semaphore access
   if (meterReadingTaskHandle != NULL) {
-    vTaskDelay(pdMS_TO_TICKS(100));
+    logger.debug("Deleting meter reading task...", TAG);
+    vTaskDelete(meterReadingTaskHandle);
+    meterReadingTaskHandle = NULL;
+    
+    // Give time for task cleanup to complete
+    vTaskDelay(pdMS_TO_TICKS(200));
   }
   
-  // Clean up semaphores
+  // Clean up semaphores only after task is deleted
   if (ade7953InterruptSemaphore != NULL) {
     vSemaphoreDelete(ade7953InterruptSemaphore);
     ade7953InterruptSemaphore = NULL;
