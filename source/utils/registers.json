@@ -23,6 +23,14 @@
         "unit": "V",
         "access": "read"
     },
+    "40103": {
+        "name": "Grid frequency",
+        "description": "Grid frequency measurement",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Hz",
+        "access": "read"
+    },
     "40201": {
         "name": "Aggregated-Active-Power",
         "description": "Aggregated active power with channel 0",

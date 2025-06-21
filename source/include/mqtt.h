@@ -19,9 +19,6 @@
 extern DebugFlagsRtc debugFlagsRtc;
 extern Statistics statistics;
 
-extern SemaphoreHandle_t payloadMeterMutex;
-extern SemaphoreHandle_t ade7953InterruptSemaphore;
-
 class Mqtt
 {
 public:
@@ -31,7 +28,10 @@ public:
         PubSubClient &clientMqtt,
         WiFiClientSecure &net,
         PublishMqtt &publishMqtt,
-        CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter
+        CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter,
+        SemaphoreHandle_t &payloadMeterMutex,
+        SemaphoreHandle_t &ade7953InterruptSemaphore,
+        RestartConfiguration &restartConfiguration
     );
 
     void begin();
@@ -93,6 +93,9 @@ private:
     WiFiClientSecure &_net;
     PublishMqtt &_publishMqtt;
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
+    SemaphoreHandle_t &_payloadMeterMutex;
+    SemaphoreHandle_t &_ade7953InterruptSemaphore;
+    RestartConfiguration &_restartConfiguration;
 
     String _deviceId = "";
 

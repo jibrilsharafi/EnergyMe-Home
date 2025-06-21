@@ -7,13 +7,13 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "10"
-#define FIRMWARE_BUILD_VERSION_PATCH "03"
+#define FIRMWARE_BUILD_VERSION_PATCH "04"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
 #define FIRMWARE_BUILD_TIME __TIME__
 
-// Project info
+// Product info
 #define COMPANY_NAME "EnergyMe"
 #define PRODUCT_NAME "Home"
 #define FULL_PRODUCT_NAME "EnergyMe - Home"
@@ -51,11 +51,11 @@
 #define PREFERENCES_DATA_KEY "crashdata"
 #define CRASH_SIGNATURE 0xDEADBEEF
 #define MAX_BREADCRUMBS 32
-#define WATCHDOG_TIMER (30 * 1000) // If the esp_task_wdt_reset() is not called within this time, the ESP32 panic
+#define WATCHDOG_TIMER (30 * 1000) // If the esp_task_wdt_reset() is not called within this time, the ESP32 panics
 #define PREFERENCES_FIRMWARE_STATUS_KEY "fw_status"
 #define ROLLBACK_TESTING_TIMEOUT (60 * 1000) // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
 #define MAX_CRASH_COUNT 5 // Maximum amount of consecutive crashes before triggering a rollback
-#define CRASH_COUNTER_TIMEOUT (180 * 1000)
+#define CRASH_COUNTER_TIMEOUT (180 * 1000) // Timeout for the crash counter to reset
 
 // Authentication
 #define PREFERENCES_NAMESPACE_AUTH "auth"
@@ -106,6 +106,7 @@
 
 // Webserver
 #define WEBSERVER_PORT 80
+#define API_UPDATE_THROTTLE_MS 500 // Minimum time between updates
 
 // LED
 // Hardware pins (check hardware revision)
@@ -220,9 +221,10 @@
 #define SAVE_ENERGY_INTERVAL (6 * 60 * 1000) // Time between each energy save to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
 // ESP32 status
-#define MINIMUM_FREE_HEAP_SIZE 30000 // Below this value (in bytes), the ESP32 will restart
-#define MINIMUM_FREE_SPIFFS_SIZE 10000 // Below this value (in bytes), the ESP32 will clear the log
-#define ESP32_RESTART_DELAY (1 * 1000) // The delay before restarting the ESP32 after a restart request, needed to allow the ESP32 to finish the current operations
+#define MINIMUM_FREE_HEAP_SIZE 10000 // Below this value (in bytes), the ESP32 will restart
+#define MINIMUM_FREE_SPIFFS_SIZE 100000 // Below this value (in bytes), the ESP32 will clear the log
+#define ESP32_RESTART_DELAY (2 * 1000) // The delay before restarting the ESP32 after a restart request, needed to allow the ESP32 to finish the current operations
+#define MINIMUM_FREE_HEAP_OTA 30000 // Below this, the OTA is rejected (UNSAFE; MAY BLOCK OTA PERMENENTLY; FIXME)
 
 // Multiplexer
 // --------------------
@@ -279,7 +281,7 @@
 #define DEFAULT_GAIN 4194304 // 0x400000 (default gain for the ADE7953)
 #define DEFAULT_OFFSET 0 // 0x000000 (default offset for the ADE7953)
 #define DEFAULT_PHCAL 10 // 0.02°/LSB, indicating a phase calibration of 0.2° which is minimum needed for CTs
-#define MINIMUM_SAMPLE_TIME 200 // 200 ms is the minimum time required to settle the ADE7953 channel readings (needed as the multiplexer constantly switches)
+#define MINIMUM_SAMPLE_TIME 200
 
 // Interrupt configuration for ADE7953
 #define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) for line cycle end detection
@@ -290,6 +292,7 @@
 // Fixed conversion values
 #define POWER_FACTOR_CONVERSION_FACTOR 1.0f / 32768.0f // PF/LSB
 #define ANGLE_CONVERSION_FACTOR 360.0f * 50.0f / 223000.0f // 0.0807 °/LSB
+#define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
 
 // Validate values
 #define VALIDATE_VOLTAGE_MIN 50.0f // Any voltage below this value is discarded
@@ -305,8 +308,7 @@
 #define MAXIMUM_POWER_FACTOR_CLAMP 1.05f // Values above 1 but below this are still accepted
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_POWER_FACTOR 0.05f // Measuring such low power factors is virtually impossible with such CTs
-#define SPURIOUS_ZERO_MAX_DURATION 5000 // Time after a valid reading to consider a reading not anymore a spurious zero
-#define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 3 // Threshold to transition to a legitimate zero state for a channel
+#define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 100 // Threshold to transition to a legitimate zero state for channel 0
 
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
 

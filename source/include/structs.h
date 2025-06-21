@@ -167,15 +167,9 @@ struct ChannelData
     : index(0), active(false), reverse(false), label(String("Channel")), phase(PHASE_1), calibrationValues(CalibrationValues()) {}
 };
 
-// Used to track the state of a channel during readings
-// and discard spurious readings
+// Used to track consecutive zero energy readings for channel 0
 struct ChannelState {
-    unsigned long lastValidReadingTime = 0;
     unsigned long consecutiveZeroCount = 0;
-    bool hasHadValidReading = false;
-    float lastValidActivePower = 0.0f;
-    float lastValidPowerFactor = 0.0f;
-    bool isInLegitimateZeroState = false;
 };
 
 struct GeneralConfiguration

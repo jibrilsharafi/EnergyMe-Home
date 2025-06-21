@@ -165,7 +165,10 @@ Mqtt mqtt(
   clientMqtt,
   net,
   publishMqtt,
-  payloadMeter
+  payloadMeter,
+  payloadMeterMutex,
+  ade7953InterruptSemaphore,
+  restartConfiguration
 );
 
 CustomServer customServer(
@@ -621,14 +624,11 @@ void loop() {
 
     TRACE();
     if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {      
-      TRACE();
       lastMaintenanceCheck = millis();      
-      logger.debug("Total interrupts received: %lu | Total handled: %lu",
-        TAG, 
-        statistics.ade7953TotalInterrupts,
-        statistics.ade7953TotalHandledInterrupts
-      );
-
+      
+      TRACE();
+      printStatistics();
+      
       TRACE();
       printDeviceStatus();
 

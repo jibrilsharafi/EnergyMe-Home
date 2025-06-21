@@ -48,6 +48,8 @@ public:
     float getAggregatedReactivePower(bool includeChannel0 = true);
     float getAggregatedApparentPower(bool includeChannel0 = true);
     float getAggregatedPowerFactor(bool includeChannel0 = true);
+
+    float getGridFrequency();
     
     void resetEnergyValues();
     bool setEnergyValues(JsonDocument &jsonDocument);
@@ -121,14 +123,13 @@ private:
     long _readApparentEnergy(int channel);
     long _readPowerFactor(int channel);
     long _readAngle(int channel);
-
+    long _readPeriod();
+    
     bool _validateValue(float newValue, float min, float max);
     bool _validateVoltage(float newValue);
     bool _validateCurrent(float newValue);
     bool _validatePower(float newValue);
     bool _validatePowerFactor(float newValue);
-
-    bool _isSpuriousZeroReading(int channel, float activePower, float powerFactor);
 
     void _setLinecyc(unsigned int linecyc);
     void _setPgaGain(long pgaGain, int channel, int measurementType);
@@ -139,6 +140,8 @@ private:
     void _recordFailure();
     void _checkForTooManyFailures();
 
+    static String _getBitsString(long value, int nBits = 32);
+
     int _ssPin;
     int _sckPin;
     int _misoPin;
@@ -147,11 +150,12 @@ private:
     int _interruptPin;
 
     unsigned int _sampleTime;
-
+    
     AdvancedLogger &_logger;
     MainFlags &_mainFlags;
 
     ChannelState _channelStates[CHANNEL_COUNT];
+    float _gridFrequency = 50.0f;
 
     int _failureCount = 0;
     unsigned long _firstFailureTime = 0;

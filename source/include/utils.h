@@ -29,12 +29,14 @@ extern Led led;
 extern RestartConfiguration restartConfiguration;
 extern MainFlags mainFlags;
 extern PublishMqtt publishMqtt;
+extern Statistics statistics;
 
+extern void ade7953ISR();
 extern TaskHandle_t meterReadingTaskHandle;
 extern SemaphoreHandle_t ade7953InterruptSemaphore;
 extern SemaphoreHandle_t payloadMeterMutex;
 
-void getJsonProjectInfo(JsonDocument& jsonDocument);
+void getJsonProductInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
 
 void setRestartEsp32(const char* functionName, const char* reason);
@@ -44,6 +46,7 @@ void cleanupInterruptHandling();
 
 void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
 void printDeviceStatus();
+void printStatistics();
 
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
@@ -79,6 +82,7 @@ void factoryReset();
 void clearAllPreferences();
 
 bool isLatestFirmwareInstalled();
+void updateJsonFirmwareStatus(const char *status, const char *reason);
 
 String getDeviceId();
 

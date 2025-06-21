@@ -119,11 +119,15 @@ uint16_t ModbusTcp::_getRegisterValue(uint16_t address) {
         case 0: return _customTime.getUnixTime() >> 16;
         case 1: return _customTime.getUnixTime() & 0xFFFF;
         case 2: return millis() >> 16;
-        case 3: return millis() & 0xFFFF;
-
+        case 3: return millis() & 0xFFFF;  
+        
         // Voltage
         case 100: return _getFloatBits(_ade7953.meterValues[0].voltage, true);
         case 101: return _getFloatBits(_ade7953.meterValues[0].voltage, false);
+        
+        // Grid frequency
+        case 102: return _getFloatBits(_ade7953.getGridFrequency(), true);
+        case 103: return _getFloatBits(_ade7953.getGridFrequency(), false);
 
         // Aggregated values
         // With channel 0
@@ -155,7 +159,7 @@ bool ModbusTcp::_isValidRegister(uint16_t address) { // Currently unused
     // Define valid ranges
     bool isValid = (
         (address >= 0 && address <= 3) ||  // General registers
-        (address >= 100 && address <= 101) ||  // Voltage
+        (address >= 100 && address <= 103) ||  // Voltage and grid frequency
         (address >= 200 && address <= 207) ||  // Aggregated values with channel 0
         (address >= 210 && address <= 217) ||  // Aggregated values without channel 0
         (address >= _lowerLimitChannelRegisters && address < _upperLimitChannelRegisters)  // Channel registers

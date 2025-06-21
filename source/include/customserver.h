@@ -6,6 +6,8 @@
 #include <ArduinoJson.h>
 #include <AdvancedLogger.h>
 #include <SPIFFS.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include "ade7953.h"
 #include "led.h"
@@ -33,6 +35,7 @@ public:
         InfluxDbClient &influxDbClient,
         ButtonHandler &buttonHandler);
 
+    ~CustomServer(); // Destructor to clean up semaphores
     void begin();
 
 private:
@@ -61,6 +64,18 @@ private:
     CustomMqtt &_customMqtt;
     InfluxDbClient &_influxDbClient;
     ButtonHandler &_buttonHandler;
-
     String _md5;
+    
+    // Concurrency control using FreeRTOS semaphores
+    SemaphoreHandle_t _configurationMutex;
+    SemaphoreHandle_t _channelMutex;
+    SemaphoreHandle_t _otaMutex;
+    
+    // Rate limiting for API requests
+    unsigned long _lastChannelUpdateTime = 0;
+    unsigned long _lastConfigUpdateTime = 0;
+    
+    // Helper methods for concurrency control
+    bool _acquireMutex(SemaphoreHandle_t mutex, const char* mutexName, TickType_t timeout = pdMS_TO_TICKS(1000));
+    void _releaseMutex(SemaphoreHandle_t mutex, const char* mutexName);
 };

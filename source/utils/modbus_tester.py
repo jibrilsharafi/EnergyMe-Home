@@ -70,7 +70,7 @@ def load_registers_from_json(json_file_path):
         return {}
 
 # Modbus server details
-SERVER_HOST = "192.168.2.75"  # Replace with your server's IP address
+SERVER_HOST = "192.168.1.60"  # Replace with your server's IP address
 SERVER_PORT = 502  # Replace with your server's port if different
 
 

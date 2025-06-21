@@ -1,8 +1,5 @@
 #include "mqtt.h"
 
-extern SemaphoreHandle_t payloadMeterMutex;
-extern RestartConfiguration restartConfiguration;
-
 static const char *TAG = "mqtt";
 
 void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
@@ -92,10 +89,23 @@ Mqtt::Mqtt(
     PubSubClient &clientMqtt,
     WiFiClientSecure &net,
     PublishMqtt &publishMqtt,
-    CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter
-    ) : _ade7953(ade7953), _logger(logger), _clientMqtt(clientMqtt), _net(net), _publishMqtt(publishMqtt), _payloadMeter(payloadMeter) {
-        _deviceId = getDeviceId();
-    }
+    CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter,
+    SemaphoreHandle_t &payloadMeterMutex,
+    SemaphoreHandle_t &ade7953InterruptSemaphore,
+    RestartConfiguration &restartConfiguration
+) : 
+    _ade7953(ade7953), 
+    _logger(logger), 
+    _clientMqtt(clientMqtt), 
+    _net(net), 
+    _publishMqtt(publishMqtt), 
+    _payloadMeter(payloadMeter),
+    _payloadMeterMutex(payloadMeterMutex),
+    _ade7953InterruptSemaphore(ade7953InterruptSemaphore),
+    _restartConfiguration(restartConfiguration)
+{
+    _deviceId = getDeviceId();
+}
 
 void Mqtt::begin() {
 #if HAS_SECRETS

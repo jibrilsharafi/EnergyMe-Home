@@ -429,8 +429,16 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
             continue;
         }
 
+        // Protect channel 0 from being disabled - it's the main voltage channel and must remain active
+        if (_index == CHANNEL_0 && !_kv.value()["active"].as<bool>()) {
+            _logger.warning("Attempt to disable channel 0 blocked - channel 0 must remain active", TAG);
+            // Force channel 0 to stay active
+            channelData[_index].active = true;
+        } else {
+            channelData[_index].active = _kv.value()["active"].as<bool>();
+        }
+
         channelData[_index].index = _index;
-        channelData[_index].active = _kv.value()["active"].as<bool>();
         channelData[_index].reverse = _kv.value()["reverse"].as<bool>();
         channelData[_index].label = _kv.value()["label"].as<String>();
         channelData[_index].phase = _kv.value()["phase"].as<Phase>();
@@ -507,7 +515,9 @@ bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
         if (!channelObject["reverse"].is<bool>()) {_logger.warning("reverse is not bool", TAG); return false;}
         if (!channelObject["label"].is<String>()) {_logger.warning("label is not string", TAG); return false;}
         if (!channelObject["phase"].is<int>()) {_logger.warning("phase is not int", TAG); return false;}
-        if (kv.value()["phase"].as<int>() < 1 || kv.value()["phase"].as<int>() > 3) {_logger.warning("phase is not between 1 and 3", TAG); return false;}
+        if (kv.value()["phase"].as<int>() != PHASE_1 && kv.value()["phase"].as<int>() != PHASE_2 && kv.value()["phase"].as<int>() != PHASE_3) {
+            _logger.warning("phase is not between 1 and 3", TAG); return false;
+        }
         if (!channelObject["calibrationLabel"].is<String>()) {_logger.warning("calibrationLabel is not string", TAG); return false;}
     }
 
@@ -674,12 +684,17 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         // These are the three most important values to read
         _activeEnergy = _readActiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.whLsb * (channelData[channel].reverse ? -1 : 1);
         _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.varhLsb * (channelData[channel].reverse ? -1 : 1);
-        _apparentEnergy = _readApparentEnergy(_ade7953Channel) / channelData[channel].calibrationValues.vahLsb;
-    
+        _apparentEnergy = _readApparentEnergy(_ade7953Channel) / channelData[channel].calibrationValues.vahLsb;        
+        
         // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
         // as channel 0 (sampled 100s of milliseconds before only)
-        if (channel == CHANNEL_0) _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
-        else _voltage = meterValues[CHANNEL_0].voltage;
+        if (channel == CHANNEL_0) {
+            _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
+            // Update grid frequency during channel 0 reading to avoid SPI conflicts during Modbus access
+            _gridFrequency = GRID_FREQUENCY_CONVERSION_FACTOR / _readPeriod();
+        } else {
+            _voltage = meterValues[CHANNEL_0].voltage;
+        }
         
         // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
         // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
@@ -688,9 +703,9 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         _apparentPower = _apparentEnergy / (_sampleTime / 1000.0 / 3600.0); // VA
         
         // It is faster and more consistent to compute the values rather than reading them from the ADE7953
-        _powerFactor = _activeEnergy / _apparentEnergy * (_reactiveEnergy >= 0 ? 1 : -1); // Apply sign as by datasheet (page 38)
-        if (_apparentEnergy == 0) _powerFactor = 0.0f; // Avoid division by zero
-        
+        if (_apparentPower == 0) _powerFactor = 0.0f; // Avoid division by zero
+        else _powerFactor = _activePower / _apparentPower * (_reactivePower >= 0 ? 1 : -1); // Apply sign as by datasheet (page 38)
+
         _current = _apparentPower / _voltage; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
     } else { 
         // TODO: understand if this can be improved using the energy registers
@@ -762,17 +777,28 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
             MAXIMUM_POWER_FACTOR_CLAMP
         );
         _powerFactor = (_powerFactor > 0) ? VALIDATE_POWER_FACTOR_MAX : VALIDATE_POWER_FACTOR_MIN; // Keep the sign of the power factor
+        _activePower = _apparentPower; // Recompute active power based on the clamped power factor
+        _reactivePower = 0.0f; // Small approximation leaving out distorted power
+    }    
+    
+    TRACE();
+    // For channel 0, discard readings where active or apparent energy is exactly 0,
+    // unless there have been at least 100 consecutive zero readings
+    if (channel == CHANNEL_0 && (_activeEnergy == 0.0f || _apparentEnergy == 0.0f)) {
+        _channelStates[channel].consecutiveZeroCount++;
+        
+        if (_channelStates[channel].consecutiveZeroCount < MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
+            _logger.debug("%s (%d): Zero energy reading on channel 0 discarded (count: %lu/%d)", 
+                TAG, channel, _channelStates[channel].consecutiveZeroCount, MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE);
+            _recordFailure();
+            return false;
+        }
+    } else {
+        // Reset counter for non-zero readings
+        _channelStates[channel].consecutiveZeroCount = 0;
     }
 
     TRACE();
-    //TODO: i really don't like this, remove it as soon as we understand the cause of the spurious zero readings
-    // Check for spurious zero readings BEFORE other validations
-    if (_isSpuriousZeroReading(channel, _activePower, _powerFactor)) {
-        _recordFailure();
-        return false;
-    }
-
-    TRACE(); // FIXME: it crashes here sometimes
     if (
         !_validateVoltage(_voltage) || 
         !_validateCurrent(_current) || 
@@ -781,7 +807,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         !_validatePower(_apparentPower) || 
         !_validatePowerFactor(_powerFactor)
     ) {
-        TRACE(); // FIXME: it crashes here sometimes
+        TRACE();
         logger.warning("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", 
             TAG, channelData[channel].label.c_str(), channel, _activePower, _current, _reactivePower, _apparentPower, _powerFactor);
         _recordFailure();
@@ -822,7 +848,7 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
 
     // If the phase is not the phase of the main channel, set the energy not to 0 if the current
     // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation
-    if (channelData[channel].phase != channelData[CHANNEL_0].phase && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
+    if (channelData[channel].phase != _basePhase && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
         _activeEnergy = 1;
         _reactiveEnergy = 1;
         _apparentEnergy = 1;
@@ -949,71 +975,6 @@ bool Ade7953::_validatePower(float newValue) {
 
 bool Ade7953::_validatePowerFactor(float newValue) {
     return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
-}
-
-bool Ade7953::_isSpuriousZeroReading(int channel, float activePower, float powerFactor) {
-    // Check if all critical measurements are near zero
-    bool isZeroReading = (abs(activePower) == 0 && 
-                         abs(powerFactor) == 0);
-    
-    if (!isZeroReading) {
-        // Not a zero reading - reset zero tracking and update state
-        _channelStates[channel].consecutiveZeroCount = 0;
-        _channelStates[channel].isInLegitimateZeroState = false;
-        _channelStates[channel].lastValidReadingTime = millis();
-        _channelStates[channel].hasHadValidReading = true;
-        _channelStates[channel].lastValidActivePower = activePower;
-        _channelStates[channel].lastValidPowerFactor = powerFactor;
-        return false;
-    }
-    
-    // It's a zero reading - now determine if it's spurious or legitimate
-    _channelStates[channel].consecutiveZeroCount++;
-    
-    // If we've never had a valid reading, assume it's legitimate (device actually off)
-    if (!_channelStates[channel].hasHadValidReading) {
-        _channelStates[channel].isInLegitimateZeroState = true;
-        return false;
-    }
-    
-    // If we're already in a legitimate zero state, continue accepting zeros
-    if (_channelStates[channel].isInLegitimateZeroState) {
-        return false;
-    }
-    
-    // Check if we've had too many consecutive zeros (transition to legitimate zero state)
-    if (_channelStates[channel].consecutiveZeroCount >= MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
-        _logger.debug("%s (%D): %d consecutive zero readings, assuming device turned off", 
-                    TAG, channelData[channel].label.c_str(), channel, _channelStates[channel].consecutiveZeroCount);
-        _channelStates[channel].isInLegitimateZeroState = true;
-        return false; // Accept this reading as the start of legitimate zero state
-    }
-    
-    // Check if the previous reading was significant enough that this zero is likely spurious
-    unsigned long timeSinceLastValid = millis() - _channelStates[channel].lastValidReadingTime;
-
-    if (timeSinceLastValid < SPURIOUS_ZERO_MAX_DURATION)
-    {
-        // Recent valid reading + isolated zero = likely spurious
-        bool hadSignificantLoad = (abs(_channelStates[channel].lastValidActivePower) > 10.0 ||
-                                   abs(_channelStates[channel].lastValidPowerFactor) > 0.1);
-
-        if (hadSignificantLoad)
-        {
-            _logger.debug("%s (%D): Spurious zero reading detected: %.1fW (last valid: %.1fW) | %.2f PF (last valid: %.2f) | Time since last valid: %lu ms",
-                            TAG,
-                            channelData[channel].label.c_str(),
-                            channel,
-                            activePower,
-                            _channelStates[channel].lastValidActivePower,
-                            powerFactor,
-                            _channelStates[channel].lastValidPowerFactor,
-                            timeSinceLastValid);
-            return true;
-        }
-    }
-
-    return false;
 }
 
 JsonDocument Ade7953::singleMeterValuesToJson(int index) {
@@ -1479,6 +1440,14 @@ long Ade7953::_readAngle(int channel) {
     else {return readRegister(ANGLE_B_16, 16, true);}
 }
 
+long Ade7953::_readPeriod() {
+    return readRegister(PERIOD_16, 16, false);
+}
+
+float Ade7953::getGridFrequency() {
+    return _gridFrequency;
+}
+
 /**
  * Checks if the line cycle has finished.
  * 
@@ -1732,8 +1701,7 @@ void Ade7953::_setupInterrupts() {
 }
 
 void Ade7953::handleInterrupt() {
-    statistics.ade7953TotalHandledInterrupts++;
-
+    
     // Read interrupt status for both channels to clear the interrupt flags
     long statusA = readRegister(RSTIRQSTATA_32, 32, false);
     long statusB = readRegister(RSTIRQSTATB_32, 32, false);
@@ -1745,18 +1713,39 @@ void Ade7953::handleInterrupt() {
         statusA & (1 << RESET_IRQ_BIT) ||
         statusA & (1 << CRC_IRQ_BIT)
     ) {
-        // FIXME: if we change a setting in the ADE7953, we should expect a CRC change
-        // and avoid a loop. Account for this
+        // TODO: how to handle this? if we change a setting in the ADE7953, we should expect a CRC change and avoid a loop.
         TRACE();
         _logger.warning("Reset interrupt or CRC changed detected. Doing setup again", TAG);
-        begin();
-    // Check for CYCEND interrupt (bit 18) - Line cycle end
+        // Check for CYCEND interrupt (bit 18) - Line cycle end
     } else if (statusA & (1 << IRQENA_CYCEND_IRQ_BIT)) {
+        statistics.ade7953TotalHandledInterrupts++;
         _logger.verbose("Line cycle end detected on Channel A", TAG);
     } else {
-        _logger.warning("Unhandled ADE7953 interrupt status: A=0x%08lX, B=0x%08lX", 
-                        TAG, 
-                        statusA, 
-                        statusB);
+        // Just log the unhandled status
+        _logger.warning("Unhandled ADE7953 interrupt status: A=0x%08lX (bits: %s), B=0x%08lX (bits: %s)", 
+                TAG, 
+                statusA, _getBitsString(statusA).c_str(),
+                statusB, _getBitsString(statusB).c_str());
     }
+}
+
+String Ade7953::_getBitsString(long value, int numBits) {
+    String bitsString;
+    bool firstBit = true;
+
+    for (int i = 0; i < numBits; i++) {
+        if (value & (1 << i)) {
+            if (!firstBit) {
+                bitsString += ", ";
+            }
+            bitsString += String(i);
+            firstBit = false;
+        }
+    }
+
+    if (bitsString.length() == 0) {
+        bitsString = "None";
+    }
+
+    return bitsString;
 }

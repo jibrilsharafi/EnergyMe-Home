@@ -2,8 +2,8 @@
 
 static const char *TAG = "utils";
 
-void getJsonProjectInfo(JsonDocument& jsonDocument) { 
-    logger.debug("Getting project info...", TAG);
+void getJsonProductInfo(JsonDocument& jsonDocument) { 
+    logger.debug("Getting product info...", TAG);
 
     jsonDocument["companyName"] = COMPANY_NAME;
     jsonDocument["fullProductName"] = FULL_PRODUCT_NAME;
@@ -13,7 +13,7 @@ void getJsonProjectInfo(JsonDocument& jsonDocument) {
     jsonDocument["author"] = AUTHOR;
     jsonDocument["authorEmail"] = AUTHOR_EMAIL;
 
-    logger.debug("Project info retrieved", TAG);
+    logger.debug("Product info retrieved", TAG);
 }
 
 void getJsonDeviceInfo(JsonDocument& jsonDocument)
@@ -493,6 +493,46 @@ void printDeviceStatus()
     );
 }
 
+void printStatistics() {
+    logger.debug("Statistics - ADE7953: %d total interrupts | %d handled interrupts | %d readings | %d reading failures", 
+        TAG, 
+        statistics.ade7953TotalInterrupts, 
+        statistics.ade7953TotalHandledInterrupts, 
+        statistics.ade7953ReadingCount, 
+        statistics.ade7953ReadingCountFailure
+    );
+
+    logger.debug("Statistics - MQTT: %d messages published | %d errors", 
+        TAG, 
+        statistics.mqttMessagesPublished, 
+        statistics.mqttMessagesPublishedError
+    );
+
+    logger.debug("Statistics - Custom MQTT: %d messages published | %d errors", 
+        TAG, 
+        statistics.customMqttMessagesPublished, 
+        statistics.customMqttMessagesPublishedError
+    );
+
+    logger.debug("Statistics - Modbus: %d requests | %d errors", 
+        TAG, 
+        statistics.modbusRequests, 
+        statistics.modbusRequestsError
+    );
+
+    logger.debug("Statistics - InfluxDB: %d uploads | %d errors", 
+        TAG, 
+        statistics.influxdbUploadCount, 
+        statistics.influxdbUploadCountError
+    );
+
+    logger.debug("Statistics - WiFi: %d connections | %d errors", 
+        TAG, 
+        statistics.wifiConnection, 
+        statistics.wifiConnectionError
+    );
+}
+
 // General configuration
 // -----------------------------
 
@@ -792,6 +832,17 @@ bool isLatestFirmwareInstalled() {
     if (_latestMinor < _currentMinor) return true;
     if (_latestMinor > _currentMinor) return false;
     return _latestPatch <= _currentPatch;
+}
+
+void updateJsonFirmwareStatus(const char *status, const char *reason)
+{
+    JsonDocument _jsonDocument;
+
+    _jsonDocument["status"] = status;
+    _jsonDocument["reason"] = reason;
+    _jsonDocument["timestamp"] = CustomTime::getTimestamp();
+
+    serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);
 }
 
 String getDeviceId() {
@@ -1094,7 +1145,7 @@ bool validateAuthToken(const String& token) {
     preferences.end();
     
     if (tokenTimestamp == 0 || !storedToken.equals(token)) {
-        return false; // Token doesn't exist or doesn't match
+        return false;
     }
     
     // Check if token has expired
