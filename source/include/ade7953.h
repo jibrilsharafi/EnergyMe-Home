@@ -40,16 +40,9 @@ public:
     );
 
     bool begin();
-    void _initializeSpiMutexes();
     void cleanup();
     void loop();
-    
-    void handleInterrupt();
-
-    bool readMeterValues(int channel, unsigned long long linecycUnixTime);
-    void purgeEnergyRegister(int channel);
-
-    bool isLinecycFinished();
+        
     unsigned int getSampleTime() const { return _sampleTime; }
 
     long readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired = true);
@@ -60,7 +53,7 @@ public:
     float getAggregatedApparentPower(bool includeChannel0 = true);
     float getAggregatedPowerFactor(bool includeChannel0 = true);
 
-    float getGridFrequency();
+    float getGridFrequency() const { return _gridFrequency; }
     
     void resetEnergyValues();
     bool setEnergyValues(JsonDocument &jsonDocument);
@@ -76,13 +69,8 @@ public:
     bool setChannelData(JsonDocument &jsonDocument);
     void channelDataToJson(JsonDocument &jsonDocument);
     
-    int findNextActiveChannel(int currentChannel);
-
-    JsonDocument singleMeterValuesToJson(int index);
-    void meterValuesToJson(JsonDocument &jsonDocument);
-
-    unsigned long getLongTermFailureCount() const { return _longTermFailureCount; }
-    unsigned long getTotalHandledInterrupts() const { return _totalHandledInterrupts; }
+    void singleMeterValuesToJson(JsonDocument &jsonDocument, ChannelNumber channel);
+    void fullMeterValuesToJson(JsonDocument &jsonDocument);
 
     MeterValues meterValues[CHANNEL_COUNT];
     ChannelData channelData[CHANNEL_COUNT];    
@@ -91,32 +79,33 @@ public:
     void resumeMeterReadingTask();
     
     void takePayloadMeterMutex(TickType_t waitTicks = portMAX_DELAY) {
-        if (_payloadMeterMutex != NULL) {
-            xSemaphoreTake(_payloadMeterMutex, waitTicks);
-        }
+        if (_payloadMeterMutex != NULL) xSemaphoreTake(_payloadMeterMutex, waitTicks); 
     }
     void givePayloadMeterMutex() {
-        if (_payloadMeterMutex != NULL) {
-            xSemaphoreGive(_payloadMeterMutex);
-        }
+        if (_payloadMeterMutex != NULL) xSemaphoreGive(_payloadMeterMutex);
     }
-    
+
 private:
-    
+
+    void _initializeSpiMutexes();
+    Ade7953InterruptType _handleInterrupt();
+    void _reinitializeAfterInterrupt();
     static void IRAM_ATTR _isrHandler();
     static void _meterReadingTask(void* parameter);
     void _stopMeterReadingTask();
     void _attachInterruptHandler();
     void _detachInterruptHandler();
     
+    static const char* _irqstataBitName(int bit);
+    
     void _setHardwarePins();
     void _setOptimumSettings();
-
+    
     void _reset();
     bool _verifyCommunication();
-
+    
     void _setDefaultParameters();
-
+    
     void _setupInterrupts();
     void _startMeterReadingTask();
     
@@ -135,9 +124,13 @@ private:
 
     Phase _getLaggingPhase(Phase phase);
     Phase _getLeadingPhase(Phase phase);
+    
+    bool _readMeterValues(int channel, unsigned long long linecycUnixTime);
+    
+    ChannelNumber _findNextActiveChannel(ChannelNumber currentChannel);
 
     void _updateSampleTime();
-
+    
     void _setEnergyFromSpiffs();
     void _saveEnergyToSpiffs();
     void _saveDailyEnergyToSpiffs();
@@ -185,6 +178,8 @@ private:
 
     unsigned int _sampleTime; // in milliseconds, time between linecycles readings
     
+    ChannelNumber _currentChannel = CHANNEL_0;
+
     AdvancedLogger &_logger;
     MainFlags &_mainFlags;
     CustomTime &_customTime;
@@ -198,10 +193,7 @@ private:
 
     int _failureCount = 0;
     unsigned long _firstFailureTime = 0;
-    unsigned long _longTermFailureCount = 0;
     unsigned long _lastMillisSaveEnergy = 0;
-
-    unsigned long _totalHandledInterrupts = 0;
     
     static Ade7953 *_instance;
 
@@ -213,4 +205,9 @@ private:
     SemaphoreHandle_t _ade7953InterruptSemaphore = NULL;
     volatile unsigned long _lastInterruptTime = 0;
 
+    void _checkInterruptTiming();
+    bool _processChannelReading(int channel, unsigned long long linecycUnix);
+    void _addMeterDataToPayload(int channel, unsigned long long linecycUnix);
+    void _processCycendInterrupt(unsigned long long linecycUnix);
+    void _handleCrcChangeInterrupt();
 };

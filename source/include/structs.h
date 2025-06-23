@@ -2,13 +2,23 @@
 
 #include <Arduino.h>
 
+#include "constants.h"
+
+// Enumeration for different types of ADE7953 interrupts
+enum class Ade7953InterruptType {
+  NONE,           // No interrupt or unknown
+  CYCEND,         // Line cycle end - normal meter reading
+  RESET,          // Device reset detected
+  CRC_CHANGE,     // CRC register change detected
+  OTHER           // Other interrupts (SAG, etc.)
+};
+
 struct MainFlags {
   bool isFirmwareUpdate;
   bool isCrashCounterReset;
   bool blockLoop;
-  int currentChannel;
   
-  MainFlags() : isFirmwareUpdate(false), isCrashCounterReset(false), blockLoop(false), currentChannel(-1) {}
+  MainFlags() : isFirmwareUpdate(false), isCrashCounterReset(false), blockLoop(false) {}
 };
 
 struct Statistics {
@@ -58,6 +68,7 @@ enum Channel : int {
 };
 
 enum ChannelNumber : int {
+  CHANNEL_INVALID = -1,
   CHANNEL_0 = 0,
   CHANNEL_1 = 1,
   CHANNEL_2 = 2,
@@ -75,6 +86,7 @@ enum ChannelNumber : int {
   CHANNEL_14 = 14,
   CHANNEL_15 = 15,
   CHANNEL_16 = 16,
+  CHANNEL_COUNT = 17
 };
 
 enum Measurement : int {

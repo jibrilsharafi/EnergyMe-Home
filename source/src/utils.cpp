@@ -81,7 +81,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     logger.debug("Serializing JSON to SPIFFS...", TAG);
 
-    TRACE(); // FIXME: here sometimes it crashes when saving the daily spiffs energy (like when restarting)
+    TRACE();
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
         logger.error("%s Failed to open file", TAG, path);

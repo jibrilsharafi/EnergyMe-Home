@@ -345,7 +345,7 @@ void Ade7953::_applyConfiguration(JsonDocument &jsonDocument) {
     _setGain(jsonDocument["bVarGain"].as<long>(), CHANNEL_B, REACTIVE_POWER);
 
     _setOffset(jsonDocument["aVarOs"].as<long>(), CHANNEL_A, REACTIVE_POWER);
-    _setOffset(jsonDocument["bVarOs"].as<long>(), CHANNEL_B, REACTIVE_POWER);
+    _setOffset(jsonDocument["bVarOs"].as<long>(), CHANNEL_B, ACTIVE_POWER);
 
     _setGain(jsonDocument["aVaGain"].as<long>(), CHANNEL_A, APPARENT_POWER);
     _setGain(jsonDocument["bVaGain"].as<long>(), CHANNEL_B, APPARENT_POWER);
@@ -657,19 +657,19 @@ void Ade7953::_updateSampleTime() {
 }
 
 // This returns the next channel (except CHANNEL_0) that is active
-int Ade7953::findNextActiveChannel(int currentChannel) {
-    for (int i = currentChannel + 1; i < CHANNEL_COUNT; i++) {
+ChannelNumber Ade7953::_findNextActiveChannel(ChannelNumber currentChannel) {
+    for (ChannelNumber i = static_cast<ChannelNumber>(currentChannel + 1); i < CHANNEL_COUNT; i = static_cast<ChannelNumber>(i + 1)) {
         if (channelData[i].active && i != CHANNEL_0) {
             return i;
         }
     }
-    for (int i = 1; i < currentChannel; i++) {
+    for (ChannelNumber i = static_cast<ChannelNumber>(1); i < currentChannel; i = static_cast<ChannelNumber>(i + 1)) {
         if (channelData[i].active && i != CHANNEL_0) {
             return i;
         }
     }
 
-    return -1;
+    return CHANNEL_INVALID;
 }
 
 
@@ -718,7 +718,7 @@ can be found in the function itself.
 @param channel The channel to read the values from. Returns
 false if the data reading is not ready yet or valid.
 */
-bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) {
+bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) {
     unsigned long _millisRead = millis();
     unsigned long _deltaMillis = _millisRead - meterValues[channel].lastMillis;
 
@@ -1031,21 +1031,6 @@ Phase Ade7953::_getLeadingPhase(Phase phase) {
     }
 }
 
-// This method is needed to reset the energy values since we need to "purge"
-// the first linecyc when switching channels in the multiplexer. This is due
-// to the fact that the ADE7953 needs to settle for 200 ms before we can 
-// properly read the the meter values
-// Update: this is not needed anymore as (thanks to a deeper dive in the datasheet)
-// I found out that every line cycle the energy registers are reset anyway
-void Ade7953::purgeEnergyRegister(int channel) {
-    int _ade7953Channel = (channel == CHANNEL_0) ? CHANNEL_A : CHANNEL_B;
-
-    // The energy registers are read with reset
-    _readActiveEnergy(_ade7953Channel);
-    _readReactiveEnergy(_ade7953Channel);
-    _readApparentEnergy(_ade7953Channel);
-}
-
 bool Ade7953::_validateValue(float newValue, float min, float max) {
     if (newValue < min || newValue > max) {
         _logger.warning("Value %f out of range (minimum: %f, maximum: %f)", TAG, newValue, min, max);
@@ -1074,34 +1059,35 @@ bool Ade7953::_validateGridFrequency(float newValue) {
     return _validateValue(newValue, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
 }
 
-JsonDocument Ade7953::singleMeterValuesToJson(int index) {
-    JsonDocument _jsonDocument;
+void Ade7953::singleMeterValuesToJson(JsonDocument &jsonDocument, ChannelNumber channel) {
+    JsonObject _jsonValues = jsonDocument.to<JsonObject>();
 
-    JsonObject _jsonValues = _jsonDocument.to<JsonObject>();
-
-    _jsonValues["voltage"] = meterValues[index].voltage;
-    _jsonValues["current"] = meterValues[index].current;
-    _jsonValues["activePower"] = meterValues[index].activePower;
-    _jsonValues["apparentPower"] = meterValues[index].apparentPower;
-    _jsonValues["reactivePower"] = meterValues[index].reactivePower;
-    _jsonValues["powerFactor"] = meterValues[index].powerFactor;
-    _jsonValues["activeEnergyImported"] = meterValues[index].activeEnergyImported;
-    _jsonValues["activeEnergyExported"] = meterValues[index].activeEnergyExported;
-    _jsonValues["reactiveEnergyImported"] = meterValues[index].reactiveEnergyImported;
-    _jsonValues["reactiveEnergyExported"] = meterValues[index].reactiveEnergyExported;
-    _jsonValues["apparentEnergy"] = meterValues[index].apparentEnergy;
-
-    return _jsonDocument;
+    // TODO: make this names with defines to ensure consistency
+    _jsonValues["voltage"] = meterValues[channel].voltage;
+    _jsonValues["current"] = meterValues[channel].current;
+    _jsonValues["activePower"] = meterValues[channel].activePower;
+    _jsonValues["apparentPower"] = meterValues[channel].apparentPower;
+    _jsonValues["reactivePower"] = meterValues[channel].reactivePower;
+    _jsonValues["powerFactor"] = meterValues[channel].powerFactor;
+    _jsonValues["activeEnergyImported"] = meterValues[channel].activeEnergyImported;
+    _jsonValues["activeEnergyExported"] = meterValues[channel].activeEnergyExported;
+    _jsonValues["reactiveEnergyImported"] = meterValues[channel].reactiveEnergyImported;
+    _jsonValues["reactiveEnergyExported"] = meterValues[channel].reactiveEnergyExported;
+    _jsonValues["apparentEnergy"] = meterValues[channel].apparentEnergy;
 }
 
 
-void Ade7953::meterValuesToJson(JsonDocument &jsonDocument) {
-    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
+void Ade7953::fullMeterValuesToJson(JsonDocument &jsonDocument) {
+    for (ChannelNumber i = CHANNEL_0; i < CHANNEL_COUNT; i = static_cast<ChannelNumber>(i + 1)) {
         if (channelData[i].active) {
             JsonObject _jsonChannel = jsonDocument.add<JsonObject>();
             _jsonChannel["index"] = i;
             _jsonChannel["label"] = channelData[i].label;
-            _jsonChannel["data"] = singleMeterValuesToJson(i);
+            // TODO: add the phase here as well
+
+            JsonDocument _jsonData;
+            singleMeterValuesToJson(_jsonData, i);
+            _jsonChannel["data"] = _jsonData.as<JsonObject>();
         }
     }
 }
@@ -1537,21 +1523,6 @@ long Ade7953::_readPeriod() {
     return readRegister(PERIOD_16, 16, false);
 }
 
-float Ade7953::getGridFrequency() {
-    return _gridFrequency;
-}
-
-/**
- * Checks if the line cycle has finished.
- * 
- * This function reads the RSTIRQSTATA_32 register and checks the 18th bit to determine if the line cycle has finished.
- * 
- * @return true if the line cycle has finished, false otherwise.
- */
-bool Ade7953::isLinecycFinished() {
-    return (readRegister(RSTIRQSTATA_32, 32, false) & (1 << 18)) != 0;
-}
-
 /**
  * Reads the value from a register in the ADE7953 energy meter.
  * 
@@ -1659,7 +1630,7 @@ void Ade7953::writeRegister(long registerAddress, int nBits, long data, bool isV
     SPI.transfer(WRITE_TRANSFER);
 
     if (nBits / 8 == 4) {
-        SPI.transfer((data >> 24) & 0xFF);
+        SPI.transfer((data >> 24) &  0xFF);
         SPI.transfer((data >> 16) & 0xFF);
         SPI.transfer((data >> 8) & 0xFF);
         SPI.transfer(data & 0xFF);
@@ -1840,32 +1811,79 @@ void Ade7953::_setupInterrupts() {
     _logger.debug("ADE7953 interrupts enabled: CYCEND, RESET", TAG);
 }
 
-void Ade7953::handleInterrupt() {
+
+
+// Returns the string name of the IRQSTATA bit, or nullptr if not found
+const char* Ade7953::_irqstataBitName(int bit) {
+  switch (bit) {
+    case IRQSTATA_AEHFA_BIT:       return "AEHFA";
+    case IRQSTATA_VAREHFA_BIT:     return "VAREHFA";
+    case IRQSTATA_VAEHFA_BIT:      return "VAEHFA";
+    case IRQSTATA_AEOFA_BIT:       return "AEOFA";
+    case IRQSTATA_VAREOFA_BIT:     return "VAREOFA";
+    case IRQSTATA_VAEOFA_BIT:      return "VAEOFA";
+    case IRQSTATA_AP_NOLOADA_BIT:  return "AP_NOLOADA";
+    case IRQSTATA_VAR_NOLOADA_BIT: return "VAR_NOLOADA";
+    case IRQSTATA_VA_NOLOADA_BIT:  return "VA_NOLOADA";
+    case IRQSTATA_APSIGN_A_BIT:    return "APSIGN_A";
+    case IRQSTATA_VARSIGN_A_BIT:   return "VARSIGN_A";
+    case IRQSTATA_ZXTO_IA_BIT:     return "ZXTO_IA";
+    case IRQSTATA_ZXIA_BIT:        return "ZXIA";
+    case IRQSTATA_OIA_BIT:         return "OIA";
+    case IRQSTATA_ZXTO_BIT:        return "ZXTO";
+    case IRQSTATA_ZXV_BIT:         return "ZXV";
+    case IRQSTATA_OV_BIT:          return "OV";
+    case IRQSTATA_WSMP_BIT:        return "WSMP";
+    case IRQSTATA_CYCEND_BIT:      return "CYCEND";
+    case IRQSTATA_SAG_BIT:         return "SAG";
+    case IRQSTATA_RESET_BIT:       return "RESET";
+    case IRQSTATA_CRC_BIT:         return "CRC";
+    default:                       return "";
+  }
+}
+
+String Ade7953::_getBitsString(long value, int nBits) {
+    String result = "";
+    for (int i = nBits - 1; i >= 0; i--) {
+        if ((value >> i) & 1) {
+            if (result.length() > 0) result += ",";
+            result += _irqstataBitName(1 << i);
+        }
+    }
+    return result.length() > 0 ? result : "none";
+}
+
+Ade7953InterruptType Ade7953::_handleInterrupt() {
     
-    // Read interrupt status for both channels to clear the interrupt flags
     long statusA = readRegister(RSTIRQSTATA_32, 32, false);
-    long statusB = readRegister(RSTIRQSTATB_32, 32, false);
+    // No need to read for channel B
 
     // Very important: if we detected a reset or a CRC change in the configurations, 
     // we must reinitialize the device
-    // Check for both the RESET interrupt (bit 20) - Device reset and CRC changes (bit 21)
-    if (
-        statusA & (1 << RESET_IRQ_BIT) ||
-        statusA & (1 << CRC_IRQ_BIT)
-    ) {
+    if (statusA & (1 << IRQSTATA_RESET_BIT)) {
+        TRACE();
+        _logger.warning("Reset interrupt detected. Device needs reinitialization", TAG);
+        return Ade7953InterruptType::RESET;
+    } else if (statusA & (1 << IRQSTATA_CRC_BIT)) {
         // TODO: how to handle this? if we change a setting in the ADE7953, we should expect a CRC change and avoid a loop.
         TRACE();
-        _logger.warning("Reset interrupt or CRC changed detected. Doing setup again", TAG);
+        _logger.warning("CRC changed detected. Device configuration may have changed", TAG);
+        return Ade7953InterruptType::CRC_CHANGE;
         // Check for CYCEND interrupt (bit 18) - Line cycle end
-    } else if (statusA & (1 << IRQENA_CYCEND_IRQ_BIT)) {
+    } else if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
         statistics.ade7953TotalHandledInterrupts++;
         _logger.verbose("Line cycle end detected on Channel A", TAG);
+        
+        // Only for CYCEND interrupts, switch to next channel and set multiplexer
+        _currentChannel = _findNextActiveChannel(_currentChannel);
+        _multiplexer.setChannel(static_cast<ChannelNumber>(std::max(_currentChannel - 1, 0)));
+        
+        return Ade7953InterruptType::CYCEND;
     } else {
         // Just log the unhandled status
-        _logger.warning("Unhandled ADE7953 interrupt status: A=0x%08lX (bits: %s), B=0x%08lX (bits: %s)", 
-                TAG, 
-                statusA, _getBitsString(statusA).c_str(),
-                statusB, _getBitsString(statusB).c_str());
+        _logger.warning("Unhandled ADE7953 interrupt status: %s (0x%08lX)", TAG, 
+            _getBitsString(statusA, 32).c_str(), statusA);
+        return Ade7953InterruptType::OTHER;
     }
 }
 
@@ -1914,6 +1932,8 @@ void Ade7953::_stopMeterReadingTask() {
 
 void Ade7953::pauseMeterReadingTask() {
     TRACE();
+    _logger.info("Pausing ADE7953 meter reading task", TAG);
+
     _detachInterruptHandler();
     if (_meterReadingTaskHandle != NULL) {
         vTaskSuspend(_meterReadingTaskHandle);
@@ -1922,6 +1942,8 @@ void Ade7953::pauseMeterReadingTask() {
 
 void Ade7953::resumeMeterReadingTask() {
     TRACE();
+    _logger.info("Resuming ADE7953 meter reading task", TAG);
+    
     if (_meterReadingTaskHandle != NULL) vTaskResume(_meterReadingTaskHandle);
     _attachInterruptHandler();
 }
@@ -1939,16 +1961,75 @@ void IRAM_ATTR Ade7953::_isrHandler()
 {
     if (_instance && _instance->_ade7953InterruptSemaphore != NULL)
     {
-        _instance->_mainFlags.currentChannel = _instance->findNextActiveChannel(_instance->_mainFlags.currentChannel);
-        _instance->_multiplexer.setChannel(std::max(_instance->_mainFlags.currentChannel - 1, 0));
-
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         statistics.ade7953TotalInterrupts++;
         _instance->_lastInterruptTime = millis();
 
+        // Signal the task to handle the interrupt - let the task determine the cause
         xSemaphoreGiveFromISR(_instance->_ade7953InterruptSemaphore, &xHigherPriorityTaskWoken);
         if (xHigherPriorityTaskWoken == pdTRUE) portYIELD_FROM_ISR();
     }
+}
+
+void Ade7953::_checkInterruptTiming() {
+    if (millis() > MINIMUM_TIME_BEFORE_VALID_METER &&
+        millis() - _lastInterruptTime >= getSampleTime()) {
+        _logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).", 
+                       TAG, millis() - _lastInterruptTime, getSampleTime());
+    }
+}
+
+bool Ade7953::_processChannelReading(int channel, unsigned long long linecycUnix) {
+    if (!_readMeterValues(channel, linecycUnix)) {
+        return false;
+    }
+    
+    _addMeterDataToPayload(channel, linecycUnix);
+    printMeterValues(&meterValues[channel], &channelData[channel]);
+    return true;
+}
+
+void Ade7953::_addMeterDataToPayload(int channel, unsigned long long linecycUnix) {
+    if (!_customTime.isTimeSynched() || millis() <= MINIMUM_TIME_BEFORE_VALID_METER) {
+        return;
+    }
+    
+    if (_payloadMeterMutex) xSemaphoreTake(_payloadMeterMutex, pdMS_TO_TICKS(5000));
+    
+    _payloadMeter.push(PayloadMeter(
+        channel, 
+        linecycUnix, 
+        meterValues[channel].activePower, 
+        meterValues[channel].powerFactor
+    ));
+    
+    if (_payloadMeterMutex) xSemaphoreGive(_payloadMeterMutex);
+}
+
+void Ade7953::_processCycendInterrupt(unsigned long long linecycUnix) {
+    _led.setGreen();
+    
+    // Process current channel (if active)
+    if (_currentChannel != CHANNEL_INVALID) {
+        _processChannelReading(_currentChannel, linecycUnix);
+    }
+    
+    // Always process channel 0
+    _processChannelReading(CHANNEL_0, linecycUnix);
+    
+    _led.setOff();
+}
+
+void Ade7953::_handleCrcChangeInterrupt() {
+    _logger.warning("CRC change detected - this may indicate configuration changes", TAG);
+    
+    // For now, we'll just log this. In the future, you might want to:
+    // 1. Check if this was an expected change (e.g., during calibration)
+    // 2. Verify device configuration integrity
+    // 3. Potentially trigger a reinitialization if unexpected
+    
+    // TODO: Implement smarter CRC change handling to avoid reinitialization loops
+    // when making intentional configuration changes
 }
 
 void Ade7953::_meterReadingTask(void *parameter)
@@ -1957,85 +2038,88 @@ void Ade7953::_meterReadingTask(void *parameter)
     if (!self) vTaskDelete(NULL);
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    unsigned long long _linecycUnix = 0;
+    const TickType_t timeoutTicks = pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + self->getSampleTime());
+    
     while (true)
     {
-        if (
-            self->_ade7953InterruptSemaphore != NULL &&
-            xSemaphoreTake(self->_ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + self->getSampleTime())) == pdTRUE)
+        // Wait for interrupt signal
+        if (self->_ade7953InterruptSemaphore != NULL &&
+            xSemaphoreTake(self->_ade7953InterruptSemaphore, timeoutTicks) == pdTRUE)
         {
-            _linecycUnix = self->_customTime.getUnixTimeMilliseconds();
-            if (
-                millis() > MINIMUM_TIME_BEFORE_VALID_METER &&
-                millis() - self->_lastInterruptTime >= self->getSampleTime())
-            {
-                self->_logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).", TAG, millis() - self->_lastInterruptTime, self->getSampleTime());
-            }
+            unsigned long long linecycUnix = self->_customTime.getUnixTimeMilliseconds();
+            
+            // Check if interrupt timing is within expected bounds
+            self->_checkInterruptTiming();
 
-            self->handleInterrupt();
-            self->_led.setGreen();
+            // Handle the interrupt and determine its type
+            Ade7953InterruptType interruptType = self->_handleInterrupt();
 
-            if (self->_mainFlags.currentChannel != -1) // -1 indicates no active channel (apart from channel 0) is found
+            // Process based on interrupt type
+            switch (interruptType)
             {
-                if (self->readMeterValues(self->_mainFlags.currentChannel, _linecycUnix))
-                {
-                    if (self->_customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
-                    {
-                        if (self->_payloadMeterMutex) xSemaphoreTake(self->_payloadMeterMutex, portMAX_DELAY);
-                        self->_payloadMeter.push(
-                            PayloadMeter(
-                                self->_mainFlags.currentChannel, 
-                                _linecycUnix, 
-                                self->meterValues[self->_mainFlags.currentChannel].activePower, 
-                                self->meterValues[self->_mainFlags.currentChannel].powerFactor
-                            )
-                        );
-                        if (self->_payloadMeterMutex) xSemaphoreGive(self->_payloadMeterMutex);
-                    }
-                    printMeterValues(&self->meterValues[self->_mainFlags.currentChannel], &self->channelData[self->_mainFlags.currentChannel]);
-                }
-            }
+            case Ade7953InterruptType::CYCEND:
+                self->_processCycendInterrupt(linecycUnix);
+                break;
 
-            if (self->readMeterValues(CHANNEL_0, _linecycUnix))
-            {
-                if (self->_customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
-                {
-                    if (self->_payloadMeterMutex) xSemaphoreTake(self->_payloadMeterMutex, portMAX_DELAY);
-                    self->_payloadMeter.push(
-                        PayloadMeter(
-                            CHANNEL_0, 
-                            _linecycUnix, 
-                            self->meterValues[CHANNEL_0].activePower, 
-                            self->meterValues[CHANNEL_0].powerFactor
-                        )
-                    );
-                    if (self->_payloadMeterMutex) xSemaphoreGive(self->_payloadMeterMutex);
-                }
-                printMeterValues(&self->meterValues[CHANNEL_0], &self->channelData[CHANNEL_0]);
+            case Ade7953InterruptType::RESET:
+                self->_reinitializeAfterInterrupt();
+                break;
+            case Ade7953InterruptType::CRC_CHANGE:
+                self->_handleCrcChangeInterrupt();
+                break;
+
+            case Ade7953InterruptType::OTHER:
+            case Ade7953InterruptType::NONE:
+            default:
+                // Already logged in _handleInterrupt(), just continue
+                break;
             }
         }
         else
         {
-            if (self->_ade7953InterruptSemaphore == NULL)
-            {
+            // Timeout or semaphore error
+            if (self->_ade7953InterruptSemaphore == NULL) {
                 self->_logger.debug("Semaphore is NULL, task exiting...", TAG);
                 break;
             }
             vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100));
         }
-        self->_led.setOff();
     }
 
     vTaskDelete(NULL);
 }
 
-String Ade7953::_getBitsString(long value, int nBits) {
-    String result = "";
-    for (int i = nBits - 1; i >= 0; i--) {
-        if ((value >> i) & 1) {
-            if (result.length() > 0) result += ",";
-            result += String(i);
-        }
+void Ade7953::_reinitializeAfterInterrupt() {
+    _logger.warning("Reinitializing ADE7953 after reset/CRC change interrupt", TAG);
+    
+    // Note: We don't pause/resume meter reading task here because this method
+    // is called from within the meter reading task itself. Pausing would cause a deadlock.
+    
+    // Detach interrupt handler temporarily to prevent conflicts
+    _detachInterruptHandler();
+    
+    try {
+        // Reinitialize the device settings (but not the hardware pins)
+        _logger.debug("Setting optimum settings...", TAG);
+        _setOptimumSettings();
+        
+        _logger.debug("Setting default parameters...", TAG);
+        _setDefaultParameters();
+        
+        _logger.debug("Setting configuration from SPIFFS...", TAG);
+        _setConfigurationFromSpiffs();
+        
+        _logger.debug("Reading calibration values from SPIFFS...", TAG);
+        _setCalibrationValuesFromSpiffs();
+        
+        _logger.debug("Setting up interrupts...", TAG);
+        _setupInterrupts();
+        
+        _logger.info("ADE7953 reinitialization completed successfully", TAG);
+    } catch (...) {
+        _logger.error("Error during ADE7953 reinitialization", TAG);
     }
-    return result.length() > 0 ? result : "none";
+    
+    // Reattach interrupt handler
+    _attachInterruptHandler();
 }

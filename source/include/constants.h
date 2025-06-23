@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "10"
-#define FIRMWARE_BUILD_VERSION_PATCH "05"
+#define FIRMWARE_BUILD_VERSION_PATCH "06"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -224,7 +224,7 @@
 #define MINIMUM_FREE_HEAP_SIZE 10000 // Below this value (in bytes), the ESP32 will restart
 #define MINIMUM_FREE_SPIFFS_SIZE 100000 // Below this value (in bytes), the ESP32 will clear the log
 #define ESP32_RESTART_DELAY (2 * 1000) // The delay before restarting the ESP32 after a restart request, needed to allow the ESP32 to finish the current operations
-#define MINIMUM_FREE_HEAP_OTA 30000 // Below this, the OTA is rejected (UNSAFE; MAY BLOCK OTA PERMENENTLY; FIXME)
+#define MINIMUM_FREE_HEAP_OTA 20000 // Below this, the OTA is rejected (a bit unsafe, this could block OTA)
 
 // Multiplexer
 // --------------------
@@ -234,7 +234,6 @@
 #define MULTIPLEXER_S2_PIN 3
 #define MULTIPLEXER_S3_PIN 9
 #define MULTIPLEXER_CHANNEL_COUNT 16 // This cannot be defined as a constant because it is used for array initialization
-#define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // The number of channels being 1 (general, ADE7953 channel A) + 16 (multiplexer, ADE7953 channel B)
 
 // ADE7953
 // --------------------
@@ -261,7 +260,7 @@
 #define ADE7953_INTERRUPT_TIMEOUT_MS 1000 // Timeout for waiting on interrupt semaphore (in ms)
 
 // Macros
-#define PAYLOAD_METER_LOCK() do { if (_payloadMeterMutex != NULL) xSemaphoreTake(_payloadMeterMutex, portMAX_DELAY); } while(0)
+#define PAYLOAD_METER_LOCK() do { if (_payloadMeterMutex != NULL) xSemaphoreTake(_payloadMeterMutex, pdMS_TO_TICKS(5000)); } while(0)
 #define PAYLOAD_METER_UNLOCK() do { if (_payloadMeterMutex != NULL) xSemaphoreGive(_payloadMeterMutex); } while(0)
 
 // Setup
@@ -282,13 +281,32 @@
 #define DEFAULT_GAIN 4194304 // 0x400000 (default gain for the ADE7953)
 #define DEFAULT_OFFSET 0 // 0x000000 (default offset for the ADE7953)
 #define DEFAULT_PHCAL 10 // 0.02°/LSB, indicating a phase calibration of 0.2° which is minimum needed for CTs
+#define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) for line cycle end detection
 #define MINIMUM_SAMPLE_TIME 200
 
-// Interrupt configuration for ADE7953
-#define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) for line cycle end detection
-#define IRQENA_CYCEND_IRQ_BIT 18 // Bit position for CYCEND interrupt
-#define RESET_IRQ_BIT 20 // Bit position for Reset interrupt
-#define CRC_IRQ_BIT 21 // Bit position for CRC error interrupt
+// IRQSTATA / RSTIRQSTATA Register Bit Positions (Table 23, ADE7953 Datasheet)
+#define IRQSTATA_AEHFA_BIT         0  // Active energy register half full (Current Channel A)
+#define IRQSTATA_VAREHFA_BIT       1  // Reactive energy register half full (Current Channel A)
+#define IRQSTATA_VAEHFA_BIT        2  // Apparent energy register half full (Current Channel A)
+#define IRQSTATA_AEOFA_BIT         3  // Active energy register overflow/underflow (Current Channel A)
+#define IRQSTATA_VAREOFA_BIT       4  // Reactive energy register overflow/underflow (Current Channel A)
+#define IRQSTATA_VAEOFA_BIT        5  // Apparent energy register overflow/underflow (Current Channel A)
+#define IRQSTATA_AP_NOLOADA_BIT    6  // Active power no-load detected (Current Channel A)
+#define IRQSTATA_VAR_NOLOADA_BIT   7  // Reactive power no-load detected (Current Channel A)
+#define IRQSTATA_VA_NOLOADA_BIT    8  // Apparent power no-load detected (Current Channel A)
+#define IRQSTATA_APSIGN_A_BIT      9  // Sign of active energy changed (Current Channel A)
+#define IRQSTATA_VARSIGN_A_BIT     10 // Sign of reactive energy changed (Current Channel A)
+#define IRQSTATA_ZXTO_IA_BIT       11 // Zero crossing missing on Current Channel A
+#define IRQSTATA_ZXIA_BIT          12 // Current Channel A zero crossing detected
+#define IRQSTATA_OIA_BIT           13 // Current Channel A overcurrent threshold exceeded
+#define IRQSTATA_ZXTO_BIT          14 // Zero crossing missing on voltage channel
+#define IRQSTATA_ZXV_BIT           15 // Voltage channel zero crossing detected
+#define IRQSTATA_OV_BIT            16 // Voltage peak overvoltage threshold exceeded
+#define IRQSTATA_WSMP_BIT          17 // New waveform data acquired
+#define IRQSTATA_CYCEND_BIT        18 // End of line cycle accumulation period
+#define IRQSTATA_SAG_BIT           19 // Sag event occurred
+#define IRQSTATA_RESET_BIT         20 // End of software or hardware reset
+#define IRQSTATA_CRC_BIT           21 // Checksum has changed
 
 // Fixed conversion values
 #define POWER_FACTOR_CONVERSION_FACTOR 1.0f / 32768.0f // PF/LSB

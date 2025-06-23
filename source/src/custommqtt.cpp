@@ -284,7 +284,7 @@ void CustomMqtt::_publishMeter()
     _logger.debug("Publishing meter data to custom MQTT...", TAG);
 
     JsonDocument _jsonDocument;
-    _ade7953.meterValuesToJson(_jsonDocument);
+    _ade7953.fullMeterValuesToJson(_jsonDocument);
     
     String _meterMessage;
     serializeJson(_jsonDocument, _meterMessage);

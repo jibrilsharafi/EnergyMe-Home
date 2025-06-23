@@ -17,10 +17,10 @@ void Multiplexer::begin()
 
     // At boot, set the multiplexer to channel 1 (channel 0 of the multiplexer)
     // To avoid incorrect first readings 
-    setChannel(0);
+    setChannel(CHANNEL_0);
 }
 
-void Multiplexer::setChannel(int channel)
+void Multiplexer::setChannel(ChannelNumber channel)
 {
     digitalWrite(_s0, channel & 0x01);
     digitalWrite(_s1, channel & 0x02);

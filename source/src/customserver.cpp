@@ -495,7 +495,7 @@ void CustomServer::_setRestApi()
         _serverLog("Request to get meter values", TAG, LogLevel::DEBUG, request);
 
         JsonDocument _jsonDocument;
-        _ade7953.meterValuesToJson(_jsonDocument);
+        _ade7953.fullMeterValuesToJson(_jsonDocument);
 
         String _buffer;
         serializeJson(_jsonDocument, _buffer);
@@ -504,15 +504,19 @@ void CustomServer::_setRestApi()
 
     _server.on("/rest/meter-single", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get meter values", TAG, LogLevel::DEBUG, request);
+        _serverLog("Request to get meter values single", TAG, LogLevel::DEBUG, request);
 
         if (request->hasParam("index")) {
             int _indexInt = request->getParam("index")->value().toInt();
 
-            if (_indexInt >= 0 && _indexInt <= MULTIPLEXER_CHANNEL_COUNT) {
-                if (_ade7953.channelData[_indexInt].active) {
+            if (_indexInt >= 0 && _indexInt < CHANNEL_COUNT) {
+                ChannelNumber _channel = static_cast<ChannelNumber>(_indexInt);
+                if (_ade7953.channelData[_channel].active) {
+                    JsonDocument jsonDocument;
+                    _ade7953.singleMeterValuesToJson(jsonDocument, _channel);
+
                     String _buffer;
-                    serializeJson(_ade7953.singleMeterValuesToJson(_indexInt), _buffer);
+                    serializeJson(jsonDocument, _buffer);
 
                     request->send(HTTP_CODE_OK, "application/json", _buffer.c_str());
                 } else {
@@ -527,7 +531,7 @@ void CustomServer::_setRestApi()
 
     _server.on("/rest/active-power", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
-        _serverLog("Request to get meter values", TAG, LogLevel::DEBUG, request);
+        _serverLog("Request to get active power", TAG, LogLevel::DEBUG, request);
 
         if (request->hasParam("index")) {
             int _indexInt = request->getParam("index")->value().toInt();
@@ -1216,7 +1220,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
         {
             _onUpdateFailed(request, "File must be in .bin format");
             return;
-        }        
+        }
         
         _ade7953.pauseMeterReadingTask();
     

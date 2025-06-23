@@ -8,9 +8,13 @@
 #include <WiFiUdp.h>
 
 // Project includes
+// Initialization before everything
+#include "constants.h"
+#include "structs.h"
+#include "utils.h"
+
 #include "ade7953.h"
 #include "buttonhandler.h"
-#include "constants.h"
 #include "crashmonitor.h"
 #include "customwifi.h" // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
 #include "customserver.h"
@@ -20,8 +24,6 @@
 #include "custommqtt.h"
 #include "influxdbclient.h"
 #include "multiplexer.h"
-#include "structs.h"
-#include "utils.h"
 
 // Global variables
 // --------------------
@@ -65,7 +67,6 @@ CircularBuffer<LogJson, LOG_BUFFER_SIZE> udpLogBuffer;
 WiFiUDP udpClient;
 IPAddress broadcastIP;
 char udpBuffer[UDP_LOG_BUFFER_SIZE];  // Separate buffer for UDP
-bool isUdpLoggingEnabled = DEFAULT_IS_UDP_LOGGING_ENABLED;
 
 // Utils variables
 unsigned long long _linecycUnix = 0;   // Used to track the Unix time when the linecycle ended (for MQTT payloads)
@@ -273,7 +274,7 @@ void callbackLogToUdp(
     const char* function,
     const char* message
 ) {
-    if (!isUdpLoggingEnabled) return;
+    if (!DEFAULT_IS_UDP_LOGGING_ENABLED) return;
     if (strcmp(level, "verbose") == 0) return; // Never send verbose logs via UDP
 
     udpLogBuffer.push(
@@ -539,6 +540,8 @@ void loop() {
         debugFlagsRtc.signature = 0; 
       }
     }
+
+    // TODO: add a periodic check doing a GET request on the is-alive API to ensure HTTP is working properly
 
     TRACE();
     checkIfRestartEsp32Required();
