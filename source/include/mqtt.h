@@ -29,8 +29,6 @@ public:
         WiFiClientSecure &net,
         PublishMqtt &publishMqtt,
         CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter,
-        SemaphoreHandle_t &payloadMeterMutex,
-        SemaphoreHandle_t &ade7953InterruptSemaphore,
         RestartConfiguration &restartConfiguration
     );
 
@@ -93,8 +91,6 @@ private:
     WiFiClientSecure &_net;
     PublishMqtt &_publishMqtt;
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
-    SemaphoreHandle_t &_payloadMeterMutex;
-    SemaphoreHandle_t &_ade7953InterruptSemaphore;
     RestartConfiguration &_restartConfiguration;
 
     String _deviceId = "";

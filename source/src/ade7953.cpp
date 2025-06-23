@@ -2,6 +2,9 @@
 
 static const char *TAG = "ade7953";
 
+// Define the static instance pointer
+Ade7953* Ade7953::_instance = nullptr;
+
 Ade7953::Ade7953(
     int ssPin,
     int sckPin,
@@ -10,22 +13,37 @@ Ade7953::Ade7953(
     int resetPin,
     int interruptPin,
     AdvancedLogger &logger,
-    MainFlags &mainFlags) : _ssPin(ssPin),
+    MainFlags &mainFlags,
+    CustomTime &customTime,
+    Led &led,
+    Multiplexer &multiplexer,
+    CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter) : 
+                            _ssPin(ssPin),
                             _sckPin(sckPin),
                             _misoPin(misoPin),
                             _mosiPin(mosiPin),
                             _resetPin(resetPin),
-                            _interruptPin(interruptPin),
+                            _interruptPin(interruptPin),                            
                             _logger(logger),
-                            _mainFlags(mainFlags)
-{
-
-    MeterValues meterValues[CHANNEL_COUNT];
-    ChannelData channelData[CHANNEL_COUNT];
-}
+                            _mainFlags(mainFlags),
+                            _customTime(customTime),
+                            _led(led),
+                            _multiplexer(multiplexer),
+                            _payloadMeter(payloadMeter) {}
 
 bool Ade7953::begin() {
     _logger.debug("Initializing Ade7953", TAG);
+
+    TRACE();
+    if (_instance != nullptr) {
+        _logger.error("Ade7953 instance already exists", TAG);
+        return false;
+    }
+
+    TRACE();
+    _logger.debug("Creating Ade7953 instance", TAG);
+    _initializeSpiMutexes();
+    _logger.debug("Successfully created Ade7953 instance", TAG);
 
     TRACE();
     _logger.debug("Setting up hardware pins...", TAG);
@@ -68,14 +86,56 @@ bool Ade7953::begin() {
     TRACE();
     _logger.debug("Reading energy from SPIFFS...", TAG);
     _setEnergyFromSpiffs();
-    _logger.debug("Done reading energy from SPIFFS", TAG);
-
+    _logger.debug("Done reading energy from SPIFFS", TAG);    
+    
     // Set it up only at the end to avoid premature interrupts
     TRACE();
+    _logger.debug("Setting up interrupts...", TAG);
     _setupInterrupts();
+    _logger.debug("Successfully set up interrupts", TAG);
 
     TRACE();
+    _logger.debug("Starting meter reading task...", TAG);
+    _startMeterReadingTask();
+    _logger.debug("Meter reading task started", TAG);
+
     return true;
+}
+
+void Ade7953::_initializeSpiMutexes()
+{
+    TRACE();
+    _spiMutex = xSemaphoreCreateMutex();
+    if (_spiMutex == NULL)
+    {
+        _logger.error("Failed to create SPI mutex", TAG);
+        return;
+    }
+    _logger.debug("SPI mutex created successfully", TAG);
+
+    TRACE();
+    _spiOperationMutex = xSemaphoreCreateMutex();
+    if (_spiOperationMutex == NULL)
+    {
+        _logger.error("Failed to create SPI operation mutex", TAG);
+        vSemaphoreDelete(_spiMutex);
+        _spiMutex = NULL;
+        return;
+    }
+    _logger.debug("SPI operation mutex created successfully", TAG);
+
+    TRACE();
+    _payloadMeterMutex = xSemaphoreCreateMutex();
+    if (_payloadMeterMutex == NULL)
+    {
+        _logger.error("Failed to create payload meter mutex", TAG);
+        vSemaphoreDelete(_spiMutex);
+        vSemaphoreDelete(_spiOperationMutex);
+        _spiMutex = NULL;
+        _spiOperationMutex = NULL;
+        return;
+    }
+    _logger.debug("Payload meter mutex created successfully", TAG);
 }
 
 void Ade7953::_setHardwarePins() {
@@ -130,6 +190,38 @@ void Ade7953::loop() {
     ) {
         _lastMillisSaveEnergy = millis();
         saveEnergy();
+    }
+
+    // If restart required, clean up
+    if (restartConfiguration.isRequired) {
+        _logger.info("Restart required. Cleaning up Ade7953 resources", TAG);
+        cleanup();
+    }
+}
+
+void Ade7953::cleanup() {
+    _logger.debug("Cleaning up Ade7953 resources", TAG);
+    
+    // Stop meter reading task and interrupt handling first
+    _stopMeterReadingTask();
+    
+    // Clean up SPI mutex
+    if (_spiMutex != NULL) {
+        vSemaphoreDelete(_spiMutex);
+        _spiMutex = NULL;
+        _logger.debug("SPI mutex deleted", TAG);
+    }
+
+    if (_spiOperationMutex != NULL) {
+        vSemaphoreDelete(_spiOperationMutex);
+        _spiOperationMutex = NULL;
+        _logger.debug("SPI operation mutex deleted", TAG);
+    }
+
+    if (_payloadMeterMutex != NULL) {
+        vSemaphoreDelete(_payloadMeterMutex);
+        _payloadMeterMutex = NULL;
+        _logger.debug("Payload meter mutex deleted", TAG);
     }
 }
 
@@ -551,8 +643,6 @@ void Ade7953::_updateChannelData() {
             );
         }
     }
-    
-    _updateSampleTime();
 
     _logger.debug("Successfully updated data channel", TAG);
 }
@@ -690,8 +780,10 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         // as channel 0 (sampled 100s of milliseconds before only)
         if (channel == CHANNEL_0) {
             _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
-            // Update grid frequency during channel 0 reading to avoid SPI conflicts during Modbus access
-            _gridFrequency = GRID_FREQUENCY_CONVERSION_FACTOR / _readPeriod();
+            
+            // Update grid frequency during channel 0 reading
+            float _newGridFrequency = GRID_FREQUENCY_CONVERSION_FACTOR / _readPeriod();
+            if (_validateGridFrequency(_newGridFrequency)) _gridFrequency = _newGridFrequency;
         } else {
             _voltage = meterValues[CHANNEL_0].voltage;
         }
@@ -788,8 +880,9 @@ bool Ade7953::readMeterValues(int channel, unsigned long long linecycUnixTimeMil
         _channelStates[channel].consecutiveZeroCount++;
         
         if (_channelStates[channel].consecutiveZeroCount < MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
+            TRACE();
             _logger.debug("%s (%d): Zero energy reading on channel 0 discarded (count: %lu/%d)", 
-                TAG, channel, _channelStates[channel].consecutiveZeroCount, MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE);
+                TAG, channelData[channel].label.c_str(),channel, _channelStates[channel].consecutiveZeroCount, MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE);
             _recordFailure();
             return false;
         }
@@ -975,6 +1068,10 @@ bool Ade7953::_validatePower(float newValue) {
 
 bool Ade7953::_validatePowerFactor(float newValue) {
     return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
+}
+
+bool Ade7953::_validateGridFrequency(float newValue) {
+    return _validateValue(newValue, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
 }
 
 JsonDocument Ade7953::singleMeterValuesToJson(int index) {
@@ -1179,11 +1276,7 @@ bool Ade7953::setEnergyValues(JsonDocument &jsonDocument) {
 // --------------------
 
 void Ade7953::_setLinecyc(unsigned int linecyc) {
-    // Limit between 100 ms and 10 s
-    unsigned int _minLinecyc = 10;
-    unsigned int _maxLinecyc = 1000;
-
-    linecyc = min(max(linecyc, _minLinecyc), _maxLinecyc);
+    linecyc = min(max(linecyc, ADE7953_MIN_LINECYC), ADE7953_MAX_LINECYC);
 
     _logger.debug(
         "Setting linecyc to %d",
@@ -1469,6 +1562,21 @@ bool Ade7953::isLinecycFinished() {
  * @return The value read from the register.
  */
 long Ade7953::readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired) {
+
+    if (isVerificationRequired) {
+        if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            _logger.error("Failed to acquire SPI operation mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
+            return INVALID_SPI_READ_WRITE;
+        }
+    }
+
+    // Acquire SPI mutex with timeout to prevent deadlocks
+    if (_spiMutex == NULL || xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        _logger.error("Failed to acquire SPI mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
+        if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
+        return INVALID_SPI_READ_WRITE;
+    }
+
     digitalWrite(_ssPin, LOW);
 
     SPI.transfer(registerAddress >> 8);
@@ -1481,6 +1589,8 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData, boo
     }
 
     digitalWrite(_ssPin, HIGH);
+
+    xSemaphoreGive(_spiMutex);
 
     long _long_response = 0;
     for (int i = 0; i < nBits / 8; i++) {
@@ -1499,10 +1609,13 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData, boo
         nBits
     );
 
-    if (isVerificationRequired && !_verifyLastCommunication(registerAddress, nBits, _long_response, signedData, false)) {
-        _logger.debug("Failed to verify last read communication for register %ld", TAG, registerAddress);
-        _recordFailure();
-        return INVALID_SPI_READ_WRITE; // Return an invalid value if verification fails
+    if (isVerificationRequired) {
+        if (!_verifyLastCommunication(registerAddress, nBits, _long_response, signedData, false)) {
+            _logger.debug("Failed to verify last read communication for register %ld (0x%04lX). Value was %ld (0x%04lX)", TAG, registerAddress, registerAddress, _long_response, _long_response);
+            _recordFailure();
+            _long_response = INVALID_SPI_READ_WRITE; // Return an invalid value if verification fails
+        }
+        xSemaphoreGive(_spiOperationMutex);
     }
 
     return _long_response;
@@ -1518,12 +1631,26 @@ long Ade7953::readRegister(long registerAddress, int nBits, bool signedData, boo
  */
 void Ade7953::writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired) {
     _logger.debug(
-        "Writing %ld to register %ld with %d bits",
+        "Writing %ld (0x%04lX) to register %ld (0x%04lX) with %d bits",
         TAG,
-        data,
-        registerAddress,
+        data, data,
+        registerAddress, registerAddress,
         nBits
-    );   
+    );
+
+    if (isVerificationRequired) {
+        if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            _logger.error("Failed to acquire SPI operation mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
+            return;
+        }
+    }
+
+    // Acquire SPI mutex with timeout to prevent deadlocks
+    if (_spiMutex == NULL || xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        _logger.error("Failed to acquire SPI mutex for write operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
+        if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
+        return;
+    }
 
     digitalWrite(_ssPin, LOW);
 
@@ -1549,9 +1676,14 @@ void Ade7953::writeRegister(long registerAddress, int nBits, long data, bool isV
 
     digitalWrite(_ssPin, HIGH);
 
-    if (isVerificationRequired && !_verifyLastCommunication(registerAddress, nBits, data, false, true)) {
-        _logger.warning("Failed to verify last write communication for register %ld", TAG, registerAddress);
-        _recordFailure();
+    xSemaphoreGive(_spiMutex);
+
+    if (isVerificationRequired) {
+        if (!_verifyLastCommunication(registerAddress, nBits, data, false, true)) {
+            _logger.warning("Failed to verify last write communication for register %ld", TAG, registerAddress);
+            _recordFailure();
+        }
+        xSemaphoreGive(_spiOperationMutex);
     }
 }
 
@@ -1559,7 +1691,13 @@ bool Ade7953::_verifyLastCommunication(long expectedAddress, int expectedBits, l
     
     long lastAddress = readRegister(LAST_ADD_16, 16, false, false);
     if (lastAddress != expectedAddress) {
-        _logger.warning("Last address %ld does not match expected %ld", TAG, lastAddress, expectedAddress);
+        _logger.warning(
+            "Last address %ld (0x%04lX) (write: %d) does not match expected %ld (0x%04lX). Expected data %ld (0x%04lX)", 
+            TAG, 
+            lastAddress, lastAddress, 
+            wasWrite, 
+            expectedAddress, expectedAddress, 
+            expectedData, expectedData);
         return false;
     }
     
@@ -1601,6 +1739,7 @@ bool Ade7953::_verifyLastCommunication(long expectedAddress, int expectedBits, l
 }
 
 void Ade7953::_recordFailure() {
+    TRACE();
     _logger.debug("Recording failure for ADE7953 communication", TAG);
 
     if (_failureCount == 0) {
@@ -1613,6 +1752,7 @@ void Ade7953::_recordFailure() {
 }
 
 void Ade7953::_checkForTooManyFailures() {
+    TRACE();
     if (millis() - _firstFailureTime > ADE7953_FAILURE_RESET_TIMEOUT_MS && _failureCount > 0) {
         _logger.debug("Failure timeout exceeded (%lu ms). Resetting failure count (reached %d)", TAG, millis() - _firstFailureTime, _failureCount);
         
@@ -1729,23 +1869,173 @@ void Ade7953::handleInterrupt() {
     }
 }
 
-String Ade7953::_getBitsString(long value, int numBits) {
-    String bitsString;
-    bool firstBit = true;
-
-    for (int i = 0; i < numBits; i++) {
-        if (value & (1 << i)) {
-            if (!firstBit) {
-                bitsString += ", ";
-            }
-            bitsString += String(i);
-            firstBit = false;
+void Ade7953::_startMeterReadingTask() {
+    TRACE();
+    if (_ade7953InterruptSemaphore == NULL) {
+        _ade7953InterruptSemaphore = xSemaphoreCreateBinary();
+        if (_ade7953InterruptSemaphore == NULL) {
+            _logger.error("Failed to create ADE7953 interrupt semaphore", TAG);
+            return;
         }
     }
 
-    if (bitsString.length() == 0) {
-        bitsString = "None";
+    TRACE();
+    _instance = this;
+    _attachInterruptHandler();
+    if (_meterReadingTaskHandle == NULL) {
+        BaseType_t result = xTaskCreate(
+            _meterReadingTask, 
+            ADE7953_METER_READING_TASK_NAME, 
+            ADE7953_METER_READING_TASK_STACK_SIZE, 
+            this, 
+            ADE7953_METER_READING_TASK_PRIORITY, 
+            &_meterReadingTaskHandle
+        );
+        if (result != pdPASS) {
+            _logger.error("Failed to create meter reading task", TAG);
+            return;
+        }
+    }
+}
+
+void Ade7953::_stopMeterReadingTask() {
+    TRACE();
+    _detachInterruptHandler();
+    if (_meterReadingTaskHandle != NULL) {
+        vTaskDelete(_meterReadingTaskHandle);
+        _meterReadingTaskHandle = NULL;
+    }
+    if (_ade7953InterruptSemaphore != NULL) {
+        vSemaphoreDelete(_ade7953InterruptSemaphore);
+        _ade7953InterruptSemaphore = NULL;
+    }
+    _instance = nullptr;
+}
+
+void Ade7953::pauseMeterReadingTask() {
+    TRACE();
+    _detachInterruptHandler();
+    if (_meterReadingTaskHandle != NULL) {
+        vTaskSuspend(_meterReadingTaskHandle);
+    }
+}
+
+void Ade7953::resumeMeterReadingTask() {
+    TRACE();
+    if (_meterReadingTaskHandle != NULL) vTaskResume(_meterReadingTaskHandle);
+    _attachInterruptHandler();
+}
+
+void Ade7953::_attachInterruptHandler() {
+    _detachInterruptHandler();
+    ::attachInterrupt(digitalPinToInterrupt(_interruptPin), _isrHandler, FALLING);
+}
+
+void Ade7953::_detachInterruptHandler() {
+    ::detachInterrupt(digitalPinToInterrupt(_interruptPin));
+}
+
+void IRAM_ATTR Ade7953::_isrHandler()
+{
+    if (_instance && _instance->_ade7953InterruptSemaphore != NULL)
+    {
+        _instance->_mainFlags.currentChannel = _instance->findNextActiveChannel(_instance->_mainFlags.currentChannel);
+        _instance->_multiplexer.setChannel(std::max(_instance->_mainFlags.currentChannel - 1, 0));
+
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        statistics.ade7953TotalInterrupts++;
+        _instance->_lastInterruptTime = millis();
+
+        xSemaphoreGiveFromISR(_instance->_ade7953InterruptSemaphore, &xHigherPriorityTaskWoken);
+        if (xHigherPriorityTaskWoken == pdTRUE) portYIELD_FROM_ISR();
+    }
+}
+
+void Ade7953::_meterReadingTask(void *parameter)
+{
+    Ade7953 *self = static_cast<Ade7953 *>(parameter);
+    if (!self) vTaskDelete(NULL);
+
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    unsigned long long _linecycUnix = 0;
+    while (true)
+    {
+        if (
+            self->_ade7953InterruptSemaphore != NULL &&
+            xSemaphoreTake(self->_ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + self->getSampleTime())) == pdTRUE)
+        {
+            _linecycUnix = self->_customTime.getUnixTimeMilliseconds();
+            if (
+                millis() > MINIMUM_TIME_BEFORE_VALID_METER &&
+                millis() - self->_lastInterruptTime >= self->getSampleTime())
+            {
+                self->_logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).", TAG, millis() - self->_lastInterruptTime, self->getSampleTime());
+            }
+
+            self->handleInterrupt();
+            self->_led.setGreen();
+
+            if (self->_mainFlags.currentChannel != -1) // -1 indicates no active channel (apart from channel 0) is found
+            {
+                if (self->readMeterValues(self->_mainFlags.currentChannel, _linecycUnix))
+                {
+                    if (self->_customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
+                    {
+                        if (self->_payloadMeterMutex) xSemaphoreTake(self->_payloadMeterMutex, portMAX_DELAY);
+                        self->_payloadMeter.push(
+                            PayloadMeter(
+                                self->_mainFlags.currentChannel, 
+                                _linecycUnix, 
+                                self->meterValues[self->_mainFlags.currentChannel].activePower, 
+                                self->meterValues[self->_mainFlags.currentChannel].powerFactor
+                            )
+                        );
+                        if (self->_payloadMeterMutex) xSemaphoreGive(self->_payloadMeterMutex);
+                    }
+                    printMeterValues(&self->meterValues[self->_mainFlags.currentChannel], &self->channelData[self->_mainFlags.currentChannel]);
+                }
+            }
+
+            if (self->readMeterValues(CHANNEL_0, _linecycUnix))
+            {
+                if (self->_customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
+                {
+                    if (self->_payloadMeterMutex) xSemaphoreTake(self->_payloadMeterMutex, portMAX_DELAY);
+                    self->_payloadMeter.push(
+                        PayloadMeter(
+                            CHANNEL_0, 
+                            _linecycUnix, 
+                            self->meterValues[CHANNEL_0].activePower, 
+                            self->meterValues[CHANNEL_0].powerFactor
+                        )
+                    );
+                    if (self->_payloadMeterMutex) xSemaphoreGive(self->_payloadMeterMutex);
+                }
+                printMeterValues(&self->meterValues[CHANNEL_0], &self->channelData[CHANNEL_0]);
+            }
+        }
+        else
+        {
+            if (self->_ade7953InterruptSemaphore == NULL)
+            {
+                self->_logger.debug("Semaphore is NULL, task exiting...", TAG);
+                break;
+            }
+            vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100));
+        }
+        self->_led.setOff();
     }
 
-    return bitsString;
+    vTaskDelete(NULL);
+}
+
+String Ade7953::_getBitsString(long value, int nBits) {
+    String result = "";
+    for (int i = nBits - 1; i >= 0; i--) {
+        if ((value >> i) & 1) {
+            if (result.length() > 0) result += ",";
+            result += String(i);
+        }
+    }
+    return result.length() > 0 ? result : "none";
 }

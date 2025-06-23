@@ -1195,7 +1195,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
 {
     // Protect OTA updates with mutex - only allow one at a time
     if (!index) { // First chunk of upload
-        if (!_acquireMutex(_otaMutex, "ota", pdMS_TO_TICKS(100))) {
+        if (!_acquireMutex(_otaMutex, "ota", pdMS_TO_TICKS(1000))) {
             _serverLog("OTA update rejected - another update in progress", TAG, LogLevel::WARNING, request);
             _onUpdateFailed(request, "Another firmware update is already in progress");
             return;
@@ -1214,53 +1214,22 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
         }
         else
         {
-            _releaseMutex(_otaMutex, "ota"); // Release mutex on error
             _onUpdateFailed(request, "File must be in .bin format");
             return;
         }        
         
-        // Suspend the meter reading task to prevent SPI conflicts during OTA
-        if (meterReadingTaskHandle != NULL) {
-            _logger.debug("Suspending meter reading task for OTA update", TAG);
-            vTaskSuspend(meterReadingTaskHandle);
-            vTaskDelay(pdMS_TO_TICKS(100)); // Give task time to fully suspend
-        }
-
-        // Detach ADE7953 interrupt during OTA to prevent interference
-        detachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN));
-        _logger.debug("Detached ADE7953 interrupt for OTA update", TAG);
-
-        // Force garbage collection and check heap before OTA
+        _ade7953.pauseMeterReadingTask();
+    
         size_t freeHeap = ESP.getFreeHeap();
         _logger.debug("Free heap before OTA: %zu bytes", TAG, freeHeap);
         
-        if (freeHeap < MINIMUM_FREE_HEAP_OTA) { 
-            
-            // Require at least 100KB free heap
-            _logger.error("Insufficient heap for OTA update: %zu bytes", TAG, freeHeap);
-            if (meterReadingTaskHandle != NULL) {
-                _logger.debug("Resuming meter reading task due to insufficient memory", TAG);
-                vTaskResume(meterReadingTaskHandle);
-            }
-
-            // Reattach ADE7953 interrupt
-            attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING);
-            _logger.debug("Reattached ADE7953 interrupt after OTA failure", TAG);
+        if (freeHeap < MINIMUM_FREE_HEAP_OTA) {
             _onUpdateFailed(request, "Insufficient memory for update");
             return;
         }
 
         if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH))
         {           
-            // Resume the task if update begin fails
-            if (meterReadingTaskHandle != NULL) {
-                _logger.debug("Resuming meter reading task after OTA begin failure", TAG);
-                vTaskResume(meterReadingTaskHandle);
-            }
-
-            // Reattach ADE7953 interrupt
-            attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING);
-            _logger.debug("Reattached ADE7953 interrupt after OTA begin failure", TAG);
             _onUpdateFailed(request, Update.errorString());
             return;
         }
@@ -1270,16 +1239,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
 
     TRACE();
     if (Update.write(data, len) != len)
-    {        
-        // Resume the task if write fails
-        if (meterReadingTaskHandle != NULL) {
-            _logger.debug("Resuming meter reading task after OTA write failure", TAG);
-            vTaskResume(meterReadingTaskHandle);
-        }
-
-        // Reattach ADE7953 interrupt
-        attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING);
-        _logger.debug("Reattached ADE7953 interrupt after OTA write failure", TAG);
+    {
         _onUpdateFailed(request, Update.errorString());
         return;
     }    
@@ -1288,25 +1248,11 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
     if (final)
     {
         if (!Update.end(true))
-        {            
-            // Resume the task if end fails
-            if (meterReadingTaskHandle != NULL) {
-                _logger.debug("Resuming meter reading task after OTA end failure", TAG);
-                vTaskResume(meterReadingTaskHandle);
-            }
-
-            // Reattach ADE7953 interrupt
-            attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING);
-            _logger.debug("Reattached ADE7953 interrupt after OTA end failure", TAG);
-            
-            // Release OTA mutex on failure
-            _releaseMutex(_otaMutex, "ota");
+        {   
             _onUpdateFailed(request, Update.errorString());
         }
         else
         {
-            // Release OTA mutex on success
-            _releaseMutex(_otaMutex, "ota");
             _onUpdateSuccessful(request);
         }
     }
@@ -1334,27 +1280,21 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 
     TRACE();
     setRestartEsp32(TAG, "Restart needed after update");
+    _releaseMutex(_otaMutex, "ota");
 }
 
 void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *reason)
 {
     TRACE();
       
-    // Resume the meter reading task that was suspended during OTA
-    if (meterReadingTaskHandle != NULL) {
-        _logger.debug("Resuming meter reading task after OTA failure", TAG);
-        vTaskResume(meterReadingTaskHandle);
-    }
-    
-    // Reattach ADE7953 interrupt
-    attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING);
+    _ade7953.resumeMeterReadingTask();
     _logger.debug("Reattached ADE7953 interrupt after OTA failure", TAG);
     
     request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"status\":\"failed\", \"reason\":\"" + String(reason) + "\"}");
 
     Update.printError(Serial);
     _logger.debug("Size: %d bytes | Progress: %d bytes | Remaining: %d bytes", TAG, Update.size(), Update.progress(), Update.remaining());
-    _logger.warning("Update failed, keeping current firmware. Reason: %s", TAG, reason);
+    _logger.error("Update failed, keeping current firmware. Reason: %s", TAG, reason);
     updateJsonFirmwareStatus("failed", reason);
 
     for (int i = 0; i < 3; i++)
@@ -1364,6 +1304,8 @@ void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *r
         _led.setOff(true);
         delay(500);
     }
+
+    _releaseMutex(_otaMutex, "ota");
 }
 
 void CustomServer::_serveJsonFile(AsyncWebServerRequest *request, const char *filePath)
@@ -1459,7 +1401,7 @@ void CustomServer::_releaseMutex(SemaphoreHandle_t mutex, const char* mutexName)
     }
     
     if (xSemaphoreGive(mutex) == pdTRUE) {
-        _logger.verbose("Successfully released mutex: %s", TAG, mutexName);
+        _logger.debug("Successfully released mutex: %s", TAG, mutexName);
     } else {
         _logger.warning("Failed to release mutex: %s", TAG, mutexName);
     }

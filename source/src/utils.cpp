@@ -385,11 +385,7 @@ void restartEsp32() {
     logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
     
     TRACE();
-    clearAllAuthTokens();    
-
-    // Clean up interrupts and tasks before restart
-    TRACE();
-    cleanupInterruptHandling();
+    clearAllAuthTokens();
 
     // If a firmware evaluation is in progress, set the firmware to test again
     TRACE();
@@ -407,34 +403,6 @@ void restartEsp32() {
 
     TRACE();
     ESP.restart();
-}
-
-void cleanupInterruptHandling() {
-  // Detach interrupt to prevent new interrupts
-  detachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN));
-  
-  // Stop the meter reading task first to prevent semaphore access
-  if (meterReadingTaskHandle != NULL) {
-    logger.debug("Deleting meter reading task...", TAG);
-    vTaskDelete(meterReadingTaskHandle);
-    meterReadingTaskHandle = NULL;
-    
-    // Give time for task cleanup to complete
-    vTaskDelay(pdMS_TO_TICKS(200));
-  }
-  
-  // Clean up semaphores only after task is deleted
-  if (ade7953InterruptSemaphore != NULL) {
-    vSemaphoreDelete(ade7953InterruptSemaphore);
-    ade7953InterruptSemaphore = NULL;
-  }
-  
-  if (payloadMeterMutex != NULL) {
-    vSemaphoreDelete(payloadMeterMutex);
-    payloadMeterMutex = NULL;
-  }
-  
-  logger.debug("Interrupt handling cleanup completed", TAG);
 }
 
 

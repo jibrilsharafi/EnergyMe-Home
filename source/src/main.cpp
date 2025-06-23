@@ -46,36 +46,30 @@ PubSubClient clientMqtt(net);
 WiFiClient customNet;
 PubSubClient customClientMqtt(customNet);
 
-CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;
+CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;  // TODO: freertos queue or/and ade7953 variable?
 
 AsyncWebServer server(WEBSERVER_PORT);
 
+String deviceId;
+
 // Callback variables
+
+// MQTT logging variables
 CircularBuffer<LogJson, LOG_BUFFER_SIZE> logBuffer;
 char jsonBuffer[LOG_JSON_BUFFER_SIZE];  // Pre-allocated buffer
 char baseMqttTopicLogs[LOG_TOPIC_SIZE];
 char fullMqttTopic[LOG_TOPIC_SIZE];
-String deviceId;
 
 // UDP logging variables
+CircularBuffer<LogJson, LOG_BUFFER_SIZE> udpLogBuffer;
 WiFiUDP udpClient;
 IPAddress broadcastIP;
 char udpBuffer[UDP_LOG_BUFFER_SIZE];  // Separate buffer for UDP
 bool isUdpLoggingEnabled = DEFAULT_IS_UDP_LOGGING_ENABLED;
 
-// Interrupt handling
-// --------------------
-volatile unsigned long ade7953TotalInterrupts = 0;
-volatile unsigned long ade7953LastInterruptTime = 0;
-
 // Utils variables
 unsigned long long _linecycUnix = 0;   // Used to track the Unix time when the linecycle ended (for MQTT payloads)
 unsigned long lastMaintenanceCheck = 0;
-
-// FreeRTOS task variables
-TaskHandle_t meterReadingTaskHandle = NULL;
-SemaphoreHandle_t payloadMeterMutex = NULL;
-SemaphoreHandle_t ade7953InterruptSemaphore = NULL;
 
 // Classes instances
 // --------------------
@@ -131,7 +125,11 @@ Ade7953 ade7953(
   ADE7953_RESET_PIN,
   ADE7953_INTERRUPT_PIN,
   logger,
-  mainFlags
+  mainFlags,
+  customTime,
+  led,
+  multiplexer,
+  payloadMeter
 );
 
 ModbusTcp modbusTcp(
@@ -159,15 +157,13 @@ InfluxDbClient influxDbClient(
   customTime
 );
 
-Mqtt mqtt(
+Mqtt mqtt( // TODO: Add semaphore for the payload meter (or better make it a queue in freertos)
   ade7953,
   logger,
   clientMqtt,
   net,
   publishMqtt,
   payloadMeter,
-  payloadMeterMutex,
-  ade7953InterruptSemaphore,
   restartConfiguration
 );
 
@@ -185,117 +181,6 @@ CustomServer customServer(
 // Main functions
 // Tasks
 // --------------------
-
-// Interrupt Service Routine for ADE7953
-void IRAM_ATTR ade7953ISR() {
-  
-  // Check if semaphore exists to prevent crashes during shutdown/startup
-  if (ade7953InterruptSemaphore == NULL) {
-    return; // Exit early if semaphore doesn't exist
-  }
-  
-  mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
-  multiplexer.setChannel(max(mainFlags.currentChannel - 1, 0));
-
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  
-  statistics.ade7953TotalInterrupts++;
-  ade7953LastInterruptTime = millis();
-    
-  // Give binary semaphore from ISR - this will wake up the waiting task
-  // If semaphore is already given, this call will be ignored (no queuing needed)
-  xSemaphoreGiveFromISR(ade7953InterruptSemaphore, &xHigherPriorityTaskWoken);
-  
-  // Request context switch if a higher priority task was woken
-  if (xHigherPriorityTaskWoken == pdTRUE) {
-    portYIELD_FROM_ISR();
-  }
-}
-
-void meterReadingTask(void *parameter)
-{
-  TickType_t xLastWakeTime = xTaskGetTickCount();
-
-  while (true)
-  {
-
-    // Wait for interrupt semaphore with timeout
-    // Check if semaphore still exists to prevent crashes during shutdown
-    if (
-        ade7953InterruptSemaphore != NULL &&
-        xSemaphoreTake(ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS)) == pdTRUE)
-    {
-      _linecycUnix = customTime.getUnixTimeMilliseconds(); // Update the linecyc Unix time
-
-      if (
-          millis() > MINIMUM_TIME_BEFORE_VALID_METER &&
-          millis() - ade7953LastInterruptTime >= ade7953.getSampleTime())
-      {
-        logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).",
-                       TAG,
-                       millis() - ade7953LastInterruptTime,
-                       ade7953.getSampleTime());
-      }
-
-      ade7953.handleInterrupt();
-
-      led.setGreen();
-
-      if (mainFlags.currentChannel != -1)
-      { // -1 indicates that no channel is active
-        if (ade7953.readMeterValues(mainFlags.currentChannel, _linecycUnix))
-        {
-          if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
-          { // Wait after the first time boot
-            PAYLOAD_METER_LOCK();
-            payloadMeter.push(
-                PayloadMeter(
-                    mainFlags.currentChannel,
-                    _linecycUnix,
-                    ade7953.meterValues[mainFlags.currentChannel].activePower,
-                    ade7953.meterValues[mainFlags.currentChannel].powerFactor));
-            PAYLOAD_METER_UNLOCK();
-          }
-
-          printMeterValues(&ade7953.meterValues[mainFlags.currentChannel], &ade7953.channelData[mainFlags.currentChannel]);
-        }
-      }
-
-      // We always read the first channel as it is in a separate channel in the ADE7953 and is not impacted by the switching of the multiplexer
-      if (ade7953.readMeterValues(CHANNEL_0, _linecycUnix))
-      {
-        if (customTime.isTimeSynched() && millis() > MINIMUM_TIME_BEFORE_VALID_METER)
-        {
-          PAYLOAD_METER_LOCK();
-          payloadMeter.push(
-              PayloadMeter(
-                  CHANNEL_0,
-                  _linecycUnix,
-                  ade7953.meterValues[CHANNEL_0].activePower,
-                  ade7953.meterValues[CHANNEL_0].powerFactor));
-          PAYLOAD_METER_UNLOCK();
-        }
-        printMeterValues(&ade7953.meterValues[CHANNEL_0], &ade7953.channelData[CHANNEL_0]);
-      }
-    }
-    else
-    {
-      // Check if semaphore is NULL (during shutdown) and exit gracefully
-      if (ade7953InterruptSemaphore == NULL)
-      {
-        logger.debug("Semaphore is NULL, task exiting...", TAG);
-        break;
-      }
-
-      // Timeout occurred - this means no interrupt was received within the timeout period
-      // This is normal behavior when no energy flow is detected or during low activity periods
-      // Use vTaskDelayUntil for precise timing to prevent drift
-      vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100));
-    }
-
-    led.setOff(); // Turn off the LED after processing the interrupt
-  }
-}
 
 // --------------------
 // Callback 
@@ -327,6 +212,21 @@ void callbackLogToMqtt(
     // If not connected to WiFi and MQTT, return (log is still stored in circular buffer for later) 
     if (WiFi.status() != WL_CONNECTED) return;
     if (clientMqtt.state() != MQTT_CONNECTED) return;
+
+    // Only generate the base MQTT topic if it does not exist yet
+    if (baseMqttTopicLogs[0] == '\0') {
+      TRACE();
+      snprintf(
+        baseMqttTopicLogs, 
+        sizeof(baseMqttTopicLogs), 
+        "%s/%s/%s/%s", 
+        MQTT_TOPIC_1, 
+        MQTT_TOPIC_2, 
+        deviceId.c_str(), 
+        MQTT_TOPIC_LOG
+      );
+      logger.debug("Base MQTT topic for logs: %s", TAG, baseMqttTopicLogs);
+    }
 
     unsigned int _loops = 0;
     while (!logBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
@@ -374,24 +274,53 @@ void callbackLogToUdp(
     const char* message
 ) {
     if (!isUdpLoggingEnabled) return;
-    if (strcmp(level, "verbose") == 0) return;
+    if (strcmp(level, "verbose") == 0) return; // Never send verbose logs via UDP
+
+    udpLogBuffer.push(
+        LogJson(
+            timestamp,
+            millisEsp,
+            level,
+            coreId,
+            function,
+            message
+        )
+    );
+
+    // If not connected to WiFi, return (log is still stored in circular buffer for later)
     if (WiFi.status() != WL_CONNECTED) return;
-    
-    // Format as simplified syslog message
-    snprintf(udpBuffer, sizeof(udpBuffer),
-        "<%d>%s %s[%lu]: [%s][Core%u] %s: %s",
-        16, // Facility.Severity (local0.info)
-        timestamp,
-        deviceId.c_str(),
-        millisEsp,
-        level,
-        coreId,
-        function,
-        message);
-    
-    udpClient.beginPacket(broadcastIP, UDP_LOG_PORT);
-    udpClient.write((const uint8_t*)udpBuffer, strlen(udpBuffer));
-    udpClient.endPacket();
+
+    unsigned int _loops = 0;
+    while (!udpLogBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
+        _loops++;
+
+        LogJson _log = udpLogBuffer.shift();
+        
+        // Format as simplified syslog message
+        snprintf(udpBuffer, sizeof(udpBuffer),
+            "<%d>%s %s[%lu]: [%s][Core%u] %s: %s",
+            16, // Facility.Severity (local0.info)
+            _log.timestamp,
+            deviceId.c_str(),
+            _log.millisEsp,
+            _log.level,
+            _log.coreId,
+            _log.function,
+            _log.message);
+        
+        if (!udpClient.beginPacket(broadcastIP, UDP_LOG_PORT)) {
+            // Failed to begin packet, put log back in buffer and break
+            udpLogBuffer.push(_log);
+            break;
+        }
+        
+        size_t bytesWritten = udpClient.write((const uint8_t*)udpBuffer, strlen(udpBuffer));
+        if (bytesWritten == 0 || !udpClient.endPacket()) {
+            // Failed to send, put log back in buffer and break
+            udpLogBuffer.push(_log);
+            break;
+        }
+    }
 }
 
 void callbackLogMultiple(
@@ -482,48 +411,16 @@ void setup() {
     }
 
     led.setPurple();
-    
-    TRACE();
+      TRACE();
     logger.debug("Setting up multiplexer...", TAG);
     multiplexer.begin();
     logger.info("Multiplexer setup done", TAG);
 
     TRACE();
-    logger.debug("Creating meter reading task...", TAG);
-    ade7953InterruptSemaphore = xSemaphoreCreateBinary();
-    if (ade7953InterruptSemaphore == NULL) {
-        logger.error("Failed to create ADE7953 interrupt semaphore", TAG);
-    } else {
-        logger.debug("ADE7953 interrupt semaphore created successfully", TAG);
-    }
-    
-    payloadMeterMutex = xSemaphoreCreateMutex();
-    if (payloadMeterMutex == NULL) {
-        logger.error("Failed to create payloadMeter mutex", TAG);
-    } else {
-        logger.debug("PayloadMeter mutex created successfully", TAG);
-    }
-
-    TRACE();
     logger.debug("Setting up ADE7953...", TAG);
-    attachInterrupt(digitalPinToInterrupt(ADE7953_INTERRUPT_PIN), ade7953ISR, FALLING); // This has to be done before ade7953.begin() for some mysterious reason
     if (!ade7953.begin()) {
       logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG);
     } else {
-      xTaskCreate(
-          meterReadingTask,          // Task function
-          ADE7953_TASK_NAME,         // Task name
-          ADE7953_TASK_STACK_SIZE,   // Stack size (bytes)
-          NULL,                      // Task parameter
-          ADE7953_TASK_PRIORITY,     // Priority (higher than normal)
-          &meterReadingTaskHandle    // Task handle
-      );
-      if (meterReadingTaskHandle != NULL) {
-          logger.info("Meter reading task created successfully", TAG);
-      } else {
-          logger.error("Failed to create meter reading task", TAG);
-      }
-      ade7953.handleInterrupt(); // Clear any bit that was set to ensure we are now ready to handle the interrupts coming
       logger.info("ADE7953 setup done", TAG);
     }
 
@@ -571,19 +468,6 @@ void setup() {
     logger.info("Modbus TCP setup done", TAG);
 
     led.setGreen();
-
-    // Generate the device ID for the callback (pre-allocation makes everything quicker)
-    TRACE();
-    snprintf(
-      baseMqttTopicLogs, 
-      sizeof(baseMqttTopicLogs), 
-      "%s/%s/%s/%s", 
-      MQTT_TOPIC_1, 
-      MQTT_TOPIC_2, 
-      deviceId.c_str(), 
-      MQTT_TOPIC_LOG
-    );
-    logger.debug("Base MQTT topic for logs: %s", TAG, baseMqttTopicLogs);    
 
     TRACE();
     logger.info("Setup done! Let's get this energetic party started!", TAG);

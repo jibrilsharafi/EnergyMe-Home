@@ -7,7 +7,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "10"
-#define FIRMWARE_BUILD_VERSION_PATCH "04"
+#define FIRMWARE_BUILD_VERSION_PATCH "05"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -50,7 +50,7 @@
 #define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor"
 #define PREFERENCES_DATA_KEY "crashdata"
 #define CRASH_SIGNATURE 0xDEADBEEF
-#define MAX_BREADCRUMBS 32
+#define MAX_BREADCRUMBS 8
 #define WATCHDOG_TIMER (30 * 1000) // If the esp_task_wdt_reset() is not called within this time, the ESP32 panics
 #define PREFERENCES_FIRMWARE_STATUS_KEY "fw_status"
 #define ROLLBACK_TESTING_TIMEOUT (60 * 1000) // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
@@ -87,7 +87,7 @@
 #define LOG_PATH "/logger/log.txt"
 #define LOG_CONFIG_PATH "/logger/config.txt"
 #define LOG_TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
-#define LOG_BUFFER_SIZE 30 // Callback queue size
+#define LOG_BUFFER_SIZE 50 // Callback queue size
 #define LOG_JSON_BUFFER_SIZE 1024
 #define LOG_TOPIC_SIZE 64
 
@@ -246,11 +246,12 @@
 #define ADE7953_RESET_PIN 21
 #define ADE7953_INTERRUPT_PIN 37
 #define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz
+#define ADE7953_SPI_MUTEX_TIMEOUT_MS 100 // Timeout for acquiring SPI mutex to prevent deadlocks
 
 // Task
-#define ADE7953_TASK_NAME "ade7953_task" // The name of the ADE7953 task
-#define ADE7953_TASK_STACK_SIZE (16 * 1024) // The stack size for the ADE7953 task (increased from 8192 to prevent stack overflow in JSON operations)
-#define ADE7953_TASK_PRIORITY 2 // The priority for the ADE7953 task
+#define ADE7953_METER_READING_TASK_NAME "ade7953_task" // The name of the ADE7953 task
+#define ADE7953_METER_READING_TASK_STACK_SIZE (16 * 1024) // The stack size for the ADE7953 task (increased from 8192 to prevent stack overflow in JSON operations)
+#define ADE7953_METER_READING_TASK_PRIORITY 2 // The priority for the ADE7953 task
 
 // Memory safety for JSON operations
 #define JSON_SAFE_MIN_HEAP_SIZE (8 * 1024) // Minimum free heap required for JSON operations (8KB)
@@ -260,8 +261,8 @@
 #define ADE7953_INTERRUPT_TIMEOUT_MS 1000 // Timeout for waiting on interrupt semaphore (in ms)
 
 // Macros
-#define PAYLOAD_METER_LOCK() do { if (payloadMeterMutex != NULL) xSemaphoreTake(payloadMeterMutex, portMAX_DELAY); } while(0)
-#define PAYLOAD_METER_UNLOCK() do { if (payloadMeterMutex != NULL) xSemaphoreGive(payloadMeterMutex); } while(0)
+#define PAYLOAD_METER_LOCK() do { if (_payloadMeterMutex != NULL) xSemaphoreTake(_payloadMeterMutex, portMAX_DELAY); } while(0)
+#define PAYLOAD_METER_UNLOCK() do { if (_payloadMeterMutex != NULL) xSemaphoreGive(_payloadMeterMutex); } while(0)
 
 // Setup
 #define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low
@@ -303,12 +304,16 @@
 #define VALIDATE_POWER_MAX 100000.0f // Any power above this value is discarded
 #define VALIDATE_POWER_FACTOR_MIN -1.0f // Any power factor below this value is discarded
 #define VALIDATE_POWER_FACTOR_MAX 1.0f // Any power factor above this value is discarded
+#define VALIDATE_GRID_FREQUENCY_MIN 45.0f // Minimum grid frequency in Hz
+#define VALIDATE_GRID_FREQUENCY_MAX 65.0f // Maximum grid frequency in Hz
 
 // Guardrails and thresholds
 #define MAXIMUM_POWER_FACTOR_CLAMP 1.05f // Values above 1 but below this are still accepted
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_POWER_FACTOR 0.05f // Measuring such low power factors is virtually impossible with such CTs
 #define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 100 // Threshold to transition to a legitimate zero state for channel 0
+#define ADE7953_MIN_LINECYC 10U // The minimum line cycle settable for the ADE7953. Must be unsigned
+#define ADE7953_MAX_LINECYC 1000U // The maximum line cycle settable for the ADE7953. Must be unsigned
 
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
 

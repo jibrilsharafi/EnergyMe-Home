@@ -6,8 +6,13 @@
 #include <SPI.h>
 #include <Ticker.h>
 #include <vector>
+#include <CircularBuffer.hpp>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include "ade7953registers.h"
+#include "led.h"
+#include "multiplexer.h"
 #include "customtime.h"
 #include "binaries.h"
 #include "constants.h"
@@ -25,12 +30,18 @@ public:
         int misoPin,
         int mosiPin,
         int resetPin,
-        int interruptPin,
+        int interruptPin,        
         AdvancedLogger &logger,
-        MainFlags &mainFlags
+        MainFlags &mainFlags,
+        CustomTime &customTime,
+        Led &led,
+        Multiplexer &multiplexer,
+        CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter
     );
 
     bool begin();
+    void _initializeSpiMutexes();
+    void cleanup();
     void loop();
     
     void handleInterrupt();
@@ -74,9 +85,30 @@ public:
     unsigned long getTotalHandledInterrupts() const { return _totalHandledInterrupts; }
 
     MeterValues meterValues[CHANNEL_COUNT];
-    ChannelData channelData[CHANNEL_COUNT];
-
+    ChannelData channelData[CHANNEL_COUNT];    
+    
+    void pauseMeterReadingTask();
+    void resumeMeterReadingTask();
+    
+    void takePayloadMeterMutex(TickType_t waitTicks = portMAX_DELAY) {
+        if (_payloadMeterMutex != NULL) {
+            xSemaphoreTake(_payloadMeterMutex, waitTicks);
+        }
+    }
+    void givePayloadMeterMutex() {
+        if (_payloadMeterMutex != NULL) {
+            xSemaphoreGive(_payloadMeterMutex);
+        }
+    }
+    
 private:
+    
+    static void IRAM_ATTR _isrHandler();
+    static void _meterReadingTask(void* parameter);
+    void _stopMeterReadingTask();
+    void _attachInterruptHandler();
+    void _detachInterruptHandler();
+    
     void _setHardwarePins();
     void _setOptimumSettings();
 
@@ -86,6 +118,7 @@ private:
     void _setDefaultParameters();
 
     void _setupInterrupts();
+    void _startMeterReadingTask();
     
     void _setConfigurationFromSpiffs();
     void _applyConfiguration(JsonDocument &jsonDocument);
@@ -130,6 +163,7 @@ private:
     bool _validateCurrent(float newValue);
     bool _validatePower(float newValue);
     bool _validatePowerFactor(float newValue);
+    bool _validateGridFrequency(float newValue);
 
     void _setLinecyc(unsigned int linecyc);
     void _setPgaGain(long pgaGain, int channel, int measurementType);
@@ -149,19 +183,34 @@ private:
     int _resetPin;
     int _interruptPin;
 
-    unsigned int _sampleTime;
+    unsigned int _sampleTime; // in milliseconds, time between linecycles readings
     
     AdvancedLogger &_logger;
     MainFlags &_mainFlags;
-
+    CustomTime &_customTime;
+    Led &_led;
+    Multiplexer &_multiplexer;
+    CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
+    
     ChannelState _channelStates[CHANNEL_COUNT];
+
     float _gridFrequency = 50.0f;
 
     int _failureCount = 0;
     unsigned long _firstFailureTime = 0;
     unsigned long _longTermFailureCount = 0;
-
     unsigned long _lastMillisSaveEnergy = 0;
 
     unsigned long _totalHandledInterrupts = 0;
+    
+    static Ade7953 *_instance;
+
+    SemaphoreHandle_t _spiMutex = NULL;
+    SemaphoreHandle_t _spiOperationMutex = NULL;
+    SemaphoreHandle_t _payloadMeterMutex = NULL;
+    
+    TaskHandle_t _meterReadingTaskHandle = NULL;
+    SemaphoreHandle_t _ade7953InterruptSemaphore = NULL;
+    volatile unsigned long _lastInterruptTime = 0;
+
 };

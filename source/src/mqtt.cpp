@@ -90,8 +90,6 @@ Mqtt::Mqtt(
     WiFiClientSecure &net,
     PublishMqtt &publishMqtt,
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter,
-    SemaphoreHandle_t &payloadMeterMutex,
-    SemaphoreHandle_t &ade7953InterruptSemaphore,
     RestartConfiguration &restartConfiguration
 ) : 
     _ade7953(ade7953), 
@@ -100,8 +98,6 @@ Mqtt::Mqtt(
     _net(net), 
     _publishMqtt(publishMqtt), 
     _payloadMeter(payloadMeter),
-    _payloadMeterMutex(payloadMeterMutex),
-    _ade7953InterruptSemaphore(ade7953InterruptSemaphore),
     _restartConfiguration(restartConfiguration)
 {
     _deviceId = getDeviceId();
@@ -473,13 +469,6 @@ void Mqtt::_setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _m
 void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter) {
     _logger.debug("Converting circular buffer to JSON...", TAG);
     
-    TRACE();  
-    // Check if mutex is still available (not deleted during shutdown)
-    if (payloadMeterMutex == NULL) {
-        _logger.warning("PayloadMeter mutex is NULL, skipping circular buffer to JSON conversion", TAG);
-        return;
-    }
-    
     // Additional safety check - if restart is in progress and enough time has passed, 
     // avoid operations that might conflict with cleanup
     if (restartConfiguration.isRequired && 
@@ -510,8 +499,8 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
         _logger.debug("Moderate memory pressure, reducing JSON batch size to %u items", TAG, maxIterations);
     }
     
-    TRACE();  
-    PAYLOAD_METER_LOCK();
+    TRACE();
+    _ade7953.takePayloadMeterMutex();
     unsigned int _loops = 0;
     while (!_payloadMeter.isEmpty() && _loops < maxIterations && generalConfiguration.sendPowerData) {
         _loops++;
@@ -534,7 +523,7 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
         _jsonObject["activePower"] = _oldestPayloadMeter.activePower;
         _jsonObject["powerFactor"] = _oldestPayloadMeter.powerFactor;
     }
-    PAYLOAD_METER_UNLOCK();
+    _ade7953.givePayloadMeterMutex();
 
     TRACE();  
     for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT; i++) {
@@ -815,15 +804,6 @@ bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) 
     size_t currentFreeHeap = ESP.getFreeHeap();
     if (currentFreeHeap < JSON_SAFE_MIN_HEAP_SIZE) {
         _logger.warning("Critical memory situation during publish (%u bytes free), potential crash risk", TAG, currentFreeHeap);
-    }
-    
-    // Check stack usage if we're in the meterReadingTask
-    TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
-    if (currentTask == meterReadingTaskHandle) {
-        UBaseType_t stackRemaining = uxTaskGetStackHighWaterMark(NULL);
-        if (stackRemaining < 512) { // Less than 512 bytes remaining
-            _logger.error("Critical stack situation in meterReadingTask (%u bytes remaining)!", TAG, stackRemaining * sizeof(StackType_t));
-        }
     }
 
     TRACE();

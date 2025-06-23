@@ -31,11 +31,6 @@ extern MainFlags mainFlags;
 extern PublishMqtt publishMqtt;
 extern Statistics statistics;
 
-extern void ade7953ISR();
-extern TaskHandle_t meterReadingTaskHandle;
-extern SemaphoreHandle_t ade7953InterruptSemaphore;
-extern SemaphoreHandle_t payloadMeterMutex;
-
 void getJsonProductInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
 
@@ -86,7 +81,6 @@ void updateJsonFirmwareStatus(const char *status, const char *reason);
 
 String getDeviceId();
 
-// Statistics functions
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
 
 const char* getMqttStateReason(int state);
