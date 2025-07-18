@@ -10,3 +10,4 @@ temp/
 releases/
 
 logs/
+.DS_Store

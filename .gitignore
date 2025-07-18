@@ -33,3 +33,6 @@
 
 # Secrets
 secrets
+
+# Mac
+.DS_Store
