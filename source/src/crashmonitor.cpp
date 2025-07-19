@@ -243,7 +243,7 @@ void CrashMonitor::_handleFirmwareTesting() {
 
     FirmwareState _firmwareStatus = getFirmwareStatus();
 
-    char _statusBuffer[32];
+    char _statusBuffer[FIRMWARE_STATUS_BUFFER_SIZE];
     getFirmwareStatusString(_firmwareStatus, _statusBuffer);
     _logger.debug("Current firmware status: %s", TAG, _statusBuffer);
     

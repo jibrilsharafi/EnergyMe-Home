@@ -271,7 +271,7 @@ void InfluxDbClient::_uploadBufferedData()
         snprintf(credentials, sizeof(credentials), "%s:%s", _influxDbConfiguration.username, _influxDbConfiguration.password);
         
         String encodedCredentialsStr = base64::encode(credentials);
-        char encodedCredentials[256];
+        char encodedCredentials[ENCODED_CREDENTIALS_BUFFER_SIZE];
         snprintf(encodedCredentials, sizeof(encodedCredentials), "%s", encodedCredentialsStr.c_str());
         
         char authHeader[AUTH_HEADER_BUFFER_SIZE];
@@ -376,7 +376,7 @@ void InfluxDbClient::_uploadBufferedData()
     }
     else
     {
-        char response[512];
+        char response[HTTP_RESPONSE_BUFFER_SIZE];
         String httpResponseStr = http.getString();
         snprintf(response, sizeof(response), "%.500s", httpResponseStr.c_str());
         _logger.error("Failed to upload to InfluxDB. HTTP code: %d, Response: %.100s", TAG, httpCode, response);
@@ -567,7 +567,7 @@ bool InfluxDbClient::_testCredentials()
         char credentials[USERNAME_BUFFER_SIZE + PASSWORD_BUFFER_SIZE + 2]; // +2 for ':' and null terminator
         snprintf(credentials, sizeof(credentials), "%s:%s", _influxDbConfiguration.username, _influxDbConfiguration.password);
         String encodedCredentialsStr = base64::encode(credentials);
-        char encodedCredentials[256];
+        char encodedCredentials[ENCODED_CREDENTIALS_BUFFER_SIZE];
         snprintf(encodedCredentials, sizeof(encodedCredentials), "%s", encodedCredentialsStr.c_str());
         
         char authHeader[AUTH_HEADER_BUFFER_SIZE];

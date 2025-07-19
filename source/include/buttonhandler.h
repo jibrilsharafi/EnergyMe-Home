@@ -100,7 +100,7 @@ private:
   unsigned long _lastDebounceTime;
   // Operation state
   ButtonPressType _currentPressType;
-  char _operationName[64];
+  char _operationName[BUTTON_HANDLER_OPERATION_BUFFER_SIZE];
   bool _operationInProgress;
   unsigned long _operationTimestamp;
 

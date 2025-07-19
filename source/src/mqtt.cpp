@@ -4,7 +4,7 @@ static const char *TAG = "mqtt";
 
 void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
     TRACE();
-    char message[512]; // Use fixed buffer size
+    char message[MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE]; // Use fixed buffer size
     size_t copyLength = (length < sizeof(message) - 1) ? length : sizeof(message) - 1;
     memcpy(message, payload, copyLength);
     message[copyLength] = '\0';
@@ -552,17 +552,17 @@ void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<Payl
     TRACE();  
     JsonObject _jsonObject = _jsonArray.add<JsonObject>();
 
-    if (_ade7953.meterValues[0].lastUnixTimeMilliseconds == 0) {
+    if (_ade7953.meterValues[CHANNEL_0].lastUnixTimeMilliseconds == 0) {
         _logger.debug("Meter values have zero unixTime, skipping...", TAG);
         return;
     }
 
-    if (!validateUnixTime(_ade7953.meterValues[0].lastUnixTimeMilliseconds)) {
-        _logger.warning("Invalid unixTime in meter values: %llu", TAG, _ade7953.meterValues[0].lastUnixTimeMilliseconds);
+    if (!validateUnixTime(_ade7953.meterValues[CHANNEL_0].lastUnixTimeMilliseconds)) {
+        _logger.warning("Invalid unixTime in meter values: %llu", TAG, _ade7953.meterValues[CHANNEL_0].lastUnixTimeMilliseconds);
         return;
     }    
-    _jsonObject["unixTime"] = _ade7953.meterValues[0].lastUnixTimeMilliseconds;
-    _jsonObject["voltage"] = _ade7953.meterValues[0].voltage;
+    _jsonObject["unixTime"] = _ade7953.meterValues[CHANNEL_0].lastUnixTimeMilliseconds;
+    _jsonObject["voltage"] = _ade7953.meterValues[CHANNEL_0].voltage;
 
     // Log memory usage after JSON operations
     size_t freeHeapAfter = ESP.getFreeHeap();

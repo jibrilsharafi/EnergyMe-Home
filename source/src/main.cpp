@@ -217,16 +217,8 @@ void callbackLogToMqtt(
 
     // Only generate the base MQTT topic if it does not exist yet
     if (baseMqttTopicLogs[0] == '\0') {
-      TRACE();
-      snprintf(
-        baseMqttTopicLogs, 
-        sizeof(baseMqttTopicLogs), 
-        "%s/%s/%s/%s", 
-        MQTT_TOPIC_1, 
-        MQTT_TOPIC_2, 
-        DEVICE_ID, 
-        MQTT_TOPIC_LOG
-      );
+      snprintf(baseMqttTopicLogs, sizeof(baseMqttTopicLogs), 
+               "%s/%s/%s/%s", MQTT_TOPIC_1, MQTT_TOPIC_2, DEVICE_ID, MQTT_TOPIC_LOG);
       logger.debug("Base MQTT topic for logs: %s", TAG, baseMqttTopicLogs);
     }
 

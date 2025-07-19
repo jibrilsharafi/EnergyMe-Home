@@ -679,14 +679,11 @@ void getPublicLocation(PublicLocation* publicLocation) {
             const char* latitude = _jsonDocument["lat"].as<const char*>();
             const char* longitude = _jsonDocument["lon"].as<const char*>();
             
-            if (country) snprintf(publicLocation->country, sizeof(publicLocation->country), "%s", country);
-            else publicLocation->country[0] = '\0'; // Ensure null termination
-            if (city) snprintf(publicLocation->city, sizeof(publicLocation->city), "%s", city);
-            else publicLocation->city[0] = '\0'; // Ensure null termination
-            if (latitude) snprintf(publicLocation->latitude, sizeof(publicLocation->latitude), "%s", latitude);
-            else publicLocation->latitude[0] = '\0'; // Ensure null termination
-            if (longitude) snprintf(publicLocation->longitude, sizeof(publicLocation->longitude), "%s", longitude);
-            else publicLocation->longitude[0] = '\0'; // Ensure null termination
+            // Extract strings safely - use empty string if NULL
+            snprintf(publicLocation->country, sizeof(publicLocation->country), "%s", country ? country : "");
+            snprintf(publicLocation->city, sizeof(publicLocation->city), "%s", city ? city : "");
+            snprintf(publicLocation->latitude, sizeof(publicLocation->latitude), "%s", latitude ? latitude : "");
+            snprintf(publicLocation->longitude, sizeof(publicLocation->longitude), "%s", longitude ? longitude : "");
 
             logger.debug(
                 "Location: %s, %s | Lat: %s | Lon: %s",
@@ -921,10 +918,17 @@ const char* getMqttStateReason(int state)
 }
 
 void decryptData(const char* encryptedData, const char* key, char* decryptedData, size_t decryptedDataSize) {
+    // Early validation and consistent error handling
     if (!encryptedData || !key || !decryptedData || decryptedDataSize == 0) {
         if (decryptedData && decryptedDataSize > 0) {
-            decryptedData[0] = '\0'; // Ensure null termination on error
+            decryptedData[0] = '\0';
         }
+        return;
+    }
+
+    size_t inputLength = strlen(encryptedData);
+    if (inputLength == 0) {
+        decryptedData[0] = '\0';
         return;
     }
 
@@ -932,53 +936,40 @@ void decryptData(const char* encryptedData, const char* key, char* decryptedData
     mbedtls_aes_init(&aes);
     mbedtls_aes_setkey_dec(&aes, (const unsigned char *)key, KEY_SIZE);
 
-    size_t decodedLength = 0;
-    size_t inputLength = strlen(encryptedData);
-    if (inputLength == 0) {
-        decryptedData[0] = '\0'; // Ensure null termination for empty input
-        mbedtls_aes_free(&aes);
-        return;
-    }
-    
-    unsigned char *decodedData = (unsigned char *)malloc(inputLength);
-    if (!decodedData) {
-        decryptedData[0] = '\0';
-        mbedtls_aes_free(&aes);
-        return;
-    }
+    // Use stack-allocated buffers instead of malloc
+    unsigned char decodedData[DECRYPTION_WORKING_BUFFER_SIZE];
+    unsigned char output[DECRYPTION_WORKING_BUFFER_SIZE];
 
-    int ret = mbedtls_base64_decode(decodedData, inputLength, &decodedLength,
-                                   (const unsigned char *)encryptedData,
-                                   inputLength);
-    if (ret != 0) {
+    size_t decodedLength = 0;
+    int ret = mbedtls_base64_decode(decodedData, sizeof(decodedData), &decodedLength,
+                                   (const unsigned char *)encryptedData, inputLength);
+    
+    if (ret != 0 || decodedLength == 0) {
         decryptedData[0] = '\0';
-        free(decodedData);
-        mbedtls_aes_free(&aes);
-        return;
-    }
-    if (decodedLength == 0) {
-        decryptedData[0] = '\0'; // Ensure null termination for empty decoded data
-        free(decodedData);
         mbedtls_aes_free(&aes);
         return;
     }
     
-    unsigned char *output = (unsigned char *)malloc(decodedLength + 1);
-    memset(output, 0, decodedLength + 1);
-    
-    for(size_t i = 0; i < decodedLength; i += 16) {
+    // Decrypt in 16-byte blocks
+    for (size_t i = 0; i < decodedLength; i += 16) {
         mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, &decodedData[i], &output[i]);
     }
     
+    // Handle PKCS7 padding removal
     uint8_t paddingLength = output[decodedLength - 1];
-    if(paddingLength <= 16) {
+    if (paddingLength > 0 && paddingLength <= 16 && paddingLength < decodedLength) {
         output[decodedLength - paddingLength] = '\0';
+    } else {
+        output[decodedLength - 1] = '\0'; // Fallback: just ensure null termination
     }
     
+    // Copy result safely
     snprintf(decryptedData, decryptedDataSize, "%s", (char*)output);
 
-    free(output);
-    free(decodedData);
+    // Clear sensitive data from stack buffers for security
+    memset(decodedData, 0, sizeof(decodedData));
+    memset(output, 0, sizeof(output));
+
     mbedtls_aes_free(&aes);
 }
 
@@ -1172,7 +1163,7 @@ void generateAuthToken(char* tokenBuffer, size_t tokenBufferSize) {
     
     char token[AUTH_TOKEN_LENGTH + 1]; // +1 for null terminator
     token[AUTH_TOKEN_LENGTH] = '\0'; // Ensure null termination
-    const char chars[64] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const char chars[CHARS_TOKEN_BUFFER_SIZE] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     
     for (int i = 0; i < AUTH_TOKEN_LENGTH; i++) {
         token[i] = chars[random(0, sizeof(chars) - 1)];
@@ -1187,10 +1178,10 @@ void generateAuthToken(char* tokenBuffer, size_t tokenBufferSize) {
             tokenHash = tokenHash * 31 + token[i];
         }
         
-        char shortKey[16]; // "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
+        char shortKey[TOKEN_SHORT_KEY_BUFFER_SIZE];
         snprintf(shortKey, sizeof(shortKey), "t%08x", (unsigned int)tokenHash);
         
-        char fullTokenKey[20]; // shortKey + "_f" + null terminator = 12 chars max, 20 for safety
+        char fullTokenKey[TOKEN_FULL_KEY_BUFFER_SIZE];
         snprintf(fullTokenKey, sizeof(fullTokenKey), "%s_f", shortKey);
         
         // Store both the timestamp and the original token
@@ -1225,10 +1216,10 @@ bool validateAuthToken(const char* token) {
         tokenHash = tokenHash * 31 + token[i];
     }
     
-    char shortKey[16]; // "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
+    char shortKey[TOKEN_SHORT_KEY_BUFFER_SIZE]; // "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
     snprintf(shortKey, sizeof(shortKey), "t%08x", (unsigned int)tokenHash);
     
-    char fullTokenKey[20]; // shortKey + "_f" + null terminator = 12 chars max, 20 for safety
+    char fullTokenKey[TOKEN_FULL_KEY_BUFFER_SIZE]; // shortKey + "_f" + null terminator = 12 chars max, 20 for safety
     snprintf(fullTokenKey, sizeof(fullTokenKey), "%s_f", shortKey);
     
     unsigned long long tokenTimestamp = preferences.getULong64(shortKey, 0);
@@ -1265,10 +1256,10 @@ void clearAuthToken(const char* token) {
             tokenHash = tokenHash * 31 + token[i];
         }
         
-        char shortKey[16]; // "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
+        char shortKey[TOKEN_SHORT_KEY_BUFFER_SIZE]; // "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
         snprintf(shortKey, sizeof(shortKey), "t%08x", (unsigned int)tokenHash);
         
-        char fullTokenKey[20]; // shortKey + "_f" + null terminator = 12 chars max, 20 for safety
+        char fullTokenKey[TOKEN_FULL_KEY_BUFFER_SIZE]; // shortKey + "_f" + null terminator = 12 chars max, 20 for safety
         snprintf(fullTokenKey, sizeof(fullTokenKey), "%s_f", shortKey);
         
         // Check if token exists before removing

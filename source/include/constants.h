@@ -133,19 +133,31 @@
 #define TOKEN_BUFFER_SIZE 128         // For authentication tokens
 #define MEASUREMENT_BUFFER_SIZE 32    // For measurement names
 #define STATUS_BUFFER_SIZE 64         // For connection status messages
+#define FIRMWARE_STATUS_BUFFER_SIZE 64 // For firmware status messages
 #define TIMESTAMP_STRING_BUFFER_SIZE 32 // For timestamp strings
 #define ENCRYPTED_DATA_BUFFER_SIZE 2048 // For encrypted data storage
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
+#define DECRYPTION_WORKING_BUFFER_SIZE 2048 // Working buffer for decryption operations
 #define AUTH_PASSWORD_BUFFER_SIZE 64 // For authentication passwords
 #define COUNTRY_BUFFER_SIZE 128        // For country names
 #define CITY_BUFFER_SIZE 128           // For city names
 #define LATITUDE_BUFFER_SIZE 32       // For latitude values (e.g., "45.123456")
 #define LONGITUDE_BUFFER_SIZE 32      // For longitude values (e.g., "9.123456")
 #define AUTH_HEADER_BUFFER_SIZE 128 // For HTTP authorization headers
+#define HTTP_RESPONSE_BUFFER_SIZE 512 // For HTTP response strings
 #define AUTH_TOKEN_BUFFER_SIZE 64     // For authentication tokens
+#define CHARS_TOKEN_BUFFER_SIZE 64 // For characters in token strings
+#define TOKEN_SHORT_KEY_BUFFER_SIZE 16 // For auth tokens "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
+#define TOKEN_FULL_KEY_BUFFER_SIZE 64 // Full auth tokens
 #define JSON_RESPONSE_BUFFER_SIZE 1024 // For JSON response strings
 #define MD5_BUFFER_SIZE 33            // For MD5 hashes (32 chars + null terminator)
 #define FULLURL_BUFFER_SIZE 512       // For full URL with query parameters
+#define BUTTON_HANDLER_OPERATION_BUFFER_SIZE 64 // For button handler operations
+#define DATE_BUFFER_SIZE 11 // For date strings (YYYY-MM-DD + null terminator)
+#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE 1024 // For MQTT subscribe messages
+#define WIFI_HOSTNAME_BUFFER_SIZE 128 // For WiFi hostname
+#define ENCODED_CREDENTIALS_BUFFER_SIZE 256 // For base64 encoded credentials
+#define FILENAME_BUFFER_SIZE 256 // For file names in the filesystem
 #define LOG_CALLBACK_TIMESTAMP_SIZE 32
 #define LOG_CALLBACK_LEVEL_SIZE     16
 #define LOG_CALLBACK_FUNCTION_SIZE  64

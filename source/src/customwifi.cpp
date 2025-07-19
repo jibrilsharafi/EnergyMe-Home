@@ -112,7 +112,7 @@ bool CustomWifi::_connectToWifi()
   });
 
   // This will block until connected or portal times out/exits
-  char hostname[128];
+  char hostname[WIFI_HOSTNAME_BUFFER_SIZE];
   snprintf(hostname, sizeof(hostname), "%s - %s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
   bool success = _wifiManager.autoConnect(hostname);
 

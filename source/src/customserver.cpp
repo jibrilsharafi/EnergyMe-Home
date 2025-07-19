@@ -1196,7 +1196,7 @@ void CustomServer::_setRestApi()
         }
         _serverLog("Request to get file", TAG, LogLevel::DEBUG, request);
     
-        char filename[256];
+        char filename[FILENAME_BUFFER_SIZE];
         const char* url = request->url().c_str();
         if (strlen(url) > 10) {
             snprintf(filename, sizeof(filename), "%s", url + 10);
@@ -1324,7 +1324,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const char* f
 void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 {
     TRACE();
-    char response[256];
+    char response[HTTP_RESPONSE_BUFFER_SIZE];
     snprintf(response, sizeof(response), "{\"status\":\"success\", \"md5\":\"%s\"}", Update.md5String().c_str());
     request->send(HTTP_CODE_OK, "application/json", response);
 
@@ -1335,7 +1335,7 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
     _logger.debug("MD5 of new firmware: %s", TAG, Update.md5String().c_str());
 
     TRACE();
-    char _firmwareStatus[64];
+    char _firmwareStatus[FIRMWARE_STATUS_BUFFER_SIZE];
     CrashMonitor::getFirmwareStatusString(NEW_TO_TEST, _firmwareStatus);
     _logger.debug("Setting rollback flag to %s", TAG, _firmwareStatus);
     
@@ -1353,7 +1353,7 @@ void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *r
     _ade7953.resumeMeterReadingTask();
     _logger.debug("Reattached ADE7953 interrupt after OTA failure", TAG);
     
-    char response[512];
+    char response[HTTP_RESPONSE_BUFFER_SIZE];
     snprintf(response, sizeof(response), "{\"status\":\"failed\", \"reason\":\"%s\"}", reason);
     request->send(HTTP_CODE_BAD_REQUEST, "application/json", response);
 
@@ -1426,7 +1426,7 @@ bool CustomServer::_checkAuth(AsyncWebServerRequest *request)
         {
             tokenStart += 11; // Length of "auth_token="
             const char* tokenEnd = strchr(tokenStart, ';');
-            char token[256]; // Buffer for token
+            char token[TOKEN_FULL_KEY_BUFFER_SIZE]; // Buffer for token
             if (tokenEnd != nullptr) {
                 size_t tokenLen = tokenEnd - tokenStart;
                 if (tokenLen >= sizeof(token)) tokenLen = sizeof(token) - 1;

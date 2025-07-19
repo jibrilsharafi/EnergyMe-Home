@@ -122,9 +122,9 @@ uint16_t ModbusTcp::_getRegisterValue(uint16_t address) {
         case 3: return millis() & 0xFFFF;  
         
         // Voltage
-        case 100: return _getFloatBits(_ade7953.meterValues[0].voltage, true);
-        case 101: return _getFloatBits(_ade7953.meterValues[0].voltage, false);
-        
+        case 100: return _getFloatBits(_ade7953.meterValues[CHANNEL_0].voltage, true);
+        case 101: return _getFloatBits(_ade7953.meterValues[CHANNEL_0].voltage, false);
+
         // Grid frequency
         case 102: return _getFloatBits(_ade7953.getGridFrequency(), true);
         case 103: return _getFloatBits(_ade7953.getGridFrequency(), false);

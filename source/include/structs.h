@@ -262,7 +262,7 @@ struct CustomMqttConfiguration {
       snprintf(username, sizeof(username), "%s", MQTT_CUSTOM_USERNAME_DEFAULT);
       snprintf(password, sizeof(password), "%s", MQTT_CUSTOM_PASSWORD_DEFAULT);
       snprintf(lastConnectionStatus, sizeof(lastConnectionStatus), "Never attempted");
-      lastConnectionAttemptTimestamp[0] = '\0';
+      snprintf(lastConnectionAttemptTimestamp, sizeof(lastConnectionAttemptTimestamp), "Never attempted");
     }
 };
 
@@ -303,7 +303,7 @@ struct InfluxDbConfiguration {
       snprintf(token, sizeof(token), "%s", INFLUXDB_TOKEN_DEFAULT);
       snprintf(measurement, sizeof(measurement), "%s", INFLUXDB_MEASUREMENT_DEFAULT);
       snprintf(lastConnectionStatus, sizeof(lastConnectionStatus), "Never attempted");
-      lastConnectionAttemptTimestamp[0] = '\0';
+      snprintf(lastConnectionAttemptTimestamp, sizeof(lastConnectionAttemptTimestamp), "Never attempted");
     }
 };
 
@@ -348,10 +348,10 @@ struct LogJson {
 
     LogJson()
         : millisEsp(0), coreId(0) {
-        timestamp[0] = '\0';
-        level[0] = '\0';
-        function[0] = '\0';
-        message[0] = '\0';
+        snprintf(timestamp, sizeof(timestamp), "%s", "");
+        snprintf(level, sizeof(level), "%s", "");
+        snprintf(function, sizeof(function), "%s", "");
+        snprintf(message, sizeof(message), "%s", "");
     }
 
     LogJson(const char* timestampIn, unsigned long millisEspIn, const char* levelIn, unsigned int coreIdIn, const char* functionIn, const char* messageIn)
@@ -372,13 +372,13 @@ struct RateLimitEntry {
     unsigned long blockedUntil;
     
     RateLimitEntry() : failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {
-        ipAddress[0] = '\0';
+        snprintf(ipAddress, sizeof(ipAddress), "%s", "");
     }
     RateLimitEntry(const char* ip) : failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {
         if (ip && strlen(ip) < IP_ADDRESS_BUFFER_SIZE) {
             snprintf(ipAddress, sizeof(ipAddress), "%s", ip);
         } else {
-            ipAddress[0] = '\0';
+            snprintf(ipAddress, sizeof(ipAddress), "%s", "");
         }
     }
 };
