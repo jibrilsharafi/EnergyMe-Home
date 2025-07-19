@@ -368,10 +368,11 @@ void setRestartEsp32(const char* functionName, const char* reason) {
     
     restartConfiguration.isRequired = true;
     restartConfiguration.requiredAt = millis();
-    restartConfiguration.functionName = String(functionName);
-    restartConfiguration.reason = String(reason);
+    snprintf(restartConfiguration.functionName, sizeof(restartConfiguration.functionName), "%s", functionName);
+    snprintf(restartConfiguration.reason, sizeof(restartConfiguration.reason), "%s", reason);
 
     // Don't cleanup interrupts immediately - let MQTT finish final operations first
+    logger.debug("Restart configuration set. Function: %s, Reason: %s, Required at %u", TAG, restartConfiguration.functionName, restartConfiguration.reason, restartConfiguration.requiredAt);
 }
 
 void checkIfRestartEsp32Required() {
@@ -387,9 +388,9 @@ void restartEsp32() {
     led.block();
     led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
     led.setWhite(true);
-    
-    logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
-    
+
+    logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
+
     TRACE();
     clearAllAuthTokens();
 
@@ -419,7 +420,7 @@ void printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
     logger.debug(
         "%s (%D): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
         TAG, 
-        channelData->label.c_str(),
+        channelData->label,
         channelData->index,
         meterValues->voltage, 
         meterValues->current, 
@@ -983,74 +984,6 @@ void decryptData(const char* encryptedData, const char* key, char* decryptedData
     
     snprintf(decryptedData, decryptedDataSize, "%s", (char*)output);
 
-    free(output);
-    free(decodedData);
-    mbedtls_aes_free(&aes);
-}
-
-// Buffer-based version for memory-safe operations
-void decryptData(const char* encryptedData, const char* key, char* decryptedData, size_t decryptedDataSize) {
-    if (!encryptedData || !key || !decryptedData || decryptedDataSize == 0) {
-        if (decryptedData && decryptedDataSize > 0) {
-            decryptedData[0] = '\0'; // Ensure null termination on error
-        }
-        return;
-    }
-
-    mbedtls_aes_context aes;
-    mbedtls_aes_init(&aes);
-    mbedtls_aes_setkey_dec(&aes, (const unsigned char *)key, KEY_SIZE);
-
-    size_t decodedLength = 0;
-    size_t inputLength = strlen(encryptedData);
-    
-    unsigned char *decodedData = (unsigned char *)malloc(inputLength);
-    if (!decodedData) {
-        decryptedData[0] = '\0';
-        mbedtls_aes_free(&aes);
-        return;
-    }
-    
-    int ret = mbedtls_base64_decode(decodedData, inputLength, &decodedLength, 
-                                   (const unsigned char *)encryptedData, 
-                                   inputLength);
-    
-    if (ret != 0) {
-        decryptedData[0] = '\0';
-        free(decodedData);
-        mbedtls_aes_free(&aes);
-        return;
-    }
-    
-    unsigned char *output = (unsigned char *)malloc(decodedLength + 1);
-    if (!output) {
-        decryptedData[0] = '\0';
-        free(decodedData);
-        mbedtls_aes_free(&aes);
-        return;
-    }
-    
-    memset(output, 0, decodedLength + 1);
-    
-    for(size_t i = 0; i < decodedLength; i += 16) {
-        mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, &decodedData[i], &output[i]);
-    }
-    
-    uint8_t paddingLength = output[decodedLength - 1];
-    if(paddingLength <= 16) {
-        output[decodedLength - paddingLength] = '\0';
-    }
-    
-    // Safely copy to output buffer with bounds checking
-    size_t resultLen = strlen((char*)output);
-    if (resultLen >= decryptedDataSize) {
-        // Truncate to fit in buffer
-        strncpy(decryptedData, (char*)output, decryptedDataSize - 1);
-        decryptedData[decryptedDataSize - 1] = '\0';
-    } else {
-        strcpy(decryptedData, (char*)output);
-    }
-    
     free(output);
     free(decodedData);
     mbedtls_aes_free(&aes);

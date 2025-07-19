@@ -21,7 +21,7 @@ void CustomMqtt::begin()
     _setConfigurationFromSpiffs();
 
     _customClientMqtt.setBufferSize(MQTT_CUSTOM_PAYLOAD_LIMIT);
-    _customClientMqtt.setServer(_customMqttConfiguration.server.c_str(), _customMqttConfiguration.port);
+    _customClientMqtt.setServer(_customMqttConfiguration.server, _customMqttConfiguration.port);
 
     _logger.debug("MQTT setup complete", TAG);
 
@@ -109,24 +109,24 @@ bool CustomMqtt::setConfiguration(JsonDocument &jsonDocument)
     }
 
     _customMqttConfiguration.enabled = jsonDocument["enabled"].as<bool>();
-    _customMqttConfiguration.server = jsonDocument["server"].as<String>();
+    snprintf(_customMqttConfiguration.server, sizeof(_customMqttConfiguration.server), "%s", jsonDocument["server"].as<const char*>());
     _customMqttConfiguration.port = jsonDocument["port"].as<int>();
-    _customMqttConfiguration.clientid = jsonDocument["clientid"].as<String>();
-    _customMqttConfiguration.topic = jsonDocument["topic"].as<String>();
+    snprintf(_customMqttConfiguration.clientid, sizeof(_customMqttConfiguration.clientid), "%s", jsonDocument["clientid"].as<const char*>());
+    snprintf(_customMqttConfiguration.topic, sizeof(_customMqttConfiguration.topic), "%s", jsonDocument["topic"].as<const char*>());
     _customMqttConfiguration.frequency = jsonDocument["frequency"].as<int>();
     _customMqttConfiguration.useCredentials = jsonDocument["useCredentials"].as<bool>();
-    _customMqttConfiguration.username = jsonDocument["username"].as<String>();
-    _customMqttConfiguration.password = jsonDocument["password"].as<String>();    
-    _customMqttConfiguration.lastConnectionStatus = "Disconnected";
+    snprintf(_customMqttConfiguration.username, sizeof(_customMqttConfiguration.username), "%s", jsonDocument["username"].as<const char*>());
+    snprintf(_customMqttConfiguration.password, sizeof(_customMqttConfiguration.password), "%s", jsonDocument["password"].as<const char*>());    
+    snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), "Disconnected");
     char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-    CustomTime::getTimestamp(_timestampBuffer);
-    _customMqttConfiguration.lastConnectionAttemptTimestamp = _timestampBuffer;
+    _customTime.getTimestamp(_timestampBuffer);
+    snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", _timestampBuffer);
 
     _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
     _mqttConnectionAttempt = 0;
 
     _customClientMqtt.disconnect();
-    _customClientMqtt.setServer(_customMqttConfiguration.server.c_str(), _customMqttConfiguration.port);
+    _customClientMqtt.setServer(_customMqttConfiguration.server, _customMqttConfiguration.port);
     
     _saveConfigurationToSpiffs();
 
@@ -184,14 +184,14 @@ bool CustomMqtt::_validateJsonConfiguration(JsonDocument &jsonDocument)
     }
 
     if (!jsonDocument["enabled"].is<bool>()) { _logger.warning("enabled field is not a boolean", TAG); return false; }
-    if (!jsonDocument["server"].is<String>()) { _logger.warning("server field is not a string", TAG); return false; }
+    if (!jsonDocument["server"].is<const char*>()) { _logger.warning("server field is not a string", TAG); return false; }
     if (!jsonDocument["port"].is<int>()) { _logger.warning("port field is not an integer", TAG); return false; }
-    if (!jsonDocument["clientid"].is<String>()) { _logger.warning("clientid field is not a string", TAG); return false; }
-    if (!jsonDocument["topic"].is<String>()) { _logger.warning("topic field is not a string", TAG); return false; }
+    if (!jsonDocument["clientid"].is<const char*>()) { _logger.warning("clientid field is not a string", TAG); return false; }
+    if (!jsonDocument["topic"].is<const char*>()) { _logger.warning("topic field is not a string", TAG); return false; }
     if (!jsonDocument["frequency"].is<int>()) { _logger.warning("frequency field is not an integer", TAG); return false; }
     if (!jsonDocument["useCredentials"].is<bool>()) { _logger.warning("useCredentials field is not a boolean", TAG); return false; }
-    if (!jsonDocument["username"].is<String>()) { _logger.warning("username field is not a string", TAG); return false; }
-    if (!jsonDocument["password"].is<String>()) { _logger.warning("password field is not a string", TAG); return false; }
+    if (!jsonDocument["username"].is<const char*>()) { _logger.warning("username field is not a string", TAG); return false; }
+    if (!jsonDocument["password"].is<const char*>()) { _logger.warning("password field is not a string", TAG); return false; }
 
     return true;
 }
@@ -220,22 +220,22 @@ bool CustomMqtt::_connectMqtt()
 
     if (_customMqttConfiguration.useCredentials) {
         res = _customClientMqtt.connect(
-            _customMqttConfiguration.clientid.c_str(),
-            _customMqttConfiguration.username.c_str(),
-            _customMqttConfiguration.password.c_str());
+            _customMqttConfiguration.clientid,
+            _customMqttConfiguration.username,
+            _customMqttConfiguration.password);
     } else {
-        res = _customClientMqtt.connect(_customMqttConfiguration.clientid.c_str());
+        res = _customClientMqtt.connect(_customMqttConfiguration.clientid);
     }
 
     if (res) {
         _logger.info("Connected to custom MQTT", TAG);
 
         _mqttConnectionAttempt = 0; // Reset attempt counter on success
-        _customMqttConfiguration.lastConnectionStatus = "Connected";
+        snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), "Connected");
 
         char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        CustomTime::getTimestamp(_timestampBuffer);
-        _customMqttConfiguration.lastConnectionAttemptTimestamp = String(_timestampBuffer);
+        _customTime.getTimestamp(_timestampBuffer);
+        snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", _timestampBuffer);
 
         _saveConfigurationToSpiffs();
 
@@ -254,11 +254,12 @@ bool CustomMqtt::_connectMqtt()
         _lastMillisMqttFailed = millis();
         _mqttConnectionAttempt++;
 
-        _customMqttConfiguration.lastConnectionStatus = String(_reason) + " (Attempt " + String(_mqttConnectionAttempt) + ")";
+        snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), 
+                 "%s (Attempt %d)", _reason, _mqttConnectionAttempt);
         
         char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        CustomTime::getTimestamp(_timestampBuffer);
-        _customMqttConfiguration.lastConnectionAttemptTimestamp = String(_timestampBuffer);
+        _customTime.getTimestamp(_timestampBuffer);
+        snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", _timestampBuffer);
 
         _saveConfigurationToSpiffs();
 
@@ -294,10 +295,10 @@ void CustomMqtt::_publishMeter()
     JsonDocument _jsonDocument;
     _ade7953.fullMeterValuesToJson(_jsonDocument);
     
-    String _meterMessage;
-    serializeJson(_jsonDocument, _meterMessage);
+    char _meterMessage[MQTT_CUSTOM_PAYLOAD_LIMIT];
+    serializeJson(_jsonDocument, _meterMessage, sizeof(_meterMessage));
 
-    if (_publishMessage(_customMqttConfiguration.topic.c_str(), _meterMessage.c_str())) _logger.debug("Meter data published to custom MQTT", TAG);
+    if (_publishMessage(_customMqttConfiguration.topic, _meterMessage)) _logger.debug("Meter data published to custom MQTT", TAG);
 }
 
 bool CustomMqtt::_publishMessage(const char *topic, const char *message)

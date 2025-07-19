@@ -441,7 +441,7 @@ void Ade7953::setDefaultCalibrationValues() {
 }
 
 void Ade7953::_jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues) {
-    _logger.verbose("Parsing JSON calibration values for label %s", TAG, calibrationValues.label.c_str());
+    _logger.verbose("Parsing JSON calibration values for label %s", TAG, calibrationValues.label);
 
     // The label is not parsed as it is already set in the channel data
     calibrationValues.vLsb = jsonObject["vLsb"].as<float>();
@@ -505,12 +505,12 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
         _logger.verbose(
             "Parsing JSON data channel %s | Active: %d | Reverse: %d | Label: %s | Phase: %d | Calibration Label: %s", 
             TAG, 
-            _kv.key().c_str(), 
+            _kv.key(), 
             _kv.value()["active"].as<bool>(), 
             _kv.value()["reverse"].as<bool>(), 
-            _kv.value()["label"].as<String>(), 
+            _kv.value()["label"].as<const char*>(), 
             _kv.value()["phase"].as<Phase>(),
-            _kv.value()["calibrationLabel"].as<String>()
+            _kv.value()["calibrationLabel"].as<const char*>()
         );
 
         int _index = atoi(_kv.key().c_str());
@@ -532,9 +532,9 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
 
         channelData[_index].index = _index;
         channelData[_index].reverse = _kv.value()["reverse"].as<bool>();
-        channelData[_index].label = _kv.value()["label"].as<String>();
+        snprintf(channelData[_index].label, sizeof(channelData[_index].label), "%s", _kv.value()["label"].as<const char*>());
         channelData[_index].phase = _kv.value()["phase"].as<Phase>();
-        channelData[_index].calibrationValues.label = _kv.value()["calibrationLabel"].as<String>();
+        snprintf(channelData[_index].calibrationValues.label, sizeof(channelData[_index].calibrationValues.label), "%s", _kv.value()["calibrationLabel"].as<const char*>());
     }
     _logger.debug("Successfully set data channel properties", TAG);
 
@@ -605,12 +605,12 @@ bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
 
         if (!channelObject["active"].is<bool>()) {_logger.warning("active is not bool", TAG); return false;}
         if (!channelObject["reverse"].is<bool>()) {_logger.warning("reverse is not bool", TAG); return false;}
-        if (!channelObject["label"].is<String>()) {_logger.warning("label is not string", TAG); return false;}
+        if (!channelObject["label"].is<const char*>()) {_logger.warning("label is not string", TAG); return false;}
         if (!channelObject["phase"].is<int>()) {_logger.warning("phase is not int", TAG); return false;}
         if (kv.value()["phase"].as<int>() != PHASE_1 && kv.value()["phase"].as<int>() != PHASE_2 && kv.value()["phase"].as<int>() != PHASE_3) {
             _logger.warning("phase is not between 1 and 3", TAG); return false;
         }
-        if (!channelObject["calibrationLabel"].is<String>()) {_logger.warning("calibrationLabel is not string", TAG); return false;}
+        if (!channelObject["calibrationLabel"].is<const char*>()) {_logger.warning("calibrationLabel is not string", TAG); return false;}
     }
 
     return true;
@@ -638,7 +638,7 @@ void Ade7953::_updateChannelData() {
             _logger.warning(
                 "Calibration label %s for channel %d not found in calibration JSON", 
                 TAG, 
-                channelData[i].calibrationValues.label.c_str(), 
+                channelData[i].calibrationValues.label, 
                 i
             );
         }
@@ -750,7 +750,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
     // We cannot put an higher limit here because if the channel happened to be disabled, then
     // enabled again, this would result in an infinite error.
     if (meterValues[channel].lastMillis != 0 && _deltaMillis == 0) {
-        _logger.warning("%s (%d): delta millis (%llu) is invalid. Discarding reading", TAG, channelData[channel].label.c_str(), channel, _deltaMillis);
+        _logger.warning("%s (%d): delta millis (%llu) is invalid. Discarding reading", TAG, channelData[channel].label, channel, _deltaMillis);
         // _recordFailure();
         return false;
     }
@@ -863,7 +863,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         _logger.debug(
             "%s (%d): Power factor %.3f is above %.3f, clamping it", 
             TAG,
-            channelData[channel].label.c_str(), 
+            channelData[channel].label, 
             channel, 
             _powerFactor,
             MAXIMUM_POWER_FACTOR_CLAMP
@@ -882,7 +882,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         if (_channelStates[channel].consecutiveZeroCount < MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
             TRACE();
             _logger.debug("%s (%d): Zero energy reading on channel 0 discarded (count: %lu/%d)", 
-                TAG, channelData[channel].label.c_str(),channel, _channelStates[channel].consecutiveZeroCount, MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE);
+                TAG, channelData[channel].label,channel, _channelStates[channel].consecutiveZeroCount, MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE);
             _recordFailure();
             return false;
         }
@@ -902,7 +902,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
     ) {
         TRACE();
         logger.warning("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", 
-            TAG, channelData[channel].label.c_str(), channel, _activePower, _current, _reactivePower, _apparentPower, _powerFactor);
+            TAG, channelData[channel].label, channel, _activePower, _current, _reactivePower, _apparentPower, _powerFactor);
         _recordFailure();
         return false;
     }
@@ -920,7 +920,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
     //     _logger.warning(
     //         "%s (%D): Current (%.3f * Voltage %.1f = %.1f) is too different from measured Apparent Power (%.1f). Discarding data point", 
     //         TAG,
-    //         channelData[channel].label.c_str(),
+    //         channelData[channel].label,
     //         channel, 
     //         _current, 
     //         _voltage,
@@ -959,7 +959,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         _logger.debug(
             "%s (%d): No load active energy reading. Setting active power and power factor to 0", 
             TAG,
-            channelData[channel].label.c_str(),
+            channelData[channel].label,
             channel
         );
         meterValues[channel].activePower = 0.0f;
@@ -974,7 +974,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         _logger.debug(
             "%s (%d): No load reactive energy reading. Setting reactive power to 0", 
             TAG,
-            channelData[channel].label.c_str(),
+            channelData[channel].label,
             channel
         );
         meterValues[channel].reactivePower = 0.0f;
@@ -986,7 +986,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         _logger.debug(
             "%s (%d): No load apparent energy reading. Setting apparent power and current to 0", 
             TAG,
-            channelData[channel].label.c_str(),
+            channelData[channel].label,
             channel
         );
         meterValues[channel].current = 0.0f;
@@ -1202,8 +1202,7 @@ bool Ade7953::setEnergyValues(JsonDocument &jsonDocument) {
     bool clearDailyEnergy = false;
 
     for (JsonPair kv : jsonDocument.as<JsonObject>()) {
-        String channelStr = kv.key().c_str();
-        int channel = channelStr.toInt();
+        int channel = atoi(kv.key().c_str());
         
         if (channel < CHANNEL_0 || channel >= CHANNEL_COUNT) {
             _logger.warning("Invalid channel index %d", TAG, channel);

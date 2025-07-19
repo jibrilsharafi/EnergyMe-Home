@@ -151,7 +151,7 @@ struct PayloadMeter
 
 struct CalibrationValues
 {
-  String label;
+  char label[CALIBRATION_LABEL_BUFFER_SIZE];
   float vLsb;
   float aLsb;
   float wLsb;
@@ -162,7 +162,9 @@ struct CalibrationValues
   float vahLsb;
 
   CalibrationValues()
-    : label(String("Calibration")), vLsb(1.0), aLsb(1.0), wLsb(1.0), varLsb(1.0), vaLsb(1.0), whLsb(1.0), varhLsb(1.0), vahLsb(1.0) {}
+    : vLsb(1.0), aLsb(1.0), wLsb(1.0), varLsb(1.0), vaLsb(1.0), whLsb(1.0), varhLsb(1.0), vahLsb(1.0) {
+      snprintf(label, sizeof(label), "Calibration");
+    }
 };
 
 
@@ -171,12 +173,14 @@ struct ChannelData
   int index;
   bool active;
   bool reverse;
-  String label;
+  char label[CHANNEL_LABEL_BUFFER_SIZE];
   Phase phase;
   CalibrationValues calibrationValues;
 
   ChannelData()
-    : index(0), active(false), reverse(false), label(String("Channel")), phase(PHASE_1), calibrationValues(CalibrationValues()) {}
+    : index(0), active(false), reverse(false), phase(PHASE_1), calibrationValues(CalibrationValues()) {
+      snprintf(label, sizeof(label), "Channel");
+    }
 };
 
 // Used to track consecutive zero energy readings for channel 0
@@ -197,10 +201,10 @@ struct GeneralConfiguration
 
 struct PublicLocation
 {
-  char country[128];
-  char city[128];
-  char latitude[32];
-  char longitude[32];
+  char country[COUNTRY_BUFFER_SIZE];
+  char city[CITY_BUFFER_SIZE];
+  char latitude[LATITUDE_BUFFER_SIZE];
+  char longitude[LONGITUDE_BUFFER_SIZE];
 
   PublicLocation() : country("Unknown"), city("Unknown"), latitude("45.0"), longitude("9.0") {} // Default to Milan coordinates
 };
@@ -209,10 +213,13 @@ struct RestartConfiguration
 {
   bool isRequired;
   unsigned long requiredAt;
-  String functionName;
-  String reason;
+  char functionName[FUNCTION_NAME_BUFFER_SIZE];
+  char reason[REASON_BUFFER_SIZE];
 
-  RestartConfiguration() : isRequired(false), requiredAt(0xFFFFFFFF), functionName(String("Unknown")), reason(String("Unknown")) {}
+  RestartConfiguration() : isRequired(false), requiredAt(0xFFFFFFFF) {
+    snprintf(functionName, sizeof(functionName), "Unknown");
+    snprintf(reason, sizeof(reason), "Unknown");
+  }
 };
 
 struct PublishMqtt
@@ -233,69 +240,71 @@ struct PublishMqtt
 
 struct CustomMqttConfiguration {
     bool enabled;
-    String server;
+    char server[SERVER_NAME_BUFFER_SIZE];
     int port;
-    String clientid;
-    String topic;
+    char clientid[CLIENT_ID_BUFFER_SIZE];
+    char topic[TOPIC_BUFFER_SIZE];
     int frequency;
     bool useCredentials;
-    String username;
-    String password;
-    String lastConnectionStatus;
-    String lastConnectionAttemptTimestamp;
+    char username[USERNAME_BUFFER_SIZE];
+    char password[PASSWORD_BUFFER_SIZE];
+    char lastConnectionStatus[STATUS_BUFFER_SIZE];
+    char lastConnectionAttemptTimestamp[TIMESTAMP_STRING_BUFFER_SIZE];
 
     CustomMqttConfiguration() 
         : enabled(DEFAULT_IS_CUSTOM_MQTT_ENABLED), 
-          server(String(MQTT_CUSTOM_SERVER_DEFAULT)), 
           port(MQTT_CUSTOM_PORT_DEFAULT),
-          clientid(String(MQTT_CUSTOM_CLIENTID_DEFAULT)),
-          topic(String(MQTT_CUSTOM_TOPIC_DEFAULT)),
           frequency(MQTT_CUSTOM_FREQUENCY_DEFAULT),
-          useCredentials(MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT),
-          username(String(MQTT_CUSTOM_USERNAME_DEFAULT)),
-          password(String(MQTT_CUSTOM_PASSWORD_DEFAULT)),
-          lastConnectionStatus(String("Never attempted")),
-          lastConnectionAttemptTimestamp(String("")) {}
+          useCredentials(MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT) {
+      snprintf(server, sizeof(server), "%s", MQTT_CUSTOM_SERVER_DEFAULT);
+      snprintf(clientid, sizeof(clientid), "%s", MQTT_CUSTOM_CLIENTID_DEFAULT);
+      snprintf(topic, sizeof(topic), "%s", MQTT_CUSTOM_TOPIC_DEFAULT);
+      snprintf(username, sizeof(username), "%s", MQTT_CUSTOM_USERNAME_DEFAULT);
+      snprintf(password, sizeof(password), "%s", MQTT_CUSTOM_PASSWORD_DEFAULT);
+      snprintf(lastConnectionStatus, sizeof(lastConnectionStatus), "Never attempted");
+      lastConnectionAttemptTimestamp[0] = '\0';
+    }
 };
 
 struct InfluxDbConfiguration {
     bool enabled;
-    String server;
+    char server[SERVER_NAME_BUFFER_SIZE];
     int port;
     int version;  // 1 or 2
     
     // v1 fields
-    String database;
-    String username;
-    String password;
+    char database[DATABASE_NAME_BUFFER_SIZE];
+    char username[USERNAME_BUFFER_SIZE];
+    char password[PASSWORD_BUFFER_SIZE];
     
     // v2 fields
-    String organization;
-    String bucket;
-    String token;
+    char organization[ORGANIZATION_BUFFER_SIZE];
+    char bucket[BUCKET_NAME_BUFFER_SIZE];
+    char token[TOKEN_BUFFER_SIZE];
     
-    String measurement;
+    char measurement[MEASUREMENT_BUFFER_SIZE];
     int frequency;
     bool useSSL;
-    String lastConnectionStatus;
-    String lastConnectionAttemptTimestamp;
+    char lastConnectionStatus[STATUS_BUFFER_SIZE];
+    char lastConnectionAttemptTimestamp[TIMESTAMP_STRING_BUFFER_SIZE];
 
     InfluxDbConfiguration() 
         : enabled(DEFAULT_IS_INFLUXDB_ENABLED), 
-          server(String(INFLUXDB_SERVER_DEFAULT)), 
           port(INFLUXDB_PORT_DEFAULT),
           version(INFLUXDB_VERSION_DEFAULT),  // Default to v2
-          database(String(INFLUXDB_DATABASE_DEFAULT)),
-          username(String(INFLUXDB_USERNAME_DEFAULT)),
-          password(String(INFLUXDB_PASSWORD_DEFAULT)),
-          organization(String(INFLUXDB_ORGANIZATION_DEFAULT)),
-          bucket(String(INFLUXDB_BUCKET_DEFAULT)),
-          token(String(INFLUXDB_TOKEN_DEFAULT)),
-          measurement(String(INFLUXDB_MEASUREMENT_DEFAULT)),
           frequency(INFLUXDB_FREQUENCY_DEFAULT),
-          useSSL(INFLUXDB_USE_SSL_DEFAULT),
-          lastConnectionStatus(String("Never attempted")),
-          lastConnectionAttemptTimestamp(String("")) {}
+          useSSL(INFLUXDB_USE_SSL_DEFAULT) {
+      snprintf(server, sizeof(server), "%s", INFLUXDB_SERVER_DEFAULT);
+      snprintf(database, sizeof(database), "%s", INFLUXDB_DATABASE_DEFAULT);
+      snprintf(username, sizeof(username), "%s", INFLUXDB_USERNAME_DEFAULT);
+      snprintf(password, sizeof(password), "%s", INFLUXDB_PASSWORD_DEFAULT);
+      snprintf(organization, sizeof(organization), "%s", INFLUXDB_ORGANIZATION_DEFAULT);
+      snprintf(bucket, sizeof(bucket), "%s", INFLUXDB_BUCKET_DEFAULT);
+      snprintf(token, sizeof(token), "%s", INFLUXDB_TOKEN_DEFAULT);
+      snprintf(measurement, sizeof(measurement), "%s", INFLUXDB_MEASUREMENT_DEFAULT);
+      snprintf(lastConnectionStatus, sizeof(lastConnectionStatus), "Never attempted");
+      lastConnectionAttemptTimestamp[0] = '\0';
+    }
 };
 
 enum FirmwareState : int {
@@ -328,18 +337,14 @@ struct CrashData {
 // Log callback struct
 // --------------------
 // Define maximum lengths for each field
-const size_t TIMESTAMP_LEN = 20;
-const size_t LEVEL_LEN     = 10;
-const size_t FUNCTION_LEN  = 50;
-const size_t MESSAGE_LEN   = 256;
 
 struct LogJson {
-    char timestamp[TIMESTAMP_LEN];
+    char timestamp[LOG_CALLBACK_TIMESTAMP_LEN];
     unsigned long millisEsp;
-    char level[LEVEL_LEN];
+    char level[LOG_CALLBACK_LEVEL_LEN];
     unsigned int coreId;
-    char function[FUNCTION_LEN];
-    char message[MESSAGE_LEN];
+    char function[LOG_CALLBACK_FUNCTION_LEN];
+    char message[LOG_CALLBACK_MESSAGE_LEN];
 
     LogJson()
         : millisEsp(0), coreId(0) {
@@ -351,19 +356,10 @@ struct LogJson {
 
     LogJson(const char* timestampIn, unsigned long millisEspIn, const char* levelIn, unsigned int coreIdIn, const char* functionIn, const char* messageIn)
         : millisEsp(millisEspIn), coreId(coreIdIn) {
-        strncpy(timestamp, timestampIn, TIMESTAMP_LEN - 1);
-        timestamp[TIMESTAMP_LEN - 1] = '\0';
-
-        strncpy(level, levelIn, LEVEL_LEN - 1);
-        level[LEVEL_LEN - 1] = '\0';
-
-        strncpy(function, functionIn, FUNCTION_LEN - 1);
-        function[FUNCTION_LEN - 1] = '\0';
-
-        
-        
-        strncpy(message, messageIn, MESSAGE_LEN - 1);
-        message[MESSAGE_LEN - 1] = '\0';
+        snprintf(timestamp, sizeof(timestamp), "%s", timestampIn ? timestampIn : "");
+        snprintf(level, sizeof(level), "%s", levelIn ? levelIn : "");
+        snprintf(function, sizeof(function), "%s", functionIn ? functionIn : "");
+        snprintf(message, sizeof(message), "%s", messageIn ? messageIn : "");
     }
 };
 
@@ -380,8 +376,7 @@ struct RateLimitEntry {
     }
     RateLimitEntry(const char* ip) : failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {
         if (ip && strlen(ip) < IP_ADDRESS_BUFFER_SIZE) {
-            strncpy(ipAddress, ip, IP_ADDRESS_BUFFER_SIZE - 1);
-            ipAddress[IP_ADDRESS_BUFFER_SIZE - 1] = '\0';
+            snprintf(ipAddress, sizeof(ipAddress), "%s", ip);
         } else {
             ipAddress[0] = '\0';
         }

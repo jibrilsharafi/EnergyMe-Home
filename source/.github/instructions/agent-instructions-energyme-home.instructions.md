@@ -18,7 +18,7 @@ Provide project context and coding guidelines that AI should follow when generat
 
 3. **Memory Management**:
     - Prefer stack allocation over dynamic allocation (avoid `String`, use `char[]` buffers)
-    - IMPORTANT:Use `snprintf()` whenever possible (and never `sprintf()`), also for string concatenation
+    - IMPORTANT: use only `snprintf()` whenever possible (and never `sprintf()` or `strncpy()`), also for string concatenation
     - Use named constants for buffer sizes (e.g., `URL_BUFFER_SIZE`, `LINE_PROTOCOL_BUFFER_SIZE`)
     - Use `sizeof(buffer)` instead of hardcoded sizes in function calls
     - Define buffer sizes as constants (in `constants.h`) for consistency

@@ -108,6 +108,7 @@
 // Buffer Sizes for String Operations
 #define URL_BUFFER_SIZE 256           // For HTTP URLs
 #define LINE_PROTOCOL_BUFFER_SIZE 512 // For InfluxDB line protocol strings
+#define PAYLOAD_BUFFER_SIZE (16 * 1024)     // For InfluxDB payload (large batches)
 #define LABEL_BUFFER_SIZE 64          // For sanitized channel labels
 #define DEVICE_ID_BUFFER_SIZE 16      // For device IDs (increased slightly for safety)
 #define DECRYPTION_BUFFER_SIZE 512    // For decrypted data (certificates, tokens, etc.)
@@ -115,11 +116,41 @@
 #define AWS_IOT_CORE_PRIVATE_KEY_BUFFER_SIZE 2048 // For AWS IoT Core private key
 #define JSON_STRING_PRINT_BUFFER_SIZE 2048 // For JSON strings (print only, needed usually for debugging)
 #define PUBLIC_LOCATION_PAYLOAD_BUFFER_SIZE 512 // For public location API payloads
-#define VERSION_BUFFER_SIZE 16 // For firmware version strings (major.minor.patch format)
-#define IP_ADDRESS_BUFFER_SIZE 16     // For IPv4 addresses (xxx.xxx.xxx.xxx + null terminator)
+#define VERSION_BUFFER_SIZE 16          // For firmware version strings (major.minor.patch format)
+#define IP_ADDRESS_BUFFER_SIZE 32       // For IPv4 addresses (xxx.xxx.xxx.xxx + null terminator)
+#define CHANNEL_LABEL_BUFFER_SIZE 128   // For channel labels (let's be generous come on!)
+#define CALIBRATION_LABEL_BUFFER_SIZE 64 // For calibration labels
+#define FUNCTION_NAME_BUFFER_SIZE 64  // For function names in restart configuration
+#define REASON_BUFFER_SIZE 256        // For restart reasons
+#define SERVER_NAME_BUFFER_SIZE 64    // For MQTT/InfluxDB server names
+#define CLIENT_ID_BUFFER_SIZE 32      // For MQTT client IDs
+#define TOPIC_BUFFER_SIZE 64          // For MQTT topics
+#define USERNAME_BUFFER_SIZE 64       // For usernames
+#define PASSWORD_BUFFER_SIZE 64       // For passwords
+#define DATABASE_NAME_BUFFER_SIZE 32  // For database names
+#define ORGANIZATION_BUFFER_SIZE 32   // For organization names
+#define BUCKET_NAME_BUFFER_SIZE 64    // For bucket names
+#define TOKEN_BUFFER_SIZE 128         // For authentication tokens
+#define MEASUREMENT_BUFFER_SIZE 32    // For measurement names
+#define STATUS_BUFFER_SIZE 64         // For connection status messages
+#define TIMESTAMP_STRING_BUFFER_SIZE 32 // For timestamp strings
 #define ENCRYPTED_DATA_BUFFER_SIZE 2048 // For encrypted data storage
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
 #define AUTH_PASSWORD_BUFFER_SIZE 64 // For authentication passwords
+#define COUNTRY_BUFFER_SIZE 128        // For country names
+#define CITY_BUFFER_SIZE 128           // For city names
+#define LATITUDE_BUFFER_SIZE 32       // For latitude values (e.g., "45.123456")
+#define LONGITUDE_BUFFER_SIZE 32      // For longitude values (e.g., "9.123456")
+#define AUTH_HEADER_BUFFER_SIZE 128 // For HTTP authorization headers
+#define AUTH_TOKEN_BUFFER_SIZE 64     // For authentication tokens
+#define JSON_RESPONSE_BUFFER_SIZE 1024 // For JSON response strings
+#define MD5_BUFFER_SIZE 33            // For MD5 hashes (32 chars + null terminator)
+#define FULLURL_BUFFER_SIZE 512       // For full URL with query parameters
+
+#define LOG_CALLBACK_TIMESTAMP_LEN 20
+#define LOG_CALLBACK_LEVEL_LEN     10
+#define LOG_CALLBACK_FUNCTION_LEN  50
+#define LOG_CALLBACK_MESSAGE_LEN   256
 
 // Webserver
 #define WEBSERVER_PORT 80

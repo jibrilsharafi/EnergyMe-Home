@@ -245,8 +245,8 @@ void Mqtt::_setupMqttWithCertificates() {
 
     TRACE();
     _net.setCACert(aws_iot_core_cert_ca);
-    _net.setCertificate(_awsIotCoreCert.c_str());
-    _net.setPrivateKey(_awsIotCorePrivateKey.c_str());
+    _net.setCertificate(_awsIotCoreCert);
+    _net.setPrivateKey(_awsIotCorePrivateKey);
 
     TRACE();
     _clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
@@ -330,8 +330,8 @@ void Mqtt::_setCertificates() {
     _logger.debug("Setting certificates...", TAG);
 
     TRACE();
-    _awsIotCoreCert = readEncryptedPreferences(PREFS_KEY_CERTIFICATE);
-    _awsIotCorePrivateKey = readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY);
+    readEncryptedPreferences(PREFS_KEY_CERTIFICATE, _awsIotCoreCert, sizeof(_awsIotCoreCert));
+    readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, _awsIotCorePrivateKey, sizeof(_awsIotCorePrivateKey));
 
     _logger.debug("Certificates set", TAG);
 }
@@ -412,7 +412,7 @@ void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTo
     TRACE();
     snprintf(
         topic,
-        MQTT_MAX_TOPIC_LENGTH,
+        sizeof(topic),
         "%s/%s/%s/%s/%s/%s",
         MQTT_BASIC_INGEST,
         ruleName,
@@ -429,7 +429,7 @@ void Mqtt::_constructMqttTopic(const char* finalTopic, char* topic) {
     TRACE();
     snprintf(
         topic,
-        MQTT_MAX_TOPIC_LENGTH,
+        sizeof(topic),
         "%s/%s/%s/%s",
         MQTT_TOPIC_1,
         MQTT_TOPIC_2,

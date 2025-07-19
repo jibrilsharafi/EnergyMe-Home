@@ -65,39 +65,53 @@ void CustomServer::begin()
 
 void CustomServer::_serverLog(const char *message, const char *function, LogLevel logLevel, AsyncWebServerRequest *request)
 {    
-    String fullUrl = request->url();
+    char fullUrl[FULLURL_BUFFER_SIZE];
+    snprintf(fullUrl, sizeof(fullUrl), "%s", request->url().c_str());
+    
     if (request->args() != 0)
     {
-        fullUrl += "?";
-        for (uint8_t i = 0; i < request->args(); i++)
+        size_t currentLength = strlen(fullUrl);
+        if (currentLength + 1 < sizeof(fullUrl)) {
+            strcat(fullUrl, "?");
+            currentLength++;
+        }
+        
+        for (uint8_t i = 0; i < request->args() && currentLength < sizeof(fullUrl) - 1; i++)
         {
-            if (i != 0)
-            {
-                fullUrl += "&";
+            if (i != 0 && currentLength + 1 < sizeof(fullUrl)) {
+                strcat(fullUrl, "&");
+                currentLength++;
             }
-            fullUrl += request->argName(i) + "=" + request->arg(i);
+            
+            char argPart[128];
+            snprintf(argPart, sizeof(argPart), "%s=%s", request->argName(i).c_str(), request->arg(i).c_str());
+            
+            if (currentLength + strlen(argPart) < sizeof(fullUrl)) {
+                strcat(fullUrl, argPart);
+                currentLength += strlen(argPart);
+            }
         }
     }
 
     if (logLevel == LogLevel::DEBUG)
     {
-        _logger.debug("%s | IP: %s - Method: %s - URL: %s", function, message, request->client()->remoteIP().toString().c_str(), request->methodToString(), fullUrl.c_str());
+        _logger.debug("%s | IP: %s - Method: %s - URL: %s", function, message, request->client()->remoteIP().toString().c_str(), request->methodToString(), fullUrl);
     }
     else if (logLevel == LogLevel::INFO)
     {
-        _logger.info("%s | IP: %s - Method: %s - URL: %s", function, message, request->client()->remoteIP().toString().c_str(), request->methodToString(), fullUrl.c_str());
+        _logger.info("%s | IP: %s - Method: %s - URL: %s", function, message, request->client()->remoteIP().toString().c_str(), request->methodToString(), fullUrl);
     }
     else if (logLevel == LogLevel::WARNING)
     {
-        _logger.warning("%s | IP: %s - Method: %s - URL: %s", function, message, request->client()->remoteIP().toString().c_str(), request->methodToString(), fullUrl.c_str());
+        _logger.warning("%s | IP: %s - Method: %s - URL: %s", function, message, request->client()->remoteIP().toString().c_str(), request->methodToString(), fullUrl);
     }
     else if (logLevel == LogLevel::ERROR)
     {
-        _logger.error("%s | IP: %s - Method: %s - URL: %s", function, message, request->client()->remoteIP().toString().c_str(), request->methodToString(), fullUrl.c_str());
+        _logger.error("%s | IP: %s - Method: %s - URL: %s", function, message, request->client()->remoteIP().toString().c_str(), request->methodToString(), fullUrl);
     }
     else if (logLevel == LogLevel::FATAL)
     {
-        _logger.fatal("%s | IP: %s - Method: %s - URL: %s", function, message, request->client()->remoteIP().toString().c_str(), request->methodToString(), fullUrl.c_str());
+        _logger.fatal("%s | IP: %s - Method: %s - URL: %s", function, message, request->client()->remoteIP().toString().c_str(), request->methodToString(), fullUrl);
     }
 }
 
@@ -228,8 +242,8 @@ void CustomServer::_setOta()
         if (_requireAuth(request)) {
             _sendUnauthorized(request);
             return;
-        } }, [this](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
-               { _handleDoUpdate(request, filename, index, data, len, final); });
+        } }, [this](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final)
+               { _handleDoUpdate(request, filename.c_str(), index, data, len, final); });
 
     // This had to be a GET request as otherwise I could not manage to use a query
     // parameter in a POST request. This is a workaround to set the MD5 hash for the
@@ -245,18 +259,24 @@ void CustomServer::_setOta()
 
         if (request->hasParam("md5"))
         {
-            String md5Str = request->getParam("md5")->value();
-            md5Str.toLowerCase();
-            _logger.debug("MD5 included in the request: %s", TAG, md5Str.c_str());
+            char md5Str[MD5_BUFFER_SIZE];
+            snprintf(md5Str, sizeof(md5Str), "%s", request->getParam("md5")->value().c_str());
+            
+            // Convert to lowercase
+            for (int i = 0; md5Str[i]; i++) {
+                md5Str[i] = tolower(md5Str[i]);
+            }
+            
+            _logger.debug("MD5 included in the request: %s", TAG, md5Str);
 
-            if (md5Str.length() != 32)
+            if (strlen(md5Str) != 32)
             {
                 _logger.warning("MD5 not 32 characters long. Skipping MD5 verification", TAG);
                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"MD5 not 32 characters long\"}");
             }
             else
             {
-                snprintf(_md5, sizeof(_md5), "%s", md5Str.c_str());
+                snprintf(_md5, sizeof(_md5), "%s", md5Str);
                 request->send(HTTP_CODE_OK, "application/json", "{\"message\":\"MD5 set\"}");
             }
         }
@@ -275,7 +295,11 @@ void CustomServer::_setOta()
 
         if (Update.isRunning())
         {
-            request->send(HTTP_CODE_OK, "application/json", "{\"status\":\"running\",\"size\":" + String(Update.size()) + ",\"progress\":" + String(Update.progress()) + ",\"remaining\":" + String(Update.remaining()) + "}");
+            char statusResponse[JSON_RESPONSE_BUFFER_SIZE];
+            snprintf(statusResponse, sizeof(statusResponse), 
+                     "{\"status\":\"running\",\"size\":%zu,\"progress\":%zu,\"remaining\":%zu}",
+                     Update.size(), Update.progress(), Update.remaining());
+            request->send(HTTP_CODE_OK, "application/json", statusResponse);
         }        else
         {
             request->send(HTTP_CODE_OK, "application/json", "{\"status\":\"idle\"}");
@@ -322,7 +346,8 @@ void CustomServer::_setRestApi()
             JsonDocument jsonDoc;
             deserializeJson(jsonDoc, buffer->data(), buffer->size());
             
-            String clientIp = request->client()->remoteIP().toString();
+            char clientIp[IP_ADDRESS_BUFFER_SIZE];
+            snprintf(clientIp, sizeof(clientIp), "%s", request->client()->remoteIP().toString().c_str());
             
             // Check if IP is blocked due to too many failed attempts
             if (isIpBlocked(clientIp)) {
@@ -333,27 +358,34 @@ void CustomServer::_setRestApi()
                 return;
             }
             
-            String password = jsonDoc["password"].as<String>();
+            char password[PASSWORD_BUFFER_SIZE];
+            snprintf(password, sizeof(password), "%s", jsonDoc["password"].as<const char*>());
               if (validatePassword(password)) {
                 // Record successful login to reset rate limiting for this IP
                 recordSuccessfulLogin(clientIp);
                 
-                String token = generateAuthToken();
-                if (token.isEmpty()) {
+                // Check if we can accept more sessions
+                if (!canAcceptMoreTokens()) {
                     // Maximum concurrent sessions reached
                     request->send(HTTP_CODE_TOO_MANY_REQUESTS, "application/json", "{\"success\":false,\"message\":\"Maximum concurrent sessions reached. Please try again later or ask another user to logout.\"}");
                     _serverLog("Login rejected - maximum sessions reached", TAG, LogLevel::WARNING, request);
                 } else {
+                    char token[AUTH_TOKEN_BUFFER_SIZE];
+                    generateAuthToken(token, sizeof(token));
+                    
                     JsonDocument response;
                     response["success"] = true;
                     response["token"] = token;
                     response["message"] = "Login successful";
                     
-                    String responseBuffer;
-                    serializeJson(response, responseBuffer);
+                    char responseBuffer[JSON_RESPONSE_BUFFER_SIZE];
+                    serializeJson(response, responseBuffer, sizeof(responseBuffer));
+                    
+                    char cookieValue[AUTH_TOKEN_BUFFER_SIZE + 50];
+                    snprintf(cookieValue, sizeof(cookieValue), "auth_token=%s; Path=/; Max-Age=86400; HttpOnly", token);
                     
                     AsyncWebServerResponse *resp = request->beginResponse(HTTP_CODE_OK, "application/json", responseBuffer);
-                    resp->addHeader("Set-Cookie", "auth_token=" + token + "; Path=/; Max-Age=86400; HttpOnly");
+                    resp->addHeader("Set-Cookie", cookieValue);
                     request->send(resp);
                     
                     _serverLog("Successful login", TAG, LogLevel::INFO, request);
@@ -375,9 +407,11 @@ void CustomServer::_setRestApi()
         if (_checkAuth(request)) {
             // Extract token and clear it
             if (request->hasHeader("Authorization")) {
-                String authHeader = request->getHeader("Authorization")->value();
-                if (authHeader.startsWith("Bearer ")) {
-                    String token = authHeader.substring(7);
+                char authHeader[AUTH_HEADER_BUFFER_SIZE];
+                snprintf(authHeader, sizeof(authHeader), "%s", request->getHeader("Authorization")->value().c_str());
+                if (strncmp(authHeader, "Bearer ", 7) == 0) {
+                    char token[AUTH_TOKEN_BUFFER_SIZE];
+                    snprintf(token, sizeof(token), "%s", authHeader + 7);
                     clearAuthToken(token);
                 }
             }
@@ -409,13 +443,19 @@ void CustomServer::_setRestApi()
             JsonDocument jsonDoc;
             deserializeJson(jsonDoc, buffer->data(), buffer->size());
             
-            String currentPassword = jsonDoc["currentPassword"].as<String>();
-            String newPassword = jsonDoc["newPassword"].as<String>();
+            char currentPassword[PASSWORD_BUFFER_SIZE];
+            char newPassword[PASSWORD_BUFFER_SIZE];
+            snprintf(currentPassword, sizeof(currentPassword), "%s", jsonDoc["currentPassword"].as<const char*>());
+            snprintf(newPassword, sizeof(newPassword), "%s", jsonDoc["newPassword"].as<const char*>());
             
             if (!validatePassword(currentPassword)) {
                 request->send(HTTP_CODE_UNAUTHORIZED, "application/json", "{\"success\":false,\"message\":\"Current password is incorrect\"}");
-            } else if (newPassword.length() < MIN_PASSWORD_LENGTH || newPassword.length() > MAX_PASSWORD_LENGTH) {
-                request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"success\":false,\"message\":\"New password must be between " + String(MIN_PASSWORD_LENGTH) + " and " + String(MAX_PASSWORD_LENGTH) + " characters\"}");
+            } else if (strlen(newPassword) < MIN_PASSWORD_LENGTH || strlen(newPassword) > MAX_PASSWORD_LENGTH) {
+                char errorMessage[JSON_RESPONSE_BUFFER_SIZE];
+                snprintf(errorMessage, sizeof(errorMessage), 
+                         "{\"success\":false,\"message\":\"New password must be between %d and %d characters\"}", 
+                         MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH);
+                request->send(HTTP_CODE_BAD_REQUEST, "application/json", errorMessage);
             } else if (setAuthPassword(newPassword)) {
                 request->send(HTTP_CODE_OK, "application/json", "{\"success\":true,\"message\":\"Password changed successfully\"}");
                 _serverLog("Password changed", TAG, LogLevel::INFO, request);
@@ -444,8 +484,8 @@ void CustomServer::_setRestApi()
             response["mustChangePassword"] = isUsingDefaultPassword();
         }
         
-        String responseBuffer;
-        serializeJson(response, responseBuffer);
+        char responseBuffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(response, responseBuffer, sizeof(responseBuffer));
         request->send(HTTP_CODE_OK, "application/json", responseBuffer); });
 
     _server.on("/rest/is-alive", HTTP_GET, [this](AsyncWebServerRequest *request)
@@ -461,10 +501,10 @@ void CustomServer::_setRestApi()
         JsonDocument _jsonDocument;
         getJsonProductInfo(_jsonDocument);
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/device-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -473,10 +513,10 @@ void CustomServer::_setRestApi()
         JsonDocument _jsonDocument;
         getJsonDeviceInfo(_jsonDocument);
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/wifi-info", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -485,10 +525,10 @@ void CustomServer::_setRestApi()
         JsonDocument _jsonDocument;
         _customWifi.getWifiStatus(_jsonDocument);
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/meter", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -497,10 +537,10 @@ void CustomServer::_setRestApi()
         JsonDocument _jsonDocument;
         _ade7953.fullMeterValuesToJson(_jsonDocument);
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/meter-single", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -515,10 +555,10 @@ void CustomServer::_setRestApi()
                     JsonDocument jsonDocument;
                     _ade7953.singleMeterValuesToJson(jsonDocument, _channel);
 
-                    String _buffer;
-                    serializeJson(jsonDocument, _buffer);
+                    char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+                    serializeJson(jsonDocument, _buffer, sizeof(_buffer));
 
-                    request->send(HTTP_CODE_OK, "application/json", _buffer.c_str());
+                    request->send(HTTP_CODE_OK, "application/json", _buffer);
                 } else {
                     request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Channel not active\"}");
                 }
@@ -538,7 +578,9 @@ void CustomServer::_setRestApi()
 
             if (_indexInt >= 0 && _indexInt <= MULTIPLEXER_CHANNEL_COUNT) {
                 if (_ade7953.channelData[_indexInt].active) {
-                    request->send(HTTP_CODE_OK, "application/json", "{\"value\":" + String(_ade7953.meterValues[_indexInt].activePower) + "}");
+                    char response[JSON_RESPONSE_BUFFER_SIZE];
+                    snprintf(response, sizeof(response), "{\"value\":%.6f}", _ade7953.meterValues[_indexInt].activePower);
+                    request->send(HTTP_CODE_OK, "application/json", response);
                 } else {
                     request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Channel not active\"}");
                 }
@@ -562,10 +604,10 @@ void CustomServer::_setRestApi()
         JsonDocument _jsonDocument;
         _ade7953.channelDataToJson(_jsonDocument);
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/get-calibration", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -613,10 +655,10 @@ void CustomServer::_setRestApi()
             }
         }
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/get-log-level", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -626,10 +668,10 @@ void CustomServer::_setRestApi()
         _jsonDocument["print"] = _logger.logLevelToString(_logger.getPrintLevel());
         _jsonDocument["save"] = _logger.logLevelToString(_logger.getSaveLevel());
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/set-log-level", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
@@ -646,10 +688,11 @@ void CustomServer::_setRestApi()
 
         if (request->hasParam("level") && request->hasParam("type")) {
             int _level = request->getParam("level")->value().toInt();
-            String _type = request->getParam("type")->value();
-            if (_type == "print") {
+            char _type[32];
+            snprintf(_type, sizeof(_type), "%s", request->getParam("type")->value().c_str());
+            if (strcmp(_type, "print") == 0) {
                 _logger.setPrintLevel(LogLevel(_level));
-            } else if (_type == "save") {
+            } else if (strcmp(_type, "save") == 0) {
                 _logger.setSaveLevel(LogLevel(_level));
             } else {
                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Invalid type parameter. Supported values: print, save\"}");
@@ -666,10 +709,10 @@ void CustomServer::_setRestApi()
         JsonDocument _jsonDocument;
         generalConfigurationToJson(generalConfiguration, _jsonDocument);
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/get-has-secrets", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -678,10 +721,10 @@ void CustomServer::_setRestApi()
         JsonDocument _jsonDocument;
         _jsonDocument["has_secrets"] = HAS_SECRETS ? true : false;
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/ade7953-read-register", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -701,7 +744,9 @@ void CustomServer::_setRestApi()
                 if (_address >= 0 && _address <= 0x3FF) {
                     long registerValue = _ade7953.readRegister(_address, _nBits, _signed);
 
-                    request->send(HTTP_CODE_OK, "application/json", "{\"value\":" + String(registerValue) + "}");
+                    char response[JSON_RESPONSE_BUFFER_SIZE];
+                    snprintf(response, sizeof(response), "{\"value\":%ld}", registerValue);
+                    request->send(HTTP_CODE_OK, "application/json", response);
                 } else {
                     request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Address out of range. Supported values: 0-0x3FF (0-1023)\"}");
                 }
@@ -777,10 +822,10 @@ void CustomServer::_setRestApi()
             return;
         }
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/get-crash-data", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -807,11 +852,11 @@ void CustomServer::_setRestApi()
         }
 
         TRACE();
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         TRACE();
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request)
                {
@@ -861,18 +906,20 @@ void CustomServer::_setRestApi()
                {
         _serverLog("Request to get last button operation", TAG, LogLevel::DEBUG, request);
 
-        String operationName = _buttonHandler.getCurrentOperationName();
+        const char* operationName = _buttonHandler.getCurrentOperationName();
         unsigned long operationTimestamp = _buttonHandler.getCurrentOperationTimestamp();
         
-        String response = "{";
-        response += "\"operationName\":\"" + operationName + "\",";
-        response += "\"operationTimestamp\":" + String(operationTimestamp);
+        char response[JSON_RESPONSE_BUFFER_SIZE];
+        
         if (operationTimestamp > 0) {
             char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
             CustomTime::timestampFromUnix(operationTimestamp, timestampBuffer);
-            response += ",\"operationTimestampFormatted\":\"" + String(timestampBuffer) + "\"";
+            snprintf(response, sizeof(response), "{\"operationName\":\"%s\",\"operationTimestamp\":%lu,\"operationTimestampFormatted\":\"%s\"}",
+                operationName, operationTimestamp, timestampBuffer);
+        } else {
+            snprintf(response, sizeof(response), "{\"operationName\":\"%s\",\"operationTimestamp\":%lu}",
+                operationName, operationTimestamp);
         }
-        response += "}";
         
         request->send(HTTP_CODE_OK, "application/json", response); });
 
@@ -906,10 +953,10 @@ void CustomServer::_setRestApi()
         JsonDocument _jsonDocument;
         statisticsToJson(statistics, _jsonDocument);
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.onRequestBody([this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
                           {
@@ -936,9 +983,9 @@ void CustomServer::_setRestApi()
             JsonDocument _jsonDocument;
             deserializeJson(_jsonDocument, buffer->data(), buffer->size());
 
-            String _buffer;
-            serializeJson(_jsonDocument, _buffer);
-            _serverLog(_buffer.c_str(), TAG, LogLevel::DEBUG, request);
+            char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+            serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+            _serverLog(_buffer, TAG, LogLevel::DEBUG, request);
 
             if (request->url() == "/rest/set-calibration") {
                 _serverLog("Request to set calibration values", TAG, LogLevel::INFO, request);
@@ -1076,12 +1123,12 @@ void CustomServer::_setRestApi()
                 _serverLog("Request to upload file", TAG, LogLevel::INFO, request);
     
                 if (_jsonDocument["filename"] && _jsonDocument["data"]) {
-                    String _filename = _jsonDocument["filename"];
-                    String _data = _jsonDocument["data"];
+                    const char* filename = _jsonDocument["filename"];
+                    const char* data = _jsonDocument["data"];
     
-                    File _file = SPIFFS.open(_filename, FILE_WRITE);
+                    File _file = SPIFFS.open(filename, FILE_WRITE);
                     if (_file) {
-                        _file.print(_data);
+                        _file.print(data);
                         _file.close();
     
                         request->send(HTTP_CODE_OK, "application/json", "{\"message\":\"File uploaded\"}");
@@ -1127,18 +1174,19 @@ void CustomServer::_setRestApi()
             _loops++;
 
             // Skip if private in name
-            String _filename = String(_file.path());
+            const char* filename = _file.path();
 
-            if (_filename.indexOf("secret") == -1) _jsonDocument[_filename] = _file.size();
-            _jsonDocument[_filename] = _file.size();
+            if (strstr(filename, "secret") == nullptr) {
+                _jsonDocument[filename] = _file.size();
+            }
             
             _file = _root.openNextFile();
         }
 
-        String _buffer;
-        serializeJson(_jsonDocument, _buffer);
+        char _buffer[JSON_RESPONSE_BUFFER_SIZE];
+        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
-        request->send(HTTP_CODE_OK, "application/json", _buffer.c_str()); });
+        request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
     _server.on("/rest/file/*", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
@@ -1148,28 +1196,34 @@ void CustomServer::_setRestApi()
         }
         _serverLog("Request to get file", TAG, LogLevel::DEBUG, request);
     
-        String _filename = request->url().substring(10);
+        char filename[256];
+        const char* url = request->url().c_str();
+        if (strlen(url) > 10) {
+            snprintf(filename, sizeof(filename), "%s", url + 10);
+        } else {
+            filename[0] = '\0';
+        }
 
-        if (_filename.indexOf("secret") != -1) {
+        if (strstr(filename, "secret") != nullptr) {
             request->send(HTTP_CODE_UNAUTHORIZED, "application/json", "{\"message\":\"Unauthorized\"}");
             return;
         }
     
-        File _file = SPIFFS.open(_filename, FILE_READ);
+        File _file = SPIFFS.open(filename, FILE_READ);
         if (_file) {
-            String contentType = "text/plain";
+            const char* contentType = "text/plain";
             
-            if (_filename.indexOf(".json") != -1) {
+            if (strstr(filename, ".json") != nullptr) {
                 contentType = "application/json";
-            } else if (_filename.indexOf(".html") != -1) {
+            } else if (strstr(filename, ".html") != nullptr) {
                 contentType = "text/html";
-            } else if (_filename.indexOf(".css") != -1) {
+            } else if (strstr(filename, ".css") != nullptr) {
                 contentType = "text/css";
-            } else if (_filename.indexOf(".ico") != -1) {
+            } else if (strstr(filename, ".ico") != nullptr) {
                 contentType = "image/png";
             }
 
-            request->send(_file, _filename, contentType);
+            request->send(_file, filename, contentType);
             _file.close();
         }
         else {
@@ -1196,7 +1250,7 @@ void CustomServer::_setOtherEndpoints()
         request->send(HTTP_CODE_NOT_FOUND, "text/plain", "Not found"); });
 }
 
-void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
+void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const char* filename, size_t index, uint8_t *data, size_t len, bool final)
 {
     // Protect OTA updates with mutex - only allow one at a time
     if (!index) { // First chunk of upload
@@ -1213,7 +1267,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
     TRACE();
     if (!index)
     {
-        if (filename.indexOf(".bin") > -1)
+        if (strstr(filename, ".bin") != nullptr)
         {
             _logger.info("Update requested for firmware", TAG);
         }
@@ -1270,7 +1324,9 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
 void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 {
     TRACE();
-    request->send(HTTP_CODE_OK, "application/json", "{\"status\":\"success\", \"md5\":\"" + Update.md5String() + "\"}");
+    char response[256];
+    snprintf(response, sizeof(response), "{\"status\":\"success\", \"md5\":\"%s\"}", Update.md5String().c_str());
+    request->send(HTTP_CODE_OK, "application/json", response);
 
     TRACE();
     _logger.info("Update complete", TAG);
@@ -1297,7 +1353,9 @@ void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *r
     _ade7953.resumeMeterReadingTask();
     _logger.debug("Reattached ADE7953 interrupt after OTA failure", TAG);
     
-    request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"status\":\"failed\", \"reason\":\"" + String(reason) + "\"}");
+    char response[512];
+    snprintf(response, sizeof(response), "{\"status\":\"failed\", \"reason\":\"%s\"}", reason);
+    request->send(HTTP_CODE_BAD_REQUEST, "application/json", response);
 
     Update.printError(Serial);
     _logger.debug("Size: %d bytes | Progress: %d bytes | Remaining: %d bytes", TAG, Update.size(), Update.progress(), Update.remaining());
@@ -1351,10 +1409,10 @@ bool CustomServer::_checkAuth(AsyncWebServerRequest *request)
     // Check for auth token in header
     if (request->hasHeader("Authorization"))
     {
-        String authHeader = request->getHeader("Authorization")->value();
-        if (authHeader.startsWith("Bearer "))
+        const char* authHeaderValue = request->getHeader("Authorization")->value().c_str();
+        if (strncmp(authHeaderValue, "Bearer ", 7) == 0)
         {
-            String token = authHeader.substring(7);
+            const char* token = authHeaderValue + 7; // Skip "Bearer "
             return validateAuthToken(token);
         }
     }
@@ -1362,15 +1420,20 @@ bool CustomServer::_checkAuth(AsyncWebServerRequest *request)
     // Check for auth token in cookie
     if (request->hasHeader("Cookie"))
     {
-        String cookieHeader = request->getHeader("Cookie")->value();
-        int tokenStart = cookieHeader.indexOf("auth_token=");
-        if (tokenStart != -1)
+        const char* cookieHeaderValue = request->getHeader("Cookie")->value().c_str();
+        const char* tokenStart = strstr(cookieHeaderValue, "auth_token=");
+        if (tokenStart != nullptr)
         {
             tokenStart += 11; // Length of "auth_token="
-            int tokenEnd = cookieHeader.indexOf(";", tokenStart);
-            if (tokenEnd == -1)
-                tokenEnd = cookieHeader.length();
-            String token = cookieHeader.substring(tokenStart, tokenEnd);
+            const char* tokenEnd = strchr(tokenStart, ';');
+            char token[256]; // Buffer for token
+            if (tokenEnd != nullptr) {
+                size_t tokenLen = tokenEnd - tokenStart;
+                if (tokenLen >= sizeof(token)) tokenLen = sizeof(token) - 1;
+                snprintf(token, tokenLen + 1, "%.*s", (int)tokenLen, tokenStart);
+            } else {
+                snprintf(token, sizeof(token), "%s", tokenStart);
+            }
             return validateAuthToken(token);
         }
     }
