@@ -17,8 +17,6 @@
 #include "utils.h"
 
 extern DebugFlagsRtc debugFlagsRtc;
-extern Statistics statistics;
-
 class Mqtt
 {
 public:
@@ -80,8 +78,8 @@ private:
     void _subscribeEnableDebugLogging(); 
     void _subscribeToTopics();
 
-    void _constructMqttTopicWithRule(const char *ruleName, const char *finalTopic, char *topic);
-    void _constructMqttTopic(const char *finalTopic, char *topic);
+    void _constructMqttTopicWithRule(const char *ruleName, const char *finalTopic, char *topic, size_t topicBufferSize);
+    void _constructMqttTopic(const char *finalTopic, char *topic, size_t topicBufferSize);
 
     void _circularBufferToJson(JsonDocument *jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &buffer);
 

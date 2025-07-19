@@ -65,7 +65,7 @@
 #define MAX_PASSWORD_LENGTH 64
 #define MIN_PASSWORD_LENGTH 4
 #define AUTH_SESSION_TIMEOUT (24 * 60 * 60 * 1000) // 24 hours in milliseconds
-#define AUTH_TOKEN_LENGTH 64
+#define AUTH_TOKEN_LENGTH 32
 #define MAX_CONCURRENT_SESSIONS 10 // Maximum number of concurrent login sessions
 
 // Rate limiting for DoS protection
@@ -87,8 +87,8 @@
 #define LOG_PATH "/logger/log.txt"
 #define LOG_CONFIG_PATH "/logger/config.txt"
 #define LOG_TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
-#define LOG_BUFFER_SIZE 50 // Callback queue size
-#define LOG_JSON_BUFFER_SIZE 1024
+#define LOG_BUFFER_SIZE 20 // Callback queue size
+#define LOG_JSON_BUFFER_SIZE 512
 #define LOG_TOPIC_SIZE 64
 
 // UDP Logging
@@ -103,68 +103,75 @@
 #define DEFAULT_DST_OFFSET 0
 #define TIME_SYNC_RETRY_INTERVAL (60 * 1000) // Retry sync if failed
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
-#define TIMESTAMP_BUFFER_SIZE 32  // Size needed for TIMESTAMP_FORMAT (19 chars + null terminator) plus some extra space for safety
+#define TIMESTAMP_BUFFER_SIZE 20  // Size needed for TIMESTAMP_FORMAT (19 chars + null terminator)
 
 // Buffer Sizes for String Operations
-#define URL_BUFFER_SIZE 256           // For HTTP URLs
-#define LINE_PROTOCOL_BUFFER_SIZE 512 // For InfluxDB line protocol strings
-#define PAYLOAD_BUFFER_SIZE (16 * 1024)     // For InfluxDB payload (large batches)
-#define LABEL_BUFFER_SIZE 64          // For sanitized channel labels
+// =================================
+
+// Small buffers (8-32 bytes)
 #define DEVICE_ID_BUFFER_SIZE 16      // For device IDs (increased slightly for safety)
-#define DECRYPTION_BUFFER_SIZE 512    // For decrypted data (certificates, tokens, etc.)
-#define AWS_IOT_CORE_CERT_BUFFER_SIZE 2048 // For AWS IoT Core certificate
-#define AWS_IOT_CORE_PRIVATE_KEY_BUFFER_SIZE 2048 // For AWS IoT Core private key
-#define JSON_STRING_PRINT_BUFFER_SIZE 2048 // For JSON strings (print only, needed usually for debugging)
-#define PUBLIC_LOCATION_PAYLOAD_BUFFER_SIZE 512 // For public location API payloads
-#define VERSION_BUFFER_SIZE 16          // For firmware version strings (major.minor.patch format)
-#define IP_ADDRESS_BUFFER_SIZE 32       // For IPv4 addresses (xxx.xxx.xxx.xxx + null terminator)
-#define CHANNEL_LABEL_BUFFER_SIZE 128   // For channel labels (let's be generous come on!)
+#define VERSION_BUFFER_SIZE 16        // For firmware version strings (major.minor.patch format)
+#define OCTET_BUFFER_SIZE 16          // For IPv4-like strings (xxx.xxx.xxx.xxx + null terminator)
+#define TOKEN_SHORT_KEY_BUFFER_SIZE 16 // For auth tokens "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
+#define MAC_ADDRESS_BUFFER_SIZE 18    // For MAC addresses (xx:xx:xx:xx:xx:xx + null terminator)
+#define DATE_BUFFER_SIZE 11           // For date strings (YYYY-MM-DD + null terminator)
+#define CLIENT_ID_BUFFER_SIZE 32      // For MQTT client IDs
+#define DATABASE_NAME_BUFFER_SIZE 32  // For database names
+#define ORGANIZATION_BUFFER_SIZE 32   // For organization names
+#define MEASUREMENT_BUFFER_SIZE 32    // For measurement names
+#define TIMESTAMP_STRING_BUFFER_SIZE 32 // For timestamp strings
+#define LATITUDE_BUFFER_SIZE 32       // For latitude values (e.g., "45.123456")
+#define LONGITUDE_BUFFER_SIZE 32      // For longitude values (e.g., "9.123456")
+#define LOG_CALLBACK_LEVEL_SIZE 8     // Longest is WARNING (7 chars + null terminator)
+#define MD5_BUFFER_SIZE 33            // For MD5 hashes (32 chars + null terminator)
+
+// Medium buffers (64-128 bytes)
+#define LABEL_BUFFER_SIZE 64          // For sanitized channel labels
 #define CALIBRATION_LABEL_BUFFER_SIZE 64 // For calibration labels
 #define FUNCTION_NAME_BUFFER_SIZE 64  // For function names in restart configuration
-#define REASON_BUFFER_SIZE 256        // For restart reasons
 #define SERVER_NAME_BUFFER_SIZE 64    // For MQTT/InfluxDB server names
-#define CLIENT_ID_BUFFER_SIZE 32      // For MQTT client IDs
 #define TOPIC_BUFFER_SIZE 64          // For MQTT topics
 #define USERNAME_BUFFER_SIZE 64       // For usernames
 #define PASSWORD_BUFFER_SIZE 64       // For passwords
-#define DATABASE_NAME_BUFFER_SIZE 32  // For database names
-#define ORGANIZATION_BUFFER_SIZE 32   // For organization names
 #define BUCKET_NAME_BUFFER_SIZE 64    // For bucket names
-#define TOKEN_BUFFER_SIZE 128         // For authentication tokens
-#define MEASUREMENT_BUFFER_SIZE 32    // For measurement names
 #define STATUS_BUFFER_SIZE 64         // For connection status messages
 #define FIRMWARE_STATUS_BUFFER_SIZE 64 // For firmware status messages
-#define TIMESTAMP_STRING_BUFFER_SIZE 32 // For timestamp strings
-#define ENCRYPTED_DATA_BUFFER_SIZE 2048 // For encrypted data storage
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
-#define DECRYPTION_WORKING_BUFFER_SIZE 2048 // Working buffer for decryption operations
-#define AUTH_PASSWORD_BUFFER_SIZE 64 // For authentication passwords
-#define COUNTRY_BUFFER_SIZE 128        // For country names
-#define CITY_BUFFER_SIZE 128           // For city names
-#define LATITUDE_BUFFER_SIZE 32       // For latitude values (e.g., "45.123456")
-#define LONGITUDE_BUFFER_SIZE 32      // For longitude values (e.g., "9.123456")
-#define AUTH_HEADER_BUFFER_SIZE 128 // For HTTP authorization headers
-#define HTTP_RESPONSE_BUFFER_SIZE 512 // For HTTP response strings
-#define AUTH_TOKEN_BUFFER_SIZE 64     // For authentication tokens
-#define CHARS_TOKEN_BUFFER_SIZE 64 // For characters in token strings
-#define TOKEN_SHORT_KEY_BUFFER_SIZE 16 // For auth tokens "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
+#define AUTH_PASSWORD_BUFFER_SIZE 64  // For authentication passwords
+#define CHARS_TOKEN_BUFFER_SIZE 64    // For characters in token strings
 #define TOKEN_FULL_KEY_BUFFER_SIZE 64 // Full auth tokens
-#define JSON_RESPONSE_BUFFER_SIZE 1024 // For JSON response strings
-#define MD5_BUFFER_SIZE 33            // For MD5 hashes (32 chars + null terminator)
-#define FULLURL_BUFFER_SIZE 512       // For full URL with query parameters
 #define BUTTON_HANDLER_OPERATION_BUFFER_SIZE 64 // For button handler operations
-#define DATE_BUFFER_SIZE 11 // For date strings (YYYY-MM-DD + null terminator)
-#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE 1024 // For MQTT subscribe messages
-#define WIFI_HOSTNAME_BUFFER_SIZE 128 // For WiFi hostname
-#define ENCODED_CREDENTIALS_BUFFER_SIZE 256 // For base64 encoded credentials
-#define FILENAME_BUFFER_SIZE 256 // For file names in the filesystem
-#define LOG_CALLBACK_TIMESTAMP_SIZE 32
-#define LOG_CALLBACK_LEVEL_SIZE     16
-#define LOG_CALLBACK_FUNCTION_SIZE  64
-#define LOG_CALLBACK_MESSAGE_SIZE   256
+#define LOG_CALLBACK_FUNCTION_SIZE 16 // Reduced to save stack space
+#define CHANNEL_LABEL_BUFFER_SIZE 128 // For channel labels (let's be generous come on!)
+#define TOKEN_BUFFER_SIZE 128         // For authentication tokens
+#define COUNTRY_BUFFER_SIZE 128       // For country names
+#define CITY_BUFFER_SIZE 128          // For city names
+#define AUTH_HEADER_BUFFER_SIZE 128   // For HTTP authorization headers
+#define LOG_CALLBACK_MESSAGE_SIZE 128 // Reduced to save stack space
+#define WIFI_SSID_BUFFER_SIZE 128     // For WiFi SSID
 
-// Extern global variables
-extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lowercase hex without colons)
+// Large buffers (256-512 bytes)
+#define REASON_BUFFER_SIZE 256        // For restart reasons
+#define URL_BUFFER_SIZE 256           // For HTTP URLs
+#define ENCODED_CREDENTIALS_BUFFER_SIZE 256 // For base64 encoded credentials
+#define FILENAME_BUFFER_SIZE 256      // For file names in the filesystem
+#define LINE_PROTOCOL_BUFFER_SIZE 512 // For InfluxDB line protocol strings
+#define DECRYPTION_BUFFER_SIZE 512    // For decrypted data (certificates, tokens, etc.)
+#define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
+#define PUBLIC_LOCATION_PAYLOAD_BUFFER_SIZE 512 // For public location API payloads
+#define HTTP_RESPONSE_BUFFER_SIZE 512 // For HTTP response strings
+#define JSON_RESPONSE_BUFFER_SIZE 512 // For JSON response strings (reduced from 1KB)
+#define FULLURL_BUFFER_SIZE 512       // For full URL with query parameters
+#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE 512 // For MQTT subscribe messages (reduced from 1KB)
+#define JSON_MQTT_BUFFER_SIZE 512     // For MQTT JSON payloads
+
+// Very large buffers (1KB+)
+#define ENCRYPTED_DATA_BUFFER_SIZE 1024 // For encrypted data storage (reduced from 2KB)
+#define DECRYPTION_WORKING_BUFFER_SIZE 1024 // Working buffer for decryption operations (reduced from 2KB)
+#define JSON_MQTT_LARGE_BUFFER_SIZE 2048 // For larger JSON payloads in MQTT messages
+#define AWS_IOT_CORE_CERT_BUFFER_SIZE 2048 // For AWS IoT Core certificate
+#define AWS_IOT_CORE_PRIVATE_KEY_BUFFER_SIZE 2048 // For AWS IoT Core private key
+#define PAYLOAD_BUFFER_SIZE 1024 // For InfluxDB payload (reduced from 16KB to 4KB)
 
 // Webserver
 #define WEBSERVER_PORT 80
@@ -228,7 +235,7 @@ extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lower
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS 150 // The maximum number of points that can be sent in a single payload. Going higher than about 150 leads to unstable connections
 #define MQTT_PAYLOAD_LIMIT 32768 // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
-#define MQTT_MAX_TOPIC_LENGTH 256 // The maximum length of a MQTT topic
+#define MQTT_MAX_TOPIC_LENGTH 64 // The maximum length of a MQTT topic
 #define MQTT_PROVISIONING_TIMEOUT (60 * 1000) // The timeout for the provisioning response
 #define MQTT_PROVISIONING_LOOP_CHECK (1 * 1000) // Interval between two certificates check on memory
 #define MQTT_DEBUG_LOGGING_DEFAULT_DURATION (3 * 60 * 1000) 
@@ -268,7 +275,7 @@ extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lower
 #define INFLUXDB_TOKEN_DEFAULT ""
 #define INFLUXDB_MEASUREMENT_DEFAULT "meter"
 #define INFLUXDB_FREQUENCY_DEFAULT 15  // In seconds
-#define INFLUXDB_BUFFER_SIZE 50 // The number of points to buffer before sending to InfluxDB
+#define INFLUXDB_BUFFER_SIZE 20 // The number of points to buffer before sending to InfluxDB
 #define INFLUXDB_USE_SSL_DEFAULT false
 #define INFLUXDB_LOOP_INTERVAL 100 // Interval between two InfluxDB loop checks
 #define INFLUXDB_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
@@ -311,7 +318,7 @@ extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lower
 
 // Task
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task" // The name of the ADE7953 task
-#define ADE7953_METER_READING_TASK_STACK_SIZE (16 * 1024) // The stack size for the ADE7953 task (increased from 8192 to prevent stack overflow in JSON operations)
+#define ADE7953_METER_READING_TASK_STACK_SIZE (8 * 1024) // The stack size for the ADE7953 task (increased from 8192 to prevent stack overflow in JSON operations)
 #define ADE7953_METER_READING_TASK_PRIORITY 2 // The priority for the ADE7953 task
 
 // Memory safety for JSON operations
@@ -459,3 +466,7 @@ extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lower
 
 // AWS IoT Core endpoint
 #define AWS_IOT_CORE_PORT 8883
+
+// -----------------------
+// Extern global variables
+extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lowercase hex without colons)

@@ -42,10 +42,18 @@ struct Statistics {
   unsigned long wifiConnection;
   unsigned long wifiConnectionError;
 
+  unsigned long logVerbose;
+  unsigned long logDebug;
+  unsigned long logInfo;
+  unsigned long logWarning;
+  unsigned long logError;
+  unsigned long logFatal;
+
   Statistics() 
     : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0), 
-    mqttMessagesPublished(0), customMqttMessagesPublished(0), modbusRequests(0), modbusRequestsError(0), 
-    influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0) {}
+    mqttMessagesPublished(0), mqttMessagesPublishedError(0), customMqttMessagesPublished(0), customMqttMessagesPublishedError(0), modbusRequests(0), modbusRequestsError(0), 
+    influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0),
+    logVerbose(0), logDebug(0), logInfo(0), logWarning(0), logError(0), logFatal(0) {}
 };
 
 struct DebugFlagsRtc {
@@ -339,7 +347,7 @@ struct CrashData {
 // Define maximum lengths for each field
 
 struct LogJson {
-    char timestamp[LOG_CALLBACK_TIMESTAMP_SIZE];
+    char timestamp[TIMESTAMP_BUFFER_SIZE];
     unsigned long millisEsp;
     char level[LOG_CALLBACK_LEVEL_SIZE];
     unsigned int coreId;
@@ -366,7 +374,7 @@ struct LogJson {
 // Rate limiting structure for DoS protection
 // --------------------
 struct RateLimitEntry {
-    char ipAddress[IP_ADDRESS_BUFFER_SIZE];
+    char ipAddress[OCTET_BUFFER_SIZE];
     int failedAttempts;
     unsigned long lastFailedAttempt;
     unsigned long blockedUntil;
@@ -375,10 +383,38 @@ struct RateLimitEntry {
         snprintf(ipAddress, sizeof(ipAddress), "%s", "");
     }
     RateLimitEntry(const char* ip) : failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {
-        if (ip && strlen(ip) < IP_ADDRESS_BUFFER_SIZE) {
+        if (ip && strlen(ip) < OCTET_BUFFER_SIZE) {
             snprintf(ipAddress, sizeof(ipAddress), "%s", ip);
         } else {
             snprintf(ipAddress, sizeof(ipAddress), "%s", "");
         }
     }
 };
+
+struct WifiInfo {
+    char macAddress[MAC_ADDRESS_BUFFER_SIZE];
+    char localIp[OCTET_BUFFER_SIZE];
+    char subnetMask[OCTET_BUFFER_SIZE];
+    char gatewayIp[OCTET_BUFFER_SIZE] ;
+    char dnsIp[OCTET_BUFFER_SIZE];
+    char status[STATUS_BUFFER_SIZE];
+    char ssid[WIFI_SSID_BUFFER_SIZE];
+    char bssid[MAC_ADDRESS_BUFFER_SIZE];
+    int rssi;
+
+    WifiInfo() : rssi(0) {
+        snprintf(macAddress, sizeof(macAddress), "%s", "");
+        snprintf(localIp, sizeof(localIp), "%s", "");
+        snprintf(subnetMask, sizeof(subnetMask), "%s", "");
+        snprintf(gatewayIp, sizeof(gatewayIp), "%s", "");
+        snprintf(dnsIp, sizeof(dnsIp), "%s", "");
+        snprintf(status, sizeof(status), "%s", "Unknown");
+        snprintf(ssid, sizeof(ssid), "%s", "Unknown");
+        snprintf(bssid, sizeof(bssid), "%s", "");
+    }
+};
+
+// -----------------------
+// Extern global variables
+extern MainFlags mainFlags;
+extern Statistics statistics;

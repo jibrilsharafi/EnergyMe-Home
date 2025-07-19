@@ -10,8 +10,6 @@
 #include "structs.h"
 #include "utils.h"
 
-extern Statistics statistics;
-
 class CustomWifi
 {
 public:
@@ -23,8 +21,9 @@ public:
     void loop();
     void resetWifi();
 
-    void getWifiStatus(JsonDocument &jsonDocument);
-    void printWifiStatus();
+    WifiInfo getWifiInfo();
+    void getWifiInfoJson(JsonDocument &jsonDocument);
+    void printWifiInfo();
 
 private:
     bool _connectToWifi();

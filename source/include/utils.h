@@ -30,7 +30,6 @@ extern Led led;
 extern RestartConfiguration restartConfiguration;
 extern MainFlags mainFlags;
 extern PublishMqtt publishMqtt;
-extern Statistics statistics;
 
 void getJsonProductInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
@@ -42,6 +41,7 @@ void cleanupInterruptHandling();
 
 void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
 void printDeviceStatus();
+void updateStatistics();
 void printStatistics();
 
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);

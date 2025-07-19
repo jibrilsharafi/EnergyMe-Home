@@ -505,7 +505,7 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
         _logger.verbose(
             "Parsing JSON data channel %s | Active: %d | Reverse: %d | Label: %s | Phase: %d | Calibration Label: %s", 
             TAG, 
-            _kv.key(), 
+            _kv.key().c_str(),
             _kv.value()["active"].as<bool>(), 
             _kv.value()["reverse"].as<bool>(), 
             _kv.value()["label"].as<const char*>(), 

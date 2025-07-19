@@ -19,8 +19,6 @@
 #include "structs.h"
 #include "utils.h"
 
-extern Statistics statistics;
-
 class Ade7953
 {
 public:

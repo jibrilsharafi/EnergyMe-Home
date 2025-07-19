@@ -346,7 +346,7 @@ void CustomServer::_setRestApi()
             JsonDocument jsonDoc;
             deserializeJson(jsonDoc, buffer->data(), buffer->size());
             
-            char clientIp[IP_ADDRESS_BUFFER_SIZE];
+            char clientIp[OCTET_BUFFER_SIZE];
             snprintf(clientIp, sizeof(clientIp), "%s", request->client()->remoteIP().toString().c_str());
             
             // Check if IP is blocked due to too many failed attempts
@@ -370,7 +370,7 @@ void CustomServer::_setRestApi()
                     request->send(HTTP_CODE_TOO_MANY_REQUESTS, "application/json", "{\"success\":false,\"message\":\"Maximum concurrent sessions reached. Please try again later or ask another user to logout.\"}");
                     _serverLog("Login rejected - maximum sessions reached", TAG, LogLevel::WARNING, request);
                 } else {
-                    char token[AUTH_TOKEN_BUFFER_SIZE];
+                    char token[AUTH_TOKEN_LENGTH + 1];
                     generateAuthToken(token, sizeof(token));
                     
                     JsonDocument response;
@@ -381,7 +381,7 @@ void CustomServer::_setRestApi()
                     char responseBuffer[JSON_RESPONSE_BUFFER_SIZE];
                     serializeJson(response, responseBuffer, sizeof(responseBuffer));
                     
-                    char cookieValue[AUTH_TOKEN_BUFFER_SIZE + 50];
+                    char cookieValue[AUTH_TOKEN_LENGTH + 1 + 50];
                     snprintf(cookieValue, sizeof(cookieValue), "auth_token=%s; Path=/; Max-Age=86400; HttpOnly", token);
                     
                     AsyncWebServerResponse *resp = request->beginResponse(HTTP_CODE_OK, "application/json", responseBuffer);
@@ -410,7 +410,7 @@ void CustomServer::_setRestApi()
                 char authHeader[AUTH_HEADER_BUFFER_SIZE];
                 snprintf(authHeader, sizeof(authHeader), "%s", request->getHeader("Authorization")->value().c_str());
                 if (strncmp(authHeader, "Bearer ", 7) == 0) {
-                    char token[AUTH_TOKEN_BUFFER_SIZE];
+                    char token[AUTH_TOKEN_LENGTH + 1];
                     snprintf(token, sizeof(token), "%s", authHeader + 7);
                     clearAuthToken(token);
                 }
@@ -523,7 +523,7 @@ void CustomServer::_setRestApi()
         _serverLog("Request to get WiFi values", TAG, LogLevel::DEBUG, request);
         
         JsonDocument _jsonDocument;
-        _customWifi.getWifiStatus(_jsonDocument);
+        _customWifi.getWifiInfoJson(_jsonDocument);
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
         serializeJson(_jsonDocument, _buffer, sizeof(_buffer));

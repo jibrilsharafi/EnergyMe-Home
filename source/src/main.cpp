@@ -507,6 +507,9 @@ void loop() {
       lastMaintenanceCheck = millis();      
       
       TRACE();
+      updateStatistics();
+
+      TRACE();
       printStatistics();
       
       TRACE();

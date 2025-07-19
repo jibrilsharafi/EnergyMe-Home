@@ -466,8 +466,22 @@ void printDeviceStatus()
     );
 }
 
+void updateStatistics() {
+    logger.debug("Updating statistics...", TAG);
+
+    // The only statistic which is (currently) updated here is the log count
+    statistics.logVerbose = logger.getVerboseCount();
+    statistics.logDebug = logger.getDebugCount();
+    statistics.logInfo = logger.getInfoCount();
+    statistics.logWarning = logger.getWarningCount();
+    statistics.logError = logger.getErrorCount();
+    statistics.logFatal = logger.getFatalCount();
+
+    logger.debug("Statistics updated", TAG);
+}
+
 void printStatistics() {
-    logger.debug("Statistics - ADE7953: %d total interrupts | %d handled interrupts | %d readings | %d reading failures", 
+    logger.debug("Statistics - ADE7953: %ld total interrupts | %ld handled interrupts | %ld readings | %ld reading failures", 
         TAG, 
         statistics.ade7953TotalInterrupts, 
         statistics.ade7953TotalHandledInterrupts, 
@@ -475,34 +489,44 @@ void printStatistics() {
         statistics.ade7953ReadingCountFailure
     );
 
-    logger.debug("Statistics - MQTT: %d messages published | %d errors", 
+    logger.debug("Statistics - MQTT: %ld messages published | %ld errors", 
         TAG, 
         statistics.mqttMessagesPublished, 
         statistics.mqttMessagesPublishedError
     );
 
-    logger.debug("Statistics - Custom MQTT: %d messages published | %d errors", 
+    logger.debug("Statistics - Custom MQTT: %ld messages published | %ld errors", 
         TAG, 
         statistics.customMqttMessagesPublished, 
         statistics.customMqttMessagesPublishedError
     );
 
-    logger.debug("Statistics - Modbus: %d requests | %d errors", 
+    logger.debug("Statistics - Modbus: %ld requests | %ld errors", 
         TAG, 
         statistics.modbusRequests, 
         statistics.modbusRequestsError
     );
 
-    logger.debug("Statistics - InfluxDB: %d uploads | %d errors", 
+    logger.debug("Statistics - InfluxDB: %ld uploads | %ld errors", 
         TAG, 
         statistics.influxdbUploadCount, 
         statistics.influxdbUploadCountError
     );
 
-    logger.debug("Statistics - WiFi: %d connections | %d errors", 
+    logger.debug("Statistics - WiFi: %ld connections | %ld errors", 
         TAG, 
         statistics.wifiConnection, 
         statistics.wifiConnectionError
+    );
+
+    logger.debug("Statistics - Log: %ld verbose | %ld debug | %ld info | %ld warning | %ld error | %ld fatal", 
+        TAG, 
+        statistics.logVerbose, 
+        statistics.logDebug, 
+        statistics.logInfo, 
+        statistics.logWarning, 
+        statistics.logError, 
+        statistics.logFatal
     );
 }
 
@@ -1151,10 +1175,6 @@ bool setAuthPassword(const char* newPassword) {
 }
 
 void generateAuthToken(char* tokenBuffer, size_t tokenBufferSize) {
-    if (!tokenBuffer || tokenBufferSize < AUTH_TOKEN_LENGTH + 1) { // +1 for null terminator
-        logger.error("Invalid token buffer parameters", TAG);
-        return;
-    }
     // Check if we can accept more tokens
     if (!canAcceptMoreTokens()) {
         logger.warning("Cannot generate new token: maximum concurrent sessions reached (%d)", TAG, MAX_CONCURRENT_SESSIONS);

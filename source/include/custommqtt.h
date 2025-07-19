@@ -13,8 +13,6 @@
 #include "structs.h"
 #include "utils.h"
 
-extern Statistics statistics;
-
 class CustomMqtt
 {
 public:

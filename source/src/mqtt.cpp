@@ -330,7 +330,27 @@ void Mqtt::_setCertificates() {
     readEncryptedPreferences(PREFS_KEY_CERTIFICATE, preshared_encryption_key, _awsIotCoreCert, sizeof(_awsIotCoreCert));
     readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, preshared_encryption_key, _awsIotCorePrivateKey, sizeof(_awsIotCorePrivateKey));
 
-    _logger.debug("Certificates set", TAG);
+    // Debug certificate lengths and format
+    size_t certLen = strlen(_awsIotCoreCert);
+    size_t keyLen = strlen(_awsIotCorePrivateKey);
+    _logger.debug("Certificate length: %d bytes, Private key length: %d bytes", TAG, certLen, keyLen);
+
+    // Validate certificate format
+    if (certLen < 10 || strstr(_awsIotCoreCert, "-----BEGIN") == nullptr) {
+        _logger.error("Invalid certificate format detected. Certificate may be corrupted.", TAG);
+        clearCertificates();
+        setRestartEsp32(TAG, "Invalid certificate format");
+        return;
+    }
+
+    if (keyLen < 10 || strstr(_awsIotCorePrivateKey, "-----BEGIN") == nullptr) {
+        _logger.error("Invalid private key format detected. Private key may be corrupted.", TAG);
+        clearCertificates();
+        setRestartEsp32(TAG, "Invalid private key format");
+        return;
+    }
+
+    _logger.debug("Certificates set and validated", TAG);
 }
 
 void Mqtt::_claimProcess() {
@@ -405,11 +425,11 @@ void Mqtt::_claimProcess() {
     }
 }
 
-void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topic) {
+void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topic, size_t topicBufferSize) {
     TRACE();
     snprintf(
         topic,
-        sizeof(topic),
+        topicBufferSize,
         "%s/%s/%s/%s/%s/%s",
         MQTT_BASIC_INGEST,
         ruleName,
@@ -422,11 +442,12 @@ void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTo
     _logger.debug("Constructing MQTT topic with rule for %s | %s", TAG, finalTopic, topic);
 }
 
-void Mqtt::_constructMqttTopic(const char* finalTopic, char* topic) {
+void Mqtt::_constructMqttTopic(const char* finalTopic, char* topic, size_t topicBufferSize) {
     TRACE();
+
     snprintf(
         topic,
-        sizeof(topic),
+        topicBufferSize,
         "%s/%s/%s/%s",
         MQTT_TOPIC_1,
         MQTT_TOPIC_2,
@@ -454,15 +475,15 @@ void Mqtt::_setupTopics() {
     _logger.debug("MQTT topics setup complete", TAG);
 }
 
-void Mqtt::_setTopicConnectivity() { _constructMqttTopic(MQTT_TOPIC_CONNECTIVITY, _mqttTopicConnectivity); }
-void Mqtt::_setTopicMeter() { _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter); }
-void Mqtt::_setTopicStatus() { _constructMqttTopic(MQTT_TOPIC_STATUS, _mqttTopicStatus); }
-void Mqtt::_setTopicMetadata() { _constructMqttTopic(MQTT_TOPIC_METADATA, _mqttTopicMetadata); }
-void Mqtt::_setTopicChannel() { _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel); }
-void Mqtt::_setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash); }
-void Mqtt::_setTopicMonitor() { _constructMqttTopic(MQTT_TOPIC_MONITOR, _mqttTopicMonitor); }
-void Mqtt::_setTopicGeneralConfiguration() { _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration); }
-void Mqtt::_setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics); }
+void Mqtt::_setTopicConnectivity() { _constructMqttTopic(MQTT_TOPIC_CONNECTIVITY, _mqttTopicConnectivity, sizeof(_mqttTopicConnectivity)); }
+void Mqtt::_setTopicMeter() { _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
+void Mqtt::_setTopicStatus() { _constructMqttTopic(MQTT_TOPIC_STATUS, _mqttTopicStatus, sizeof(_mqttTopicStatus)); }
+void Mqtt::_setTopicMetadata() { _constructMqttTopic(MQTT_TOPIC_METADATA, _mqttTopicMetadata, sizeof(_mqttTopicMetadata)); }
+void Mqtt::_setTopicChannel() { _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel, sizeof(_mqttTopicChannel)); }
+void Mqtt::_setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash, sizeof(_mqttTopicCrash)); }
+void Mqtt::_setTopicMonitor() { _constructMqttTopic(MQTT_TOPIC_MONITOR, _mqttTopicMonitor, sizeof(_mqttTopicMonitor)); }
+void Mqtt::_setTopicGeneralConfiguration() { _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration, sizeof(_mqttTopicGeneralConfiguration)); }
+void Mqtt::_setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
 
 // TODO: use messagepack instead of JSON here for efficiency
 void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter) {
@@ -579,7 +600,7 @@ void Mqtt::_publishConnectivity(bool isOnline) {
     _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["connectivity"] = isOnline ? "online" : "offline";
 
-    char connectivityMessage[JSON_RESPONSE_BUFFER_SIZE];
+    char connectivityMessage[JSON_MQTT_BUFFER_SIZE];
     serializeJson(_jsonDocument, connectivityMessage, sizeof(connectivityMessage));
 
     if (_publishMessage(_mqttTopicConnectivity, connectivityMessage, true)) {_publishMqtt.connectivity = false;} // Publish with retain
@@ -594,7 +615,7 @@ void Mqtt::_publishMeter() {
     JsonDocument _jsonDocument;
     _circularBufferToJson(&_jsonDocument, _payloadMeter);
 
-    char meterMessage[JSON_RESPONSE_BUFFER_SIZE];
+    char meterMessage[JSON_MQTT_LARGE_BUFFER_SIZE];
     serializeJson(_jsonDocument, meterMessage, sizeof(meterMessage));
 
     if (_publishMessage(_mqttTopicMeter, meterMessage)) {_publishMqtt.meter = false;}
@@ -614,7 +635,7 @@ void Mqtt::_publishStatus() {
     _jsonDocument["freeHeap"] = ESP.getFreeHeap();
     _jsonDocument["freeSpiffs"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
 
-    char statusMessage[JSON_RESPONSE_BUFFER_SIZE];
+    char statusMessage[JSON_MQTT_BUFFER_SIZE];
     serializeJson(_jsonDocument, statusMessage, sizeof(statusMessage));
 
     if (_publishMessage(_mqttTopicStatus, statusMessage)) {_publishMqtt.status = false;}
@@ -632,7 +653,7 @@ void Mqtt::_publishMetadata() {
     _jsonDocument["firmwareBuildVersion"] = FIRMWARE_BUILD_VERSION;
     _jsonDocument["firmwareBuildDate"] = FIRMWARE_BUILD_DATE;
 
-    char metadataMessage[JSON_RESPONSE_BUFFER_SIZE];
+    char metadataMessage[JSON_MQTT_BUFFER_SIZE];
     serializeJson(_jsonDocument, metadataMessage, sizeof(metadataMessage));
 
     if (_publishMessage(_mqttTopicMetadata, metadataMessage)) {_publishMqtt.metadata = false;}
@@ -651,7 +672,7 @@ void Mqtt::_publishChannel() {
     _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["data"] = _jsonChannelData;
 
-    char channelMessage[JSON_RESPONSE_BUFFER_SIZE];
+    char channelMessage[JSON_MQTT_BUFFER_SIZE];
     serializeJson(_jsonDocument, channelMessage, sizeof(channelMessage));
  
     if (_publishMessage(_mqttTopicChannel, channelMessage)) {_publishMqtt.channel = false;}
@@ -683,7 +704,7 @@ void Mqtt::_publishCrash() {
     _jsonDocument["crashData"] = _jsonDocumentCrash;
 
     TRACE();
-    char crashMessage[JSON_RESPONSE_BUFFER_SIZE];
+    char crashMessage[JSON_MQTT_BUFFER_SIZE];
     serializeJson(_jsonDocument, crashMessage, sizeof(crashMessage));
 
     TRACE();
@@ -707,7 +728,7 @@ void Mqtt::_publishMonitor() {
     _jsonDocument["monitorData"] = _jsonDocumentMonitor;
 
     TRACE();
-    char crashMonitorMessage[JSON_RESPONSE_BUFFER_SIZE];
+    char crashMonitorMessage[JSON_MQTT_BUFFER_SIZE];
     serializeJson(_jsonDocument, crashMonitorMessage, sizeof(crashMonitorMessage));
 
     TRACE();
@@ -728,7 +749,7 @@ void Mqtt::_publishGeneralConfiguration() {
     generalConfigurationToJson(generalConfiguration, _jsonDocumentConfiguration);
     _jsonDocument["generalConfiguration"] = _jsonDocumentConfiguration;
 
-    char generalConfigurationMessage[JSON_RESPONSE_BUFFER_SIZE];
+    char generalConfigurationMessage[JSON_MQTT_BUFFER_SIZE];
     serializeJson(_jsonDocument, generalConfigurationMessage, sizeof(generalConfigurationMessage));
 
     if (_publishMessage(_mqttTopicGeneralConfiguration, generalConfigurationMessage)) {_publishMqtt.generalConfiguration = false;}
@@ -747,7 +768,7 @@ void Mqtt::_publishStatistics() {
     statisticsToJson(statistics, _jsonDocumentStatistics);
     _jsonDocument["statistics"] = _jsonDocumentStatistics;
 
-    char statisticsMessage[JSON_RESPONSE_BUFFER_SIZE];
+    char statisticsMessage[JSON_MQTT_BUFFER_SIZE];
     serializeJson(_jsonDocument, statisticsMessage, sizeof(statisticsMessage));
 
     if (_publishMessage(_mqttTopicStatistics, statisticsMessage)) {_publishMqtt.statistics = false;}
@@ -764,11 +785,11 @@ bool Mqtt::_publishProvisioningRequest() {
     _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
 
-    char provisioningRequestMessage[JSON_RESPONSE_BUFFER_SIZE];
+    char provisioningRequestMessage[JSON_MQTT_BUFFER_SIZE];
     serializeJson(_jsonDocument, provisioningRequestMessage, sizeof(provisioningRequestMessage));
 
     char _topic[MQTT_MAX_TOPIC_LENGTH];
-    _constructMqttTopic(MQTT_TOPIC_PROVISIONING_REQUEST, _topic);
+    _constructMqttTopic(MQTT_TOPIC_PROVISIONING_REQUEST, _topic, sizeof(_topic));
 
     return _publishMessage(_topic, provisioningRequestMessage);
 }
@@ -888,7 +909,7 @@ void Mqtt::_subscribeToTopics() {
 void Mqtt::_subscribeUpdateFirmware() {
     _logger.debug("Subscribing to firmware update topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE);
     char _topic[MQTT_MAX_TOPIC_LENGTH];
-    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE, _topic);
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE, _topic, sizeof(_topic));
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
         _logger.warning("Failed to subscribe to firmware update topic", TAG);
@@ -898,7 +919,7 @@ void Mqtt::_subscribeUpdateFirmware() {
 void Mqtt::_subscribeRestart() {
     _logger.debug("Subscribing to restart topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_RESTART);
     char _topic[MQTT_MAX_TOPIC_LENGTH];
-    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_RESTART, _topic);
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_RESTART, _topic, sizeof(_topic));
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
         _logger.warning("Failed to subscribe to restart topic", TAG);
@@ -908,7 +929,7 @@ void Mqtt::_subscribeRestart() {
 void Mqtt::_subscribeEraseCertificates() {
     _logger.debug("Subscribing to erase certificates topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES);
     char _topic[MQTT_MAX_TOPIC_LENGTH];
-    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES, _topic);
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES, _topic, sizeof(_topic));
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
         _logger.warning("Failed to subscribe to erase certificates topic", TAG);
@@ -918,7 +939,7 @@ void Mqtt::_subscribeEraseCertificates() {
 void Mqtt::_subscribeSetGeneralConfiguration() {
     _logger.debug("Subscribing to set general configuration topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION);
     char _topic[MQTT_MAX_TOPIC_LENGTH];
-    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION, _topic);
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION, _topic, sizeof(_topic));
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
         _logger.warning("Failed to subscribe to set general configuration topic", TAG);
@@ -928,7 +949,7 @@ void Mqtt::_subscribeSetGeneralConfiguration() {
 void Mqtt::_subscribeEnableDebugLogging() { 
     _logger.debug("Subscribing to enable debug logging topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING);
     char _topic[MQTT_MAX_TOPIC_LENGTH];
-    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING, _topic);
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING, _topic, sizeof(_topic));
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
         _logger.warning("Failed to subscribe to enable debug logging topic", TAG);
@@ -938,7 +959,7 @@ void Mqtt::_subscribeEnableDebugLogging() {
 void Mqtt::_subscribeProvisioningResponse() {
     _logger.debug("Subscribing to provisioning response topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE);
     char _topic[MQTT_MAX_TOPIC_LENGTH];
-    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE, _topic);
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE, _topic, sizeof(_topic));
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
         _logger.warning("Failed to subscribe to provisioning response topic", TAG);
