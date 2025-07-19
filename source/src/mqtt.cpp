@@ -4,10 +4,10 @@ static const char *TAG = "mqtt";
 
 void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
     TRACE();
-    String message;
-    for (unsigned int i = 0; i < length; i++) {
-        message += (char)payload[i];
-    }
+    char message[512]; // Use fixed buffer size
+    size_t copyLength = (length < sizeof(message) - 1) ? length : sizeof(message) - 1;
+    memcpy(message, payload, copyLength);
+    message[copyLength] = '\0';
 
     if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE)) {
         TRACE();
@@ -27,11 +27,11 @@ void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
         }
 
         if (_jsonDocument["status"] == "success") {
-            String _encryptedCertPem = _jsonDocument["encryptedCertificatePem"];
-            String _encryptedPrivateKey = _jsonDocument["encryptedPrivateKey"];
+            const char* encryptedCertPem = _jsonDocument["encryptedCertificatePem"];
+            const char* encryptedPrivateKey = _jsonDocument["encryptedPrivateKey"];
             
-            writeEncryptedPreferences(PREFS_KEY_CERTIFICATE, _encryptedCertPem.c_str());
-            writeEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, _encryptedPrivateKey.c_str());
+            writeEncryptedPreferences(PREFS_KEY_CERTIFICATE, encryptedCertPem);
+            writeEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, encryptedPrivateKey);
 
             // Restart MQTT connection
             setRestartEsp32("subscribeCallback", "Restarting after successful certificates provisioning");
@@ -579,10 +579,10 @@ void Mqtt::_publishConnectivity(bool isOnline) {
     _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["connectivity"] = isOnline ? "online" : "offline";
 
-    String _connectivityMessage;
-    serializeJson(_jsonDocument, _connectivityMessage);
+    char connectivityMessage[JSON_RESPONSE_BUFFER_SIZE];
+    serializeJson(_jsonDocument, connectivityMessage, sizeof(connectivityMessage));
 
-    if (_publishMessage(_mqttTopicConnectivity, _connectivityMessage.c_str(), true)) {_publishMqtt.connectivity = false;} // Publish with retain
+    if (_publishMessage(_mqttTopicConnectivity, connectivityMessage, true)) {_publishMqtt.connectivity = false;} // Publish with retain
 
     _logger.debug("Connectivity published to MQTT", TAG);
 }
@@ -594,10 +594,10 @@ void Mqtt::_publishMeter() {
     JsonDocument _jsonDocument;
     _circularBufferToJson(&_jsonDocument, _payloadMeter);
 
-    String _meterMessage;
-    serializeJson(_jsonDocument, _meterMessage);
+    char meterMessage[JSON_RESPONSE_BUFFER_SIZE];
+    serializeJson(_jsonDocument, meterMessage, sizeof(meterMessage));
 
-    if (_publishMessage(_mqttTopicMeter, _meterMessage.c_str())) {_publishMqtt.meter = false;}
+    if (_publishMessage(_mqttTopicMeter, meterMessage)) {_publishMqtt.meter = false;}
 
     _logger.debug("Meter data published to MQTT", TAG);
 }
@@ -614,10 +614,10 @@ void Mqtt::_publishStatus() {
     _jsonDocument["freeHeap"] = ESP.getFreeHeap();
     _jsonDocument["freeSpiffs"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
 
-    String _statusMessage;
-    serializeJson(_jsonDocument, _statusMessage);
+    char statusMessage[JSON_RESPONSE_BUFFER_SIZE];
+    serializeJson(_jsonDocument, statusMessage, sizeof(statusMessage));
 
-    if (_publishMessage(_mqttTopicStatus, _statusMessage.c_str())) {_publishMqtt.status = false;}
+    if (_publishMessage(_mqttTopicStatus, statusMessage)) {_publishMqtt.status = false;}
 
     _logger.debug("Status published to MQTT", TAG);
 }
@@ -632,10 +632,10 @@ void Mqtt::_publishMetadata() {
     _jsonDocument["firmwareBuildVersion"] = FIRMWARE_BUILD_VERSION;
     _jsonDocument["firmwareBuildDate"] = FIRMWARE_BUILD_DATE;
 
-    String _metadataMessage;
-    serializeJson(_jsonDocument, _metadataMessage);
+    char metadataMessage[JSON_RESPONSE_BUFFER_SIZE];
+    serializeJson(_jsonDocument, metadataMessage, sizeof(metadataMessage));
 
-    if (_publishMessage(_mqttTopicMetadata, _metadataMessage.c_str())) {_publishMqtt.metadata = false;}
+    if (_publishMessage(_mqttTopicMetadata, metadataMessage)) {_publishMqtt.metadata = false;}
     
     _logger.debug("Metadata published to MQTT", TAG);
 }
@@ -651,10 +651,10 @@ void Mqtt::_publishChannel() {
     _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["data"] = _jsonChannelData;
 
-    String _channelMessage;
-    serializeJson(_jsonDocument, _channelMessage);
+    char channelMessage[JSON_RESPONSE_BUFFER_SIZE];
+    serializeJson(_jsonDocument, channelMessage, sizeof(channelMessage));
  
-    if (_publishMessage(_mqttTopicChannel, _channelMessage.c_str())) {_publishMqtt.channel = false;}
+    if (_publishMessage(_mqttTopicChannel, channelMessage)) {_publishMqtt.channel = false;}
 
     _logger.debug("Channel data published to MQTT", TAG);
 }
@@ -683,11 +683,11 @@ void Mqtt::_publishCrash() {
     _jsonDocument["crashData"] = _jsonDocumentCrash;
 
     TRACE();
-    String _crashMessage;
-    serializeJson(_jsonDocument, _crashMessage);
+    char crashMessage[JSON_RESPONSE_BUFFER_SIZE];
+    serializeJson(_jsonDocument, crashMessage, sizeof(crashMessage));
 
     TRACE();
-    if (_publishMessage(_mqttTopicCrash, _crashMessage.c_str())) {_publishMqtt.crash = false;}
+    if (_publishMessage(_mqttTopicCrash, crashMessage)) {_publishMqtt.crash = false;}
 
     _logger.debug("Crash data published to MQTT", TAG);
 }
@@ -707,11 +707,11 @@ void Mqtt::_publishMonitor() {
     _jsonDocument["monitorData"] = _jsonDocumentMonitor;
 
     TRACE();
-    String _crashMonitorMessage;
-    serializeJson(_jsonDocument, _crashMonitorMessage);
+    char crashMonitorMessage[JSON_RESPONSE_BUFFER_SIZE];
+    serializeJson(_jsonDocument, crashMonitorMessage, sizeof(crashMonitorMessage));
 
     TRACE();
-    if (_publishMessage(_mqttTopicMonitor, _crashMonitorMessage.c_str())) {_publishMqtt.monitor = false;}
+    if (_publishMessage(_mqttTopicMonitor, crashMonitorMessage)) {_publishMqtt.monitor = false;}
 
     _logger.debug("Monitor data published to MQTT", TAG);
 }
@@ -728,10 +728,10 @@ void Mqtt::_publishGeneralConfiguration() {
     generalConfigurationToJson(generalConfiguration, _jsonDocumentConfiguration);
     _jsonDocument["generalConfiguration"] = _jsonDocumentConfiguration;
 
-    String _generalConfigurationMessage;
-    serializeJson(_jsonDocument, _generalConfigurationMessage);
+    char generalConfigurationMessage[JSON_RESPONSE_BUFFER_SIZE];
+    serializeJson(_jsonDocument, generalConfigurationMessage, sizeof(generalConfigurationMessage));
 
-    if (_publishMessage(_mqttTopicGeneralConfiguration, _generalConfigurationMessage.c_str())) {_publishMqtt.generalConfiguration = false;}
+    if (_publishMessage(_mqttTopicGeneralConfiguration, generalConfigurationMessage)) {_publishMqtt.generalConfiguration = false;}
 
     _logger.debug("General configuration published to MQTT", TAG);
 }
@@ -747,10 +747,10 @@ void Mqtt::_publishStatistics() {
     statisticsToJson(statistics, _jsonDocumentStatistics);
     _jsonDocument["statistics"] = _jsonDocumentStatistics;
 
-    String _statisticsMessage;
-    serializeJson(_jsonDocument, _statisticsMessage);
+    char statisticsMessage[JSON_RESPONSE_BUFFER_SIZE];
+    serializeJson(_jsonDocument, statisticsMessage, sizeof(statisticsMessage));
 
-    if (_publishMessage(_mqttTopicStatistics, _statisticsMessage.c_str())) {_publishMqtt.statistics = false;}
+    if (_publishMessage(_mqttTopicStatistics, statisticsMessage)) {_publishMqtt.statistics = false;}
 
     _logger.debug("Statistics published to MQTT", TAG);
 }
@@ -764,13 +764,13 @@ bool Mqtt::_publishProvisioningRequest() {
     _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
     _jsonDocument["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
 
-    String _provisioningRequestMessage;
-    serializeJson(_jsonDocument, _provisioningRequestMessage);
+    char provisioningRequestMessage[JSON_RESPONSE_BUFFER_SIZE];
+    serializeJson(_jsonDocument, provisioningRequestMessage, sizeof(provisioningRequestMessage));
 
     char _topic[MQTT_MAX_TOPIC_LENGTH];
     _constructMqttTopic(MQTT_TOPIC_PROVISIONING_REQUEST, _topic);
 
-    return _publishMessage(_topic, _provisioningRequestMessage.c_str());
+    return _publishMessage(_topic, provisioningRequestMessage);
 }
 
 bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) {

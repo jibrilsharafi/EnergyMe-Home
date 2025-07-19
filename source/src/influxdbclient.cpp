@@ -270,9 +270,12 @@ void InfluxDbClient::_uploadBufferedData()
         char credentials[USERNAME_BUFFER_SIZE + PASSWORD_BUFFER_SIZE + 2]; // +2 for ':' and null terminator
         snprintf(credentials, sizeof(credentials), "%s:%s", _influxDbConfiguration.username, _influxDbConfiguration.password);
         
-        String encodedCredentials = base64::encode(credentials);
+        String encodedCredentialsStr = base64::encode(credentials);
+        char encodedCredentials[256];
+        snprintf(encodedCredentials, sizeof(encodedCredentials), "%s", encodedCredentialsStr.c_str());
+        
         char authHeader[AUTH_HEADER_BUFFER_SIZE];
-        snprintf(authHeader, sizeof(authHeader), "Basic %s", encodedCredentials.c_str());
+        snprintf(authHeader, sizeof(authHeader), "Basic %s", encodedCredentials);
         http.addHeader("Authorization", authHeader);
     }
 
@@ -374,8 +377,8 @@ void InfluxDbClient::_uploadBufferedData()
     else
     {
         char response[512];
-        String httpResponse = http.getString();
-        snprintf(response, sizeof(response), "%.500s", httpResponse.c_str());
+        String httpResponseStr = http.getString();
+        snprintf(response, sizeof(response), "%.500s", httpResponseStr.c_str());
         _logger.error("Failed to upload to InfluxDB. HTTP code: %d, Response: %.100s", TAG, httpCode, response);
         _lastMillisInfluxDbFailed = millis();
         _influxDbConnectionAttempt++;
@@ -520,13 +523,15 @@ bool InfluxDbClient::_testConnection()
     }
     else if (httpCode > 0)
     {
-        _logger.debug("InfluxDB connection response: %s", TAG, http.getString());
+        String responseStr = http.getString();
+        _logger.debug("InfluxDB connection response: %s", TAG, responseStr.c_str());
         http.end();
         return httpCode >= 200 && httpCode < 300;
     }
     else
     {
-        _logger.error("InfluxDB connection failed: %s", TAG, http.errorToString(httpCode));
+        String errorStr = http.errorToString(httpCode);
+        _logger.error("InfluxDB connection failed: %s", TAG, errorStr.c_str());
         http.end();
         return false;
     }
@@ -561,9 +566,12 @@ bool InfluxDbClient::_testCredentials()
         // InfluxDB v1.x compatibility API uses Basic authentication
         char credentials[USERNAME_BUFFER_SIZE + PASSWORD_BUFFER_SIZE + 2]; // +2 for ':' and null terminator
         snprintf(credentials, sizeof(credentials), "%s:%s", _influxDbConfiguration.username, _influxDbConfiguration.password);
-        String encodedCredentials = base64::encode(credentials);
+        String encodedCredentialsStr = base64::encode(credentials);
+        char encodedCredentials[256];
+        snprintf(encodedCredentials, sizeof(encodedCredentials), "%s", encodedCredentialsStr.c_str());
+        
         char authHeader[AUTH_HEADER_BUFFER_SIZE];
-        snprintf(authHeader, sizeof(authHeader), "Basic %s", encodedCredentials.c_str());
+        snprintf(authHeader, sizeof(authHeader), "Basic %s", encodedCredentials);
         http.addHeader("Authorization", authHeader);
     }
 
@@ -583,13 +591,15 @@ bool InfluxDbClient::_testCredentials()
     }
     else if (httpCode > 0)
     {
-        _logger.debug("InfluxDB credentials test response: %s", TAG, http.getString());
+        String responseStr = http.getString();
+        _logger.debug("InfluxDB credentials test response: %s", TAG, responseStr.c_str());
         http.end();
         return httpCode >= 200 && httpCode < 300;
     }
     else
     {
-        _logger.error("InfluxDB credentials test failed: %s", TAG, http.errorToString(httpCode));
+        String errorStr = http.errorToString(httpCode);
+        _logger.error("InfluxDB credentials test failed: %s", TAG, errorStr.c_str());
         http.end();
         return false;
     }
@@ -702,16 +712,16 @@ bool InfluxDbClient::_validateJsonConfiguration(JsonDocument &jsonDocument)
     {_logger.warning("Invalid JSON document", TAG); return false; }
 
     if (!jsonDocument["enabled"].is<bool>()) {_logger.warning("enabled field is not a boolean", TAG); return false; }
-    if (!jsonDocument["server"].is<String>()) {_logger.warning("server field is not a string", TAG); return false; }
+    if (!jsonDocument["server"].is<const char*>()) {_logger.warning("server field is not a string", TAG); return false; }
     if (!jsonDocument["port"].is<int>()) {_logger.warning("port field is not an integer", TAG); return false; }
     if (!jsonDocument["version"].is<int>()) {_logger.warning("version field is not an integer", TAG); return false; }
-    if (!jsonDocument["database"].is<String>()) {_logger.warning("database field is not a string", TAG); return false; }
-    if (!jsonDocument["username"].is<String>()) {_logger.warning("username field is not a string", TAG); return false; }
-    if (!jsonDocument["password"].is<String>()) {_logger.warning("password field is not a string", TAG); return false; }
-    if (!jsonDocument["organization"].is<String>()) {_logger.warning("organization field is not a string", TAG); return false; }
-    if (!jsonDocument["bucket"].is<String>()) {_logger.warning("bucket field is not a string", TAG); return false; }
-    if (!jsonDocument["token"].is<String>()) {_logger.warning("token field is not a string", TAG); return false; }
-    if (!jsonDocument["measurement"].is<String>()) {_logger.warning("measurement field is not a string", TAG); return false; }
+    if (!jsonDocument["database"].is<const char*>()) {_logger.warning("database field is not a string", TAG); return false; }
+    if (!jsonDocument["username"].is<const char*>()) {_logger.warning("username field is not a string", TAG); return false; }
+    if (!jsonDocument["password"].is<const char*>()) {_logger.warning("password field is not a string", TAG); return false; }
+    if (!jsonDocument["organization"].is<const char*>()) {_logger.warning("organization field is not a string", TAG); return false; }
+    if (!jsonDocument["bucket"].is<const char*>()) {_logger.warning("bucket field is not a string", TAG); return false; }
+    if (!jsonDocument["token"].is<const char*>()) {_logger.warning("token field is not a string", TAG); return false; }
+    if (!jsonDocument["measurement"].is<const char*>()) {_logger.warning("measurement field is not a string", TAG); return false; }
     if (!jsonDocument["frequency"].is<int>()) {_logger.warning("frequency field is not an integer", TAG); return false; }
     // Also ensure frequency is between 1 and 3600
     if (jsonDocument["frequency"].as<int>() < 1 || jsonDocument["frequency"].as<int>() > 3600) {

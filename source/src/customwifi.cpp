@@ -203,9 +203,10 @@ void CustomWifi::printWifiStatus()
   _logger.info(
       "MAC: %s | IP: %s | Status: %s | SSID: %s | RSSI: %s",
       TAG,
-      _jsonDocument["macAddress"].as<String>().c_str(),
-      _jsonDocument["localIp"].as<String>().c_str(),
-      _jsonDocument["status"].as<String>().c_str(),
-      _jsonDocument["ssid"].as<String>().c_str(),
-      _jsonDocument["rssi"].as<String>().c_str());
+      _jsonDocument["macAddress"].as<const char*>(),
+      _jsonDocument["localIp"].as<const char*>(),
+      _jsonDocument["status"].as<const char*>(),
+      _jsonDocument["ssid"].as<const char*>(),
+      _jsonDocument["rssi"].as<const char*>()
+    );
 }
