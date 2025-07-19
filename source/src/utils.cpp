@@ -49,9 +49,7 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
     jsonDocument["chip"]["sdkVersion"] = ESP.getSdkVersion();
     jsonDocument["chip"]["id"] = ESP.getEfuseMac();
 
-    char _deviceId[DEVICE_ID_BUFFER_SIZE]; // TODO: understand if we can have a global device ID variable
-    getDeviceId(_deviceId, sizeof(_deviceId));
-    jsonDocument["device"]["id"] = _deviceId;
+    jsonDocument["device"]["id"] = DEVICE_ID;
 
     logger.debug("Device info retrieved", TAG);
 }
@@ -867,11 +865,6 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
 
 void getDeviceId(char* deviceId, size_t maxLength) {
     // Copied from WiFiSTA implementation
-    if (!deviceId || maxLength < 13) { // 12 chars + null terminator
-        logger.error(TAG, "Invalid parameters for device ID generation");
-        return;
-    }
-    
     uint8_t mac[6];
     
     if (WiFiGenericClass::getMode() == WIFI_MODE_NULL) {
@@ -1011,10 +1004,8 @@ void readEncryptedPreferences(const char* preference_key, const char* preshared_
         return;
     }
 
-    char _deviceId[DEVICE_ID_BUFFER_SIZE];
-    getDeviceId(_deviceId, DEVICE_ID_BUFFER_SIZE);
     char _encryptionKey[ENCRYPTION_KEY_BUFFER_SIZE];
-    snprintf(_encryptionKey, ENCRYPTION_KEY_BUFFER_SIZE, "%s%s", preshared_encryption_key, _deviceId);
+    snprintf(_encryptionKey, ENCRYPTION_KEY_BUFFER_SIZE, "%s%s", preshared_encryption_key, DEVICE_ID);
 
     decryptData(_encryptedData, _encryptionKey, decryptedData, decryptedDataSize);
 }
@@ -1322,9 +1313,8 @@ void clearAllAuthTokens() {
 
 void hashPassword(const char* password, char* hashedPassword, size_t hashedPasswordSize) {
     // Simple hash using device ID as salt
-    char _deviceId[DEVICE_ID_BUFFER_SIZE];
-    getDeviceId(_deviceId, sizeof(_deviceId));
-    snprintf(hashedPassword, hashedPasswordSize, "%s%s", password, _deviceId);
+    // Use global device ID
+    snprintf(hashedPassword, hashedPasswordSize, "%s%s", password, DEVICE_ID);
     
     // Basic hash implementation (you might want to use a more secure method)
     uint32_t hash = 0;

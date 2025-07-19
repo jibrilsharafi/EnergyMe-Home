@@ -112,10 +112,9 @@ bool CustomWifi::_connectToWifi()
   });
 
   // This will block until connected or portal times out/exits
-  char _deviceId[DEVICE_ID_BUFFER_SIZE];
-  getDeviceId(_deviceId, sizeof(_deviceId));
-  String hostname = WIFI_CONFIG_PORTAL_SSID " - " + String(_deviceId);
-  bool success = _wifiManager.autoConnect(hostname.c_str());
+  char hostname[128];
+  snprintf(hostname, sizeof(hostname), "%s - %s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
+  bool success = _wifiManager.autoConnect(hostname);
 
   if (success) {
     _logger.info("Connected to WiFi: %s", TAG, WiFi.SSID().c_str());

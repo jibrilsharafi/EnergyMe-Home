@@ -72,6 +72,4 @@ private:
 
     unsigned long _lastMillisMeterPublish = MINIMUM_TIME_BEFORE_VALID_METER; // Do not publish immediately after setup
     unsigned long _lastMillisMeterBuffer = MINIMUM_TIME_BEFORE_VALID_METER; // Do not buffer immediately after setup
-
-    char _deviceId[DEVICE_ID_BUFFER_SIZE];
 };

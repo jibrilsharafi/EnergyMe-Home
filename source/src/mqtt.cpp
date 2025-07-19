@@ -98,10 +98,7 @@ Mqtt::Mqtt(
     _net(net), 
     _publishMqtt(publishMqtt), 
     _payloadMeter(payloadMeter),
-    _restartConfiguration(restartConfiguration)
-{
-    getDeviceId(_deviceId, sizeof(_deviceId));
-}
+    _restartConfiguration(restartConfiguration) {}
 
 void Mqtt::begin() {
 #if HAS_SECRETS
@@ -266,7 +263,7 @@ bool Mqtt::_connectMqtt()
     TRACE();
     if (
         _clientMqtt.connect(
-            _deviceId,
+            DEVICE_ID,
             _mqttTopicConnectivity,
             MQTT_WILL_QOS,
             MQTT_WILL_RETAIN,
@@ -360,7 +357,7 @@ void Mqtt::_claimProcess() {
         _logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", TAG, _connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
         TRACE();
-        if (_clientMqtt.connect(_deviceId)) {
+        if (_clientMqtt.connect(DEVICE_ID)) {
             _logger.debug("Connected to MQTT for claiming certificates", TAG);
             break;
         }
@@ -418,7 +415,7 @@ void Mqtt::_constructMqttTopicWithRule(const char* ruleName, const char* finalTo
         ruleName,
         MQTT_TOPIC_1,
         MQTT_TOPIC_2,
-        _deviceId,
+        DEVICE_ID,
         finalTopic
     );
 
@@ -433,7 +430,7 @@ void Mqtt::_constructMqttTopic(const char* finalTopic, char* topic) {
         "%s/%s/%s/%s",
         MQTT_TOPIC_1,
         MQTT_TOPIC_2,
-        _deviceId,
+        DEVICE_ID,
         finalTopic
     );
 
@@ -448,7 +445,8 @@ void Mqtt::_setupTopics() {
     _setTopicMeter();
     _setTopicStatus();
     _setTopicMetadata();
-    _setTopicChannel();    _setTopicCrash();
+    _setTopicChannel();    
+    _setTopicCrash();
     _setTopicMonitor();
     _setTopicGeneralConfiguration();
     _setTopicStatistics();

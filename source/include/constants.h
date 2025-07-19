@@ -146,11 +146,13 @@
 #define JSON_RESPONSE_BUFFER_SIZE 1024 // For JSON response strings
 #define MD5_BUFFER_SIZE 33            // For MD5 hashes (32 chars + null terminator)
 #define FULLURL_BUFFER_SIZE 512       // For full URL with query parameters
+#define LOG_CALLBACK_TIMESTAMP_SIZE 32
+#define LOG_CALLBACK_LEVEL_SIZE     16
+#define LOG_CALLBACK_FUNCTION_SIZE  64
+#define LOG_CALLBACK_MESSAGE_SIZE   256
 
-#define LOG_CALLBACK_TIMESTAMP_LEN 20
-#define LOG_CALLBACK_LEVEL_LEN     10
-#define LOG_CALLBACK_FUNCTION_LEN  50
-#define LOG_CALLBACK_MESSAGE_LEN   256
+// Extern global variables
+extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lowercase hex without colons)
 
 // Webserver
 #define WEBSERVER_PORT 80

@@ -81,7 +81,6 @@ bool isLatestFirmwareInstalled();
 void updateJsonFirmwareStatus(const char *status, const char *reason);
 
 void getDeviceId(char* deviceId, size_t maxLength);
-void getDeviceIdFromMac(char* deviceId, size_t maxLength);
 
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
 

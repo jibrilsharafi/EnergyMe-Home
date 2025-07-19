@@ -93,8 +93,6 @@ private:
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
     RestartConfiguration &_restartConfiguration;
 
-    char _deviceId[DEVICE_ID_BUFFER_SIZE];
-
     char _mqttTopicConnectivity[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicMeter[MQTT_MAX_TOPIC_LENGTH];
     char _mqttTopicStatus[MQTT_MAX_TOPIC_LENGTH];

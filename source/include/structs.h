@@ -339,12 +339,12 @@ struct CrashData {
 // Define maximum lengths for each field
 
 struct LogJson {
-    char timestamp[LOG_CALLBACK_TIMESTAMP_LEN];
+    char timestamp[LOG_CALLBACK_TIMESTAMP_SIZE];
     unsigned long millisEsp;
-    char level[LOG_CALLBACK_LEVEL_LEN];
+    char level[LOG_CALLBACK_LEVEL_SIZE];
     unsigned int coreId;
-    char function[LOG_CALLBACK_FUNCTION_LEN];
-    char message[LOG_CALLBACK_MESSAGE_LEN];
+    char function[LOG_CALLBACK_FUNCTION_SIZE];
+    char message[LOG_CALLBACK_MESSAGE_SIZE];
 
     LogJson()
         : millisEsp(0), coreId(0) {
