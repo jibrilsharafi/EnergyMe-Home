@@ -1,4 +1,5 @@
 #include "utils.h"
+#include <WiFi.h>
 
 static const char *TAG = "utils";
 
@@ -76,10 +77,10 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
         logger.debug("%s JSON being deserialized is {}", TAG, path);
     }
     
-    String _jsonString;
-    serializeJson(jsonDocument, _jsonString);
-
-    logger.debug("JSON deserialized from SPIFFS correctly: %s", TAG, _jsonString.c_str());
+    // For debugging purposes, serialize to a string and log it
+    char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
+    serializeJson(jsonDocument, _jsonString, sizeof(_jsonString));
+    logger.debug("JSON deserialized from SPIFFS correctly: %s", TAG, _jsonString);
 }
 
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
@@ -99,9 +100,10 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
         logger.debug("%s JSON being serialized is {}", TAG, path);
     }
 
-    String _jsonString;
-    serializeJson(jsonDocument, _jsonString);
-    logger.debug("JSON serialized to SPIFFS correctly: %s", TAG, _jsonString.c_str());
+    // For debugging purposes, serialize to a string and log it
+    char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
+    serializeJson(jsonDocument, _jsonString, sizeof(_jsonString));
+    logger.debug("JSON serialized to SPIFFS correctly: %s", TAG, _jsonString);
 
     return true;
 }
@@ -144,11 +146,11 @@ void createDefaultEnergyFile() {
     JsonDocument _jsonDocument;
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
-        _jsonDocument[String(i)]["activeEnergyImported"] = 0;
-        _jsonDocument[String(i)]["activeEnergyExported"] = 0;
-        _jsonDocument[String(i)]["reactiveEnergyImported"] = 0;
-        _jsonDocument[String(i)]["reactiveEnergyExported"] = 0;
-        _jsonDocument[String(i)]["apparentEnergy"] = 0;
+        _jsonDocument[i]["activeEnergyImported"] = 0;
+        _jsonDocument[i]["activeEnergyExported"] = 0;
+        _jsonDocument[i]["reactiveEnergyImported"] = 0;
+        _jsonDocument[i]["reactiveEnergyExported"] = 0;
+        _jsonDocument[i]["apparentEnergy"] = 0;
     }
 
     serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument);
@@ -642,6 +644,11 @@ bool validateGeneralConfigurationJson(JsonDocument& jsonDocument) {
 // -----------------------------
 
 void getPublicLocation(PublicLocation* publicLocation) {
+    if (!publicLocation) {
+        logger.error("Null pointer passed to getPublicLocation", TAG);
+        return;
+    }
+
     HTTPClient _http;
     JsonDocument _jsonDocument;
 
@@ -650,53 +657,88 @@ void getPublicLocation(PublicLocation* publicLocation) {
     int httpCode = _http.GET();
     if (httpCode > 0) {
         if (httpCode == HTTP_CODE_OK) {
-            String payload = _http.getString();
-            payload.trim();
+            // Use stream directly - efficient and simple
+            DeserializationError error = deserializeJson(_jsonDocument, _http.getStream());
             
-            deserializeJson(_jsonDocument, payload);
+            if (error) {
+                logger.error("JSON parsing failed: %s", TAG, error.c_str());
+                _http.end();
+                return;
+            }
+            
+            // Validate API response
+            if (_jsonDocument["status"] != "success") {
+                logger.error("API returned error status: %s", TAG, 
+                           _jsonDocument["status"].as<const char*>());
+                _http.end();
+                return;
+            }
 
-            publicLocation->country = _jsonDocument["country"].as<String>();
-            publicLocation->city = _jsonDocument["city"].as<String>();
-            publicLocation->latitude = _jsonDocument["lat"].as<String>();
-            publicLocation->longitude = _jsonDocument["lon"].as<String>();
+            // Extract strings safely using const char* and copy to char arrays
+            const char* country = _jsonDocument["country"].as<const char*>();
+            const char* city = _jsonDocument["city"].as<const char*>();
+            const char* latitude = _jsonDocument["lat"].as<const char*>();
+            const char* longitude = _jsonDocument["lon"].as<const char*>();
+            
+            if (country) snprintf(publicLocation->country, sizeof(publicLocation->country), "%s", country);
+            else publicLocation->country[0] = '\0'; // Ensure null termination
+            if (city) snprintf(publicLocation->city, sizeof(publicLocation->city), "%s", city);
+            else publicLocation->city[0] = '\0'; // Ensure null termination
+            if (latitude) snprintf(publicLocation->latitude, sizeof(publicLocation->latitude), "%s", latitude);
+            else publicLocation->latitude[0] = '\0'; // Ensure null termination
+            if (longitude) snprintf(publicLocation->longitude, sizeof(publicLocation->longitude), "%s", longitude);
+            else publicLocation->longitude[0] = '\0'; // Ensure null termination
 
             logger.debug(
-                "Location: %s, %s | Lat: %.4f | Lon: %.4f",
+                "Location: %s, %s | Lat: %s | Lon: %s",
                 TAG,
-                publicLocation->country.c_str(),
-                publicLocation->city.c_str(),
-                publicLocation->latitude.toFloat(),
-                publicLocation->longitude.toFloat()
+                publicLocation->country,
+                publicLocation->city,
+                publicLocation->latitude,
+                publicLocation->longitude
             );
+        } else {
+            logger.warning("HTTP request failed with code: %d", TAG, httpCode);
         }
     } else {
-        logger.error("Error on HTTP request: %d", TAG, httpCode);
+        logger.error("HTTP request error: %s", TAG, _http.errorToString(httpCode).c_str());
     }
 
     _http.end();
 }
 
 void getPublicTimezone(int* gmtOffset, int* dstOffset) {
+    if (!gmtOffset || !dstOffset) {
+        logger.error("Null pointer passed to getPublicTimezone", TAG);
+        return;
+    }
+
     PublicLocation _publicLocation;
     getPublicLocation(&_publicLocation);
 
     HTTPClient _http;
-    String _url = PUBLIC_TIMEZONE_ENDPOINT;
-    _url += "lat=" + _publicLocation.latitude;
-    _url += "&lng=" + _publicLocation.longitude;
-    _url += "&username=" + String(PUBLIC_TIMEZONE_USERNAME);
+    JsonDocument _jsonDocument;
+
+    char _url[URL_BUFFER_SIZE];
+    snprintf(_url, sizeof(_url), "%slat=%s&lng=%s&username=%s",
+        PUBLIC_TIMEZONE_ENDPOINT,
+        _publicLocation.latitude,
+        _publicLocation.longitude,
+        PUBLIC_TIMEZONE_USERNAME);
 
     _http.begin(_url);
     int httpCode = _http.GET();
 
     if (httpCode > 0) {
         if (httpCode == HTTP_CODE_OK) {
-            String payload = _http.getString();
-            payload.trim();
+            // Use stream directly - efficient and simple
+            DeserializationError error = deserializeJson(_jsonDocument, _http.getStream());
             
-            JsonDocument _jsonDocument;
-
-            deserializeJson(_jsonDocument, payload);
+            if (error) {
+                logger.error("JSON parsing failed: %s", TAG, error.c_str());
+                _http.end();
+                return;
+            }
 
             *gmtOffset = _jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
             *dstOffset = _jsonDocument["dstOffset"].as<int>() * 3600 - *gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
@@ -707,14 +749,14 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
                 _jsonDocument["rawOffset"].as<int>(),
                 _jsonDocument["dstOffset"].as<int>()
             );
+        } else {
+            logger.warning("HTTP request failed with code: %d", TAG, httpCode);
         }
     } else {
-        logger.error(
-            "Error on HTTP request: %d", 
-            TAG, 
-            httpCode
-        );
+        logger.error("HTTP request error: %s", TAG, _http.errorToString(httpCode).c_str());
     }
+
+    _http.end();
 }
 
 void updateTimezone() {
@@ -777,23 +819,26 @@ bool isLatestFirmwareInstalled() {
         return true;
     }
 
-    String _latestFirmwareVersion = _jsonDocument["buildVersion"].as<String>();
-    String _currentFirmwareVersion = FIRMWARE_BUILD_VERSION;
+    char _latestFirmwareVersion[VERSION_BUFFER_SIZE];
+    char _currentFirmwareVersion[VERSION_BUFFER_SIZE];
+
+    snprintf(_latestFirmwareVersion, sizeof(_latestFirmwareVersion), "%s", _jsonDocument["buildVersion"].as<const char*>());
+    snprintf(_currentFirmwareVersion, sizeof(_currentFirmwareVersion), "%s", FIRMWARE_BUILD_VERSION);
 
     logger.debug(
         "Latest firmware version: %s | Current firmware version: %s",
         TAG,
-        _latestFirmwareVersion.c_str(),
-        _currentFirmwareVersion.c_str()
+        _latestFirmwareVersion,
+        _currentFirmwareVersion
     );
 
-    if (_latestFirmwareVersion.length() == 0 || _latestFirmwareVersion.indexOf(".") == -1) {
+    if (strlen(_latestFirmwareVersion) == 0 || strchr(_latestFirmwareVersion, '.') == NULL) {
         logger.warning("Latest firmware version is empty or in the wrong format", TAG);
         return true;
     }
 
     int _latestMajor, _latestMinor, _latestPatch;
-    sscanf(_latestFirmwareVersion.c_str(), "%d.%d.%d", &_latestMajor, &_latestMinor, &_latestPatch);
+    sscanf(_latestFirmwareVersion, "%d.%d.%d", &_latestMajor, &_latestMinor, &_latestPatch);
 
     int _currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
     int _currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
@@ -820,10 +865,23 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {
-    String _macAddress = WiFi.macAddress();
-    _macAddress.replace(":", "");
-    _macAddress.toLowerCase();
-    _macAddress.toCharArray(deviceId, maxLength);
+    // Copied from WiFiSTA implementation
+    if (!deviceId || maxLength < 13) { // 12 chars + null terminator
+        logger.error(TAG, "Invalid parameters for device ID generation");
+        return;
+    }
+    
+    uint8_t mac[6];
+    
+    if (WiFiGenericClass::getMode() == WIFI_MODE_NULL) {
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    } else {
+        esp_wifi_get_mac((wifi_interface_t)ESP_IF_WIFI_STA, mac);
+    }
+    
+    // Use lowercase hex formatting without colons
+    snprintf(deviceId, maxLength, "%02x%02x%02x%02x%02x%02x", 
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
 const char* getMqttStateReason(int state)
@@ -868,19 +926,48 @@ const char* getMqttStateReason(int state)
     }
 }
 
-String decryptData(String encryptedData, String key) {
+void decryptData(const char* encryptedData, const char* key, char* decryptedData, size_t decryptedDataSize) {
+    if (!encryptedData || !key || !decryptedData || decryptedDataSize == 0) {
+        if (decryptedData && decryptedDataSize > 0) {
+            decryptedData[0] = '\0'; // Ensure null termination on error
+        }
+        return;
+    }
+
     mbedtls_aes_context aes;
     mbedtls_aes_init(&aes);
-    mbedtls_aes_setkey_dec(&aes, (const unsigned char *)key.c_str(), KEY_SIZE);
+    mbedtls_aes_setkey_dec(&aes, (const unsigned char *)key, KEY_SIZE);
 
     size_t decodedLength = 0;
-    size_t inputLength = encryptedData.length();
+    size_t inputLength = strlen(encryptedData);
+    if (inputLength == 0) {
+        decryptedData[0] = '\0'; // Ensure null termination for empty input
+        mbedtls_aes_free(&aes);
+        return;
+    }
     
     unsigned char *decodedData = (unsigned char *)malloc(inputLength);
-    
-    int ret = mbedtls_base64_decode(decodedData, inputLength, &decodedLength, 
-                                   (const unsigned char *)encryptedData.c_str(), 
-                                   encryptedData.length());
+    if (!decodedData) {
+        decryptedData[0] = '\0';
+        mbedtls_aes_free(&aes);
+        return;
+    }
+
+    int ret = mbedtls_base64_decode(decodedData, inputLength, &decodedLength,
+                                   (const unsigned char *)encryptedData,
+                                   inputLength);
+    if (ret != 0) {
+        decryptedData[0] = '\0';
+        free(decodedData);
+        mbedtls_aes_free(&aes);
+        return;
+    }
+    if (decodedLength == 0) {
+        decryptedData[0] = '\0'; // Ensure null termination for empty decoded data
+        free(decodedData);
+        mbedtls_aes_free(&aes);
+        return;
+    }
     
     unsigned char *output = (unsigned char *)malloc(decodedLength + 1);
     memset(output, 0, decodedLength + 1);
@@ -894,33 +981,109 @@ String decryptData(String encryptedData, String key) {
         output[decodedLength - paddingLength] = '\0';
     }
     
-    String decryptedData = String((char *)output);
+    snprintf(decryptedData, decryptedDataSize, "%s", (char*)output);
+
+    free(output);
+    free(decodedData);
+    mbedtls_aes_free(&aes);
+}
+
+// Buffer-based version for memory-safe operations
+void decryptData(const char* encryptedData, const char* key, char* decryptedData, size_t decryptedDataSize) {
+    if (!encryptedData || !key || !decryptedData || decryptedDataSize == 0) {
+        if (decryptedData && decryptedDataSize > 0) {
+            decryptedData[0] = '\0'; // Ensure null termination on error
+        }
+        return;
+    }
+
+    mbedtls_aes_context aes;
+    mbedtls_aes_init(&aes);
+    mbedtls_aes_setkey_dec(&aes, (const unsigned char *)key, KEY_SIZE);
+
+    size_t decodedLength = 0;
+    size_t inputLength = strlen(encryptedData);
+    
+    unsigned char *decodedData = (unsigned char *)malloc(inputLength);
+    if (!decodedData) {
+        decryptedData[0] = '\0';
+        mbedtls_aes_free(&aes);
+        return;
+    }
+    
+    int ret = mbedtls_base64_decode(decodedData, inputLength, &decodedLength, 
+                                   (const unsigned char *)encryptedData, 
+                                   inputLength);
+    
+    if (ret != 0) {
+        decryptedData[0] = '\0';
+        free(decodedData);
+        mbedtls_aes_free(&aes);
+        return;
+    }
+    
+    unsigned char *output = (unsigned char *)malloc(decodedLength + 1);
+    if (!output) {
+        decryptedData[0] = '\0';
+        free(decodedData);
+        mbedtls_aes_free(&aes);
+        return;
+    }
+    
+    memset(output, 0, decodedLength + 1);
+    
+    for(size_t i = 0; i < decodedLength; i += 16) {
+        mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, &decodedData[i], &output[i]);
+    }
+    
+    uint8_t paddingLength = output[decodedLength - 1];
+    if(paddingLength <= 16) {
+        output[decodedLength - paddingLength] = '\0';
+    }
+    
+    // Safely copy to output buffer with bounds checking
+    size_t resultLen = strlen((char*)output);
+    if (resultLen >= decryptedDataSize) {
+        // Truncate to fit in buffer
+        strncpy(decryptedData, (char*)output, decryptedDataSize - 1);
+        decryptedData[decryptedDataSize - 1] = '\0';
+    } else {
+        strcpy(decryptedData, (char*)output);
+    }
     
     free(output);
     free(decodedData);
     mbedtls_aes_free(&aes);
-
-    return decryptedData;
 }
 
-String readEncryptedPreferences(const char* preference_key) {
+void readEncryptedPreferences(const char* preference_key, const char* preshared_encryption_key, char* decryptedData, size_t decryptedDataSize) {
+    if (!preference_key || !preshared_encryption_key || !decryptedData || decryptedDataSize == 0) {
+        if (decryptedData && decryptedDataSize > 0) {
+            decryptedData[0] = '\0'; // Ensure null termination on error
+        }
+        return;
+    }
+
     Preferences preferences;
     if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) { // true = read-only mode
         logger.error("Failed to open preferences", TAG);
-        return String("");
     }
 
-    String _encryptedData = preferences.getString(preference_key, "");
+    char _encryptedData[ENCRYPTED_DATA_BUFFER_SIZE];
+    preferences.getString(preference_key, _encryptedData, ENCRYPTED_DATA_BUFFER_SIZE);
     preferences.end();
 
-    if (_encryptedData.isEmpty()) {
+    if (strlen(_encryptedData) == 0) {
         logger.warning("No encrypted data found for key: %s", TAG, preference_key);
-        return String("");
+        return;
     }
 
     char _deviceId[DEVICE_ID_BUFFER_SIZE];
     getDeviceId(_deviceId, DEVICE_ID_BUFFER_SIZE);
-    return decryptData(_encryptedData, String(preshared_encryption_key) + String(_deviceId));
+    char _encryptionKey[ENCRYPTION_KEY_BUFFER_SIZE];
+    snprintf(_encryptionKey, ENCRYPTION_KEY_BUFFER_SIZE, "%s%s", preshared_encryption_key, _deviceId);
+
+    decryptData(_encryptedData, _encryptionKey, decryptedData, decryptedDataSize);
 }
 
 bool checkCertificatesExist() {
@@ -999,10 +1162,12 @@ void initializeAuthentication() {
         }
     }
     
-    String storedPassword = preferences.getString(PREFERENCES_KEY_PASSWORD, "");
+    // Read the stored password to check if it exists
+    char storedPassword[AUTH_PASSWORD_BUFFER_SIZE];
+    preferences.getString(PREFERENCES_KEY_PASSWORD, storedPassword, sizeof(storedPassword));
     preferences.end();
-    
-    if (storedPassword.isEmpty()) {
+
+    if (strlen(storedPassword) == 0) {
         logger.info("No password set, using default password", TAG);
         if (!setAuthPassword(DEFAULT_WEB_PASSWORD)) {
             logger.error("Failed to set default password", TAG);
@@ -1013,8 +1178,8 @@ void initializeAuthentication() {
     logger.debug("Authentication initialized", TAG);
 }
 
-bool validatePassword(const String& password) {
-    if (password.length() < MIN_PASSWORD_LENGTH || password.length() > MAX_PASSWORD_LENGTH) {
+bool validatePassword(const char* password) {
+    if (strlen(password) < MIN_PASSWORD_LENGTH || strlen(password) > MAX_PASSWORD_LENGTH) {
         return false;
     }
     
@@ -1024,26 +1189,36 @@ bool validatePassword(const String& password) {
         return true; // Fallback: return true when preferences cannot be opened
     }
     
-    String storedPasswordHash = preferences.getString(PREFERENCES_KEY_PASSWORD, "");
+    char storedPasswordHash[AUTH_PASSWORD_BUFFER_SIZE];
+    // Read the stored password hash
+    // If no password is set, we allow access as a fallback
+    preferences.getString(PREFERENCES_KEY_PASSWORD, storedPasswordHash, sizeof(storedPasswordHash));
     preferences.end();
-    
-    if (storedPasswordHash.isEmpty()) {
+
+    if (strlen(storedPasswordHash) == 0) {
         logger.debug("No stored password hash found, allowing access as fallback", TAG);
         return true; // Fallback: return true when no password is stored
     }
     
-    String passwordHash = hashPassword(password);
-    return passwordHash.equals(storedPasswordHash);
+    char passwordHash[AUTH_PASSWORD_BUFFER_SIZE];
+    // Hash the provided password
+    hashPassword(password, passwordHash, sizeof(passwordHash));
+    return strcmp(passwordHash, storedPasswordHash) == 0;
 }
 
-bool setAuthPassword(const String& newPassword) {
-    if (newPassword.length() < MIN_PASSWORD_LENGTH || newPassword.length() > MAX_PASSWORD_LENGTH) {
-        logger.warning("Password length invalid: %d characters", TAG, newPassword.length());
+bool setAuthPassword(const char* newPassword) {
+    if (strlen(newPassword) < MIN_PASSWORD_LENGTH || strlen(newPassword) > MAX_PASSWORD_LENGTH) {
+        logger.warning("Password length invalid: %d characters", TAG, strlen(newPassword));
         return false;
     }
-    
-    String passwordHash = hashPassword(newPassword);
-    
+
+    char passwordHash[AUTH_PASSWORD_BUFFER_SIZE];
+    // Hash the new password
+    hashPassword(newPassword, passwordHash, sizeof(passwordHash));
+    if (strlen(passwordHash) == 0) {
+        logger.error("Failed to hash the new password", TAG);
+        return false;
+    }
     Preferences preferences;
     if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
         logger.warning("Failed to open auth preferences, treating as successful fallback", TAG);
@@ -1059,18 +1234,24 @@ bool setAuthPassword(const String& newPassword) {
     logger.info("Password updated successfully", TAG);
     return true;
 }
-String generateAuthToken() {
+
+void generateAuthToken(char* tokenBuffer, size_t tokenBufferSize) {
+    if (!tokenBuffer || tokenBufferSize < AUTH_TOKEN_LENGTH + 1) { // +1 for null terminator
+        logger.error("Invalid token buffer parameters", TAG);
+        return;
+    }
     // Check if we can accept more tokens
     if (!canAcceptMoreTokens()) {
         logger.warning("Cannot generate new token: maximum concurrent sessions reached (%d)", TAG, MAX_CONCURRENT_SESSIONS);
-        return "";
+        return;
     }
     
-    String token = "";
-    const char chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    char token[AUTH_TOKEN_LENGTH + 1]; // +1 for null terminator
+    token[AUTH_TOKEN_LENGTH] = '\0'; // Ensure null termination
+    const char chars[64] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     
     for (int i = 0; i < AUTH_TOKEN_LENGTH; i++) {
-        token += chars[random(0, sizeof(chars) - 1)];
+        token[i] = chars[random(0, sizeof(chars) - 1)];
     }
     
     // Store token with timestamp using a hash-based short key
@@ -1078,15 +1259,20 @@ String generateAuthToken() {
     if (preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
         // Create a short hash from the token for the key (max 15 chars for NVS)
         uint32_t tokenHash = 0;
-        for (int i = 0; i < token.length(); i++) {
-            tokenHash = tokenHash * 31 + token.charAt(i);
+        for (int i = 0; i < AUTH_TOKEN_LENGTH; i++) {
+            tokenHash = tokenHash * 31 + token[i];
         }
-        String shortKey = "t" + String(tokenHash, HEX); // "t" + 8-char hex = 9 chars max
+        
+        char shortKey[16]; // "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
+        snprintf(shortKey, sizeof(shortKey), "t%08x", (unsigned int)tokenHash);
+        
+        char fullTokenKey[20]; // shortKey + "_f" + null terminator = 12 chars max, 20 for safety
+        snprintf(fullTokenKey, sizeof(fullTokenKey), "%s_f", shortKey);
         
         // Store both the timestamp and the original token
-        preferences.putULong64(shortKey.c_str(), millis());
+        preferences.putULong64(shortKey, millis());
         // Store mapping from short key to full token
-        preferences.putString((shortKey + "_f").c_str(), token); // "_f" for full token
+        preferences.putString(fullTokenKey, token);
         preferences.end();
         
         // Increment the active token count
@@ -1094,11 +1280,12 @@ String generateAuthToken() {
         logger.debug("Token generated successfully. Active tokens: %d/%d", TAG, activeTokenCount, MAX_CONCURRENT_SESSIONS);
     }
     
-    return token;
+    // Copy token to output buffer
+    snprintf(tokenBuffer, tokenBufferSize, "%s", token);
 }
 
-bool validateAuthToken(const String& token) {
-    if (token.length() != AUTH_TOKEN_LENGTH) {
+bool validateAuthToken(const char* token) {
+    if (!token || strlen(token) != AUTH_TOKEN_LENGTH) {
         return false;
     }
     
@@ -1110,18 +1297,24 @@ bool validateAuthToken(const String& token) {
     
     // Create the same hash-based short key
     uint32_t tokenHash = 0;
-    for (int i = 0; i < token.length(); i++) {
-        tokenHash = tokenHash * 31 + token.charAt(i);
+    for (int i = 0; i < AUTH_TOKEN_LENGTH; i++) {
+        tokenHash = tokenHash * 31 + token[i];
     }
-    String shortKey = "t" + String(tokenHash, HEX);
     
-    unsigned long long tokenTimestamp = preferences.getULong64(shortKey.c_str(), 0);
+    char shortKey[16]; // "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
+    snprintf(shortKey, sizeof(shortKey), "t%08x", (unsigned int)tokenHash);
+    
+    char fullTokenKey[20]; // shortKey + "_f" + null terminator = 12 chars max, 20 for safety
+    snprintf(fullTokenKey, sizeof(fullTokenKey), "%s_f", shortKey);
+    
+    unsigned long long tokenTimestamp = preferences.getULong64(shortKey, 0);
     
     // Verify the full token matches
-    String storedToken = preferences.getString((shortKey + "_f").c_str(), "");
+    char storedToken[AUTH_TOKEN_LENGTH + 1];
+    preferences.getString(fullTokenKey, storedToken, sizeof(storedToken));
     preferences.end();
     
-    if (tokenTimestamp == 0 || !storedToken.equals(token)) {
+    if (tokenTimestamp == 0 || strcmp(storedToken, token) != 0) {
         return false;
     }
     
@@ -1135,20 +1328,29 @@ bool validateAuthToken(const String& token) {
     return true;
 }
 
-void clearAuthToken(const String& token) {
+void clearAuthToken(const char* token) {
+    if (!token) {
+        return;
+    }
+    
     Preferences preferences;
     if (preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
         // Create the same hash-based short key
         uint32_t tokenHash = 0;
-        for (int i = 0; i < token.length(); i++) {
-            tokenHash = tokenHash * 31 + token.charAt(i);
+        for (int i = 0; i < AUTH_TOKEN_LENGTH && token[i] != '\0'; i++) {
+            tokenHash = tokenHash * 31 + token[i];
         }
-        String shortKey = "t" + String(tokenHash, HEX);
+        
+        char shortKey[16]; // "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
+        snprintf(shortKey, sizeof(shortKey), "t%08x", (unsigned int)tokenHash);
+        
+        char fullTokenKey[20]; // shortKey + "_f" + null terminator = 12 chars max, 20 for safety
+        snprintf(fullTokenKey, sizeof(fullTokenKey), "%s_f", shortKey);
         
         // Check if token exists before removing
-        if (preferences.getULong64(shortKey.c_str(), 0) != 0) {
-            preferences.remove(shortKey.c_str());
-            preferences.remove((shortKey + "_f").c_str());
+        if (preferences.getULong64(shortKey, 0) != 0) {
+            preferences.remove(shortKey);
+            preferences.remove(fullTokenKey);
             
             // Decrement the active token count
             if (activeTokenCount > 0) {
@@ -1169,11 +1371,12 @@ void clearAllAuthTokens() {
     }
     
     // Clear all preferences except password to remove all tokens
-    String storedPassword = preferences.getString(PREFERENCES_KEY_PASSWORD, "");
+    char storedPassword[MAX_PASSWORD_LENGTH + 1];
+    preferences.getString(PREFERENCES_KEY_PASSWORD, storedPassword, sizeof(storedPassword));
     preferences.clear();
     
     // Restore the password
-    if (!storedPassword.isEmpty()) {
+    if (strlen(storedPassword) > 0) {
         preferences.putString(PREFERENCES_KEY_PASSWORD, storedPassword);
     }
     
@@ -1184,19 +1387,19 @@ void clearAllAuthTokens() {
     logger.debug("All tokens cleared. Active tokens: %d", TAG, activeTokenCount);
 }
 
-String hashPassword(const String& password) {
+void hashPassword(const char* password, char* hashedPassword, size_t hashedPasswordSize) {
     // Simple hash using device ID as salt
     char _deviceId[DEVICE_ID_BUFFER_SIZE];
     getDeviceId(_deviceId, sizeof(_deviceId));
-    String saltedPassword = password + String(_deviceId);
+    snprintf(hashedPassword, hashedPasswordSize, "%s%s", password, _deviceId);
     
     // Basic hash implementation (you might want to use a more secure method)
     uint32_t hash = 0;
-    for (int i = 0; i < saltedPassword.length(); i++) {
-        hash = hash * 31 + saltedPassword.charAt(i);
+    for (size_t i = 0; i < strlen(hashedPassword); i++) {
+        hash = hash * 31 + hashedPassword[i];
     }
-    
-    return String(hash, HEX);
+
+    snprintf(hashedPassword, hashedPasswordSize, "%08X", hash);
 }
 
 int getActiveTokenCount() {
@@ -1264,8 +1467,8 @@ void initializeRateLimiting() {
     logger.debug("Rate limiting initialized", TAG);
 }
 
-bool isIpBlocked(const String& clientIp) {
-    if (clientIp.isEmpty()) {
+bool isIpBlocked(const char* clientIp) {
+    if (!clientIp || strlen(clientIp) == 0) {
         return false; // Don't block if IP is unknown
     }
     
@@ -1277,11 +1480,11 @@ bool isIpBlocked(const String& clientIp) {
     
     // Look for existing entry for this IP
     for (int i = 0; i < rateLimitEntryCount; i++) {
-        if (rateLimitEntries[i].ipAddress.equals(clientIp)) {
+        if (strcmp(rateLimitEntries[i].ipAddress, clientIp) == 0) {
             // Check if IP is currently blocked
             if (rateLimitEntries[i].blockedUntil > millis()) {
                 logger.debug("IP %s is blocked until %lu (current: %lu)", TAG, 
-                           clientIp.c_str(), rateLimitEntries[i].blockedUntil, millis());
+                           clientIp, rateLimitEntries[i].blockedUntil, millis());
                 return true;
             }
             break;
@@ -1291,16 +1494,16 @@ bool isIpBlocked(const String& clientIp) {
     return false;
 }
 
-void recordFailedLogin(const String& clientIp) {
-    if (clientIp.isEmpty()) {
+void recordFailedLogin(const char* clientIp) {
+    if (!clientIp || strlen(clientIp) == 0) {
         return; // Can't track empty IP
     }
     
-    logger.debug("Recording failed login for IP: %s", TAG, clientIp.c_str());
+    logger.debug("Recording failed login for IP: %s", TAG, clientIp);
     
     // Look for existing entry for this IP
     for (int i = 0; i < rateLimitEntryCount; i++) {
-        if (rateLimitEntries[i].ipAddress.equals(clientIp)) {
+        if (strcmp(rateLimitEntries[i].ipAddress, clientIp) == 0) {
             rateLimitEntries[i].failedAttempts++;
             rateLimitEntries[i].lastFailedAttempt = millis();
             
@@ -1308,9 +1511,9 @@ void recordFailedLogin(const String& clientIp) {
             if (rateLimitEntries[i].failedAttempts >= MAX_LOGIN_ATTEMPTS) {
                 rateLimitEntries[i].blockedUntil = millis() + LOGIN_BLOCK_DURATION;
                 logger.warning("IP %s blocked for %d minutes after %d failed login attempts", TAG,
-                             clientIp.c_str(), LOGIN_BLOCK_DURATION / (60 * 1000), rateLimitEntries[i].failedAttempts);
+                             clientIp, LOGIN_BLOCK_DURATION / (60 * 1000), rateLimitEntries[i].failedAttempts);
             } else {
-                logger.debug("IP %s has %d failed attempts", TAG, clientIp.c_str(), rateLimitEntries[i].failedAttempts);
+                logger.debug("IP %s has %d failed attempts", TAG, clientIp, rateLimitEntries[i].failedAttempts);
             }
             return;
         }
@@ -1322,7 +1525,7 @@ void recordFailedLogin(const String& clientIp) {
         rateLimitEntries[rateLimitEntryCount].failedAttempts = 1;
         rateLimitEntries[rateLimitEntryCount].lastFailedAttempt = millis();
         rateLimitEntryCount++;
-        logger.debug("New rate limit entry created for IP: %s", TAG, clientIp.c_str());
+        logger.debug("New rate limit entry created for IP: %s", TAG, clientIp);
     } else {
         // Array is full, replace oldest entry
         int oldestIndex = 0;
@@ -1336,7 +1539,7 @@ void recordFailedLogin(const String& clientIp) {
         }
         
         logger.debug("Rate limit array full, replacing oldest entry (IP: %s) with new IP: %s", TAG, 
-                   rateLimitEntries[oldestIndex].ipAddress.c_str(), clientIp.c_str());
+                   rateLimitEntries[oldestIndex].ipAddress, clientIp);
         
         rateLimitEntries[oldestIndex] = RateLimitEntry(clientIp);
         rateLimitEntries[oldestIndex].failedAttempts = 1;
@@ -1344,15 +1547,15 @@ void recordFailedLogin(const String& clientIp) {
     }
 }
 
-void recordSuccessfulLogin(const String& clientIp) {
-    if (clientIp.isEmpty()) {
+void recordSuccessfulLogin(const char* clientIp) {
+    if (!clientIp || strlen(clientIp) == 0) {
         return; // Can't track empty IP
     }
     
     // Reset failed attempts for this IP on successful login
     for (int i = 0; i < rateLimitEntryCount; i++) {
-        if (rateLimitEntries[i].ipAddress.equals(clientIp)) {
-            logger.debug("Resetting failed attempts for IP %s after successful login", TAG, clientIp.c_str());
+        if (strcmp(rateLimitEntries[i].ipAddress, clientIp) == 0) {
+            logger.debug("Resetting failed attempts for IP %s after successful login", TAG, clientIp);
             rateLimitEntries[i].failedAttempts = 0;
             rateLimitEntries[i].blockedUntil = 0;
             return;
@@ -1383,7 +1586,7 @@ void cleanupOldRateLimitEntries() {
             }
             newCount++;
         } else {
-            logger.debug("Cleaning up old rate limit entry for IP: %s", TAG, rateLimitEntries[i].ipAddress.c_str());
+            logger.debug("Cleaning up old rate limit entry for IP: %s", TAG, rateLimitEntries[i].ipAddress);
         }
     }
     

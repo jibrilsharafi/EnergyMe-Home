@@ -117,6 +117,6 @@ private:
     bool _isSetupDone = false;
     bool _isClaimInProgress = false;
 
-    String _awsIotCoreCert;
-    String _awsIotCorePrivateKey;
+    char _awsIotCoreCert[AWS_IOT_CORE_CERT_BUFFER_SIZE];
+    char _awsIotCorePrivateKey[AWS_IOT_CORE_PRIVATE_KEY_BUFFER_SIZE];
 };

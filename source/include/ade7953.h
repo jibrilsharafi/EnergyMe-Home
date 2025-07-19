@@ -96,7 +96,7 @@ private:
     void _attachInterruptHandler();
     void _detachInterruptHandler();
     
-    static const char* _irqstataBitName(int bit);
+    static void _irqstataBitName(int bit, char *buffer, size_t bufferSize);
     
     void _setHardwarePins();
     void _setOptimumSettings();

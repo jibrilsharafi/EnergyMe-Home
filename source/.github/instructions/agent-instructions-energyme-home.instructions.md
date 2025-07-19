@@ -1,0 +1,46 @@
+---
+applyTo: '**'
+---
+Provide project context and coding guidelines that AI should follow when generating code, answering questions, or reviewing changes.
+
+1. **Project Context**:
+    - EnergyMe-Home is an open-source ESP32-based energy monitoring system using the Arduino framework with PlatformIO
+    - Monitors up to 17 circuits (1 direct + 16 multiplexed) via ADE7953 energy meter IC
+    - Primary interfaces: Web UI, MQTT, InfluxDB, Modbus TCP
+    - Uses SPIFFS for configuration storage (JSON files)
+    - Most processing is handled by the ADE7953 IC - ESP32 mainly handles communication and data routing
+
+2. **Coding Philosophy**:
+    - **Favor simplicity over complexity** - this is not a performance-critical system
+    - **Readable code over clever optimizations** - maintainability is key for open-source projects
+    - **Arduino/embedded conventions** - use standard Arduino libraries and patterns where possible
+    - **Defensive programming** - validate inputs and handle errors gracefully, but don't over-engineer
+
+3. **Memory Management**:
+    - Prefer stack allocation over dynamic allocation (avoid `String`, use `char[]` buffers)
+    - IMPORTANT:Use `snprintf()` whenever possible (and never `sprintf()`), also for string concatenation
+    - Use named constants for buffer sizes (e.g., `URL_BUFFER_SIZE`, `LINE_PROTOCOL_BUFFER_SIZE`)
+    - Use `sizeof(buffer)` instead of hardcoded sizes in function calls
+    - Define buffer sizes as constants (in `constants.h`) for consistency
+    - Only optimize memory usage in frequently called or critical functions (understand from context)
+
+4. **Error Handling**:
+    - Log errors and warnings appropriately using the logger
+    - Return early on invalid inputs (fail-fast principle)
+    - Provide meaningful error messages for debugging
+    - Don't crash the system - graceful degradation is preferred
+
+5. **Code Organization**:
+    - Use existing project patterns and conventions
+    - Keep functions focused and reasonably sized
+    - Use constants from `constants.h` for configuration values
+    - Follow existing naming conventions in the codebase
+    - Add comments for business logic, not obvious code
+
+6. **JSON and Configuration**:
+    - Always validate JSON structure before accessing fields
+    - Use `JsonDocument` everywhere - automatically uses 2MB PSRAM on ESP32-S3
+    - Pass streams directly to `deserializeJson()` for efficiency (e.g., `deserializeJson(doc, file)` or `deserializeJson(doc, http.getStream())`)
+    - Initialize all configuration fields with sensible defaults
+    - Log JSON parsing errors clearly
+    - Don't worry about JSON document size - plenty of PSRAM available

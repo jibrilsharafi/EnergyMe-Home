@@ -65,7 +65,7 @@
 #define MAX_PASSWORD_LENGTH 64
 #define MIN_PASSWORD_LENGTH 4
 #define AUTH_SESSION_TIMEOUT (24 * 60 * 60 * 1000) // 24 hours in milliseconds
-#define AUTH_TOKEN_LENGTH 32
+#define AUTH_TOKEN_LENGTH 64
 #define MAX_CONCURRENT_SESSIONS 10 // Maximum number of concurrent login sessions
 
 // Rate limiting for DoS protection
@@ -110,6 +110,16 @@
 #define LINE_PROTOCOL_BUFFER_SIZE 512 // For InfluxDB line protocol strings
 #define LABEL_BUFFER_SIZE 64          // For sanitized channel labels
 #define DEVICE_ID_BUFFER_SIZE 16      // For device IDs (increased slightly for safety)
+#define DECRYPTION_BUFFER_SIZE 512    // For decrypted data (certificates, tokens, etc.)
+#define AWS_IOT_CORE_CERT_BUFFER_SIZE 2048 // For AWS IoT Core certificate
+#define AWS_IOT_CORE_PRIVATE_KEY_BUFFER_SIZE 2048 // For AWS IoT Core private key
+#define JSON_STRING_PRINT_BUFFER_SIZE 2048 // For JSON strings (print only, needed usually for debugging)
+#define PUBLIC_LOCATION_PAYLOAD_BUFFER_SIZE 512 // For public location API payloads
+#define VERSION_BUFFER_SIZE 16 // For firmware version strings (major.minor.patch format)
+#define IP_ADDRESS_BUFFER_SIZE 16     // For IPv4 addresses (xxx.xxx.xxx.xxx + null terminator)
+#define ENCRYPTED_DATA_BUFFER_SIZE 2048 // For encrypted data storage
+#define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
+#define AUTH_PASSWORD_BUFFER_SIZE 64 // For authentication passwords
 
 // Webserver
 #define WEBSERVER_PORT 80

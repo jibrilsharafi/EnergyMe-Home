@@ -12,6 +12,7 @@
 #include <esp_system.h>
 #include <rom/rtc.h>
 #include <vector>
+#include <esp_wifi.h> // For the MAC address
 #include <ESPmDNS.h>
 
 #include "binaries.h"
@@ -80,35 +81,36 @@ bool isLatestFirmwareInstalled();
 void updateJsonFirmwareStatus(const char *status, const char *reason);
 
 void getDeviceId(char* deviceId, size_t maxLength);
+void getDeviceIdFromMac(char* deviceId, size_t maxLength);
 
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
 
 const char* getMqttStateReason(int state);
 
-String decryptData(String encryptedData, String key);
-String readEncryptedPreferences(const char* preference_key);
+void decryptData(const char* encryptedData, const char* key, char* decryptedData, size_t decryptedDataSize);
+void readEncryptedPreferences(const char* preference_key, char* value, size_t valueSize);
 void writeEncryptedPreferences(const char* preference_key, const char* value);
 void clearCertificates();
 bool checkCertificatesExist();
 
 // Authentication functions
 void initializeAuthentication();
-bool validatePassword(const String& password);
-bool setAuthPassword(const String& newPassword);
+bool validatePassword(const char* password);
+bool setAuthPassword(const char* newPassword);
 bool isUsingDefaultPassword();
-String generateAuthToken();
-bool validateAuthToken(const String& token);
-void clearAuthToken(const String& token);
+void generateAuthToken(char* token, size_t tokenSize);
+bool validateAuthToken(const char* token);
+void clearAuthToken(const char* token);
 void clearAllAuthTokens();
-String hashPassword(const String& password);
+void hashPassword(const char* password, char* hashedPassword, size_t hashedPasswordSize);
 int getActiveTokenCount();
 bool canAcceptMoreTokens();
 
 // Rate limiting functions for DoS protection
 void initializeRateLimiting();
-bool isIpBlocked(const String& clientIp);
-void recordFailedLogin(const String& clientIp);
-void recordSuccessfulLogin(const String& clientIp);
+bool isIpBlocked(const char* clientIp);
+void recordFailedLogin(const char* clientIp);
+void recordSuccessfulLogin(const char* clientIp);
 void cleanupOldRateLimitEntries();
 
 bool setupMdns();

@@ -605,11 +605,11 @@ void CustomServer::_setRestApi()
         JsonDocument _jsonDocument;
         for (int i = 0; i < CHANNEL_COUNT; i++) {
             if (_ade7953.channelData[i].active) {
-                _jsonDocument[String(i)]["activeEnergyImported"] = _ade7953.meterValues[i].activeEnergyImported;
-                _jsonDocument[String(i)]["activeEnergyExported"] = _ade7953.meterValues[i].activeEnergyExported;
-                _jsonDocument[String(i)]["reactiveEnergyImported"] = _ade7953.meterValues[i].reactiveEnergyImported;
-                _jsonDocument[String(i)]["reactiveEnergyExported"] = _ade7953.meterValues[i].reactiveEnergyExported;
-                _jsonDocument[String(i)]["apparentEnergy"] = _ade7953.meterValues[i].apparentEnergy;
+                _jsonDocument[i]["activeEnergyImported"] = _ade7953.meterValues[i].activeEnergyImported;
+                _jsonDocument[i]["activeEnergyExported"] = _ade7953.meterValues[i].activeEnergyExported;
+                _jsonDocument[i]["reactiveEnergyImported"] = _ade7953.meterValues[i].reactiveEnergyImported;
+                _jsonDocument[i]["reactiveEnergyExported"] = _ade7953.meterValues[i].reactiveEnergyExported;
+                _jsonDocument[i]["apparentEnergy"] = _ade7953.meterValues[i].apparentEnergy;
             }
         }
 

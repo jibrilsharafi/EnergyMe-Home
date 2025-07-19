@@ -197,12 +197,12 @@ struct GeneralConfiguration
 
 struct PublicLocation
 {
-  String country;
-  String city;
-  String latitude;
-  String longitude;
+  char country[128];
+  char city[128];
+  char latitude[32];
+  char longitude[32];
 
-  PublicLocation() : country(String("Unknown")), city(String("Unknown")), latitude(String("45.0")), longitude(String("9.0")) {}
+  PublicLocation() : country("Unknown"), city("Unknown"), latitude("45.0"), longitude("9.0") {} // Default to Milan coordinates
 };
 
 struct RestartConfiguration
@@ -370,11 +370,20 @@ struct LogJson {
 // Rate limiting structure for DoS protection
 // --------------------
 struct RateLimitEntry {
-    String ipAddress;
+    char ipAddress[IP_ADDRESS_BUFFER_SIZE];
     int failedAttempts;
     unsigned long lastFailedAttempt;
     unsigned long blockedUntil;
     
-    RateLimitEntry() : ipAddress(""), failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {}
-    RateLimitEntry(const String& ip) : ipAddress(ip), failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {}
+    RateLimitEntry() : failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {
+        ipAddress[0] = '\0';
+    }
+    RateLimitEntry(const char* ip) : failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {
+        if (ip && strlen(ip) < IP_ADDRESS_BUFFER_SIZE) {
+            strncpy(ipAddress, ip, IP_ADDRESS_BUFFER_SIZE - 1);
+            ipAddress[IP_ADDRESS_BUFFER_SIZE - 1] = '\0';
+        } else {
+            ipAddress[0] = '\0';
+        }
+    }
 };

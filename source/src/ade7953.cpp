@@ -582,11 +582,11 @@ void Ade7953::channelDataToJson(JsonDocument &jsonDocument) {
     _logger.debug("Converting data channel to JSON...", TAG);
 
     for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-        jsonDocument[String(i)]["active"] = channelData[i].active;
-        jsonDocument[String(i)]["reverse"] = channelData[i].reverse;
-        jsonDocument[String(i)]["label"] = channelData[i].label;
-        jsonDocument[String(i)]["phase"] = channelData[i].phase;
-        jsonDocument[String(i)]["calibrationLabel"] = channelData[i].calibrationValues.label;
+        jsonDocument[i]["active"] = channelData[i].active;
+        jsonDocument[i]["reverse"] = channelData[i].reverse;
+        jsonDocument[i]["label"] = channelData[i].label;
+        jsonDocument[i]["phase"] = channelData[i].phase;
+        jsonDocument[i]["calibrationLabel"] = channelData[i].calibrationValues.label;
     }
 
     _logger.debug("Successfully converted data channel to JSON", TAG);
@@ -1106,11 +1106,11 @@ void Ade7953::_setEnergyFromSpiffs() {
         return;
     } else {
         for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-            meterValues[i].activeEnergyImported = _jsonDocument[String(i)]["activeEnergyImported"].as<float>();
-            meterValues[i].activeEnergyExported = _jsonDocument[String(i)]["activeEnergyExported"].as<float>();
-            meterValues[i].reactiveEnergyImported = _jsonDocument[String(i)]["reactiveEnergyImported"].as<float>();
-            meterValues[i].reactiveEnergyExported = _jsonDocument[String(i)]["reactiveEnergyExported"].as<float>();
-            meterValues[i].apparentEnergy = _jsonDocument[String(i)]["apparentEnergy"].as<float>();
+            meterValues[i].activeEnergyImported = _jsonDocument[i]["activeEnergyImported"].as<float>();
+            meterValues[i].activeEnergyExported = _jsonDocument[i]["activeEnergyExported"].as<float>();
+            meterValues[i].reactiveEnergyImported = _jsonDocument[i]["reactiveEnergyImported"].as<float>();
+            meterValues[i].reactiveEnergyExported = _jsonDocument[i]["reactiveEnergyExported"].as<float>();
+            meterValues[i].apparentEnergy = _jsonDocument[i]["apparentEnergy"].as<float>();
         }
     }
         
@@ -1135,11 +1135,11 @@ void Ade7953::_saveEnergyToSpiffs() {
     deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
 
     for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-        _jsonDocument[String(i)]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
-        _jsonDocument[String(i)]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
-        _jsonDocument[String(i)]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
-        _jsonDocument[String(i)]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
-        _jsonDocument[String(i)]["apparentEnergy"] = meterValues[i].apparentEnergy;
+        _jsonDocument[i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
+        _jsonDocument[i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
+        _jsonDocument[i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
+        _jsonDocument[i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
+        _jsonDocument[i]["apparentEnergy"] = meterValues[i].apparentEnergy;
     }
 
     if (serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument)) _logger.debug("Successfully saved energy to SPIFFS", TAG);
@@ -1162,11 +1162,11 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
 
     for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active) {
-            if (meterValues[i].activeEnergyImported > 1) _jsonDocument[_currentDate][String(i)]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
-            if (meterValues[i].activeEnergyExported > 1) _jsonDocument[_currentDate][String(i)]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
-            if (meterValues[i].reactiveEnergyImported > 1) _jsonDocument[_currentDate][String(i)]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
-            if (meterValues[i].reactiveEnergyExported > 1) _jsonDocument[_currentDate][String(i)]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
-            if (meterValues[i].apparentEnergy > 1) _jsonDocument[_currentDate][String(i)]["apparentEnergy"] = meterValues[i].apparentEnergy;
+            if (meterValues[i].activeEnergyImported > 1) _jsonDocument[_currentDate][i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
+            if (meterValues[i].activeEnergyExported > 1) _jsonDocument[_currentDate][i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
+            if (meterValues[i].reactiveEnergyImported > 1) _jsonDocument[_currentDate][i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
+            if (meterValues[i].reactiveEnergyExported > 1) _jsonDocument[_currentDate][i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
+            if (meterValues[i].apparentEnergy > 1) _jsonDocument[_currentDate][i]["apparentEnergy"] = meterValues[i].apparentEnergy;
         }
     }
 
@@ -1811,35 +1811,33 @@ void Ade7953::_setupInterrupts() {
     _logger.debug("ADE7953 interrupts enabled: CYCEND, RESET", TAG);
 }
 
-
-
-// Returns the string name of the IRQSTATA bit, or nullptr if not found
-const char* Ade7953::_irqstataBitName(int bit) {
-  switch (bit) {
-    case IRQSTATA_AEHFA_BIT:       return "AEHFA";
-    case IRQSTATA_VAREHFA_BIT:     return "VAREHFA";
-    case IRQSTATA_VAEHFA_BIT:      return "VAEHFA";
-    case IRQSTATA_AEOFA_BIT:       return "AEOFA";
-    case IRQSTATA_VAREOFA_BIT:     return "VAREOFA";
-    case IRQSTATA_VAEOFA_BIT:      return "VAEOFA";
-    case IRQSTATA_AP_NOLOADA_BIT:  return "AP_NOLOADA";
-    case IRQSTATA_VAR_NOLOADA_BIT: return "VAR_NOLOADA";
-    case IRQSTATA_VA_NOLOADA_BIT:  return "VA_NOLOADA";
-    case IRQSTATA_APSIGN_A_BIT:    return "APSIGN_A";
-    case IRQSTATA_VARSIGN_A_BIT:   return "VARSIGN_A";
-    case IRQSTATA_ZXTO_IA_BIT:     return "ZXTO_IA";
-    case IRQSTATA_ZXIA_BIT:        return "ZXIA";
-    case IRQSTATA_OIA_BIT:         return "OIA";
-    case IRQSTATA_ZXTO_BIT:        return "ZXTO";
-    case IRQSTATA_ZXV_BIT:         return "ZXV";
-    case IRQSTATA_OV_BIT:          return "OV";
-    case IRQSTATA_WSMP_BIT:        return "WSMP";
-    case IRQSTATA_CYCEND_BIT:      return "CYCEND";
-    case IRQSTATA_SAG_BIT:         return "SAG";
-    case IRQSTATA_RESET_BIT:       return "RESET";
-    case IRQSTATA_CRC_BIT:         return "CRC";
-    default:                       return "";
-  }
+// Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
+void Ade7953::_irqstataBitName(int bit, char *buffer, size_t bufferSize) {
+    switch (bit) {
+        case IRQSTATA_AEHFA_BIT:       snprintf(buffer, bufferSize, "AEHFA");
+        case IRQSTATA_VAREHFA_BIT:     snprintf(buffer, bufferSize, "VAREHFA");
+        case IRQSTATA_VAEHFA_BIT:      snprintf(buffer, bufferSize, "VAEHFA");
+        case IRQSTATA_AEOFA_BIT:       snprintf(buffer, bufferSize, "AEOFA");
+        case IRQSTATA_VAREOFA_BIT:     snprintf(buffer, bufferSize, "VAREOFA");
+        case IRQSTATA_VAEOFA_BIT:      snprintf(buffer, bufferSize, "VAEOFA");
+        case IRQSTATA_AP_NOLOADA_BIT:  snprintf(buffer, bufferSize, "AP_NOLOADA");
+        case IRQSTATA_VAR_NOLOADA_BIT: snprintf(buffer, bufferSize, "VAR_NOLOADA");
+        case IRQSTATA_VA_NOLOADA_BIT:  snprintf(buffer, bufferSize, "VA_NOLOADA");
+        case IRQSTATA_APSIGN_A_BIT:    snprintf(buffer, bufferSize, "APSIGN_A");
+        case IRQSTATA_VARSIGN_A_BIT:   snprintf(buffer, bufferSize, "VARSIGN_A");
+        case IRQSTATA_ZXTO_IA_BIT:     snprintf(buffer, bufferSize, "ZXTO_IA");
+        case IRQSTATA_ZXIA_BIT:        snprintf(buffer, bufferSize, "ZXIA");
+        case IRQSTATA_OIA_BIT:         snprintf(buffer, bufferSize, "OIA");
+        case IRQSTATA_ZXTO_BIT:        snprintf(buffer, bufferSize, "ZXTO");
+        case IRQSTATA_ZXV_BIT:         snprintf(buffer, bufferSize, "ZXV");
+        case IRQSTATA_OV_BIT:          snprintf(buffer, bufferSize, "OV");
+        case IRQSTATA_WSMP_BIT:        snprintf(buffer, bufferSize, "WSMP");
+        case IRQSTATA_CYCEND_BIT:      snprintf(buffer, bufferSize, "CYCEND");
+        case IRQSTATA_SAG_BIT:         snprintf(buffer, bufferSize, "SAG");
+        case IRQSTATA_RESET_BIT:       snprintf(buffer, bufferSize, "RESET");
+        case IRQSTATA_CRC_BIT:         snprintf(buffer, bufferSize, "CRC");
+        default:                       snprintf(buffer, bufferSize, "UNKNOWN");
+    }
 }
 
 Ade7953InterruptType Ade7953::_handleInterrupt() {

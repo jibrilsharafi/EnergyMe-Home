@@ -466,6 +466,7 @@ void Mqtt::_setTopicMonitor() { _constructMqttTopic(MQTT_TOPIC_MONITOR, _mqttTop
 void Mqtt::_setTopicGeneralConfiguration() { _constructMqttTopic(MQTT_TOPIC_GENERAL_CONFIGURATION, _mqttTopicGeneralConfiguration); }
 void Mqtt::_setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics); }
 
+// TODO: use messagepack instead of JSON here for efficiency
 void Mqtt::_circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter) {
     _logger.debug("Converting circular buffer to JSON...", TAG);
     
