@@ -87,7 +87,7 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
 const char* getMqttStateReason(int state);
 
 void decryptData(const char* encryptedData, const char* key, char* decryptedData, size_t decryptedDataSize);
-void readEncryptedPreferences(const char* preference_key, char* value, size_t valueSize);
+void readEncryptedPreferences(const char* preference_key, const char* preshared_encryption_key, char* value, size_t valueSize);
 void writeEncryptedPreferences(const char* preference_key, const char* value);
 void clearCertificates();
 bool checkCertificatesExist();

@@ -327,8 +327,8 @@ void Mqtt::_setCertificates() {
     _logger.debug("Setting certificates...", TAG);
 
     TRACE();
-    readEncryptedPreferences(PREFS_KEY_CERTIFICATE, _awsIotCoreCert, sizeof(_awsIotCoreCert));
-    readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, _awsIotCorePrivateKey, sizeof(_awsIotCorePrivateKey));
+    readEncryptedPreferences(PREFS_KEY_CERTIFICATE, preshared_encryption_key, _awsIotCoreCert, sizeof(_awsIotCoreCert));
+    readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, preshared_encryption_key, _awsIotCorePrivateKey, sizeof(_awsIotCorePrivateKey));
 
     _logger.debug("Certificates set", TAG);
 }
