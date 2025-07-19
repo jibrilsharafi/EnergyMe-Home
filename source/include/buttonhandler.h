@@ -65,11 +65,12 @@ public:
    * @return true if operation is active
    */
   bool isOperationInProgress() const { return _operationInProgress; }
+
   /**
    * Get the name of the current operation being processed
    * @return Name of the operation
    */
-  String getCurrentOperationName() const { return _operationName; }
+  const char* getCurrentOperationName() const { return _operationName; }
 
   /**
    * Get the Unix timestamp of the last operation
@@ -99,7 +100,7 @@ private:
   unsigned long _lastDebounceTime;
   // Operation state
   ButtonPressType _currentPressType;
-  String _operationName;
+  char _operationName[64];
   bool _operationInProgress;
   unsigned long _operationTimestamp;
 

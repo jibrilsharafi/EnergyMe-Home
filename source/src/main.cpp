@@ -52,7 +52,7 @@ CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;
 
 AsyncWebServer server(WEBSERVER_PORT);
 
-String deviceId;
+char deviceId[13]; // 12 characters (MAC address) + 1 for null terminator
 
 // Callback variables
 
@@ -223,7 +223,7 @@ void callbackLogToMqtt(
         "%s/%s/%s/%s", 
         MQTT_TOPIC_1, 
         MQTT_TOPIC_2, 
-        deviceId.c_str(), 
+        deviceId, 
         MQTT_TOPIC_LOG
       );
       logger.debug("Base MQTT topic for logs: %s", TAG, baseMqttTopicLogs);
@@ -302,7 +302,7 @@ void callbackLogToUdp(
             "<%d>%s %s[%lu]: [%s][Core%u] %s: %s",
             16, // Facility.Severity (local0.info)
             _log.timestamp,
-            deviceId.c_str(),
+            deviceId,
             _log.millisEsp,
             _log.level,
             _log.coreId,
@@ -342,8 +342,8 @@ void setup() {
     Serial.println("Booting...");
     Serial.printf("Build version: %s\n", FIRMWARE_BUILD_VERSION);
     Serial.printf("Build date: %s %s\n", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
-    deviceId = getDeviceId();
-    Serial.printf("Device ID: %s\n", deviceId.c_str());
+    getDeviceId(deviceId, sizeof(deviceId));
+    Serial.printf("Device ID: %s\n", deviceId);
 
     Serial.println("Setting up LED...");
     led.begin();
@@ -361,7 +361,7 @@ void setup() {
     logger.setCallback(callbackLogMultiple);
 
     logger.info("Guess who's back, back again! EnergyMe - Home is starting up...", TAG);
-    logger.info("Build version: %s | Build date: %s %s | Device ID: %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, deviceId.c_str());
+    logger.info("Build version: %s | Build date: %s %s | Device ID: %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, deviceId);
 
     logger.debug("Setting up crash monitor...", TAG);
     crashMonitor.begin();

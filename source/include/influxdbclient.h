@@ -39,8 +39,8 @@ private:
 
     void _bufferMeterData();
     void _uploadBufferedData();
-    String _formatRealtimeLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp);
-    String _formatEnergyLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp);
+    void _formatRealtimeLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp, char* buffer, size_t bufferSize);
+    void _formatEnergyLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp, char* buffer, size_t bufferSize);
 
     bool _validateJsonConfiguration(JsonDocument &jsonDocument);
 
@@ -63,7 +63,7 @@ private:
 
     bool _isSetupDone = false;
     bool _isConnected = false;
-    String _baseUrl;
+    char _baseUrl[URL_BUFFER_SIZE];
 
     unsigned long _lastMillisInfluxDbLoop = 0;
     unsigned long _lastMillisInfluxDbFailed = 0;
@@ -73,5 +73,5 @@ private:
     unsigned long _lastMillisMeterPublish = MINIMUM_TIME_BEFORE_VALID_METER; // Do not publish immediately after setup
     unsigned long _lastMillisMeterBuffer = MINIMUM_TIME_BEFORE_VALID_METER; // Do not buffer immediately after setup
 
-    String _deviceId;
+    char _deviceId[DEVICE_ID_BUFFER_SIZE];
 };

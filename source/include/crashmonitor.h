@@ -34,7 +34,7 @@ public:
 
     static bool isLastResetDueToCrash();
 
-    static String getFirmwareStatusString(FirmwareState status);
+    static void getFirmwareStatusString(FirmwareState status, char* buffer);
     
 private:
     static const char* _getResetReasonString(esp_reset_reason_t reason);

@@ -64,7 +64,7 @@ private:
     CustomMqtt &_customMqtt;
     InfluxDbClient &_influxDbClient;
     ButtonHandler &_buttonHandler;
-    String _md5;
+    char _md5[33]; // MD5 is 32 characters + null terminator
     
     // Concurrency control using FreeRTOS semaphores
     SemaphoreHandle_t _configurationMutex;

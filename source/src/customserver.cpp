@@ -245,18 +245,18 @@ void CustomServer::_setOta()
 
         if (request->hasParam("md5"))
         {
-            _md5 = request->getParam("md5")->value();
-            _md5.toLowerCase();
-            _logger.debug("MD5 included in the request: %s", TAG, _md5.c_str());
+            String md5Str = request->getParam("md5")->value();
+            md5Str.toLowerCase();
+            _logger.debug("MD5 included in the request: %s", TAG, md5Str.c_str());
 
-            if (_md5.length() != 32)
+            if (md5Str.length() != 32)
             {
                 _logger.warning("MD5 not 32 characters long. Skipping MD5 verification", TAG);
                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"MD5 not 32 characters long\"}");
             }
             else
             {
-                _md5 = request->getParam("md5")->value();
+                snprintf(_md5, sizeof(_md5), "%s", md5Str.c_str());
                 request->send(HTTP_CODE_OK, "application/json", "{\"message\":\"MD5 set\"}");
             }
         }
@@ -868,8 +868,9 @@ void CustomServer::_setRestApi()
         response += "\"operationName\":\"" + operationName + "\",";
         response += "\"operationTimestamp\":" + String(operationTimestamp);
         if (operationTimestamp > 0) {
-            String timestampStr = CustomTime::timestampFromUnix(operationTimestamp);
-            response += ",\"operationTimestampFormatted\":\"" + timestampStr + "\"";
+            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            CustomTime::timestampFromUnix(operationTimestamp, timestampBuffer);
+            response += ",\"operationTimestampFormatted\":\"" + String(timestampBuffer) + "\"";
         }
         response += "}";
         
@@ -1238,7 +1239,7 @@ void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const String 
             return;
         }
 
-        Update.setMD5(_md5.c_str());
+        Update.setMD5(_md5);
     }    
 
     TRACE();
@@ -1278,9 +1279,11 @@ void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
     _logger.debug("MD5 of new firmware: %s", TAG, Update.md5String().c_str());
 
     TRACE();
-    _logger.debug("Setting rollback flag to %s", TAG, CrashMonitor::getFirmwareStatusString(NEW_TO_TEST));
-    if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST))
-        _logger.error("Failed to set firmware status", TAG);
+    char _firmwareStatus[64];
+    CrashMonitor::getFirmwareStatusString(NEW_TO_TEST, _firmwareStatus);
+    _logger.debug("Setting rollback flag to %s", TAG, _firmwareStatus);
+    
+    if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) _logger.error("Failed to set firmware status", TAG);
 
     TRACE();
     setRestartEsp32(TAG, "Restart needed after update");

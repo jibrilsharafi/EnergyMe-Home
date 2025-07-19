@@ -1842,17 +1842,6 @@ const char* Ade7953::_irqstataBitName(int bit) {
   }
 }
 
-String Ade7953::_getBitsString(long value, int nBits) {
-    String result = "";
-    for (int i = nBits - 1; i >= 0; i--) {
-        if ((value >> i) & 1) {
-            if (result.length() > 0) result += ",";
-            result += _irqstataBitName(1 << i);
-        }
-    }
-    return result.length() > 0 ? result : "none";
-}
-
 Ade7953InterruptType Ade7953::_handleInterrupt() {
     
     long statusA = readRegister(RSTIRQSTATA_32, 32, false);
@@ -1881,8 +1870,7 @@ Ade7953InterruptType Ade7953::_handleInterrupt() {
         return Ade7953InterruptType::CYCEND;
     } else {
         // Just log the unhandled status
-        _logger.warning("Unhandled ADE7953 interrupt status: %s (0x%08lX)", TAG, 
-            _getBitsString(statusA, 32).c_str(), statusA);
+        _logger.warning("Unhandled ADE7953 interrupt status: 0x%08lX", TAG, statusA);
         return Ade7953InterruptType::OTHER;
     }
 }

@@ -130,19 +130,19 @@ void ButtonHandler::_processButtonPressType()
     switch (_currentPressType)
     {
     case ButtonPressType::SINGLE_SHORT:
-        _operationName = "Restart";
+        snprintf(_operationName, sizeof(_operationName), "Restart");
         _handleRestart();
         break;
     case ButtonPressType::SINGLE_MEDIUM:
-        _operationName = "Password Reset";
+        snprintf(_operationName, sizeof(_operationName), "Password Reset");
         _handlePasswordReset();
         break;
     case ButtonPressType::SINGLE_LONG:
-        _operationName = "WiFi Reset";
+        snprintf(_operationName, sizeof(_operationName), "WiFi Reset");
         _handleWifiReset();
         break;
     case ButtonPressType::SINGLE_VERY_LONG:
-        _operationName = "Factory Reset";
+        snprintf(_operationName, sizeof(_operationName), "Factory Reset");
         _handleFactoryReset();
         break;
     default:
@@ -153,7 +153,7 @@ void ButtonHandler::_processButtonPressType()
 void ButtonHandler::_handleRestart()
 {
     _logger.info("Restart initiated", TAG);
-    _operationName = "Restart";
+    snprintf(_operationName, sizeof(_operationName), "Restart");
     _operationTimestamp = CustomTime::getUnixTime();
     _saveLastOperationToNVS();
     _saveOperationTimestampToNVS();
@@ -175,7 +175,7 @@ void ButtonHandler::_handleRestart()
 void ButtonHandler::_handlePasswordReset()
 {
     _logger.debug("Password reset to default initiated", TAG);
-    _operationName = "Password Reset";
+    snprintf(_operationName, sizeof(_operationName), "Password Reset");
     _operationTimestamp = CustomTime::getUnixTime();
     _saveLastOperationToNVS();
     _saveOperationTimestampToNVS();
@@ -224,7 +224,7 @@ void ButtonHandler::_handlePasswordReset()
 void ButtonHandler::_handleWifiReset()
 {
     _logger.info("WiFi reset initiated", TAG);
-    _operationName = "WiFi Reset";
+    snprintf(_operationName, sizeof(_operationName), "WiFi Reset");
     _operationTimestamp = CustomTime::getUnixTime();
     _saveLastOperationToNVS();
     _saveOperationTimestampToNVS();
@@ -249,7 +249,7 @@ void ButtonHandler::_handleWifiReset()
 void ButtonHandler::_handleFactoryReset()
 {
     _logger.info("Factory reset initiated", TAG);
-    _operationName = "Factory Reset";
+    snprintf(_operationName, sizeof(_operationName), "Factory Reset");
     _operationTimestamp = CustomTime::getUnixTime();
     _saveLastOperationToNVS();
     _saveOperationTimestampToNVS();
@@ -315,7 +315,7 @@ bool ButtonHandler::_readButton()
 
 void ButtonHandler::clearCurrentOperationName()
 {
-    _operationName = "";
+    sniprintf(_operationName, sizeof(_operationName), "None");
     _operationTimestamp = 0;
     _saveLastOperationToNVS();
     _saveOperationTimestampToNVS();
@@ -324,15 +324,19 @@ void ButtonHandler::clearCurrentOperationName()
 void ButtonHandler::_saveLastOperationToNVS()
 {
     _preferences.putString("lastOperation", _operationName);
-    _logger.debug("Saved last operation to NVS: %s", TAG, _operationName.c_str());
+    _logger.debug("Saved last operation to NVS: %s", TAG, _operationName);
 }
 
 void ButtonHandler::_loadLastOperationFromNVS()
 {
-    _operationName = _preferences.getString("lastOperation", "");
-    if (!_operationName.isEmpty())
+    _preferences.getString("lastOperation", _operationName, sizeof(_operationName));
+    if (strlen(_operationName) > 0) 
     {
-        _logger.info("Loaded last button operation from NVS: %s", TAG, _operationName.c_str());
+        _logger.info("Loaded last button operation from NVS: %s", TAG, _operationName);
+    }
+    else
+    {
+        _logger.info("No previous button operation found in NVS", TAG);
     }
 }
 
@@ -347,7 +351,8 @@ void ButtonHandler::_loadOperationTimestampFromNVS()
     _operationTimestamp = _preferences.getULong("lastOpTimestamp", 0);
     if (_operationTimestamp > 0)
     {
-        String timestampStr = CustomTime::timestampFromUnix(_operationTimestamp);
-        _logger.info("Loaded operation timestamp from NVS: %s", TAG, timestampStr.c_str());
+        char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        CustomTime::timestampFromUnix(_operationTimestamp, timestampBuffer);
+        _logger.info("Loaded operation timestamp from NVS: %s", TAG, timestampBuffer);
     }
 }

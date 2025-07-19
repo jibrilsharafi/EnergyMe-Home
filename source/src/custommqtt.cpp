@@ -118,8 +118,10 @@ bool CustomMqtt::setConfiguration(JsonDocument &jsonDocument)
     _customMqttConfiguration.username = jsonDocument["username"].as<String>();
     _customMqttConfiguration.password = jsonDocument["password"].as<String>();    
     _customMqttConfiguration.lastConnectionStatus = "Disconnected";
-    _customMqttConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
-    
+    char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+    CustomTime::getTimestamp(_timestampBuffer);
+    _customMqttConfiguration.lastConnectionAttemptTimestamp = _timestampBuffer;
+
     _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
     _mqttConnectionAttempt = 0;
 
@@ -230,7 +232,10 @@ bool CustomMqtt::_connectMqtt()
 
         _mqttConnectionAttempt = 0; // Reset attempt counter on success
         _customMqttConfiguration.lastConnectionStatus = "Connected";
-        _customMqttConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+
+        char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        CustomTime::getTimestamp(_timestampBuffer);
+        _customMqttConfiguration.lastConnectionAttemptTimestamp = String(_timestampBuffer);
 
         _saveConfigurationToSpiffs();
 
@@ -250,7 +255,10 @@ bool CustomMqtt::_connectMqtt()
         _mqttConnectionAttempt++;
 
         _customMqttConfiguration.lastConnectionStatus = String(_reason) + " (Attempt " + String(_mqttConnectionAttempt) + ")";
-        _customMqttConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+        
+        char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        CustomTime::getTimestamp(_timestampBuffer);
+        _customMqttConfiguration.lastConnectionAttemptTimestamp = String(_timestampBuffer);
 
         _saveConfigurationToSpiffs();
 

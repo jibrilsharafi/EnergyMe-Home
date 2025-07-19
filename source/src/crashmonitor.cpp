@@ -154,8 +154,10 @@ bool CrashMonitor::_isValidBreadcrumb(const Breadcrumb& crumb) {
 }
 
 void CrashMonitor::_logCrashInfo() {
+    char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+    CustomTime::timestampFromUnix(crashData.lastUnixTime, DEFAULT_TIMESTAMP_FORMAT, timestampBuffer);
     _logger.fatal("Oh no!!! Crash Report | Timestamp: %s - Reason: %s - Reset Count %d - Crash Count: %d", TAG, 
-        CustomTime::timestampFromUnix(crashData.lastUnixTime, DEFAULT_TIMESTAMP_FORMAT).c_str(),
+        timestampBuffer,
         _getResetReasonString((esp_reset_reason_t)crashData.lastResetReason), 
         crashData.resetCount, 
         crashData.crashCount
@@ -241,7 +243,9 @@ void CrashMonitor::_handleFirmwareTesting() {
 
     FirmwareState _firmwareStatus = getFirmwareStatus();
 
-    _logger.debug("Rollback status: %s", TAG, getFirmwareStatusString(_firmwareStatus));
+    char _statusBuffer[32];
+    getFirmwareStatusString(_firmwareStatus, _statusBuffer);
+    _logger.debug("Current firmware status: %s", TAG, _statusBuffer);
     
     if (_firmwareStatus == NEW_TO_TEST) {
         _logger.info("Testing new firmware!!! Are you excited of the new features? :D", TAG);
@@ -299,12 +303,12 @@ FirmwareState CrashMonitor::getFirmwareStatus() {
     return static_cast<FirmwareState>(status);
 }
 
-String CrashMonitor::getFirmwareStatusString(FirmwareState status) {
+void CrashMonitor::getFirmwareStatusString(FirmwareState status, char* buffer) {
     switch (status) {
-        case FirmwareState::STABLE: return "Stable";
-        case FirmwareState::NEW_TO_TEST: return "New to test";
-        case FirmwareState::TESTING: return "Testing";
-        case FirmwareState::ROLLBACK: return "Rollback";
-        default: return "Unknown";
+        case FirmwareState::STABLE: sprintf(buffer, "Stable"); break;
+        case FirmwareState::NEW_TO_TEST: sprintf(buffer, "New to test"); break;
+        case FirmwareState::TESTING: sprintf(buffer, "Testing"); break;
+        case FirmwareState::ROLLBACK: sprintf(buffer, "Rollback"); break;
+        default: sprintf(buffer, "Unknown"); break;
     }
 }

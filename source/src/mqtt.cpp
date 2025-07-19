@@ -100,7 +100,7 @@ Mqtt::Mqtt(
     _payloadMeter(payloadMeter),
     _restartConfiguration(restartConfiguration)
 {
-    _deviceId = getDeviceId();
+    getDeviceId(_deviceId, sizeof(_deviceId));
 }
 
 void Mqtt::begin() {
@@ -266,7 +266,7 @@ bool Mqtt::_connectMqtt()
     TRACE();
     if (
         _clientMqtt.connect(
-            _deviceId.c_str(),
+            _deviceId,
             _mqttTopicConnectivity,
             MQTT_WILL_QOS,
             MQTT_WILL_RETAIN,
@@ -360,7 +360,7 @@ void Mqtt::_claimProcess() {
         _logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", TAG, _connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
         TRACE();
-        if (_clientMqtt.connect(_deviceId.c_str())) {
+        if (_clientMqtt.connect(_deviceId)) {
             _logger.debug("Connected to MQTT for claiming certificates", TAG);
             break;
         }

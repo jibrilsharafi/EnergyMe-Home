@@ -11,7 +11,7 @@ InfluxDbClient::InfluxDbClient(
                               _logger(logger),
                               _influxDbConfiguration(influxDbConfiguration),
                               _customTime(customTime) {
-                                _deviceId = getDeviceId();
+                              getDeviceId(_deviceId, sizeof(_deviceId));
                               }
 
 void InfluxDbClient::begin()
@@ -20,8 +20,12 @@ void InfluxDbClient::begin()
 
     _setConfigurationFromSpiffs();
 
-    _baseUrl = String("http") + (_influxDbConfiguration.useSSL ? "s" : "") + "://" + _influxDbConfiguration.server + ":" + String(_influxDbConfiguration.port);
-    _logger.debug("Base URL set to: %s", TAG, _baseUrl.c_str());
+    // _baseUrl = String("http") + (_influxDbConfiguration.useSSL ? "s" : "") + "://" + _influxDbConfiguration.server + ":" + String(_influxDbConfiguration.port);
+    snprintf(_baseUrl, sizeof(_baseUrl), "http%s://%s:%d", 
+            _influxDbConfiguration.useSSL ? "s" : "", 
+            _influxDbConfiguration.server.c_str(), 
+            _influxDbConfiguration.port);
+    _logger.debug("Base URL set to: %s", TAG, _baseUrl);
     
     _isConnected = false;
     _bufferMeterValues.clear();
@@ -82,7 +86,9 @@ bool InfluxDbClient::_connectInfluxDb()
         _influxDbConnectionAttempt++;
 
         _influxDbConfiguration.lastConnectionStatus = "Failed to ping InfluxDB (Attempt " + String(_influxDbConnectionAttempt) + ")";
-        _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+        char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        _customTime.getTimestamp(timestampBuffer);
+        _influxDbConfiguration.lastConnectionAttemptTimestamp = String(timestampBuffer);
         _saveConfigurationToSpiffs();
 
         _isConnected = false;
@@ -117,7 +123,9 @@ bool InfluxDbClient::_connectInfluxDb()
         _influxDbConnectionAttempt++;
 
         _influxDbConfiguration.lastConnectionStatus = "Failed to validate credentials (Attempt " + String(_influxDbConnectionAttempt) + ")";
-        _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+        char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        _customTime.getTimestamp(timestampBuffer);
+        _influxDbConfiguration.lastConnectionAttemptTimestamp = String(timestampBuffer);
         _saveConfigurationToSpiffs();
 
         _isConnected = false;
@@ -146,7 +154,9 @@ bool InfluxDbClient::_connectInfluxDb()
     _logger.info("Successfully connected to InfluxDB", TAG);
     _influxDbConnectionAttempt = 0; // Reset attempt counter on success
     _influxDbConfiguration.lastConnectionStatus = "Connection successful";
-    _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+    char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+    _customTime.getTimestamp(timestampBuffer);
+    _influxDbConfiguration.lastConnectionAttemptTimestamp = String(timestampBuffer);
     _saveConfigurationToSpiffs();
     _isConnected = true;
 
@@ -226,15 +236,20 @@ void InfluxDbClient::_uploadBufferedData()
         return;
 
     HTTPClient http;
-    String url;
+    char url[URL_BUFFER_SIZE];
 
     if (_influxDbConfiguration.version == 2)
     {
-        url = _baseUrl + "/api/v2/write?org=" + _influxDbConfiguration.organization + "&bucket=" + _influxDbConfiguration.bucket;
+        snprintf(url, sizeof(url), "%s/api/v2/write?org=%s&bucket=%s", 
+                _baseUrl, 
+                _influxDbConfiguration.organization.c_str(), 
+                _influxDbConfiguration.bucket.c_str());
     }
     else
     {
-        url = _baseUrl + "/write?db=" + _influxDbConfiguration.database;
+        snprintf(url, sizeof(url), "%s/write?db=%s", 
+                _baseUrl, 
+                _influxDbConfiguration.database.c_str());
     }
 
     http.begin(url);
@@ -264,9 +279,10 @@ void InfluxDbClient::_uploadBufferedData()
     {
         _loops++;
         BufferedPoint point = _bufferMeterValues.shift();
-        String lineProtocol = _formatRealtimeLineProtocol(point.meterValues, point.channel, point.unixTimeMilliseconds);
+        char lineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
+        _formatRealtimeLineProtocol(point.meterValues, point.channel, point.unixTimeMilliseconds, lineProtocol, sizeof(lineProtocol));
 
-        if (payload.length() + lineProtocol.length() > 25000)
+        if (payload.length() + strlen(lineProtocol) > 25000)
         { // Keep under safe HTTP limit (reduced to leave room for energy data)
             _logger.warning("Payload too large, pushing point back to buffer", TAG);
             _bufferMeterValues.unshift(point);
@@ -275,7 +291,7 @@ void InfluxDbClient::_uploadBufferedData()
 
         if (payload.length() > 0)
             payload += "\n";
-        payload += lineProtocol;
+        payload += String(lineProtocol);
         pointCount++;
     }
 
@@ -285,9 +301,10 @@ void InfluxDbClient::_uploadBufferedData()
     {
         if (_ade7953.channelData[i].active)
         {
-            String energyLineProtocol = _formatEnergyLineProtocol(_ade7953.meterValues[i], i, currentTimestamp);
+            char energyLineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
+            _formatEnergyLineProtocol(_ade7953.meterValues[i], i, currentTimestamp, energyLineProtocol, sizeof(energyLineProtocol));
 
-            if (payload.length() + energyLineProtocol.length() > 30000)
+            if (payload.length() + strlen(energyLineProtocol) > 30000)
             { // Check if adding energy data would exceed limit
                 _logger.warning("Payload too large to include energy data for channel %d", TAG, i);
                 break;
@@ -295,7 +312,7 @@ void InfluxDbClient::_uploadBufferedData()
 
             if (payload.length() > 0)
                 payload += "\n";
-            payload += energyLineProtocol;
+            payload += String(energyLineProtocol);
         }
     }
 
@@ -305,7 +322,9 @@ void InfluxDbClient::_uploadBufferedData()
     {
         _logger.debug("Successfully uploaded %d real-time points + energy data to InfluxDB", TAG, pointCount);
         _influxDbConfiguration.lastConnectionStatus = "Upload successful";
-        _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+        char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        _customTime.getTimestamp(timestampBuffer);
+        _influxDbConfiguration.lastConnectionAttemptTimestamp = String(timestampBuffer);
 
         // Reset connection state on successful upload
         _isConnected = true;
@@ -323,7 +342,9 @@ void InfluxDbClient::_uploadBufferedData()
         _influxDbConnectionAttempt++;
 
         _influxDbConfiguration.lastConnectionStatus = "Upload failed (HTTP " + String(httpCode) + ") (Attempt " + String(_influxDbConnectionAttempt) + ")";
-        _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+        char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        _customTime.getTimestamp(timestampBuffer);
+        _influxDbConfiguration.lastConnectionAttemptTimestamp = String(timestampBuffer);
         _saveConfigurationToSpiffs();
 
         // Mark as disconnected to trigger reconnection attempts
@@ -364,22 +385,31 @@ void InfluxDbClient::_uploadBufferedData()
     http.end();
 }
 
-String InfluxDbClient::_formatRealtimeLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp)
+void InfluxDbClient::_formatRealtimeLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp, char* buffer, size_t bufferSize)
 {
-    char lineBuffer[512];
+    // Create sanitized label directly in a char array
+    char sanitizedLabel[LABEL_BUFFER_SIZE];  // Use defined constant
+    const char* originalLabel = _ade7953.channelData[channel].label.c_str();
     
-    String channelLabel = _ade7953.channelData[channel].label;
-    channelLabel.replace(" ", "_");
-    channelLabel.replace(",", "_");
-    channelLabel.replace("=", "_");
-    channelLabel.replace(":", "_");
+    // Sanitize the label in-place without heap allocation
+    size_t labelLen = strlen(originalLabel);
+    size_t writePos = 0;
+    for (size_t i = 0; i < labelLen && writePos < sizeof(sanitizedLabel) - 1; i++) {
+        char c = originalLabel[i];
+        if (c == ' ' || c == ',' || c == '=' || c == ':') {
+            sanitizedLabel[writePos++] = '_';
+        } else {
+            sanitizedLabel[writePos++] = c;
+        }
+    }
+    sanitizedLabel[writePos] = '\0';
 
-    snprintf(lineBuffer, sizeof(lineBuffer),
+    snprintf(buffer, bufferSize,
         "%s,channel=%d,label=%s,device_id=%s voltage=%.2f,current=%.3f,active_power=%.2f,reactive_power=%.2f,apparent_power=%.2f,power_factor=%.3f %llu000000",
         _influxDbConfiguration.measurement.c_str(),
         channel,
-        channelLabel.c_str(),
-        _deviceId.c_str(),
+        sanitizedLabel,
+        _deviceId,
         meterValues.voltage,
         meterValues.current,
         meterValues.activePower,
@@ -388,26 +418,33 @@ String InfluxDbClient::_formatRealtimeLineProtocol(const MeterValues &meterValue
         meterValues.powerFactor,
         timestamp
     );
-
-    return String(lineBuffer);
 }
 
-String InfluxDbClient::_formatEnergyLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp)
+void InfluxDbClient::_formatEnergyLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp, char* buffer, size_t bufferSize)
 {
-    char lineBuffer[512];
+    // Create sanitized label directly in a char array
+    char sanitizedLabel[LABEL_BUFFER_SIZE];  // Use defined constant
+    const char* originalLabel = _ade7953.channelData[channel].label.c_str();
     
-    String channelLabel = _ade7953.channelData[channel].label;
-    channelLabel.replace(" ", "_");
-    channelLabel.replace(",", "_");
-    channelLabel.replace("=", "_");
-    channelLabel.replace(":", "_");
+    // Sanitize the label in-place without heap allocation
+    size_t labelLen = strlen(originalLabel);
+    size_t writePos = 0;
+    for (size_t i = 0; i < labelLen && writePos < sizeof(sanitizedLabel) - 1; i++) {
+        char c = originalLabel[i];
+        if (c == ' ' || c == ',' || c == '=' || c == ':') {
+            sanitizedLabel[writePos++] = '_';
+        } else {
+            sanitizedLabel[writePos++] = c;
+        }
+    }
+    sanitizedLabel[writePos] = '\0';
 
-    snprintf(lineBuffer, sizeof(lineBuffer),
+    snprintf(buffer, bufferSize,
         "%s,channel=%d,label=%s,device_id=%s active_energy_imported=%.3f,active_energy_exported=%.3f,reactive_energy_imported=%.3f,reactive_energy_exported=%.3f,apparent_energy=%.3f %llu000000",
         _influxDbConfiguration.measurement.c_str(),
         channel,
-        channelLabel.c_str(),
-        _deviceId.c_str(),
+        sanitizedLabel,
+        _deviceId,
         meterValues.activeEnergyImported,
         meterValues.activeEnergyExported,
         meterValues.reactiveEnergyImported,
@@ -415,8 +452,6 @@ String InfluxDbClient::_formatEnergyLineProtocol(const MeterValues &meterValues,
         meterValues.apparentEnergy,
         timestamp
     );
-
-    return String(lineBuffer);
 }
 
 bool InfluxDbClient::_testConnection()
@@ -429,7 +464,8 @@ bool InfluxDbClient::_testConnection()
     }
 
     HTTPClient http;
-    String url = _baseUrl + "/ping";
+    char url[URL_BUFFER_SIZE];
+    snprintf(url, sizeof(url), "%s/ping", _baseUrl);
 
     http.begin(url);
     int httpCode = http.GET();
@@ -465,7 +501,8 @@ bool InfluxDbClient::_testCredentials()
     }
 
     HTTPClient http;
-    String url = _baseUrl + "/api/v2";
+    char url[URL_BUFFER_SIZE];
+    snprintf(url, sizeof(url), "%s/api/v2", _baseUrl);
 
     http.begin(url);
 
@@ -558,7 +595,9 @@ bool InfluxDbClient::setConfiguration(JsonDocument &jsonDocument)
     _nextInfluxDbConnectionAttemptMillis = millis(); // Try connecting immediately
     _isConnected = false;
     _influxDbConfiguration.lastConnectionStatus = "Disconnected";
-    _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+    char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+    _customTime.getTimestamp(timestampBuffer);
+    _influxDbConfiguration.lastConnectionAttemptTimestamp = String(timestampBuffer);
 
     _logger.debug("InfluxDB configuration set", TAG);
 

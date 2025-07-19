@@ -18,7 +18,9 @@ bool CustomTime::begin() {
 
     if (_getTime()) {
         _isTimeSynched = true;
-        _logger.info("Time synchronized: %s", TAG, getTimestamp().c_str());
+        char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        getTimestamp(_timestampBuffer);
+        _logger.info("Time synchronized: %s", TAG, _timestampBuffer);
         return true;
     } else {
         _isTimeSynched = false;
@@ -52,23 +54,19 @@ bool CustomTime::_getTime() {
     return true;
 }
 
-String CustomTime::timestampFromUnix(long unix){
+void CustomTime::timestampFromUnix(long unix, char* buffer){
     struct tm* _timeinfo;
-    char _timestamp[26];
 
     _timeinfo = localtime(&unix);
-    strftime(_timestamp, sizeof(_timestamp), TIMESTAMP_FORMAT, _timeinfo);
-    return String(_timestamp);
+    strftime(buffer, TIMESTAMP_BUFFER_SIZE, TIMESTAMP_FORMAT, _timeinfo);
 }
 
 // Static method for other classes to use
-String CustomTime::timestampFromUnix(long unix, const char *timestampFormat){
+void CustomTime::timestampFromUnix(long unix, const char *timestampFormat, char* buffer){
     struct tm* _timeinfo;
-    char _timestamp[26];
 
     _timeinfo = localtime(&unix);
-    strftime(_timestamp, sizeof(_timestamp), timestampFormat, _timeinfo);
-    return String(_timestamp);
+    strftime(buffer, TIMESTAMP_BUFFER_SIZE, timestampFormat, _timeinfo);
 }
 
 unsigned long CustomTime::getUnixTime(){
@@ -81,6 +79,6 @@ unsigned long long CustomTime::getUnixTimeMilliseconds() {
     return tv.tv_sec * 1000LL + (tv.tv_usec / 1000LL);
 }
 
-String CustomTime::getTimestamp(){
-    return timestampFromUnix(getUnixTime());
+void CustomTime::getTimestamp(char* buffer){
+    timestampFromUnix(getUnixTime(), buffer);
 }

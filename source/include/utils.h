@@ -79,7 +79,7 @@ void clearAllPreferences();
 bool isLatestFirmwareInstalled();
 void updateJsonFirmwareStatus(const char *status, const char *reason);
 
-String getDeviceId();
+void getDeviceId(char* deviceId, size_t maxLength);
 
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
 

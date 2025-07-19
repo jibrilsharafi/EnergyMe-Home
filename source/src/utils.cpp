@@ -21,7 +21,9 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
     logger.debug("Getting device info...", TAG);
 
     jsonDocument["system"]["uptime"] = millis();
-    jsonDocument["system"]["systemTime"] = customTime.getTimestamp();
+    char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+    CustomTime::getTimestamp(_timestampBuffer);
+    jsonDocument["system"]["systemTime"] = _timestampBuffer;
 
     jsonDocument["firmware"]["buildVersion"] = FIRMWARE_BUILD_VERSION;
     jsonDocument["firmware"]["buildDate"] = FIRMWARE_BUILD_DATE;
@@ -46,7 +48,9 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
     jsonDocument["chip"]["sdkVersion"] = ESP.getSdkVersion();
     jsonDocument["chip"]["id"] = ESP.getEfuseMac();
 
-    jsonDocument["device"]["id"] = getDeviceId();
+    char _deviceId[DEVICE_ID_BUFFER_SIZE]; // TODO: understand if we can have a global device ID variable
+    getDeviceId(_deviceId, sizeof(_deviceId));
+    jsonDocument["device"]["id"] = _deviceId;
 
     logger.debug("Device info retrieved", TAG);
 }
@@ -808,15 +812,18 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
 
     _jsonDocument["status"] = status;
     _jsonDocument["reason"] = reason;
-    _jsonDocument["timestamp"] = CustomTime::getTimestamp();
+    char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+    CustomTime::getTimestamp(_timestampBuffer);
+    _jsonDocument["timestamp"] = _timestampBuffer;
 
     serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);
 }
 
-String getDeviceId() {
+void getDeviceId(char* deviceId, size_t maxLength) {
     String _macAddress = WiFi.macAddress();
     _macAddress.replace(":", "");
-    return _macAddress;
+    _macAddress.toLowerCase();
+    _macAddress.toCharArray(deviceId, maxLength);
 }
 
 const char* getMqttStateReason(int state)
@@ -911,7 +918,9 @@ String readEncryptedPreferences(const char* preference_key) {
         return String("");
     }
 
-    return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId());
+    char _deviceId[DEVICE_ID_BUFFER_SIZE];
+    getDeviceId(_deviceId, DEVICE_ID_BUFFER_SIZE);
+    return decryptData(_encryptedData, String(preshared_encryption_key) + String(_deviceId));
 }
 
 bool checkCertificatesExist() {
@@ -1177,7 +1186,9 @@ void clearAllAuthTokens() {
 
 String hashPassword(const String& password) {
     // Simple hash using device ID as salt
-    String saltedPassword = password + getDeviceId();
+    char _deviceId[DEVICE_ID_BUFFER_SIZE];
+    getDeviceId(_deviceId, sizeof(_deviceId));
+    String saltedPassword = password + String(_deviceId);
     
     // Basic hash implementation (you might want to use a more secure method)
     uint32_t hash = 0;

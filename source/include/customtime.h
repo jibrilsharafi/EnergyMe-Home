@@ -21,12 +21,12 @@ public:
 
     bool isTimeSynched() { return _isTimeSynched; }
 
-    static String timestampFromUnix(long unix);
-    static String timestampFromUnix(long unix, const char *timestampFormat);
+    static void timestampFromUnix(long unix, char* buffer);
+    static void timestampFromUnix(long unix, const char *timestampFormat, char* buffer);
 
     static unsigned long getUnixTime();
     static unsigned long long getUnixTimeMilliseconds();
-    static String getTimestamp();
+    static void getTimestamp(char* buffer);
 
 private:
     bool _getTime();

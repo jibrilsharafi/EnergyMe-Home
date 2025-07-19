@@ -103,6 +103,13 @@
 #define DEFAULT_DST_OFFSET 0
 #define TIME_SYNC_RETRY_INTERVAL (60 * 1000) // Retry sync if failed
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
+#define TIMESTAMP_BUFFER_SIZE 32  // Size needed for TIMESTAMP_FORMAT (19 chars + null terminator) plus some extra space for safety
+
+// Buffer Sizes for String Operations
+#define URL_BUFFER_SIZE 256           // For HTTP URLs
+#define LINE_PROTOCOL_BUFFER_SIZE 512 // For InfluxDB line protocol strings
+#define LABEL_BUFFER_SIZE 64          // For sanitized channel labels
+#define DEVICE_ID_BUFFER_SIZE 16      // For device IDs (increased slightly for safety)
 
 // Webserver
 #define WEBSERVER_PORT 80

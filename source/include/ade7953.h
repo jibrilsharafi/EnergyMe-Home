@@ -167,8 +167,6 @@ private:
     void _recordFailure();
     void _checkForTooManyFailures();
 
-    static String _getBitsString(long value, int nBits = 32);
-
     int _ssPin;
     int _sckPin;
     int _misoPin;
