@@ -54,10 +54,6 @@ void CrashMonitor::begin() {
     _handleCrashCounter();
     _handleFirmwareTesting();
 
-    // Enable watchdog
-    esp_task_wdt_init(WATCHDOG_TIMER, true);
-    esp_task_wdt_add(NULL);
-
     _logger.debug("Crash monitor setup done", TAG);
 }
 

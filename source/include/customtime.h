@@ -21,8 +21,8 @@ public:
 
     bool isTimeSynched() { return _isTimeSynched; }
 
-    static void timestampFromUnix(long unix, char* buffer);
-    static void timestampFromUnix(long unix, const char *timestampFormat, char* buffer);
+    static void timestampFromUnix(time_t unix, char* buffer);
+    static void timestampFromUnix(time_t unix, const char *timestampFormat, char* buffer);
 
     static unsigned long getUnixTime();
     static unsigned long long getUnixTimeMilliseconds();

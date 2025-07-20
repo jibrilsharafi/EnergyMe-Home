@@ -12,13 +12,9 @@ void Led::begin() {
     pinMode(_greenPin, OUTPUT);
     pinMode(_bluePin, OUTPUT);
 
-    ledcSetup(1, LED_FREQUENCY, LED_RESOLUTION);
-    ledcSetup(2, LED_FREQUENCY, LED_RESOLUTION);
-    ledcSetup(3, LED_FREQUENCY, LED_RESOLUTION);
-
-    ledcAttachPin(_redPin, _redPinChannel);
-    ledcAttachPin(_greenPin, _greenPinChannel);
-    ledcAttachPin(_bluePin, _bluePinChannel);
+    ledcAttach(_redPin, LED_FREQUENCY, LED_RESOLUTION);
+    ledcAttach(_greenPin, LED_FREQUENCY, LED_RESOLUTION);
+    ledcAttach(_bluePin, LED_FREQUENCY, LED_RESOLUTION);
 
     setOff();
 }

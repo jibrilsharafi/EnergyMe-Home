@@ -12,8 +12,9 @@
 #include <esp_system.h>
 #include <rom/rtc.h>
 #include <vector>
-#include <esp_wifi.h> // For the MAC address
+#include <esp_mac.h> // For the MAC address
 #include <ESPmDNS.h>
+#include <WiFi.h>
 
 #include "binaries.h"
 #include "constants.h"
@@ -44,7 +45,7 @@ void updateStatistics();
 void printStatistics();
 
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
-void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
+bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
 void createEmptyJsonFile(const char* path);
 

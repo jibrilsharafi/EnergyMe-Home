@@ -1,81 +1,111 @@
 #pragma once
 
 #include <Arduino.h>
+#if defined(ESP32) || defined(LIBRETINY)
 #include <AsyncTCP.h>
-#include <Update.h>
-#include <ArduinoJson.h>
-#include <AdvancedLogger.h>
-#include <SPIFFS.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
+#include <WiFi.h>
+#elif defined(ESP8266)
+#include <ESP8266WiFi.h>
+#include <ESPAsyncTCP.h>
+#elif defined(TARGET_RP2040) || defined(TARGET_RP2350) || defined(PICO_RP2040) || defined(PICO_RP2350)
+#include <RPAsyncTCP.h>
+#include <WiFi.h>
+#endif
 
-#include "ade7953.h"
-#include "led.h"
-#include "customtime.h"
-#include "customwifi.h"
-#include "crashmonitor.h"
-#include <ESPAsyncWebServer.h> // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
-#include "constants.h"
-#include "influxdbclient.h"
-#include "utils.h"
-#include "custommqtt.h"
-#include "binaries.h"
-#include "buttonhandler.h"
+#include <ESPAsyncWebServer.h>
 
-class CustomServer
-{
-public:
-    CustomServer(
-        AsyncWebServer &server,
-        AdvancedLogger &logger,
-        Led &led,
-        Ade7953 &ade7953,
-        CustomWifi &customWifi,
-        CustomMqtt &customMqtt,
-        InfluxDbClient &influxDbClient,
-        ButtonHandler &buttonHandler);
+void server_begin();
 
-    ~CustomServer(); // Destructor to clean up semaphores
-    void begin();
+// #include <Arduino.h>
+// #include <AsyncTCP.h>
+// #include <WiFi.h>
+// #include <ESPAsyncWebServer.h>
+// #include <Update.h>
+// #include "AsyncJson.h"
+// #include <ArduinoJson.h>
+// #include <AdvancedLogger.h>
+// #include <SPIFFS.h>
+// #include "freertos/FreeRTOS.h"
+// #include "freertos/semphr.h"
 
-private:
-    void _setHtmlPages();
-    void _setOta();
-    void _setRestApi();
-    void _setOtherEndpoints();
-    void _handleDoUpdate(AsyncWebServerRequest *request, const char* filename, size_t index, uint8_t *data, size_t len, bool final);
-    void _onUpdateSuccessful(AsyncWebServerRequest *request);
-    void _onUpdateFailed(AsyncWebServerRequest *request, const char *reason);
-    void _updateJsonFirmwareStatus(const char *status, const char *reason);
-    void _serveJsonFile(AsyncWebServerRequest *request, const char *filePath);
+// #include "ade7953.h"
+// #include "led.h"
+// #include "customtime.h"
+// #include "customwifi.h"
+// #include "crashmonitor.h"
+// #include "constants.h"
+// #include "influxdbclient.h"
+// #include "utils.h"
+// #include "custommqtt.h"
+// #include "binaries.h"
+// #include "buttonhandler.h"
 
-    // Authentication methods
-    bool _requireAuth(AsyncWebServerRequest *request);
-    bool _checkAuth(AsyncWebServerRequest *request);
-    void _sendUnauthorized(AsyncWebServerRequest *request);
+// class CustomServer
+// {
+// public:
+//     CustomServer(
+//         AsyncWebServer &server,
+//         AdvancedLogger &logger,
+//         Led &led,
+//         Ade7953 &ade7953,
+//         CustomWifi &customWifi,
+//         CustomMqtt &customMqtt,
+//         InfluxDbClient &influxDbClient,
+//         ButtonHandler &buttonHandler);
 
-    void _serverLog(const char *message, const char *function, LogLevel logLevel, AsyncWebServerRequest *request);
+//     ~CustomServer();
+//     void begin();
 
-    AsyncWebServer &_server;
-    AdvancedLogger &_logger;
-    Led &_led;
-    Ade7953 &_ade7953;
-    CustomWifi &_customWifi;
-    CustomMqtt &_customMqtt;
-    InfluxDbClient &_influxDbClient;
-    ButtonHandler &_buttonHandler;
-    char _md5[MD5_BUFFER_SIZE];
+// private:
+//     // Refactored: Replaced discrete setup functions with more focused ones
+//     void _setStaticContent();
+//     void _setApiHandlers();
+//     void _setupAuthApi();
+//     void _setupGetApi();
+//     void _setupPostApi();
+//     void _setOtaHandlers();
+//     void _setNotFoundHandler();
+
+//     void _handleDoUpdate(AsyncWebServerRequest *request, const char* filename, size_t index, uint8_t *data, size_t len, bool final);
+//     void _onUpdateSuccessful(AsyncWebServerRequest *request);
+//     void _onUpdateFailed(AsyncWebServerRequest *request, const char *reason);
     
-    // Concurrency control using FreeRTOS semaphores
-    SemaphoreHandle_t _configurationMutex;
-    SemaphoreHandle_t _channelMutex;
-    SemaphoreHandle_t _otaMutex;
+//     AsyncWebServer &_server;
+//     AdvancedLogger &_logger;
+//     Led &_led;
+//     Ade7953 &_ade7953;
+//     CustomWifi &_customWifi;
+//     CustomMqtt &_customMqtt;
+//     InfluxDbClient &_influxDbClient;
+//     ButtonHandler &_buttonHandler;
+//     char _md5[MD5_BUFFER_SIZE];
     
-    // Rate limiting for API requests
-    unsigned long _lastChannelUpdateTime = 0;
-    unsigned long _lastConfigUpdateTime = 0;
+//     SemaphoreHandle_t _configurationMutex;
+//     SemaphoreHandle_t _channelMutex;
+//     SemaphoreHandle_t _otaMutex;
     
-    // Helper methods for concurrency control
-    bool _acquireMutex(SemaphoreHandle_t mutex, const char* mutexName, TickType_t timeout = pdMS_TO_TICKS(1000));
-    void _releaseMutex(SemaphoreHandle_t mutex, const char* mutexName);
-};
+//     // Rate limiting timestamps
+//     unsigned long _lastConfigUpdateTime = 0;
+//     unsigned long _lastChannelUpdateTime = 0;
+    
+//     // Refactored: Middleware objects are now members of the class
+//     AsyncAuthenticationMiddleware _authMiddleware;
+//     AsyncLoggingMiddleware _loggingMiddleware;
+//     AsyncRateLimitMiddleware _apiRateLimitMiddleware;
+    
+//     // Refactored: Dedicated handlers for JSON POST endpoints
+//     AsyncCallbackJsonWebHandler* _setCalibrationHandler;
+//     AsyncCallbackJsonWebHandler* _setAdeConfigHandler;
+//     AsyncCallbackJsonWebHandler* _setGeneralConfigHandler;
+//     AsyncCallbackJsonWebHandler* _setChannelHandler;
+//     AsyncCallbackJsonWebHandler* _setCustomMqttHandler;
+//     AsyncCallbackJsonWebHandler* _setInfluxDbHandler;
+//     AsyncCallbackJsonWebHandler* _setEnergyHandler;
+//     AsyncCallbackJsonWebHandler* _uploadFileHandler;
+//     AsyncCallbackJsonWebHandler* _changePasswordHandler;
+//     AsyncCallbackJsonWebHandler* _loginHandler;
+
+//     // Helper methods
+//     bool _acquireMutex(SemaphoreHandle_t mutex, const char* mutexName, TickType_t timeout = pdMS_TO_TICKS(1000));
+//     void _releaseMutex(SemaphoreHandle_t mutex, const char* mutexName);
+// };

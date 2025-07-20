@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
-#include <WiFiManager.h> // Needs to be defined on top due to conflict between WiFiManager and ESPAsyncWebServer
 #include <CircularBuffer.hpp>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -50,7 +49,7 @@ PubSubClient customClientMqtt(customNet);
 
 CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;  // TODO: freertos queue or/and ade7953 variable?
 
-AsyncWebServer server(WEBSERVER_PORT);
+// AsyncWebServer server(WEBSERVER_PORT);
 
 // Global device ID - defined here, declared as extern in constants.h
 char DEVICE_ID[DEVICE_ID_BUFFER_SIZE];
@@ -169,16 +168,16 @@ Mqtt mqtt( // TODO: Add semaphore for the payload meter (or better make it a que
   restartConfiguration
 );
 
-CustomServer customServer(
-  server,
-  logger,
-  led,
-  ade7953,
-  customWifi,
-  customMqtt,
-  influxDbClient,
-  buttonHandler
-);
+// CustomServer customServer(
+//   server,
+//   logger,
+//   led,
+//   ade7953,
+//   customWifi,
+//   customMqtt,
+//   influxDbClient,
+//   buttonHandler
+// );
 
 // Main functions
 // Tasks
@@ -464,7 +463,8 @@ void setup() {
     
     TRACE();
     logger.debug("Setting up server...", TAG);
-    customServer.begin();
+    // customServer.begin();
+    server_begin();
     logger.info("Server setup done", TAG);
 
     TRACE();

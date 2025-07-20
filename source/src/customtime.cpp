@@ -54,7 +54,7 @@ bool CustomTime::_getTime() {
     return true;
 }
 
-void CustomTime::timestampFromUnix(long unix, char* buffer){
+void CustomTime::timestampFromUnix(time_t unix, char* buffer){
     struct tm* _timeinfo;
 
     _timeinfo = localtime(&unix);
@@ -62,7 +62,7 @@ void CustomTime::timestampFromUnix(long unix, char* buffer){
 }
 
 // Static method for other classes to use
-void CustomTime::timestampFromUnix(long unix, const char *timestampFormat, char* buffer){
+void CustomTime::timestampFromUnix(time_t unix, const char *timestampFormat, char* buffer){
     struct tm* _timeinfo;
 
     _timeinfo = localtime(&unix);

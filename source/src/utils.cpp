@@ -1,5 +1,4 @@
 #include "utils.h"
-#include <WiFi.h>
 
 static const char *TAG = "utils";
 
@@ -79,21 +78,21 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
     return true;
 }
 
-void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
+bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     logger.debug("Deserializing JSON from SPIFFS", TAG);
 
     TRACE();
     File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
         logger.error("%s Failed to open file", TAG, path);
-        return;
+        return false;
     }
 
     DeserializationError _error = deserializeJson(jsonDocument, _file);
     _file.close();
     if (_error){
         logger.error("Failed to deserialize file %s. Error: %s", TAG, path, _error.c_str());
-        return;
+        return false;
     }
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){
@@ -104,6 +103,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
     safeSerializeJson(jsonDocument, _jsonString, sizeof(_jsonString), true);
     logger.debug("JSON deserialized from SPIFFS correctly: %s", TAG, _jsonString);
+    return true;
 }
 
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
@@ -928,7 +928,13 @@ void getDeviceId(char* deviceId, size_t maxLength) {
     if (WiFiGenericClass::getMode() == WIFI_MODE_NULL) {
         esp_read_mac(mac, ESP_MAC_WIFI_STA);
     } else {
-        esp_wifi_get_mac((wifi_interface_t)ESP_IF_WIFI_STA, mac);
+        logger.error("WiFi mode is not set to STA. Cannot get MAC address", TAG);
+        mac[0] = 0x00;
+        mac[1] = 0x00;
+        mac[2] = 0x00;
+        mac[3] = 0x00;
+        mac[4] = 0x00;
+        mac[5] = 0x00;
     }
     
     // Use lowercase hex formatting without colons
