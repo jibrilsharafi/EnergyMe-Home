@@ -20,8 +20,8 @@ public:
         Ade7953 &ade7953,
         AdvancedLogger &logger,
         PubSubClient &customClientMqtt,
-        CustomMqttConfiguration &customMqttConfiguration,
-        CustomTime &customTime);
+        CustomMqttConfiguration &customMqttConfiguration
+    );
 
     void begin();
     void loop();
@@ -47,7 +47,6 @@ private:
     AdvancedLogger &_logger;
     PubSubClient &_customClientMqtt;
     CustomMqttConfiguration &_customMqttConfiguration;
-    CustomTime &_customTime;
 
     bool _isSetupDone = false;
 

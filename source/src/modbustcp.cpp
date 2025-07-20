@@ -10,9 +10,8 @@ ModbusTcp::ModbusTcp(
     int maxClients, 
     int timeout,
     AdvancedLogger &logger,
-    Ade7953 &ade7953,
-    CustomTime &customTime
-) : _port(port), _serverId(serverId), _maxClients(maxClients), _timeout(timeout), _logger(logger), _ade7953(ade7953), _customTime(customTime) {
+    Ade7953 &ade7953
+) : _port(port), _serverId(serverId), _maxClients(maxClients), _timeout(timeout), _logger(logger), _ade7953(ade7953) {
 
     // Define the range of registers for the channels
     _lowerLimitChannelRegisters = 1000;
@@ -116,8 +115,8 @@ uint16_t ModbusTcp::_getRegisterValue(uint16_t address) {
 
     switch (address) {
         // General registers
-        case 0: return _customTime.getUnixTime() >> 16;
-        case 1: return _customTime.getUnixTime() & 0xFFFF;
+        case 0: return CustomTime::getUnixTime() >> 16;
+        case 1: return CustomTime::getUnixTime() & 0xFFFF;
         case 2: return millis() >> 16;
         case 3: return millis() & 0xFFFF;  
         

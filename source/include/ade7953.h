@@ -31,7 +31,6 @@ public:
         int interruptPin,        
         AdvancedLogger &logger,
         MainFlags &mainFlags,
-        CustomTime &customTime,
         CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter
     );
 
@@ -176,7 +175,6 @@ private:
 
     AdvancedLogger &_logger;
     MainFlags &_mainFlags;
-    CustomTime &_customTime;
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
     
     ChannelState _channelStates[CHANNEL_COUNT];

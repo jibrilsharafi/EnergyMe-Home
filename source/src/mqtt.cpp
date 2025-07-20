@@ -804,7 +804,7 @@ bool Mqtt::_publishMessage(const char* topic, const char* message, bool retain) 
     }    
     
     // Ensure time has been synced
-    if (!customTime.isTimeSynched()) {
+    if (!CustomTime::isTimeSynched()) {
         _logger.warning("Time not synced. Skipping publishing on %s", TAG, topic);
         statistics.mqttMessagesPublishedError++;
         return false;

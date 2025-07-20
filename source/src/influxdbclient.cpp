@@ -6,11 +6,10 @@ static const char *TAG = "influxdbclient";
 InfluxDbClient::InfluxDbClient(
     Ade7953 &ade7953,
     AdvancedLogger &logger,
-    InfluxDbConfiguration &influxDbConfiguration,
-    CustomTime &customTime) : _ade7953(ade7953),
+    InfluxDbConfiguration &influxDbConfiguration
+    ) : _ade7953(ade7953),
                               _logger(logger),
-                              _influxDbConfiguration(influxDbConfiguration),
-                              _customTime(customTime) {}
+                              _influxDbConfiguration(influxDbConfiguration) {}
 
 void InfluxDbClient::begin()
 {
@@ -86,7 +85,7 @@ bool InfluxDbClient::_connectInfluxDb()
         snprintf(_influxDbConfiguration.lastConnectionStatus, sizeof(_influxDbConfiguration.lastConnectionStatus), "Failed to ping InfluxDB (Attempt %d)", _influxDbConnectionAttempt);
 
         char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        _customTime.getTimestamp(timestampBuffer);
+        CustomTime::getTimestamp(timestampBuffer);
         snprintf(_influxDbConfiguration.lastConnectionAttemptTimestamp, sizeof(_influxDbConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
         
         _saveConfigurationToSpiffs();
@@ -125,7 +124,7 @@ bool InfluxDbClient::_connectInfluxDb()
         snprintf(_influxDbConfiguration.lastConnectionStatus, sizeof(_influxDbConfiguration.lastConnectionStatus), "Failed to validate credentials (Attempt %d)", _influxDbConnectionAttempt);
         
         char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        _customTime.getTimestamp(timestampBuffer);
+        CustomTime::getTimestamp(timestampBuffer);
         snprintf(_influxDbConfiguration.lastConnectionAttemptTimestamp, sizeof(_influxDbConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
         _saveConfigurationToSpiffs();
 
@@ -157,7 +156,7 @@ bool InfluxDbClient::_connectInfluxDb()
     snprintf(_influxDbConfiguration.lastConnectionStatus, sizeof(_influxDbConfiguration.lastConnectionStatus), "Connected to InfluxDB");
 
     char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-    _customTime.getTimestamp(timestampBuffer);
+    CustomTime::getTimestamp(timestampBuffer);
     snprintf(_influxDbConfiguration.lastConnectionAttemptTimestamp, sizeof(_influxDbConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
 
     _saveConfigurationToSpiffs();
@@ -187,7 +186,7 @@ void InfluxDbClient::_disable()
 
 void InfluxDbClient::_bufferMeterData()
 {
-    if (!_customTime.isTimeSynched() || millis() < MINIMUM_TIME_BEFORE_VALID_METER)
+    if (!CustomTime::isTimeSynched() || millis() < MINIMUM_TIME_BEFORE_VALID_METER)
     {
         _logger.debug("Time not synced or not enough time passed, skipping data buffering", TAG);
         return;
@@ -325,7 +324,7 @@ void InfluxDbClient::_uploadBufferedData()
     }
 
     // Then, add current energy data for all active channels
-    unsigned long long currentTimestamp = _customTime.getUnixTimeMilliseconds();
+    unsigned long long currentTimestamp = CustomTime::getUnixTimeMilliseconds();
     for (int i = 0; i < CHANNEL_COUNT; i++)
     {
         if (_ade7953.channelData[i].active)
@@ -364,7 +363,7 @@ void InfluxDbClient::_uploadBufferedData()
         _logger.debug("Successfully uploaded %d real-time points + energy data to InfluxDB", TAG, pointCount);
         snprintf(_influxDbConfiguration.lastConnectionStatus, sizeof(_influxDbConfiguration.lastConnectionStatus), "Upload successful");
         char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        _customTime.getTimestamp(timestampBuffer);
+        CustomTime::getTimestamp(timestampBuffer);
         snprintf(_influxDbConfiguration.lastConnectionAttemptTimestamp, sizeof(_influxDbConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
 
         // Reset connection state on successful upload
@@ -387,7 +386,7 @@ void InfluxDbClient::_uploadBufferedData()
                  "Upload failed (HTTP %d) (Attempt %d)", httpCode, _influxDbConnectionAttempt);
         
                  char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        _customTime.getTimestamp(timestampBuffer);
+        CustomTime::getTimestamp(timestampBuffer);
         snprintf(_influxDbConfiguration.lastConnectionAttemptTimestamp, sizeof(_influxDbConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
         
         _saveConfigurationToSpiffs();
@@ -651,7 +650,7 @@ bool InfluxDbClient::setConfiguration(JsonDocument &jsonDocument)
     _isConnected = false;
     snprintf(_influxDbConfiguration.lastConnectionStatus, sizeof(_influxDbConfiguration.lastConnectionStatus), "Disconnected");
     char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-    _customTime.getTimestamp(timestampBuffer);
+    CustomTime::getTimestamp(timestampBuffer);
     snprintf(_influxDbConfiguration.lastConnectionAttemptTimestamp, sizeof(_influxDbConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
 
     _logger.debug("InfluxDB configuration set", TAG);

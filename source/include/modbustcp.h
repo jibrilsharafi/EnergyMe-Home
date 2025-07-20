@@ -18,8 +18,8 @@ public:
         int maxClients,
         int timeout,
         AdvancedLogger &logger,
-        Ade7953 &ade7953,
-        CustomTime &customTime);
+        Ade7953 &ade7953
+    );
 
     void begin();
 
@@ -40,7 +40,6 @@ private:
 
     AdvancedLogger &_logger;
     Ade7953 &_ade7953;
-    CustomTime &_customTime;
 
     int _lowerLimitChannelRegisters;
     int _stepChannelRegisters;

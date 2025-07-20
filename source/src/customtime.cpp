@@ -3,82 +3,74 @@
 // TAG
 static const char *TAG = "customtime";
 
-CustomTime::CustomTime(const char *ntpServer, int timeSyncInterval, GeneralConfiguration &generalConfiguration, AdvancedLogger &logger)
-    : _ntpServer(ntpServer), _timeSyncInterval(timeSyncInterval), _generalConfiguration(generalConfiguration), _logger(logger) {
-}
+namespace CustomTime {
+    // Static variables to maintain state
+    static bool _isTimeSynched = false;
+    
+    // Private helper function
+    static bool _getTime();
 
-bool CustomTime::begin() {
-    configTime(
-        _generalConfiguration.gmtOffset, 
-        _generalConfiguration.dstOffset, 
-        _ntpServer
-    );
+    bool begin() {
+        setSyncInterval(TIME_SYNC_INTERVAL_S);
+        
+        // TimeLib will automatically retry sync at the interval we set
+        // We just check if initial sync worked, but don't need manual retry logic
+        _isTimeSynched = _getTime();
+        return _isTimeSynched;
+    }
 
-    setSyncInterval(_timeSyncInterval);
+    void setOffset(int gmtOffset, int dstOffset) {
+        configTime(gmtOffset, dstOffset, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
+        setSyncInterval(TIME_SYNC_INTERVAL_S);
+        
+        if (_getTime()) {
+            _isTimeSynched = true;
+            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            getTimestamp(timestampBuffer);
+        } else {
+            _isTimeSynched = false;
+        }
+    }
 
-    if (_getTime()) {
-        _isTimeSynched = true;
-        char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        getTimestamp(_timestampBuffer);
-        _logger.info("Time synchronized: %s", TAG, _timestampBuffer);
+    bool isTimeSynched() {
+        return _isTimeSynched;
+    }
+
+    static bool _getTime() {
+        time_t _now;
+        struct tm _timeinfo;
+        if(!getLocalTime(&_timeinfo)){
+            return false;
+        }
+        time(&_now);
         return true;
-    } else {
-        _isTimeSynched = false;
-        _logger.error("Failed to synchronize time. Retrying in %d seconds", TAG, TIME_SYNC_RETRY_INTERVAL / 1000);
-        _lastTimeSyncAttempt = millis();
-        return false;
     }
-}
 
-void CustomTime::loop() {
-    if (!_isTimeSynched && (millis() - _lastTimeSyncAttempt > TIME_SYNC_RETRY_INTERVAL)) {
-      _logger.info("Attempting to sync time in loop...", TAG);
-      
-      _isTimeSynched = begin();
-      if (_isTimeSynched) {
-          _logger.info("Time sync successful in loop.", TAG);
-      } else {
-          _logger.warning("Time sync retry failed. Retrying in %d seconds", TAG, TIME_SYNC_RETRY_INTERVAL / 1000);
-      }
-      _lastTimeSyncAttempt = millis();
+    void timestampFromUnix(time_t unix, char* buffer) {
+        struct tm* _timeinfo;
+
+        _timeinfo = localtime(&unix);
+        strftime(buffer, TIMESTAMP_BUFFER_SIZE, TIMESTAMP_FORMAT, _timeinfo);
     }
-}
 
-bool CustomTime::_getTime() {
-    time_t _now;
-    struct tm _timeinfo;
-    if(!getLocalTime(&_timeinfo)){
-        return false;
+    void timestampFromUnix(time_t unix, const char *timestampFormat, char* buffer) {
+        struct tm* _timeinfo;
+
+        _timeinfo = localtime(&unix);
+        strftime(buffer, TIMESTAMP_BUFFER_SIZE, timestampFormat, _timeinfo);
     }
-    time(&_now);
-    return true;
-}
 
-void CustomTime::timestampFromUnix(time_t unix, char* buffer){
-    struct tm* _timeinfo;
+    unsigned long getUnixTime() {
+        return static_cast<unsigned long>(time(nullptr));
+    }
 
-    _timeinfo = localtime(&unix);
-    strftime(buffer, TIMESTAMP_BUFFER_SIZE, TIMESTAMP_FORMAT, _timeinfo);
-}
+    unsigned long long getUnixTimeMilliseconds() {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        return tv.tv_sec * 1000LL + (tv.tv_usec / 1000LL);
+    }
 
-// Static method for other classes to use
-void CustomTime::timestampFromUnix(time_t unix, const char *timestampFormat, char* buffer){
-    struct tm* _timeinfo;
-
-    _timeinfo = localtime(&unix);
-    strftime(buffer, TIMESTAMP_BUFFER_SIZE, timestampFormat, _timeinfo);
-}
-
-unsigned long CustomTime::getUnixTime(){
-    return static_cast<unsigned long>(time(nullptr));
-}
-
-unsigned long long CustomTime::getUnixTimeMilliseconds() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000LL + (tv.tv_usec / 1000LL);
-}
-
-void CustomTime::getTimestamp(char* buffer){
-    timestampFromUnix(getUnixTime(), buffer);
+    void getTimestamp(char* buffer) {
+        timestampFromUnix(getUnixTime(), buffer);
+    }
 }

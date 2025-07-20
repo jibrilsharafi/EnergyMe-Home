@@ -18,8 +18,8 @@ public:
     InfluxDbClient(
         Ade7953 &ade7953,
         AdvancedLogger &logger,
-        InfluxDbConfiguration &influxDbConfiguration,
-        CustomTime &customTime);
+        InfluxDbConfiguration &influxDbConfiguration
+    );
 
     void begin();
     void loop();
@@ -47,7 +47,6 @@ private:
     Ade7953 &_ade7953;
     AdvancedLogger &_logger;
     InfluxDbConfiguration &_influxDbConfiguration;
-    CustomTime &_customTime;
 
     struct BufferedPoint {
         MeterValues meterValues;

@@ -26,7 +26,6 @@
 // Only place where the extern is used a lot
 extern AdvancedLogger logger;
 extern GeneralConfiguration generalConfiguration;
-extern CustomTime customTime;
 extern RestartConfiguration restartConfiguration;
 extern MainFlags mainFlags;
 extern PublishMqtt publishMqtt;

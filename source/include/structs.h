@@ -206,8 +206,8 @@ struct GeneralConfiguration // TODO: modify this, it is terrible to have this "g
 
   GeneralConfiguration() : 
     isCloudServicesEnabled(DEFAULT_IS_CLOUD_SERVICES_ENABLED), 
-    gmtOffset(DEFAULT_GMT_OFFSET), 
-    dstOffset(DEFAULT_DST_OFFSET), 
+    gmtOffset(0), 
+    dstOffset(0), 
     ledBrightness(191), // Default to 75% brightness
     sendPowerData(DEFAULT_SEND_POWER_DATA) {}
 };

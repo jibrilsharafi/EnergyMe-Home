@@ -90,20 +90,12 @@
 #define LOG_BUFFER_SIZE 20 // Callback queue size
 #define LOG_JSON_BUFFER_SIZE 512
 #define LOG_TOPIC_SIZE 64
+#define TIMESTAMP_BUFFER_SIZE 20 // Size needed for TIMESTAMP_FORMAT (19 chars + null terminator) (this is replicated, FIXME)
 
 // UDP Logging
 #define UDP_LOG_PORT 514 // Standard syslog port
 #define UDP_LOG_BUFFER_SIZE 512 // Smaller buffer for UDP packets
 #define DEFAULT_IS_UDP_LOGGING_ENABLED true
-
-// Time
-#define NTP_SERVER "pool.ntp.org"
-#define TIME_SYNC_INTERVAL (60 * 60) // Sync time every hour (in seconds)
-#define DEFAULT_GMT_OFFSET 0
-#define DEFAULT_DST_OFFSET 0
-#define TIME_SYNC_RETRY_INTERVAL (60 * 1000) // Retry sync if failed
-#define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
-#define TIMESTAMP_BUFFER_SIZE 20  // Size needed for TIMESTAMP_FORMAT (19 chars + null terminator)
 
 // Buffer Sizes for String Operations
 // =================================

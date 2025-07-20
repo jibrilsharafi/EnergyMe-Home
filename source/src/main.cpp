@@ -95,13 +95,6 @@ ButtonHandler buttonHandler(
   customWifi
 );
 
-CustomTime customTime(
-  NTP_SERVER,
-  TIME_SYNC_INTERVAL,
-  generalConfiguration,
-  logger
-);
-
 Ade7953 ade7953(
   SS_PIN,
   SCK_PIN,
@@ -111,7 +104,6 @@ Ade7953 ade7953(
   ADE7953_INTERRUPT_PIN,
   logger,
   mainFlags,
-  customTime,
   payloadMeter
 );
 
@@ -121,23 +113,20 @@ ModbusTcp modbusTcp(
   MODBUS_TCP_MAX_CLIENTS, 
   MODBUS_TCP_TIMEOUT,
   logger,
-  ade7953,
-  customTime
+  ade7953
 );
 
 CustomMqtt customMqtt(
   ade7953,
   logger,
   customClientMqtt,
-  customMqttConfiguration,
-  customTime
+  customMqttConfiguration
 );
 
 InfluxDbClient influxDbClient(
   ade7953,
   logger,
-  influxDbConfiguration,
-  customTime
+  influxDbConfiguration
 );
 
 Mqtt mqtt( // TODO: Add semaphore for the payload meter (or better make it a queue in freertos)
@@ -376,24 +365,24 @@ void setup() {
     TRACE();
     logger.debug("Checking for missing files...", TAG);
     auto missingFiles = checkMissingFiles();
-    if (!missingFiles.empty()) {
-        Led::setOrange();
-        logger.info("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
-
-        TRACE();
-        createDefaultFilesForMissingFiles(missingFiles);
-
-        logger.info("Default files created for missing files", TAG);
+    if (missingFiles.empty()) {
+      logger.info("No missing files detected", TAG);
     } else {
-        logger.info("No missing files detected", TAG);
+      Led::setOrange();
+      logger.info("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
+  
+      TRACE();
+      createDefaultFilesForMissingFiles(missingFiles);
+  
+      logger.info("Default files created for missing files", TAG);
     }
 
     TRACE();
     logger.debug("Fetching general configuration from SPIFFS...", TAG);
-    if (!setGeneralConfigurationFromSpiffs()) {
-        logger.warning("Failed to load configuration from SPIFFS. Using default values.", TAG);
+    if (setGeneralConfigurationFromSpiffs()) {
+      logger.info("Configuration loaded from SPIFFS", TAG);
     } else {
-        logger.info("Configuration loaded from SPIFFS", TAG);
+      logger.warning("Failed to load configuration from SPIFFS. Using default values.", TAG);
     }
 
     Led::setPurple();
@@ -410,10 +399,10 @@ void setup() {
 
     TRACE();
     logger.debug("Setting up ADE7953...", TAG);
-    if (!ade7953.begin()) {
-      logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG);
-    } else {
+    if (ade7953.begin()) {
       logger.info("ADE7953 setup done", TAG);
+    } else {
+      logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG);
     }
 
     Led::setBlue();
@@ -443,10 +432,16 @@ void setup() {
     TRACE();
     logger.debug("Syncing time...", TAG);
     updateTimezone();
-    if (!customTime.begin()) {
-      logger.error("Initial time sync failed! Will retry later.", TAG);
+    if (CustomTime::begin()) {
+      CustomTime::setOffset(
+        generalConfiguration.gmtOffset, 
+        generalConfiguration.dstOffset
+      );
+      char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+      CustomTime::getTimestamp(timestampBuffer);
+      logger.info("Initial time sync successful. Current timestamp: %s", TAG, timestampBuffer);
     } else {
-      logger.info("Time synced. We're on time pal!", TAG);
+      logger.error("Initial time sync failed! Will retry later.", TAG);
     }
     
     TRACE();
@@ -472,8 +467,6 @@ void loop() {
 
     // Main loop now only handles non-critical operations
     // Meter reading is handled by dedicated task
-    TRACE();
-    customTime.loop();
 
     TRACE();
     crashMonitor.crashCounterLoop();

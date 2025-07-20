@@ -156,8 +156,8 @@ void createDefaultGeneralConfigurationFile() {
     JsonDocument _jsonDocument;
 
     _jsonDocument["isCloudServicesEnabled"] = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
-    _jsonDocument["gmtOffset"] = DEFAULT_GMT_OFFSET;
-    _jsonDocument["dstOffset"] = DEFAULT_DST_OFFSET;
+    _jsonDocument["gmtOffset"] = 0;
+    _jsonDocument["dstOffset"] = 0;
     _jsonDocument["ledBrightness"] = DEFAULT_LED_BRIGHTNESS;
     _jsonDocument["sendPowerData"] = DEFAULT_SEND_POWER_DATA;
 

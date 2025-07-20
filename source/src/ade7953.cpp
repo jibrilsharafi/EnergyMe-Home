@@ -14,7 +14,6 @@ Ade7953::Ade7953(
     int interruptPin,
     AdvancedLogger &logger,
     MainFlags &mainFlags,
-    CustomTime &customTime,
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter) : 
                             _ssPin(ssPin),
                             _sckPin(sckPin),
@@ -24,7 +23,6 @@ Ade7953::Ade7953(
                             _interruptPin(interruptPin),                            
                             _logger(logger),
                             _mainFlags(mainFlags),
-                            _customTime(customTime),
                             _payloadMeter(payloadMeter) {}
 
 bool Ade7953::begin() {
@@ -1971,7 +1969,7 @@ bool Ade7953::_processChannelReading(int channel, unsigned long long linecycUnix
 }
 
 void Ade7953::_addMeterDataToPayload(int channel, unsigned long long linecycUnix) {
-    if (!_customTime.isTimeSynched() || millis() <= MINIMUM_TIME_BEFORE_VALID_METER) {
+    if (!CustomTime::getUnixTime() || millis() <= MINIMUM_TIME_BEFORE_VALID_METER) {
         return;
     }
     
@@ -2027,7 +2025,7 @@ void Ade7953::_meterReadingTask(void *parameter)
         if (self->_ade7953InterruptSemaphore != NULL &&
             xSemaphoreTake(self->_ade7953InterruptSemaphore, timeoutTicks) == pdTRUE)
         {
-            unsigned long long linecycUnix = self->_customTime.getUnixTimeMilliseconds();
+            unsigned long long linecycUnix = CustomTime::getUnixTimeMilliseconds();
             
             // Check if interrupt timing is within expected bounds
             self->_checkInterruptTiming();
