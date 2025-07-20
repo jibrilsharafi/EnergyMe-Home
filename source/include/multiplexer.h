@@ -4,17 +4,12 @@
 
 #include "structs.h"
 
-class Multiplexer
-{
-public:
-    Multiplexer(int s0, int s1, int s2, int s3);
-    void begin();
-
+namespace Multiplexer {
+    void begin(
+        int s0Pin,
+        int s1Pin,
+        int s2Pin,
+        int s3Pin
+    );
     void setChannel(ChannelNumber channel);
-
-private:
-    int _s0;
-    int _s1;
-    int _s2;
-    int _s3;
-};
+}

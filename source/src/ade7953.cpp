@@ -15,7 +15,6 @@ Ade7953::Ade7953(
     AdvancedLogger &logger,
     MainFlags &mainFlags,
     CustomTime &customTime,
-    Multiplexer &multiplexer,
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter) : 
                             _ssPin(ssPin),
                             _sckPin(sckPin),
@@ -26,7 +25,6 @@ Ade7953::Ade7953(
                             _logger(logger),
                             _mainFlags(mainFlags),
                             _customTime(customTime),
-                            _multiplexer(multiplexer),
                             _payloadMeter(payloadMeter) {}
 
 bool Ade7953::begin() {
@@ -1860,7 +1858,7 @@ Ade7953InterruptType Ade7953::_handleInterrupt() {
         
         // Only for CYCEND interrupts, switch to next channel and set multiplexer
         _currentChannel = _findNextActiveChannel(_currentChannel);
-        _multiplexer.setChannel(static_cast<ChannelNumber>(std::max(_currentChannel - 1, 0)));
+        Multiplexer::setChannel(static_cast<ChannelNumber>(std::max(_currentChannel - 1, 0)));
         
         return Ade7953InterruptType::CYCEND;
     } else {

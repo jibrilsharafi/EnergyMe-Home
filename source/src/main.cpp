@@ -85,13 +85,6 @@ CrashMonitor crashMonitor(
   logger
 );
 
-Multiplexer multiplexer(
-  MULTIPLEXER_S0_PIN,
-  MULTIPLEXER_S1_PIN,
-  MULTIPLEXER_S2_PIN,
-  MULTIPLEXER_S3_PIN
-);
-
 CustomWifi customWifi(
   logger
 );
@@ -119,7 +112,6 @@ Ade7953 ade7953(
   logger,
   mainFlags,
   customTime,
-  multiplexer,
   payloadMeter
 );
 
@@ -405,9 +397,15 @@ void setup() {
     }
 
     Led::setPurple();
-      TRACE();
+      
+    TRACE();
     logger.debug("Setting up multiplexer...", TAG);
-    multiplexer.begin();
+    Multiplexer::begin(
+      MULTIPLEXER_S0_PIN,
+      MULTIPLEXER_S1_PIN,
+      MULTIPLEXER_S2_PIN,
+      MULTIPLEXER_S3_PIN
+    );
     logger.info("Multiplexer setup done", TAG);
 
     TRACE();
