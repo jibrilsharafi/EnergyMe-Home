@@ -1,49 +1,33 @@
+// The LED functionality has been changed from an object to a namespace
+// to simplify usage and avoid unnecessary object instantiation, since 
+// it is (almost) stateless and only one LED will be used at a time anyway.
+
 #pragma once
 
 #include <Arduino.h>
 
-#include "constants.h"
+#define DEFAULT_LED_BRIGHTNESS 191 // 75% of the maximum brightness
+#define LED_RESOLUTION 8 // Resolution for PWM, 8 bits (0-255)
+#define LED_MAX_BRIGHTNESS 255 // 8-bit PWM
+#define LED_FREQUENCY 5000 // Frequency for PWM, in Hz. Quite standard
 
-class Led {
-    public:
-        // Constructor. redPin, greenPin, bluePin are the pins connected to the LED
-        Led(int redPin, int greenPin, int bluePin, int brightness);
-        // Initialize the LED
-        void begin();
+namespace Led {
+    void begin(int redPin, int greenPin, int bluePin);
 
-        // Set the brightness of the LED (0-255)
-        void setBrightness(int brightness);
-        int getBrightness();
+    void setBrightness(int brightness);
+    int getBrightness();
 
-        void setRed(bool force = false);
-        void setGreen(bool force = false);
-        void setBlue(bool force = false);
-        void setYellow(bool force = false);
-        void setPurple(bool force = false);
-        void setCyan(bool force = false);
-        void setOrange(bool force = false);
-        void setWhite(bool force = false);
-        
-        void setOff(bool force = false);
+    void setRed(bool force = false);
+    void setGreen(bool force = false);
+    void setBlue(bool force = false);
+    void setYellow(bool force = false);
+    void setPurple(bool force = false);
+    void setCyan(bool force = false);
+    void setOrange(bool force = false);
+    void setWhite(bool force = false);
+    
+    void setOff(bool force = false);
 
-        void block();
-        void unblock();
-
-    private:
-        int _redValue = 0;
-        int _greenValue = 0;
-        int _blueValue = 0;
-
-        int _redPin;
-        int _greenPin;
-        int _bluePin;
-        
-        int _brightness;
-
-        bool _isBlocked = false;
-        
-        // Set the color of the LED to the specified RGB triplet
-        void _setColor(int red, int green, int blue, bool force = false);
-        // Set the PWM values of the LED
-        void _setPwm();
-};
+    void block();
+    void unblock();
+}

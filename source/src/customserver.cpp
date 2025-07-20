@@ -130,14 +130,12 @@ void server_begin() {
 // CustomServer::CustomServer(
 //     AsyncWebServer &server,
 //     AdvancedLogger &logger,
-//     Led &led,
 //     Ade7953 &ade7953,
 //     CustomWifi &customWifi,
 //     CustomMqtt &customMqtt,
 //     InfluxDbClient &influxDbClient,
 //     ButtonHandler &buttonHandler) : _server(server),
 //                                     _logger(logger),
-//                                     _led(led),
 //                                     _ade7953(ade7953),
 //                                     _customWifi(customWifi),
 //                                     _customMqtt(customMqtt),
@@ -944,8 +942,8 @@ void server_begin() {
 //         }
 //     }
 
-//     _led.block();
-//     _led.setPurple(true);
+//     Led::block();
+//     Led::setPurple(true);
 
 //     TRACE();
 //     if (!index)
@@ -1000,8 +998,8 @@ void server_begin() {
 //     }
 
 //     TRACE();
-//     _led.setOff(true);
-//     _led.unblock();
+//     Led::setOff(true);
+//     Led::unblock();
 // }
 
 // void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
@@ -1049,9 +1047,9 @@ void server_begin() {
 
 //     for (int i = 0; i < 3; i++)
 //     {
-//         _led.setRed(true);
+//         Led::setRed(true);
 //         delay(500);
-//         _led.setOff(true);
+//         Led::setOff(true);
 //         delay(500);
 //     }
 

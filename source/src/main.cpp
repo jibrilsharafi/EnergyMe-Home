@@ -85,13 +85,6 @@ CrashMonitor crashMonitor(
   logger
 );
 
-Led led(
-  LED_RED_PIN, 
-  LED_GREEN_PIN, 
-  LED_BLUE_PIN, 
-  DEFAULT_LED_BRIGHTNESS
-);
-
 Multiplexer multiplexer(
   MULTIPLEXER_S0_PIN,
   MULTIPLEXER_S1_PIN,
@@ -100,14 +93,12 @@ Multiplexer multiplexer(
 );
 
 CustomWifi customWifi(
-  logger,
-  led
+  logger
 );
 
 ButtonHandler buttonHandler(
   BUTTON_GPIO0_PIN,
   logger,
-  led,
   customWifi
 );
 
@@ -128,7 +119,6 @@ Ade7953 ade7953(
   logger,
   mainFlags,
   customTime,
-  led,
   multiplexer,
   payloadMeter
 );
@@ -349,16 +339,16 @@ void setup() {
     Serial.printf("Device ID: %s\n", DEVICE_ID);
 
     Serial.println("Setting up LED...");
-    led.begin();
+    Led::begin(LED_RED_PIN, LED_GREEN_PIN, LED_BLUE_PIN);
     Serial.println("LED setup done");
-    led.setYellow(); // Indicate we're in early boot/crash check
+    Led::setYellow(); // Indicate we're in early boot/crash check
 
     if (!SPIFFS.begin(true)) {
         Serial.println("SPIFFS initialization failed!");
         ESP.restart();
         return;
     }
-    led.setWhite();
+    Led::setWhite();
     
     logger.begin();
     logger.setCallback(callbackLogMultiple);
@@ -389,13 +379,13 @@ void setup() {
         debugFlagsRtc.signature = 0;
     }
 
-    led.setCyan();
+    Led::setCyan();
 
     TRACE();
     logger.debug("Checking for missing files...", TAG);
     auto missingFiles = checkMissingFiles();
     if (!missingFiles.empty()) {
-        led.setOrange();
+        Led::setOrange();
         logger.info("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
 
         TRACE();
@@ -414,7 +404,7 @@ void setup() {
         logger.info("Configuration loaded from SPIFFS", TAG);
     }
 
-    led.setPurple();
+    Led::setPurple();
       TRACE();
     logger.debug("Setting up multiplexer...", TAG);
     multiplexer.begin();
@@ -428,7 +418,7 @@ void setup() {
       logger.info("ADE7953 setup done", TAG);
     }
 
-    led.setBlue();    
+    Led::setBlue();
     
     TRACE();
     logger.debug("Setting up WiFi...", TAG);
@@ -472,7 +462,7 @@ void setup() {
     modbusTcp.begin();
     logger.info("Modbus TCP setup done", TAG);
 
-    led.setGreen();
+    Led::setGreen();
 
     TRACE();
     logger.info("Setup done! Let's get this energetic party started!", TAG);

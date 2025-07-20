@@ -411,9 +411,9 @@ void checkIfRestartEsp32Required() {
 
 void restartEsp32() {
     TRACE();
-    led.block();
-    led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
-    led.setWhite(true);
+    Led::block();
+    Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
+    Led::setWhite(true);
 
     logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
 
@@ -684,7 +684,7 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
 void applyGeneralConfiguration() {
     logger.debug("Applying general configuration...", TAG);
 
-    led.setBrightness(generalConfiguration.ledBrightness);
+    Led::setBrightness(generalConfiguration.ledBrightness);
 
     logger.debug("General configuration applied", TAG);
 }
@@ -838,9 +838,9 @@ void factoryReset() {
 
     mainFlags.blockLoop = true;
 
-    led.block();
-    led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
-    led.setRed(true);
+    Led::block();
+    Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
+    Led::setRed(true);
 
     clearAllPreferences();
     SPIFFS.format();

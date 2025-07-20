@@ -3,7 +3,8 @@
 static const char *TAG = "customwifi";
 
 CustomWifi::CustomWifi(
-    AdvancedLogger &logger, Led &led) : _logger(logger), _led(led) {}
+    AdvancedLogger &logger
+  ) : _logger(logger) {}
 
 bool CustomWifi::begin()
 {
@@ -25,7 +26,7 @@ bool CustomWifi::begin()
   }
 
   // If we get here, we're connected (either initially or after portal restart)
-  _led.unblock();
+  Led::unblock();
   _logger.debug("WiFi setup done", TAG);
   return true;
 }
@@ -51,7 +52,7 @@ void CustomWifi::loop()
   // Logs show "Idle Status" (WL_IDLE_STATUS) when IP is 0.0f.0.0f, where WiFi.isConnected() would be false.
   if (!WiFi.isConnected() || WiFi.localIP() == IPAddress(0,0,0,0)) {
     _logger.warning("WiFi connection lost or IP not assigned. Current status: %d. Attempting reconnection...", TAG, WiFi.status());
-    _led.setBlue();
+    Led::setBlue();
     
     // Try simple reconnect first
     if (WiFi.reconnect()) { // This attempts to reconnect using the last known credentials.
@@ -71,7 +72,7 @@ void CustomWifi::loop()
           _failedConnectionAttempts = 0; // Reset counter on successful full reconnection
           _lastConnectionAttemptTime = millis(); // Update timestamp for stable connection tracking
           _fullyConnected = true;
-          _led.unblock(); // Unblock LED after successful connection
+          Led::unblock(); // Unblock LED after successful connection
           statistics.wifiConnection++; // Increment successful connection counter
           break;
         }
@@ -96,8 +97,8 @@ bool CustomWifi::_connectToWifi()
 {
   _logger.debug("Connecting to WiFi (using WiFiManager)...", TAG);
 
-  _led.block();
-  _led.setBlue(true);
+  Led::block();
+  Led::setBlue(true);
   
   _lastConnectionAttemptTime = millis(); // Record the start of this connection attempt
   _failedConnectionAttempts++;
@@ -127,7 +128,7 @@ bool CustomWifi::_connectToWifi()
     if (_portalWasStarted) {
         // Portal was actually started and used during this session
         _logger.warning("WiFi credentials configured via portal. Restarting device...", TAG);
-        _led.setCyan(true); // Indicate successful save before restart
+        Led::setCyan(true); // Indicate successful save before restart
         delay(1000); // Short delay to allow log message to potentially send
         ESP.restart();
         // Code execution stops here due to restart
@@ -135,12 +136,12 @@ bool CustomWifi::_connectToWifi()
         // Connected using existing credentials without portal, proceed normally
         setupMdns();
         printWifiInfo();
-        _led.unblock();
+        Led::unblock();
         return true;
     }
   } else {
     // Connection or portal failed/timed out
-    _led.setRed(true);
+    Led::setRed(true);
     statistics.wifiConnectionError++; // Increment error counter
     _logger.warning("Failed to connect to WiFi or portal timed out. Attempt %d of %d", TAG, 
                    _failedConnectionAttempts, WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS);
@@ -159,8 +160,8 @@ bool CustomWifi::_connectToWifi()
       // Consider adding a delay here if retries happen too quickly in your logic.
       // delay(backoffDelay); // Optional: uncomment if immediate retry is needed
     }
-    _led.unblock(); // Allow LED to show other states (like Orange for retry pending)
-    _led.setOrange(); 
+    Led::unblock(); // Allow LED to show other states (like Orange for retry pending)
+    Led::setOrange(); 
     return false;
   }
   // Should not reach here due to restart or return statements above

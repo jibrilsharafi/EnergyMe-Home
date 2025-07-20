@@ -14,8 +14,8 @@ class CustomWifi
 {
 public:
     CustomWifi(
-        AdvancedLogger &logger,
-        Led &led);
+        AdvancedLogger &logger
+    );
 
     bool begin();
     void loop();
@@ -31,7 +31,6 @@ private:
     WiFiManager _wifiManager;
 
     AdvancedLogger &_logger;
-    Led &_led;
 
     unsigned long _lastMillisWifiLoop = 0;
     unsigned long _lastConnectionAttemptTime = 0;

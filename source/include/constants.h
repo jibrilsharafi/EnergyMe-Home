@@ -183,11 +183,6 @@
 #define LED_GREEN_PIN 40
 #define LED_BLUE_PIN 38
 
-#define DEFAULT_LED_BRIGHTNESS 191 // 75% of the maximum brightness
-#define LED_MAX_BRIGHTNESS 255
-#define LED_FREQUENCY 5000
-#define LED_RESOLUTION 8
-
 // Button
 // Hardware pins (check hardware revision)
 #define BUTTON_GPIO0_PIN 0 // GPIO0 button for critical functionality control

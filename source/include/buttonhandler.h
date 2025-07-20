@@ -39,7 +39,6 @@ public:
   ButtonHandler(
       int buttonPin,
       AdvancedLogger &logger,
-      Led &led,
       CustomWifi &customWifi);
 
   /**
@@ -89,7 +88,6 @@ private:
 
   // Dependencies
   AdvancedLogger &_logger;
-  Led &_led;
   CustomWifi &_customWifi;
   Preferences _preferences;
 

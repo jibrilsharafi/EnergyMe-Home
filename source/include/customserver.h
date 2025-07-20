@@ -43,7 +43,6 @@ public:
     CustomServer(
         AsyncWebServer &server,
         AdvancedLogger &logger,
-        Led &led,
         Ade7953 &ade7953,
         CustomWifi &customWifi,
         CustomMqtt &customMqtt,
@@ -69,7 +68,6 @@ private:
     
     AsyncWebServer &_server;
     AdvancedLogger &_logger;
-    Led &_led;
     Ade7953 &_ade7953;
     CustomWifi &_customWifi;
     CustomMqtt &_customMqtt;

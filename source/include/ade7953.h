@@ -32,7 +32,6 @@ public:
         AdvancedLogger &logger,
         MainFlags &mainFlags,
         CustomTime &customTime,
-        Led &led,
         Multiplexer &multiplexer,
         CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter
     );
@@ -179,7 +178,6 @@ private:
     AdvancedLogger &_logger;
     MainFlags &_mainFlags;
     CustomTime &_customTime;
-    Led &_led;
     Multiplexer &_multiplexer;
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
     

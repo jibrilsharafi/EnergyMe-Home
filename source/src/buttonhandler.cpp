@@ -7,10 +7,8 @@ static const char *TAG = "buttonhandler";
 ButtonHandler::ButtonHandler(
     int buttonPin,
     AdvancedLogger &logger,
-    Led &led,
     CustomWifi &customWifi) : _buttonPin(buttonPin),
                               _logger(logger),
-                              _led(led),
                               _customWifi(customWifi),
                               _buttonPressed(false),
                               _lastButtonState(false),
@@ -84,9 +82,9 @@ void ButtonHandler::_handleButtonPress()
     _logger.debug("Button pressed", TAG);
 
     // Start immediate visual feedback
-    _led.block();
-    _led.setBrightness(max(_led.getBrightness(), 1)); // Show a faint light even if it is off
-    _led.setWhite(true);                              // Initial press indication
+    Led::block();
+    Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
+    Led::setWhite(true);                              // Initial press indication
 }
 
 void ButtonHandler::_handleButtonRelease()
@@ -122,7 +120,7 @@ void ButtonHandler::_handleButtonRelease()
         _operationInProgress = false;
     }
 
-    _led.unblock(); // Unblock LED for other operations
+    Led::unblock(); // Unblock LED for other operations
 }
 
 void ButtonHandler::_processButtonPressType()
@@ -159,14 +157,14 @@ void ButtonHandler::_handleRestart()
     _saveOperationTimestampToNVS();
 
     // Block LED from other operations and set feedback color
-    _led.block();
-    _led.setCyan(true);
+    Led::block();
+    Led::setCyan(true);
 
     setRestartEsp32(TAG, "Restart via button");
 
     // Anything below here is useless like a chocolate teapot
     // -----------------------------------------------------
-    _led.unblock();
+    Led::unblock();
 
     _operationInProgress = false;
     _currentPressType = ButtonPressType::NONE;
@@ -181,8 +179,8 @@ void ButtonHandler::_handlePasswordReset()
     _saveOperationTimestampToNVS();
 
     // Block LED from other operations
-    _led.block();
-    _led.setYellow(true);
+    Led::block();
+    Led::setYellow(true);
 
     // Reset password to default
     if (setAuthPassword(DEFAULT_WEB_PASSWORD))
@@ -192,9 +190,9 @@ void ButtonHandler::_handlePasswordReset()
         // Success - Green - 3 slow blinks green
         for (int i = 0; i < 3; ++i)
         {
-            _led.setGreen(true);
+            Led::setGreen(true);
             delay(500); // Brief success indication
-            _led.setOff(true);
+            Led::setOff(true);
             delay(500);
         }
     }
@@ -205,16 +203,16 @@ void ButtonHandler::_handlePasswordReset()
         // Failure - Red - 3 slow blinks red
         for (int i = 0; i < 3; ++i)
         {
-            _led.setRed(true); // Indicate failure
+            Led::setRed(true); // Indicate failure
             delay(500);
-            _led.setOff(true);
+            Led::setOff(true);
             delay(500);
         }
     }
 
     // Unblock LED
-    _led.setOff(true);
-    _led.unblock();
+    Led::setOff(true);
+    Led::unblock();
     delay(1000); // Ensure proper feedback to the user
 
     _operationInProgress = false;
@@ -230,8 +228,8 @@ void ButtonHandler::_handleWifiReset()
     _saveOperationTimestampToNVS();
 
     // Block LED from other operations
-    _led.block();
-    _led.setOrange(true);
+    Led::block();
+    Led::setOrange(true);
 
     _customWifi.resetWifi(); // Erase WiFi credentials and restart
 
@@ -240,7 +238,7 @@ void ButtonHandler::_handleWifiReset()
     _logger.info("WiFi reset completed successfully", TAG);
 
     // Unblock LED
-    _led.unblock();
+    Led::unblock();
 
     _operationInProgress = false;
     _currentPressType = ButtonPressType::NONE;
@@ -255,8 +253,8 @@ void ButtonHandler::_handleFactoryReset()
     _saveOperationTimestampToNVS();
 
     // Block LED from other operations
-    _led.block();
-    _led.setRed(true);
+    Led::block();
+    Led::setRed(true);
 
     factoryReset(); // Format and restart
 
@@ -265,7 +263,7 @@ void ButtonHandler::_handleFactoryReset()
     _logger.info("Factory reset initiated - device will restart", TAG);
 
     // Unblock LED (won't matter due to restart)
-    _led.unblock();
+    Led::unblock();
 
     _operationInProgress = false;
     _currentPressType = ButtonPressType::NONE;
@@ -283,28 +281,28 @@ void ButtonHandler::_updatePressVisualFeedback()
     // Provide immediate visual feedback based on current press duration
     if (pressDuration >= BUTTON_MAX_PRESS_TIME)
     {
-        _led.setWhite(true); // Indicate maximum press time exceeded
+        Led::setWhite(true); // Indicate maximum press time exceeded
         return;
     }
     if (pressDuration >= BUTTON_VERY_LONG_PRESS_TIME)
     {
-        _led.setRed(true); // Factory reset - most dangerous (red)
+        Led::setRed(true); // Factory reset - most dangerous (red)
     }
     else if (pressDuration >= BUTTON_LONG_PRESS_TIME)
     {
-        _led.setOrange(true); // WiFi reset - moderately dangerous (orange)
+        Led::setOrange(true); // WiFi reset - moderately dangerous (orange)
     }
     else if (pressDuration >= BUTTON_MEDIUM_PRESS_TIME)
     {
-        _led.setYellow(true); // Password reset - caution (yellow)
+        Led::setYellow(true); // Password reset - caution (yellow)
     }
     else if (pressDuration >= BUTTON_SHORT_PRESS_TIME)
     {
-        _led.setCyan(true); // Restart - safest operation (green)
+        Led::setCyan(true); // Restart - safest operation (green)
     }
     else
     {
-        _led.setWhite(true); // Initial press indication
+        Led::setWhite(true); // Initial press indication
     }
 }
 

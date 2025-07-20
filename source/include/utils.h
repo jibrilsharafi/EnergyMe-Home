@@ -27,7 +27,6 @@
 extern AdvancedLogger logger;
 extern GeneralConfiguration generalConfiguration;
 extern CustomTime customTime;
-extern Led led;
 extern RestartConfiguration restartConfiguration;
 extern MainFlags mainFlags;
 extern PublishMqtt publishMqtt;

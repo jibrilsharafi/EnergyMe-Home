@@ -15,7 +15,6 @@ Ade7953::Ade7953(
     AdvancedLogger &logger,
     MainFlags &mainFlags,
     CustomTime &customTime,
-    Led &led,
     Multiplexer &multiplexer,
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter) : 
                             _ssPin(ssPin),
@@ -27,7 +26,6 @@ Ade7953::Ade7953(
                             _logger(logger),
                             _mainFlags(mainFlags),
                             _customTime(customTime),
-                            _led(led),
                             _multiplexer(multiplexer),
                             _payloadMeter(payloadMeter) {}
 
@@ -1992,7 +1990,7 @@ void Ade7953::_addMeterDataToPayload(int channel, unsigned long long linecycUnix
 }
 
 void Ade7953::_processCycendInterrupt(unsigned long long linecycUnix) {
-    _led.setGreen();
+    Led::setGreen();
     
     // Process current channel (if active)
     if (_currentChannel != CHANNEL_INVALID) {
@@ -2002,7 +2000,7 @@ void Ade7953::_processCycendInterrupt(unsigned long long linecycUnix) {
     // Always process channel 0
     _processChannelReading(CHANNEL_0, linecycUnix);
     
-    _led.setOff();
+    Led::setOff();
 }
 
 void Ade7953::_handleCrcChangeInterrupt() {
