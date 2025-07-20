@@ -40,10 +40,6 @@ class Led {
         
         int _brightness;
 
-        int _redPinChannel = 1;
-        int _greenPinChannel = 2;
-        int _bluePinChannel = 3;
-
         bool _isBlocked = false;
         
         // Set the color of the LED to the specified RGB triplet

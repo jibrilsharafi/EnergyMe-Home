@@ -54,6 +54,8 @@ void CrashMonitor::begin() {
     _handleCrashCounter();
     _handleFirmwareTesting();
 
+    // Removed watchdog (wdt)
+
     _logger.debug("Crash monitor setup done", TAG);
 }
 
@@ -141,8 +143,6 @@ void CrashMonitor::leaveBreadcrumb(const char* filename, const char* functionNam
 
     crashData.currentIndex = (crashData.currentIndex + 1) % MAX_BREADCRUMBS;
     crashData.lastUnixTime = CustomTime::getUnixTime();
-
-    esp_task_wdt_reset();
 }
 
 bool CrashMonitor::_isValidBreadcrumb(const Breadcrumb& crumb) {

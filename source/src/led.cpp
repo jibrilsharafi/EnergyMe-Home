@@ -76,9 +76,9 @@ void Led::_setColor(int red, int green, int blue, bool force) {
 }
 
 void Led::_setPwm() {
-    ledcWrite(_redPinChannel, int(_redValue * _brightness / LED_MAX_BRIGHTNESS));
-    ledcWrite(_greenPinChannel, int(_greenValue * _brightness / LED_MAX_BRIGHTNESS));
-    ledcWrite(_bluePinChannel, int(_blueValue * _brightness / LED_MAX_BRIGHTNESS));
+    ledcWrite(_redPin, int(_redValue * _brightness / LED_MAX_BRIGHTNESS));
+    ledcWrite(_greenPin, int(_greenValue * _brightness / LED_MAX_BRIGHTNESS));
+    ledcWrite(_bluePin, int(_blueValue * _brightness / LED_MAX_BRIGHTNESS));
 }
 
 void Led::block() {

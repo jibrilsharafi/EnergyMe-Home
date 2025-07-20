@@ -64,8 +64,11 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
     if (_size >= bufferSize) {
         if (truncateOnError) {
             // Truncate JSON to fit buffer
-            logger.debug("Truncating JSON to fit buffer size (%zu bytes vs %zu bytes)", TAG, bufferSize, _size);
             serializeJson(jsonDocument, buffer, bufferSize);
+            // Ensure null-termination (avoid weird last character issues)
+            buffer[bufferSize - 1] = '\0';
+            
+            logger.debug("Truncating JSON to fit buffer size (%zu bytes vs %zu bytes)", TAG, bufferSize, _size);
         } else {
             logger.warning("JSON size (%zu bytes) exceeds buffer size (%zu bytes)", TAG, _size, bufferSize);
             snprintf(buffer, bufferSize, ""); // Clear buffer on failure
@@ -922,20 +925,8 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {
-    // Copied from WiFiSTA implementation
     uint8_t mac[6];
-    
-    if (WiFiGenericClass::getMode() == WIFI_MODE_NULL) {
-        esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    } else {
-        logger.error("WiFi mode is not set to STA. Cannot get MAC address", TAG);
-        mac[0] = 0x00;
-        mac[1] = 0x00;
-        mac[2] = 0x00;
-        mac[3] = 0x00;
-        mac[4] = 0x00;
-        mac[5] = 0x00;
-    }
+    esp_efuse_mac_get_default(mac);
     
     // Use lowercase hex formatting without colons
     snprintf(deviceId, maxLength, "%02x%02x%02x%02x%02x%02x", 
