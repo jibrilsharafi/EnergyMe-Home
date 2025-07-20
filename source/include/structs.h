@@ -251,7 +251,7 @@ struct CustomMqttConfiguration {
     char server[SERVER_NAME_BUFFER_SIZE];
     int port;
     char clientid[CLIENT_ID_BUFFER_SIZE];
-    char topic[TOPIC_BUFFER_SIZE];
+    char topic[MQTT_TOPIC_BUFFER_SIZE];
     int frequency;
     bool useCredentials;
     char username[USERNAME_BUFFER_SIZE];

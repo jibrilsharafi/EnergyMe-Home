@@ -379,7 +379,7 @@ void CustomServer::_setRestApi()
                     response["message"] = "Login successful";
                     
                     char responseBuffer[JSON_RESPONSE_BUFFER_SIZE];
-                    serializeJson(response, responseBuffer, sizeof(responseBuffer));
+                    safeSerializeJson(response, responseBuffer, sizeof(responseBuffer));
                     
                     char cookieValue[AUTH_TOKEN_LENGTH + 1 + 50];
                     snprintf(cookieValue, sizeof(cookieValue), "auth_token=%s; Path=/; Max-Age=86400; HttpOnly", token);
@@ -485,7 +485,7 @@ void CustomServer::_setRestApi()
         }
         
         char responseBuffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(response, responseBuffer, sizeof(responseBuffer));
+        safeSerializeJson(response, responseBuffer, sizeof(responseBuffer));
         request->send(HTTP_CODE_OK, "application/json", responseBuffer); });
 
     _server.on("/rest/is-alive", HTTP_GET, [this](AsyncWebServerRequest *request)
@@ -502,7 +502,7 @@ void CustomServer::_setRestApi()
         getJsonProductInfo(_jsonDocument);
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -514,7 +514,7 @@ void CustomServer::_setRestApi()
         getJsonDeviceInfo(_jsonDocument);
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -526,7 +526,7 @@ void CustomServer::_setRestApi()
         _customWifi.getWifiInfoJson(_jsonDocument);
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -538,7 +538,7 @@ void CustomServer::_setRestApi()
         _ade7953.fullMeterValuesToJson(_jsonDocument);
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -556,7 +556,7 @@ void CustomServer::_setRestApi()
                     _ade7953.singleMeterValuesToJson(jsonDocument, _channel);
 
                     char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-                    serializeJson(jsonDocument, _buffer, sizeof(_buffer));
+                    safeSerializeJson(jsonDocument, _buffer, sizeof(_buffer));
 
                     request->send(HTTP_CODE_OK, "application/json", _buffer);
                 } else {
@@ -605,7 +605,7 @@ void CustomServer::_setRestApi()
         _ade7953.channelDataToJson(_jsonDocument);
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -656,7 +656,7 @@ void CustomServer::_setRestApi()
         }
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -669,7 +669,7 @@ void CustomServer::_setRestApi()
         _jsonDocument["save"] = _logger.logLevelToString(_logger.getSaveLevel());
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -710,7 +710,7 @@ void CustomServer::_setRestApi()
         generalConfigurationToJson(generalConfiguration, _jsonDocument);
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -722,7 +722,7 @@ void CustomServer::_setRestApi()
         _jsonDocument["has_secrets"] = HAS_SECRETS ? true : false;
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -823,7 +823,7 @@ void CustomServer::_setRestApi()
         }
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -853,7 +853,7 @@ void CustomServer::_setRestApi()
 
         TRACE();
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         TRACE();
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
@@ -954,7 +954,7 @@ void CustomServer::_setRestApi()
         statisticsToJson(statistics, _jsonDocument);
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 
@@ -984,7 +984,7 @@ void CustomServer::_setRestApi()
             deserializeJson(_jsonDocument, buffer->data(), buffer->size());
 
             char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-            serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+            safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
             _serverLog(_buffer, TAG, LogLevel::DEBUG, request);
 
             if (request->url() == "/rest/set-calibration") {
@@ -1184,7 +1184,7 @@ void CustomServer::_setRestApi()
         }
 
         char _buffer[JSON_RESPONSE_BUFFER_SIZE];
-        serializeJson(_jsonDocument, _buffer, sizeof(_buffer));
+        safeSerializeJson(_jsonDocument, _buffer, sizeof(_buffer));
 
         request->send(HTTP_CODE_OK, "application/json", _buffer); });
 

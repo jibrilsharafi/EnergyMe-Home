@@ -227,8 +227,6 @@ void callbackLogToMqtt(
         _loops++;
 
         LogJson _log = logBuffer.shift();
-        size_t totalLength = strlen(_log.timestamp) + strlen(_log.function) + strlen(_log.message) + 100; // Leave overhead
-        if (totalLength > sizeof(jsonBuffer)) continue;
 
         snprintf(jsonBuffer, sizeof(jsonBuffer),
             "{\"timestamp\":\"%s\","
@@ -254,6 +252,7 @@ void callbackLogToMqtt(
             Serial.printf("MQTT publish failed to %s. Error: %d\n", 
                 fullMqttTopic, clientMqtt.state());
             logBuffer.push(_log);
+            statistics.mqttMessagesPublishedError++;
             break;
         }
     }
@@ -269,6 +268,9 @@ void callbackLogToUdp(
 ) {
     if (!DEFAULT_IS_UDP_LOGGING_ENABLED) return;
     if (strcmp(level, "verbose") == 0) return; // Never send verbose logs via UDP
+    
+    // Skip UDP logging if heap is critically low to prevent death spiral
+    if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) return;
 
     udpLogBuffer.push(
         LogJson(
@@ -290,9 +292,16 @@ void callbackLogToUdp(
 
         LogJson _log = udpLogBuffer.shift();
         
+        // Additional heap check before attempting to send
+        if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) {
+            // Put log back and stop trying
+            udpLogBuffer.push(_log);
+            break;
+        }
+        
         // Format as simplified syslog message
         snprintf(udpBuffer, sizeof(udpBuffer),
-            "<%d>%s %s[%lu]: [%s][Core%u] %s: %s",
+            "<%d>%s %s[%lu]: [%s][Core%u] %s: %s", // TODO: Make this constants or give meaningful names
             16, // Facility.Severity (local0.info)
             _log.timestamp,
             DEVICE_ID,

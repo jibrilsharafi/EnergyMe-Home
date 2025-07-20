@@ -37,13 +37,13 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument);
 void setRestartEsp32(const char* functionName, const char* reason);
 void checkIfRestartEsp32Required();
 void restartEsp32();
-void cleanupInterruptHandling();
 
 void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
 void printDeviceStatus();
 void updateStatistics();
 void printStatistics();
 
+bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
 void createEmptyJsonFile(const char* path);

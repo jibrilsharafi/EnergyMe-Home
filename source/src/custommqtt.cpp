@@ -296,7 +296,10 @@ void CustomMqtt::_publishMeter()
     _ade7953.fullMeterValuesToJson(_jsonDocument);
     
     char _meterMessage[MQTT_CUSTOM_PAYLOAD_LIMIT];
-    serializeJson(_jsonDocument, _meterMessage, sizeof(_meterMessage));
+    if (!safeSerializeJson(_jsonDocument, _meterMessage, sizeof(_meterMessage))) {
+        _logger.warning("Failed to serialize meter data to JSON", TAG);
+        return;
+    }
 
     if (_publishMessage(_customMqttConfiguration.topic, _meterMessage)) _logger.debug("Meter data published to custom MQTT", TAG);
 }

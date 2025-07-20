@@ -91,15 +91,15 @@ private:
     CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
     RestartConfiguration &_restartConfiguration;
 
-    char _mqttTopicConnectivity[MQTT_MAX_TOPIC_LENGTH];
-    char _mqttTopicMeter[MQTT_MAX_TOPIC_LENGTH];
-    char _mqttTopicStatus[MQTT_MAX_TOPIC_LENGTH];
-    char _mqttTopicMetadata[MQTT_MAX_TOPIC_LENGTH];
-    char _mqttTopicChannel[MQTT_MAX_TOPIC_LENGTH];
-    char _mqttTopicCrash[MQTT_MAX_TOPIC_LENGTH];
-    char _mqttTopicMonitor[MQTT_MAX_TOPIC_LENGTH];
-    char _mqttTopicGeneralConfiguration[MQTT_MAX_TOPIC_LENGTH];
-    char _mqttTopicStatistics[MQTT_MAX_TOPIC_LENGTH];
+    char _mqttTopicConnectivity[MQTT_TOPIC_BUFFER_SIZE];
+    char _mqttTopicMeter[MQTT_TOPIC_BUFFER_SIZE];
+    char _mqttTopicStatus[MQTT_TOPIC_BUFFER_SIZE];
+    char _mqttTopicMetadata[MQTT_TOPIC_BUFFER_SIZE];
+    char _mqttTopicChannel[MQTT_TOPIC_BUFFER_SIZE];
+    char _mqttTopicCrash[MQTT_TOPIC_BUFFER_SIZE];
+    char _mqttTopicMonitor[MQTT_TOPIC_BUFFER_SIZE];
+    char _mqttTopicGeneralConfiguration[MQTT_TOPIC_BUFFER_SIZE];
+    char _mqttTopicStatistics[MQTT_TOPIC_BUFFER_SIZE];
 
     unsigned long _lastMillisMqttLoop = 0;
     unsigned long _lastMillisMeterPublished = MINIMUM_TIME_BEFORE_VALID_METER; // Do not publish immediately after setup

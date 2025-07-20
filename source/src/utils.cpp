@@ -54,6 +54,31 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
     logger.debug("Device info retrieved", TAG);
 }
 
+bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError) {
+    // Validate inputs
+    if (!buffer || bufferSize == 0) {
+        logger.warning("Invalid buffer parameters passed to safeSerializeJson", TAG);
+        return false;
+    }
+
+    size_t _size = measureJson(jsonDocument);
+    if (_size >= bufferSize) {
+        if (truncateOnError) {
+            // Truncate JSON to fit buffer
+            logger.debug("Truncating JSON to fit buffer size (%zu bytes vs %zu bytes)", TAG, bufferSize, _size);
+            serializeJson(jsonDocument, buffer, bufferSize);
+        } else {
+            logger.warning("JSON size (%zu bytes) exceeds buffer size (%zu bytes)", TAG, _size, bufferSize);
+            snprintf(buffer, bufferSize, ""); // Clear buffer on failure
+        }
+        return false;
+    }
+
+    serializeJson(jsonDocument, buffer, bufferSize);
+    logger.debug("JSON serialized successfully (bytes: %zu): %s", TAG, _size, buffer);
+    return true;
+}
+
 void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     logger.debug("Deserializing JSON from SPIFFS", TAG);
 
@@ -77,7 +102,7 @@ void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     
     // For debugging purposes, serialize to a string and log it
     char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
-    serializeJson(jsonDocument, _jsonString, sizeof(_jsonString));
+    safeSerializeJson(jsonDocument, _jsonString, sizeof(_jsonString), true);
     logger.debug("JSON deserialized from SPIFFS correctly: %s", TAG, _jsonString);
 }
 
@@ -100,7 +125,7 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
 
     // For debugging purposes, serialize to a string and log it
     char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
-    serializeJson(jsonDocument, _jsonString, sizeof(_jsonString));
+    safeSerializeJson(jsonDocument, _jsonString, sizeof(_jsonString), true);
     logger.debug("JSON serialized to SPIFFS correctly: %s", TAG, _jsonString);
 
     return true;
@@ -405,6 +430,18 @@ void restartEsp32() {
 
     TRACE();
     logger.end();
+
+    // Give time for AsyncTCP connections to close gracefully
+    TRACE();
+    delay(1000);
+
+    // Disable WiFi to prevent AsyncTCP crashes during restart
+    TRACE();
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    
+    // Additional delay to ensure clean shutdown
+    delay(500);
 
     TRACE();
     ESP.restart();

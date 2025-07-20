@@ -58,7 +58,7 @@
 #define CRASH_COUNTER_TIMEOUT (180 * 1000) // Timeout for the crash counter to reset
 
 // Authentication
-#define PREFERENCES_NAMESPACE_AUTH "auth"
+#define PREFERENCES_NAMESPACE_AUTH "auth" 
 #define PREFERENCES_KEY_PASSWORD "password"
 #define DEFAULT_WEB_PASSWORD "energyme"
 #define DEFAULT_WEB_USERNAME "admin"
@@ -130,7 +130,7 @@
 #define CALIBRATION_LABEL_BUFFER_SIZE 64 // For calibration labels
 #define FUNCTION_NAME_BUFFER_SIZE 64  // For function names in restart configuration
 #define SERVER_NAME_BUFFER_SIZE 64    // For MQTT/InfluxDB server names
-#define TOPIC_BUFFER_SIZE 64          // For MQTT topics
+#define MQTT_TOPIC_BUFFER_SIZE 64          // For MQTT topics
 #define USERNAME_BUFFER_SIZE 64       // For usernames
 #define PASSWORD_BUFFER_SIZE 64       // For passwords
 #define BUCKET_NAME_BUFFER_SIZE 64    // For bucket names
@@ -157,10 +157,10 @@
 #define FILENAME_BUFFER_SIZE 256      // For file names in the filesystem
 #define LINE_PROTOCOL_BUFFER_SIZE 512 // For InfluxDB line protocol strings
 #define DECRYPTION_BUFFER_SIZE 512    // For decrypted data (certificates, tokens, etc.)
-#define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
+#define JSON_STRING_PRINT_BUFFER_SIZE 256 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
 #define PUBLIC_LOCATION_PAYLOAD_BUFFER_SIZE 512 // For public location API payloads
 #define HTTP_RESPONSE_BUFFER_SIZE 512 // For HTTP response strings
-#define JSON_RESPONSE_BUFFER_SIZE 512 // For JSON response strings (reduced from 1KB)
+#define JSON_RESPONSE_BUFFER_SIZE 2048 // For JSON response strings (reduced from 512B)
 #define FULLURL_BUFFER_SIZE 512       // For full URL with query parameters
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE 512 // For MQTT subscribe messages (reduced from 1KB)
 #define JSON_MQTT_BUFFER_SIZE 512     // For MQTT JSON payloads
@@ -233,9 +233,8 @@
 #define MQTT_MAX_RECONNECT_INTERVAL (5 * 60 * 1000) // Maximum interval for MQTT reconnection attempts
 #define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
-#define MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS 150 // The maximum number of points that can be sent in a single payload. Going higher than about 150 leads to unstable connections
-#define MQTT_PAYLOAD_LIMIT 32768 // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
-#define MQTT_MAX_TOPIC_LENGTH 64 // The maximum length of a MQTT topic
+#define MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS 100 // The maximum number of points that can be sent in a single payload. Going higher than about 150 leads to unstable connections
+#define MQTT_PAYLOAD_LIMIT (16 * 1024) // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
 #define MQTT_PROVISIONING_TIMEOUT (60 * 1000) // The timeout for the provisioning response
 #define MQTT_PROVISIONING_LOOP_CHECK (1 * 1000) // Interval between two certificates check on memory
 #define MQTT_DEBUG_LOGGING_DEFAULT_DURATION (3 * 60 * 1000) 
@@ -260,7 +259,7 @@
 #define MQTT_CUSTOM_RECONNECT_MULTIPLIER 2 // Multiplier for custom MQTT exponential backoff
 #define MQTT_CUSTOM_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL (10 * 1000) // Minimum interval between two connection attempts
-#define MQTT_CUSTOM_PAYLOAD_LIMIT 8192 // Increase the base limit of 256 bytes
+#define MQTT_CUSTOM_PAYLOAD_LIMIT 512 // Increase the base limit of 256 bytes
 
 // InfluxDB Configuration Defaults
 #define DEFAULT_IS_INFLUXDB_ENABLED false
@@ -290,8 +289,8 @@
 #define SAVE_ENERGY_INTERVAL (6 * 60 * 1000) // Time between each energy save to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
 // ESP32 status
-#define MINIMUM_FREE_HEAP_SIZE 10000 // Below this value (in bytes), the ESP32 will restart
-#define MINIMUM_FREE_SPIFFS_SIZE 100000 // Below this value (in bytes), the ESP32 will clear the log
+#define MINIMUM_FREE_HEAP_SIZE 5000 // Below this value (in bytes), the ESP32 will restart
+#define MINIMUM_FREE_SPIFFS_SIZE 200000 // Below this value (in bytes), the ESP32 will clear the log
 #define ESP32_RESTART_DELAY (2 * 1000) // The delay before restarting the ESP32 after a restart request, needed to allow the ESP32 to finish the current operations
 #define MINIMUM_FREE_HEAP_OTA 20000 // Below this, the OTA is rejected (a bit unsafe, this could block OTA)
 
@@ -302,7 +301,7 @@
 #define MULTIPLEXER_S1_PIN 11
 #define MULTIPLEXER_S2_PIN 3
 #define MULTIPLEXER_S3_PIN 9
-#define MULTIPLEXER_CHANNEL_COUNT 16 // This cannot be defined as a constant because it is used for array initialization
+#define MULTIPLEXER_CHANNEL_COUNT 16
 
 // ADE7953
 // --------------------
@@ -318,19 +317,14 @@
 
 // Task
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task" // The name of the ADE7953 task
-#define ADE7953_METER_READING_TASK_STACK_SIZE (8 * 1024) // The stack size for the ADE7953 task (increased from 8192 to prevent stack overflow in JSON operations)
+#define ADE7953_METER_READING_TASK_STACK_SIZE (8 * 1024) // The stack size for the ADE7953 task
 #define ADE7953_METER_READING_TASK_PRIORITY 2 // The priority for the ADE7953 task
 
 // Memory safety for JSON operations
-#define JSON_SAFE_MIN_HEAP_SIZE (8 * 1024) // Minimum free heap required for JSON operations (8KB)
-#define JSON_LOW_MEMORY_BATCH_LIMIT 250 // Reduced batch size when memory is low
+#define JSON_SAFE_MIN_HEAP_SIZE (16 * 1024) // Minimum free heap required for JSON operations
 
 // Interrupt handling
 #define ADE7953_INTERRUPT_TIMEOUT_MS 1000 // Timeout for waiting on interrupt semaphore (in ms)
-
-// Macros
-#define PAYLOAD_METER_LOCK() do { if (_payloadMeterMutex != NULL) xSemaphoreTake(_payloadMeterMutex, pdMS_TO_TICKS(5000)); } while(0)
-#define PAYLOAD_METER_UNLOCK() do { if (_payloadMeterMutex != NULL) xSemaphoreGive(_payloadMeterMutex); } while(0)
 
 // Setup
 #define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low
@@ -429,7 +423,6 @@
 #define PREFERENCES_NAMESPACE_CERTIFICATES "certificates"
 #define PREFS_KEY_CERTIFICATE "certificate"
 #define PREFS_KEY_PRIVATE_KEY "private_key"
-#define CERTIFICATE_LENGTH 2048
 #define KEY_SIZE 256
 
 // EnergyMe - Home | Custom MQTT topics
