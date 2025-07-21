@@ -7,41 +7,15 @@
 #include "ade7953.h"
 #include "customtime.h"
 #include "constants.h"
-#include "structs.h"
 
-class ModbusTcp
+#define MODBUS_TCP_SERVER_ID 1 // The Modbus TCP server ID
+#define MODBUS_TCP_MAX_CLIENTS 3 // The maximum number of clients that can connect to the Modbus TCP server
+#define MODBUS_TCP_TIMEOUT (10 * 1000) // The timeout for the Modbus TCP server
+
+extern AdvancedLogger logger;
+extern Ade7953 ade7953;
+
+namespace ModbusTcp
 {
-public:
-    ModbusTcp(
-        int port,
-        int serverId,
-        int maxClients,
-        int timeout,
-        AdvancedLogger &logger,
-        Ade7953 &ade7953
-    );
-
     void begin();
-
-private:
-    ModbusServerTCPasync _mbServer;
-
-    uint16_t _getRegisterValue(uint16_t address);
-    uint16_t _getFloatBits(float value, bool high);
-
-    bool _isValidRegister(uint16_t address);
-
-    static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request); // Must resturn a ModbusMessage as requested by registerWorker() method
-
-    int _port;
-    int _serverId;
-    int _maxClients;
-    int _timeout;
-
-    AdvancedLogger &_logger;
-    Ade7953 &_ade7953;
-
-    int _lowerLimitChannelRegisters;
-    int _stepChannelRegisters;
-    int _upperLimitChannelRegisters;
-};
+}

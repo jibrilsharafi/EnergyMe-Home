@@ -92,15 +92,6 @@ Ade7953 ade7953(
   payloadMeter
 );
 
-ModbusTcp modbusTcp(
-  MODBUS_TCP_PORT, 
-  MODBUS_TCP_SERVER_ID, 
-  MODBUS_TCP_MAX_CLIENTS, 
-  MODBUS_TCP_TIMEOUT,
-  logger,
-  ade7953
-);
-
 CustomMqtt customMqtt(
   ade7953,
   logger,
@@ -441,7 +432,7 @@ void setup() {
     logger.info("Server setup done", TAG);
     
     logger.debug("Setting up Modbus TCP...", TAG);
-    modbusTcp.begin();
+    ModbusTcp::begin();
     logger.info("Modbus TCP setup done", TAG);
 
     logger.debug("Setting up InfluxDB client...", TAG);

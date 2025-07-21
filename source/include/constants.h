@@ -147,7 +147,6 @@
 #define PAYLOAD_BUFFER_SIZE 1024 // For InfluxDB payload (reduced from 16KB to 4KB)
 
 // Webserver
-#define WEBSERVER_PORT 80
 #define API_UPDATE_THROTTLE_MS 500 // Minimum time between updates
 
 // Button
@@ -318,12 +317,9 @@
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0f // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20f // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 
-// Modbus TCP
-// --------------------
+// Server used ports (here to ensure no conflicts)
 #define MODBUS_TCP_PORT 502 // The default port for Modbus TCP
-#define MODBUS_TCP_MAX_CLIENTS 3 // The maximum number of clients that can connect to the Modbus TCP server
-#define MODBUS_TCP_TIMEOUT (10 * 1000) // The timeout for the Modbus TCP server
-#define MODBUS_TCP_SERVER_ID 1 // The Modbus TCP server ID
+#define WEBSERVER_PORT 80
 
 // Cloud services
 // --------------------

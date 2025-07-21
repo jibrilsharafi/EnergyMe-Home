@@ -2,167 +2,170 @@
 
 static const char *TAG = "modbustcp";
 
-ModbusTcp* modbusTcpInstance = nullptr;
+namespace ModbusTcp
+{
+    // Static state variables
+    static ModbusServerTCPasync _mbServer;
+    static int _lowerLimitChannelRegisters = 1000;
+    static int _stepChannelRegisters = 100;
+    static int _upperLimitChannelRegisters = _lowerLimitChannelRegisters + (CHANNEL_COUNT) * _stepChannelRegisters;
 
-ModbusTcp::ModbusTcp(
-    int port, 
-    int serverId, 
-    int maxClients, 
-    int timeout,
-    AdvancedLogger &logger,
-    Ade7953 &ade7953
-) : _port(port), _serverId(serverId), _maxClients(maxClients), _timeout(timeout), _logger(logger), _ade7953(ade7953) {
+    // Private function declarations
+    static uint16_t _getRegisterValue(uint16_t address);
+    static uint16_t _getFloatBits(float value, bool high);
+    static bool _isValidRegister(uint16_t address);
+    static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request);
 
-    // Define the range of registers for the channels
-    _lowerLimitChannelRegisters = 1000;
-    _stepChannelRegisters = 100;
-    _upperLimitChannelRegisters = _lowerLimitChannelRegisters + (CHANNEL_COUNT) * _stepChannelRegisters;
-
-    modbusTcpInstance = this;
-}
-
-void ModbusTcp::begin() {
-    _logger.debug("Initializing Modbus TCP", TAG);
-    
-    _mbServer.registerWorker(_serverId, READ_HOLD_REGISTER, &ModbusTcp::_handleReadHoldingRegisters);
-    _mbServer.start(_port, _maxClients, _timeout);  // Port, default server ID, timeout in ms
-    
-    _logger.debug("Modbus TCP initialized", TAG);
-}
-
-ModbusMessage ModbusTcp::_handleReadHoldingRegisters(ModbusMessage request) {
-    if (!modbusTcpInstance) {
-        modbusTcpInstance->_logger.error("ModbusTcp instance not initialized yet", TAG);
-        statistics.modbusRequestsError++;
-        return ModbusMessage(request.getServerID(), request.getFunctionCode(), SERVER_DEVICE_FAILURE);
-    }
-    
-    if (request.getFunctionCode() != READ_HOLD_REGISTER) {
-        modbusTcpInstance->_logger.debug("Invalid function code: %d", TAG, request.getFunctionCode());
-        statistics.modbusRequestsError++;
-        return ModbusMessage(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
+    void begin()
+    {
+        logger.debug("Initializing Modbus TCP", TAG);
+        
+        _mbServer.registerWorker(MODBUS_TCP_SERVER_ID, READ_HOLD_REGISTER, &_handleReadHoldingRegisters);
+        _mbServer.start(MODBUS_TCP_PORT, MODBUS_TCP_MAX_CLIENTS, MODBUS_TCP_TIMEOUT);
+        
+        logger.debug("Modbus TCP initialized", TAG);
     }
 
-    // No check on the valid address is performed as it seems that the response is not correctly handled by the client
-    
-    uint16_t startAddress;
-    uint16_t registerCount;
-    request.get(2, startAddress);
-    request.get(4, registerCount);
-    
-    // Calculate the byte count (2 bytes per register)
-    uint8_t byteCount = registerCount * 2;
-    
-    // Create the response
-    ModbusMessage response;
-    response.add(request.getServerID());
-    response.add(request.getFunctionCode());
-    response.add(byteCount);
+    static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request)
+    {
+        if (request.getFunctionCode() != READ_HOLD_REGISTER)
+        {
+            logger.debug("Invalid function code: %d", TAG, request.getFunctionCode());
+            statistics.modbusRequestsError++;
+            return ModbusMessage(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
+        }
 
-    // Fix this: 
-    for (uint16_t i = 0; i < registerCount; i++) {
-        uint16_t value = modbusTcpInstance->_getRegisterValue(startAddress + i);
-        response.add(value);
+        // No check on the valid address is performed as it seems that the response is not correctly handled by the client
+        
+        uint16_t startAddress;
+        uint16_t registerCount;
+        request.get(2, startAddress);
+        request.get(4, registerCount);
+        
+        // Calculate the byte count (2 bytes per register)
+        uint8_t byteCount = registerCount * 2;
+        
+        // Create the response
+        ModbusMessage response;
+        response.add(request.getServerID());
+        response.add(request.getFunctionCode());
+        response.add(byteCount);
+
+        // Add register values to response
+        for (uint16_t i = 0; i < registerCount; i++)
+        {
+            uint16_t value = _getRegisterValue(startAddress + i);
+            response.add(value);
+        }
+        
+        statistics.modbusRequests++;
+        return response;
     }
-    
-    statistics.modbusRequests++;
-    return response;
-}
 
-// Helper function to split float into high or low 16 bits
-uint16_t ModbusTcp::_getFloatBits(float value, bool high) {
-    uint32_t intValue = *reinterpret_cast<uint32_t*>(&value);
-    if (high) {
-        return intValue >> 16;
-    } else {
-        return intValue & 0xFFFF;
-    }
-}
-
-uint16_t ModbusTcp::_getRegisterValue(uint16_t address) {
-
-    // The address is calculated as 1000 + 100 * channel + offset
-    // All the registers here are float 32 bits, so we need to split them into two
-
-    if (address >= _lowerLimitChannelRegisters && address < _upperLimitChannelRegisters) {
-        int realAddress = address - _lowerLimitChannelRegisters;
-        int channel = realAddress / _stepChannelRegisters;
-        int offset = realAddress % _stepChannelRegisters;
-
-        switch (offset) {
-            case 0: return _getFloatBits(_ade7953.meterValues[channel].current, true);
-            case 1: return _getFloatBits(_ade7953.meterValues[channel].current, false);
-            case 2: return _getFloatBits(_ade7953.meterValues[channel].activePower, true);
-            case 3: return _getFloatBits(_ade7953.meterValues[channel].activePower, false);
-            case 4: return _getFloatBits(_ade7953.meterValues[channel].reactivePower, true);
-            case 5: return _getFloatBits(_ade7953.meterValues[channel].reactivePower, false);
-            case 6: return _getFloatBits(_ade7953.meterValues[channel].apparentPower, true);
-            case 7: return _getFloatBits(_ade7953.meterValues[channel].apparentPower, false);
-            case 8: return _getFloatBits(_ade7953.meterValues[channel].powerFactor, true);
-            case 9: return _getFloatBits(_ade7953.meterValues[channel].powerFactor, false);
-            case 10: return _getFloatBits(_ade7953.meterValues[channel].activeEnergyImported, true);
-            case 11: return _getFloatBits(_ade7953.meterValues[channel].activeEnergyImported, false);
-            case 12: return _getFloatBits(_ade7953.meterValues[channel].activeEnergyExported, true);
-            case 13: return _getFloatBits(_ade7953.meterValues[channel].activeEnergyExported, false);
-            case 14: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyImported, true);
-            case 15: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyImported, false);
-            case 16: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyExported, true);
-            case 17: return _getFloatBits(_ade7953.meterValues[channel].reactiveEnergyExported, false);
-            case 18: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergy, true);
-            case 19: return _getFloatBits(_ade7953.meterValues[channel].apparentEnergy, false);
+    // Helper function to split float into high or low 16 bits
+    static uint16_t _getFloatBits(float value, bool high)
+    {
+        uint32_t intValue = *reinterpret_cast<uint32_t*>(&value);
+        if (high)
+        {
+            return intValue >> 16;
+        }
+        else
+        {
+            return intValue & 0xFFFF;
         }
     }
 
-    switch (address) {
-        // General registers
-        case 0: return CustomTime::getUnixTime() >> 16;
-        case 1: return CustomTime::getUnixTime() & 0xFFFF;
-        case 2: return millis() >> 16;
-        case 3: return millis() & 0xFFFF;  
-        
-        // Voltage
-        case 100: return _getFloatBits(_ade7953.meterValues[CHANNEL_0].voltage, true);
-        case 101: return _getFloatBits(_ade7953.meterValues[CHANNEL_0].voltage, false);
+    static uint16_t _getRegisterValue(uint16_t address)
+    {
+        // The address is calculated as 1000 + 100 * channel + offset
+        // All the registers here are float 32 bits, so we need to split them into two
 
-        // Grid frequency
-        case 102: return _getFloatBits(_ade7953.getGridFrequency(), true);
-        case 103: return _getFloatBits(_ade7953.getGridFrequency(), false);
+        if (address >= _lowerLimitChannelRegisters && address < _upperLimitChannelRegisters)
+        {
+            int realAddress = address - _lowerLimitChannelRegisters;
+            int channel = realAddress / _stepChannelRegisters;
+            int offset = realAddress % _stepChannelRegisters;
 
-        // Aggregated values
-        // With channel 0
-        case 200: return _getFloatBits(_ade7953.getAggregatedActivePower(), true);
-        case 201: return _getFloatBits(_ade7953.getAggregatedActivePower(), false);
-        case 202: return _getFloatBits(_ade7953.getAggregatedReactivePower(), true);
-        case 203: return _getFloatBits(_ade7953.getAggregatedReactivePower(), false);
-        case 204: return _getFloatBits(_ade7953.getAggregatedApparentPower(), true);
-        case 205: return _getFloatBits(_ade7953.getAggregatedApparentPower(), false);
-        case 206: return _getFloatBits(_ade7953.getAggregatedPowerFactor(), true);
-        case 207: return _getFloatBits(_ade7953.getAggregatedPowerFactor(), false);
+            switch (offset)
+            {
+                case 0: return _getFloatBits(ade7953.meterValues[channel].current, true);
+                case 1: return _getFloatBits(ade7953.meterValues[channel].current, false);
+                case 2: return _getFloatBits(ade7953.meterValues[channel].activePower, true);
+                case 3: return _getFloatBits(ade7953.meterValues[channel].activePower, false);
+                case 4: return _getFloatBits(ade7953.meterValues[channel].reactivePower, true);
+                case 5: return _getFloatBits(ade7953.meterValues[channel].reactivePower, false);
+                case 6: return _getFloatBits(ade7953.meterValues[channel].apparentPower, true);
+                case 7: return _getFloatBits(ade7953.meterValues[channel].apparentPower, false);
+                case 8: return _getFloatBits(ade7953.meterValues[channel].powerFactor, true);
+                case 9: return _getFloatBits(ade7953.meterValues[channel].powerFactor, false);
+                case 10: return _getFloatBits(ade7953.meterValues[channel].activeEnergyImported, true);
+                case 11: return _getFloatBits(ade7953.meterValues[channel].activeEnergyImported, false);
+                case 12: return _getFloatBits(ade7953.meterValues[channel].activeEnergyExported, true);
+                case 13: return _getFloatBits(ade7953.meterValues[channel].activeEnergyExported, false);
+                case 14: return _getFloatBits(ade7953.meterValues[channel].reactiveEnergyImported, true);
+                case 15: return _getFloatBits(ade7953.meterValues[channel].reactiveEnergyImported, false);
+                case 16: return _getFloatBits(ade7953.meterValues[channel].reactiveEnergyExported, true);
+                case 17: return _getFloatBits(ade7953.meterValues[channel].reactiveEnergyExported, false);
+                case 18: return _getFloatBits(ade7953.meterValues[channel].apparentEnergy, true);
+                case 19: return _getFloatBits(ade7953.meterValues[channel].apparentEnergy, false);
+            }
+        }
 
-        // Without channel 0
-        case 210: return _getFloatBits(_ade7953.getAggregatedActivePower(false), true);
-        case 211: return _getFloatBits(_ade7953.getAggregatedActivePower(false), false);
-        case 212: return _getFloatBits(_ade7953.getAggregatedReactivePower(false), true);
-        case 213: return _getFloatBits(_ade7953.getAggregatedReactivePower(false), false);
-        case 214: return _getFloatBits(_ade7953.getAggregatedApparentPower(false), true);
-        case 215: return _getFloatBits(_ade7953.getAggregatedApparentPower(false), false);
-        case 216: return _getFloatBits(_ade7953.getAggregatedPowerFactor(false), true);
-        case 217: return _getFloatBits(_ade7953.getAggregatedPowerFactor(false), false);
+        switch (address)
+        {
+            // General registers
+            case 0: return CustomTime::getUnixTime() >> 16;
+            case 1: return CustomTime::getUnixTime() & 0xFFFF;
+            case 2: return millis() >> 16;
+            case 3: return millis() & 0xFFFF;  
+            
+            // Voltage
+            case 100: return _getFloatBits(ade7953.meterValues[CHANNEL_0].voltage, true);
+            case 101: return _getFloatBits(ade7953.meterValues[CHANNEL_0].voltage, false);
 
-        // Default case to handle unexpected addresses
-        default: return (uint16_t)0;
+            // Grid frequency
+            case 102: return _getFloatBits(ade7953.getGridFrequency(), true);
+            case 103: return _getFloatBits(ade7953.getGridFrequency(), false);
+
+            // Aggregated values
+            // With channel 0
+            case 200: return _getFloatBits(ade7953.getAggregatedActivePower(), true);
+            case 201: return _getFloatBits(ade7953.getAggregatedActivePower(), false);
+            case 202: return _getFloatBits(ade7953.getAggregatedReactivePower(), true);
+            case 203: return _getFloatBits(ade7953.getAggregatedReactivePower(), false);
+            case 204: return _getFloatBits(ade7953.getAggregatedApparentPower(), true);
+            case 205: return _getFloatBits(ade7953.getAggregatedApparentPower(), false);
+            case 206: return _getFloatBits(ade7953.getAggregatedPowerFactor(), true);
+            case 207: return _getFloatBits(ade7953.getAggregatedPowerFactor(), false);
+
+            // Without channel 0
+            case 210: return _getFloatBits(ade7953.getAggregatedActivePower(false), true);
+            case 211: return _getFloatBits(ade7953.getAggregatedActivePower(false), false);
+            case 212: return _getFloatBits(ade7953.getAggregatedReactivePower(false), true);
+            case 213: return _getFloatBits(ade7953.getAggregatedReactivePower(false), false);
+            case 214: return _getFloatBits(ade7953.getAggregatedApparentPower(false), true);
+            case 215: return _getFloatBits(ade7953.getAggregatedApparentPower(false), false);
+            case 216: return _getFloatBits(ade7953.getAggregatedPowerFactor(false), true);
+            case 217: return _getFloatBits(ade7953.getAggregatedPowerFactor(false), false);
+
+            // Default case to handle unexpected addresses
+            default: return (uint16_t)0;
+        }
     }
-}
 
-bool ModbusTcp::_isValidRegister(uint16_t address) { // Currently unused
-    // Define valid ranges
-    bool isValid = (
-        (address >= 0 && address <= 3) ||  // General registers
-        (address >= 100 && address <= 103) ||  // Voltage and grid frequency
-        (address >= 200 && address <= 207) ||  // Aggregated values with channel 0
-        (address >= 210 && address <= 217) ||  // Aggregated values without channel 0
-        (address >= _lowerLimitChannelRegisters && address < _upperLimitChannelRegisters)  // Channel registers
-    );
+    static bool _isValidRegister(uint16_t address) // Currently unused
+    {
+        // Define valid ranges
+        bool isValid = (
+            (address >= 0 && address <= 3) ||  // General registers
+            (address >= 100 && address <= 103) ||  // Voltage and grid frequency
+            (address >= 200 && address <= 207) ||  // Aggregated values with channel 0
+            (address >= 210 && address <= 217) ||  // Aggregated values without channel 0
+            (address >= _lowerLimitChannelRegisters && address < _upperLimitChannelRegisters)  // Channel registers
+        );
 
-    return isValid;
-}
+        return isValid;
+    }
+
+} // namespace ModbusTcp
