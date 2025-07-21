@@ -44,8 +44,7 @@ public:
         AsyncWebServer &server,
         AdvancedLogger &logger,
         Ade7953 &ade7953,
-        CustomMqtt &customMqtt,
-        InfluxDbClient &influxDbClient);
+        CustomMqtt &customMqtt);
 
     ~CustomServer();
     void begin();
@@ -68,7 +67,6 @@ private:
     AdvancedLogger &_logger;
     Ade7953 &_ade7953;
     CustomMqtt &_customMqtt;
-    InfluxDbClient &_influxDbClient;
     char _md5[MD5_BUFFER_SIZE];
     
     SemaphoreHandle_t _configurationMutex;

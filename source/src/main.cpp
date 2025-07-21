@@ -38,7 +38,6 @@ Statistics statistics;
 
 GeneralConfiguration generalConfiguration;
 CustomMqttConfiguration customMqttConfiguration;
-InfluxDbConfiguration influxDbConfiguration;
 RTC_NOINIT_ATTR DebugFlagsRtc debugFlagsRtc;
 
 WiFiClientSecure net = WiFiClientSecure();
@@ -107,12 +106,6 @@ CustomMqtt customMqtt(
   logger,
   customClientMqtt,
   customMqttConfiguration
-);
-
-InfluxDbClient influxDbClient(
-  ade7953,
-  logger,
-  influxDbConfiguration
 );
 
 Mqtt mqtt( // TODO: Add semaphore for the payload meter (or better make it a queue in freertos)
@@ -238,9 +231,6 @@ void callbackLogToUdp(
     
     // Skip UDP logging if heap is critically low to prevent death spiral
     if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) return;
-    
-    // Skip UDP logging for the first 10 seconds to let network stack stabilize
-    if (millis() < 10000) return;
 
     udpLogBuffer.push(
         LogJson(
@@ -261,14 +251,7 @@ void callbackLogToUdp(
         _loops++;
 
         LogJson _log = udpLogBuffer.shift();
-        
-        // Additional heap check before attempting to send
-        if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) {
-            // Put log back and stop trying
-            udpLogBuffer.push(_log);
-            break;
-        }
-        
+
         // Format as simplified syslog message
         snprintf(udpBuffer, sizeof(udpBuffer),
             "<%d>%s %s[%lu]: [%s][Core%u] %s: %s", // TODO: Make this constants or give meaningful names
@@ -281,24 +264,19 @@ void callbackLogToUdp(
             _log.function,
             _log.message);
         
-        // Try to begin UDP packet with timeout protection
         if (!udpClient.beginPacket(udpDestinationIp, UDP_LOG_PORT)) {
-            // Failed to begin packet - network might not be ready
-            // Put log back in buffer and stop trying (don't retry immediately)
             udpLogBuffer.push(_log);
             break;
         }
         
         size_t bytesWritten = udpClient.write((const uint8_t*)udpBuffer, strlen(udpBuffer));
         if (bytesWritten == 0) {
-            // Write failed - network issue
             udpLogBuffer.push(_log);
             udpClient.endPacket(); // Clean up the packet
             break;
         }
         
         if (!udpClient.endPacket()) {
-            // Send failed - put log back and stop
             udpLogBuffer.push(_log);
             break;
         }
@@ -475,68 +453,36 @@ void setup() {
     logger.info("Modbus TCP setup done", TAG);
 
     Led::setGreen();
-
-    
     logger.info("Setup done! Let's get this energetic party started!", TAG);
 }
 
 void loop() {
-    
     if (mainFlags.blockLoop) return;
-
-    // Main loop now only handles non-critical operations
-    // Meter reading is handled by dedicated task
-
-    
+ 
     CrashMonitor::crashCounterLoop();
-
-    
     CrashMonitor::firmwareTestingLoop();
-      
-    
-    // WiFi is now event-driven - no loop needed!
-    
-    
-    // ButtonHandler is now interrupt-driven - no loop needed!
-    
     
     mqtt.loop();
-    
-    
     customMqtt.loop();
-    
-    
-    influxDbClient.loop();
-
-    
+    InfluxDbClient::loop();
     ade7953.loop();
-
     
     if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {      
       lastMaintenanceCheck = millis();      
-      
-      
       updateStatistics();
-
-      
       printStatistics();
-      
-      
       printDeviceStatus();
 
-      
       if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
         logger.fatal("Heap memory has degraded below safe minimum: %d bytes", TAG, ESP.getFreeHeap());
         setRestartEsp32(TAG, "Heap memory has degraded below safe minimum");
       }
 
-      // If memory is below a certain level, clear the log
-      
+      // If memory is below a certain level, clear the log 
       if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
         logger.clearLog();
         logger.warning("Log cleared due to low memory", TAG);
       }
-      
       
       if (debugFlagsRtc.enableMqttDebugLogging && millis() >= debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
         logger.info("MQTT debug logging period ended.", TAG);

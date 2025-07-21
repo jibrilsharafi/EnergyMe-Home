@@ -639,12 +639,12 @@ void server_begin() {
 //     _server.addHandler(_setCustomMqttHandler);
     
 //     _setInfluxDbHandler = new AsyncCallbackJsonWebHandler("/rest/set-influxdb-configuration", [this](AsyncWebServerRequest* request, JsonVariant& json) {
-//         JsonDocument doc;
-//         doc.set(json);
-//         bool success = _influxDbClient.setConfiguration(doc);
-//         request->send(success ? 200 : 400, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
-//     });
-//     _setInfluxDbHandler->setMethod(HTTP_POST);
+        //         JsonDocument doc;
+        //         doc.set(json);
+        //         bool success = InfluxDbClient::setConfiguration(doc);
+        //         request->send(success ? 200 : 400, "application/json", success ? "{"message":"OK"}" : "{"error":"Invalid data"}");
+        //     });
+        //     _setInfluxDbHandler->setMethod(HTTP_POST);
 //     _server.addHandler(_setInfluxDbHandler);
 
 //     _setEnergyHandler = new AsyncCallbackJsonWebHandler("/rest/set-energy", [this](AsyncWebServerRequest* request, JsonVariant& json) {
