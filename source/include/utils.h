@@ -24,13 +24,6 @@
 #include "structs.h"
 #include "globals.h"
 
-// Only place where the extern is used a lot
-extern AdvancedLogger logger;
-extern GeneralConfiguration generalConfiguration;
-extern RestartConfiguration restartConfiguration;
-extern MainFlags mainFlags;
-extern PublishMqtt publishMqtt;
-
 void getJsonProductInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
 
@@ -55,19 +48,10 @@ void createDefaultCustomMqttConfigurationFile();
 void createDefaultChannelDataFile();
 void createDefaultCalibrationFile();
 void createDefaultAde7953ConfigurationFile();
-void createDefaultGeneralConfigurationFile();
 void createDefaultEnergyFile();
 void createDefaultDailyEnergyFile();
 void createDefaultFirmwareUpdateInfoFile();
 void createDefaultFirmwareUpdateStatusFile();
-
-void setDefaultGeneralConfiguration();
-bool setGeneralConfiguration(JsonDocument& jsonDocument);
-bool setGeneralConfigurationFromSpiffs();
-void saveGeneralConfigurationToSpiffs();
-void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument);
-bool validateGeneralConfigurationJson(JsonDocument& jsonDocument);
-void applyGeneralConfiguration();
 
 void getPublicLocation(PublicLocation* publicLocation);
 void getPublicTimezone(int* gmtOffset, int* dstOffset);

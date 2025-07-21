@@ -13,8 +13,7 @@ Ade7953::Ade7953(
     int resetPin,
     int interruptPin,
     AdvancedLogger &logger,
-    MainFlags &mainFlags,
-    CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter) : 
+    MainFlags &mainFlags) : 
                             _ssPin(ssPin),
                             _sckPin(sckPin),
                             _misoPin(misoPin),
@@ -22,8 +21,7 @@ Ade7953::Ade7953(
                             _resetPin(resetPin),
                             _interruptPin(interruptPin),                            
                             _logger(logger),
-                            _mainFlags(mainFlags),
-                            _payloadMeter(payloadMeter) {}
+                            _mainFlags(mainFlags) {}
 
 bool Ade7953::begin() {
     _logger.debug("Initializing Ade7953", TAG);
@@ -555,7 +553,7 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
 
     _saveChannelDataToSpiffs();
 
-    publishMqtt.channel = true;
+    Mqtt::requestChannelPublish();
 
     _logger.debug("Successfully parsed JSON data channel", TAG);
 
@@ -1995,7 +1993,7 @@ void Ade7953::_addMeterDataToPayload(int channel, unsigned long long linecycUnix
     
     if (_payloadMeterMutex) xSemaphoreTake(_payloadMeterMutex, pdMS_TO_TICKS(5000));
     
-    _payloadMeter.push(PayloadMeter(
+    Mqtt::pushMeter(PayloadMeter(
         channel, 
         linecycUnix, 
         meterValues[channel].activePower, 

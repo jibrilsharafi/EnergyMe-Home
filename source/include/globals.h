@@ -7,6 +7,9 @@
 #include "structs.h"
 
 extern AdvancedLogger logger;
-extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lowercase hex without colons)
 extern Statistics statistics;
 extern MainFlags mainFlags;
+extern RestartConfiguration restartConfiguration;
+extern DebugFlagsRtc debugFlagsRtc;
+
+extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lowercase hex without colons)

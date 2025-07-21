@@ -10,10 +10,12 @@
 #include <Preferences.h>
 
 #include "constants.h"
+#include "globals.h"
+#include "mqtt.h"
 #include "structs.h"
 #include "utils.h"
 
-#define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor"
+#define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor_ns"
 #define PREFERENCES_DATA_KEY "crashdata"
 #define CRASH_SIGNATURE 0xDEADBEEF // A signature to identify whether we have or not data in RTC
 #define MAX_BREADCRUMBS 8
@@ -22,8 +24,6 @@
 #define ROLLBACK_TESTING_TIMEOUT (60 * 1000) // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
 #define MAX_CRASH_COUNT 5 // Maximum amount of consecutive crashes before triggering a rollback
 #define CRASH_COUNTER_TIMEOUT (180 * 1000) // Timeout for the crash counter to reset
-
-extern AdvancedLogger logger;
 
 struct CrashData {
     unsigned int currentIndex;            // Current position in circular buffer

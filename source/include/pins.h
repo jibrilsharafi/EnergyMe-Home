@@ -2,17 +2,21 @@
 
 // Hardware revision: EnergyMe - Home v5 (02-12-2024)
 
+// RGB LED pins
 #define LED_RED_PIN 39
 #define LED_GREEN_PIN 40
 #define LED_BLUE_PIN 38
 
+// General use button pin (used also to set the chip to flash mode)
 #define BUTTON_GPIO0_PIN 0
 
+// Multiplexer pins
 #define MULTIPLEXER_S0_PIN 10
 #define MULTIPLEXER_S1_PIN 11
 #define MULTIPLEXER_S2_PIN 3
 #define MULTIPLEXER_S3_PIN 9
 
+// ADE7953 pins
 #define ADE7953_SS_PIN 48
 #define ADE7953_SCK_PIN 36
 #define ADE7953_MISO_PIN 35

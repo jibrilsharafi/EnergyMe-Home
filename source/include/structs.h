@@ -196,16 +196,6 @@ struct ChannelState {
     unsigned long consecutiveZeroCount = 0;
 };
 
-struct GeneralConfiguration // TODO: modify this, it is terrible to have this "general" configuration struct
-{
-  bool isCloudServicesEnabled;
-  bool sendPowerData; // Flag to control sending of power data. This can only be modified via MQTT
-
-  GeneralConfiguration() : 
-    isCloudServicesEnabled(DEFAULT_IS_CLOUD_SERVICES_ENABLED), 
-    sendPowerData(DEFAULT_SEND_POWER_DATA) {}
-};
-
 struct PublicLocation
 {
   char country[COUNTRY_BUFFER_SIZE];
@@ -227,22 +217,6 @@ struct RestartConfiguration
     snprintf(functionName, sizeof(functionName), "Unknown");
     snprintf(reason, sizeof(reason), "Unknown");
   }
-};
-
-struct PublishMqtt // TODO: make mqtt static and use methods instead
-{
-  bool connectivity;
-  bool meter;
-  bool status;
-  bool metadata;
-  bool channel;
-  bool crash;
-  bool monitor;
-  bool generalConfiguration;
-  bool statistics;
-
-  // Set default to true to publish everything on first connection (except meter which needs to gather data first and crash which is needed only in case of crash)
-  PublishMqtt() : connectivity(true), meter(false), status(true), metadata(true), channel(true), crash(false), monitor(true), generalConfiguration(true), statistics(true) {}
 };
 
 struct CustomMqttConfiguration {

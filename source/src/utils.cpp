@@ -150,19 +150,6 @@ void createEmptyJsonFile(const char* path) {
     logger.debug("Empty JSON file %s created", TAG, path);
 }
 
-void createDefaultGeneralConfigurationFile() {
-    logger.debug("Creating default general %s...", TAG, GENERAL_CONFIGURATION_JSON_PATH);
-
-    JsonDocument _jsonDocument;
-
-    _jsonDocument["isCloudServicesEnabled"] = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
-    _jsonDocument["sendPowerData"] = DEFAULT_SEND_POWER_DATA;
-
-    serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    logger.debug("Default %s created", TAG, GENERAL_CONFIGURATION_JSON_PATH);
-}
-
 void createDefaultEnergyFile() {
     logger.debug("Creating default %s...", TAG, ENERGY_JSON_PATH);
 
@@ -316,9 +303,7 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
 
     
     for (const char* path : missingFiles) {
-        if (strcmp(path, GENERAL_CONFIGURATION_JSON_PATH) == 0) {
-            createDefaultGeneralConfigurationFile();
-        } else if (strcmp(path, CONFIGURATION_ADE7953_JSON_PATH) == 0) {
+        if (strcmp(path, CONFIGURATION_ADE7953_JSON_PATH) == 0) {
             createDefaultAde7953ConfigurationFile();
         } else if (strcmp(path, CALIBRATION_JSON_PATH) == 0) {
             createDefaultCalibrationFile();
@@ -540,85 +525,6 @@ void printStatistics() {
     );
 }
 
-// General configuration
-// -----------------------------
-
-bool setGeneralConfigurationFromSpiffs() {
-    logger.debug("Setting general configuration from SPIFFS...", TAG);
-
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    if (!setGeneralConfiguration(_jsonDocument)) {
-        logger.error("Failed to open general configuration file", TAG);
-        setDefaultGeneralConfiguration();
-        return false;
-    }
-    
-    logger.debug("General configuration set from SPIFFS", TAG);
-    return true;
-}
-
-void setDefaultGeneralConfiguration() {
-    logger.debug("Setting default general configuration...", TAG);
-    
-    createDefaultGeneralConfigurationFile();
-
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    setGeneralConfiguration(_jsonDocument);
-    
-    logger.debug("Default general configuration set", TAG);
-}
-
-void saveGeneralConfigurationToSpiffs() {
-    logger.debug("Saving general configuration to SPIFFS...", TAG);
-
-    JsonDocument _jsonDocument;
-    generalConfigurationToJson(generalConfiguration, _jsonDocument);
-
-    serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    logger.debug("General configuration saved to SPIFFS", TAG);
-}
-
-bool setGeneralConfiguration(JsonDocument& jsonDocument) {
-    logger.debug("Setting general configuration...", TAG);
-
-    if (!validateGeneralConfigurationJson(jsonDocument)) {
-        logger.warning("Failed to set general configuration", TAG);
-        return false;
-    }
-#if HAS_SECRETS
-    generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
-    generalConfiguration.sendPowerData = jsonDocument["sendPowerData"].as<bool>();
-#else
-    logger.info("Cloud services cannot be enabled due to missing secrets", TAG);
-    generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
-    generalConfiguration.sendPowerData = DEFAULT_SEND_POWER_DATA;
-#endif
-
-    applyGeneralConfiguration();
-
-    saveGeneralConfigurationToSpiffs();
-
-    publishMqtt.generalConfiguration = true;
-
-    logger.debug("General configuration set", TAG);
-
-    return true;
-}
-
-void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument) {
-    logger.debug("Converting general configuration to JSON...", TAG);
-
-    jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
-    jsonDocument["sendPowerData"] = generalConfiguration.sendPowerData;
-
-    logger.debug("General configuration converted to JSON", TAG);
-}
-
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
     logger.debug("Converting statistics to JSON...", TAG);
 
@@ -650,23 +556,6 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
     jsonDocument["logFatal"] = statistics.logFatal;
 
     logger.debug("Statistics converted to JSON", TAG);
-}
-
-void applyGeneralConfiguration() {
-    logger.debug("Applying general configuration...", TAG);
-
-    logger.debug("General configuration applied", TAG);
-}
-
-bool validateGeneralConfigurationJson(JsonDocument& jsonDocument) {
-    logger.debug("Validating general configuration JSON...", TAG);
-
-    if (!jsonDocument.is<JsonObject>()) { logger.warning("JSON is not an object", TAG); return false; }
-    
-    if (!jsonDocument["isCloudServicesEnabled"].is<bool>()) { logger.warning("isCloudServicesEnabled is not a boolean", TAG); return false; }
-    if (!jsonDocument["sendPowerData"].is<bool>()) { logger.warning("sendPowerData is not a boolean", TAG); return false; }
-
-    return true;
 }
 
 // Helper functions

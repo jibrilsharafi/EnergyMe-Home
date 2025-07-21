@@ -8,6 +8,7 @@
 #include <WiFi.h>
 
 #include "ade7953.h"
+#include "globals.h"
 #include "customtime.h"
 #include "customwifi.h"
 
@@ -30,7 +31,6 @@
 #define INFLUXDB_TASK_PRIORITY 1
 
 extern Ade7953 ade7953;
-extern AdvancedLogger logger;
 
 struct InfluxDbConfiguration {
     bool enabled;

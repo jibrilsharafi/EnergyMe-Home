@@ -21,7 +21,6 @@
 #include "led.h"
 #include "modbustcp.h"
 #include "mqtt.h"
-#include "custommqtt.h"
 #include "influxdbclient.h"
 #include "multiplexer.h"
 
@@ -31,22 +30,11 @@
 static const char *TAG = "main";
 
 RestartConfiguration restartConfiguration;
-PublishMqtt publishMqtt;
 
 MainFlags mainFlags;
 Statistics statistics;
 
-GeneralConfiguration generalConfiguration;
-CustomMqttConfiguration customMqttConfiguration;
 RTC_NOINIT_ATTR DebugFlagsRtc debugFlagsRtc;
-
-WiFiClientSecure net = WiFiClientSecure();
-PubSubClient clientMqtt(net);
-
-WiFiClient customNet;
-PubSubClient customClientMqtt(customNet);
-
-CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;  // TODO: freertos queue or/and ade7953 variable?
 
 // AsyncWebServer server(WEBSERVER_PORT);
 
@@ -88,25 +76,7 @@ Ade7953 ade7953(
   ADE7953_RESET_PIN,
   ADE7953_INTERRUPT_PIN,
   logger,
-  mainFlags,
-  payloadMeter
-);
-
-CustomMqtt customMqtt(
-  ade7953,
-  logger,
-  customClientMqtt,
-  customMqttConfiguration
-);
-
-Mqtt mqtt( // TODO: Add semaphore for the payload meter (or better make it a queue in freertos)
-  ade7953,
-  logger,
-  clientMqtt,
-  net,
-  publishMqtt,
-  payloadMeter,
-  restartConfiguration
+  mainFlags
 );
 
 // CustomServer customServer(
@@ -146,67 +116,8 @@ void callbackLogToMqtt(
     const char* function,
     const char* message
 ) {
-    if (
-      (strcmp(level, "debug") == 0 && !debugFlagsRtc.enableMqttDebugLogging) || // Only send debug logs if MQTT debug logging is enabled
-      (strcmp(level, "verbose") == 0) // Never send verbose logs via MQTT
-    ) return;
-
-    logBuffer.push(
-      LogJson(
-        timestamp,
-        millisEsp,
-        level,
-        coreId,
-        function,
-        message
-      )
-    );
-
-    // If not connected to WiFi and MQTT, return (log is still stored in circular buffer for later) 
-    if (CustomWifi::isFullyConnected() == false) return;
-    if (clientMqtt.state() != MQTT_CONNECTED) return;
-
-    // Only generate the base MQTT topic if it does not exist yet
-    if (baseMqttTopicLogs[0] == '\0') {
-      snprintf(baseMqttTopicLogs, sizeof(baseMqttTopicLogs), 
-               "%s/%s/%s/%s", MQTT_TOPIC_1, MQTT_TOPIC_2, DEVICE_ID, MQTT_TOPIC_LOG);
-      logger.debug("Base MQTT topic for logs: %s", TAG, baseMqttTopicLogs);
-    }
-
-    unsigned int _loops = 0;
-    while (!logBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
-        _loops++;
-
-        LogJson _log = logBuffer.shift();
-
-        snprintf(jsonBuffer, sizeof(jsonBuffer), // TODO: if size not enough, ensure at least }
-            "{\"timestamp\":\"%s\","
-            "\"millis\":%lu,"
-            "\"core\":%u,"
-            "\"function\":\"%s\","
-            "\"message\":\"%s\"}",
-            _log.timestamp,
-            _log.millisEsp,
-            _log.coreId,
-            _log.function,
-            _log.message);
-
-        snprintf(
-          fullMqttTopic, 
-          sizeof(fullMqttTopic), 
-          "%s/%s", 
-          baseMqttTopicLogs, 
-          _log.level
-        );
-
-        if (!clientMqtt.publish(fullMqttTopic, jsonBuffer)) {
-            Serial.printf("MQTT publish failed to %s. Error: %d\n", 
-                fullMqttTopic, clientMqtt.state());
-            logBuffer.push(_log);
-            statistics.mqttMessagesPublishedError++;
-            break;
-        }
-    }
+    // Use the new queue-based approach
+    Mqtt::pushLog(timestamp, millisEsp, level, coreId, function, message);
 }
 
 void callbackLogToUdp(
@@ -364,14 +275,7 @@ void setup() {
   
       logger.info("Default files created for missing files", TAG);
     }
-
-    logger.debug("Fetching general configuration from SPIFFS...", TAG);
-    if (setGeneralConfigurationFromSpiffs()) {
-      logger.info("Configuration loaded from SPIFFS", TAG);
-    } else {
-      logger.warning("Failed to load configuration from SPIFFS. Using default values.", TAG);
-    }
-
+    
     Led::setPurple();
     
     logger.debug("Setting up multiplexer...", TAG);
@@ -435,6 +339,10 @@ void setup() {
     ModbusTcp::begin();
     logger.info("Modbus TCP setup done", TAG);
 
+    logger.debug("Setting up MQTT client...", TAG);
+    Mqtt::begin();
+    logger.info("MQTT client setup done", TAG);
+
     logger.debug("Setting up InfluxDB client...", TAG);
     InfluxDbClient::begin();
     logger.info("InfluxDB client setup done", TAG);
@@ -448,9 +356,7 @@ void loop() {
  
     CrashMonitor::crashCounterLoop();
     CrashMonitor::firmwareTestingLoop();
-    
-    mqtt.loop();
-    customMqtt.loop();
+
     ade7953.loop();
     
     if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {      

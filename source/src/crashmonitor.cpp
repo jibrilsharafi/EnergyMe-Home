@@ -52,7 +52,7 @@ namespace CrashMonitor
         // If it was a crash, increment counter
         if (isLastResetDueToCrash()) {
             _crashData.crashCount++;
-            publishMqtt.crash = true;
+            Mqtt::requestCrashPublish();
             _logCrashInfo();
             _saveCrashData();
         }
@@ -147,7 +147,7 @@ namespace CrashMonitor
             logger.info("Core dump size: %d bytes", TAG, core_dump_size);
             
             // Set flag for MQTT export
-            publishMqtt.crash = true;
+            Mqtt::requestCrashPublish();
         } else {
             logger.warning("Failed to get core dump info", TAG);
         }
@@ -192,10 +192,7 @@ namespace CrashMonitor
     }
 
     void _handleFirmwareTesting() {
-        if (publishMqtt.crash) {
-            logger.info("Firmware testing: OK", TAG);
-            publishMqtt.crash = false; // Clear the flag after handling
-        }
+        // TODO: implement this correctly
     }
 
     void firmwareTestingLoop() {

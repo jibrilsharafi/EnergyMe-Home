@@ -14,6 +14,7 @@
 #include "led.h"
 #include "multiplexer.h"
 #include "customtime.h"
+#include "mqtt.h"
 #include "binaries.h"
 #include "constants.h"
 #include "structs.h"
@@ -30,8 +31,7 @@ public:
         int resetPin,
         int interruptPin,        
         AdvancedLogger &logger,
-        MainFlags &mainFlags,
-        CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter
+        MainFlags &mainFlags
     );
 
     bool begin();
@@ -175,7 +175,6 @@ private:
 
     AdvancedLogger &_logger;
     MainFlags &_mainFlags;
-    CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter;
     
     ChannelState _channelStates[CHANNEL_COUNT];
 
