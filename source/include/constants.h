@@ -47,7 +47,7 @@
 // Crash monitor
 #define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor"
 #define PREFERENCES_DATA_KEY "crashdata"
-#define CRASH_SIGNATURE 0xDEADBEEF
+#define CRASH_SIGNATURE 0xDEADBEEF // A signature to identify whether we have or not data in RTC
 #define MAX_BREADCRUMBS 8
 #define WATCHDOG_TIMER (30 * 1000) // If the esp_task_wdt_reset() is not called within this time, the ESP32 panics - TODO: remove me, unused
 #define PREFERENCES_FIRMWARE_STATUS_KEY "fw_status"

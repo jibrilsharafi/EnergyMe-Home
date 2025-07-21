@@ -39,7 +39,6 @@ Statistics statistics;
 GeneralConfiguration generalConfiguration;
 CustomMqttConfiguration customMqttConfiguration;
 InfluxDbConfiguration influxDbConfiguration;
-RTC_NOINIT_ATTR CrashData crashData;
 RTC_NOINIT_ATTR DebugFlagsRtc debugFlagsRtc;
 
 WiFiClientSecure net = WiFiClientSecure();
@@ -80,10 +79,6 @@ AdvancedLogger logger(
   LOG_PATH,
   LOG_CONFIG_PATH,
   LOG_TIMESTAMP_FORMAT
-);
-
-CrashMonitor crashMonitor(
-  logger
 );
 
 Ade7953 ade7953(
@@ -357,8 +352,16 @@ void setup() {
     logger.info("Build version: %s | Build date: %s %s | Device ID: %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
 
     logger.debug("Setting up crash monitor...", TAG);
-    crashMonitor.begin();
+    CrashMonitor::begin();
     logger.info("Crash monitor setup done", TAG);
+
+    if (CrashMonitor::hasCoreDump()) {
+        size_t dumpSize = CrashMonitor::getCoreDumpSize();
+        logger.warning("Core dump available: %d bytes", "main", dumpSize);
+        
+        // Clear it after processing
+        CrashMonitor::clearCoreDump();
+    }
 
     logger.debug(
         "Checking RTC debug flags. Signature: 0x%X, Enabled: %d, Duration: %lu, EndTimeMillis: %lu", 
@@ -381,7 +384,7 @@ void setup() {
 
     Led::setCyan();
 
-    TRACE();
+    
     logger.debug("Checking for missing files...", TAG);
     auto missingFiles = checkMissingFiles();
     if (missingFiles.empty()) {
@@ -390,13 +393,13 @@ void setup() {
       Led::setOrange();
       logger.info("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
   
-      TRACE();
+      
       createDefaultFilesForMissingFiles(missingFiles);
   
       logger.info("Default files created for missing files", TAG);
     }
 
-    TRACE();
+    
     logger.debug("Fetching general configuration from SPIFFS...", TAG);
     if (setGeneralConfigurationFromSpiffs()) {
       logger.info("Configuration loaded from SPIFFS", TAG);
@@ -406,7 +409,7 @@ void setup() {
 
     Led::setPurple();
       
-    TRACE();
+    
     logger.debug("Setting up multiplexer...", TAG);
     Multiplexer::begin(
       MULTIPLEXER_S0_PIN,
@@ -416,7 +419,7 @@ void setup() {
     );
     logger.info("Multiplexer setup done", TAG);
 
-    TRACE();
+    
     logger.debug("Setting up ADE7953...", TAG);
     if (ade7953.begin()) {
       logger.info("ADE7953 setup done", TAG);
@@ -426,23 +429,23 @@ void setup() {
 
     Led::setBlue();
     
-    TRACE();
+    
     logger.debug("Setting up WiFi...", TAG);
     CustomWifi::begin();
     logger.info("WiFi setup done", TAG);
 
     // Add UDP logging setup after WiFi
-    TRACE();
+    
     logger.debug("Setting up UDP logging...", TAG);
     setupUdpLogging();
     logger.info("UDP logging setup done", TAG);
 
-    TRACE();
+    
     logger.debug("Setting up button handler...", TAG);
     ButtonHandler::begin(BUTTON_GPIO0_PIN);
     logger.info("Button handler setup done", TAG);
 
-    TRACE();
+    
     logger.debug("Syncing time...", TAG);
     ;
     if (CustomTime::begin()) {
@@ -460,81 +463,81 @@ void setup() {
       logger.error("Initial time sync failed! Will retry later.", TAG);
     }
     
-    TRACE();
+    
     logger.debug("Setting up server...", TAG);
     // customServer.begin();
     server_begin();
     logger.info("Server setup done", TAG);
 
-    TRACE();
+    
     logger.debug("Setting up Modbus TCP...", TAG);
     modbusTcp.begin();
     logger.info("Modbus TCP setup done", TAG);
 
     Led::setGreen();
 
-    TRACE();
+    
     logger.info("Setup done! Let's get this energetic party started!", TAG);
 }
 
 void loop() {
-    TRACE();
+    
     if (mainFlags.blockLoop) return;
 
     // Main loop now only handles non-critical operations
     // Meter reading is handled by dedicated task
 
-    TRACE();
-    crashMonitor.crashCounterLoop();
+    
+    CrashMonitor::crashCounterLoop();
 
-    TRACE();
-    crashMonitor.firmwareTestingLoop();
+    
+    CrashMonitor::firmwareTestingLoop();
       
-    TRACE();
+    
     // WiFi is now event-driven - no loop needed!
     
-    TRACE();
+    
     // ButtonHandler is now interrupt-driven - no loop needed!
     
-    TRACE();
+    
     mqtt.loop();
     
-    TRACE();
+    
     customMqtt.loop();
     
-    TRACE();
+    
     influxDbClient.loop();
 
-    TRACE();
+    
     ade7953.loop();
 
-    TRACE();
+    
     if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {      
       lastMaintenanceCheck = millis();      
       
-      TRACE();
+      
       updateStatistics();
 
-      TRACE();
+      
       printStatistics();
       
-      TRACE();
+      
       printDeviceStatus();
 
-      TRACE();
+      
       if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
         logger.fatal("Heap memory has degraded below safe minimum: %d bytes", TAG, ESP.getFreeHeap());
         setRestartEsp32(TAG, "Heap memory has degraded below safe minimum");
       }
 
       // If memory is below a certain level, clear the log
-      TRACE();
+      
       if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
         logger.clearLog();
         logger.warning("Log cleared due to low memory", TAG);
       }
       
-      TRACE();
+      
       if (debugFlagsRtc.enableMqttDebugLogging && millis() >= debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
         logger.info("MQTT debug logging period ended.", TAG);
 
@@ -547,6 +550,6 @@ void loop() {
 
     // TODO: add a periodic check doing a GET request on the is-alive API to ensure HTTP is working properly
 
-    TRACE();
+    
     checkIfRestartEsp32Required();
 }

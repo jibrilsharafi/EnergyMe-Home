@@ -229,7 +229,7 @@ struct RestartConfiguration
   }
 };
 
-struct PublishMqtt
+struct PublishMqtt // TODO: make mqtt static and use methods instead
 {
   bool connectivity;
   bool meter;
@@ -321,26 +321,6 @@ enum FirmwareState : int {
     ROLLBACK
 };
 
-struct Breadcrumb {
-    const char* file;
-    const char* function;
-    unsigned int line;
-    unsigned long long micros;
-    unsigned int freeHeap;
-    unsigned int coreId;
-};
-
-struct CrashData {
-    Breadcrumb breadcrumbs[MAX_BREADCRUMBS];      // Circular buffer of breadcrumbs
-    unsigned int currentIndex;            // Current position in circular buffer
-    unsigned int crashCount;             // Number of crashes detected
-    unsigned int lastResetReason;        // Last reset reason from ESP32
-    unsigned int resetCount;             // Number of resets
-    unsigned long lastUnixTime;          // Last unix time before crash
-    unsigned int signature;              // To verify RTC data validity
-    // Since this struct will be used in an RTC_NOINIT_ATTR, we cannot initialize it in the constructor
-};
-
 // Log callback struct
 // --------------------
 // Define maximum lengths for each field
@@ -369,8 +349,3 @@ struct LogJson {
         snprintf(message, sizeof(message), "%s", messageIn ? messageIn : "");
     }
 };
-
-// -----------------------
-// Extern global variables
-extern MainFlags mainFlags;
-extern Statistics statistics;

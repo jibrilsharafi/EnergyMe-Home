@@ -945,7 +945,7 @@ void server_begin() {
 //     Led::block();
 //     Led::setPurple(true);
 
-//     TRACE();
+//     
 //     if (!index)
 //     {
 //         if (strstr(filename, ".bin") != nullptr)
@@ -977,14 +977,14 @@ void server_begin() {
 //         Update.setMD5(_md5);
 //     }    
 
-//     TRACE();
+//     
 //     if (Update.write(data, len) != len)
 //     {
 //         _onUpdateFailed(request, Update.errorString());
 //         return;
 //     }    
     
-//     TRACE();
+//     
 //     if (final)
 //     {
 //         if (!Update.end(true))
@@ -997,40 +997,40 @@ void server_begin() {
 //         }
 //     }
 
-//     TRACE();
+//     
 //     Led::setOff(true);
 //     Led::unblock();
 // }
 
 // void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 // {
-//     TRACE();
+//     
 //     // Refactored: Using a static buffer to prevent stack overflow
 //     static char response[HTTP_RESPONSE_BUFFER_SIZE];
 //     snprintf(response, sizeof(response), "{\"status\":\"success\", \"md5\":\"%s\"}", Update.md5String().c_str());
 //     request->send(200, "application/json", response);
 
-//     TRACE();
+//     
 //     _logger.info("Update complete", TAG);
 //     updateJsonFirmwareStatus("success", "");
 
 //     _logger.debug("MD5 of new firmware: %s", TAG, Update.md5String().c_str());
 
-//     TRACE();
+//     
 //     char firmwareStatus[FIRMWARE_STATUS_BUFFER_SIZE];
 //     CrashMonitor::getFirmwareStatusString(NEW_TO_TEST, firmwareStatus);
 //     _logger.debug("Setting rollback flag to %s", TAG, firmwareStatus);
     
 //     if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) _logger.error("Failed to set firmware status", TAG);
 
-//     TRACE();
+//     
 //     setRestartEsp32(TAG, "Restart needed after update");
 //     _releaseMutex(_otaMutex, "ota");
 // }
 
 // void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *reason)
 // {
-//     TRACE();
+//     
       
 //     _ade7953.resumeMeterReadingTask();
 //     _logger.debug("Reattached ADE7953 interrupt after OTA failure", TAG);

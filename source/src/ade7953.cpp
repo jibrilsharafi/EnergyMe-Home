@@ -28,23 +28,23 @@ Ade7953::Ade7953(
 bool Ade7953::begin() {
     _logger.debug("Initializing Ade7953", TAG);
 
-    TRACE();
+    
     if (_instance != nullptr) {
         _logger.error("Ade7953 instance already exists", TAG);
         return false;
     }
 
-    TRACE();
+    
     _logger.debug("Creating Ade7953 instance", TAG);
     _initializeSpiMutexes();
     _logger.debug("Successfully created Ade7953 instance", TAG);
 
-    TRACE();
+    
     _logger.debug("Setting up hardware pins...", TAG);
     _setHardwarePins();
     _logger.debug("Successfully set up hardware pins", TAG);
 
-    TRACE();
+    
     _logger.debug("Verifying communication with Ade7953...", TAG);
     if (!_verifyCommunication()) {
         _logger.error("Failed to communicate with Ade7953", TAG);
@@ -52,43 +52,43 @@ bool Ade7953::begin() {
     }
     _logger.debug("Successfully initialized Ade7953", TAG);
     
-    TRACE();
+    
     _logger.debug("Setting optimum settings...", TAG);
     _setOptimumSettings();
     _logger.debug("Successfully set optimum settings", TAG);
 
-    TRACE();
+    
     _logger.debug("Setting default parameters...", TAG);
     _setDefaultParameters();
     _logger.debug("Successfully set default parameters", TAG);
 
-    TRACE();
+    
     _logger.debug("Setting configuration from SPIFFS...", TAG);
     _setConfigurationFromSpiffs();
     _logger.debug("Done setting configuration from SPIFFS", TAG);
 
-    TRACE();
+    
     _logger.debug("Reading channel data from SPIFFS...", TAG);
     _setChannelDataFromSpiffs();
     _logger.debug("Done reading channel data from SPIFFS", TAG);
 
-    TRACE();
+    
     _logger.debug("Reading calibration values from SPIFFS...", TAG);
     _setCalibrationValuesFromSpiffs();
     _logger.debug("Done reading calibration values from SPIFFS", TAG);
 
-    TRACE();
+    
     _logger.debug("Reading energy from SPIFFS...", TAG);
     _setEnergyFromSpiffs();
     _logger.debug("Done reading energy from SPIFFS", TAG);    
     
     // Set it up only at the end to avoid premature interrupts
-    TRACE();
+    
     _logger.debug("Setting up interrupts...", TAG);
     _setupInterrupts();
     _logger.debug("Successfully set up interrupts", TAG);
 
-    TRACE();
+    
     _logger.debug("Starting meter reading task...", TAG);
     _startMeterReadingTask();
     _logger.debug("Meter reading task started", TAG);
@@ -98,7 +98,7 @@ bool Ade7953::begin() {
 
 void Ade7953::_initializeSpiMutexes()
 {
-    TRACE();
+    
     _spiMutex = xSemaphoreCreateMutex();
     if (_spiMutex == NULL)
     {
@@ -107,7 +107,7 @@ void Ade7953::_initializeSpiMutexes()
     }
     _logger.debug("SPI mutex created successfully", TAG);
 
-    TRACE();
+    
     _spiOperationMutex = xSemaphoreCreateMutex();
     if (_spiOperationMutex == NULL)
     {
@@ -118,7 +118,7 @@ void Ade7953::_initializeSpiMutexes()
     }
     _logger.debug("SPI operation mutex created successfully", TAG);
 
-    TRACE();
+    
     _payloadMeterMutex = xSemaphoreCreateMutex();
     if (_payloadMeterMutex == NULL)
     {
@@ -782,7 +782,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
     Phase _basePhase = channelData[CHANNEL_0].phase;
 
     if (channelData[channel].phase == _basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
-        TRACE();
+        
         // These are the three most important values to read
         _activeEnergy = _readActiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.whLsb * (channelData[channel].reverse ? -1 : 1);
         _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.varhLsb * (channelData[channel].reverse ? -1 : 1);
@@ -817,7 +817,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
         // It is easier just to ensure during installation that the CTs are installed correctly
 
-        TRACE();
+        
         // Assume from channel 0
         _voltage = meterValues[CHANNEL_0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
         
@@ -885,14 +885,14 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         _reactivePower = 0.0f; // Small approximation leaving out distorted power
     }    
     
-    TRACE();
+    
     // For channel 0, discard readings where active or apparent energy is exactly 0,
     // unless there have been at least 100 consecutive zero readings
     if (channel == CHANNEL_0 && (_activeEnergy == 0.0f || _apparentEnergy == 0.0f)) {
         _channelStates[channel].consecutiveZeroCount++;
         
         if (_channelStates[channel].consecutiveZeroCount < MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
-            TRACE();
+            
             _logger.debug("%s (%d): Zero energy reading on channel 0 discarded (count: %lu/%d)", 
                 TAG, channelData[channel].label,channel, _channelStates[channel].consecutiveZeroCount, MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE);
             _recordFailure();
@@ -903,7 +903,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         _channelStates[channel].consecutiveZeroCount = 0;
     }
 
-    TRACE();
+    
     if (
         !_validateVoltage(_voltage) || 
         !_validateCurrent(_current) || 
@@ -912,7 +912,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         !_validatePower(_apparentPower) || 
         !_validatePowerFactor(_powerFactor)
     ) {
-        TRACE();
+        
         logger.warning("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", 
             TAG, channelData[channel].label, channel, _activePower, _current, _reactivePower, _apparentPower, _powerFactor);
         _recordFailure();
@@ -924,7 +924,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
     // // Skip this check if apparent power is below 1 to avoid issues with low power readings
     // // Channel 0 does not have this problem since it has a dedicated ADC on the ADE7953, while the other channels
     // // use a multiplexer and some weird behavior can happen sometimes
-    // TRACE();
+    // 
     // if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != CHANNEL_0 &&
     //     (abs(_current * _voltage - _apparentPower) > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE || 
     //      abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) 
@@ -959,7 +959,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         _apparentEnergy = 1;
     }
 
-    TRACE();
+    
     // Leverage the no-load feature of the ADE7953 to discard the noise
     // As such, when the energy read by the ADE7953 in the given linecycle is below
     // a certain threshold (set during setup), the read value is 0
@@ -1132,7 +1132,7 @@ void Ade7953::_setEnergyFromSpiffs() {
 void Ade7953::saveEnergy() {
     _logger.debug("Saving energy...", TAG);
 
-    TRACE();
+    
     _saveEnergyToSpiffs();
     _saveDailyEnergyToSpiffs();
 
@@ -1142,7 +1142,7 @@ void Ade7953::saveEnergy() {
 void Ade7953::_saveEnergyToSpiffs() {
     _logger.debug("Saving energy to SPIFFS...", TAG);
 
-    TRACE();
+    
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
 
@@ -1160,7 +1160,7 @@ void Ade7953::_saveEnergyToSpiffs() {
 void Ade7953::_saveDailyEnergyToSpiffs() {
     _logger.debug("Saving daily energy to SPIFFS...", TAG);
 
-    TRACE();
+    
     JsonDocument _jsonDocument;
     deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument);
     
@@ -1721,7 +1721,7 @@ bool Ade7953::_verifyLastCommunication(long expectedAddress, int expectedBits, l
 }
 
 void Ade7953::_recordFailure() {
-    TRACE();
+    
     _logger.debug("Recording failure for ADE7953 communication", TAG);
 
     if (_failureCount == 0) {
@@ -1734,7 +1734,7 @@ void Ade7953::_recordFailure() {
 }
 
 void Ade7953::_checkForTooManyFailures() {
-    TRACE();
+    
     if (millis() - _firstFailureTime > ADE7953_FAILURE_RESET_TIMEOUT_MS && _failureCount > 0) {
         _logger.debug("Failure timeout exceeded (%lu ms). Resetting failure count (reached %d)", TAG, millis() - _firstFailureTime, _failureCount);
         
@@ -1745,7 +1745,7 @@ void Ade7953::_checkForTooManyFailures() {
     }
 
     if (_failureCount >= ADE7953_MAX_FAILURES_BEFORE_RESTART) {
-        TRACE();
+        
         _logger.fatal("Too many failures (%d) in ADE7953 communication or readings. Resetting device...", TAG, _failureCount);
         setRestartEsp32(TAG, "Too many failures in ADE7953 communication or readings");
 
@@ -1859,12 +1859,12 @@ Ade7953InterruptType Ade7953::_handleInterrupt() {
     // Very important: if we detected a reset or a CRC change in the configurations, 
     // we must reinitialize the device
     if (statusA & (1 << IRQSTATA_RESET_BIT)) {
-        TRACE();
+        
         _logger.warning("Reset interrupt detected. Device needs reinitialization", TAG);
         return Ade7953InterruptType::RESET;
     } else if (statusA & (1 << IRQSTATA_CRC_BIT)) {
         // TODO: how to handle this? if we change a setting in the ADE7953, we should expect a CRC change and avoid a loop.
-        TRACE();
+        
         _logger.warning("CRC changed detected. Device configuration may have changed", TAG);
         return Ade7953InterruptType::CRC_CHANGE;
         // Check for CYCEND interrupt (bit 18) - Line cycle end
@@ -1885,7 +1885,7 @@ Ade7953InterruptType Ade7953::_handleInterrupt() {
 }
 
 void Ade7953::_startMeterReadingTask() {
-    TRACE();
+    
     if (_ade7953InterruptSemaphore == NULL) {
         _ade7953InterruptSemaphore = xSemaphoreCreateBinary();
         if (_ade7953InterruptSemaphore == NULL) {
@@ -1894,7 +1894,7 @@ void Ade7953::_startMeterReadingTask() {
         }
     }
 
-    TRACE();
+    
     _instance = this;
     _attachInterruptHandler();
     if (_meterReadingTaskHandle == NULL) {
@@ -1914,7 +1914,7 @@ void Ade7953::_startMeterReadingTask() {
 }
 
 void Ade7953::_stopMeterReadingTask() {
-    TRACE();
+    
     _detachInterruptHandler();
     if (_meterReadingTaskHandle != NULL) {
         vTaskDelete(_meterReadingTaskHandle);
@@ -1928,7 +1928,7 @@ void Ade7953::_stopMeterReadingTask() {
 }
 
 void Ade7953::pauseMeterReadingTask() {
-    TRACE();
+    
     _logger.info("Pausing ADE7953 meter reading task", TAG);
 
     _detachInterruptHandler();
@@ -1938,7 +1938,7 @@ void Ade7953::pauseMeterReadingTask() {
 }
 
 void Ade7953::resumeMeterReadingTask() {
-    TRACE();
+    
     _logger.info("Resuming ADE7953 meter reading task", TAG);
     
     if (_meterReadingTaskHandle != NULL) vTaskResume(_meterReadingTaskHandle);

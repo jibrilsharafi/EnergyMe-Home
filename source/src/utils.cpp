@@ -84,7 +84,7 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
 bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     logger.debug("Deserializing JSON from SPIFFS", TAG);
 
-    TRACE();
+    
     File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
         logger.error("%s Failed to open file", TAG, path);
@@ -112,7 +112,7 @@ bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     logger.debug("Serializing JSON to SPIFFS...", TAG);
 
-    TRACE();
+    
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
         logger.error("%s Failed to open file", TAG, path);
@@ -137,7 +137,7 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
 void createEmptyJsonFile(const char* path) {
     logger.debug("Creating empty JSON file %s...", TAG, path);
 
-    TRACE();
+    
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file) {
         logger.error("Failed to open file %s", TAG, path);
@@ -326,7 +326,7 @@ std::vector<const char*> checkMissingFiles() {
 
     const size_t CONFIG_FILE_COUNT = sizeof(CONFIG_FILE_PATHS) / sizeof(CONFIG_FILE_PATHS[0]);
 
-    TRACE();
+    
     for (size_t i = 0; i < CONFIG_FILE_COUNT; ++i) {
         const char* path = CONFIG_FILE_PATHS[i];
         if (!SPIFFS.exists(path)) {
@@ -341,7 +341,7 @@ std::vector<const char*> checkMissingFiles() {
 void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles) {
     logger.debug("Creating default files for missing files...", TAG);
 
-    TRACE();
+    
     for (const char* path : missingFiles) {
         if (strcmp(path, GENERAL_CONFIGURATION_JSON_PATH) == 0) {
             createDefaultGeneralConfigurationFile();
@@ -375,7 +375,7 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
 bool checkAllFiles() {
     logger.debug("Checking all files...", TAG);
 
-    TRACE();
+    
     std::vector<const char*> missingFiles = checkMissingFiles();
     if (!missingFiles.empty()) {
         createDefaultFilesForMissingFiles(missingFiles);
@@ -407,43 +407,43 @@ void checkIfRestartEsp32Required() {
 }
 
 void restartEsp32() {
-    TRACE();
+    
     Led::block();
     Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
     Led::setWhite(true);
 
     logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
 
-    TRACE();
+    
     clearAllAuthTokens();
 
     // If a firmware evaluation is in progress, set the firmware to test again
-    TRACE();
+    
     FirmwareState _firmwareStatus = CrashMonitor::getFirmwareStatus();
 
-    TRACE();
+    
     if (_firmwareStatus == TESTING) {
         logger.info("Firmware evaluation is in progress. Setting firmware to test again", TAG);
-        TRACE();
+        
         if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) logger.error("Failed to set firmware status", TAG);
     }
 
-    TRACE();
+    
     logger.end();
 
     // Give time for AsyncTCP connections to close gracefully
-    TRACE();
+    
     delay(1000);
 
     // Disable WiFi to prevent AsyncTCP crashes during restart
-    TRACE();
+    
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     
     // Additional delay to ensure clean shutdown
     delay(500);
 
-    TRACE();
+    
     ESP.restart();
 }
 

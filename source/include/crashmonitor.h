@@ -13,46 +13,37 @@
 #include "structs.h"
 #include "utils.h"
 
-extern CrashData crashData;
+extern AdvancedLogger logger;
 
-class CrashMonitor {
-public:
-    CrashMonitor(AdvancedLogger& logger);
+struct CrashData {
+    unsigned int currentIndex;            // Current position in circular buffer
+    unsigned int crashCount;             // Number of crashes detected
+    unsigned int lastResetReason;        // Last reset reason from ESP32
+    unsigned int resetCount;             // Number of resets
+    unsigned long lastUnixTime;          // Last unix time before crash
+    unsigned int signature;              // To verify RTC data validity
+    // Since this struct will be used in an RTC_NOINIT_ATTR, we cannot initialize it in the constructor
+};
 
+namespace CrashMonitor {
     void begin();
-    void leaveBreadcrumb(const char* filename, const char* functionName, unsigned int lineNumber, unsigned int coreId);
 
     void crashCounterLoop();
     void firmwareTestingLoop();
 
-    static bool setFirmwareStatus(FirmwareState status);
-    static FirmwareState getFirmwareStatus();
+    bool setFirmwareStatus(FirmwareState status);
+    FirmwareState getFirmwareStatus();
 
-    static bool checkIfCrashDataExists();
-    static bool getSavedCrashData(CrashData& crashDataSaved);
-    static bool getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport);
+    bool checkIfCrashDataExists();
+    bool getSavedCrashData(CrashData& crashDataSaved);
+    bool getJsonReport(JsonDocument& _jsonDocument);
 
-    static bool isLastResetDueToCrash();
+    bool isLastResetDueToCrash();
+    
+    // Core dump functions
+    bool hasCoreDump();
+    void clearCoreDump();
+    size_t getCoreDumpSize();
 
-    static void getFirmwareStatusString(FirmwareState status, char* buffer);
-    
-private:
-    static const char* _getResetReasonString(esp_reset_reason_t reason);
-    
-    void _logCrashInfo();
-    void _saveCrashData();
-    
-    void _handleCrashCounter();
-    void _handleFirmwareTesting();
-    
-    void _initializeCrashData();
-    static bool _isValidBreadcrumb(const Breadcrumb& crumb);
-    
-    bool _isFirmwareUpdate = false;
-    bool _isCrashCounterReset = false;
-
-    AdvancedLogger& _logger;
-};
-
-extern CrashMonitor crashMonitor;
-#define TRACE(); crashMonitor.leaveBreadcrumb(pathToFileName(__FILE__), __FUNCTION__, __LINE__, xPortGetCoreID());
+    void getFirmwareStatusString(FirmwareState status, char* buffer, size_t bufferSize);
+}
