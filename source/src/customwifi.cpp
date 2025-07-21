@@ -45,6 +45,12 @@ namespace CustomWifi
     return true;
   }
 
+  bool isFullyConnected() // Also check IP to ensure full connectivity
+  {
+    // Check if WiFi is connected and has an IP address
+    return WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0);
+  }
+
   static void _setupWiFiManager()
   {
     _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT);
@@ -82,12 +88,14 @@ namespace CustomWifi
       Led::setBlue();
       _reconnectAttempts = 0;
       // Defer logging to task
-      if (_wifiTaskHandle) xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetValueWithOverwrite);
+      if (_wifiTaskHandle)
+        xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetValueWithOverwrite);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       // Defer all operations to task - avoid any function calls that might log
-      if (_wifiTaskHandle) xTaskNotify(_wifiTaskHandle, WIFI_EVENT_GOT_IP, eSetValueWithOverwrite);
+      if (_wifiTaskHandle)
+        xTaskNotify(_wifiTaskHandle, WIFI_EVENT_GOT_IP, eSetValueWithOverwrite);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -95,7 +103,8 @@ namespace CustomWifi
       statistics.wifiConnectionError++;
 
       // Notify task to handle fallback if needed
-      if (_wifiTaskHandle) xTaskNotify(_wifiTaskHandle, WIFI_EVENT_DISCONNECTED, eSetValueWithOverwrite);
+      if (_wifiTaskHandle)
+        xTaskNotify(_wifiTaskHandle, WIFI_EVENT_DISCONNECTED, eSetValueWithOverwrite);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE:
@@ -156,18 +165,18 @@ namespace CustomWifi
         case WIFI_EVENT_CONNECTED:
           logger.info("WiFi connected to: %s", TAG, WiFi.SSID().c_str());
           continue; // No further action needed
-          
+
         case WIFI_EVENT_GOT_IP:
           logger.info("WiFi got IP: %s", TAG, WiFi.localIP().toString().c_str());
           // Handle successful connection operations safely in task context
           _handleSuccessfulConnection();
           continue; // No further action needed
-          
+
         case WIFI_EVENT_DISCONNECTED:
           logger.warning("WiFi disconnected - auto-reconnect will handle", TAG);
           // Fall through to handle disconnection
           break;
-          
+
         default:
           // Legacy notification or timeout - treat as disconnection check
           break;
@@ -177,43 +186,43 @@ namespace CustomWifi
         if (notificationValue == WIFI_EVENT_DISCONNECTED || notificationValue == 1)
         {
           // Wait a bit for auto-reconnect to work
-        vTaskDelay(pdMS_TO_TICKS(5000));
+          vTaskDelay(pdMS_TO_TICKS(5000));
 
-        // Check if still disconnected
-        if (!WiFi.isConnected())
-        {
-          _reconnectAttempts++;
-          _lastReconnectAttempt = millis();
-
-          logger.warning("Auto-reconnect failed, attempt %d", TAG, _reconnectAttempts);
-          Led::setOrange();
-
-          // After several failures, try WiFiManager as fallback
-          if (_reconnectAttempts >= WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS)
+          // Check if still disconnected
+          if (!WiFi.isConnected())
           {
-            logger.error("Multiple reconnection failures - starting portal", TAG);
+            _reconnectAttempts++;
+            _lastReconnectAttempt = millis();
 
-            // Try WiFiManager portal
-            Led::block();
-            Led::setPurple(true);
+            logger.warning("Auto-reconnect failed, attempt %d", TAG, _reconnectAttempts);
+            Led::setOrange();
 
-            if (!_wifiManager.startConfigPortal(hostname))
+            // After several failures, try WiFiManager as fallback
+            if (_reconnectAttempts >= WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS)
             {
-              logger.fatal("Portal failed - restarting device", TAG);
-              Led::setRed(true);
-              delay(2000);
-              ESP.restart();
+              logger.error("Multiple reconnection failures - starting portal", TAG);
+
+              // Try WiFiManager portal
+              Led::block();
+              Led::setPurple(true);
+
+              if (!_wifiManager.startConfigPortal(hostname))
+              {
+                logger.fatal("Portal failed - restarting device", TAG);
+                Led::setRed(true);
+                delay(2000);
+                ESP.restart();
+              }
+              // If portal succeeds, device will restart automatically
             }
-            // If portal succeeds, device will restart automatically
           }
-        }
         }
       }
 
       // Periodic health check (every 30 seconds)
       if (WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0))
       {
-                // Reset failure counter on sustained connection
+        // Reset failure counter on sustained connection
         if (_isInitialConnection || _reconnectAttempts > 0)
         {
           logger.debug("WiFi connection stable - resetting counters", TAG);

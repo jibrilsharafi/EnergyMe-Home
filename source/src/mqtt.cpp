@@ -119,7 +119,7 @@ void Mqtt::loop() {
     if ((millis() - _lastMillisMqttLoop) < MQTT_LOOP_INTERVAL) return;
     _lastMillisMqttLoop = millis();
 
-    if (!WiFi.isConnected()) return;
+    if (!CustomWifi::isFullyConnected()) return;
 
     TRACE();
     // Handle cloud services being disabled

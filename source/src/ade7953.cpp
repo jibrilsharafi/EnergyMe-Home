@@ -472,7 +472,25 @@ bool Ade7953::_validateCalibrationValuesJson(JsonDocument& jsonDocument) {
 // Data channel
 // --------------------
 
-void Ade7953::_setChannelDataFromSpiffs() {
+void Ade7953::_setChannelDataFromSpiffs() { // FIXME: this does not work:
+    // [1970-01-01 00:00:02] [2 521 ms] [DEBUG   ] [Core 1] [ade7953] Done setting configuration from SPIFFS
+    // [1970-01-01 00:00:02] [2 531 ms] [DEBUG   ] [Core 1] [ade7953] Reading channel data from SPIFFS...
+    // [1970-01-01 00:00:02] [2 542 ms] [DEBUG   ] [Core 1] [ade7953] Setting data channel from SPIFFS...
+    // [1970-01-01 00:00:02] [2 553 ms] [DEBUG   ] [Core 1] [utils] Deserializing JSON from SPIFFS
+    // [1970-01-01 00:00:02] [2 581 ms] [DEBUG   ] [Core 1] [utils] Truncating JSON to fit buffer size (256 bytes vs 1741 bytes)
+    // [1970-01-01 00:00:02] [2 582 ms] [DEBUG   ] [Core 1] [utils] JSON deserialized from SPIFFS correctly: [{"active":true,"reverse":false,"label":"Channel 0","phase":1,"calibrationLabel":"SCT-013-50A-333mV"},{"active":false,"reverse":false,"label":"Channel 1"
+    // [1970-01-01 00:00:02] [2 613 ms] [DEBUG   ] [Core 1] [ade7953] Setting channel data...
+    // [1970-01-01 00:00:02] [2 613 ms] [WARNING ] [Core 1] [ade7953] JSON is not an object
+    // [1970-01-01 00:00:02] [2 629 ms] [WARNING ] [Core 1] [ade7953] Invalid JSON data channel. Keeping previous data channel
+    // [1970-01-01 00:00:02] [2 632 ms] [ERROR   ] [Core 1] [ade7953] Failed to set data channel from SPIFFS. Keeping default data channel
+    // [1970-01-01 00:00:02] [2 646 ms] [DEBUG   ] [Core 1] [ade7953] Setting default data channel...
+    // [1970-01-01 00:00:02] [2 656 ms] [DEBUG   ] [Core 1] [utils] Creating default /config/channel.json...
+    // [1970-01-01 00:00:02] [2 668 ms] [DEBUG   ] [Core 1] [utils] Serializing JSON to SPIFFS...
+    // [1970-01-01 00:00:02] [2 702 ms] [DEBUG   ] [Core 1] [utils] Truncating JSON to fit buffer size (256 bytes vs 1816 bytes)
+    // [1970-01-01 00:00:02] [2 702 ms] [DEBUG   ] [Core 1] [utils] JSON serialized to SPIFFS correctly: {"0":{"active":true,"reverse":false,"label":"Channel 0","phase":1,"calibrationLabel":"SCT-013-50A-333mV"},"1":{"active":false,"reverse":false,"label":"Channe
+    // [1970-01-01 00:00:02] [2 733 ms] [DEBUG   ] [Core 1] [utils] Default /config/channel.json created
+    // [1970-01-01 00:00:02] [2 734 ms] [DEBUG   ] [Core 1] [utils] Deserializing JSON from SPIFFS
+    // [1970-01-01 00:00:02] [2 764 ms] [DEBUG   ] [Core 1] [utils] Truncating JSON to fit buffer size (256 bytes vs 1816 bytes)
     _logger.debug("Setting data channel from SPIFFS...", TAG);
 
     JsonDocument _jsonDocument;

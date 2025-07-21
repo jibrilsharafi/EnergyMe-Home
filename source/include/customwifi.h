@@ -54,6 +54,7 @@ namespace CustomWifi
 {
     bool begin();
     void resetWifi();
+    bool isFullyConnected();
 
     void getWifiInfoJson(JsonDocument &jsonDocument);
     void printWifiInfo();

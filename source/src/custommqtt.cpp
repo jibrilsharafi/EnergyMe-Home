@@ -33,7 +33,7 @@ void CustomMqtt::loop()
     if ((millis() - _lastMillisMqttLoop) < MQTT_CUSTOM_LOOP_INTERVAL) return;
     _lastMillisMqttLoop = millis();
 
-    if (!WiFi.isConnected()) return;
+    if (!CustomWifi::isFullyConnected()) return;
 
     // Ensure configuration is loaded from SPIFFS on first run
     TRACE();

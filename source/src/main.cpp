@@ -66,7 +66,7 @@ char fullMqttTopic[LOG_TOPIC_SIZE];
 // UDP logging variables
 CircularBuffer<LogJson, LOG_BUFFER_SIZE> udpLogBuffer;
 WiFiUDP udpClient;
-IPAddress broadcastIP;
+IPAddress udpDestinationIp; // Will be set from configuration
 char udpBuffer[UDP_LOG_BUFFER_SIZE];  // Separate buffer for UDP
 
 // Utils variables
@@ -145,6 +145,18 @@ Mqtt mqtt( // TODO: Add semaphore for the payload meter (or better make it a que
 // --------------------
 
 // --------------------
+// UDP Logging Configuration
+
+void setupUdpLogging() {
+    // Initialize UDP destination IP from configuration
+    udpDestinationIp.fromString(DEFAULT_UDP_LOG_DESTINATION_IP);
+    
+    udpClient.begin(UDP_LOG_PORT);
+    logger.info("UDP logging configured - destination: %s:%d", TAG, 
+                udpDestinationIp.toString().c_str(), UDP_LOG_PORT);
+}
+
+// --------------------
 // Callback 
 
 void callbackLogToMqtt(
@@ -172,7 +184,7 @@ void callbackLogToMqtt(
     );
 
     // If not connected to WiFi and MQTT, return (log is still stored in circular buffer for later) 
-    if (WiFi.status() != WL_CONNECTED) return;
+    if (CustomWifi::isFullyConnected() == false) return;
     if (clientMqtt.state() != MQTT_CONNECTED) return;
 
     // Only generate the base MQTT topic if it does not exist yet
@@ -188,7 +200,7 @@ void callbackLogToMqtt(
 
         LogJson _log = logBuffer.shift();
 
-        snprintf(jsonBuffer, sizeof(jsonBuffer),
+        snprintf(jsonBuffer, sizeof(jsonBuffer), // TODO: if size not enough, ensure at least }
             "{\"timestamp\":\"%s\","
             "\"millis\":%lu,"
             "\"core\":%u,"
@@ -247,10 +259,7 @@ void callbackLogToUdp(
     );
 
     // If not connected to WiFi or no valid IP, return (log is still stored in circular buffer for later)
-    if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0, 0, 0, 0)) return;
-    
-    // Additional check - ensure we have a valid gateway (network is fully ready)
-    if (WiFi.gatewayIP() == IPAddress(0, 0, 0, 0)) return;
+    if (CustomWifi::isFullyConnected() == false) return;
 
     unsigned int _loops = 0;
     while (!udpLogBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
@@ -278,7 +287,7 @@ void callbackLogToUdp(
             _log.message);
         
         // Try to begin UDP packet with timeout protection
-        if (!udpClient.beginPacket(broadcastIP, UDP_LOG_PORT)) {
+        if (!udpClient.beginPacket(udpDestinationIp, UDP_LOG_PORT)) {
             // Failed to begin packet - network might not be ready
             // Put log back in buffer and stop trying (don't retry immediately)
             udpLogBuffer.push(_log);
@@ -425,14 +434,8 @@ void setup() {
     // Add UDP logging setup after WiFi
     TRACE();
     logger.debug("Setting up UDP logging...", TAG);
-    if (WiFi.status() == WL_CONNECTED) {
-        broadcastIP = WiFi.localIP();
-        broadcastIP[3] = 255; // Convert to broadcast address
-        udpClient.begin(UDP_LOG_PORT);
-        logger.info("UDP broadcast logging configured for %s:%d", TAG, broadcastIP.toString().c_str(), UDP_LOG_PORT);
-    } else {
-        logger.warning("UDP logging setup skipped - WiFi not connected", TAG);
-    }
+    setupUdpLogging();
+    logger.info("UDP logging setup done", TAG);
 
     TRACE();
     logger.debug("Setting up button handler...", TAG);

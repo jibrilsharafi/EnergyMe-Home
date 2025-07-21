@@ -9,6 +9,7 @@
 #include "ade7953.h"
 #include "constants.h"
 #include "customtime.h"
+#include "customwifi.h"
 #include "structs.h"
 #include "utils.h"
 

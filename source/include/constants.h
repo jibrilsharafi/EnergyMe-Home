@@ -86,14 +86,15 @@
 #define LOG_CONFIG_PATH "/logger/config.txt"
 #define LOG_TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
 #define LOG_BUFFER_SIZE 20 // Callback queue size
-#define LOG_JSON_BUFFER_SIZE 512
+#define LOG_JSON_BUFFER_SIZE 256
 #define LOG_TOPIC_SIZE 64
 #define TIMESTAMP_BUFFER_SIZE 20 // Size needed for TIMESTAMP_FORMAT (19 chars + null terminator) (this is replicated, FIXME)
 
 // UDP Logging
 #define UDP_LOG_PORT 514 // Standard syslog port
-#define UDP_LOG_BUFFER_SIZE 512 // Smaller buffer for UDP packets
+#define UDP_LOG_BUFFER_SIZE 256 // Smaller buffer for UDP packets
 #define DEFAULT_IS_UDP_LOGGING_ENABLED true
+#define DEFAULT_UDP_LOG_DESTINATION_IP "239.255.255.250" // Multicast IP for UDP logging - Local multicast range (239.255.x.x)
 
 // Buffer Sizes for String Operations
 // =================================

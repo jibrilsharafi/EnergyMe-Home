@@ -15,7 +15,7 @@
 
 #define PREFERENCES_NAMESPACE_BUTTON "button_ns"
 #define PREFERENCES_LAST_OPERATION_KEY "last_operation"
-#define PREFERENCES_LAST_OPERATION_TIMESTAMP_KEY "last_operation_timestamp"
+#define PREFERENCES_LAST_OPERATION_TIMESTAMP_KEY "last_op_timestamp" // Cannot be too long
 
 #define ZERO_START_TIME 0 // Used to indicate no button press has started
 

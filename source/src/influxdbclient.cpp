@@ -34,7 +34,7 @@ void InfluxDbClient::loop()
     if ((millis() - _lastMillisInfluxDbLoop) < INFLUXDB_LOOP_INTERVAL) return;
     _lastMillisInfluxDbLoop = millis();
 
-    if (!WiFi.isConnected()) return;
+    if (!CustomWifi::isFullyConnected()) return;
     if (!_isSetupDone) begin();
     if (!_influxDbConfiguration.enabled) return;
 

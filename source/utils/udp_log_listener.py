@@ -3,21 +3,23 @@
 UDP Log Listener for EnergyMe-Home
 ==================================
 
-This script listens for UDP broadcast messages from EnergyMe-Home devices
+This script listens for UDP multicast/unicast messages from EnergyMe-Home devices
 and displays them in a formatted way. It's designed to work with the syslog
 format used by the ESP32 firmware.
 
 Usage:
-    python udp_log_listener.py [--port 514] [--host 0.0.0.0] [--filter LEVEL]
+    python udp_log_listener.py [--port 514] [--multicast 239.255.255.250] [--filter LEVEL]
 
 Examples:
-    python udp_log_listener.py                    # Listen on default port 514
-    python udp_log_listener.py --port 1514        # Listen on custom port
-    python udp_log_listener.py --filter info      # Only show info and above
-    python udp_log_listener.py --filter debug     # Show debug and above
+    python udp_log_listener.py                          # Listen on multicast (default)
+    python udp_log_listener.py --unicast                # Use unicast mode
+    python udp_log_listener.py --port 1514              # Listen on custom port
+    python udp_log_listener.py --filter info            # Only show info and above
+    python udp_log_listener.py --multicast 239.1.1.1    # Custom multicast group
 """
 
 import socket
+import struct
 import argparse
 import sys
 import time
@@ -103,12 +105,13 @@ class UDPLogListener:
     """UDP log listener for EnergyMe-Home devices"""
     
     def __init__(self, host: str = '0.0.0.0', port: int = 514, log_filter: Optional[LogFilter] = None, 
-                 log_file: Optional[str] = None, log_format: str = 'structured'):
+                 log_file: Optional[str] = None, log_format: str = 'structured', multicast_group: Optional[str] = None):
         self.host = host
         self.port = port
         self.filter = log_filter or LogFilter()
         self.log_file = log_file
         self.log_format = log_format  # 'structured', 'raw', or 'json'
+        self.multicast_group = multicast_group  # Multicast group IP
         self.file_handle: Optional[TextIO] = None
         self.socket = None
         self.running = False
@@ -140,12 +143,27 @@ class UDPLogListener:
             
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.socket.bind((self.host, self.port))
+            
+            # Handle multicast setup
+            if self.multicast_group:
+                # Bind to the multicast group
+                self.socket.bind(('', self.port))  # Bind to all interfaces for multicast
+                
+                # Join the multicast group
+                mreq = struct.pack("4sl", socket.inet_aton(self.multicast_group), socket.INADDR_ANY)
+                self.socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+                
+                print(f"{Colors.BOLD}EnergyMe-Home UDP Log Listener (Multicast){Colors.RESET}")
+                print(f"Listening on multicast group {self.multicast_group}:{self.port}")
+            else:
+                # Regular unicast/broadcast
+                self.socket.bind((self.host, self.port))
+                print(f"{Colors.BOLD}EnergyMe-Home UDP Log Listener{Colors.RESET}")
+                print(f"Listening on {self.host}:{self.port}")
+            
             self.running = True
             self.stats['start_time'] = time.time()
             
-            print(f"{Colors.BOLD}EnergyMe-Home UDP Log Listener{Colors.RESET}")
-            print(f"Listening on {self.host}:{self.port}")
             print(f"Filter: {self.filter.min_level_value} and above")
             print(f"Press Ctrl+C to stop\n")
             
@@ -287,6 +305,15 @@ class UDPLogListener:
     def _stop(self):
         """Stop the listener and show statistics"""
         self.running = False
+        
+        # Leave multicast group if we joined one
+        if self.socket and self.multicast_group:
+            try:
+                mreq = struct.pack("4sl", socket.inet_aton(self.multicast_group), socket.INADDR_ANY)
+                self.socket.setsockopt(socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq)
+            except Exception as e:
+                print(f"{Colors.ERROR}Error leaving multicast group: {e}{Colors.RESET}")
+        
         if self.socket:
             self.socket.close()
         
@@ -315,9 +342,21 @@ def main():
     )
     
     parser.add_argument(
+        '--multicast',
+        default='239.255.255.250',
+        help='Multicast group IP to listen on (default: 239.255.255.250 for EnergyMe-Home)'
+    )
+    
+    parser.add_argument(
+        '--unicast',
+        action='store_true',
+        help='Use unicast instead of multicast (listen on --host IP)'
+    )
+    
+    parser.add_argument(
         '--host', 
         default='0.0.0.0',
-        help='Host to bind to (default: 0.0.0.0 for all interfaces)'
+        help='Host to bind to for unicast mode (default: 0.0.0.0 for all interfaces)'
     )
     
     parser.add_argument(
@@ -368,8 +407,11 @@ def main():
     # Create filter
     log_filter = LogFilter(args.filter)
     
+    # Determine multicast group
+    multicast_group = None if args.unicast else args.multicast
+    
     # Start listener
-    listener = UDPLogListener(args.host, args.port, log_filter, args.log_file, args.log_format)
+    listener = UDPLogListener(args.host, args.port, log_filter, args.log_file, args.log_format, multicast_group)
     listener.start()
 
 if __name__ == '__main__':
