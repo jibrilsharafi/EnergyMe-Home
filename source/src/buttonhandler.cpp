@@ -6,10 +6,8 @@ static const char *TAG = "buttonhandler";
 
 ButtonHandler::ButtonHandler(
     int buttonPin,
-    AdvancedLogger &logger,
-    CustomWifi &customWifi) : _buttonPin(buttonPin),
+    AdvancedLogger &logger) : _buttonPin(buttonPin),
                               _logger(logger),
-                              _customWifi(customWifi),
                               _buttonPressed(false),
                               _lastButtonState(false),
                               _buttonPressStartTime(0),
@@ -231,7 +229,7 @@ void ButtonHandler::_handleWifiReset()
     Led::block();
     Led::setOrange(true);
 
-    _customWifi.resetWifi(); // Erase WiFi credentials and restart
+    CustomWifi::resetWifi(); // Erase WiFi credentials and restart
 
     // Anything below here is useless like being an adult in a candy store
     // -----------------------------------------------------

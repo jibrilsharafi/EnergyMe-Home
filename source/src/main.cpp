@@ -86,14 +86,9 @@ CrashMonitor crashMonitor(
   logger
 );
 
-CustomWifi customWifi(
-  logger
-);
-
 ButtonHandler buttonHandler(
   BUTTON_GPIO0_PIN,
-  logger,
-  customWifi
+  logger
 );
 
 Ade7953 ade7953(
@@ -145,7 +140,6 @@ Mqtt mqtt( // TODO: Add semaphore for the payload meter (or better make it a que
 //   logger,
 //   led,
 //   ade7953,
-//   customWifi,
 //   customMqtt,
 //   influxDbClient,
 //   buttonHandler
@@ -410,7 +404,7 @@ void setup() {
     
     TRACE();
     logger.debug("Setting up WiFi...", TAG);
-    customWifi.begin();
+    CustomWifi::begin();
     logger.info("WiFi setup done", TAG);
 
     // Add UDP logging setup after WiFi
@@ -479,7 +473,7 @@ void loop() {
     crashMonitor.firmwareTestingLoop();
       
     TRACE();
-    customWifi.loop();
+    // WiFi is now event-driven - no loop needed!
     
     TRACE();
     buttonHandler.loop();

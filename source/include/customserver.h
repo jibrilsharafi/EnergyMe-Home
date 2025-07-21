@@ -44,7 +44,6 @@ public:
         AsyncWebServer &server,
         AdvancedLogger &logger,
         Ade7953 &ade7953,
-        CustomWifi &customWifi,
         CustomMqtt &customMqtt,
         InfluxDbClient &influxDbClient,
         ButtonHandler &buttonHandler);
@@ -69,7 +68,6 @@ private:
     AsyncWebServer &_server;
     AdvancedLogger &_logger;
     Ade7953 &_ade7953;
-    CustomWifi &_customWifi;
     CustomMqtt &_customMqtt;
     InfluxDbClient &_influxDbClient;
     ButtonHandler &_buttonHandler;

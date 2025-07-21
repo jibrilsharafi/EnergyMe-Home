@@ -38,8 +38,7 @@ public:
    */
   ButtonHandler(
       int buttonPin,
-      AdvancedLogger &logger,
-      CustomWifi &customWifi);
+      AdvancedLogger &logger);
 
   /**
    * Initialize the button handler
@@ -88,7 +87,6 @@ private:
 
   // Dependencies
   AdvancedLogger &_logger;
-  CustomWifi &_customWifi;
   Preferences _preferences;
 
   // Button state tracking

@@ -370,49 +370,6 @@ struct LogJson {
     }
 };
 
-// Rate limiting structure for DoS protection
-// --------------------
-struct RateLimitEntry {
-    char ipAddress[OCTET_BUFFER_SIZE];
-    int failedAttempts;
-    unsigned long lastFailedAttempt;
-    unsigned long blockedUntil;
-    
-    RateLimitEntry() : failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {
-        snprintf(ipAddress, sizeof(ipAddress), "%s", "");
-    }
-    RateLimitEntry(const char* ip) : failedAttempts(0), lastFailedAttempt(0), blockedUntil(0) {
-        if (ip && strlen(ip) < OCTET_BUFFER_SIZE) {
-            snprintf(ipAddress, sizeof(ipAddress), "%s", ip);
-        } else {
-            snprintf(ipAddress, sizeof(ipAddress), "%s", "");
-        }
-    }
-};
-
-struct WifiInfo {
-    char macAddress[MAC_ADDRESS_BUFFER_SIZE];
-    char localIp[OCTET_BUFFER_SIZE];
-    char subnetMask[OCTET_BUFFER_SIZE];
-    char gatewayIp[OCTET_BUFFER_SIZE] ;
-    char dnsIp[OCTET_BUFFER_SIZE];
-    char status[STATUS_BUFFER_SIZE];
-    char ssid[WIFI_SSID_BUFFER_SIZE];
-    char bssid[MAC_ADDRESS_BUFFER_SIZE];
-    int rssi;
-
-    WifiInfo() : rssi(0) {
-        snprintf(macAddress, sizeof(macAddress), "%s", "");
-        snprintf(localIp, sizeof(localIp), "%s", "");
-        snprintf(subnetMask, sizeof(subnetMask), "%s", "");
-        snprintf(gatewayIp, sizeof(gatewayIp), "%s", "");
-        snprintf(dnsIp, sizeof(dnsIp), "%s", "");
-        snprintf(status, sizeof(status), "%s", "Unknown");
-        snprintf(ssid, sizeof(ssid), "%s", "Unknown");
-        snprintf(bssid, sizeof(bssid), "%s", "");
-    }
-};
-
 // -----------------------
 // Extern global variables
 extern MainFlags mainFlags;

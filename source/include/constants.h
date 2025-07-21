@@ -101,9 +101,7 @@
 // Small buffers (8-32 bytes)
 #define DEVICE_ID_BUFFER_SIZE 16      // For device IDs (increased slightly for safety)
 #define VERSION_BUFFER_SIZE 16        // For firmware version strings (major.minor.patch format)
-#define OCTET_BUFFER_SIZE 16          // For IPv4-like strings (xxx.xxx.xxx.xxx + null terminator)
 #define TOKEN_SHORT_KEY_BUFFER_SIZE 16 // For auth tokens "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
-#define MAC_ADDRESS_BUFFER_SIZE 18    // For MAC addresses (xx:xx:xx:xx:xx:xx + null terminator)
 #define DATE_BUFFER_SIZE 11           // For date strings (YYYY-MM-DD + null terminator)
 #define CLIENT_ID_BUFFER_SIZE 32      // For MQTT client IDs
 #define DATABASE_NAME_BUFFER_SIZE 32  // For database names
@@ -124,7 +122,6 @@
 #define USERNAME_BUFFER_SIZE 64       // For usernames
 #define PASSWORD_BUFFER_SIZE 64       // For passwords
 #define BUCKET_NAME_BUFFER_SIZE 64    // For bucket names
-#define STATUS_BUFFER_SIZE 64         // For connection status messages
 #define FIRMWARE_STATUS_BUFFER_SIZE 64 // For firmware status messages
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
 #define AUTH_PASSWORD_BUFFER_SIZE 64  // For authentication passwords
@@ -138,7 +135,7 @@
 #define CITY_BUFFER_SIZE 128          // For city names
 #define AUTH_HEADER_BUFFER_SIZE 128   // For HTTP authorization headers
 #define LOG_CALLBACK_MESSAGE_SIZE 128 // Reduced to save stack space
-#define WIFI_SSID_BUFFER_SIZE 128     // For WiFi SSID
+#define STATUS_BUFFER_SIZE 128         // For connection status messages
 
 // Large buffers (256-512 bytes)
 #define REASON_BUFFER_SIZE 256        // For restart reasons
@@ -180,18 +177,6 @@
 // Button press patterns
 #define BUTTON_DOUBLE_PRESS_INTERVAL 500 // Maximum time between presses for double press detection
 #define BUTTON_TRIPLE_PRESS_INTERVAL 500 // Maximum time between presses for triple press detection
-
-// WiFi
-#define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
-#define WIFI_LOOP_INTERVAL (1 * 1000) 
-#define WIFI_CONNECT_TIMEOUT 60 // In seconds
-#define WIFI_PORTAL_TIMEOUT (3 * 60) // In seconds
-#define WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS 5 // Maximum WiFi reconnection attempts before restart
-#define WIFI_RECONNECT_DELAY_BASE (5 * 1000) // Base delay for exponential backoff
-#define WIFI_STABLE_CONNECTION (5 * 60 * 1000) // Duration of uninterrupted WiFi connection to reset the reconnection counter
-
-// MDNS
-#define MDNS_HOSTNAME "energyme"
 
 // MQTT
 #if HAS_SECRETS
@@ -424,7 +409,3 @@
 
 // AWS IoT Core endpoint
 #define AWS_IOT_CORE_PORT 8883
-
-// -----------------------
-// Extern global variables
-extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lowercase hex without colons)

@@ -22,6 +22,7 @@
 #include "crashmonitor.h"
 #include "led.h"
 #include "structs.h"
+#include "globals.h"
 
 // Only place where the extern is used a lot
 extern AdvancedLogger logger;
@@ -102,14 +103,5 @@ void clearAllAuthTokens();
 void hashPassword(const char* password, char* hashedPassword, size_t hashedPasswordSize);
 int getActiveTokenCount();
 bool canAcceptMoreTokens();
-
-// Rate limiting functions for DoS protection
-void initializeRateLimiting();
-bool isIpBlocked(const char* clientIp);
-void recordFailedLogin(const char* clientIp);
-void recordSuccessfulLogin(const char* clientIp);
-void cleanupOldRateLimitEntries();
-
-bool setupMdns();
 
 bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds = true);

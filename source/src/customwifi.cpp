@@ -2,235 +2,282 @@
 
 static const char *TAG = "customwifi";
 
-CustomWifi::CustomWifi(
-    AdvancedLogger &logger
-  ) : _logger(logger) {}
-
-bool CustomWifi::begin()
+namespace CustomWifi
 {
-  _logger.debug("Setting up WiFi...", TAG);
+  // Static variables - minimal state
+  static WiFiManager _wifiManager;
+  static TaskHandle_t _wifiTaskHandle = NULL;
+  static bool _isInitialConnection = true;
+  static unsigned long _lastReconnectAttempt = 0;
+  static int _reconnectAttempts = 0;
 
-  _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT);
-  _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT);
-  // _wifiManager.setHttpPort(WIFI_CONFIG_PORTAL_PORT); // Keep portal on default port 80
+  // Private helper functions
+  static void _onWiFiEvent(WiFiEvent_t event);
+  static void _wifiConnectionTask(void *parameter);
+  static void _setupWiFiManager();
+  static void _handleSuccessfulConnection();
+  static bool _setupMdns();
+  static WifiInfo _getWifiInfo();
 
-  // Connect to WiFi or start portal
-  if (!_connectToWifi()) {
-    // Handle the case where connection/portal failed critically after retries
-    // Depending on _connectToWifi's logic, it might have already restarted.
-    // If not, you might want to add a fallback or error state here.
-    _logger.fatal("Initial WiFi connection failed after retries.", TAG);
-    // Perhaps blink an error pattern or halt.
-    // For now, we assume _connectToWifi handles restarts on persistent failure.
-    return false; 
+  bool begin()
+  {
+    logger.info("Setting up WiFi with event-driven architecture...", TAG);
+
+    // Setup WiFi event handling
+    WiFi.onEvent(_onWiFiEvent);
+
+    // Enable auto-reconnect and persistence
+    WiFi.setAutoReconnect(true);
+    WiFi.persistent(true);
+
+    // Setup WiFiManager with optimal settings
+    _setupWiFiManager();
+
+    // Create WiFi connection task
+    xTaskCreate(_wifiConnectionTask, "wifi_task", 4096, NULL, 1, &_wifiTaskHandle);
+
+    logger.info("WiFi setup complete - event-driven mode enabled", TAG);
+    return true;
   }
 
-  // If we get here, we're connected (either initially or after portal restart)
-  Led::unblock();
-  _logger.debug("WiFi setup done", TAG);
-  return true;
-}
+  static void _setupWiFiManager()
+  {
+    _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT);
+    _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT);
+    _wifiManager.setConnectRetries(3); // Let WiFiManager handle initial retries
 
-void CustomWifi::loop()
-{
-  // Only check periodically to reduce overhead
-  if (millis() - _lastMillisWifiLoop < WIFI_LOOP_INTERVAL) return;  
-  _lastMillisWifiLoop = millis();
-  
-  // If already connected and IP is valid, reset failure counter and return
-  if (WiFi.isConnected() && WiFi.localIP() != IPAddress(0,0,0,0)) {
-    if (_failedConnectionAttempts > 0 && 
-        (millis() - _lastConnectionAttemptTime) > WIFI_STABLE_CONNECTION) { 
-      _failedConnectionAttempts = 0;
-      _logger.debug("WiFi connection stable, resetting failure counter", TAG);
+    // Callback when portal starts
+    _wifiManager.setAPCallback([](WiFiManager *wm)
+                               {
+                                 logger.info("WiFi configuration portal started: %s", TAG, wm->getConfigPortalSSID().c_str());
+                                 Led::block();
+                                 Led::setPurple(true); // Distinct color for portal mode
+                               });
+
+    // Callback when config is saved
+    _wifiManager.setSaveConfigCallback([]()
+                                       {
+            logger.warning("WiFi credentials saved via portal - restarting...", TAG);
+            Led::setCyan(true);
+            delay(1000);
+            ESP.restart(); });
+  }
+
+  static void _onWiFiEvent(WiFiEvent_t event)
+  {
+    switch (event)
+    {
+    case ARDUINO_EVENT_WIFI_STA_START:
+      logger.debug("WiFi station started", TAG);
+      break;
+
+    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+      logger.info("WiFi connected to: %s", TAG, WiFi.SSID().c_str());
+      Led::setBlue();
+      _reconnectAttempts = 0;
+      break;
+
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      logger.info("WiFi got IP: %s", TAG, WiFi.localIP().toString().c_str());
+      _handleSuccessfulConnection();
+      break;
+
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      logger.warning("WiFi disconnected - auto-reconnect will handle", TAG);
+      Led::setBlue();
+      statistics.wifiConnectionError++;
+
+      // Notify task to handle fallback if needed
+      if (_wifiTaskHandle)
+      {
+        xTaskNotify(_wifiTaskHandle, 1, eSetValueWithOverwrite);
+      }
+      break;
+
+    case ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE:
+      logger.warning("WiFi auth mode changed", TAG);
+      break;
+
+    default:
+      break;
     }
-    return;
   }
 
-  // If disconnected or IP is not yet assigned.
-  // WiFi.isConnected() checks if WiFi.status() == WL_CONNECTED.
-  // Logs show "Idle Status" (WL_IDLE_STATUS) when IP is 0.0f.0.0f, where WiFi.isConnected() would be false.
-  if (!WiFi.isConnected() || WiFi.localIP() == IPAddress(0,0,0,0)) {
-    _logger.warning("WiFi connection lost or IP not assigned. Current status: %d. Attempting reconnection...", TAG, WiFi.status());
+  static void _handleSuccessfulConnection()
+  {
+    _isInitialConnection = false;
+    _reconnectAttempts = 0;
+    _lastReconnectAttempt = 0;
+
+    // Setup mDNS
+    _setupMdns();
+
+    // Print connection info
+    printWifiInfo();
+
+    // LED indication
+    Led::unblock();
+    Led::setGreen();
+
+    // Update statistics
+    statistics.wifiConnection++;
+
+    logger.info("WiFi fully connected and operational", TAG);
+  }
+
+  static void _wifiConnectionTask(void *parameter)
+  {
+    uint32_t notificationValue;
+
+    // Initial connection attempt
     Led::setBlue();
-    
-    // Try simple reconnect first
-    if (WiFi.reconnect()) { // This attempts to reconnect using the last known credentials.
-      _logger.info("WiFi.reconnect() call initiated. Waiting for connection and IP address...", TAG);
-      
-      unsigned long _reconnectWaitStart = millis();
-      bool _fullyConnected = false;
-      // Wait for a short period for the connection to establish and an IP to be assigned.
+    char hostname[WIFI_SSID_BUFFER_SIZE];
+    snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
 
-      unsigned int _loops = 0;
-      while (millis() - _reconnectWaitStart < 5000 && _loops < MAX_LOOP_ITERATIONS) { // Wait up to 5 seconds
-        _loops++;
-        if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0,0,0,0)) {
-          _logger.info("Successfully reconnected to WiFi: %s, IP: %s", TAG, WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-          setupMdns();
-          printWifiInfo(); // Should now show correct IP and status
-          _failedConnectionAttempts = 0; // Reset counter on successful full reconnection
-          _lastConnectionAttemptTime = millis(); // Update timestamp for stable connection tracking
-          _fullyConnected = true;
-          Led::unblock(); // Unblock LED after successful connection
-          statistics.wifiConnection++; // Increment successful connection counter
-          break;
+    if (!_wifiManager.autoConnect(hostname))
+    {
+      logger.error("Initial WiFi connection failed - restarting", TAG);
+      Led::setRed(true);
+      delay(2000);
+      ESP.restart();
+    }
+
+    // Main task loop - handles fallback scenarios
+    while (true)
+    {
+      // Wait for notification from event handler or timeout
+      if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(30000)))
+      {
+        // Got notification - WiFi disconnected
+
+        // Wait a bit for auto-reconnect to work
+        vTaskDelay(pdMS_TO_TICKS(5000));
+
+        // Check if still disconnected
+        if (!WiFi.isConnected())
+        {
+          _reconnectAttempts++;
+          _lastReconnectAttempt = millis();
+
+          logger.warning("Auto-reconnect failed, attempt %d", TAG, _reconnectAttempts);
+          Led::setOrange();
+
+          // After several failures, try WiFiManager as fallback
+          if (_reconnectAttempts >= WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS)
+          {
+            logger.error("Multiple reconnection failures - starting portal", TAG);
+
+            // Try WiFiManager portal
+            Led::block();
+            Led::setPurple(true);
+
+            if (!_wifiManager.startConfigPortal(hostname))
+            {
+              logger.fatal("Portal failed - restarting device", TAG);
+              Led::setRed(true);
+              delay(2000);
+              ESP.restart();
+            }
+            // If portal succeeds, device will restart automatically
+          }
         }
-        delay(250); // Check status periodically
       }
 
-      if (!_fullyConnected) {
-        _logger.warning("WiFi.reconnect() initiated but connection not fully established (no IP or not WL_CONNECTED) within timeout. Current status: %d, IP: %s. Falling back to _connectToWifi().", TAG, WiFi.status(), WiFi.localIP().toString().c_str());
-        statistics.wifiConnectionError++; // Increment error counter
-        _connectToWifi(); // Fallback to the more robust WiFiManager method
+      // Periodic health check (every 30 seconds)
+      if (WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0))
+      {
+        // Reset failure counter on sustained connection
+        if (_reconnectAttempts > 0 &&
+            (millis() - _lastReconnectAttempt) > WIFI_STABLE_CONNECTION)
+        {
+          logger.debug("WiFi connection stable - resetting counters", TAG);
+          _reconnectAttempts = 0;
+        }
       }
-    } else {
-      // If WiFi.reconnect() itself returns false (e.g., no credentials, immediate failure)
-      _logger.warning("WiFi.reconnect() call failed immediately. Using _connectToWifi().", TAG);
-      statistics.wifiConnectionError++; // Increment error counter
-      _connectToWifi(); // Fallback to the more robust WiFiManager method
     }
+
+    vTaskDelete(NULL);
   }
-}
 
-bool CustomWifi::_connectToWifi()
-{
-  _logger.debug("Connecting to WiFi (using WiFiManager)...", TAG);
-
-  Led::block();
-  Led::setBlue(true);
-  
-  _lastConnectionAttemptTime = millis(); // Record the start of this connection attempt
-  _failedConnectionAttempts++;
-  
-  // Reset portal tracking flag
-  _portalWasStarted = false;
-  
-  // Set up callback to detect when portal starts
-  _wifiManager.setAPCallback([this](WiFiManager* myWiFiManager) {
-    _logger.info("WiFi configuration portal started", TAG);
-    _portalWasStarted = true;
-  });
-
-  // This will block until connected or portal times out/exits
-  char hostname[WIFI_SSID_BUFFER_SIZE];
-  snprintf(hostname, sizeof(hostname), "%s - %s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
-  bool success = _wifiManager.autoConnect(hostname);
-
-  if (success) {
-    _logger.info("Connected to WiFi: %s", TAG, WiFi.SSID().c_str());
-    
-    // Reset failed attempts counter on success
-    _failedConnectionAttempts = 0;
-    _lastConnectionAttemptTime = millis(); // Update timestamp on successful connection
-    statistics.wifiConnection++; // Increment successful connection counter
-
-    if (_portalWasStarted) {
-        // Portal was actually started and used during this session
-        _logger.warning("WiFi credentials configured via portal. Restarting device...", TAG);
-        Led::setCyan(true); // Indicate successful save before restart
-        delay(1000); // Short delay to allow log message to potentially send
-        ESP.restart();
-        // Code execution stops here due to restart
-    } else {
-        // Connected using existing credentials without portal, proceed normally
-        setupMdns();
-        printWifiInfo();
-        Led::unblock();
-        return true;
-    }
-  } else {
-    // Connection or portal failed/timed out
+  void resetWifi()
+  {
+    logger.warning("Resetting WiFi credentials and restarting...", TAG);
     Led::setRed(true);
-    statistics.wifiConnectionError++; // Increment error counter
-    _logger.warning("Failed to connect to WiFi or portal timed out. Attempt %d of %d", TAG, 
-                   _failedConnectionAttempts, WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS);
-                   
-    // Only restart if we've hit the maximum *consecutive* attempts
-    if (_failedConnectionAttempts >= WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS) {
-      _logger.error("Maximum reconnection attempts reached. Restarting device...", TAG);
-      setRestartEsp32(TAG, "Maximum WiFi reconnection attempts reached");
-      // Restart is handled by setRestartEsp32 -> checkIfRestartEsp32Required in main loop
-    } else {
-      // Calculate backoff delay for next retry in loop() or next explicit call
-      unsigned long backoffDelay = WIFI_RECONNECT_DELAY_BASE * (1 << (_failedConnectionAttempts - 1));
-      _logger.info("Will retry connecting later (delay: %lu ms)", TAG, backoffDelay);
-      // Note: The actual delay might happen implicitly before the next loop() check
-      // or explicitly if _connectToWifi is called again immediately.
-      // Consider adding a delay here if retries happen too quickly in your logic.
-      // delay(backoffDelay); // Optional: uncomment if immediate retry is needed
-    }
-    Led::unblock(); // Allow LED to show other states (like Orange for retry pending)
-    Led::setOrange(); 
-    return false;
+    _wifiManager.resetSettings();
+    delay(1000);
+    ESP.restart();
   }
-  // Should not reach here due to restart or return statements above
-  return false; 
-}
 
-void CustomWifi::resetWifi()
-{
-  _logger.warning("Erasing WiFi credentials and restarting...", TAG);
-  _wifiManager.resetSettings();
-  ESP.restart();
-}
+  bool _setupMdns()
+  {
+    logger.debug("Setting up mDNS...", TAG);
 
-WifiInfo CustomWifi::getWifiInfo()
-{
-  WifiInfo wifiInfo;
+    // Ensure mDNS is stopped before starting
+    MDNS.end();
+    delay(100);
 
-  snprintf(wifiInfo.macAddress, sizeof(wifiInfo.macAddress), "%s", WiFi.macAddress().c_str());
-  snprintf(wifiInfo.localIp, sizeof(wifiInfo.localIp), "%s", WiFi.localIP().toString().c_str());
-  snprintf(wifiInfo.subnetMask, sizeof(wifiInfo.subnetMask), "%s", WiFi.subnetMask().toString().c_str());
-  snprintf(wifiInfo.gatewayIp, sizeof(wifiInfo.gatewayIp), "%s", WiFi.gatewayIP().toString().c_str());
-  snprintf(wifiInfo.dnsIp, sizeof(wifiInfo.dnsIp), "%s", WiFi.dnsIP().toString().c_str());
+    if (
+        MDNS.begin(MDNS_HOSTNAME) &&
+        MDNS.addService("http", "tcp", WEBSERVER_PORT) &&
+        MDNS.addService("mqtt", "tcp", MQTT_CUSTOM_PORT_DEFAULT) &&
+        MDNS.addService("modbus", "tcp", MODBUS_TCP_PORT))
+    {
+      logger.info("mDNS setup done", TAG);
+      return true;
+    }
+    else
+    {
+      logger.warning("Error setting up mDNS", TAG);
+      return false;
+    }
+  }
 
-  wl_status_t status = WiFi.status();
-  snprintf(wifiInfo.status, sizeof(wifiInfo.status), "%s", 
-    (status == WL_NO_SHIELD) ? "No Shield Available"
-    : (status == WL_IDLE_STATUS) ? "Idle Status"
-    : (status == WL_NO_SSID_AVAIL) ? "No SSID Available"
-    : (status == WL_SCAN_COMPLETED) ? "Scan Completed"
-    : (status == WL_CONNECTED) ? "Connected"
-    : (status == WL_CONNECT_FAILED) ? "Connection Failed"
-    : (status == WL_CONNECTION_LOST) ? "Connection Lost"
-    : (status == WL_DISCONNECTED) ? "Disconnected"
-                                    : "Unknown Status");
+  WifiInfo _getWifiInfo()
+  {
+    WifiInfo wifiInfo = {};
 
-  snprintf(wifiInfo.ssid, sizeof(wifiInfo.ssid), "%s", WiFi.SSID().c_str());
-  snprintf(wifiInfo.bssid, sizeof(wifiInfo.bssid), "%s", WiFi.BSSIDstr().c_str());
-  wifiInfo.rssi = WiFi.RSSI();
+    snprintf(wifiInfo.macAddress, sizeof(wifiInfo.macAddress), "%s", WiFi.macAddress().c_str());
+    snprintf(wifiInfo.localIp, sizeof(wifiInfo.localIp), "%s", WiFi.localIP().toString().c_str());
+    snprintf(wifiInfo.subnetMask, sizeof(wifiInfo.subnetMask), "%s", WiFi.subnetMask().toString().c_str());
+    snprintf(wifiInfo.gatewayIp, sizeof(wifiInfo.gatewayIp), "%s", WiFi.gatewayIP().toString().c_str());
+    snprintf(wifiInfo.dnsIp, sizeof(wifiInfo.dnsIp), "%s", WiFi.dnsIP().toString().c_str());
 
-  return wifiInfo;
-}
+    // Simplified status mapping
+    wl_status_t status = WiFi.status();
+    const char *statusStr = (status == WL_CONNECTED)         ? "Connected"
+                            : (status == WL_DISCONNECTED)    ? "Disconnected"
+                            : (status == WL_CONNECTION_LOST) ? "Connection Lost"
+                            : (status == WL_CONNECT_FAILED)  ? "Connection Failed"
+                            : (status == WL_IDLE_STATUS)     ? "Idle"
+                                                             : "Unknown";
+    snprintf(wifiInfo.status, sizeof(wifiInfo.status), "%s", statusStr);
 
-void CustomWifi::getWifiInfoJson(JsonDocument &jsonDocument)
-{
-  WifiInfo wifiInfo = getWifiInfo();
+    snprintf(wifiInfo.ssid, sizeof(wifiInfo.ssid), "%s", WiFi.SSID().c_str());
+    snprintf(wifiInfo.bssid, sizeof(wifiInfo.bssid), "%s", WiFi.BSSIDstr().c_str());
+    wifiInfo.rssi = WiFi.RSSI();
 
-  jsonDocument["macAddress"] = wifiInfo.macAddress;
-  jsonDocument["localIp"] = wifiInfo.localIp;
-  jsonDocument["subnetMask"] = wifiInfo.subnetMask;
-  jsonDocument["gatewayIp"] = wifiInfo.gatewayIp;
-  jsonDocument["dnsIp"] = wifiInfo.dnsIp;
-  jsonDocument["status"] = wifiInfo.status;
-  jsonDocument["ssid"] = wifiInfo.ssid;
-  jsonDocument["bssid"] = wifiInfo.bssid;
-  jsonDocument["rssi"] = wifiInfo.rssi;
-}
+    return wifiInfo;
+  }
 
-void CustomWifi::printWifiInfo()
-{
-  JsonDocument _jsonDocument;
-  getWifiInfoJson(_jsonDocument);
+  void getWifiInfoJson(JsonDocument &jsonDocument)
+  {
+    WifiInfo wifiInfo = _getWifiInfo();
 
-  _logger.info(
-      "MAC: %s | IP: %s | Status: %s | SSID: %s | RSSI: %d",
-      TAG,
-      _jsonDocument["macAddress"].as<const char*>(),
-      _jsonDocument["localIp"].as<const char*>(),
-      _jsonDocument["status"].as<const char*>(),
-      _jsonDocument["ssid"].as<const char*>(),
-      _jsonDocument["rssi"].as<int>()
-    );
+    jsonDocument["macAddress"] = wifiInfo.macAddress;
+    jsonDocument["localIp"] = wifiInfo.localIp;
+    jsonDocument["subnetMask"] = wifiInfo.subnetMask;
+    jsonDocument["gatewayIp"] = wifiInfo.gatewayIp;
+    jsonDocument["dnsIp"] = wifiInfo.dnsIp;
+    jsonDocument["status"] = wifiInfo.status;
+    jsonDocument["ssid"] = wifiInfo.ssid;
+    jsonDocument["bssid"] = wifiInfo.bssid;
+    jsonDocument["rssi"] = wifiInfo.rssi;
+  }
+
+  void printWifiInfo()
+  {
+    WifiInfo wifiInfo = _getWifiInfo();
+    logger.info("WiFi - SSID: %s | IP: %s | Status: %s | RSSI: %d dBm", TAG,
+                wifiInfo.ssid, wifiInfo.localIp, wifiInfo.status, wifiInfo.rssi);
+  }
 }
