@@ -231,6 +231,9 @@ void callbackLogToUdp(
     
     // Skip UDP logging if heap is critically low to prevent death spiral
     if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) return;
+    
+    // Skip UDP logging for the first 10 seconds to let network stack stabilize
+    if (millis() < 10000) return;
 
     udpLogBuffer.push(
         LogJson(
@@ -243,8 +246,11 @@ void callbackLogToUdp(
         )
     );
 
-    // If not connected to WiFi, return (log is still stored in circular buffer for later)
-    if (WiFi.status() != WL_CONNECTED) return;
+    // If not connected to WiFi or no valid IP, return (log is still stored in circular buffer for later)
+    if (WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0, 0, 0, 0)) return;
+    
+    // Additional check - ensure we have a valid gateway (network is fully ready)
+    if (WiFi.gatewayIP() == IPAddress(0, 0, 0, 0)) return;
 
     unsigned int _loops = 0;
     while (!udpLogBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
@@ -271,17 +277,31 @@ void callbackLogToUdp(
             _log.function,
             _log.message);
         
+        // Try to begin UDP packet with timeout protection
         if (!udpClient.beginPacket(broadcastIP, UDP_LOG_PORT)) {
-            // Failed to begin packet, put log back in buffer and break
+            // Failed to begin packet - network might not be ready
+            // Put log back in buffer and stop trying (don't retry immediately)
             udpLogBuffer.push(_log);
             break;
         }
         
         size_t bytesWritten = udpClient.write((const uint8_t*)udpBuffer, strlen(udpBuffer));
-        if (bytesWritten == 0 || !udpClient.endPacket()) {
-            // Failed to send, put log back in buffer and break
+        if (bytesWritten == 0) {
+            // Write failed - network issue
+            udpLogBuffer.push(_log);
+            udpClient.endPacket(); // Clean up the packet
+            break;
+        }
+        
+        if (!udpClient.endPacket()) {
+            // Send failed - put log back and stop
             udpLogBuffer.push(_log);
             break;
+        }
+        
+        // Small delay between UDP packets to avoid overwhelming the stack
+        if (!udpLogBuffer.isEmpty()) {
+            delayMicroseconds(100); // 0.1ms delay
         }
     }
 }

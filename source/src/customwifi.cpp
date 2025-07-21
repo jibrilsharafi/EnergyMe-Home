@@ -11,6 +11,11 @@ namespace CustomWifi
   static unsigned long _lastReconnectAttempt = 0;
   static int _reconnectAttempts = 0;
 
+  // WiFi event notification values for task communication
+  static const uint32_t WIFI_EVENT_CONNECTED = 1;
+  static const uint32_t WIFI_EVENT_GOT_IP = 2;
+  static const uint32_t WIFI_EVENT_DISCONNECTED = 3;
+
   // Private helper functions
   static void _onWiFiEvent(WiFiEvent_t event);
   static void _wifiConnectionTask(void *parameter);
@@ -65,37 +70,36 @@ namespace CustomWifi
 
   static void _onWiFiEvent(WiFiEvent_t event)
   {
+    // Keep WiFi event handlers minimal to avoid stack overflow
+    // All logging is deferred to the WiFi task
     switch (event)
     {
     case ARDUINO_EVENT_WIFI_STA_START:
-      logger.debug("WiFi station started", TAG);
+      // Station started - no action needed
       break;
 
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-      logger.info("WiFi connected to: %s", TAG, WiFi.SSID().c_str());
       Led::setBlue();
       _reconnectAttempts = 0;
+      // Defer logging to task
+      if (_wifiTaskHandle) xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetValueWithOverwrite);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      logger.info("WiFi got IP: %s", TAG, WiFi.localIP().toString().c_str());
-      _handleSuccessfulConnection();
+      // Defer all operations to task - avoid any function calls that might log
+      if (_wifiTaskHandle) xTaskNotify(_wifiTaskHandle, WIFI_EVENT_GOT_IP, eSetValueWithOverwrite);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      logger.warning("WiFi disconnected - auto-reconnect will handle", TAG);
       Led::setBlue();
       statistics.wifiConnectionError++;
 
       // Notify task to handle fallback if needed
-      if (_wifiTaskHandle)
-      {
-        xTaskNotify(_wifiTaskHandle, 1, eSetValueWithOverwrite);
-      }
+      if (_wifiTaskHandle) xTaskNotify(_wifiTaskHandle, WIFI_EVENT_DISCONNECTED, eSetValueWithOverwrite);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE:
-      logger.warning("WiFi auth mode changed", TAG);
+      // Auth mode changed - no immediate action needed
       break;
 
     default:
@@ -119,9 +123,6 @@ namespace CustomWifi
     Led::unblock();
     Led::setGreen();
 
-    // Update statistics
-    statistics.wifiConnection++;
-
     logger.info("WiFi fully connected and operational", TAG);
   }
 
@@ -142,15 +143,40 @@ namespace CustomWifi
       ESP.restart();
     }
 
-    // Main task loop - handles fallback scenarios
+    // Main task loop - handles fallback scenarios and deferred logging
     while (true)
     {
       // Wait for notification from event handler or timeout
       if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(30000)))
       {
-        // Got notification - WiFi disconnected
+        // Handle deferred operations from WiFi events (safe context)
+        // NOTE: Logging temporarily disabled due to AdvancedLogger stack issues
+        switch (notificationValue)
+        {
+        case WIFI_EVENT_CONNECTED:
+          logger.info("WiFi connected to: %s", TAG, WiFi.SSID().c_str());
+          continue; // No further action needed
+          
+        case WIFI_EVENT_GOT_IP:
+          logger.info("WiFi got IP: %s", TAG, WiFi.localIP().toString().c_str());
+          // Handle successful connection operations safely in task context
+          _handleSuccessfulConnection();
+          continue; // No further action needed
+          
+        case WIFI_EVENT_DISCONNECTED:
+          logger.warning("WiFi disconnected - auto-reconnect will handle", TAG);
+          // Fall through to handle disconnection
+          break;
+          
+        default:
+          // Legacy notification or timeout - treat as disconnection check
+          break;
+        }
 
-        // Wait a bit for auto-reconnect to work
+        // Handle disconnection (only for WIFI_EVENT_DISCONNECTED or legacy notifications)
+        if (notificationValue == WIFI_EVENT_DISCONNECTED || notificationValue == 1)
+        {
+          // Wait a bit for auto-reconnect to work
         vTaskDelay(pdMS_TO_TICKS(5000));
 
         // Check if still disconnected
@@ -181,14 +207,14 @@ namespace CustomWifi
             // If portal succeeds, device will restart automatically
           }
         }
+        }
       }
 
       // Periodic health check (every 30 seconds)
       if (WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0))
       {
-        // Reset failure counter on sustained connection
-        if (_reconnectAttempts > 0 &&
-            (millis() - _lastReconnectAttempt) > WIFI_STABLE_CONNECTION)
+                // Reset failure counter on sustained connection
+        if (_isInitialConnection || _reconnectAttempts > 0)
         {
           logger.debug("WiFi connection stable - resetting counters", TAG);
           _reconnectAttempts = 0;

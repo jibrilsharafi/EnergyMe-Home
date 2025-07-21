@@ -17,6 +17,8 @@ namespace CustomTime {
 
     bool begin() {
         setSyncInterval(TIME_SYNC_INTERVAL_S);
+
+        _loadConfiguration();
         
         // TimeLib will automatically retry sync at the interval we set
         // We just check if initial sync worked, but don't need manual retry logic

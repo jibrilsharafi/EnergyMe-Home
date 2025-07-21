@@ -1928,7 +1928,10 @@ void Ade7953::resumeMeterReadingTask() {
 }
 
 void Ade7953::_attachInterruptHandler() {
-    _detachInterruptHandler();
+    // Detach only if already attached (avoid priting error)
+    if (_meterReadingTaskHandle != NULL) {
+        _detachInterruptHandler();
+    }
     ::attachInterrupt(digitalPinToInterrupt(_interruptPin), _isrHandler, FALLING);
 }
 
