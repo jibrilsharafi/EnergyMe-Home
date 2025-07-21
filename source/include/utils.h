@@ -71,7 +71,6 @@ void applyGeneralConfiguration();
 
 void getPublicLocation(PublicLocation* publicLocation);
 void getPublicTimezone(int* gmtOffset, int* dstOffset);
-void updateTimezone();
 
 void factoryReset();
 void clearAllPreferences();

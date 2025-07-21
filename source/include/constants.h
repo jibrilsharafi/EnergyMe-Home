@@ -2,8 +2,6 @@
 
 // Note: all the durations hereafter are in milliseconds unless specified otherwise
 
-// Hardware revision: EnergyMe - Home v5 (02-12-2024)
-
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "11"
@@ -169,15 +167,7 @@
 #define WEBSERVER_PORT 80
 #define API_UPDATE_THROTTLE_MS 500 // Minimum time between updates
 
-// LED
-// Hardware pins (check hardware revision)
-#define LED_RED_PIN 39
-#define LED_GREEN_PIN 40
-#define LED_BLUE_PIN 38
-
 // Button
-// Hardware pins (check hardware revision)
-#define BUTTON_GPIO0_PIN 0 // GPIO0 button for critical functionality control
 
 // Button timing constants
 #define BUTTON_DEBOUNCE_TIME 50 // Debounce time in milliseconds
@@ -283,22 +273,10 @@
 
 // Multiplexer
 // --------------------
-// Hardware pins (check hardware revision)
-#define MULTIPLEXER_S0_PIN 10
-#define MULTIPLEXER_S1_PIN 11
-#define MULTIPLEXER_S2_PIN 3
-#define MULTIPLEXER_S3_PIN 9
 #define MULTIPLEXER_CHANNEL_COUNT 16
 
 // ADE7953
 // --------------------
-// Hardware pins (check hardware revision)
-#define SS_PIN 48
-#define SCK_PIN 36
-#define MISO_PIN 35
-#define MOSI_PIN 45
-#define ADE7953_RESET_PIN 21
-#define ADE7953_INTERRUPT_PIN 37
 #define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz
 #define ADE7953_SPI_MUTEX_TIMEOUT_MS 100 // Timeout for acquiring SPI mutex to prevent deadlocks
 

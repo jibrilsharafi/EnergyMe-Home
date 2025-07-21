@@ -1,0 +1,21 @@
+#pragma once
+
+// Hardware revision: EnergyMe - Home v5 (02-12-2024)
+
+#define LED_RED_PIN 39
+#define LED_GREEN_PIN 40
+#define LED_BLUE_PIN 38
+
+#define BUTTON_GPIO0_PIN 0
+
+#define MULTIPLEXER_S0_PIN 10
+#define MULTIPLEXER_S1_PIN 11
+#define MULTIPLEXER_S2_PIN 3
+#define MULTIPLEXER_S3_PIN 9
+
+#define ADE7953_SS_PIN 48
+#define ADE7953_SCK_PIN 36
+#define ADE7953_MISO_PIN 35
+#define ADE7953_MOSI_PIN 45
+#define ADE7953_RESET_PIN 21
+#define ADE7953_INTERRUPT_PIN 37

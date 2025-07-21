@@ -1,10 +1,14 @@
 #pragma once
 
-#include <Arduino.h>
-#include <TimeLib.h>
 #include <AdvancedLogger.h>
+#include <Arduino.h>
+#include <Preferences.h>
+#include <TimeLib.h>
 
-// Time
+#define PREFERENCES_NAMESPACE_TIME "time_ns"
+#define PREFERENCES_GMT_OFFSET_KEY "gmt_offset"
+#define PREFERENCES_DST_OFFSET_KEY "dst_offset"
+
 #define NTP_SERVER_1 "pool.ntp.org"
 #define NTP_SERVER_2 "time.google.com"
 #define NTP_SERVER_3 "time.apple.com"
@@ -12,9 +16,12 @@
 #define TIME_SYNC_RETRY_INTERVAL_MS (60 * 1000) // Retry sync if failed
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
 #define TIMESTAMP_BUFFER_SIZE 20  // Size needed for TIMESTAMP_FORMAT (19 chars + null terminator)
+#define DEFAULT_GMT_OFFSET 0
+#define DEFAULT_DST_OFFSET 0
 
 namespace CustomTime {
     bool begin();
+    void resetToDefaults(); // TODO: include in factory reset
 
     bool isTimeSynched();
 

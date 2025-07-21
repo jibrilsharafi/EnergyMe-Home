@@ -404,12 +404,6 @@ components:
       properties:
         "isCloudServicesEnabled":
           type: boolean
-        "gmtOffset":
-          type: integer
-        "dstOffset":
-          type: integer
-        "ledBrightness":
-          type: integer
         "sendPowerData":
           type: boolean
     Statistics:

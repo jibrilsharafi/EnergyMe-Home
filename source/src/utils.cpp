@@ -156,9 +156,6 @@ void createDefaultGeneralConfigurationFile() {
     JsonDocument _jsonDocument;
 
     _jsonDocument["isCloudServicesEnabled"] = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
-    _jsonDocument["gmtOffset"] = 0;
-    _jsonDocument["dstOffset"] = 0;
-    _jsonDocument["ledBrightness"] = DEFAULT_LED_BRIGHTNESS;
     _jsonDocument["sendPowerData"] = DEFAULT_SEND_POWER_DATA;
 
     serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
@@ -628,9 +625,6 @@ bool setGeneralConfiguration(JsonDocument& jsonDocument) {
     generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
     generalConfiguration.sendPowerData = DEFAULT_SEND_POWER_DATA;
 #endif
-    generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
-    generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
-    generalConfiguration.ledBrightness = jsonDocument["ledBrightness"].as<int>();
 
     applyGeneralConfiguration();
 
@@ -647,9 +641,6 @@ void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, Json
     logger.debug("Converting general configuration to JSON...", TAG);
 
     jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
-    jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
-    jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
-    jsonDocument["ledBrightness"] = generalConfiguration.ledBrightness;
     jsonDocument["sendPowerData"] = generalConfiguration.sendPowerData;
 
     logger.debug("General configuration converted to JSON", TAG);
@@ -684,8 +675,6 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
 void applyGeneralConfiguration() {
     logger.debug("Applying general configuration...", TAG);
 
-    Led::setBrightness(generalConfiguration.ledBrightness);
-
     logger.debug("General configuration applied", TAG);
 }
 
@@ -695,9 +684,6 @@ bool validateGeneralConfigurationJson(JsonDocument& jsonDocument) {
     if (!jsonDocument.is<JsonObject>()) { logger.warning("JSON is not an object", TAG); return false; }
     
     if (!jsonDocument["isCloudServicesEnabled"].is<bool>()) { logger.warning("isCloudServicesEnabled is not a boolean", TAG); return false; }
-    if (!jsonDocument["gmtOffset"].is<int>()) { logger.warning("gmtOffset is not an integer", TAG); return false; }
-    if (!jsonDocument["dstOffset"].is<int>()) { logger.warning("dstOffset is not an integer", TAG); return false; }
-    if (!jsonDocument["ledBrightness"].is<int>()) { logger.warning("ledBrightness is not an integer", TAG); return false; }
     if (!jsonDocument["sendPowerData"].is<bool>()) { logger.warning("sendPowerData is not a boolean", TAG); return false; }
 
     return true;
@@ -817,20 +803,6 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
     }
 
     _http.end();
-}
-
-void updateTimezone() {
-    if (!WiFi.isConnected()) {
-        logger.warning("WiFi is not connected. Cannot update timezone", TAG);
-        return;
-    }
-
-    logger.debug("Updating timezone...", TAG);
-
-    getPublicTimezone(&generalConfiguration.gmtOffset, &generalConfiguration.dstOffset);
-    saveGeneralConfigurationToSpiffs();
-
-    logger.debug("Timezone updated", TAG);
 }
 
 void factoryReset() { 

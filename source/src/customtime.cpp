@@ -6,9 +6,14 @@ static const char *TAG = "customtime";
 namespace CustomTime {
     // Static variables to maintain state
     static bool _isTimeSynched = false;
-    
+    static int _gmtOffset = DEFAULT_GMT_OFFSET;
+    static int _dstOffset = DEFAULT_DST_OFFSET;
+
     // Private helper function
     static bool _getTime();
+
+    static bool _loadConfiguration();
+    static void _saveConfiguration();
 
     bool begin() {
         setSyncInterval(TIME_SYNC_INTERVAL_S);
@@ -17,6 +22,12 @@ namespace CustomTime {
         // We just check if initial sync worked, but don't need manual retry logic
         _isTimeSynched = _getTime();
         return _isTimeSynched;
+    }
+
+    void resetToDefaults() {
+        _gmtOffset = DEFAULT_GMT_OFFSET;
+        _dstOffset = DEFAULT_DST_OFFSET;
+        _saveConfiguration();
     }
 
     void setOffset(int gmtOffset, int dstOffset) {
@@ -34,6 +45,35 @@ namespace CustomTime {
 
     bool isTimeSynched() {
         return _isTimeSynched;
+    }
+
+    bool _loadConfiguration() {
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_TIME, true)) {
+            // If preferences can't be opened, fallback to default
+            _gmtOffset = DEFAULT_GMT_OFFSET;
+            _dstOffset = DEFAULT_DST_OFFSET;
+            _saveConfiguration();
+            setOffset(_gmtOffset, _dstOffset);
+            return false;
+        }
+
+        _gmtOffset = preferences.getInt(PREFERENCES_GMT_OFFSET_KEY, DEFAULT_GMT_OFFSET);
+        _dstOffset = preferences.getInt(PREFERENCES_DST_OFFSET_KEY, DEFAULT_DST_OFFSET);
+        preferences.end();
+        
+        setOffset(_gmtOffset, _dstOffset);
+        return true;
+    }
+
+    void _saveConfiguration() {
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_TIME, false)) { // false = read-write mode
+            return;
+        }
+        preferences.putInt(PREFERENCES_GMT_OFFSET_KEY, _gmtOffset);
+        preferences.putInt(PREFERENCES_DST_OFFSET_KEY, _dstOffset);
+        preferences.end();
     }
 
     static bool _getTime() {

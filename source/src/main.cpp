@@ -11,6 +11,7 @@
 #include "constants.h"
 #include "structs.h"
 #include "utils.h"
+#include "pins.h"
 
 #include "ade7953.h"
 #include "buttonhandler.h"
@@ -96,10 +97,10 @@ ButtonHandler buttonHandler(
 );
 
 Ade7953 ade7953(
-  SS_PIN,
-  SCK_PIN,
-  MISO_PIN,
-  MOSI_PIN,
+  ADE7953_SS_PIN,
+  ADE7953_SCK_PIN,
+  ADE7953_MISO_PIN,
+  ADE7953_MOSI_PIN,
   ADE7953_RESET_PIN,
   ADE7953_INTERRUPT_PIN,
   logger,
@@ -431,12 +432,15 @@ void setup() {
 
     TRACE();
     logger.debug("Syncing time...", TAG);
-    updateTimezone();
+    ;
     if (CustomTime::begin()) {
+      int gmtOffset, dstOffset;
+      getPublicTimezone(&gmtOffset, &dstOffset);
       CustomTime::setOffset(
-        generalConfiguration.gmtOffset, 
-        generalConfiguration.dstOffset
+        gmtOffset, 
+        dstOffset
       );
+      
       char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
       CustomTime::getTimestamp(timestampBuffer);
       logger.info("Initial time sync successful. Current timestamp: %s", TAG, timestampBuffer);

@@ -5,7 +5,12 @@
 #pragma once
 
 #include <Arduino.h>
+#include <Preferences.h>
 
+#define PREFERENCES_NAMESPACE_LED "led_ns"
+#define PREFERENCES_BRIGHTNESS_KEY "brightness"
+
+#define INVALID_PIN -1 // Used for initialization of pins
 #define DEFAULT_LED_BRIGHTNESS 191 // 75% of the maximum brightness
 #define LED_RESOLUTION 8 // Resolution for PWM, 8 bits (0-255)
 #define LED_MAX_BRIGHTNESS 255 // 8-bit PWM
@@ -13,6 +18,7 @@
 
 namespace Led {
     void begin(int redPin, int greenPin, int bluePin);
+    void resetToDefaults(); // TODO: include in factory reset
 
     void setBrightness(int brightness);
     int getBrightness();

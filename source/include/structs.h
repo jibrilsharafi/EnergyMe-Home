@@ -199,16 +199,10 @@ struct ChannelState {
 struct GeneralConfiguration // TODO: modify this, it is terrible to have this "general" configuration struct
 {
   bool isCloudServicesEnabled;
-  int gmtOffset;
-  int dstOffset;
-  int ledBrightness;
   bool sendPowerData; // Flag to control sending of power data. This can only be modified via MQTT
 
   GeneralConfiguration() : 
     isCloudServicesEnabled(DEFAULT_IS_CLOUD_SERVICES_ENABLED), 
-    gmtOffset(0), 
-    dstOffset(0), 
-    ledBrightness(191), // Default to 75% brightness
     sendPowerData(DEFAULT_SEND_POWER_DATA) {}
 };
 
