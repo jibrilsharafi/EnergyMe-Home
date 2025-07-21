@@ -86,11 +86,6 @@ CrashMonitor crashMonitor(
   logger
 );
 
-ButtonHandler buttonHandler(
-  BUTTON_GPIO0_PIN,
-  logger
-);
-
 Ade7953 ade7953(
   ADE7953_SS_PIN,
   ADE7953_SCK_PIN,
@@ -421,7 +416,7 @@ void setup() {
 
     TRACE();
     logger.debug("Setting up button handler...", TAG);
-    buttonHandler.begin();
+    ButtonHandler::begin(BUTTON_GPIO0_PIN);
     logger.info("Button handler setup done", TAG);
 
     TRACE();
@@ -476,7 +471,7 @@ void loop() {
     // WiFi is now event-driven - no loop needed!
     
     TRACE();
-    buttonHandler.loop();
+    // ButtonHandler is now interrupt-driven - no loop needed!
     
     TRACE();
     mqtt.loop();

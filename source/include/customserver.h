@@ -45,8 +45,7 @@ public:
         AdvancedLogger &logger,
         Ade7953 &ade7953,
         CustomMqtt &customMqtt,
-        InfluxDbClient &influxDbClient,
-        ButtonHandler &buttonHandler);
+        InfluxDbClient &influxDbClient);
 
     ~CustomServer();
     void begin();
@@ -70,7 +69,6 @@ private:
     Ade7953 &_ade7953;
     CustomMqtt &_customMqtt;
     InfluxDbClient &_influxDbClient;
-    ButtonHandler &_buttonHandler;
     char _md5[MD5_BUFFER_SIZE];
     
     SemaphoreHandle_t _configurationMutex;
