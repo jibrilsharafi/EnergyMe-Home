@@ -22,7 +22,7 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
 
     jsonDocument["system"]["uptime"] = millis();
     char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-    CustomTime::getTimestamp(_timestampBuffer);
+    CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer));
     jsonDocument["system"]["systemTime"] = _timestampBuffer;
 
     jsonDocument["firmware"]["buildVersion"] = FIRMWARE_BUILD_VERSION;
@@ -280,32 +280,6 @@ void createDefaultCustomMqttConfigurationFile() {
     logger.debug("Default %s created", TAG, CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
 }
 
-void createDefaultInfluxDbConfigurationFile() {
-    logger.debug("Creating default %s...", TAG, INFLUXDB_CONFIGURATION_JSON_PATH);
-
-    JsonDocument _jsonDocument;
-
-    _jsonDocument["enabled"] = DEFAULT_IS_INFLUXDB_ENABLED;
-    _jsonDocument["server"] = INFLUXDB_SERVER_DEFAULT;
-    _jsonDocument["port"] = INFLUXDB_PORT_DEFAULT;
-    _jsonDocument["version"] = INFLUXDB_VERSION_DEFAULT; // Default to v2
-    _jsonDocument["database"] = INFLUXDB_DATABASE_DEFAULT;
-    _jsonDocument["username"] = INFLUXDB_USERNAME_DEFAULT;
-    _jsonDocument["password"] = INFLUXDB_PASSWORD_DEFAULT;
-    _jsonDocument["organization"] = INFLUXDB_ORGANIZATION_DEFAULT;
-    _jsonDocument["bucket"] = INFLUXDB_BUCKET_DEFAULT;
-    _jsonDocument["token"] = INFLUXDB_TOKEN_DEFAULT;
-    _jsonDocument["measurement"] = INFLUXDB_MEASUREMENT_DEFAULT;
-    _jsonDocument["frequency"] = INFLUXDB_FREQUENCY_DEFAULT;
-    _jsonDocument["useSSL"] = INFLUXDB_USE_SSL_DEFAULT;
-    _jsonDocument["lastConnectionStatus"] = "Never attempted";
-    _jsonDocument["lastConnectionAttemptTimestamp"] = "";
-
-    serializeJsonToSpiffs(INFLUXDB_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    logger.debug("Default %s created", TAG, INFLUXDB_CONFIGURATION_JSON_PATH);
-}
-
 std::vector<const char*> checkMissingFiles() {
     logger.debug("Checking missing files...", TAG);
 
@@ -317,7 +291,6 @@ std::vector<const char*> checkMissingFiles() {
         CALIBRATION_JSON_PATH,
         CHANNEL_DATA_JSON_PATH,
         CUSTOM_MQTT_CONFIGURATION_JSON_PATH,
-        INFLUXDB_CONFIGURATION_JSON_PATH,
         ENERGY_JSON_PATH,
         DAILY_ENERGY_JSON_PATH,
         FW_UPDATE_INFO_JSON_PATH,
@@ -353,8 +326,6 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
             createDefaultChannelDataFile();
         } else if (strcmp(path, CUSTOM_MQTT_CONFIGURATION_JSON_PATH) == 0) {
             createDefaultCustomMqttConfigurationFile();
-        } else if (strcmp(path, INFLUXDB_CONFIGURATION_JSON_PATH) == 0) {
-            createDefaultInfluxDbConfigurationFile();
         } else if (strcmp(path, ENERGY_JSON_PATH) == 0) {
             createDefaultEnergyFile();
         } else if (strcmp(path, DAILY_ENERGY_JSON_PATH) == 0) {
@@ -393,6 +364,8 @@ void setRestartEsp32(const char* functionName, const char* reason) {
     restartConfiguration.requiredAt = millis();
     snprintf(restartConfiguration.functionName, sizeof(restartConfiguration.functionName), "%s", functionName);
     snprintf(restartConfiguration.reason, sizeof(restartConfiguration.reason), "%s", reason);
+
+    //TODO: we should start stopping tasks here
 
     // Don't cleanup interrupts immediately - let MQTT finish final operations first
     logger.debug("Restart configuration set. Function: %s, Reason: %s, Required at %u", TAG, restartConfiguration.functionName, restartConfiguration.reason, restartConfiguration.requiredAt);
@@ -669,6 +642,13 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
     jsonDocument["wifiConnection"] = statistics.wifiConnection;
     jsonDocument["wifiConnectionError"] = statistics.wifiConnectionError;
 
+    jsonDocument["logVerbose"] = statistics.logVerbose;
+    jsonDocument["logDebug"] = statistics.logDebug;
+    jsonDocument["logInfo"] = statistics.logInfo;
+    jsonDocument["logWarning"] = statistics.logWarning;
+    jsonDocument["logError"] = statistics.logError;
+    jsonDocument["logFatal"] = statistics.logFatal;
+
     logger.debug("Statistics converted to JSON", TAG);
 }
 
@@ -726,17 +706,17 @@ void getPublicLocation(PublicLocation* publicLocation) {
             // Extract strings safely using const char* and copy to char arrays
             const char* country = _jsonDocument["country"].as<const char*>();
             const char* city = _jsonDocument["city"].as<const char*>();
-            const char* latitude = _jsonDocument["lat"].as<const char*>();
-            const char* longitude = _jsonDocument["lon"].as<const char*>();
-            
+            float latitude = _jsonDocument["lat"].as<float>();
+            float longitude = _jsonDocument["lon"].as<float>();
+
             // Extract strings safely - use empty string if NULL
             snprintf(publicLocation->country, sizeof(publicLocation->country), "%s", country ? country : "");
             snprintf(publicLocation->city, sizeof(publicLocation->city), "%s", city ? city : "");
-            snprintf(publicLocation->latitude, sizeof(publicLocation->latitude), "%s", latitude ? latitude : "");
-            snprintf(publicLocation->longitude, sizeof(publicLocation->longitude), "%s", longitude ? longitude : "");
+            publicLocation->latitude = latitude;
+            publicLocation->longitude = longitude;
 
             logger.debug(
-                "Location: %s, %s | Lat: %s | Lon: %s",
+                "Location: %s, %s | Lat: %f | Lon: %f",
                 TAG,
                 publicLocation->country,
                 publicLocation->city,
@@ -766,7 +746,7 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
     JsonDocument _jsonDocument;
 
     char _url[URL_BUFFER_SIZE];
-    snprintf(_url, sizeof(_url), "%slat=%s&lng=%s&username=%s",
+    snprintf(_url, sizeof(_url), "%slat=%f&lng=%f&username=%s",
         PUBLIC_TIMEZONE_ENDPOINT,
         _publicLocation.latitude,
         _publicLocation.longitude,
@@ -778,7 +758,7 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
     if (httpCode > 0) {
         if (httpCode == HTTP_CODE_OK) {
             // Use stream directly - efficient and simple
-            DeserializationError error = deserializeJson(_jsonDocument, _http.getStream());
+            DeserializationError error = deserializeJson(_jsonDocument, _http.getStream()); // FIXME: this returns null
             
             if (error) {
                 logger.error("JSON parsing failed: %s", TAG, error.c_str());
@@ -890,7 +870,7 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
     _jsonDocument["status"] = status;
     _jsonDocument["reason"] = reason;
     char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-    CustomTime::getTimestamp(_timestampBuffer);
+    CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer)); // TODO: maybe everything should be returned in unix so it is UTC, and then converted on the other side? or standard iso utc timestamp?
     _jsonDocument["timestamp"] = _timestampBuffer;
 
     serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);

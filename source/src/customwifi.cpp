@@ -39,7 +39,7 @@ namespace CustomWifi
     _setupWiFiManager();
 
     // Create WiFi connection task
-    xTaskCreate(_wifiConnectionTask, "wifi_task", 4096, NULL, 1, &_wifiTaskHandle);
+    xTaskCreate(_wifiConnectionTask, "wifi_task", 4096, NULL, 1, &_wifiTaskHandle); // TODO: use defines
 
     logger.info("WiFi setup complete - event-driven mode enabled", TAG);
     return true;

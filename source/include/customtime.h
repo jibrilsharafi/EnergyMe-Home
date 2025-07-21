@@ -27,10 +27,9 @@ namespace CustomTime {
 
     void setOffset(int gmtOffset, int dstOffset);
 
-    void timestampFromUnix(time_t unix, char* buffer);
-    void timestampFromUnix(time_t unix, const char *timestampFormat, char* buffer);
+    void timestampFromUnix(time_t unix, char* buffer, size_t bufferSize);
 
     unsigned long getUnixTime();
     unsigned long long getUnixTimeMilliseconds();
-    void getTimestamp(char* buffer);
+    void getTimestamp(char* buffer, size_t bufferSize);
 }

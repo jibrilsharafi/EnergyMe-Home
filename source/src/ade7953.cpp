@@ -1972,8 +1972,7 @@ void IRAM_ATTR Ade7953::_isrHandler()
 }
 
 void Ade7953::_checkInterruptTiming() {
-    if (millis() > MINIMUM_TIME_BEFORE_VALID_METER &&
-        millis() - _lastInterruptTime >= getSampleTime()) {
+    if (millis() - _lastInterruptTime >= getSampleTime()) {
         _logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).", 
                        TAG, millis() - _lastInterruptTime, getSampleTime());
     }
@@ -1990,7 +1989,7 @@ bool Ade7953::_processChannelReading(int channel, unsigned long long linecycUnix
 }
 
 void Ade7953::_addMeterDataToPayload(int channel, unsigned long long linecycUnix) {
-    if (!CustomTime::getUnixTime() || millis() <= MINIMUM_TIME_BEFORE_VALID_METER) {
+    if (!CustomTime::isTimeSynched()) {
         return;
     }
     

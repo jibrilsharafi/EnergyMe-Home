@@ -210,10 +210,10 @@ struct PublicLocation
 {
   char country[COUNTRY_BUFFER_SIZE];
   char city[CITY_BUFFER_SIZE];
-  char latitude[LATITUDE_BUFFER_SIZE];
-  char longitude[LONGITUDE_BUFFER_SIZE];
+  float latitude;
+  float longitude;
 
-  PublicLocation() : country("Unknown"), city("Unknown"), latitude("45.0"), longitude("9.0") {} // Default to Milan coordinates
+  PublicLocation() : country("Unknown"), city("Unknown"), latitude(45.0), longitude(9.0) {} // Default to Milan coordinates
 };
 
 struct RestartConfiguration
@@ -268,47 +268,6 @@ struct CustomMqttConfiguration {
       snprintf(topic, sizeof(topic), "%s", MQTT_CUSTOM_TOPIC_DEFAULT);
       snprintf(username, sizeof(username), "%s", MQTT_CUSTOM_USERNAME_DEFAULT);
       snprintf(password, sizeof(password), "%s", MQTT_CUSTOM_PASSWORD_DEFAULT);
-      snprintf(lastConnectionStatus, sizeof(lastConnectionStatus), "Never attempted");
-      snprintf(lastConnectionAttemptTimestamp, sizeof(lastConnectionAttemptTimestamp), "Never attempted");
-    }
-};
-
-struct InfluxDbConfiguration {
-    bool enabled;
-    char server[SERVER_NAME_BUFFER_SIZE];
-    int port;
-    int version;  // 1 or 2
-    
-    // v1 fields
-    char database[DATABASE_NAME_BUFFER_SIZE];
-    char username[USERNAME_BUFFER_SIZE];
-    char password[PASSWORD_BUFFER_SIZE];
-    
-    // v2 fields
-    char organization[ORGANIZATION_BUFFER_SIZE];
-    char bucket[BUCKET_NAME_BUFFER_SIZE];
-    char token[TOKEN_BUFFER_SIZE];
-    
-    char measurement[MEASUREMENT_BUFFER_SIZE];
-    int frequency;
-    bool useSSL;
-    char lastConnectionStatus[STATUS_BUFFER_SIZE];
-    char lastConnectionAttemptTimestamp[TIMESTAMP_STRING_BUFFER_SIZE];
-
-    InfluxDbConfiguration() 
-        : enabled(DEFAULT_IS_INFLUXDB_ENABLED), 
-          port(INFLUXDB_PORT_DEFAULT),
-          version(INFLUXDB_VERSION_DEFAULT),  // Default to v2
-          frequency(INFLUXDB_FREQUENCY_DEFAULT),
-          useSSL(INFLUXDB_USE_SSL_DEFAULT) {
-      snprintf(server, sizeof(server), "%s", INFLUXDB_SERVER_DEFAULT);
-      snprintf(database, sizeof(database), "%s", INFLUXDB_DATABASE_DEFAULT);
-      snprintf(username, sizeof(username), "%s", INFLUXDB_USERNAME_DEFAULT);
-      snprintf(password, sizeof(password), "%s", INFLUXDB_PASSWORD_DEFAULT);
-      snprintf(organization, sizeof(organization), "%s", INFLUXDB_ORGANIZATION_DEFAULT);
-      snprintf(bucket, sizeof(bucket), "%s", INFLUXDB_BUCKET_DEFAULT);
-      snprintf(token, sizeof(token), "%s", INFLUXDB_TOKEN_DEFAULT);
-      snprintf(measurement, sizeof(measurement), "%s", INFLUXDB_MEASUREMENT_DEFAULT);
       snprintf(lastConnectionStatus, sizeof(lastConnectionStatus), "Never attempted");
       snprintf(lastConnectionAttemptTimestamp, sizeof(lastConnectionAttemptTimestamp), "Never attempted");
     }

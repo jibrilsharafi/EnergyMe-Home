@@ -103,7 +103,7 @@ private:
     char _mqttTopicStatistics[MQTT_TOPIC_BUFFER_SIZE];
 
     unsigned long _lastMillisMqttLoop = 0;
-    unsigned long _lastMillisMeterPublished = MINIMUM_TIME_BEFORE_VALID_METER; // Do not publish immediately after setup
+    unsigned long _lastMillisMeterPublished = 0;
     unsigned long _lastMillisStatusPublished = 0;
     unsigned long _lastMillisMonitorPublished = 0;
     unsigned long _lastMillisStatisticsPublished = 0;

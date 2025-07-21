@@ -362,22 +362,18 @@ void setup() {
 
     Led::setCyan();
 
-    
     logger.debug("Checking for missing files...", TAG);
     auto missingFiles = checkMissingFiles();
     if (missingFiles.empty()) {
       logger.info("No missing files detected", TAG);
     } else {
       Led::setOrange();
-      logger.info("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
-  
-      
+      logger.info("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);      
       createDefaultFilesForMissingFiles(missingFiles);
   
       logger.info("Default files created for missing files", TAG);
     }
 
-    
     logger.debug("Fetching general configuration from SPIFFS...", TAG);
     if (setGeneralConfigurationFromSpiffs()) {
       logger.info("Configuration loaded from SPIFFS", TAG);
@@ -386,7 +382,6 @@ void setup() {
     }
 
     Led::setPurple();
-      
     
     logger.debug("Setting up multiplexer...", TAG);
     Multiplexer::begin(
@@ -396,7 +391,10 @@ void setup() {
       MULTIPLEXER_S3_PIN
     );
     logger.info("Multiplexer setup done", TAG);
-
+    
+    logger.debug("Setting up button handler...", TAG);
+    ButtonHandler::begin(BUTTON_GPIO0_PIN);
+    logger.info("Button handler setup done", TAG);
     
     logger.debug("Setting up ADE7953...", TAG);
     if (ade7953.begin()) {
@@ -405,27 +403,22 @@ void setup() {
       logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG);
     }
 
-    Led::setBlue();
-    
-    
+    Led::setBlue();  
     logger.debug("Setting up WiFi...", TAG);
     CustomWifi::begin();
     logger.info("WiFi setup done", TAG);
 
+    while (!CustomWifi::isFullyConnected()) { // TODO: make better?
+        logger.info("Waiting for full WiFi connection...", TAG);
+        delay(1000);
+    }
+
     // Add UDP logging setup after WiFi
-    
     logger.debug("Setting up UDP logging...", TAG);
     setupUdpLogging();
     logger.info("UDP logging setup done", TAG);
-
-    
-    logger.debug("Setting up button handler...", TAG);
-    ButtonHandler::begin(BUTTON_GPIO0_PIN);
-    logger.info("Button handler setup done", TAG);
-
     
     logger.debug("Syncing time...", TAG);
-    ;
     if (CustomTime::begin()) {
       int gmtOffset, dstOffset;
       getPublicTimezone(&gmtOffset, &dstOffset);
@@ -435,7 +428,7 @@ void setup() {
       );
       
       char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-      CustomTime::getTimestamp(timestampBuffer);
+      CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
       logger.info("Initial time sync successful. Current timestamp: %s", TAG, timestampBuffer);
     } else {
       logger.error("Initial time sync failed! Will retry later.", TAG);
@@ -446,11 +439,14 @@ void setup() {
     // customServer.begin();
     server_begin();
     logger.info("Server setup done", TAG);
-
     
     logger.debug("Setting up Modbus TCP...", TAG);
     modbusTcp.begin();
     logger.info("Modbus TCP setup done", TAG);
+
+    logger.debug("Setting up InfluxDB client...", TAG);
+    InfluxDbClient::begin();
+    logger.info("InfluxDB client setup done", TAG);
 
     Led::setGreen();
     logger.info("Setup done! Let's get this energetic party started!", TAG);
@@ -464,7 +460,6 @@ void loop() {
     
     mqtt.loop();
     customMqtt.loop();
-    InfluxDbClient::loop();
     ade7953.loop();
     
     if (millis() - lastMaintenanceCheck >= MAINTENANCE_CHECK_INTERVAL) {      

@@ -30,7 +30,6 @@
 #define MINIMUM_UNIX_TIME_MILLISECONDS 1000000000000 // Corresponds to 2001
 #define MAXIMUM_UNIX_TIME 4102444800 // In seconds, corresponds to 2100
 #define MAXIMUM_UNIX_TIME_MILLISECONDS 4102444800000 // Corresponds to 2100
-#define MINIMUM_TIME_BEFORE_VALID_METER 15000 // Before this do not buffer or upload meter values (avoid incorrect readings just after boot)
 
 // File path
 #define GENERAL_CONFIGURATION_JSON_PATH "/config/general.json"
@@ -38,22 +37,10 @@
 #define CALIBRATION_JSON_PATH "/config/calibration.json"
 #define CHANNEL_DATA_JSON_PATH "/config/channel.json"
 #define CUSTOM_MQTT_CONFIGURATION_JSON_PATH "/config/custommqtt.json"
-#define INFLUXDB_CONFIGURATION_JSON_PATH "/config/influxdb.json"
 #define ENERGY_JSON_PATH "/energy.json"
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
 #define FW_UPDATE_INFO_JSON_PATH "/fw-update-info.json"
 #define FW_UPDATE_STATUS_JSON_PATH "/fw-update-status.json"
-
-// Crash monitor
-#define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor"
-#define PREFERENCES_DATA_KEY "crashdata"
-#define CRASH_SIGNATURE 0xDEADBEEF // A signature to identify whether we have or not data in RTC
-#define MAX_BREADCRUMBS 8
-#define WATCHDOG_TIMER (30 * 1000) // If the esp_task_wdt_reset() is not called within this time, the ESP32 panics - TODO: remove me, unused
-#define PREFERENCES_FIRMWARE_STATUS_KEY "fw_status"
-#define ROLLBACK_TESTING_TIMEOUT (60 * 1000) // Interval in which the firmware is being tested. If the ESP32 reboots unexpectedly, the firmware will be rolled back
-#define MAX_CRASH_COUNT 5 // Maximum amount of consecutive crashes before triggering a rollback
-#define CRASH_COUNTER_TIMEOUT (180 * 1000) // Timeout for the crash counter to reset
 
 // Authentication
 #define PREFERENCES_NAMESPACE_AUTH "auth" 
@@ -109,8 +96,6 @@
 #define ORGANIZATION_BUFFER_SIZE 32   // For organization names
 #define MEASUREMENT_BUFFER_SIZE 32    // For measurement names
 #define TIMESTAMP_STRING_BUFFER_SIZE 32 // For timestamp strings
-#define LATITUDE_BUFFER_SIZE 32       // For latitude values (e.g., "45.123456")
-#define LONGITUDE_BUFFER_SIZE 32      // For longitude values (e.g., "9.123456")
 #define LOG_CALLBACK_LEVEL_SIZE 8     // Longest is WARNING (7 chars + null terminator)
 #define MD5_BUFFER_SIZE 33            // For MD5 hashes (32 chars + null terminator)
 
@@ -139,8 +124,8 @@
 #define STATUS_BUFFER_SIZE 128         // For connection status messages
 
 // Large buffers (256-512 bytes)
-#define REASON_BUFFER_SIZE 256        // For restart reasons
-#define URL_BUFFER_SIZE 256           // For HTTP URLs
+#define REASON_BUFFER_SIZE 128        // For restart reasons
+#define URL_BUFFER_SIZE 128           // For HTTP URLs
 #define ENCODED_CREDENTIALS_BUFFER_SIZE 256 // For base64 encoded credentials
 #define FILENAME_BUFFER_SIZE 256      // For file names in the filesystem
 #define LINE_PROTOCOL_BUFFER_SIZE 512 // For InfluxDB line protocol strings
@@ -223,30 +208,6 @@
 #define MQTT_CUSTOM_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL (10 * 1000) // Minimum interval between two connection attempts
 #define MQTT_CUSTOM_PAYLOAD_LIMIT 512 // Increase the base limit of 256 bytes
-
-// InfluxDB Configuration Defaults
-#define DEFAULT_IS_INFLUXDB_ENABLED false
-#define INFLUXDB_SERVER_DEFAULT "localhost"
-#define INFLUXDB_PORT_DEFAULT 8086
-#define INFLUXDB_VERSION_DEFAULT 2
-#define INFLUXDB_DATABASE_DEFAULT "energyme-home"
-#define INFLUXDB_USERNAME_DEFAULT ""
-#define INFLUXDB_PASSWORD_DEFAULT ""
-#define INFLUXDB_ORGANIZATION_DEFAULT "my-org"
-#define INFLUXDB_BUCKET_DEFAULT "energyme-home"
-#define INFLUXDB_TOKEN_DEFAULT ""
-#define INFLUXDB_MEASUREMENT_DEFAULT "meter"
-#define INFLUXDB_FREQUENCY_DEFAULT 15  // In seconds
-#define INFLUXDB_BUFFER_SIZE 20 // The number of points to buffer before sending to InfluxDB
-#define INFLUXDB_USE_SSL_DEFAULT false
-#define INFLUXDB_LOOP_INTERVAL 100 // Interval between two InfluxDB loop checks
-#define INFLUXDB_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
-#define INFLUXDB_FREQUENCY_UPLOAD_MULTIPLIER 10 // This is to upload the data only every 10x the frequency set in the InfluxDB configuration, to avoid doing too many HTTP requests and slowing down the ESP32
-#define INFLUXDB_INITIAL_RECONNECT_INTERVAL (30 * 1000) // Initial interval for InfluxDB reconnection attempts
-#define INFLUXDB_MAX_RECONNECT_INTERVAL (15 * 60 * 1000) // Maximum interval for InfluxDB reconnection attempts
-#define INFLUXDB_RECONNECT_MULTIPLIER 2 // Multiplier for InfluxDB exponential backoff
-#define INFLUXDB_MIN_CONNECTION_INTERVAL (30 * 1000) // Minimum interval between two connection attempts
-#define INFLUXDB_MAX_CONNECTION_ATTEMPTS 10 // Maximum number of failed attempts before disabling InfluxDB
 
 // Saving date
 #define SAVE_ENERGY_INTERVAL (6 * 60 * 1000) // Time between each energy save to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 

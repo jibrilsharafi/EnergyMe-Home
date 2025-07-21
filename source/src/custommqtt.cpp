@@ -118,7 +118,7 @@ bool CustomMqtt::setConfiguration(JsonDocument &jsonDocument)
     snprintf(_customMqttConfiguration.password, sizeof(_customMqttConfiguration.password), "%s", jsonDocument["password"].as<const char*>());    
     snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), "Disconnected");
     char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-    CustomTime::getTimestamp(_timestampBuffer);
+    CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer));
     snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", _timestampBuffer);
 
     _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
@@ -233,7 +233,7 @@ bool CustomMqtt::_connectMqtt()
         snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), "Connected");
 
         char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        CustomTime::getTimestamp(_timestampBuffer);
+        CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer));
         snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", _timestampBuffer);
 
         _saveConfigurationToSpiffs();
@@ -257,7 +257,7 @@ bool CustomMqtt::_connectMqtt()
                  "%s (Attempt %d)", _reason, _mqttConnectionAttempt);
         
         char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        CustomTime::getTimestamp(_timestampBuffer);
+        CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer));
         snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", _timestampBuffer);
 
         _saveConfigurationToSpiffs();

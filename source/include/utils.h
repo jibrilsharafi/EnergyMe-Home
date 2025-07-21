@@ -52,7 +52,6 @@ std::vector<const char*> checkMissingFiles();
 void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles);
 bool checkAllFiles();
 void createDefaultCustomMqttConfigurationFile();
-void createDefaultInfluxDbConfigurationFile();
 void createDefaultChannelDataFile();
 void createDefaultCalibrationFile();
 void createDefaultAde7953ConfigurationFile();

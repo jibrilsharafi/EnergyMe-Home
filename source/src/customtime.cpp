@@ -39,7 +39,7 @@ namespace CustomTime {
         if (_getTime()) {
             _isTimeSynched = true;
             char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-            getTimestamp(timestampBuffer);
+            getTimestamp(timestampBuffer, sizeof(timestampBuffer));
         } else {
             _isTimeSynched = false;
         }
@@ -88,18 +88,11 @@ namespace CustomTime {
         return true;
     }
 
-    void timestampFromUnix(time_t unix, char* buffer) {
+    void timestampFromUnix(time_t unix, char* buffer, size_t bufferSize) {
         struct tm* _timeinfo;
 
         _timeinfo = localtime(&unix);
-        strftime(buffer, TIMESTAMP_BUFFER_SIZE, TIMESTAMP_FORMAT, _timeinfo);
-    }
-
-    void timestampFromUnix(time_t unix, const char *timestampFormat, char* buffer) {
-        struct tm* _timeinfo;
-
-        _timeinfo = localtime(&unix);
-        strftime(buffer, TIMESTAMP_BUFFER_SIZE, timestampFormat, _timeinfo);
+        strftime(buffer, bufferSize, TIMESTAMP_FORMAT, _timeinfo);
     }
 
     unsigned long getUnixTime() {
@@ -112,7 +105,7 @@ namespace CustomTime {
         return tv.tv_sec * 1000LL + (tv.tv_usec / 1000LL);
     }
 
-    void getTimestamp(char* buffer) {
-        timestampFromUnix(getUnixTime(), buffer);
+    void getTimestamp(char* buffer, size_t bufferSize) {
+        timestampFromUnix(getUnixTime(), buffer, bufferSize);
     }
 }
