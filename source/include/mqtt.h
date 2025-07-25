@@ -16,6 +16,7 @@
 #include "constants.h"
 #include "customtime.h"
 #include "customwifi.h"
+#include "customlog.h"
 #include "globals.h"
 #include "structs.h"
 #include "utils.h"
@@ -121,11 +122,12 @@ namespace Mqtt
     void begin();
     void stop();
 
-    void enable();
-    void disable();
+    // Configuration methods
+    void setCloudServicesEnabled(bool enabled);
+    bool isCloudServicesEnabled();
     
     // Public methods for requesting MQTT publications
-    void requestConnectivityPublish(bool isOnline);
+    void requestConnectivityPublish();
     void requestMeterPublish();
     void requestStatusPublish();
     void requestMetadataPublish();

@@ -23,6 +23,7 @@
 #include "mqtt.h"
 #include "influxdbclient.h"
 #include "multiplexer.h"
+#include "customlog.h"
 
 // Global variables
 // --------------------
@@ -31,7 +32,6 @@ static const char *TAG = "main";
 
 RestartConfiguration restartConfiguration;
 
-MainFlags mainFlags;
 Statistics statistics;
 
 RTC_NOINIT_ATTR DebugFlagsRtc debugFlagsRtc;
@@ -43,20 +43,7 @@ char DEVICE_ID[DEVICE_ID_BUFFER_SIZE];
 
 // Callback variables
 
-// MQTT logging variables
-CircularBuffer<LogJson, LOG_BUFFER_SIZE> logBuffer;
-char jsonBuffer[LOG_JSON_BUFFER_SIZE];  // Pre-allocated buffer
-char baseMqttTopicLogs[LOG_TOPIC_SIZE];
-char fullMqttTopic[LOG_TOPIC_SIZE];
-
-// UDP logging variables
-CircularBuffer<LogJson, LOG_BUFFER_SIZE> udpLogBuffer;
-WiFiUDP udpClient;
-IPAddress udpDestinationIp; // Will be set from configuration
-char udpBuffer[UDP_LOG_BUFFER_SIZE];  // Separate buffer for UDP
-
 // Utils variables
-unsigned long long _linecycUnix = 0;   // Used to track the Unix time when the linecycle ended (for MQTT payloads)
 unsigned long lastMaintenanceCheck = 0;
 
 // Classes instances
@@ -75,8 +62,7 @@ Ade7953 ade7953(
   ADE7953_MOSI_PIN,
   ADE7953_RESET_PIN,
   ADE7953_INTERRUPT_PIN,
-  logger,
-  mainFlags
+  logger
 );
 
 // CustomServer customServer(
@@ -96,111 +82,6 @@ Ade7953 ade7953(
 // --------------------
 // UDP Logging Configuration
 
-void setupUdpLogging() {
-    // Initialize UDP destination IP from configuration
-    udpDestinationIp.fromString(DEFAULT_UDP_LOG_DESTINATION_IP);
-    
-    udpClient.begin(UDP_LOG_PORT);
-    logger.info("UDP logging configured - destination: %s:%d", TAG, 
-                udpDestinationIp.toString().c_str(), UDP_LOG_PORT);
-}
-
-// --------------------
-// Callback 
-
-void callbackLogToMqtt(
-    const char* timestamp,
-    unsigned long millisEsp,
-    const char* level,
-    unsigned int coreId,
-    const char* function,
-    const char* message
-) {
-    // Use the new queue-based approach
-    Mqtt::pushLog(timestamp, millisEsp, level, coreId, function, message);
-}
-
-void callbackLogToUdp(
-    const char* timestamp,
-    unsigned long millisEsp,
-    const char* level,
-    unsigned int coreId,
-    const char* function,
-    const char* message
-) {
-    if (!DEFAULT_IS_UDP_LOGGING_ENABLED) return;
-    if (strcmp(level, "verbose") == 0) return; // Never send verbose logs via UDP
-    
-    // Skip UDP logging if heap is critically low to prevent death spiral
-    if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) return;
-
-    udpLogBuffer.push(
-        LogJson(
-            timestamp,
-            millisEsp,
-            level,
-            coreId,
-            function,
-            message
-        )
-    );
-
-    // If not connected to WiFi or no valid IP, return (log is still stored in circular buffer for later)
-    if (CustomWifi::isFullyConnected() == false) return;
-
-    unsigned int _loops = 0;
-    while (!udpLogBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
-        _loops++;
-
-        LogJson _log = udpLogBuffer.shift();
-
-        // Format as simplified syslog message
-        snprintf(udpBuffer, sizeof(udpBuffer),
-            "<%d>%s %s[%lu]: [%s][Core%u] %s: %s", // TODO: Make this constants or give meaningful names
-            16, // Facility.Severity (local0.info)
-            _log.timestamp,
-            DEVICE_ID,
-            _log.millisEsp,
-            _log.level,
-            _log.coreId,
-            _log.function,
-            _log.message);
-        
-        if (!udpClient.beginPacket(udpDestinationIp, UDP_LOG_PORT)) {
-            udpLogBuffer.push(_log);
-            break;
-        }
-        
-        size_t bytesWritten = udpClient.write((const uint8_t*)udpBuffer, strlen(udpBuffer));
-        if (bytesWritten == 0) {
-            udpLogBuffer.push(_log);
-            udpClient.endPacket(); // Clean up the packet
-            break;
-        }
-        
-        if (!udpClient.endPacket()) {
-            udpLogBuffer.push(_log);
-            break;
-        }
-        
-        // Small delay between UDP packets to avoid overwhelming the stack
-        if (!udpLogBuffer.isEmpty()) {
-            delayMicroseconds(100); // 0.1ms delay
-        }
-    }
-}
-
-void callbackLogMultiple(
-    const char* timestamp,
-    unsigned long millisEsp,
-    const char* level,
-    unsigned int coreId,
-    const char* function,
-    const char* message
-) {
-  callbackLogToUdp(timestamp, millisEsp, level, coreId, function, message);
-  callbackLogToMqtt(timestamp, millisEsp, level, coreId, function, message);
-}
 
 void setup() {
     Serial.begin(SERIAL_BAUDRATE);
@@ -226,7 +107,7 @@ void setup() {
     Led::setWhite();
     
     logger.begin();
-    logger.setCallback(callbackLogMultiple);
+    logger.setCallback(CustomLog::callbackMultiple);
 
     logger.info("Guess who's back, back again! EnergyMe - Home is starting up...", TAG);
     logger.info("Build version: %s | Build date: %s %s | Device ID: %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
@@ -310,7 +191,7 @@ void setup() {
 
     // Add UDP logging setup after WiFi
     logger.debug("Setting up UDP logging...", TAG);
-    setupUdpLogging();
+    CustomLog::setupUdp();
     logger.info("UDP logging setup done", TAG);
     
     logger.debug("Syncing time...", TAG);
@@ -352,7 +233,6 @@ void setup() {
 }
 
 void loop() {
-    if (mainFlags.blockLoop) return;
  
     CrashMonitor::crashCounterLoop();
     CrashMonitor::firmwareTestingLoop();

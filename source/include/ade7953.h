@@ -30,8 +30,7 @@ public:
         int mosiPin,
         int resetPin,
         int interruptPin,        
-        AdvancedLogger &logger,
-        MainFlags &mainFlags
+        AdvancedLogger &logger
     );
 
     bool begin();
@@ -174,7 +173,6 @@ private:
     ChannelNumber _currentChannel = CHANNEL_0;
 
     AdvancedLogger &_logger;
-    MainFlags &_mainFlags;
     
     ChannelState _channelStates[CHANNEL_COUNT];
 

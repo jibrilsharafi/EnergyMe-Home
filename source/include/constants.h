@@ -72,16 +72,6 @@
 #define LOG_PATH "/logger/log.txt"
 #define LOG_CONFIG_PATH "/logger/config.txt"
 #define LOG_TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
-#define LOG_BUFFER_SIZE 20 // Callback queue size
-#define LOG_JSON_BUFFER_SIZE 256
-#define LOG_TOPIC_SIZE 64
-#define TIMESTAMP_BUFFER_SIZE 20 // Size needed for TIMESTAMP_FORMAT (19 chars + null terminator) (this is replicated, FIXME)
-
-// UDP Logging
-#define UDP_LOG_PORT 514 // Standard syslog port
-#define UDP_LOG_BUFFER_SIZE 256 // Smaller buffer for UDP packets
-#define DEFAULT_IS_UDP_LOGGING_ENABLED true
-#define DEFAULT_UDP_LOG_DESTINATION_IP "239.255.255.250" // Multicast IP for UDP logging - Local multicast range (239.255.x.x)
 
 // Buffer Sizes for String Operations
 // =================================
@@ -96,7 +86,6 @@
 #define ORGANIZATION_BUFFER_SIZE 32   // For organization names
 #define MEASUREMENT_BUFFER_SIZE 32    // For measurement names
 #define TIMESTAMP_STRING_BUFFER_SIZE 32 // For timestamp strings
-#define LOG_CALLBACK_LEVEL_SIZE 8     // Longest is WARNING (7 chars + null terminator)
 #define MD5_BUFFER_SIZE 33            // For MD5 hashes (32 chars + null terminator)
 
 // Medium buffers (64-128 bytes)
@@ -114,13 +103,11 @@
 #define CHARS_TOKEN_BUFFER_SIZE 64    // For characters in token strings
 #define TOKEN_FULL_KEY_BUFFER_SIZE 64 // Full auth tokens
 #define BUTTON_HANDLER_OPERATION_BUFFER_SIZE 64 // For button handler operations
-#define LOG_CALLBACK_FUNCTION_SIZE 16 // Reduced to save stack space
 #define CHANNEL_LABEL_BUFFER_SIZE 128 // For channel labels (let's be generous come on!)
 #define TOKEN_BUFFER_SIZE 128         // For authentication tokens
 #define COUNTRY_BUFFER_SIZE 128       // For country names
 #define CITY_BUFFER_SIZE 128          // For city names
 #define AUTH_HEADER_BUFFER_SIZE 128   // For HTTP authorization headers
-#define LOG_CALLBACK_MESSAGE_SIZE 128 // Reduced to save stack space
 #define STATUS_BUFFER_SIZE 128         // For connection status messages
 
 // Large buffers (256-512 bytes)
@@ -163,9 +150,6 @@
 #define BUTTON_DOUBLE_PRESS_INTERVAL 500 // Maximum time between presses for double press detection
 #define BUTTON_TRIPLE_PRESS_INTERVAL 500 // Maximum time between presses for triple press detection
 
-// General Configuration Defaults
-#define DEFAULT_SEND_POWER_DATA true // Default for sending active power and power factor data
-
 // Custom MQTT
 #define DEFAULT_IS_CUSTOM_MQTT_ENABLED false
 #define MQTT_CUSTOM_SERVER_DEFAULT "test.mosquitto.org"
@@ -188,7 +172,7 @@
 
 // ESP32 status
 #define MINIMUM_FREE_HEAP_SIZE 5000 // Below this value (in bytes), the ESP32 will restart
-#define MINIMUM_FREE_SPIFFS_SIZE 200000 // Below this value (in bytes), the ESP32 will clear the log
+#define MINIMUM_FREE_SPIFFS_SIZE 100000 // Below this value (in bytes), the ESP32 will clear the log
 #define ESP32_RESTART_DELAY (2 * 1000) // The delay before restarting the ESP32 after a restart request, needed to allow the ESP32 to finish the current operations
 #define MINIMUM_FREE_HEAP_OTA 20000 // Below this, the OTA is rejected (a bit unsafe, this could block OTA)
 

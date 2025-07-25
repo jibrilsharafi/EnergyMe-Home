@@ -13,14 +13,6 @@ enum class Ade7953InterruptType {
   OTHER           // Other interrupts (SAG, etc.)
 };
 
-struct MainFlags {
-  bool isFirmwareUpdate;
-  bool isCrashCounterReset;
-  bool blockLoop;
-  
-  MainFlags() : isFirmwareUpdate(false), isCrashCounterReset(false), blockLoop(false) {}
-};
-
 struct Statistics {
   unsigned long ade7953TotalInterrupts;
   unsigned long ade7953TotalHandledInterrupts;
@@ -252,33 +244,4 @@ enum FirmwareState : int {
     NEW_TO_TEST,
     TESTING,
     ROLLBACK
-};
-
-// Log callback struct
-// --------------------
-// Define maximum lengths for each field
-
-struct LogJson {
-    char timestamp[TIMESTAMP_BUFFER_SIZE];
-    unsigned long millisEsp;
-    char level[LOG_CALLBACK_LEVEL_SIZE];
-    unsigned int coreId;
-    char function[LOG_CALLBACK_FUNCTION_SIZE];
-    char message[LOG_CALLBACK_MESSAGE_SIZE];
-
-    LogJson()
-        : millisEsp(0), coreId(0) {
-        snprintf(timestamp, sizeof(timestamp), "%s", "");
-        snprintf(level, sizeof(level), "%s", "");
-        snprintf(function, sizeof(function), "%s", "");
-        snprintf(message, sizeof(message), "%s", "");
-    }
-
-    LogJson(const char* timestampIn, unsigned long millisEspIn, const char* levelIn, unsigned int coreIdIn, const char* functionIn, const char* messageIn)
-        : millisEsp(millisEspIn), coreId(coreIdIn) {
-        snprintf(timestamp, sizeof(timestamp), "%s", timestampIn ? timestampIn : "");
-        snprintf(level, sizeof(level), "%s", levelIn ? levelIn : "");
-        snprintf(function, sizeof(function), "%s", functionIn ? functionIn : "");
-        snprintf(message, sizeof(message), "%s", messageIn ? messageIn : "");
-    }
 };

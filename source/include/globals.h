@@ -8,7 +8,6 @@
 
 extern AdvancedLogger logger;
 extern Statistics statistics;
-extern MainFlags mainFlags;
 extern RestartConfiguration restartConfiguration;
 extern DebugFlagsRtc debugFlagsRtc;
 

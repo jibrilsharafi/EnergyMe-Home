@@ -12,16 +12,14 @@ Ade7953::Ade7953(
     int mosiPin,
     int resetPin,
     int interruptPin,
-    AdvancedLogger &logger,
-    MainFlags &mainFlags) : 
+    AdvancedLogger &logger) : 
                             _ssPin(ssPin),
                             _sckPin(sckPin),
                             _misoPin(misoPin),
                             _mosiPin(mosiPin),
                             _resetPin(resetPin),
                             _interruptPin(interruptPin),                            
-                            _logger(logger),
-                            _mainFlags(mainFlags) {}
+                            _logger(logger) {}
 
 bool Ade7953::begin() {
     _logger.debug("Initializing Ade7953", TAG);

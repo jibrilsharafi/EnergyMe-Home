@@ -94,7 +94,6 @@ namespace Mqtt
     
     // Helper functions for preferences
     static void _loadPreferences();
-    static bool _isCloudServicesEnabled();
     static bool _isSendPowerDataEnabled();
     static void _setSendPowerDataEnabled(bool enabled);
 
@@ -175,47 +174,27 @@ namespace Mqtt
         logger.info("MQTT client stopped", TAG);
     }
 
-    void enable()
+    // Configuration methods
+    void setCloudServicesEnabled(bool enabled)
     {
-        logger.debug("Enabling cloud services...", TAG);
+        logger.debug("Setting cloud services to %s...", TAG, enabled ? "enabled" : "disabled");
         
         // Update state variable
-        _cloudServicesEnabled = true;
+        _cloudServicesEnabled = enabled;
         
-        // Save preference for cloud services enabled
+        // Save preference
         Preferences prefs;
         prefs.begin(MQTT_PREFERENCES_NAMESPACE, false);
-        prefs.putBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, true);
+        prefs.putBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, enabled);
         prefs.end();
         
-        logger.info("Cloud services enabled", TAG);
+        logger.info("Cloud services %s", TAG, enabled ? "enabled" : "disabled");
     }
 
-    void disable()
-    {
-        logger.debug("Disabling cloud services...", TAG);
-        
-        // Update state variable
-        _cloudServicesEnabled = false;
-        
-        // Save preference for cloud services disabled
-        Preferences prefs;
-        prefs.begin(MQTT_PREFERENCES_NAMESPACE, false);
-        prefs.putBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, false);
-        prefs.end();
-
-        stop();
-        
-        logger.info("Cloud services disabled", TAG);
-    }
+    bool isCloudServicesEnabled() { return _cloudServicesEnabled; }
 
     // Public methods for requesting MQTT publications
-    void requestConnectivityPublish(bool isOnline)
-    {
-        _publishMqtt.connectivity = true;
-        // Store the online state for later use in _publishConnectivity
-    }
-
+    void requestConnectivityPublish() { _publishMqtt.connectivity = true; }
     void requestMeterPublish() {_publishMqtt.meter = true; }
     void requestStatusPublish() {_publishMqtt.status = true; }
     void requestMetadataPublish() {_publishMqtt.metadata = true; }
@@ -308,10 +287,16 @@ namespace Mqtt
                 return;
             }
             
-            // Only handle sendPowerData setting
+            // Handle sendPowerData setting
             if (_jsonDocument["sendPowerData"].is<bool>()) {
                 bool sendPowerData = _jsonDocument["sendPowerData"].as<bool>();
                 _setSendPowerDataEnabled(sendPowerData);
+            }
+            
+            // Handle cloudServicesEnabled setting
+            if (_jsonDocument["cloudServicesEnabled"].is<bool>()) {
+                bool cloudServicesEnabled = _jsonDocument["cloudServicesEnabled"].as<bool>();
+                setCloudServicesEnabled(cloudServicesEnabled);
             }
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING))
@@ -368,7 +353,7 @@ namespace Mqtt
             }
 
             // Handle cloud services being disabled
-            if (!_isCloudServicesEnabled())
+            if (!isCloudServicesEnabled())
             {
                 if (_isSetupDone || _isClaimInProgress)
                 {
@@ -1179,7 +1164,7 @@ namespace Mqtt
         prefs.begin(MQTT_PREFERENCES_NAMESPACE, true); // Read-only
         
         _cloudServicesEnabled = prefs.getBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, DEFAULT_IS_CLOUD_SERVICES_ENABLED);
-        _sendPowerDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, true);
+        _sendPowerDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, DEFAULT_IS_SEND_POWER_DATA_ENABLED);
         
         prefs.end();
         
@@ -1188,15 +1173,7 @@ namespace Mqtt
                    _sendPowerDataEnabled ? "true" : "false");
     }
     
-    static bool _isCloudServicesEnabled()
-    {
-        return _cloudServicesEnabled;
-    }
-    
-    static bool _isSendPowerDataEnabled()
-    {
-        return _sendPowerDataEnabled;
-    }
+    static bool _isSendPowerDataEnabled() { return _sendPowerDataEnabled; }
     
     static void _setSendPowerDataEnabled(bool enabled)
     {

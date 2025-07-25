@@ -464,7 +464,7 @@ void printDeviceStatus()
 void updateStatistics() {
     logger.debug("Updating statistics...", TAG);
 
-    // The only statistic which is (currently) updated here is the log count
+    // The only statistic which is (currently) updated manually here is the log count
     statistics.logVerbose = logger.getVerboseCount();
     statistics.logDebug = logger.getDebugCount();
     statistics.logInfo = logger.getInfoCount();
@@ -676,8 +676,6 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
 
 void factoryReset() { 
     logger.fatal("Factory reset requested", TAG);
-
-    mainFlags.blockLoop = true;
 
     Led::block();
     Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
