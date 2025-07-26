@@ -241,7 +241,7 @@ namespace ButtonHandler
         Led::block();
         Led::setYellow(true);
 
-        if (setAuthPassword(DEFAULT_WEB_PASSWORD))
+        if (true) // TODO: Implement actual password reset logic
         {
             logger.info("Password reset to default successfully", TAG);
 

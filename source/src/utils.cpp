@@ -1,56 +1,239 @@
 #include "utils.h"
+#include <Preferences.h>
 
 static const char *TAG = "utils";
 
-void getJsonProductInfo(JsonDocument& jsonDocument) { 
-    logger.debug("Getting product info...", TAG);
+// New system info functions
+void populateSystemStaticInfo(SystemStaticInfo& info) {
+    logger.debug("Populating static system info...", TAG);
 
-    jsonDocument["companyName"] = COMPANY_NAME;
-    jsonDocument["fullProductName"] = FULL_PRODUCT_NAME;
-    jsonDocument["productName"] = PRODUCT_NAME;
-    jsonDocument["productDescription"] = PRODUCT_DESCRIPTION;
-    jsonDocument["githubUrl"] = GITHUB_URL;
-    jsonDocument["author"] = AUTHOR;
-    jsonDocument["authorEmail"] = AUTHOR_EMAIL;
+    // Initialize the struct to ensure clean state
+    memset(&info, 0, sizeof(info));
 
-    logger.debug("Product info retrieved", TAG);
+    // Product info
+    snprintf(info.companyName, sizeof(info.companyName), "%s", COMPANY_NAME);
+    snprintf(info.productName, sizeof(info.productName), "%s", PRODUCT_NAME);
+    snprintf(info.fullProductName, sizeof(info.fullProductName), "%s", FULL_PRODUCT_NAME);
+    snprintf(info.productDescription, sizeof(info.productDescription), "%s", PRODUCT_DESCRIPTION);
+    snprintf(info.githubUrl, sizeof(info.githubUrl), "%s", GITHUB_URL);
+    snprintf(info.author, sizeof(info.author), "%s", AUTHOR);
+    snprintf(info.authorEmail, sizeof(info.authorEmail), "%s", AUTHOR_EMAIL);
+    
+    // Firmware info
+    snprintf(info.buildVersion, sizeof(info.buildVersion), "%s", FIRMWARE_BUILD_VERSION);
+    snprintf(info.buildDate, sizeof(info.buildDate), "%s", FIRMWARE_BUILD_DATE);
+    snprintf(info.buildTime, sizeof(info.buildTime), "%s", FIRMWARE_BUILD_TIME);
+    snprintf(info.sketchMD5, sizeof(info.sketchMD5), "%s", ESP.getSketchMD5().c_str());
+    
+    // Hardware info
+    snprintf(info.chipModel, sizeof(info.chipModel), "%s", ESP.getChipModel());
+    info.chipRevision = ESP.getChipRevision();
+    info.chipCores = ESP.getChipCores();
+    info.chipId = ESP.getEfuseMac();
+    info.flashChipSizeBytes = ESP.getFlashChipSize();
+    info.flashChipSpeedHz = ESP.getFlashChipSpeed();
+    info.psramSizeBytes = ESP.getPsramSize();
+    info.cpuFrequencyMHz = ESP.getCpuFreqMHz();
+    
+    // SDK info
+    snprintf(info.sdkVersion, sizeof(info.sdkVersion), "%s", ESP.getSdkVersion());
+    snprintf(info.coreVersion, sizeof(info.coreVersion), "%s", ESP.getCoreVersion());
+    
+    // Device ID
+    getDeviceId(info.deviceId, sizeof(info.deviceId));
+    
+    // Firmware state
+    info.firmwareState = CrashMonitor::getFirmwareStatus();
+
+    logger.debug("Static system info populated", TAG);
 }
 
-void getJsonDeviceInfo(JsonDocument& jsonDocument)
-{
-    logger.debug("Getting device info...", TAG);
+void populateSystemDynamicInfo(SystemDynamicInfo& info) {
+    logger.debug("Populating dynamic system info...", TAG);
 
-    jsonDocument["system"]["uptime"] = millis();
-    char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-    CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer));
-    jsonDocument["system"]["systemTime"] = _timestampBuffer;
+    // Initialize the struct to ensure clean state
+    memset(&info, 0, sizeof(info));
 
-    jsonDocument["firmware"]["buildVersion"] = FIRMWARE_BUILD_VERSION;
-    jsonDocument["firmware"]["buildDate"] = FIRMWARE_BUILD_DATE;
-    jsonDocument["firmware"]["buildTime"] = FIRMWARE_BUILD_TIME;
-
-    jsonDocument["memory"]["heap"]["free"] = ESP.getFreeHeap();
-    jsonDocument["memory"]["heap"]["total"] = ESP.getHeapSize();
-    jsonDocument["memory"]["heap"]["used"] = ESP.getHeapSize() - ESP.getFreeHeap();
-    jsonDocument["memory"]["heap"]["freePercentage"] = ((float)ESP.getFreeHeap() / ESP.getHeapSize()) * 100.0;
-    jsonDocument["memory"]["heap"]["usedPercentage"] = ((float)(ESP.getHeapSize() - ESP.getFreeHeap()) / ESP.getHeapSize()) * 100.0;
+    // Time
+    info.uptimeMilliseconds = millis();
+    info.uptimeSeconds = info.uptimeMilliseconds / 1000;
+    CustomTime::getTimestamp(info.currentTimestamp, sizeof(info.currentTimestamp));
     
-    jsonDocument["memory"]["spiffs"]["free"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
-    jsonDocument["memory"]["spiffs"]["total"] = SPIFFS.totalBytes();
-    jsonDocument["memory"]["spiffs"]["used"] = SPIFFS.usedBytes();
-    jsonDocument["memory"]["spiffs"]["freePercentage"] = ((float)(SPIFFS.totalBytes() - SPIFFS.usedBytes()) / SPIFFS.totalBytes()) * 100.0;
-    jsonDocument["memory"]["spiffs"]["usedPercentage"] = ((float)SPIFFS.usedBytes() / SPIFFS.totalBytes()) * 100.0;
+    // Memory - Heap
+    info.heapTotalBytes = ESP.getHeapSize();
+    info.heapFreeBytes = ESP.getFreeHeap();
+    info.heapUsedBytes = info.heapTotalBytes - info.heapFreeBytes;
+    info.heapMinFreeBytes = ESP.getMinFreeHeap();
+    info.heapMaxAllocBytes = ESP.getMaxAllocHeap();
+    info.heapFreePercentage = info.heapTotalBytes > 0 ? ((float)info.heapFreeBytes / info.heapTotalBytes) * 100.0f : 0.0f;
+    info.heapUsedPercentage = 100.0f - info.heapFreePercentage;
+    
+    // Memory - PSRAM
+    uint32_t psramTotal = ESP.getPsramSize();
+    if (psramTotal > 0) {
+        info.psramFreeBytes = ESP.getFreePsram();
+        info.psramUsedBytes = psramTotal - info.psramFreeBytes;
+        info.psramMinFreeBytes = ESP.getMinFreePsram();
+        info.psramMaxAllocBytes = ESP.getMaxAllocPsram();
+        info.psramFreePercentage = ((float)info.psramFreeBytes / psramTotal) * 100.0f;
+        info.psramUsedPercentage = 100.0f - info.psramFreePercentage;
+    }
+    
+    // Storage
+    info.spiffsTotalBytes = SPIFFS.totalBytes();
+    info.spiffsUsedBytes = SPIFFS.usedBytes();
+    info.spiffsFreeBytes = info.spiffsTotalBytes - info.spiffsUsedBytes;
+    info.spiffsFreePercentage = info.spiffsTotalBytes > 0 ? ((float)info.spiffsFreeBytes / info.spiffsTotalBytes) * 100.0f : 0.0f;
+    info.spiffsUsedPercentage = 100.0f - info.spiffsFreePercentage;
+    
+    // Performance
+    info.temperatureCelsius = temperatureRead();
+    
+    // Network (if connected)
+    if (WiFi.isConnected()) {
+        info.wifiConnected = true;
+        info.wifiRssi = WiFi.RSSI();
+        snprintf(info.wifiSsid, sizeof(info.wifiSsid), "%s", WiFi.SSID().c_str());
+        snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str());
+        snprintf(info.wifiLocalIp, sizeof(info.wifiLocalIp), "%s", WiFi.localIP().toString().c_str());
+        snprintf(info.wifiGatewayIp, sizeof(info.wifiGatewayIp), "%s", WiFi.gatewayIP().toString().c_str());
+        snprintf(info.wifiSubnetMask, sizeof(info.wifiSubnetMask), "%s", WiFi.subnetMask().toString().c_str());
+        snprintf(info.wifiDnsIp, sizeof(info.wifiDnsIp), "%s", WiFi.dnsIP().toString().c_str());
+        snprintf(info.wifiBssid, sizeof(info.wifiBssid), "%s", WiFi.BSSIDstr().c_str());
+    } else {
+        info.wifiConnected = false;
+        info.wifiRssi = -100; // Invalid RSSI
+        snprintf(info.wifiSsid, sizeof(info.wifiSsid), "Not connected");
+        snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
+        snprintf(info.wifiLocalIp, sizeof(info.wifiLocalIp), "0.0.0.0");
+        snprintf(info.wifiGatewayIp, sizeof(info.wifiGatewayIp), "0.0.0.0");
+        snprintf(info.wifiSubnetMask, sizeof(info.wifiSubnetMask), "0.0.0.0");
+        snprintf(info.wifiDnsIp, sizeof(info.wifiDnsIp), "0.0.0.0");
+        snprintf(info.wifiBssid, sizeof(info.wifiBssid), "00:00:00:00:00:00");
+    }
 
+    logger.debug("Dynamic system info populated", TAG);
+}
 
-    jsonDocument["chip"]["model"] = ESP.getChipModel();
-    jsonDocument["chip"]["revision"] = ESP.getChipRevision();
-    jsonDocument["chip"]["cpuFrequency"] = ESP.getCpuFreqMHz();
-    jsonDocument["chip"]["sdkVersion"] = ESP.getSdkVersion();
-    jsonDocument["chip"]["id"] = ESP.getEfuseMac();
+void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
+    logger.debug("Converting static system info to JSON...", TAG);
 
-    jsonDocument["device"]["id"] = DEVICE_ID;
+    // Product
+    doc["product"]["companyName"] = info.companyName;
+    doc["product"]["productName"] = info.productName;
+    doc["product"]["fullProductName"] = info.fullProductName;
+    doc["product"]["productDescription"] = info.productDescription;
+    doc["product"]["githubUrl"] = info.githubUrl;
+    doc["product"]["author"] = info.author;
+    doc["product"]["authorEmail"] = info.authorEmail;
+    
+    // Firmware
+    doc["firmware"]["buildVersion"] = info.buildVersion;
+    doc["firmware"]["buildDate"] = info.buildDate;
+    doc["firmware"]["buildTime"] = info.buildTime;
+    doc["firmware"]["sketchMD5"] = info.sketchMD5;
+    
+    // Hardware
+    doc["hardware"]["chipModel"] = info.chipModel;
+    doc["hardware"]["chipRevision"] = info.chipRevision;
+    doc["hardware"]["chipCores"] = info.chipCores;
+    doc["hardware"]["chipId"] = (uint64_t)info.chipId;
+    doc["hardware"]["cpuFrequencyMHz"] = info.cpuFrequencyMHz;
+    doc["hardware"]["flashChipSizeBytes"] = info.flashChipSizeBytes;
+    doc["hardware"]["flashChipSpeedHz"] = info.flashChipSpeedHz;
+    doc["hardware"]["psramSizeBytes"] = info.psramSizeBytes;
+    doc["hardware"]["cpuFrequencyMHz"] = info.cpuFrequencyMHz;
+    
+    // SDK
+    doc["sdk"]["sdkVersion"] = info.sdkVersion;
+    doc["sdk"]["coreVersion"] = info.coreVersion;
+    
+    // Device
+    doc["device"]["id"] = info.deviceId;
+    
+    // Firmware state
+    // Convert firmware state to string
+    const char* fwStateStr;
+    switch (info.firmwareState) { // TODO: make this into a function
+        case STABLE: fwStateStr = "STABLE"; break;
+        case NEW_TO_TEST: fwStateStr = "NEW_TO_TEST"; break;
+        case TESTING: fwStateStr = "TESTING"; break;
+        case ROLLBACK: fwStateStr = "ROLLBACK"; break;
+        default: fwStateStr = "UNKNOWN"; break;
+    }
+    doc["firmware"]["state"] = fwStateStr;
 
-    logger.debug("Device info retrieved", TAG);
+    logger.debug("Static system info converted to JSON", TAG);
+}
+
+void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
+    logger.debug("Converting dynamic system info to JSON...", TAG);
+
+    // Time
+    doc["time"]["uptimeMilliseconds"] = (uint64_t)info.uptimeMilliseconds;
+    doc["time"]["uptimeSeconds"] = info.uptimeSeconds;
+    doc["time"]["currentTimestamp"] = info.currentTimestamp;
+    
+    // Memory - Heap
+    doc["memory"]["heap"]["totalBytes"] = info.heapTotalBytes;
+    doc["memory"]["heap"]["freeBytes"] = info.heapFreeBytes;
+    doc["memory"]["heap"]["usedBytes"] = info.heapUsedBytes;
+    doc["memory"]["heap"]["minFreeBytes"] = info.heapMinFreeBytes;
+    doc["memory"]["heap"]["maxAllocBytes"] = info.heapMaxAllocBytes;
+    doc["memory"]["heap"]["freePercentage"] = info.heapFreePercentage;
+    doc["memory"]["heap"]["usedPercentage"] = info.heapUsedPercentage;
+    
+    // Memory - PSRAM
+    if (info.psramFreeBytes > 0 || info.psramUsedBytes > 0) {
+        doc["memory"]["psram"]["freeBytes"] = info.psramFreeBytes;
+        doc["memory"]["psram"]["usedBytes"] = info.psramUsedBytes;
+        doc["memory"]["psram"]["minFreeBytes"] = info.psramMinFreeBytes;
+        doc["memory"]["psram"]["maxAllocBytes"] = info.psramMaxAllocBytes;
+        doc["memory"]["psram"]["freePercentage"] = info.psramFreePercentage;
+        doc["memory"]["psram"]["usedPercentage"] = info.psramUsedPercentage;
+    }
+    
+    // Storage
+    doc["storage"]["spiffs"]["totalBytes"] = info.spiffsTotalBytes;
+    doc["storage"]["spiffs"]["usedBytes"] = info.spiffsUsedBytes;
+    doc["storage"]["spiffs"]["freeBytes"] = info.spiffsFreeBytes;
+    doc["storage"]["spiffs"]["freePercentage"] = info.spiffsFreePercentage;
+    doc["storage"]["spiffs"]["usedPercentage"] = info.spiffsUsedPercentage;
+    
+    // Performance
+    doc["performance"]["temperatureCelsius"] = info.temperatureCelsius;
+    
+    // Network
+    doc["network"]["wifiConnected"] = info.wifiConnected;
+    doc["network"]["wifiSsid"] = info.wifiSsid;
+    doc["network"]["wifiMacAddress"] = info.wifiMacAddress;
+    doc["network"]["wifiLocalIp"] = info.wifiLocalIp;
+    doc["network"]["wifiGatewayIp"] = info.wifiGatewayIp;
+    doc["network"]["wifiSubnetMask"] = info.wifiSubnetMask;
+    doc["network"]["wifiDnsIp"] = info.wifiDnsIp;
+    doc["network"]["wifiBssid"] = info.wifiBssid;
+    if (info.wifiConnected) {
+        doc["network"]["wifiRssi"] = info.wifiRssi;
+    }
+
+    logger.debug("Dynamic system info converted to JSON", TAG);
+}
+
+// Convenience functions for API endpoints
+void getJsonDeviceStaticInfo(JsonDocument& doc) {
+    logger.debug("Getting static device info JSON...", TAG);
+    SystemStaticInfo info;
+    populateSystemStaticInfo(info);
+    systemStaticInfoToJson(info, doc);
+    logger.debug("Static device info JSON retrieved", TAG);
+}
+
+void getJsonDeviceDynamicInfo(JsonDocument& doc) {
+    logger.debug("Getting dynamic device info JSON...", TAG);
+    SystemDynamicInfo info;
+    populateSystemDynamicInfo(info);
+    systemDynamicInfoToJson(info, doc);
+    logger.debug("Dynamic device info JSON retrieved", TAG);
 }
 
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError) {
@@ -81,13 +264,185 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
     return true;
 }
 
+bool loadConfigFromPreferences(const char* configType, JsonDocument& jsonDocument) {
+    logger.debug("Loading %s configuration from Preferences", TAG, configType);
+
+    // Route to appropriate PreferencesConfig functions based on config type
+    if (strcmp(configType, "ade7953") == 0) {
+        jsonDocument["sampleTime"] = PreferencesConfig::getSampleTime();
+        jsonDocument["aVGain"] = PreferencesConfig::getVoltageGain();
+        jsonDocument["aIGain"] = PreferencesConfig::getCurrentGainA();
+        jsonDocument["bIGain"] = PreferencesConfig::getCurrentGainB();
+        
+        // Load additional ADE7953 parameters directly from Preferences
+        Preferences prefs;
+        if (prefs.begin(PREFERENCES_NAMESPACE_ADE7953, true)) {
+            jsonDocument["aIRmsOs"] = prefs.getUInt("aIRmsOs", DEFAULT_OFFSET);
+            jsonDocument["bIRmsOs"] = prefs.getUInt("bIRmsOs", DEFAULT_OFFSET);
+            jsonDocument["aWGain"] = prefs.getUInt("aWGain", DEFAULT_GAIN);
+            jsonDocument["bWGain"] = prefs.getUInt("bWGain", DEFAULT_GAIN);
+            jsonDocument["aWattOs"] = prefs.getUInt("aWattOs", DEFAULT_OFFSET);
+            jsonDocument["bWattOs"] = prefs.getUInt("bWattOs", DEFAULT_OFFSET);
+            jsonDocument["aVarGain"] = prefs.getUInt("aVarGain", DEFAULT_GAIN);
+            jsonDocument["bVarGain"] = prefs.getUInt("bVarGain", DEFAULT_GAIN);
+            jsonDocument["aVarOs"] = prefs.getUInt("aVarOs", DEFAULT_OFFSET);
+            jsonDocument["bVarOs"] = prefs.getUInt("bVarOs", DEFAULT_OFFSET);
+            jsonDocument["aVaGain"] = prefs.getUInt("aVaGain", DEFAULT_GAIN);
+            jsonDocument["bVaGain"] = prefs.getUInt("bVaGain", DEFAULT_GAIN);
+            jsonDocument["aVaOs"] = prefs.getUInt("aVaOs", DEFAULT_OFFSET);
+            jsonDocument["bVaOs"] = prefs.getUInt("bVaOs", DEFAULT_OFFSET);
+            jsonDocument["phCalA"] = prefs.getUInt("phCalA", DEFAULT_PHCAL);
+            jsonDocument["phCalB"] = prefs.getUInt("phCalB", DEFAULT_PHCAL);
+            prefs.end();
+        }
+        
+    } else if (strcmp(configType, "channels") == 0) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            jsonDocument[i]["active"] = PreferencesConfig::getChannelActive(i);
+            
+            char labelBuffer[64];
+            PreferencesConfig::getChannelLabel(i, labelBuffer, sizeof(labelBuffer));
+            jsonDocument[i]["label"] = labelBuffer;
+            
+            jsonDocument[i]["phase"] = PreferencesConfig::getChannelPhase(i);
+        }
+        
+    } else if (strcmp(configType, "mqtt") == 0) {
+        jsonDocument["enabled"] = PreferencesConfig::getMqttEnabled();
+        jsonDocument["port"] = PreferencesConfig::getMqttPort();
+        
+        char buffer[256];
+        if (PreferencesConfig::getMqttServer(buffer, sizeof(buffer))) {
+            jsonDocument["server"] = buffer;
+        }
+        if (PreferencesConfig::getMqttUsername(buffer, sizeof(buffer))) {
+            jsonDocument["username"] = buffer;
+        }
+        if (PreferencesConfig::getMqttPassword(buffer, sizeof(buffer))) {
+            jsonDocument["password"] = buffer;
+        }
+        
+        // Load additional MQTT parameters directly from Preferences
+        Preferences prefs;
+        if (prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            jsonDocument["clientid"] = prefs.getString("clientid", MQTT_CUSTOM_CLIENTID_DEFAULT);
+            jsonDocument["topic"] = prefs.getString("topic", MQTT_CUSTOM_TOPIC_DEFAULT);
+            jsonDocument["frequency"] = prefs.getUInt("frequency", MQTT_CUSTOM_FREQUENCY_DEFAULT);
+            jsonDocument["useCredentials"] = prefs.getBool("useCredentials", MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT);
+            jsonDocument["lastConnectionStatus"] = prefs.getString("lastStatus", "Never attempted");
+            jsonDocument["lastConnectionAttemptTimestamp"] = prefs.getString("lastAttempt", "");
+            prefs.end();
+        }
+        
+    } else if (strcmp(configType, "general") == 0) {
+        char buffer[256];
+        if (PreferencesConfig::getTimezone(buffer, sizeof(buffer))) {
+            jsonDocument["timezone"] = buffer;
+        }
+        jsonDocument["sendPowerData"] = PreferencesConfig::getSendPowerData();
+        
+    } else {
+        logger.warning("Unknown config type: %s", TAG, configType);
+        return false;
+    }
+
+    char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
+    safeSerializeJson(jsonDocument, _jsonString, sizeof(_jsonString), true);
+    logger.debug("%s configuration loaded from Preferences: %s", TAG, configType, _jsonString);
+    return true;
+}
+
+bool saveConfigToPreferences(const char* configType, JsonDocument& jsonDocument) {
+    logger.debug("Saving %s configuration to Preferences", TAG, configType);
+
+    bool success = true;
+    
+    // Route to appropriate PreferencesConfig functions based on config type
+    if (strcmp(configType, "ade7953") == 0) {
+        success &= PreferencesConfig::setSampleTime(jsonDocument["sampleTime"].as<uint32_t>());
+        success &= PreferencesConfig::setVoltageGain(jsonDocument["aVGain"].as<uint32_t>());
+        success &= PreferencesConfig::setCurrentGainA(jsonDocument["aIGain"].as<uint32_t>());
+        success &= PreferencesConfig::setCurrentGainB(jsonDocument["bIGain"].as<uint32_t>());
+        
+        // Save additional ADE7953 parameters directly to Preferences
+        Preferences prefs;
+        if (prefs.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
+            prefs.putUInt("aIRmsOs", jsonDocument["aIRmsOs"].as<uint32_t>());
+            prefs.putUInt("bIRmsOs", jsonDocument["bIRmsOs"].as<uint32_t>());
+            prefs.putUInt("aWGain", jsonDocument["aWGain"].as<uint32_t>());
+            prefs.putUInt("bWGain", jsonDocument["bWGain"].as<uint32_t>());
+            prefs.putUInt("aWattOs", jsonDocument["aWattOs"].as<uint32_t>());
+            prefs.putUInt("bWattOs", jsonDocument["bWattOs"].as<uint32_t>());
+            prefs.putUInt("aVarGain", jsonDocument["aVarGain"].as<uint32_t>());
+            prefs.putUInt("bVarGain", jsonDocument["bVarGain"].as<uint32_t>());
+            prefs.putUInt("aVarOs", jsonDocument["aVarOs"].as<uint32_t>());
+            prefs.putUInt("bVarOs", jsonDocument["bVarOs"].as<uint32_t>());
+            prefs.putUInt("aVaGain", jsonDocument["aVaGain"].as<uint32_t>());
+            prefs.putUInt("bVaGain", jsonDocument["bVaGain"].as<uint32_t>());
+            prefs.putUInt("aVaOs", jsonDocument["aVaOs"].as<uint32_t>());
+            prefs.putUInt("bVaOs", jsonDocument["bVaOs"].as<uint32_t>());
+            prefs.putUInt("phCalA", jsonDocument["phCalA"].as<uint32_t>());
+            prefs.putUInt("phCalB", jsonDocument["phCalB"].as<uint32_t>());
+            prefs.end();
+        } else {
+            success = false;
+        }
+        
+    } else if (strcmp(configType, "channels") == 0) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT && i < jsonDocument.size(); i++) {
+            success &= PreferencesConfig::setChannelActive(i, jsonDocument[i]["active"].as<bool>());
+            success &= PreferencesConfig::setChannelLabel(i, jsonDocument[i]["label"].as<const char*>());
+            success &= PreferencesConfig::setChannelPhase(i, jsonDocument[i]["phase"].as<uint8_t>());
+        }
+        
+    } else if (strcmp(configType, "mqtt") == 0) {
+        success &= PreferencesConfig::setMqttEnabled(jsonDocument["enabled"].as<bool>());
+        success &= PreferencesConfig::setMqttServer(jsonDocument["server"].as<const char*>());
+        success &= PreferencesConfig::setMqttPort(jsonDocument["port"].as<uint16_t>());
+        success &= PreferencesConfig::setMqttUsername(jsonDocument["username"].as<const char*>());
+        success &= PreferencesConfig::setMqttPassword(jsonDocument["password"].as<const char*>());
+        
+        // Save additional MQTT parameters directly to Preferences
+        Preferences prefs;
+        if (prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            prefs.putString("clientid", jsonDocument["clientid"].as<String>());
+            prefs.putString("topic", jsonDocument["topic"].as<String>());
+            prefs.putUInt("frequency", jsonDocument["frequency"].as<uint32_t>());
+            prefs.putBool("useCredentials", jsonDocument["useCredentials"].as<bool>());
+            prefs.putString("lastStatus", jsonDocument["lastConnectionStatus"].as<String>());
+            prefs.putString("lastAttempt", jsonDocument["lastConnectionAttemptTimestamp"].as<String>());
+            prefs.end();
+        } else {
+            success = false;
+        }
+        
+    } else if (strcmp(configType, "general") == 0) {
+        success &= PreferencesConfig::setTimezone(jsonDocument["timezone"].as<const char*>());
+        success &= PreferencesConfig::setSendPowerData(jsonDocument["sendPowerData"].as<bool>());
+        
+    } else {
+        logger.warning("Unknown config type: %s", TAG, configType);
+        return false;
+    }
+
+    char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
+    safeSerializeJson(jsonDocument, _jsonString, sizeof(_jsonString), true);
+    logger.debug("%s configuration saved to Preferences: %s", TAG, configType, _jsonString);
+    
+    if (!success) {
+        logger.error("Failed to save %s configuration to Preferences", TAG, configType);
+    }
+    
+    return success;
+}
+
+// Legacy SPIFFS functions for backward compatibility during transition
 bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     logger.debug("Deserializing JSON from SPIFFS", TAG);
 
-    
     File _file = SPIFFS.open(path, FILE_READ);
     if (!_file){
-        logger.error("%s Failed to open file", TAG, path);
+        logger.error("Failed to open file %s", TAG, path);
         return false;
     }
 
@@ -99,7 +454,7 @@ bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     }
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){
-        logger.debug("%s JSON being deserialized is {}", TAG, path);
+        logger.debug("JSON being deserialized is {}", TAG);
     }
     
     // For debugging purposes, serialize to a string and log it
@@ -112,18 +467,17 @@ bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     logger.debug("Serializing JSON to SPIFFS...", TAG);
 
-    
     File _file = SPIFFS.open(path, FILE_WRITE);
     if (!_file){
-        logger.error("%s Failed to open file", TAG, path);
+        logger.error("Failed to open file %s", TAG, path);
         return false;
     }
 
     serializeJson(jsonDocument, _file);
     _file.close();
 
-    if (jsonDocument.isNull() || jsonDocument.size() == 0){ // It should never happen as createEmptyJsonFile should be used instead
-        logger.debug("%s JSON being serialized is {}", TAG, path);
+    if (jsonDocument.isNull() || jsonDocument.size() == 0){
+        logger.debug("JSON being serialized is {}", TAG);
     }
 
     // For debugging purposes, serialize to a string and log it
@@ -163,6 +517,8 @@ void createDefaultEnergyFile() {
         _jsonDocument[i]["apparentEnergy"] = 0;
     }
 
+    // Note: Energy data will be stored in SPIFFS/LittleFS for historical data
+    // This function will be updated when we migrate to LittleFS
     serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument);
 
     logger.debug("Default %s created", TAG, ENERGY_JSON_PATH);
@@ -176,24 +532,8 @@ void createDefaultDailyEnergyFile() {
     logger.debug("Default %s created", TAG, DAILY_ENERGY_JSON_PATH);
 }
 
-void createDefaultFirmwareUpdateInfoFile() {
-    logger.debug("Creating default %s...", TAG, FW_UPDATE_INFO_JSON_PATH);
-
-    createEmptyJsonFile(FW_UPDATE_INFO_JSON_PATH);
-
-    logger.debug("Default %s created", TAG, FW_UPDATE_INFO_JSON_PATH);
-}
-
-void createDefaultFirmwareUpdateStatusFile() {
-    logger.debug("Creating default %s...", TAG, FW_UPDATE_STATUS_JSON_PATH);
-
-    createEmptyJsonFile(FW_UPDATE_STATUS_JSON_PATH);
-
-    logger.debug("Default %s created", TAG, FW_UPDATE_STATUS_JSON_PATH);
-}
-
 void createDefaultAde7953ConfigurationFile() {
-    logger.debug("Creating default %s...", TAG, CONFIGURATION_ADE7953_JSON_PATH);
+    logger.debug("Creating default ADE7953 configuration...", TAG);
 
     JsonDocument _jsonDocument;
 
@@ -218,35 +558,40 @@ void createDefaultAde7953ConfigurationFile() {
     _jsonDocument["phCalA"] = DEFAULT_PHCAL;
     _jsonDocument["phCalB"] = DEFAULT_PHCAL;
 
-    serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
+    // Save to Preferences instead of SPIFFS
+    saveConfigToPreferences("ade7953", _jsonDocument);
 
-    logger.debug("Default %s created", TAG, CONFIGURATION_ADE7953_JSON_PATH);
+    logger.debug("Default ADE7953 configuration created", TAG);
 }
 
 void createDefaultCalibrationFile() {
-    logger.debug("Creating default %s...", TAG, CALIBRATION_JSON_PATH);
+    logger.debug("Creating default calibration...", TAG);
 
     JsonDocument _jsonDocument;
     deserializeJson(_jsonDocument, default_config_calibration_json);
 
+    // Note: Calibration data is configuration, not historical data
+    // This will be handled by the ADE7953 module's own Preferences
+    // For now, keep SPIFFS for backward compatibility
     serializeJsonToSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
 
-    logger.debug("Default %s created", TAG, CALIBRATION_JSON_PATH);
+    logger.debug("Default calibration created", TAG);
 }
 
 void createDefaultChannelDataFile() {
-    logger.debug("Creating default %s...", TAG, CHANNEL_DATA_JSON_PATH);
+    logger.debug("Creating default channel configuration...", TAG);
 
     JsonDocument _jsonDocument;
     deserializeJson(_jsonDocument, default_config_channel_json);
 
-    serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument);
+    // Save to Preferences instead of SPIFFS
+    saveConfigToPreferences("channels", _jsonDocument);
 
-    logger.debug("Default %s created", TAG, CHANNEL_DATA_JSON_PATH);
+    logger.debug("Default channel configuration created", TAG);
 }
 
 void createDefaultCustomMqttConfigurationFile() {
-    logger.debug("Creating default %s...", TAG, CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
+    logger.debug("Creating default custom MQTT configuration...", TAG);
 
     JsonDocument _jsonDocument;
 
@@ -262,9 +607,10 @@ void createDefaultCustomMqttConfigurationFile() {
     _jsonDocument["lastConnectionStatus"] = "Never attempted";
     _jsonDocument["lastConnectionAttemptTimestamp"] = "";
 
-    serializeJsonToSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
+    // Save to Preferences instead of SPIFFS
+    saveConfigToPreferences("mqtt", _jsonDocument);
 
-    logger.debug("Default %s created", TAG, CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
+    logger.debug("Default custom MQTT configuration created", TAG);
 }
 
 std::vector<const char*> checkMissingFiles() {
@@ -273,15 +619,11 @@ std::vector<const char*> checkMissingFiles() {
     std::vector<const char*> missingFiles;
     
     const char* CONFIG_FILE_PATHS[] = {
-        GENERAL_CONFIGURATION_JSON_PATH,
         CONFIGURATION_ADE7953_JSON_PATH,
         CALIBRATION_JSON_PATH,
         CHANNEL_DATA_JSON_PATH,
-        CUSTOM_MQTT_CONFIGURATION_JSON_PATH,
         ENERGY_JSON_PATH,
         DAILY_ENERGY_JSON_PATH,
-        FW_UPDATE_INFO_JSON_PATH,
-        FW_UPDATE_STATUS_JSON_PATH
     };
 
     const size_t CONFIG_FILE_COUNT = sizeof(CONFIG_FILE_PATHS) / sizeof(CONFIG_FILE_PATHS[0]);
@@ -309,16 +651,10 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
             createDefaultCalibrationFile();
         } else if (strcmp(path, CHANNEL_DATA_JSON_PATH) == 0) {
             createDefaultChannelDataFile();
-        } else if (strcmp(path, CUSTOM_MQTT_CONFIGURATION_JSON_PATH) == 0) {
-            createDefaultCustomMqttConfigurationFile();
         } else if (strcmp(path, ENERGY_JSON_PATH) == 0) {
             createDefaultEnergyFile();
         } else if (strcmp(path, DAILY_ENERGY_JSON_PATH) == 0) {
             createDefaultDailyEnergyFile();
-        } else if (strcmp(path, FW_UPDATE_INFO_JSON_PATH) == 0) {
-            createDefaultFirmwareUpdateInfoFile();
-        } else if (strcmp(path, FW_UPDATE_STATUS_JSON_PATH) == 0) {
-            createDefaultFirmwareUpdateStatusFile();
         } else {
             // Handle other files if needed
             logger.warning("No default creation function for path: %s", TAG, path);
@@ -372,13 +708,8 @@ void restartEsp32() {
 
     logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
 
-    
-    clearAllAuthTokens();
-
     // If a firmware evaluation is in progress, set the firmware to test again
-    
     FirmwareState _firmwareStatus = CrashMonitor::getFirmwareStatus();
-
     
     if (_firmwareStatus == TESTING) {
         logger.info("Firmware evaluation is in progress. Setting firmware to test again", TAG);
@@ -386,73 +717,38 @@ void restartEsp32() {
         if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) logger.error("Failed to set firmware status", TAG);
     }
 
-    
     logger.end();
 
     // Give time for AsyncTCP connections to close gracefully
-    
     delay(1000);
 
     // Disable WiFi to prevent AsyncTCP crashes during restart
-    
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     
     // Additional delay to ensure clean shutdown
     delay(500);
 
-    
     ESP.restart();
 }
 
+// Convenience methods for SystemInfo struct
+void SystemInfo::updateStatic() {
+    populateSystemStaticInfo(static_info);
+}
+
+void SystemInfo::updateDynamic() {
+    populateSystemDynamicInfo(dynamic_info);
+}
+
+// Legacy compatibility function
 void populateSystemInfo(SystemInfo& systemInfo) {
-    logger.debug("Populating system info...", TAG);
+    logger.debug("Populating system info (legacy)...", TAG);
+    
+    // Use the new methods to populate both static and dynamic info
+    systemInfo.updateAll();
 
-    // Time and uptime
-    systemInfo.uptimeMillis = millis();
-    systemInfo.uptimeSeconds = systemInfo.uptimeMillis / 1000;
-    CustomTime::getTimestamp(systemInfo.timestamp, sizeof(systemInfo.timestamp));
-
-    // Internal RAM (DRAM)
-    systemInfo.heapSizeBytes = ESP.getHeapSize();
-    systemInfo.freeHeapBytes = ESP.getFreeHeap();
-    systemInfo.minFreeHeapBytes = ESP.getMinFreeHeap();
-    systemInfo.maxAllocHeapBytes = ESP.getMaxAllocHeap();
-
-    // PSRAM (if available)
-    systemInfo.psramSizeBytes = ESP.getPsramSize();
-    systemInfo.freePsramBytes = ESP.getFreePsram();
-    systemInfo.minFreePsramBytes = ESP.getMinFreePsram();
-    systemInfo.maxAllocPsramBytes = ESP.getMaxAllocPsram();
-
-    // Flash memory
-    systemInfo.flashChipSizeBytes = ESP.getFlashChipSize();
-    systemInfo.flashChipSpeedHz = ESP.getFlashChipSpeed();
-    systemInfo.sketchSizeBytes = ESP.getSketchSize();
-    systemInfo.freeSketchSpaceBytes = ESP.getFreeSketchSpace();
-    snprintf(systemInfo.sketchMD5, sizeof(systemInfo.sketchMD5), "%s", ESP.getSketchMD5().c_str());
-
-    // SPIFFS filesystem
-    systemInfo.spiffsTotalBytes = SPIFFS.totalBytes();
-    systemInfo.spiffsUsedBytes = SPIFFS.usedBytes();
-    systemInfo.spiffsFreeBytes = SPIFFS.totalBytes() - SPIFFS.usedBytes();
-
-    // Chip information
-    snprintf(systemInfo.chipModel, sizeof(systemInfo.chipModel), "%s", ESP.getChipModel());
-    systemInfo.chipRevision = ESP.getChipRevision();
-    systemInfo.chipCores = ESP.getChipCores();
-    systemInfo.cpuFreqMHz = ESP.getCpuFreqMHz();
-    systemInfo.cycleCount = ESP.getCycleCount();
-    systemInfo.chipId = ESP.getEfuseMac();
-
-    // SDK and Core versions
-    snprintf(systemInfo.sdkVersion, sizeof(systemInfo.sdkVersion), "%s", ESP.getSdkVersion());
-    snprintf(systemInfo.coreVersion, sizeof(systemInfo.coreVersion), "%s", ESP.getCoreVersion());
-
-    // Temperature
-    systemInfo.temperatureCelsius = temperatureRead();
-
-    logger.debug("System info populated", TAG);
+    logger.debug("System info populated (legacy)", TAG);
 }
 
 
@@ -479,27 +775,66 @@ void printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
     );
 }
 
+void printDeviceStatusStatic()
+{
+    SystemStaticInfo info;
+    populateSystemStaticInfo(info);
+
+    logger.info("--- Static System Info ---", TAG);
+    logger.info("Product: %s (%s)", TAG, info.fullProductName, info.productName);
+    logger.info("Company: %s | Author: %s", TAG, info.companyName, info.author);
+    logger.info("Firmware: %s | Build: %s %s", TAG, info.buildVersion, info.buildDate, info.buildTime);
+    logger.info("Sketch MD5: %s", TAG, info.sketchMD5);
+    logger.info("Flash: %lu bytes, %lu Hz", TAG, info.flashChipSizeBytes, info.flashChipSpeedHz);
+    logger.info("PSRAM: %lu bytes", TAG, info.psramSizeBytes);
+    logger.info("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", TAG, info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
+    logger.info("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
+    logger.info("Device ID: %s", TAG, info.deviceId);
+    
+    // Convert firmware state to string
+    const char* fwStateStr;
+    switch (info.firmwareState) { // TODO: make this into a function
+        case STABLE: fwStateStr = "STABLE"; break;
+        case NEW_TO_TEST: fwStateStr = "NEW_TO_TEST"; break;
+        case TESTING: fwStateStr = "TESTING"; break;
+        case ROLLBACK: fwStateStr = "ROLLBACK"; break;
+        default: fwStateStr = "UNKNOWN"; break;
+    }
+    logger.info("Firmware State: %s", TAG, fwStateStr);
+    logger.info("------------------------", TAG);
+}
+
+void printDeviceStatusDynamic()
+{
+    SystemDynamicInfo info;
+    populateSystemDynamicInfo(info);
+
+    logger.info("--- Dynamic System Info ---", TAG);
+    logger.info("Uptime: %lu s (%llu ms)", TAG, info.uptimeSeconds, (unsigned long long)info.uptimeMilliseconds);
+    logger.info("Timestamp: %s", TAG, info.currentTimestamp);
+    logger.info("Heap: %lu total, %lu free, %lu min free, %lu max alloc", TAG, info.heapTotalBytes, info.heapFreeBytes, info.heapMinFreeBytes, info.heapMaxAllocBytes);
+    if (info.psramFreeBytes > 0 || info.psramUsedBytes > 0) {
+        logger.info("PSRAM: %lu free, %lu used, %lu min free, %lu max alloc", TAG, info.psramFreeBytes, info.psramUsedBytes, info.psramMinFreeBytes, info.psramMaxAllocBytes);
+    }
+    logger.info("SPIFFS: %lu total, %lu used, %lu free", TAG, info.spiffsTotalBytes, info.spiffsUsedBytes, info.spiffsFreeBytes);
+    logger.info("Temperature: %.2f C", TAG, info.temperatureCelsius);
+    
+    // WiFi information
+    if (info.wifiConnected) {
+        logger.info("WiFi: Connected to '%s' (BSSID: %s)", TAG, info.wifiSsid, info.wifiBssid);
+        logger.info("WiFi: RSSI %d dBm | MAC %s", TAG, info.wifiRssi, info.wifiMacAddress);
+        logger.info("WiFi: IP %s | Gateway %s | DNS %s", TAG, info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp);
+        logger.info("WiFi: Subnet %s", TAG, info.wifiSubnetMask);
+    } else {
+        logger.info("WiFi: Disconnected | MAC %s", TAG, info.wifiMacAddress);
+    }
+    logger.info("-------------------------", TAG);
+}
+
 void printDeviceStatus()
 {
-    SystemInfo info;
-    populateSystemInfo(info);
-
-    logger.info("--- System Info ---", TAG);
-    logger.info("Uptime: %lu s (%lu ms)", TAG, info.uptimeSeconds, info.uptimeMillis);
-    logger.info("Timestamp: %s", TAG, info.timestamp);
-
-    logger.info("Heap: %lu total, %lu free, %lu min free, %lu max alloc", TAG, info.heapSizeBytes, info.freeHeapBytes, info.minFreeHeapBytes, info.maxAllocHeapBytes);
-    logger.info("PSRAM: %lu total, %lu free, %lu min free, %lu max alloc", TAG, info.psramSizeBytes, info.freePsramBytes, info.minFreePsramBytes, info.maxAllocPsramBytes);
-
-    logger.info("Flash: %lu bytes, %lu Hz", TAG, info.flashChipSizeBytes, info.flashChipSpeedHz);
-    logger.info("Sketch: %lu bytes, free: %lu bytes, MD5: %s", TAG, info.sketchSizeBytes, info.freeSketchSpaceBytes, info.sketchMD5);
-
-    logger.info("SPIFFS: %lu total, %lu used, %lu free", TAG, info.spiffsTotalBytes, info.spiffsUsedBytes, info.spiffsFreeBytes);
-
-    logger.info("Chip: %s, rev %u, cores %u, freq %lu MHz, cycles %lu, id 0x%llx", TAG, info.chipModel, info.chipRevision, info.chipCores, info.cpuFreqMHz, info.cycleCount, info.chipId);
-    logger.info("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
-    logger.info("Temperature: %.2f C", TAG, info.temperatureCelsius);
-    logger.info("-------------------", TAG);
+    printDeviceStatusStatic();
+    printDeviceStatusDynamic();
 }
 
 void updateStatistics() {
@@ -569,55 +904,23 @@ void printStatistics() {
 }
 
 void systemInfoToJson(JsonDocument& jsonDocument) {
-    logger.debug("Converting system info to JSON...", TAG);
+    logger.debug("Converting system info to JSON (legacy)...", TAG);
 
     SystemInfo info;
     populateSystemInfo(info);
 
-    jsonDocument["uptimeSeconds"] = info.uptimeSeconds;
-    jsonDocument["uptimeMillis"] = info.uptimeMillis;
-    jsonDocument["timestamp"] = info.timestamp;
+    // Combine static and dynamic info for legacy compatibility
+    systemStaticInfoToJson(info.static_info, jsonDocument);
+    
+    JsonDocument dynamicDoc;
+    systemDynamicInfoToJson(info.dynamic_info, dynamicDoc);
+    
+    // Merge dynamic info into the main document
+    for (JsonPair kv : dynamicDoc.as<JsonObject>()) {
+        jsonDocument[kv.key()] = kv.value();
+    }
 
-    // Internal RAM (DRAM)
-    jsonDocument["heapSizeBytes"] = info.heapSizeBytes;
-    jsonDocument["freeHeapBytes"] = info.freeHeapBytes;
-    jsonDocument["minFreeHeapBytes"] = info.minFreeHeapBytes;
-    jsonDocument["maxAllocHeapBytes"] = info.maxAllocHeapBytes;
-
-    // PSRAM
-    jsonDocument["psramSizeBytes"] = info.psramSizeBytes;
-    jsonDocument["freePsramBytes"] = info.freePsramBytes;
-    jsonDocument["minFreePsramBytes"] = info.minFreePsramBytes;
-    jsonDocument["maxAllocPsramBytes"] = info.maxAllocPsramBytes;
-
-    // Flash
-    jsonDocument["flashChipSizeBytes"] = info.flashChipSizeBytes;
-    jsonDocument["flashChipSpeedHz"] = info.flashChipSpeedHz;
-    jsonDocument["sketchSizeBytes"] = info.sketchSizeBytes;
-    jsonDocument["freeSketchSpaceBytes"] = info.freeSketchSpaceBytes;
-    jsonDocument["sketchMD5"] = info.sketchMD5;
-
-    // SPIFFS
-    jsonDocument["spiffsTotalBytes"] = info.spiffsTotalBytes;
-    jsonDocument["spiffsUsedBytes"] = info.spiffsUsedBytes;
-    jsonDocument["spiffsFreeBytes"] = info.spiffsFreeBytes;
-
-    // Chip info
-    jsonDocument["chipModel"] = info.chipModel;
-    jsonDocument["chipRevision"] = info.chipRevision;
-    jsonDocument["chipCores"] = info.chipCores;
-    jsonDocument["cpuFreqMHz"] = info.cpuFreqMHz;
-    jsonDocument["cycleCount"] = info.cycleCount;
-    jsonDocument["chipId"] = (uint64_t)info.chipId;
-
-    // SDK/Core
-    jsonDocument["sdkVersion"] = info.sdkVersion;
-    jsonDocument["coreVersion"] = info.coreVersion;
-
-    // Temperature
-    jsonDocument["temperatureCelsius"] = info.temperatureCelsius;
-
-    logger.debug("System info converted to JSON", TAG);
+    logger.debug("System info converted to JSON (legacy)", TAG);
 }
 
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
@@ -802,11 +1105,35 @@ void clearAllPreferences() {
     preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); // false = read-write mode
     preferences.clear();
     preferences.end();
+
+    // Clear the new configuration namespaces
+    preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false);
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false);
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false);
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_MQTT, false);
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false);
+    preferences.clear();
+    preferences.end();
 }
 
 bool isLatestFirmwareInstalled() {
     JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(FW_UPDATE_INFO_JSON_PATH, _jsonDocument);
+    // deserializeJsonFromSpiffs(FW_UPDATE_INFO_JSON_PATH, _jsonDocument);
+    // TODO: switch to Preferences
+    logger.warning("IMPLEMENT THIS: deserializeJsonFromSpiffs for FW_UPDATE_INFO_JSON_PATH", TAG);
+    return true; // For now, return true as we don't have the implementation yet
     
     if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
         logger.debug("Firmware update info file is empty", TAG);
@@ -855,7 +1182,10 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
     CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer)); // TODO: maybe everything should be returned in unix so it is UTC, and then converted on the other side? or standard iso utc timestamp?
     _jsonDocument["timestamp"] = _timestampBuffer;
 
-    serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);
+    // Note: Firmware status is temporary data, keep in SPIFFS for now
+    // This will be updated when we migrate to LittleFS for temporary data
+    // serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);
+    logger.warning("IMPLEMENT THIS: updateJsonFirmwareStatus", TAG); // TODO: switch to Preferences
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {
@@ -1039,279 +1369,6 @@ void clearCertificates() {
     logger.info("Certificates for cloud services cleared", TAG);
 }
 
-// Authentication functions
-// -----------------------------
-
-// Static variables for token management
-static int activeTokenCount = 0;
-
-void initializeAuthentication() {
-    logger.debug("Initializing authentication...", TAG);
-    
-    clearAllAuthTokens();
-    activeTokenCount = 0;
-    
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
-        logger.warning("Failed to open auth preferences for reading, trying to create namespace", TAG);
-        
-        // Try to create the namespace by opening in write mode
-        if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
-            logger.error("Failed to create auth preferences namespace", TAG);
-            return;
-        }
-        preferences.end();
-        
-        // Now try to open in read mode again
-        if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
-            logger.error("Failed to open auth preferences after creation", TAG);
-            return;
-        }
-    }
-    
-    // Read the stored password to check if it exists
-    char storedPassword[AUTH_PASSWORD_BUFFER_SIZE];
-    preferences.getString(PREFERENCES_KEY_PASSWORD, storedPassword, sizeof(storedPassword));
-    preferences.end();
-
-    if (strlen(storedPassword) == 0) {
-        logger.info("No password set, using default password", TAG);
-        if (!setAuthPassword(DEFAULT_WEB_PASSWORD)) {
-            logger.error("Failed to set default password", TAG);
-            return;
-        }
-    }
-    
-    logger.debug("Authentication initialized", TAG);
-}
-
-bool validatePassword(const char* password) {
-    if (strlen(password) < MIN_PASSWORD_LENGTH || strlen(password) > MAX_PASSWORD_LENGTH) {
-        return false;
-    }
-    
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
-        logger.warning("Failed to open auth preferences, allowing access as fallback", TAG);
-        return true; // Fallback: return true when preferences cannot be opened
-    }
-    
-    char storedPasswordHash[AUTH_PASSWORD_BUFFER_SIZE];
-    // Read the stored password hash
-    // If no password is set, we allow access as a fallback
-    preferences.getString(PREFERENCES_KEY_PASSWORD, storedPasswordHash, sizeof(storedPasswordHash));
-    preferences.end();
-
-    if (strlen(storedPasswordHash) == 0) {
-        logger.debug("No stored password hash found, allowing access as fallback", TAG);
-        return true; // Fallback: return true when no password is stored
-    }
-    
-    char passwordHash[AUTH_PASSWORD_BUFFER_SIZE];
-    // Hash the provided password
-    hashPassword(password, passwordHash, sizeof(passwordHash));
-    return strcmp(passwordHash, storedPasswordHash) == 0;
-}
-
-bool setAuthPassword(const char* newPassword) {
-    if (strlen(newPassword) < MIN_PASSWORD_LENGTH || strlen(newPassword) > MAX_PASSWORD_LENGTH) {
-        logger.warning("Password length invalid: %d characters", TAG, strlen(newPassword));
-        return false;
-    }
-
-    char passwordHash[AUTH_PASSWORD_BUFFER_SIZE];
-    // Hash the new password
-    hashPassword(newPassword, passwordHash, sizeof(passwordHash));
-    if (strlen(passwordHash) == 0) {
-        logger.error("Failed to hash the new password", TAG);
-        return false;
-    }
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
-        logger.warning("Failed to open auth preferences, treating as successful fallback", TAG);
-        return true; // Fallback: return true when preferences cannot be opened
-    }
-    
-    preferences.putString(PREFERENCES_KEY_PASSWORD, passwordHash);
-    preferences.end();
-    
-    // Clear all existing tokens when password changes
-    clearAllAuthTokens();
-    
-    logger.info("Password updated successfully", TAG);
-    return true;
-}
-
-void generateAuthToken(char* tokenBuffer, size_t tokenBufferSize) {
-    // Check if we can accept more tokens
-    if (!canAcceptMoreTokens()) {
-        logger.warning("Cannot generate new token: maximum concurrent sessions reached (%d)", TAG, MAX_CONCURRENT_SESSIONS);
-        return;
-    }
-    
-    char token[AUTH_TOKEN_LENGTH + 1]; // +1 for null terminator
-    token[AUTH_TOKEN_LENGTH] = '\0'; // Ensure null termination
-    const char chars[CHARS_TOKEN_BUFFER_SIZE] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    
-    for (int i = 0; i < AUTH_TOKEN_LENGTH; i++) {
-        token[i] = chars[random(0, sizeof(chars) - 1)];
-    }
-    
-    // Store token with timestamp using a hash-based short key
-    Preferences preferences;
-    if (preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
-        // Create a short hash from the token for the key (max 15 chars for NVS)
-        uint32_t tokenHash = 0;
-        for (int i = 0; i < AUTH_TOKEN_LENGTH; i++) {
-            tokenHash = tokenHash * 31 + token[i];
-        }
-        
-        char shortKey[TOKEN_SHORT_KEY_BUFFER_SIZE];
-        snprintf(shortKey, sizeof(shortKey), "t%08x", (unsigned int)tokenHash);
-        
-        char fullTokenKey[TOKEN_FULL_KEY_BUFFER_SIZE];
-        snprintf(fullTokenKey, sizeof(fullTokenKey), "%s_f", shortKey);
-        
-        // Store both the timestamp and the original token
-        preferences.putULong64(shortKey, millis());
-        // Store mapping from short key to full token
-        preferences.putString(fullTokenKey, token);
-        preferences.end();
-        
-        // Increment the active token count
-        activeTokenCount++;
-        logger.debug("Token generated successfully. Active tokens: %d/%d", TAG, activeTokenCount, MAX_CONCURRENT_SESSIONS);
-    }
-    
-    // Copy token to output buffer
-    snprintf(tokenBuffer, tokenBufferSize, "%s", token);
-}
-
-bool validateAuthToken(const char* token) {
-    if (!token || strlen(token) != AUTH_TOKEN_LENGTH) {
-        return false;
-    }
-    
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
-        logger.warning("Failed to open auth preferences for token validation, allowing access as fallback", TAG);
-        return true; // Fallback: return true when preferences cannot be opened
-    }
-    
-    // Create the same hash-based short key
-    uint32_t tokenHash = 0;
-    for (int i = 0; i < AUTH_TOKEN_LENGTH; i++) {
-        tokenHash = tokenHash * 31 + token[i];
-    }
-    
-    char shortKey[TOKEN_SHORT_KEY_BUFFER_SIZE]; // "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
-    snprintf(shortKey, sizeof(shortKey), "t%08x", (unsigned int)tokenHash);
-    
-    char fullTokenKey[TOKEN_FULL_KEY_BUFFER_SIZE]; // shortKey + "_f" + null terminator = 12 chars max, 20 for safety
-    snprintf(fullTokenKey, sizeof(fullTokenKey), "%s_f", shortKey);
-    
-    unsigned long long tokenTimestamp = preferences.getULong64(shortKey, 0);
-    
-    // Verify the full token matches
-    char storedToken[AUTH_TOKEN_LENGTH + 1];
-    preferences.getString(fullTokenKey, storedToken, sizeof(storedToken));
-    preferences.end();
-    
-    if (tokenTimestamp == 0 || strcmp(storedToken, token) != 0) {
-        return false;
-    }
-    
-    // Check if token has expired
-    if (millis() - tokenTimestamp > AUTH_SESSION_TIMEOUT) {
-        logger.debug("Token expired, removing it", TAG);
-        clearAuthToken(token);
-        return false;
-    }
-    
-    return true;
-}
-
-void clearAuthToken(const char* token) {
-    if (!token) {
-        return;
-    }
-    
-    Preferences preferences;
-    if (preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
-        // Create the same hash-based short key
-        uint32_t tokenHash = 0;
-        for (int i = 0; i < AUTH_TOKEN_LENGTH && token[i] != '\0'; i++) {
-            tokenHash = tokenHash * 31 + token[i];
-        }
-        
-        char shortKey[TOKEN_SHORT_KEY_BUFFER_SIZE]; // "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
-        snprintf(shortKey, sizeof(shortKey), "t%08x", (unsigned int)tokenHash);
-        
-        char fullTokenKey[TOKEN_FULL_KEY_BUFFER_SIZE]; // shortKey + "_f" + null terminator = 12 chars max, 20 for safety
-        snprintf(fullTokenKey, sizeof(fullTokenKey), "%s_f", shortKey);
-        
-        // Check if token exists before removing
-        if (preferences.getULong64(shortKey, 0) != 0) {
-            preferences.remove(shortKey);
-            preferences.remove(fullTokenKey);
-            
-            // Decrement the active token count
-            if (activeTokenCount > 0) {
-                activeTokenCount--;
-                logger.debug("Token cleared. Active tokens: %d/%d", TAG, activeTokenCount, MAX_CONCURRENT_SESSIONS);
-            }
-        }
-        preferences.end();
-    }
-}
-
-void clearAllAuthTokens() {
-    logger.debug("Clearing all auth tokens...", TAG);
-    
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
-        return;
-    }
-    
-    // Clear all preferences except password to remove all tokens
-    char storedPassword[MAX_PASSWORD_LENGTH + 1];
-    preferences.getString(PREFERENCES_KEY_PASSWORD, storedPassword, sizeof(storedPassword));
-    preferences.clear();
-    
-    // Restore the password
-    if (strlen(storedPassword) > 0) {
-        preferences.putString(PREFERENCES_KEY_PASSWORD, storedPassword);
-    }
-    
-    preferences.end();
-    
-    // Reset the token count
-    activeTokenCount = 0;
-    logger.debug("All tokens cleared. Active tokens: %d", TAG, activeTokenCount);
-}
-
-void hashPassword(const char* password, char* hashedPassword, size_t hashedPasswordSize) {
-    // Simple hash using device ID as salt
-    // Use global device ID
-    snprintf(hashedPassword, hashedPasswordSize, "%s%s", password, DEVICE_ID);
-    
-    // Basic hash implementation (you might want to use a more secure method)
-    uint32_t hash = 0;
-    for (size_t i = 0; i < strlen(hashedPassword); i++) {
-        hash = hash * 31 + hashedPassword[i];
-    }
-
-    snprintf(hashedPassword, hashedPasswordSize, "%08X", hash);
-}
-
-int getActiveTokenCount() {
-    return activeTokenCount;
-}
-
-bool canAcceptMoreTokens() {
-    return activeTokenCount < MAX_CONCURRENT_SESSIONS;
-}
-
 bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds) {
     if (isMilliseconds) {
         return (unixTime >= MINIMUM_UNIX_TIME_MILLISECONDS && unixTime <= MAXIMUM_UNIX_TIME_MILLISECONDS);
@@ -1320,6 +1377,376 @@ bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds) {
     }
 }
 
-bool isUsingDefaultPassword() {
-    return validatePassword(DEFAULT_WEB_PASSWORD);
+// =============================================================================
+// Preferences Configuration Utilities
+// =============================================================================
+
+namespace PreferencesConfig {
+    static const char* TAG_PREFS = "preferencesconfig";
+    
+    bool setTimezone(const char* timezone) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
+            logger.error("Failed to open general preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putString(PREF_KEY_TIMEZONE, timezone) > 0;
+        prefs.end();
+        return success;
+    }
+    
+    bool getTimezone(char* buffer, size_t bufferSize) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_GENERAL, true)) {
+            logger.error("Failed to open general preferences", TAG_PREFS);
+            return false;
+        }
+        String value = prefs.getString(PREF_KEY_TIMEZONE, "UTC");
+        prefs.end();
+        snprintf(buffer, bufferSize, "%s", value.c_str());
+        return true;
+    }
+    
+    bool setSendPowerData(bool enabled) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
+            logger.error("Failed to open general preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putBool(PREF_KEY_SEND_POWER_DATA, enabled);
+        prefs.end();
+        return success;
+    }
+    
+    bool getSendPowerData() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_GENERAL, true)) {
+            logger.error("Failed to open general preferences", TAG_PREFS);
+            return true; // Default to enabled
+        }
+        bool value = prefs.getBool(PREF_KEY_SEND_POWER_DATA, true);
+        prefs.end();
+        return value;
+    }
+    
+    // ADE7953 configuration
+    bool setSampleTime(uint32_t sampleTime) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
+            logger.error("Failed to open ADE7953 preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putUInt(PREF_KEY_SAMPLE_TIME, sampleTime);
+        prefs.end();
+        return success;
+    }
+    
+    uint32_t getSampleTime() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_ADE7953, true)) {
+            logger.error("Failed to open ADE7953 preferences", TAG_PREFS);
+            return 200; // Default sample time
+        }
+        uint32_t value = prefs.getUInt(PREF_KEY_SAMPLE_TIME, 200);
+        prefs.end();
+        return value;
+    }
+    
+    bool setVoltageGain(uint32_t gain) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
+            logger.error("Failed to open ADE7953 preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putUInt(PREF_KEY_A_V_GAIN, gain);
+        prefs.end();
+        return success;
+    }
+    
+    uint32_t getVoltageGain() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_ADE7953, true)) {
+            logger.error("Failed to open ADE7953 preferences", TAG_PREFS);
+            return 4194304; // Default gain
+        }
+        uint32_t value = prefs.getUInt(PREF_KEY_A_V_GAIN, 4194304);
+        prefs.end();
+        return value;
+    }
+    
+    bool setCurrentGainA(uint32_t gain) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
+            logger.error("Failed to open ADE7953 preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putUInt(PREF_KEY_A_I_GAIN, gain);
+        prefs.end();
+        return success;
+    }
+    
+    uint32_t getCurrentGainA() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_ADE7953, true)) {
+            logger.error("Failed to open ADE7953 preferences", TAG_PREFS);
+            return 4194304; // Default gain
+        }
+        uint32_t value = prefs.getUInt(PREF_KEY_A_I_GAIN, 4194304);
+        prefs.end();
+        return value;
+    }
+    
+    bool setCurrentGainB(uint32_t gain) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
+            logger.error("Failed to open ADE7953 preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putUInt(PREF_KEY_B_I_GAIN, gain);
+        prefs.end();
+        return success;
+    }
+    
+    uint32_t getCurrentGainB() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_ADE7953, true)) {
+            logger.error("Failed to open ADE7953 preferences", TAG_PREFS);
+            return 4194304; // Default gain
+        }
+        uint32_t value = prefs.getUInt(PREF_KEY_B_I_GAIN, 4194304);
+        prefs.end();
+        return value;
+    }
+    
+    // Channel configuration
+    bool setChannelActive(uint8_t channel, bool active) {
+        if (channel >= CHANNEL_COUNT) return false;
+        
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CHANNELS, false)) {
+            logger.error("Failed to open channels preferences", TAG_PREFS);
+            return false;
+        }
+        
+        char key[32];
+        snprintf(key, sizeof(key), PREF_KEY_CHANNEL_ACTIVE_FMT, channel);
+        bool success = prefs.putBool(key, active);
+        prefs.end();
+        return success;
+    }
+    
+    bool getChannelActive(uint8_t channel) {
+        if (channel >= CHANNEL_COUNT) return false;
+        
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CHANNELS, true)) {
+            logger.error("Failed to open channels preferences", TAG_PREFS);
+            return (channel == 0); // Default: only channel 0 active
+        }
+        
+        char key[32];
+        snprintf(key, sizeof(key), PREF_KEY_CHANNEL_ACTIVE_FMT, channel);
+        bool value = prefs.getBool(key, (channel == 0)); // Default: only channel 0 active
+        prefs.end();
+        return value;
+    }
+    
+    bool setChannelLabel(uint8_t channel, const char* label) {
+        if (channel >= CHANNEL_COUNT) return false;
+        
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CHANNELS, false)) {
+            logger.error("Failed to open channels preferences", TAG_PREFS);
+            return false;
+        }
+        
+        char key[32];
+        snprintf(key, sizeof(key), PREF_KEY_CHANNEL_LABEL_FMT, channel);
+        bool success = prefs.putString(key, label) > 0;
+        prefs.end();
+        return success;
+    }
+    
+    bool getChannelLabel(uint8_t channel, char* buffer, size_t bufferSize) {
+        if (channel >= CHANNEL_COUNT) return false;
+        
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CHANNELS, true)) {
+            logger.error("Failed to open channels preferences", TAG_PREFS);
+            snprintf(buffer, bufferSize, "Channel %d", channel);
+            return false;
+        }
+        
+        char key[32];
+        char defaultLabel[32];
+        snprintf(key, sizeof(key), PREF_KEY_CHANNEL_LABEL_FMT, channel);
+        snprintf(defaultLabel, sizeof(defaultLabel), "Channel %d", channel);
+        
+        String value = prefs.getString(key, defaultLabel);
+        prefs.end();
+        snprintf(buffer, bufferSize, "%s", value.c_str());
+        return true;
+    }
+    
+    bool setChannelPhase(uint8_t channel, uint8_t phase) {
+        if (channel >= CHANNEL_COUNT) return false;
+        
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CHANNELS, false)) {
+            logger.error("Failed to open channels preferences", TAG_PREFS);
+            return false;
+        }
+        
+        char key[32];
+        snprintf(key, sizeof(key), PREF_KEY_CHANNEL_PHASE_FMT, channel);
+        bool success = prefs.putUChar(key, phase);
+        prefs.end();
+        return success;
+    }
+    
+    uint8_t getChannelPhase(uint8_t channel) {
+        if (channel >= CHANNEL_COUNT) return 1;
+        
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CHANNELS, true)) {
+            logger.error("Failed to open channels preferences", TAG_PREFS);
+            return 1; // Default phase
+        }
+        
+        char key[32];
+        snprintf(key, sizeof(key), PREF_KEY_CHANNEL_PHASE_FMT, channel);
+        uint8_t value = prefs.getUChar(key, 1);
+        prefs.end();
+        return value;
+    }
+    
+    // MQTT configuration
+    bool setMqttEnabled(bool enabled) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putBool(PREF_KEY_MQTT_ENABLED, enabled);
+        prefs.end();
+        return success;
+    }
+    
+    bool getMqttEnabled() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return false; // Default to disabled
+        }
+        bool value = prefs.getBool(PREF_KEY_MQTT_ENABLED, false);
+        prefs.end();
+        return value;
+    }
+    
+    bool setMqttServer(const char* server) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putString(PREF_KEY_MQTT_SERVER, server) > 0;
+        prefs.end();
+        return success;
+    }
+    
+    bool getMqttServer(char* buffer, size_t bufferSize) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            buffer[0] = '\0';
+            return false;
+        }
+        String value = prefs.getString(PREF_KEY_MQTT_SERVER, "");
+        prefs.end();
+        snprintf(buffer, bufferSize, "%s", value.c_str());
+        return true;
+    }
+    
+    bool setMqttPort(uint16_t port) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putUShort(PREF_KEY_MQTT_PORT, port);
+        prefs.end();
+        return success;
+    }
+    
+    uint16_t getMqttPort() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return 1883; // Default MQTT port
+        }
+        uint16_t value = prefs.getUShort(PREF_KEY_MQTT_PORT, 1883);
+        prefs.end();
+        return value;
+    }
+    
+    bool setMqttUsername(const char* username) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putString(PREF_KEY_MQTT_USERNAME, username) > 0;
+        prefs.end();
+        return success;
+    }
+    
+    bool getMqttUsername(char* buffer, size_t bufferSize) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            buffer[0] = '\0';
+            return false;
+        }
+        String value = prefs.getString(PREF_KEY_MQTT_USERNAME, "");
+        prefs.end();
+        snprintf(buffer, bufferSize, "%s", value.c_str());
+        return true;
+    }
+    
+    bool setMqttPassword(const char* password) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putString(PREF_KEY_MQTT_PASSWORD, password) > 0;
+        prefs.end();
+        return success;
+    }
+    
+    bool getMqttPassword(char* buffer, size_t bufferSize) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            buffer[0] = '\0';
+            return false;
+        }
+        String value = prefs.getString(PREF_KEY_MQTT_PASSWORD, "");
+        prefs.end();
+        snprintf(buffer, bufferSize, "%s", value.c_str());
+        return true;
+    }
+    
+    // Utility functions
+    bool hasConfiguration(const char* prefsNamespace) {
+        Preferences prefs;
+        if (!prefs.begin(prefsNamespace, true)) {
+            return false;
+        }
+        
+        // Check if namespace has any keys
+        bool hasKeys = prefs.getBytesLength("__check__") == 0 && prefs.freeEntries() < 500; // Rough heuristic
+        prefs.end();
+        return hasKeys;
+    }
 }

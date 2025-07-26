@@ -7,6 +7,7 @@
 #include <HTTPClient.h>
 #include <SPIFFS.h>
 #include <TimeLib.h>
+#include <Preferences.h>
 #include "mbedtls/aes.h"
 #include "mbedtls/base64.h"
 #include <esp_system.h>
@@ -24,10 +25,69 @@
 #include "structs.h"
 #include "globals.h"
 
-void getJsonProductInfo(JsonDocument& jsonDocument);
-void getJsonDeviceInfo(JsonDocument& jsonDocument);
+// New system info functions
+void populateSystemStaticInfo(SystemStaticInfo& info);
+void populateSystemDynamicInfo(SystemDynamicInfo& info);
+void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc);
+void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc);
+
+// Convenience functions for JSON API endpoints
+void getJsonDeviceStaticInfo(JsonDocument& doc);
+void getJsonDeviceDynamicInfo(JsonDocument& doc);
+
+// Legacy functions (for backward compatibility)
 void populateSystemInfo(SystemInfo& systemInfo);
 void systemInfoToJson(JsonDocument& jsonDocument);
+
+// Preferences utilities for configuration storage
+namespace PreferencesConfig {
+    // General configuration
+    bool setTimezone(const char* timezone);
+    bool getTimezone(char* buffer, size_t bufferSize);
+    bool setSendPowerData(bool enabled);
+    bool getSendPowerData();
+    
+    // ADE7953 configuration
+    bool setSampleTime(uint32_t sampleTime);
+    uint32_t getSampleTime();
+    bool setVoltageGain(uint32_t gain);
+    uint32_t getVoltageGain();
+    bool setCurrentGainA(uint32_t gain);
+    uint32_t getCurrentGainA();
+    bool setCurrentGainB(uint32_t gain);
+    uint32_t getCurrentGainB();
+    
+    // Channel configuration
+    bool setChannelActive(uint8_t channel, bool active);
+    bool getChannelActive(uint8_t channel);
+    bool setChannelLabel(uint8_t channel, const char* label);
+    bool getChannelLabel(uint8_t channel, char* buffer, size_t bufferSize);
+    bool setChannelPhase(uint8_t channel, uint8_t phase);
+    uint8_t getChannelPhase(uint8_t channel);
+    
+    // MQTT configuration
+    bool setMqttEnabled(bool enabled);
+    bool getMqttEnabled();
+    bool setMqttServer(const char* server);
+    bool getMqttServer(char* buffer, size_t bufferSize);
+    bool setMqttPort(uint16_t port);
+    uint16_t getMqttPort();
+    bool setMqttUsername(const char* username);
+    bool getMqttUsername(char* buffer, size_t bufferSize);
+    bool setMqttPassword(const char* password);
+    bool getMqttPassword(char* buffer, size_t bufferSize);
+    
+    // Utility functions
+    bool hasConfiguration(const char* prefsNamespace);
+    
+    // Smart configuration loading functions (Preferences-first with JSON fallback)
+    bool loadAde7953Config(JsonDocument& jsonDoc);
+    bool saveAde7953Config(const JsonDocument& jsonDoc);
+    bool loadChannelConfig(JsonDocument& jsonDoc);
+    bool saveChannelConfig(const JsonDocument& jsonDoc);
+    bool loadMqttConfig(JsonDocument& jsonDoc);
+    bool saveMqttConfig(const JsonDocument& jsonDoc);
+}
 
 void setRestartEsp32(const char* functionName, const char* reason);
 void checkIfRestartEsp32Required();
@@ -35,10 +95,15 @@ void restartEsp32();
 
 void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
 void printDeviceStatus();
+void printDeviceStatusStatic();
+void printDeviceStatusDynamic();
 void updateStatistics();
 void printStatistics();
 
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
+bool loadConfigFromPreferences(const char* configType, JsonDocument& jsonDocument);
+bool saveConfigToPreferences(const char* configType, JsonDocument& jsonDocument);
+// Legacy SPIFFS functions for backward compatibility during transition
 bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
 void createEmptyJsonFile(const char* path);
@@ -52,8 +117,6 @@ void createDefaultCalibrationFile();
 void createDefaultAde7953ConfigurationFile();
 void createDefaultEnergyFile();
 void createDefaultDailyEnergyFile();
-void createDefaultFirmwareUpdateInfoFile();
-void createDefaultFirmwareUpdateStatusFile();
 
 void getPublicLocation(PublicLocation* publicLocation);
 void getPublicTimezone(int* gmtOffset, int* dstOffset);
@@ -75,18 +138,5 @@ void readEncryptedPreferences(const char* preference_key, const char* preshared_
 void writeEncryptedPreferences(const char* preference_key, const char* value);
 void clearCertificates();
 bool checkCertificatesExist();
-
-// Authentication functions
-void initializeAuthentication();
-bool validatePassword(const char* password);
-bool setAuthPassword(const char* newPassword);
-bool isUsingDefaultPassword();
-void generateAuthToken(char* token, size_t tokenSize);
-bool validateAuthToken(const char* token);
-void clearAuthToken(const char* token);
-void clearAllAuthTokens();
-void hashPassword(const char* password, char* hashedPassword, size_t hashedPasswordSize);
-int getActiveTokenCount();
-bool canAcceptMoreTokens();
 
 bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds = true);

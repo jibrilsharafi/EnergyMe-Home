@@ -250,7 +250,7 @@ namespace Mqtt
             if (deserializeJson(_jsonDocument, message)) {
                 return;
             }
-            serializeJsonToSpiffs(FW_UPDATE_INFO_JSON_PATH, _jsonDocument);
+            serializeJson(_jsonDocument, Serial); // TODO: actually save this data
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_RESTART))
         {

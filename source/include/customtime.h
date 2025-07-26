@@ -5,7 +5,8 @@
 #include <Preferences.h>
 #include <TimeLib.h>
 
-#define PREFERENCES_NAMESPACE_TIME "time_ns"
+#include "constants.h"
+
 #define PREFERENCES_GMT_OFFSET_KEY "gmt_offset"
 #define PREFERENCES_DST_OFFSET_KEY "dst_offset"
 

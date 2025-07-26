@@ -15,7 +15,6 @@
 #include "structs.h"
 #include "utils.h"
 
-#define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor_ns"
 #define PREFERENCES_DATA_KEY "crashdata"
 #define CRASH_SIGNATURE 0xDEADBEEF // A signature to identify whether we have or not data in RTC
 #define MAX_BREADCRUMBS 8

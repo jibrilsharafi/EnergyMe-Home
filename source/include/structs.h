@@ -13,6 +13,13 @@ enum class Ade7953InterruptType {
   OTHER           // Other interrupts (SAG, etc.)
 };
 
+enum FirmwareState : int {
+    STABLE,
+    NEW_TO_TEST,
+    TESTING,
+    ROLLBACK
+};
+
 struct Statistics {
   unsigned long ade7953TotalInterrupts;
   unsigned long ade7953TotalHandledInterrupts;
@@ -48,63 +55,128 @@ struct Statistics {
     logVerbose(0), logDebug(0), logInfo(0), logWarning(0), logError(0), logFatal(0) {}
 };
 
-struct SystemInfo {
-    // Time and uptime
-    unsigned long uptimeSeconds;
-    unsigned long uptimeMillis;
-    char timestamp[TIMESTAMP_STRING_BUFFER_SIZE]; // Formatted timestamp
+// Static system information (rarely changes, only with firmware updates)
+struct SystemStaticInfo {
+    // Product & Company
+    char companyName[64];
+    char productName[64];
+    char fullProductName[128];
+    char productDescription[256];
+    char githubUrl[128];
+    char author[64];
+    char authorEmail[64];
     
-    // Internal RAM (DRAM)
-    unsigned long heapSizeBytes;           // Total heap size
-    unsigned long freeHeapBytes;           // Available heap
-    unsigned long minFreeHeapBytes;        // Lowest level of free heap since boot
-    unsigned long maxAllocHeapBytes;       // Largest block of heap that can be allocated at once
+    // Firmware & Build
+    char buildVersion[32];
+    char buildDate[32];
+    char buildTime[32];
+    char sketchMD5[33];  // MD5 hash (32 chars + null terminator)
     
-    // PSRAM (if available)
-    unsigned long psramSizeBytes;          // Total PSRAM size
-    unsigned long freePsramBytes;          // Available PSRAM
-    unsigned long minFreePsramBytes;       // Lowest level of free PSRAM since boot
-    unsigned long maxAllocPsramBytes;      // Largest block of PSRAM that can be allocated at once
+    // Hardware & Chip (mostly static)
+    char chipModel[32];        // ESP32, ESP32-S3, etc.
+    uint8_t chipRevision;      // Hardware revision
+    uint8_t chipCores;         // Number of CPU cores
+    uint64_t chipId;           // Unique chip ID
+    uint32_t flashChipSizeBytes;
+    uint32_t flashChipSpeedHz;
+    uint32_t psramSizeBytes;   // Total PSRAM (if available)
+    uint32_t cpuFrequencyMHz;  // CPU frequency
     
-    // Flash memory
-    unsigned long flashChipSizeBytes;      // Total flash chip size
-    unsigned long flashChipSpeedHz;        // Flash chip speed in Hz
-    unsigned long sketchSizeBytes;         // Current sketch size
-    unsigned long freeSketchSpaceBytes;    // Free sketch space
-    char sketchMD5[MD5_BUFFER_SIZE];       // MD5 hash of current sketch
+    // SDK versions
+    char sdkVersion[32];
+    char coreVersion[32];
     
-    // SPIFFS filesystem
-    unsigned long spiffsTotalBytes;
-    unsigned long spiffsUsedBytes;
-    unsigned long spiffsFreeBytes;
+    // Device configuration
+    char deviceId[32];
     
-    // Chip information
-    char chipModel[VERSION_BUFFER_SIZE];   // ESP32, ESP32-S2, etc.
-    unsigned int chipRevision;             // Chip revision number
-    unsigned int chipCores;                // Number of CPU cores
-    unsigned long cpuFreqMHz;              // CPU frequency in MHz
-    unsigned long cycleCount;              // Current CPU cycle count
-    uint64_t chipId;                       // Unique chip ID (MAC-based)
+    // Firmware state
+    FirmwareState firmwareState;
     
-    // SDK and Core versions
-    char sdkVersion[VERSION_BUFFER_SIZE];  // ESP-IDF version
-    char coreVersion[VERSION_BUFFER_SIZE]; // Arduino core version
-    
-    // Temperature (if available)
-    float temperatureCelsius;              // Internal temperature sensor
-    
-    SystemInfo()
-        : uptimeSeconds(0), uptimeMillis(0),
-          heapSizeBytes(0), freeHeapBytes(0), minFreeHeapBytes(0), maxAllocHeapBytes(0),
-          psramSizeBytes(0), freePsramBytes(0), minFreePsramBytes(0), maxAllocPsramBytes(0),
-          flashChipSizeBytes(0), flashChipSpeedHz(0), sketchSizeBytes(0), freeSketchSpaceBytes(0),
-          spiffsTotalBytes(0), spiffsUsedBytes(0), spiffsFreeBytes(0),
-          chipRevision(0), chipCores(0), cpuFreqMHz(0), cycleCount(0), chipId(0),
-          temperatureCelsius(0.0) {
+    SystemStaticInfo() {
+        // Initialize with safe defaults
+        memset(this, 0, sizeof(*this));
+        snprintf(companyName, sizeof(companyName), "Unknown");
+        snprintf(productName, sizeof(productName), "Unknown");
+        snprintf(fullProductName, sizeof(fullProductName), "Unknown");
+        snprintf(productDescription, sizeof(productDescription), "Unknown");
+        snprintf(githubUrl, sizeof(githubUrl), "Unknown");
+        snprintf(author, sizeof(author), "Unknown");
+        snprintf(authorEmail, sizeof(authorEmail), "Unknown");
+        snprintf(buildVersion, sizeof(buildVersion), "Unknown");
+        snprintf(buildDate, sizeof(buildDate), "Unknown");
+        snprintf(buildTime, sizeof(buildTime), "Unknown");
         snprintf(sketchMD5, sizeof(sketchMD5), "Unknown");
         snprintf(chipModel, sizeof(chipModel), "Unknown");
         snprintf(sdkVersion, sizeof(sdkVersion), "Unknown");
         snprintf(coreVersion, sizeof(coreVersion), "Unknown");
+        snprintf(deviceId, sizeof(deviceId), "Unknown");
+        firmwareState = STABLE;
+    }
+};
+
+// Dynamic system information (changes frequently)
+struct SystemDynamicInfo {
+    // Time & Uptime
+    uint64_t uptimeMilliseconds;
+    uint32_t uptimeSeconds;
+    char currentTimestamp[32];
+    
+    // Memory - Heap (DRAM)
+    uint32_t heapTotalBytes;
+    uint32_t heapFreeBytes;
+    uint32_t heapUsedBytes;
+    uint32_t heapMinFreeBytes;      // Lowest since boot
+    uint32_t heapMaxAllocBytes;     // Largest allocatable block
+    float heapFreePercentage;
+    float heapUsedPercentage;
+    
+    // Memory - PSRAM
+    uint32_t psramFreeBytes;
+    uint32_t psramUsedBytes;
+    uint32_t psramMinFreeBytes;
+    uint32_t psramMaxAllocBytes;
+    float psramFreePercentage;
+    float psramUsedPercentage;
+    
+    // Storage - SPIFFS
+    uint32_t spiffsTotalBytes;
+    uint32_t spiffsUsedBytes;
+    uint32_t spiffsFreeBytes;
+    float spiffsFreePercentage;
+    float spiffsUsedPercentage;
+    
+    // Performance
+    float temperatureCelsius;
+    
+    // Network status
+    int32_t wifiRssi;
+    bool wifiConnected;
+    char wifiSsid[128];
+    char wifiMacAddress[18];
+    char wifiLocalIp[16];
+    char wifiGatewayIp[16];
+    char wifiSubnetMask[16];
+    char wifiDnsIp[16];
+    char wifiBssid[18];
+    
+    SystemDynamicInfo() {
+        memset(this, 0, sizeof(*this));
+        temperatureCelsius = -273.15f; // Invalid temp indicator
+        wifiRssi = -100; // Invalid RSSI indicator
+    }
+};
+
+// Combined container for convenience
+struct SystemInfo {
+    SystemStaticInfo static_info;
+    SystemDynamicInfo dynamic_info;
+    
+    // Convenience methods
+    void updateDynamic();
+    void updateStatic();
+    void updateAll() {
+        updateStatic();
+        updateDynamic();
     }
 };
 
@@ -297,11 +369,4 @@ struct CustomMqttConfiguration {
       snprintf(lastConnectionStatus, sizeof(lastConnectionStatus), "Never attempted");
       snprintf(lastConnectionAttemptTimestamp, sizeof(lastConnectionAttemptTimestamp), "Never attempted");
     }
-};
-
-enum FirmwareState : int {
-    STABLE,
-    NEW_TO_TEST,
-    TESTING,
-    ROLLBACK
 };

@@ -254,7 +254,6 @@ namespace CustomWifi
     if (
         MDNS.begin(MDNS_HOSTNAME) &&
         MDNS.addService("http", "tcp", WEBSERVER_PORT) &&
-        MDNS.addService("mqtt", "tcp", MQTT_CUSTOM_PORT_DEFAULT) &&
         MDNS.addService("modbus", "tcp", MODBUS_TCP_PORT))
     {
       logger.info("mDNS setup done", TAG);

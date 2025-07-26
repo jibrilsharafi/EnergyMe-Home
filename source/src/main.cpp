@@ -185,7 +185,7 @@ void setup() {
     logger.info("WiFi setup done", TAG);
 
     while (!CustomWifi::isFullyConnected()) { // TODO: make better?
-        logger.info("Waiting for full WiFi connection...", TAG);
+        logger.debug("Waiting for full WiFi connection...", TAG);
         delay(1000);
     }
 

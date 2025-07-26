@@ -7,7 +7,8 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
-#define PREFERENCES_NAMESPACE_LED "led_ns"
+#include "constants.h"
+
 #define PREFERENCES_BRIGHTNESS_KEY "brightness"
 
 #define INVALID_PIN -1 // Used for initialization of pins

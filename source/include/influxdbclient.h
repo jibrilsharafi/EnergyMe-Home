@@ -12,7 +12,6 @@
 #include "customtime.h"
 #include "customwifi.h"
 
-#define PREFERENCES_NAMESPACE_INFLUXDB "influxdb_ns"
 #define INFLUXDB_ENABLED_DEFAULT false
 #define INFLUXDB_SERVER_DEFAULT "localhost"
 #define INFLUXDB_PORT_DEFAULT 8086

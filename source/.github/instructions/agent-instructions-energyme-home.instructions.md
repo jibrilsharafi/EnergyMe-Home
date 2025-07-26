@@ -44,3 +44,7 @@ Provide project context and coding guidelines that AI should follow when generat
     - Initialize all configuration fields with sensible defaults
     - Log JSON parsing errors clearly
     - Don't worry about JSON document size - plenty of PSRAM available
+
+7. **Data storage**:
+    - Use Preferences wherever possible for configuration storage
+    - Use SPIFFS (to update in the future to LittleFS) for historical data storage

@@ -1,4 +1,5 @@
 #include "custommqtt.h"
+#include <Preferences.h>
 
 static const char *TAG = "custommqtt";
 
@@ -87,10 +88,17 @@ void CustomMqtt::_setDefaultConfiguration()
 {
     _logger.debug("Setting default custom MQTT configuration...", TAG);
 
-    createDefaultCustomMqttConfigurationFile();
-
+    // Create default configuration JSON
     JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
+    _jsonDocument["enabled"] = false;
+    _jsonDocument["server"] = "";
+    _jsonDocument["port"] = 1883;
+    _jsonDocument["clientid"] = "energyme";
+    _jsonDocument["topic"] = "energyme/meter";
+    _jsonDocument["frequency"] = 10;
+    _jsonDocument["useCredentials"] = false;
+    _jsonDocument["username"] = "";
+    _jsonDocument["password"] = "";
 
     setConfiguration(_jsonDocument);
 
@@ -136,42 +144,61 @@ bool CustomMqtt::setConfiguration(JsonDocument &jsonDocument)
 
 void CustomMqtt::_setConfigurationFromSpiffs()
 {
-    _logger.debug("Setting custom MQTT configuration from SPIFFS...", TAG);
+    _logger.debug("Setting custom MQTT configuration from Preferences...", TAG);
 
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    if (!setConfiguration(_jsonDocument))
-    {
-        _logger.error("Failed to set custom MQTT configuration from SPIFFS. Using default one", TAG);
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_MQTT, true)) { // true = read-only
+        _logger.error("Failed to open Preferences namespace for MQTT. Using default configuration", TAG);
         _setDefaultConfiguration();
         return;
     }
 
-    _logger.debug("Successfully set custom MQTT configuration from SPIFFS", TAG);
+    JsonDocument _jsonDocument;
+    _jsonDocument["enabled"] = preferences.getBool(PREF_KEY_MQTT_ENABLED, false);
+    _jsonDocument["server"] = preferences.getString(PREF_KEY_MQTT_SERVER, "");
+    _jsonDocument["port"] = preferences.getUInt(PREF_KEY_MQTT_PORT, 1883);
+    _jsonDocument["clientid"] = preferences.getString(PREF_KEY_MQTT_CLIENT_ID, "energyme");
+    _jsonDocument["topic"] = preferences.getString(PREF_KEY_MQTT_TOPIC, "energyme/meter");
+    _jsonDocument["frequency"] = preferences.getUInt(PREF_KEY_MQTT_FREQUENCY, 10);
+    _jsonDocument["useCredentials"] = preferences.getBool(PREF_KEY_MQTT_USE_CREDENTIALS, false);
+    _jsonDocument["username"] = preferences.getString(PREF_KEY_MQTT_USERNAME, "");
+    _jsonDocument["password"] = preferences.getString(PREF_KEY_MQTT_PASSWORD, "");
+
+    preferences.end();
+
+    if (!setConfiguration(_jsonDocument))
+    {
+        _logger.error("Failed to set custom MQTT configuration from Preferences. Using default one", TAG);
+        _setDefaultConfiguration();
+        return;
+    }
+
+    _logger.debug("Successfully set custom MQTT configuration from Preferences", TAG);
 }
 
 void CustomMqtt::_saveConfigurationToSpiffs()
 {
-    _logger.debug("Saving custom MQTT configuration to SPIFFS...", TAG);
+    _logger.debug("Saving custom MQTT configuration to Preferences...", TAG);
 
-    JsonDocument _jsonDocument;
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_MQTT, false)) { // false = read-write
+        _logger.error("Failed to open Preferences namespace for MQTT", TAG);
+        return;
+    }
 
-    _jsonDocument["enabled"] = _customMqttConfiguration.enabled;
-    _jsonDocument["server"] = _customMqttConfiguration.server;
-    _jsonDocument["port"] = _customMqttConfiguration.port;
-    _jsonDocument["clientid"] = _customMqttConfiguration.clientid;
-    _jsonDocument["topic"] = _customMqttConfiguration.topic;
-    _jsonDocument["frequency"] = _customMqttConfiguration.frequency;
-    _jsonDocument["useCredentials"] = _customMqttConfiguration.useCredentials;
-    _jsonDocument["username"] = _customMqttConfiguration.username;
-    _jsonDocument["password"] = _customMqttConfiguration.password;
-    _jsonDocument["lastConnectionStatus"] = _customMqttConfiguration.lastConnectionStatus;
-    _jsonDocument["lastConnectionAttemptTimestamp"] = _customMqttConfiguration.lastConnectionAttemptTimestamp;
+    preferences.putBool(PREF_KEY_MQTT_ENABLED, _customMqttConfiguration.enabled);
+    preferences.putString(PREF_KEY_MQTT_SERVER, _customMqttConfiguration.server);
+    preferences.putUInt(PREF_KEY_MQTT_PORT, _customMqttConfiguration.port);
+    preferences.putString(PREF_KEY_MQTT_CLIENT_ID, _customMqttConfiguration.clientid);
+    preferences.putString(PREF_KEY_MQTT_TOPIC, _customMqttConfiguration.topic);
+    preferences.putUInt(PREF_KEY_MQTT_FREQUENCY, _customMqttConfiguration.frequency);
+    preferences.putBool(PREF_KEY_MQTT_USE_CREDENTIALS, _customMqttConfiguration.useCredentials);
+    preferences.putString(PREF_KEY_MQTT_USERNAME, _customMqttConfiguration.username);
+    preferences.putString(PREF_KEY_MQTT_PASSWORD, _customMqttConfiguration.password);
 
-    serializeJsonToSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
+    preferences.end();
 
-    _logger.debug("Successfully saved custom MQTT configuration to SPIFFS", TAG);
+    _logger.debug("Successfully saved custom MQTT configuration to Preferences", TAG);
 }
 
 bool CustomMqtt::_validateJsonConfiguration(JsonDocument &jsonDocument)
@@ -198,12 +225,17 @@ bool CustomMqtt::_validateJsonConfiguration(JsonDocument &jsonDocument)
 void CustomMqtt::_disable() {
     _logger.debug("Disabling custom MQTT...", TAG);
 
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_MQTT, false)) { // false = read-write
+        _logger.error("Failed to open Preferences namespace for MQTT", TAG);
+        return;
+    }
 
-    _jsonDocument["enabled"] = false;
+    preferences.putBool(PREF_KEY_MQTT_ENABLED, false);
+    preferences.end();
 
-    setConfiguration(_jsonDocument);
+    // Update the configuration object
+    _customMqttConfiguration.enabled = false;
     
     // Don't reset _isSetupDone - configuration is still loaded, just disabled
     _mqttConnectionAttempt = 0;

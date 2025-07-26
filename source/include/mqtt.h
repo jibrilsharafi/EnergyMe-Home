@@ -63,7 +63,6 @@
 #define MQTT_BASIC_INGEST AWS_TOPIC "/rules"
 
 // Certificates path
-#define PREFERENCES_NAMESPACE_CERTIFICATES "certificates"
 #define PREFS_KEY_CERTIFICATE "certificate"
 #define PREFS_KEY_PRIVATE_KEY "private_key"
 #define KEY_SIZE 256

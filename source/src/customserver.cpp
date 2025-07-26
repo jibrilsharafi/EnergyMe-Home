@@ -5,54 +5,132 @@ static const char *TAG = "customserver";
 namespace CustomServer {
   static AsyncWebServer server(WEBSERVER_PORT);
   static AsyncAuthenticationMiddleware digestAuth;
+  static AsyncRateLimitMiddleware rateLimit;
+  static AsyncLoggingMiddleware requestLogger;
 
   void begin() {
     logger.debug("Setting up web server...", TAG);
     
     // Configure digest authentication (more secure than basic auth)
-    digestAuth.setUsername("admin");
-    digestAuth.setPassword("admin");
-    digestAuth.setRealm("EnergyMe - Home");
+    digestAuth.setUsername(WEBSERVER_DEFAULT_USERNAME);
+    digestAuth.setPassword(WEBSERVER_DEFAULT_PASSWORD);
+    digestAuth.setRealm(WEBSERVER_REALM);
     digestAuth.setAuthFailureMessage("Authentication required");
     digestAuth.setAuthType(AsyncAuthType::AUTH_DIGEST);
     digestAuth.generateHash();  // precompute hash for better performance
     
-    logger.debug("Digest authentication configured", TAG);    // Root page with basic auth
-    server
-      .on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        String html = "<!DOCTYPE html>";
-        html += "<html><head><title>EnergyMe - Home</title>";
-        html += "<style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5;}";
-        html += ".container{max-width:600px;margin:0 auto;background:white;padding:30px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}";
-        html += "h1{color:#333;text-align:center;margin-bottom:30px;}";
-        html += ".info{background:#e8f4fd;padding:15px;border-radius:5px;margin:20px 0;}";
-        html += ".status{color:#28a745;font-weight:bold;}";
-        html += "</style></head><body>";
-        html += "<div class='container'>";
-        html += "<h1>🏠 EnergyMe - Home</h1>";
-        html += "<div class='info'>";
-        html += "<p><strong>Status:</strong> <span class='status'>System Online</span></p>";
-        html += "<p><strong>Device ID:</strong> " + WiFi.macAddress() + "</p>";
-        html += "<p><strong>IP Address:</strong> " + WiFi.localIP().toString() + "</p>";
-        html += "<p><strong>Free Heap:</strong> " + String(ESP.getFreeHeap()) + " bytes</p>";
-        html += "<p><strong>Uptime:</strong> " + String(millis() / 1000) + " seconds</p>";
-        html += "</div>";
-        html += "<p>Welcome to EnergyMe - Home web interface!</p>";
-        html += "<p>More features will be available soon...</p>";
-        html += "</div></body></html>";
-        
-        request->send(200, "text/html", html);
-      })
-      .addMiddleware(&digestAuth);
+    logger.debug("Digest authentication configured", TAG);
 
-    // Simple health check endpoint (no auth required)
-    server.on("/health", HTTP_GET, [](AsyncWebServerRequest *request) {
-      request->send(200, "application/json", "{\"status\":\"ok\",\"uptime\":" + String(millis()) + "}");
+    // Set rate limiting to prevent abuse
+    rateLimit.setMaxRequests(WEBSERVER_MAX_REQUESTS);
+    rateLimit.setWindowSize(WEBSERVER_WINDOW_SIZE_SECONDS);
+      
+    requestLogger.setEnabled(true);
+    requestLogger.setOutput(Serial);
+
+    // === STATIC CONTENT (no auth required) ===
+    
+    // CSS files
+    server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/css", styles_css);
     });
+    
+    server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/css", button_css);
+    });
+
+    server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/css", section_css);
+    });
+
+    server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/css", typography_css);
+    });
+
+    // Resources
+    server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "image/svg+xml", favicon_svg);
+    });
+
+    // === AUTHENTICATED PAGES ===
+    
+    // Main dashboard
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/html", index_html);
+      });
+
+    // Configuration pages
+    server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/html", configuration_html);
+      });
+
+    server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/html", calibration_html);
+      });
+
+    server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/html", channel_html);
+      });
+
+    server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/html", info_html);
+      });
+
+    server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/html", log_html);
+      });
+
+    server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/html", update_html);
+      });
+
+    // Swagger UI
+    server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/html", swagger_ui_html);
+      });
+
+    server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/yaml", swagger_yaml);
+    });
+
+    // Combined system info (static + dynamic)
+    server.on("/api/v1/system", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        JsonDocument doc;
+        
+        // Get both static and dynamic info
+        JsonDocument staticDoc, dynamicDoc;
+        getJsonDeviceStaticInfo(staticDoc);
+        getJsonDeviceDynamicInfo(dynamicDoc);
+
+        // Combine into a single response
+        doc["static"] = staticDoc;
+        doc["dynamic"] = dynamicDoc;
+        
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    // Health check endpoint (lightweight)
+    server.on("/api/v1/health", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        JsonDocument doc;
+        doc["status"] = "ok";
+        doc["uptime"] = millis();
+        doc["freeHeap"] = ESP.getFreeHeap();
+        doc["timestamp"] = millis();
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    server.addMiddleware(&digestAuth);
+    server.addMiddleware(&requestLogger);
+
 
     // Start the server
     server.begin();
     logger.info("Web server started on port %d", TAG, WEBSERVER_PORT);
+    logger.info("Access web interface at: http://192.168.4.1/ (admin/admin)", TAG);
   }
 }
 

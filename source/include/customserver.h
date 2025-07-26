@@ -1,15 +1,25 @@
 #pragma once
 
+#include <WiFiManager.h>
 #include <Arduino.h>
 #include <AsyncTCP.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <AdvancedLogger.h>
+#include <ArduinoJson.h>
+#include <AsyncJson.h>
 
-// #include "constants.h"
+#include "constants.h"
 #include "globals.h"
+#include "binaries.h"
+#include "utils.h"
 
-#define WEBSERVER_PORT 80
+#define WEBSERVER_DEFAULT_USERNAME "admin"
+#define WEBSERVER_DEFAULT_PASSWORD "energyme"
+#define WEBSERVER_REALM "EnergyMe - Home"
+
+#define WEBSERVER_MAX_REQUESTS 180
+#define WEBSERVER_WINDOW_SIZE_SECONDS 60 // in seconds
 
 namespace CustomServer {
     void begin();

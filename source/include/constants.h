@@ -32,15 +32,11 @@
 #define MAXIMUM_UNIX_TIME_MILLISECONDS 4102444800000 // Corresponds to 2100
 
 // File path
-#define GENERAL_CONFIGURATION_JSON_PATH "/config/general.json"
 #define CONFIGURATION_ADE7953_JSON_PATH "/config/ade7953.json"
 #define CALIBRATION_JSON_PATH "/config/calibration.json"
 #define CHANNEL_DATA_JSON_PATH "/config/channel.json"
-#define CUSTOM_MQTT_CONFIGURATION_JSON_PATH "/config/custommqtt.json"
 #define ENERGY_JSON_PATH "/energy.json"
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
-#define FW_UPDATE_INFO_JSON_PATH "/fw-update-info.json"
-#define FW_UPDATE_STATUS_JSON_PATH "/fw-update-status.json"
 
 // Authentication
 #define PREFERENCES_NAMESPACE_AUTH "auth" 
@@ -52,6 +48,68 @@
 #define AUTH_SESSION_TIMEOUT (24 * 60 * 60 * 1000) // 24 hours in milliseconds
 #define AUTH_TOKEN_LENGTH 32
 #define MAX_CONCURRENT_SESSIONS 10 // Maximum number of concurrent login sessions
+
+// Preferences namespaces for configuration storage
+#define PREFERENCES_NAMESPACE_GENERAL "general_ns"
+#define PREFERENCES_NAMESPACE_ADE7953 "ade7953_ns"
+#define PREFERENCES_NAMESPACE_CALIBRATION "calibration_ns"
+#define PREFERENCES_NAMESPACE_CHANNELS "channels_ns"
+#define PREFERENCES_NAMESPACE_MQTT "mqtt_ns"
+#define PREFERENCES_NAMESPACE_INFLUXDB "influxdb_ns"
+#define PREFERENCES_NAMESPACE_BUTTON "button_ns"
+#define PREFERENCES_NAMESPACE_WIFI "wifi_ns"
+#define PREFERENCES_NAMESPACE_TIME "time_ns"
+#define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor_ns"
+#define PREFERENCES_NAMESPACE_CERTIFICATES "certificates_ns"
+#define PREFERENCES_NAMESPACE_LED "led_ns"
+
+// Preferences keys for general configuration
+#define PREF_KEY_TIMEZONE "timezone"
+#define PREF_KEY_LOCATION_LAT "locationLat"
+#define PREF_KEY_LOCATION_LON "locationLon"
+#define PREF_KEY_SEND_POWER_DATA "sendPowerData"
+#define PREF_KEY_LOG_LEVEL_PRINT "logLevelPrint"
+#define PREF_KEY_LOG_LEVEL_SAVE "logLevelSave"
+
+// Preferences keys for ADE7953 configuration
+#define PREF_KEY_SAMPLE_TIME "sampleTime"
+#define PREF_KEY_A_V_GAIN "aVGain"
+#define PREF_KEY_A_I_GAIN "aIGain"
+#define PREF_KEY_B_I_GAIN "bIGain"
+#define PREF_KEY_A_IRMS_OS "aIRmsOs"
+#define PREF_KEY_B_IRMS_OS "bIRmsOs"
+#define PREF_KEY_A_W_GAIN "aWGain"
+#define PREF_KEY_B_W_GAIN "bWGain"
+#define PREF_KEY_A_WATT_OS "aWattOs"
+#define PREF_KEY_B_WATT_OS "bWattOs"
+#define PREF_KEY_A_VAR_GAIN "aVarGain"
+#define PREF_KEY_B_VAR_GAIN "bVarGain"
+#define PREF_KEY_A_VAR_OS "aVarOs"
+#define PREF_KEY_B_VAR_OS "bVarOs"
+#define PREF_KEY_A_VA_GAIN "aVaGain"
+#define PREF_KEY_B_VA_GAIN "bVaGain"
+#define PREF_KEY_A_VA_OS "aVaOs"
+#define PREF_KEY_B_VA_OS "bVaOs"
+
+// Preferences keys for MQTT configuration
+#define PREF_KEY_MQTT_ENABLED "enabled"
+#define PREF_KEY_MQTT_SERVER "server"
+#define PREF_KEY_MQTT_PORT "port"
+#define PREF_KEY_MQTT_USERNAME "username"
+#define PREF_KEY_MQTT_PASSWORD "password"
+#define PREF_KEY_MQTT_CLIENT_ID "clientId"
+#define PREF_KEY_MQTT_TOPIC_PREFIX "topicPrefix"
+#define PREF_KEY_MQTT_PUBLISH_INTERVAL "publishInterval"
+#define PREF_KEY_MQTT_USE_CREDENTIALS "useCredentials"
+#define PREF_KEY_MQTT_TOPIC "topic"
+#define PREF_KEY_MQTT_FREQUENCY "frequency"
+
+// Preferences keys for channel configuration (per channel, format: "ch<N>_<property>")
+#define PREF_KEY_CHANNEL_ACTIVE_FMT "ch%d_active"
+#define PREF_KEY_CHANNEL_REVERSE_FMT "ch%d_reverse"
+#define PREF_KEY_CHANNEL_LABEL_FMT "ch%d_label"
+#define PREF_KEY_CHANNEL_PHASE_FMT "ch%d_phase"
+#define PREF_KEY_CHANNEL_CALIB_LABEL_FMT "ch%d_calibLabel"
 
 // Rate limiting for DoS protection
 #define MAX_LOGIN_ATTEMPTS 10 // Maximum failed login attempts before IP is blocked
@@ -117,7 +175,7 @@
 #define FILENAME_BUFFER_SIZE 256      // For file names in the filesystem
 #define LINE_PROTOCOL_BUFFER_SIZE 512 // For InfluxDB line protocol strings
 #define DECRYPTION_BUFFER_SIZE 512    // For decrypted data (certificates, tokens, etc.)
-#define JSON_STRING_PRINT_BUFFER_SIZE 256 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
+#define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
 #define PUBLIC_LOCATION_PAYLOAD_BUFFER_SIZE 512 // For public location API payloads
 #define HTTP_RESPONSE_BUFFER_SIZE 512 // For HTTP response strings
 #define JSON_RESPONSE_BUFFER_SIZE 2048 // For JSON response strings (reduced from 512B)
@@ -132,23 +190,6 @@
 #define AWS_IOT_CORE_CERT_BUFFER_SIZE 2048 // For AWS IoT Core certificate
 #define AWS_IOT_CORE_PRIVATE_KEY_BUFFER_SIZE 2048 // For AWS IoT Core private key
 #define PAYLOAD_BUFFER_SIZE 1024 // For InfluxDB payload (reduced from 16KB to 4KB)
-
-// Webserver
-#define API_UPDATE_THROTTLE_MS 500 // Minimum time between updates
-
-// Button
-
-// Button timing constants
-#define BUTTON_DEBOUNCE_TIME 50 // Debounce time in milliseconds
-#define BUTTON_SHORT_PRESS_TIME 2000 // Short press duration (Restart)
-#define BUTTON_MEDIUM_PRESS_TIME 6000 // Medium press duration (Password reset)
-#define BUTTON_LONG_PRESS_TIME 10000 // Long press duration (WiFi reset)
-#define BUTTON_VERY_LONG_PRESS_TIME 15000 // Very long press duration (Factory reset)
-#define BUTTON_MAX_PRESS_TIME 20000 // Maximum press duration
-
-// Button press patterns
-#define BUTTON_DOUBLE_PRESS_INTERVAL 500 // Maximum time between presses for double press detection
-#define BUTTON_TRIPLE_PRESS_INTERVAL 500 // Maximum time between presses for triple press detection
 
 // Custom MQTT
 #define DEFAULT_IS_CUSTOM_MQTT_ENABLED false
