@@ -212,8 +212,7 @@ void setup() {
     
     
     logger.debug("Setting up server...", TAG);
-    // customServer.begin();
-    server_begin();
+    CustomServer::begin();
     logger.info("Server setup done", TAG);
     
     logger.debug("Setting up Modbus TCP...", TAG);

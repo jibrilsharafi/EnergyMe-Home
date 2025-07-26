@@ -2,129 +2,58 @@
 
 static const char *TAG = "customserver";
 
-static AsyncWebServer server(80);
+namespace CustomServer {
+  static AsyncWebServer server(WEBSERVER_PORT);
+  static AsyncAuthenticationMiddleware digestAuth;
 
-// basicAuth
-static AsyncAuthenticationMiddleware basicAuth;
-static AsyncAuthenticationMiddleware basicAuthHash;
+  void begin() {
+    logger.debug("Setting up web server...", TAG);
+    
+    // Configure digest authentication (more secure than basic auth)
+    digestAuth.setUsername("admin");
+    digestAuth.setPassword("admin");
+    digestAuth.setRealm("EnergyMe - Home");
+    digestAuth.setAuthFailureMessage("Authentication required");
+    digestAuth.setAuthType(AsyncAuthType::AUTH_DIGEST);
+    digestAuth.generateHash();  // precompute hash for better performance
+    
+    logger.debug("Digest authentication configured", TAG);    // Root page with basic auth
+    server
+      .on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String html = "<!DOCTYPE html>";
+        html += "<html><head><title>EnergyMe - Home</title>";
+        html += "<style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5;}";
+        html += ".container{max-width:600px;margin:0 auto;background:white;padding:30px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}";
+        html += "h1{color:#333;text-align:center;margin-bottom:30px;}";
+        html += ".info{background:#e8f4fd;padding:15px;border-radius:5px;margin:20px 0;}";
+        html += ".status{color:#28a745;font-weight:bold;}";
+        html += "</style></head><body>";
+        html += "<div class='container'>";
+        html += "<h1>🏠 EnergyMe - Home</h1>";
+        html += "<div class='info'>";
+        html += "<p><strong>Status:</strong> <span class='status'>System Online</span></p>";
+        html += "<p><strong>Device ID:</strong> " + WiFi.macAddress() + "</p>";
+        html += "<p><strong>IP Address:</strong> " + WiFi.localIP().toString() + "</p>";
+        html += "<p><strong>Free Heap:</strong> " + String(ESP.getFreeHeap()) + " bytes</p>";
+        html += "<p><strong>Uptime:</strong> " + String(millis() / 1000) + " seconds</p>";
+        html += "</div>";
+        html += "<p>Welcome to EnergyMe - Home web interface!</p>";
+        html += "<p>More features will be available soon...</p>";
+        html += "</div></body></html>";
+        
+        request->send(200, "text/html", html);
+      })
+      .addMiddleware(&digestAuth);
 
-// simple digest authentication
-static AsyncAuthenticationMiddleware digestAuth;
-static AsyncAuthenticationMiddleware digestAuthHash;
+    // Simple health check endpoint (no auth required)
+    server.on("/health", HTTP_GET, [](AsyncWebServerRequest *request) {
+      request->send(200, "application/json", "{\"status\":\"ok\",\"uptime\":" + String(millis()) + "}");
+    });
 
-// complex authentication which adds request attributes for the next middlewares and handler
-static AsyncMiddlewareFunction complexAuth([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
-  if (!request->authenticate("user", "password")) {
-    return request->requestAuthentication();
+    // Start the server
+    server.begin();
+    logger.info("Web server started on port %d", TAG, WEBSERVER_PORT);
   }
-
-  // add attributes to the request for the next middlewares and handler
-  request->setAttribute("user", "Mathieu");
-  request->setAttribute("role", "staff");
-  if (request->hasParam("token")) {
-    request->setAttribute("token", request->getParam("token")->value().c_str());
-  }
-
-  next();
-});
-
-static AsyncAuthorizationMiddleware authz([](AsyncWebServerRequest *request) {
-  return request->getAttribute("token") == "123";
-});
-
-void server_begin() {
-  // basic authentication
-  basicAuth.setUsername("admin");
-  basicAuth.setPassword("admin");
-  basicAuth.setRealm("MyApp");
-  basicAuth.setAuthFailureMessage("Authentication failed");
-  basicAuth.setAuthType(AsyncAuthType::AUTH_BASIC);
-  basicAuth.generateHash();  // precompute hash (optional but recommended)
-
-  // basic authentication with hash
-  basicAuthHash.setUsername("admin");
-  basicAuthHash.setPasswordHash("YWRtaW46YWRtaW4=");  // BASE64(admin:admin)
-  basicAuthHash.setRealm("MyApp");
-  basicAuthHash.setAuthFailureMessage("Authentication failed");
-  basicAuthHash.setAuthType(AsyncAuthType::AUTH_BASIC);
-
-  // digest authentication
-  digestAuth.setUsername("admin");
-  digestAuth.setPassword("admin");
-  digestAuth.setRealm("MyApp");
-  digestAuth.setAuthFailureMessage("Authentication failed");
-  digestAuth.setAuthType(AsyncAuthType::AUTH_DIGEST);
-  digestAuth.generateHash();  // precompute hash (optional but recommended)
-
-  // digest authentication with hash
-  digestAuthHash.setUsername("admin");
-  digestAuthHash.setPasswordHash("f499b71f9a36d838b79268e145e132f7");  // MD5(user:realm:pass)
-  digestAuthHash.setRealm("MyApp");
-  digestAuthHash.setAuthFailureMessage("Authentication failed");
-  digestAuthHash.setAuthType(AsyncAuthType::AUTH_DIGEST);
-
-  // basic authentication method
-  // curl -v -u admin:admin  http://192.168.4.1/auth-basic
-  server
-    .on(
-      "/auth-basic", HTTP_GET,
-      [](AsyncWebServerRequest *request) {
-        request->send(200, "text/plain", "Hello, world!");
-      }
-    )
-    .addMiddleware(&basicAuth);
-
-  // basic authentication method with hash
-  // curl -v -u admin:admin  http://192.168.4.1/auth-basic-hash
-  server
-    .on(
-      "/auth-basic-hash", HTTP_GET,
-      [](AsyncWebServerRequest *request) {
-        request->send(200, "text/plain", "Hello, world!");
-      }
-    )
-    .addMiddleware(&basicAuthHash);
-
-  // digest authentication
-  // curl -v -u admin:admin --digest  http://192.168.4.1/auth-digest
-  server
-    .on(
-      "/auth-digest", HTTP_GET,
-      [](AsyncWebServerRequest *request) {
-        request->send(200, "text/plain", "Hello, world!");
-      }
-    )
-    .addMiddleware(&digestAuth);
-
-  // digest authentication with hash
-  // curl -v -u admin:admin --digest  http://192.168.4.1/auth-digest-hash
-  server
-    .on(
-      "/auth-digest-hash", HTTP_GET,
-      [](AsyncWebServerRequest *request) {
-        request->send(200, "text/plain", "Hello, world!");
-      }
-    )
-    .addMiddleware(&digestAuthHash);
-
-  // test digest auth custom authorization middleware
-  // curl -v --digest -u user:password  http://192.168.4.1/auth-custom?token=123 => OK
-  // curl -v --digest -u user:password  http://192.168.4.1/auth-custom?token=456 => 403
-  // curl -v --digest -u user:FAILED  http://192.168.4.1/auth-custom?token=456 => 401
-  server
-    .on(
-      "/auth-custom", HTTP_GET,
-      [](AsyncWebServerRequest *request) {
-        String buffer = "Hello ";
-        buffer.concat(request->getAttribute("user"));
-        buffer.concat(" with role: ");
-        buffer.concat(request->getAttribute("role"));
-        request->send(200, "text/plain", buffer);
-      }
-    )
-    .addMiddlewares({&complexAuth, &authz});
-
-  server.begin();
 }
 
 // CustomServer::CustomServer(

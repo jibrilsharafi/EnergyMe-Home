@@ -517,6 +517,7 @@ void updateStatistics() {
 }
 
 void printStatistics() {
+    logger.info("--- Statistics ---", TAG);
     logger.debug("Statistics - ADE7953: %ld total interrupts | %ld handled interrupts | %ld readings | %ld reading failures", 
         TAG, 
         statistics.ade7953TotalInterrupts, 
@@ -564,6 +565,7 @@ void printStatistics() {
         statistics.logError, 
         statistics.logFatal
     );
+    logger.info("-------------------", TAG);
 }
 
 void systemInfoToJson(JsonDocument& jsonDocument) {
