@@ -4,7 +4,7 @@
 
 #include "constants.h"
 
-// Enumeration for different types of ADE7953 interrupts
+// Enumeration for different types of ADE7953 interrupts | TODO: move to ade7953.h
 enum class Ade7953InterruptType {
   NONE,           // No interrupt or unknown
   CYCEND,         // Line cycle end - normal meter reading
@@ -46,6 +46,66 @@ struct Statistics {
     mqttMessagesPublished(0), mqttMessagesPublishedError(0), customMqttMessagesPublished(0), customMqttMessagesPublishedError(0), modbusRequests(0), modbusRequestsError(0), 
     influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0),
     logVerbose(0), logDebug(0), logInfo(0), logWarning(0), logError(0), logFatal(0) {}
+};
+
+struct SystemInfo {
+    // Time and uptime
+    unsigned long uptimeSeconds;
+    unsigned long uptimeMillis;
+    char timestamp[TIMESTAMP_STRING_BUFFER_SIZE]; // Formatted timestamp
+    
+    // Internal RAM (DRAM)
+    unsigned long heapSizeBytes;           // Total heap size
+    unsigned long freeHeapBytes;           // Available heap
+    unsigned long minFreeHeapBytes;        // Lowest level of free heap since boot
+    unsigned long maxAllocHeapBytes;       // Largest block of heap that can be allocated at once
+    
+    // PSRAM (if available)
+    unsigned long psramSizeBytes;          // Total PSRAM size
+    unsigned long freePsramBytes;          // Available PSRAM
+    unsigned long minFreePsramBytes;       // Lowest level of free PSRAM since boot
+    unsigned long maxAllocPsramBytes;      // Largest block of PSRAM that can be allocated at once
+    
+    // Flash memory
+    unsigned long flashChipSizeBytes;      // Total flash chip size
+    unsigned long flashChipSpeedHz;        // Flash chip speed in Hz
+    unsigned long sketchSizeBytes;         // Current sketch size
+    unsigned long freeSketchSpaceBytes;    // Free sketch space
+    char sketchMD5[MD5_BUFFER_SIZE];       // MD5 hash of current sketch
+    
+    // SPIFFS filesystem
+    unsigned long spiffsTotalBytes;
+    unsigned long spiffsUsedBytes;
+    unsigned long spiffsFreeBytes;
+    
+    // Chip information
+    char chipModel[VERSION_BUFFER_SIZE];   // ESP32, ESP32-S2, etc.
+    unsigned int chipRevision;             // Chip revision number
+    unsigned int chipCores;                // Number of CPU cores
+    unsigned long cpuFreqMHz;              // CPU frequency in MHz
+    unsigned long cycleCount;              // Current CPU cycle count
+    uint64_t chipId;                       // Unique chip ID (MAC-based)
+    
+    // SDK and Core versions
+    char sdkVersion[VERSION_BUFFER_SIZE];  // ESP-IDF version
+    char coreVersion[VERSION_BUFFER_SIZE]; // Arduino core version
+    
+    // Temperature (if available)
+    float temperatureCelsius;              // Internal temperature sensor
+    
+    SystemInfo()
+        : uptimeSeconds(0), uptimeMillis(0),
+          heapSizeBytes(0), freeHeapBytes(0), minFreeHeapBytes(0), maxAllocHeapBytes(0),
+          psramSizeBytes(0), freePsramBytes(0), minFreePsramBytes(0), maxAllocPsramBytes(0),
+          flashChipSizeBytes(0), flashChipSpeedHz(0), sketchSizeBytes(0), freeSketchSpaceBytes(0),
+          spiffsTotalBytes(0), spiffsUsedBytes(0), spiffsFreeBytes(0),
+          chipRevision(0), chipCores(0), cpuFreqMHz(0), cycleCount(0), chipId(0),
+          temperatureCelsius(0.0) {
+        snprintf(sketchMD5, sizeof(sketchMD5), "Unknown");
+        snprintf(chipModel, sizeof(chipModel), "Unknown");
+        snprintf(sdkVersion, sizeof(sdkVersion), "Unknown");
+        snprintf(coreVersion, sizeof(coreVersion), "Unknown");
+    }
 };
 
 struct DebugFlagsRtc {

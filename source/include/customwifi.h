@@ -11,10 +11,15 @@
 #include "globals.h"
 #include "led.h"
 
+#define WIFI_TASK_NAME "wifi_task"
+#define WIFI_TASK_STACK_SIZE 8192
+#define WIFI_TASK_PRIORITY 5
+
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
 #define WIFI_LOOP_INTERVAL (1 * 1000)
 #define WIFI_CONNECT_TIMEOUT 60                   // In seconds
 #define WIFI_PORTAL_TIMEOUT (3 * 60)              // In seconds
+#define WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS 3             // Maximum reconnection attempts before giving up
 #define WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS 5 // Maximum WiFi reconnection attempts before restart
 #define WIFI_RECONNECT_DELAY_BASE (5 * 1000)      // Base delay for exponential backoff
 #define WIFI_STABLE_CONNECTION (5 * 60 * 1000)    // Duration of uninterrupted WiFi connection to reset the reconnection counter

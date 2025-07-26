@@ -405,6 +405,56 @@ void restartEsp32() {
     ESP.restart();
 }
 
+void populateSystemInfo(SystemInfo& systemInfo) {
+    logger.debug("Populating system info...", TAG);
+
+    // Time and uptime
+    systemInfo.uptimeMillis = millis();
+    systemInfo.uptimeSeconds = systemInfo.uptimeMillis / 1000;
+    CustomTime::getTimestamp(systemInfo.timestamp, sizeof(systemInfo.timestamp));
+
+    // Internal RAM (DRAM)
+    systemInfo.heapSizeBytes = ESP.getHeapSize();
+    systemInfo.freeHeapBytes = ESP.getFreeHeap();
+    systemInfo.minFreeHeapBytes = ESP.getMinFreeHeap();
+    systemInfo.maxAllocHeapBytes = ESP.getMaxAllocHeap();
+
+    // PSRAM (if available)
+    systemInfo.psramSizeBytes = ESP.getPsramSize();
+    systemInfo.freePsramBytes = ESP.getFreePsram();
+    systemInfo.minFreePsramBytes = ESP.getMinFreePsram();
+    systemInfo.maxAllocPsramBytes = ESP.getMaxAllocPsram();
+
+    // Flash memory
+    systemInfo.flashChipSizeBytes = ESP.getFlashChipSize();
+    systemInfo.flashChipSpeedHz = ESP.getFlashChipSpeed();
+    systemInfo.sketchSizeBytes = ESP.getSketchSize();
+    systemInfo.freeSketchSpaceBytes = ESP.getFreeSketchSpace();
+    snprintf(systemInfo.sketchMD5, sizeof(systemInfo.sketchMD5), "%s", ESP.getSketchMD5().c_str());
+
+    // SPIFFS filesystem
+    systemInfo.spiffsTotalBytes = SPIFFS.totalBytes();
+    systemInfo.spiffsUsedBytes = SPIFFS.usedBytes();
+    systemInfo.spiffsFreeBytes = SPIFFS.totalBytes() - SPIFFS.usedBytes();
+
+    // Chip information
+    snprintf(systemInfo.chipModel, sizeof(systemInfo.chipModel), "%s", ESP.getChipModel());
+    systemInfo.chipRevision = ESP.getChipRevision();
+    systemInfo.chipCores = ESP.getChipCores();
+    systemInfo.cpuFreqMHz = ESP.getCpuFreqMHz();
+    systemInfo.cycleCount = ESP.getCycleCount();
+    systemInfo.chipId = ESP.getEfuseMac();
+
+    // SDK and Core versions
+    snprintf(systemInfo.sdkVersion, sizeof(systemInfo.sdkVersion), "%s", ESP.getSdkVersion());
+    snprintf(systemInfo.coreVersion, sizeof(systemInfo.coreVersion), "%s", ESP.getCoreVersion());
+
+    // Temperature
+    systemInfo.temperatureCelsius = temperatureRead();
+
+    logger.debug("System info populated", TAG);
+}
+
 
 // Print functions
 // -----------------------------
@@ -431,34 +481,25 @@ void printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
 
 void printDeviceStatus()
 {
-    unsigned int heapSize = ESP.getHeapSize();
-    unsigned int freeHeap = ESP.getFreeHeap();
-    unsigned int minFreeHeap = ESP.getMinFreeHeap();
-    unsigned int maxAllocHeap = ESP.getMaxAllocHeap();
+    SystemInfo info;
+    populateSystemInfo(info);
 
-    unsigned int SpiffsTotalBytes = SPIFFS.totalBytes();
-    unsigned int SpiffsUsedBytes = SPIFFS.usedBytes();
-    unsigned int SpiffsFreeBytes = SpiffsTotalBytes - SpiffsUsedBytes;
-    
-    float heapUsedPercentage = ((float)(heapSize - freeHeap) / heapSize) * 100.0;
-    float heapFreePercentage = ((float)freeHeap / heapSize) * 100.0;
-    float spiffsUsedPercentage = ((float)SpiffsUsedBytes / SpiffsTotalBytes) * 100.0;
-    float spiffsFreePercentage = ((float)SpiffsFreeBytes / SpiffsTotalBytes) * 100.0;
+    logger.info("--- System Info ---", TAG);
+    logger.info("Uptime: %lu s (%lu ms)", TAG, info.uptimeSeconds, info.uptimeMillis);
+    logger.info("Timestamp: %s", TAG, info.timestamp);
 
-    logger.debug(
-        "Heap: %.1f%% used, %.1f%% free (%u free / %u total bytes) (min: %u bytes, max alloc: %u bytes) | SPIFFS: %.1f%% used, %.1f%% free (%u free / %u total bytes)",
-        TAG,
-        heapUsedPercentage,
-        heapFreePercentage,
-        freeHeap,
-        heapSize,
-        minFreeHeap,
-        maxAllocHeap,
-        spiffsUsedPercentage,
-        spiffsFreePercentage,
-        SpiffsFreeBytes,
-        SpiffsTotalBytes
-    );
+    logger.info("Heap: %lu total, %lu free, %lu min free, %lu max alloc", TAG, info.heapSizeBytes, info.freeHeapBytes, info.minFreeHeapBytes, info.maxAllocHeapBytes);
+    logger.info("PSRAM: %lu total, %lu free, %lu min free, %lu max alloc", TAG, info.psramSizeBytes, info.freePsramBytes, info.minFreePsramBytes, info.maxAllocPsramBytes);
+
+    logger.info("Flash: %lu bytes, %lu Hz", TAG, info.flashChipSizeBytes, info.flashChipSpeedHz);
+    logger.info("Sketch: %lu bytes, free: %lu bytes, MD5: %s", TAG, info.sketchSizeBytes, info.freeSketchSpaceBytes, info.sketchMD5);
+
+    logger.info("SPIFFS: %lu total, %lu used, %lu free", TAG, info.spiffsTotalBytes, info.spiffsUsedBytes, info.spiffsFreeBytes);
+
+    logger.info("Chip: %s, rev %u, cores %u, freq %lu MHz, cycles %lu, id 0x%llx", TAG, info.chipModel, info.chipRevision, info.chipCores, info.cpuFreqMHz, info.cycleCount, info.chipId);
+    logger.info("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
+    logger.info("Temperature: %.2f C", TAG, info.temperatureCelsius);
+    logger.info("-------------------", TAG);
 }
 
 void updateStatistics() {
@@ -523,6 +564,58 @@ void printStatistics() {
         statistics.logError, 
         statistics.logFatal
     );
+}
+
+void systemInfoToJson(JsonDocument& jsonDocument) {
+    logger.debug("Converting system info to JSON...", TAG);
+
+    SystemInfo info;
+    populateSystemInfo(info);
+
+    jsonDocument["uptimeSeconds"] = info.uptimeSeconds;
+    jsonDocument["uptimeMillis"] = info.uptimeMillis;
+    jsonDocument["timestamp"] = info.timestamp;
+
+    // Internal RAM (DRAM)
+    jsonDocument["heapSizeBytes"] = info.heapSizeBytes;
+    jsonDocument["freeHeapBytes"] = info.freeHeapBytes;
+    jsonDocument["minFreeHeapBytes"] = info.minFreeHeapBytes;
+    jsonDocument["maxAllocHeapBytes"] = info.maxAllocHeapBytes;
+
+    // PSRAM
+    jsonDocument["psramSizeBytes"] = info.psramSizeBytes;
+    jsonDocument["freePsramBytes"] = info.freePsramBytes;
+    jsonDocument["minFreePsramBytes"] = info.minFreePsramBytes;
+    jsonDocument["maxAllocPsramBytes"] = info.maxAllocPsramBytes;
+
+    // Flash
+    jsonDocument["flashChipSizeBytes"] = info.flashChipSizeBytes;
+    jsonDocument["flashChipSpeedHz"] = info.flashChipSpeedHz;
+    jsonDocument["sketchSizeBytes"] = info.sketchSizeBytes;
+    jsonDocument["freeSketchSpaceBytes"] = info.freeSketchSpaceBytes;
+    jsonDocument["sketchMD5"] = info.sketchMD5;
+
+    // SPIFFS
+    jsonDocument["spiffsTotalBytes"] = info.spiffsTotalBytes;
+    jsonDocument["spiffsUsedBytes"] = info.spiffsUsedBytes;
+    jsonDocument["spiffsFreeBytes"] = info.spiffsFreeBytes;
+
+    // Chip info
+    jsonDocument["chipModel"] = info.chipModel;
+    jsonDocument["chipRevision"] = info.chipRevision;
+    jsonDocument["chipCores"] = info.chipCores;
+    jsonDocument["cpuFreqMHz"] = info.cpuFreqMHz;
+    jsonDocument["cycleCount"] = info.cycleCount;
+    jsonDocument["chipId"] = (uint64_t)info.chipId;
+
+    // SDK/Core
+    jsonDocument["sdkVersion"] = info.sdkVersion;
+    jsonDocument["coreVersion"] = info.coreVersion;
+
+    // Temperature
+    jsonDocument["temperatureCelsius"] = info.temperatureCelsius;
+
+    logger.debug("System info converted to JSON", TAG);
 }
 
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {

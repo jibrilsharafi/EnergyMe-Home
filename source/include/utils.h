@@ -26,6 +26,8 @@
 
 void getJsonProductInfo(JsonDocument& jsonDocument);
 void getJsonDeviceInfo(JsonDocument& jsonDocument);
+void populateSystemInfo(SystemInfo& systemInfo);
+void systemInfoToJson(JsonDocument& jsonDocument);
 
 void setRestartEsp32(const char* functionName, const char* reason);
 void checkIfRestartEsp32Required();

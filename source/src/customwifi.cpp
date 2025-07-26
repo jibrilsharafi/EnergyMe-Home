@@ -39,7 +39,7 @@ namespace CustomWifi
     _setupWiFiManager();
 
     // Create WiFi connection task
-    xTaskCreate(_wifiConnectionTask, "wifi_task", 4096, NULL, 1, &_wifiTaskHandle); // TODO: use defines
+    xTaskCreate(_wifiConnectionTask, WIFI_TASK_NAME, WIFI_TASK_STACK_SIZE, NULL, WIFI_TASK_PRIORITY, &_wifiTaskHandle);
 
     logger.info("WiFi setup complete - event-driven mode enabled", TAG);
     return true;
@@ -55,7 +55,7 @@ namespace CustomWifi
   {
     _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT);
     _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT);
-    _wifiManager.setConnectRetries(3); // Let WiFiManager handle initial retries
+    _wifiManager.setConnectRetries(WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS); // Let WiFiManager handle initial retries
 
     // Callback when portal starts
     _wifiManager.setAPCallback([](WiFiManager *wm)
