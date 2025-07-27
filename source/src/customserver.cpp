@@ -68,6 +68,7 @@ namespace CustomServer {
     logger.debug("Rate limiting configured: max requests = %d, window size = %d seconds", TAG, WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
 
     // ---- Logging Middleware Setup ----
+    // TODO: remove this in production, it's for debugging only
     requestLogger.setEnabled(true);
     requestLogger.setOutput(Serial);
     
@@ -453,17 +454,17 @@ namespace CustomServer {
         
         if (Update.isRunning()) {
             doc["status"] = "running";
-            doc["size"] = Update.size();
-            doc["progress"] = Update.progress();
-            doc["remaining"] = Update.remaining();
-            doc["progressPercent"] = Update.size() > 0 ? (float)Update.progress() / Update.size() * 100.0 : 0.0;
         } else {
             doc["status"] = "idle";
-            doc["canRollback"] = Update.canRollBack();
-            if (Update.hasError()) {
-                doc["lastError"] = Update.errorString();
-            }
         }
+        
+        doc["canRollback"] = Update.canRollBack();
+        doc["hasError"] = Update.hasError();
+        doc["lastError"] = Update.errorString();
+        doc["size"] = Update.size();
+        doc["progress"] = Update.progress();
+        doc["remaining"] = Update.remaining();
+        doc["progressPercent"] = Update.size() > 0 ? (float)Update.progress() / Update.size() * 100.0 : 0.0;
         
         // Add current firmware info
         doc["currentVersion"] = FIRMWARE_BUILD_VERSION;

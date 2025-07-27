@@ -53,6 +53,8 @@ namespace CustomWifi
 
   static void _setupWiFiManager()
   {
+    logger.debug("Setting up the WiFiManager...", TAG);
+
     _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT);
     _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT);
     _wifiManager.setConnectRetries(WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS); // Let WiFiManager handle initial retries
@@ -60,19 +62,23 @@ namespace CustomWifi
     // Callback when portal starts
     _wifiManager.setAPCallback([](WiFiManager *wm)
                                {
-                                 logger.info("WiFi configuration portal started: %s", TAG, wm->getConfigPortalSSID().c_str());
+                                //  logger.info("WiFi configuration portal started: %s", TAG, wm->getConfigPortalSSID().c_str());
+                                Serial.println("WiFi configuration portal started");
                                  Led::block();
-                                 Led::setPurple(true); // Distinct color for portal mode
+                                 Led::setBlue(true); // Distinct color for portal mode
                                });
 
     // Callback when config is saved
     _wifiManager.setSaveConfigCallback([]()
                                        {
-            logger.warning("WiFi credentials saved via portal - restarting...", TAG);
+            // logger.info("WiFi credentials saved via portal - restarting...", TAG);
+            Serial.println("WiFi credentials saved");
             Led::setCyan(true);
             vTaskDelay(pdMS_TO_TICKS(1000));
             ESP.restart();
           });
+          
+    logger.debug("WiFiManager set up", TAG);
   }
 
   static void _onWiFiEvent(WiFiEvent_t event)
@@ -138,7 +144,11 @@ namespace CustomWifi
 
   static void _wifiConnectionTask(void *parameter)
   {
+    logger.debug("Starting wifi task...", TAG);
     uint32_t notificationValue;
+
+    // Wait for system to stabilize before WiFi connection
+    vTaskDelay(pdMS_TO_TICKS(2000));
 
     // Initial connection attempt
     Led::setBlue();
@@ -221,7 +231,7 @@ namespace CustomWifi
       }
 
       // Periodic health check (every 30 seconds)
-      if (WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0))
+      if (isFullyConnected())
       {
         // Reset failure counter on sustained connection
         if (_isInitialConnection || _reconnectAttempts > 0)

@@ -51,3 +51,4 @@ Provide project context and coding guidelines that AI should follow when generat
 
 8. **Agent capabilities**:
     - Never ask to run `pio` or `platformio` commands as they won't work directly in the terminal. Assume the user will run them manually.
+    - Always stick to the request, and avoid at all costs creating new files unless asked to. Proposals are accepted.
