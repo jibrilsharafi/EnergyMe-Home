@@ -350,14 +350,7 @@ bool loadConfigFromPreferences(const char* configType, JsonDocument& jsonDocumen
             jsonDocument["lastConnectionAttemptTimestamp"] = prefs.getString("lastAttempt", "");
             prefs.end();
         }
-        
-    } else if (strcmp(configType, "general") == 0) {
-        char buffer[256];
-        if (PreferencesConfig::getTimezone(buffer, sizeof(buffer))) {
-            jsonDocument["timezone"] = buffer;
-        }
-        jsonDocument["sendPowerData"] = PreferencesConfig::getSendPowerData();
-        
+    
     } else {
         logger.warning("Unknown config type: %s", TAG, configType);
         return false;
@@ -432,10 +425,6 @@ bool saveConfigToPreferences(const char* configType, JsonDocument& jsonDocument)
         } else {
             success = false;
         }
-        
-    } else if (strcmp(configType, "general") == 0) {
-        success &= PreferencesConfig::setTimezone(jsonDocument["timezone"].as<const char*>());
-        success &= PreferencesConfig::setSendPowerData(jsonDocument["sendPowerData"].as<bool>());
         
     } else {
         logger.warning("Unknown config type: %s", TAG, configType);
@@ -595,7 +584,7 @@ void createDefaultCalibrationFile() {
     logger.debug("Default calibration created", TAG);
 }
 
-void createDefaultChannelDataFile() {
+void createDefaultChannelDataFile() { // TODO: remove this weird json to preferences stuff
     logger.debug("Creating default channel configuration...", TAG);
 
     JsonDocument _jsonDocument;
@@ -1131,11 +1120,6 @@ void clearAllPreferences() {
     preferences.clear();
     preferences.end();
 
-    // Clear the new configuration namespaces
-    preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false);
-    preferences.clear();
-    preferences.end();
-
     preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false);
     preferences.clear();
     preferences.end();
@@ -1409,51 +1393,6 @@ bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds) {
 namespace PreferencesConfig {
     static const char* TAG_PREFS = "preferencesconfig";
     
-    bool setTimezone(const char* timezone) {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
-            logger.error("Failed to open general preferences", TAG_PREFS);
-            return false;
-        }
-        bool success = prefs.putString(PREF_KEY_TIMEZONE, timezone) > 0;
-        prefs.end();
-        return success;
-    }
-    
-    bool getTimezone(char* buffer, size_t bufferSize) {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_GENERAL, true)) {
-            logger.error("Failed to open general preferences", TAG_PREFS);
-            return false;
-        }
-        String value = prefs.getString(PREF_KEY_TIMEZONE, "UTC");
-        prefs.end();
-        snprintf(buffer, bufferSize, "%s", value.c_str());
-        return true;
-    }
-    
-    bool setSendPowerData(bool enabled) {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
-            logger.error("Failed to open general preferences", TAG_PREFS);
-            return false;
-        }
-        bool success = prefs.putBool(PREF_KEY_SEND_POWER_DATA, enabled);
-        prefs.end();
-        return success;
-    }
-    
-    bool getSendPowerData() {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_GENERAL, true)) {
-            logger.error("Failed to open general preferences", TAG_PREFS);
-            return true; // Default to enabled
-        }
-        bool value = prefs.getBool(PREF_KEY_SEND_POWER_DATA, true);
-        prefs.end();
-        return value;
-    }
-    
     // ADE7953 configuration
     bool setSampleTime(uint32_t sampleTime) {
         Preferences prefs;
@@ -1603,13 +1542,10 @@ namespace PreferencesConfig {
         }
         
         char key[32];
-        char defaultLabel[32];
         snprintf(key, sizeof(key), PREF_KEY_CHANNEL_LABEL_FMT, channel);
-        snprintf(defaultLabel, sizeof(defaultLabel), "Channel %d", channel);
         
-        String value = prefs.getString(key, defaultLabel);
+        prefs.getString(key, buffer, bufferSize);
         prefs.end();
-        snprintf(buffer, bufferSize, "%s", value.c_str());
         return true;
     }
     
@@ -1645,7 +1581,7 @@ namespace PreferencesConfig {
         return value;
     }
     
-    // MQTT configuration
+    // MQTT configuration TODO: this is the custom MQTT, do not mix up
     bool setMqttEnabled(bool enabled) {
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
@@ -1686,9 +1622,8 @@ namespace PreferencesConfig {
             buffer[0] = '\0';
             return false;
         }
-        String value = prefs.getString(PREF_KEY_MQTT_SERVER, "");
+        prefs.getString(PREF_KEY_MQTT_SERVER, buffer, bufferSize);
         prefs.end();
-        snprintf(buffer, bufferSize, "%s", value.c_str());
         return true;
     }
     
@@ -1732,9 +1667,8 @@ namespace PreferencesConfig {
             buffer[0] = '\0';
             return false;
         }
-        String value = prefs.getString(PREF_KEY_MQTT_USERNAME, "");
+        prefs.getString(PREF_KEY_MQTT_USERNAME, buffer, bufferSize);
         prefs.end();
-        snprintf(buffer, bufferSize, "%s", value.c_str());
         return true;
     }
     
@@ -1756,9 +1690,8 @@ namespace PreferencesConfig {
             buffer[0] = '\0';
             return false;
         }
-        String value = prefs.getString(PREF_KEY_MQTT_PASSWORD, "");
+        prefs.getString(PREF_KEY_MQTT_PASSWORD, buffer, bufferSize);
         prefs.end();
-        snprintf(buffer, bufferSize, "%s", value.c_str());
         return true;
     }
     
@@ -1800,22 +1733,10 @@ namespace PreferencesConfig {
             logger.error("Failed to open auth preferences for reading", TAG);
             return false;
         }
-        
-        String value = prefs.getString(PREFERENCES_KEY_PASSWORD, "");
+
+        prefs.getString(PREFERENCES_KEY_PASSWORD, buffer, bufferSize);
         prefs.end();
-        
-        if (value.isEmpty()) {
-            // Return default password if not set
-            snprintf(buffer, bufferSize, "%s", WEBSERVER_DEFAULT_PASSWORD);
-            return true;
-        }
-        
-        if (value.length() >= bufferSize) {
-            logger.error("Password too long for buffer", TAG);
-            return false;
-        }
-        
-        snprintf(buffer, bufferSize, "%s", value.c_str());
+
         return true;
     }
     
@@ -1824,6 +1745,7 @@ namespace PreferencesConfig {
         return setWebPassword(WEBSERVER_DEFAULT_PASSWORD);
     }
     
+    // Only check length - there is no need to be picky here
     bool validatePasswordStrength(const char* password) {
         if (password == nullptr) {
             return false;
@@ -1842,9 +1764,6 @@ namespace PreferencesConfig {
             logger.warning("Password too long", TAG);
             return false;
         }
-        
-        // For simplicity, just check length constraints
-        // Could add complexity requirements here (uppercase, numbers, etc.)
         return true;
     }
     
@@ -1859,5 +1778,99 @@ namespace PreferencesConfig {
         bool hasKeys = prefs.getBytesLength("__check__") == 0 && prefs.freeEntries() < 500; // Rough heuristic
         prefs.end();
         return hasKeys;
+    }
+
+    // Firmware
+    bool setFirmwareUpdatesVersion(const char* version) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false)) {
+            logger.error("Failed to open firmware updates preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putString(PREF_KEY_FW_UPDATES_VERSION, version) > 0;
+        prefs.end();
+        return success;
+    }
+
+    bool getFirmwareUpdatesVersion(char* buffer, size_t bufferSize) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, true)) {
+            logger.error("Failed to open firmware updates preferences", TAG_PREFS);
+            buffer[0] = '\0';
+            return false;
+        }
+        prefs.getString(PREF_KEY_FW_UPDATES_VERSION, buffer, bufferSize);
+        prefs.end();
+        return true;
+    }
+
+    bool setFirmwareUpdatesUrl(const char* url) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false)) {
+            logger.error("Failed to open firmware updates preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putString(PREF_KEY_FW_UPDATES_URL, url) > 0;
+        prefs.end();
+        return success;
+    }
+
+    bool getFirmwareUpdatesUrl(char* buffer, size_t bufferSize) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, true)) {
+            logger.error("Failed to open firmware updates preferences", TAG_PREFS);
+            buffer[0] = '\0';
+            return false;
+        }
+        prefs.getString(PREF_KEY_FW_UPDATES_URL, buffer, bufferSize);
+        prefs.end();
+        return true;
+    }
+
+    // MQTT
+    bool setCloudServicesEnabled(bool enabled) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putBool(PREF_KEY_MQTT_CLOUD_SERVICES, enabled) > 0;
+        prefs.end();
+        return success;
+    }
+
+    bool getCloudServicesEnabled() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return false;
+        }
+        bool enabled;
+        enabled = prefs.getBool(PREF_KEY_MQTT_CLOUD_SERVICES);
+        prefs.end();
+        return enabled;
+    }
+
+    bool setSendPowerData(bool enabled) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return false;
+        }
+        bool success = prefs.putBool(PREF_KEY_MQTT_SEND_POWER_DATA, enabled) > 0;
+        prefs.end();
+        return success;
+    }
+
+    bool getSendPowerData() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+            return false;
+        }
+        bool enabled;
+        enabled = prefs.getBool(PREF_KEY_MQTT_SEND_POWER_DATA);
+        prefs.end();
+        return enabled;
     }
 }

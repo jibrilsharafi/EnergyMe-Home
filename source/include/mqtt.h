@@ -80,7 +80,7 @@
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_MONITOR "monitor"
 #define MQTT_TOPIC_LOG "log"
-#define MQTT_TOPIC_GENERAL_CONFIGURATION "general-configuration"
+#define MQTT_TOPIC_GENERAL_CONFIGURATION "general-configuration" // TODO: deprecate this
 #define MQTT_TOPIC_CONNECTIVITY "connectivity"
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_PROVISIONING_REQUEST "provisioning/request"

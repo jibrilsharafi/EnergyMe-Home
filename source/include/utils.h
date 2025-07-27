@@ -40,13 +40,7 @@ void populateSystemInfo(SystemInfo& systemInfo);
 void systemInfoToJson(JsonDocument& jsonDocument);
 
 // Preferences utilities for configuration storage
-namespace PreferencesConfig {
-    // General configuration
-    bool setTimezone(const char* timezone);
-    bool getTimezone(char* buffer, size_t bufferSize);
-    bool setSendPowerData(bool enabled);
-    bool getSendPowerData();
-    
+namespace PreferencesConfig {    
     // ADE7953 configuration
     bool setSampleTime(uint32_t sampleTime);
     uint32_t getSampleTime();
@@ -65,7 +59,7 @@ namespace PreferencesConfig {
     bool setChannelPhase(uint8_t channel, uint8_t phase);
     uint8_t getChannelPhase(uint8_t channel);
     
-    // MQTT configuration
+    // Custom MQTT configuration // TODO: make custom
     bool setMqttEnabled(bool enabled);
     bool getMqttEnabled();
     bool setMqttServer(const char* server);
@@ -85,14 +79,18 @@ namespace PreferencesConfig {
     
     // Utility functions
     bool hasConfiguration(const char* prefsNamespace);
-    
-    // Smart configuration loading functions (Preferences-first with JSON fallback)
-    bool loadAde7953Config(JsonDocument& jsonDoc);
-    bool saveAde7953Config(const JsonDocument& jsonDoc);
-    bool loadChannelConfig(JsonDocument& jsonDoc);
-    bool saveChannelConfig(const JsonDocument& jsonDoc);
-    bool loadMqttConfig(JsonDocument& jsonDoc);
-    bool saveMqttConfig(const JsonDocument& jsonDoc);
+
+    // Firmware
+    bool setFirmwareUpdatesVersion(const char* version);
+    bool getFirmwareUpdatesVersion(char* buffer, size_t bufferSize);
+    bool setFirmwareUpdatesUrl(const char* url);
+    bool getFirmwareUpdatesUrl(char* buffer, size_t bufferSize);
+
+    // MQTT
+    bool setCloudServicesEnabled(bool enabled);
+    bool getCloudServicesEnabled();
+    bool setSendPowerData(bool enabled);
+    bool getSendPowerData();
 }
 
 void setRestartEsp32(const char* functionName, const char* reason);

@@ -3,6 +3,7 @@
 // TODO: we could introduce the logger here (when it will
 // be static) but it is not essential since this is a 
 // simple LED control class
+// TODO: add task for async usage
 namespace Led {
     // Static variables to maintain state
     static int _redPin = INVALID_PIN;
@@ -57,6 +58,9 @@ namespace Led {
         _brightness = preferences.getInt(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS);
         preferences.end();
         
+        // Validate loaded value is within acceptable range
+        _brightness = min(max(_brightness, 0), LED_MAX_BRIGHTNESS);
+        
         // Update PWM with loaded brightness
         _setPwm();
         return true;
@@ -64,7 +68,7 @@ namespace Led {
 
     void _saveConfiguration() {
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_LED, false)) { // false = read-write mode
+        if (!preferences.begin(PREFERENCES_NAMESPACE_LED, false)) {
             return;
         }
         preferences.putInt(PREFERENCES_BRIGHTNESS_KEY, _brightness);

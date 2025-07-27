@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "11"
-#define FIRMWARE_BUILD_VERSION_PATCH "01"
+#define FIRMWARE_BUILD_VERSION_PATCH "02"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -51,11 +51,11 @@
 #define MAX_CONCURRENT_SESSIONS 10 // Maximum number of concurrent login sessions
 
 // Preferences namespaces for configuration storage
-#define PREFERENCES_NAMESPACE_GENERAL "general_ns"
 #define PREFERENCES_NAMESPACE_ADE7953 "ade7953_ns"
 #define PREFERENCES_NAMESPACE_CALIBRATION "calibration_ns"
 #define PREFERENCES_NAMESPACE_CHANNELS "channels_ns"
 #define PREFERENCES_NAMESPACE_MQTT "mqtt_ns"
+#define PREFERENCES_NAMESPACE_CUSTOM_MQTT "custom_mqtt_ns"
 #define PREFERENCES_NAMESPACE_INFLUXDB "influxdb_ns"
 #define PREFERENCES_NAMESPACE_BUTTON "button_ns"
 #define PREFERENCES_NAMESPACE_WIFI "wifi_ns"
@@ -63,6 +63,10 @@
 #define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor_ns"
 #define PREFERENCES_NAMESPACE_CERTIFICATES "certificates_ns"
 #define PREFERENCES_NAMESPACE_LED "led_ns"
+#define PREFERENCES_NAMESPACE_FIRMWARE_UPDATES "fw_updates_ns"
+
+#define PREF_KEY_FW_UPDATES_URL "url"
+#define PREF_KEY_FW_UPDATES_VERSION "version"
 
 // Preferences keys for general configuration
 #define PREF_KEY_TIMEZONE "timezone"
@@ -92,7 +96,7 @@
 #define PREF_KEY_A_VA_OS "aVaOs"
 #define PREF_KEY_B_VA_OS "bVaOs"
 
-// Preferences keys for MQTT configuration
+// Preferences keys for MQTT configuration // TODO: make custom MQTT
 #define PREF_KEY_MQTT_ENABLED "enabled"
 #define PREF_KEY_MQTT_SERVER "server"
 #define PREF_KEY_MQTT_PORT "port"
@@ -104,6 +108,10 @@
 #define PREF_KEY_MQTT_USE_CREDENTIALS "useCredentials"
 #define PREF_KEY_MQTT_TOPIC "topic"
 #define PREF_KEY_MQTT_FREQUENCY "frequency"
+
+// MQTT
+#define PREF_KEY_MQTT_CLOUD_SERVICES "cloud_services"
+#define PREF_KEY_MQTT_SEND_POWER_DATA "send_power_data"
 
 // Preferences keys for channel configuration (per channel, format: "ch<N>_<property>")
 #define PREF_KEY_CHANNEL_ACTIVE_FMT "ch%d_active"
@@ -166,12 +174,12 @@
 #define TOKEN_BUFFER_SIZE 128         // For authentication tokens
 #define COUNTRY_BUFFER_SIZE 128       // For country names
 #define CITY_BUFFER_SIZE 128          // For city names
-#define AUTH_HEADER_BUFFER_SIZE 128   // For HTTP authorization headers
 #define STATUS_BUFFER_SIZE 128         // For connection status messages
 
 // Large buffers (256-512 bytes)
 #define REASON_BUFFER_SIZE 128        // For restart reasons
 #define URL_BUFFER_SIZE 128           // For HTTP URLs
+#define AUTH_HEADER_BUFFER_SIZE 256   // For HTTP authorization headers
 #define ENCODED_CREDENTIALS_BUFFER_SIZE 256 // For base64 encoded credentials
 #define FILENAME_BUFFER_SIZE 256      // For file names in the filesystem
 #define LINE_PROTOCOL_BUFFER_SIZE 512 // For InfluxDB line protocol strings

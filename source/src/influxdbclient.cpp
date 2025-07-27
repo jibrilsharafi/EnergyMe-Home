@@ -124,15 +124,13 @@ namespace InfluxDbClient
         }
         else if (influxDbConfiguration.version == 1)
         {
-            char credentials[USERNAME_BUFFER_SIZE + PASSWORD_BUFFER_SIZE + 2]; // +2 for ':' and null terminator
+            char credentials[sizeof(influxDbConfiguration.username) + sizeof(influxDbConfiguration.password) + 2]; // +2 for ':' and null terminator
             snprintf(credentials, sizeof(credentials), "%s:%s", influxDbConfiguration.username, influxDbConfiguration.password);
 
-            String encodedCredentialsStr = base64::encode(credentials);
-            char encodedCredentials[ENCODED_CREDENTIALS_BUFFER_SIZE];
-            snprintf(encodedCredentials, sizeof(encodedCredentials), "%s", encodedCredentialsStr.c_str());
+            String encodedCredentials = base64::encode((const uint8_t*)credentials, strlen(credentials));
 
             char authHeader[AUTH_HEADER_BUFFER_SIZE];
-            snprintf(authHeader, sizeof(authHeader), "Basic %s", encodedCredentials);
+            snprintf(authHeader, sizeof(authHeader), "Basic %s", encodedCredentials.c_str());
             http.addHeader("Authorization", authHeader);
         }
 

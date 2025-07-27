@@ -10,7 +10,7 @@ import getpass
 import re
 from dotenv import load_dotenv
 
-# JUST USE curl -X POST -F "data=@.pio/build/esp32dev/firmware.bin" http://192.168.2.75/api/v1/ota/upload --digest -u admin:energyme00 -H "X-MD5: e6d900e225975835dd73abe1ba644134"
+# JUST USE curl -X POST -F "data=@.pio/build/esp32dev/firmware.bin" http://energyme.local/api/v1/ota/upload --digest -u admin:energyme -H "X-MD5: $(md5sum .pio/build/esp32dev/firmware.bin | cut -d' ' -f1)"
 
 """
 EnergyMe Firmware Release Tool

@@ -198,36 +198,21 @@ namespace CustomServer {
         }
         
         doc["usingDefaultPassword"] = isDefault;
-        doc["defaultUsername"] = WEBSERVER_DEFAULT_USERNAME;
-        doc["authRequired"] = true;
+        doc["username"] = WEBSERVER_DEFAULT_USERNAME; // Only one username available in any case
+        doc["authRequired"] = true; // In general, it is required everywhere
         
         serializeJson(doc, *response);
         request->send(response);
     });
 
     // Change password (requires current password)
-    server.on("/api/v1/auth/change-password", HTTP_POST, [](AsyncWebServerRequest *request) {
-        // This endpoint should be protected by authentication middleware
-    }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-        static String jsonData;
-        
-        if (index == 0) {
-            jsonData = "";
-        }
-        
-        for (size_t i = 0; i < len; i++) {
-            jsonData += (char)data[i];
-        }
-        
-        if (index + len == total) {
-            // Parse JSON
+    // Using AsyncCallbackJsonWebHandler for cleaner JSON handling
+    static AsyncCallbackJsonWebHandler* changePasswordHandler = new AsyncCallbackJsonWebHandler(
+        "/api/v1/auth/change-password", 
+        [](AsyncWebServerRequest *request, JsonVariant &json) {
+            // Parse JSON (automatically handled by AsyncCallbackJsonWebHandler)
             JsonDocument doc;
-            DeserializationError error = deserializeJson(doc, jsonData);
-            
-            if (error) {
-                request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
-                return;
-            }
+            doc.set(json);
             
             const char* currentPassword = doc["currentPassword"];
             const char* newPassword = doc["newPassword"];
@@ -262,10 +247,11 @@ namespace CustomServer {
 
             // Update authentication middleware with new password (but after sending response otherwise the client will not receive it)
             updateAuthPassword();
-            
-            jsonData = "";
         }
-    });
+    );
+    
+    changePasswordHandler->setMethod(HTTP_POST);
+    server.addHandler(changePasswordHandler);
 
     // Reset password to default (admin operation)
     server.on("/api/v1/auth/reset-password", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -414,10 +400,12 @@ namespace CustomServer {
                     return;
                 }
                 
-                // Log progress every 32KB
-                if (index % 32768 == 0 && index > 0) {
+                // Log progress every 32KB or more frequently
+                static size_t lastProgressIndex = 0;
+                if (index >= lastProgressIndex + 32768 || index == 0) {
                     float progress = (float)Update.progress() / Update.size() * 100.0;
                     logger.debug("OTA progress: %.1f%% (%zu / %zu bytes)", TAG, progress, Update.progress(), Update.size());
+                    lastProgressIndex = index;
                 }
             }
             
@@ -459,6 +447,8 @@ namespace CustomServer {
         }
         
         doc["canRollback"] = Update.canRollBack();
+        const esp_partition_t *running = esp_ota_get_running_partition();
+        doc["currentPartition"] = running->label;
         doc["hasError"] = Update.hasError();
         doc["lastError"] = Update.errorString();
         doc["size"] = Update.size();
@@ -486,9 +476,8 @@ namespace CustomServer {
             logger.warning("Performing firmware rollback", TAG);
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Rollback initiated. Device will restart.\"}");
 
-            vTaskDelay(pdMS_TO_TICKS(1000)); // Give time for response to be sent
             Update.rollBack();
-            ESP.restart();
+            setRestartEsp32(TAG, "Firmware rollback");
         } else {
             logger.error("Rollback not possible: %s", TAG, Update.errorString());
             request->send(400, "application/json", "{\"success\":false,\"message\":\"Rollback not possible\"}");

@@ -9,6 +9,7 @@
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
 #include <Update.h>
+#include "esp_ota_ops.h"
 
 #include "constants.h"
 #include "globals.h"

@@ -174,25 +174,6 @@ namespace Mqtt
         logger.info("MQTT client stopped", TAG);
     }
 
-    // Configuration methods
-    void setCloudServicesEnabled(bool enabled)
-    {
-        logger.debug("Setting cloud services to %s...", TAG, enabled ? "enabled" : "disabled");
-        
-        // Update state variable
-        _cloudServicesEnabled = enabled;
-        
-        // Save preference
-        Preferences prefs;
-        prefs.begin(MQTT_PREFERENCES_NAMESPACE, false);
-        prefs.putBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, enabled);
-        prefs.end();
-        
-        logger.info("Cloud services %s", TAG, enabled ? "enabled" : "disabled");
-    }
-
-    bool isCloudServicesEnabled() { return _cloudServicesEnabled; }
-
     // Public methods for requesting MQTT publications
     void requestConnectivityPublish() { _publishMqtt.connectivity = true; }
     void requestMeterPublish() {_publishMqtt.meter = true; }
@@ -240,17 +221,30 @@ namespace Mqtt
     static void _subscribeCallback(const char* topic, byte *payload, unsigned int length)
     {
         char message[MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE];
+        if (length >= sizeof(message) - 1) {
+            logger.warning("The MQTT message received from the topic %s has a size of %d (too big). It will be truncated", TAG, topic, length);
+        }
         size_t copyLength = (length < sizeof(message) - 1) ? length : sizeof(message) - 1;
         memcpy(message, payload, copyLength);
         message[copyLength] = '\0';
 
+        logger.debug("Received MQTT message from %s: %s", TAG, topic, message);
+
         if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE))
         {
-            JsonDocument _jsonDocument;
-            if (deserializeJson(_jsonDocument, message)) {
+            // Expected JSON format: {"version": "1.0.0", "url": "https://example.com/firmware.bin"}
+            JsonDocument jsonDocument;
+            if (deserializeJson(jsonDocument, message)) {
                 return;
             }
-            serializeJson(_jsonDocument, Serial); // TODO: actually save this data
+
+            if (jsonDocument["version"].is<const char*>()) {
+                PreferencesConfig::setFirmwareUpdatesVersion(jsonDocument["version"].as<const char*>());
+            }
+
+            if (jsonDocument["url"].is<const char*>()) {
+                PreferencesConfig::setFirmwareUpdatesUrl(jsonDocument["url"].as<const char*>());
+            }
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_RESTART))
         {
@@ -258,15 +252,15 @@ namespace Mqtt
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE))
         {
-            JsonDocument _jsonDocument;
-            if (deserializeJson(_jsonDocument, message)) {
+            JsonDocument jsonDocument;
+            if (deserializeJson(jsonDocument, message)) {
                 return;
             }
 
-            if (_jsonDocument["status"] == "success")
+            if (jsonDocument["status"] == "success")
             {
-                const char* encryptedCertPem = _jsonDocument["encryptedCertificatePem"];
-                const char* encryptedPrivateKey = _jsonDocument["encryptedPrivateKey"];
+                const char* encryptedCertPem = jsonDocument["encryptedCertificatePem"];
+                const char* encryptedPrivateKey = jsonDocument["encryptedPrivateKey"];
                 
                 writeEncryptedPreferences(PREFS_KEY_CERTIFICATE, encryptedCertPem);
                 writeEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, encryptedPrivateKey);
@@ -282,40 +276,40 @@ namespace Mqtt
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION))
         {
-            JsonDocument _jsonDocument;
-            if (deserializeJson(_jsonDocument, message)) {
+            JsonDocument jsonDocument;
+            if (deserializeJson(jsonDocument, message)) {
                 return;
             }
             
             // Handle sendPowerData setting
-            if (_jsonDocument["sendPowerData"].is<bool>()) {
-                bool sendPowerData = _jsonDocument["sendPowerData"].as<bool>();
+            if (jsonDocument["sendPowerData"].is<bool>()) {
+                bool sendPowerData = jsonDocument["sendPowerData"].as<bool>();
                 _setSendPowerDataEnabled(sendPowerData);
             }
             
             // Handle cloudServicesEnabled setting
-            if (_jsonDocument["cloudServicesEnabled"].is<bool>()) {
-                bool cloudServicesEnabled = _jsonDocument["cloudServicesEnabled"].as<bool>();
+            if (jsonDocument["cloudServicesEnabled"].is<bool>()) {
+                bool cloudServicesEnabled = jsonDocument["cloudServicesEnabled"].as<bool>();
                 setCloudServicesEnabled(cloudServicesEnabled);
             }
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING))
         {
-            JsonDocument _jsonDocument;
-            if (deserializeJson(_jsonDocument, message)) {
+            JsonDocument jsonDocument;
+            if (deserializeJson(jsonDocument, message)) {
                 return;
             }
 
             bool enable = false;
-            if (_jsonDocument["enable"].is<bool>()) {
-                enable = _jsonDocument["enable"].as<bool>();
+            if (jsonDocument["enable"].is<bool>()) {
+                enable = jsonDocument["enable"].as<bool>();
             }
 
             if (enable)
             {
                 int durationMinutes = MQTT_DEBUG_LOGGING_DEFAULT_DURATION / (60 * 1000);
-                if (_jsonDocument["duration_minutes"].is<int>()) {
-                    durationMinutes = _jsonDocument["duration_minutes"].as<int>();
+                if (jsonDocument["duration_minutes"].is<int>()) {
+                    durationMinutes = jsonDocument["duration_minutes"].as<int>();
                 }
                 
                 int durationMs = durationMinutes * 60 * 1000;
@@ -1155,25 +1149,39 @@ namespace Mqtt
         }
     }
     
-    // Helper functions for preferences
+    // Helper functions for preferences - now using centralized PreferencesConfig
+    
     static void _loadPreferences()
     {
-        logger.debug("Loading MQTT preferences...", TAG);
+        logger.debug("Loading MQTT preferences from centralized config...", TAG);
         
-        Preferences prefs;
-        prefs.begin(MQTT_PREFERENCES_NAMESPACE, true); // Read-only
-        
-        _cloudServicesEnabled = prefs.getBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, DEFAULT_IS_CLOUD_SERVICES_ENABLED);
-        _sendPowerDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, DEFAULT_IS_SEND_POWER_DATA_ENABLED);
-        
-        prefs.end();
+        // Load from centralized preferences
+        _cloudServicesEnabled = PreferencesConfig::getCloudServicesEnabled();
+        _sendPowerDataEnabled = PreferencesConfig::getSendPowerData();
         
         logger.info("Cloud services enabled: %s, Send power data enabled: %s", TAG, 
                    _cloudServicesEnabled ? "true" : "false",
                    _sendPowerDataEnabled ? "true" : "false");
     }
-    
+
+    bool isCloudServicesEnabled() { return _cloudServicesEnabled; }
     static bool _isSendPowerDataEnabled() { return _sendPowerDataEnabled; }
+
+    // Configuration methods - now using centralized PreferencesConfig
+    void setCloudServicesEnabled(bool enabled)
+    {
+        logger.debug("Setting cloud services to %s...", TAG, enabled ? "enabled" : "disabled");
+        
+        // Update state variable
+        _cloudServicesEnabled = enabled;
+        
+        // Save via centralized preferences
+        if (PreferencesConfig::setCloudServicesEnabled(enabled)) {
+            logger.info("Cloud services %s", TAG, enabled ? "enabled" : "disabled");
+        } else {
+            logger.error("Failed to save cloud services setting", TAG);
+        }
+    }
     
     static void _setSendPowerDataEnabled(bool enabled)
     {
@@ -1182,13 +1190,11 @@ namespace Mqtt
         // Update state variable
         _sendPowerDataEnabled = enabled;
         
-        // Save to preferences
-        Preferences prefs;
-        prefs.begin(MQTT_PREFERENCES_NAMESPACE, false); // Read-write
-        prefs.putBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, enabled);
-        prefs.end();
-        
-        logger.info("Send power data %s", TAG, enabled ? "enabled" : "disabled");
+        // Save via centralized preferences
+        if (PreferencesConfig::setSendPowerData(enabled)) {
+            logger.info("Send power data %s", TAG, enabled ? "enabled" : "disabled");
+        } else {
+            logger.error("Failed to save send power data setting", TAG);
+        }
     }
-
 }

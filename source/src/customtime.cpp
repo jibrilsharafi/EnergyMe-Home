@@ -78,7 +78,7 @@ namespace CustomTime {
         preferences.end();
     }
 
-    static bool _getTime() {
+    bool _getTime() {
         time_t _now;
         struct tm _timeinfo;
         if(!getLocalTime(&_timeinfo)){

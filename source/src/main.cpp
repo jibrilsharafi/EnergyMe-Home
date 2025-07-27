@@ -228,6 +228,8 @@ void setup() {
     logger.info("InfluxDB client setup done", TAG);
 
     Led::setGreen();
+    printDeviceStatusStatic();
+    
     logger.info("Setup done! Let's get this energetic party started!", TAG);
 }
 
@@ -242,7 +244,7 @@ void loop() {
       lastMaintenanceCheck = millis();      
       updateStatistics();
       printStatistics();
-      printDeviceStatus();
+      printDeviceStatusDynamic();
 
       if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
         logger.fatal("Heap memory has degraded below safe minimum: %d bytes", TAG, ESP.getFreeHeap());
