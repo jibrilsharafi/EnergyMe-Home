@@ -737,14 +737,14 @@ void restartEsp32() {
     logger.end();
 
     // Give time for AsyncTCP connections to close gracefully
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
     // Disable WiFi to prevent AsyncTCP crashes during restart
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     
     // Additional delay to ensure clean shutdown
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     ESP.restart();
 }

@@ -256,8 +256,8 @@ namespace CustomServer {
             
             logger.info("Password changed successfully via API", TAG);
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Password changed successfully\"}");
-            
-            delay(1000); // Give time for the response to be sent before updating the password
+
+            vTaskDelay(pdMS_TO_TICKS(1000)); // Give time for the response to be sent before updating the password
 
             // Update authentication middleware with new password (but after sending response otherwise the client will not receive it)
             updateAuthPassword();
@@ -306,9 +306,9 @@ namespace CustomServer {
                 Led::unblock();
                 for (int i = 0; i < 3; i++) {
                     Led::setRed(true);
-                    delay(500);
+                    vTaskDelay(pdMS_TO_TICKS(500));
                     Led::setOff(true);
-                    delay(500);
+                    vTaskDelay(pdMS_TO_TICKS(500));
                 }
             } else {
                 AsyncResponseStream *response = request->beginResponseStream("application/json");
@@ -435,7 +435,7 @@ namespace CustomServer {
                     
                     // Show success LED pattern
                     Led::setGreen(true);
-                    delay(1000);
+                    vTaskDelay(pdMS_TO_TICKS(1000));
                 }
                 
                 // Restore LED
@@ -484,8 +484,8 @@ namespace CustomServer {
         if (Update.canRollBack()) {
             logger.warning("Performing firmware rollback", TAG);
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Rollback initiated. Device will restart.\"}");
-            
-            delay(1000); // Give time for response to be sent
+
+            vTaskDelay(pdMS_TO_TICKS(1000)); // Give time for response to be sent
             Update.rollBack();
             ESP.restart();
         } else {

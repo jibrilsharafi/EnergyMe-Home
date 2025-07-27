@@ -70,7 +70,7 @@ namespace CrashMonitor
 
     void reboot(const char* reason) {
         logger.warning("System reboot requested: %s", TAG, reason);
-        delay(100); // Give time for log message to be sent
+        vTaskDelay(pdMS_TO_TICKS(100)); // Give time for log message to be sent
 
         ESP.restart();
     }

@@ -186,7 +186,7 @@ void setup() {
 
     while (!CustomWifi::isFullyConnected()) { // TODO: make better?
         logger.debug("Waiting for full WiFi connection...", TAG);
-        delay(1000);
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
     // Add UDP logging setup after WiFi
@@ -229,11 +229,6 @@ void setup() {
 
     Led::setGreen();
     logger.info("Setup done! Let's get this energetic party started!", TAG);
-
-    for (int i = 0; i < 50; i++) {
-      logger.info("TEST2", TAG);
-      delay(100); // Add a small delay to avoid flooding the log
-    }
 }
 
 void loop() {

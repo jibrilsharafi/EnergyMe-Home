@@ -218,9 +218,9 @@ void Ade7953::cleanup() {
 void Ade7953::_reset() {
     _logger.debug("Resetting Ade7953", TAG);
     digitalWrite(_resetPin, LOW);
-    delay(ADE7953_RESET_LOW_DURATION);
+    vTaskDelay(pdMS_TO_TICKS(ADE7953_RESET_LOW_DURATION));
     digitalWrite(_resetPin, HIGH);
-    delay(ADE7953_RESET_LOW_DURATION);
+    vTaskDelay(pdMS_TO_TICKS(ADE7953_RESET_LOW_DURATION));
 }
 
 /**

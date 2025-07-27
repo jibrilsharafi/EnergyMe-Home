@@ -70,8 +70,9 @@ namespace CustomWifi
                                        {
             logger.warning("WiFi credentials saved via portal - restarting...", TAG);
             Led::setCyan(true);
-            delay(1000);
-            ESP.restart(); });
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            ESP.restart();
+          });
   }
 
   static void _onWiFiEvent(WiFiEvent_t event)
@@ -148,7 +149,7 @@ namespace CustomWifi
     {
       logger.error("Initial WiFi connection failed - restarting", TAG);
       Led::setRed(true);
-      delay(2000);
+      vTaskDelay(pdMS_TO_TICKS(2000));
       ESP.restart();
     }
 
@@ -210,7 +211,7 @@ namespace CustomWifi
               {
                 logger.fatal("Portal failed - restarting device", TAG);
                 Led::setRed(true);
-                delay(2000);
+                vTaskDelay(pdMS_TO_TICKS(2000));
                 ESP.restart();
               }
               // If portal succeeds, device will restart automatically
@@ -239,7 +240,7 @@ namespace CustomWifi
     logger.warning("Resetting WiFi credentials and restarting...", TAG);
     Led::setRed(true);
     _wifiManager.resetSettings();
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
     ESP.restart();
   }
 
@@ -249,7 +250,7 @@ namespace CustomWifi
 
     // Ensure mDNS is stopped before starting
     MDNS.end();
-    delay(100);
+    vTaskDelay(pdMS_TO_TICKS(100));
 
     if (
         MDNS.begin(MDNS_HOSTNAME) &&
