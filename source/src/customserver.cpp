@@ -278,6 +278,221 @@ namespace CustomServer {
             request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to reset password\"}");
         }
     });
+
+    // === OTA UPDATE ENDPOINTS ===
+    
+    // Firmware upload endpoint with integrated MD5 support
+    server.on("/api/v1/ota/upload", HTTP_POST, 
+        [](AsyncWebServerRequest *request) {
+            // Handle the completion of the upload
+            if (request->getResponse()) {
+                // Response already set due to error
+                return;
+            }
+            
+            if (Update.hasError()) {
+                AsyncResponseStream *response = request->beginResponseStream("application/json");
+                JsonDocument doc;
+                doc["success"] = false;
+                doc["message"] = Update.errorString();
+                serializeJson(doc, *response);
+                request->send(response);
+                
+                logger.error("OTA update failed: %s", TAG, Update.errorString());
+                Update.printError(Serial);
+                
+                // Flash red LED pattern for error
+                Led::setOff(true);
+                Led::unblock();
+                for (int i = 0; i < 3; i++) {
+                    Led::setRed(true);
+                    delay(500);
+                    Led::setOff(true);
+                    delay(500);
+                }
+            } else {
+                AsyncResponseStream *response = request->beginResponseStream("application/json");
+                JsonDocument doc;
+                doc["success"] = true;
+                doc["message"] = "Firmware update completed successfully";
+                doc["md5"] = Update.md5String();
+                serializeJson(doc, *response);
+                request->send(response);
+                
+                logger.info("OTA update completed successfully", TAG);
+                logger.info("New firmware MD5: %s", TAG, Update.md5String().c_str());
+                
+                // Set firmware status for testing
+                if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) {
+                    logger.error("Failed to set firmware status for testing", TAG);
+                }
+                
+                // Schedule restart
+                setRestartEsp32(TAG, "Restart needed after firmware update");
+            }
+        },
+        [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+            // Handle firmware upload chunks
+            static bool otaInitialized = false;
+            
+            if (!index) {
+                // First chunk - initialize OTA
+                logger.info("Starting OTA update with file: %s", TAG, filename.c_str());
+                
+                // Validate file extension
+                if (!filename.endsWith(".bin")) {
+                    logger.error("Invalid file type. Only .bin files are supported", TAG);
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"File must be in .bin format\"}");
+                    return;
+                }
+                
+                // Get content length from header
+                size_t contentLength = request->header("Content-Length").toInt();
+                if (contentLength == 0) {
+                    logger.error("No Content-Length header found", TAG);
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing Content-Length header\"}");
+                    return;
+                }
+                
+                // Check free heap
+                size_t freeHeap = ESP.getFreeHeap();
+                logger.debug("Free heap before OTA: %zu bytes", TAG, freeHeap);
+                if (freeHeap < MINIMUM_FREE_HEAP_OTA) { // Minimum free heap for OTA
+                    logger.error("Insufficient memory for OTA update", TAG);
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Insufficient memory for update\"}");
+                    return;
+                }
+                
+                // Pause ADE7953 during update to free resources
+                // _ade7953.pauseMeterReadingTask(); // Uncomment if you have this method
+                
+                // Start LED indication
+                Led::block();
+                Led::setPurple(true);
+                
+                // Begin OTA update with known size
+                if (!Update.begin(contentLength, U_FLASH)) {
+                    logger.error("Failed to begin OTA update: %s", TAG, Update.errorString());
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Failed to begin update\"}");
+                    
+                    // Restore LED and resume operations
+                    Led::setOff(true);
+                    Led::unblock();
+                    // _ade7953.resumeMeterReadingTask(); // Uncomment if you have this method
+                    return;
+                }
+                
+                // Check for MD5 header and set it if provided
+                String md5Header = request->header("X-MD5");
+                if (md5Header.length() == 32) {
+                    // Convert to lowercase
+                    md5Header.toLowerCase();
+                    Update.setMD5(md5Header.c_str());
+                    logger.info("MD5 verification enabled: %s", TAG, md5Header.c_str());
+                } else if (md5Header.length() > 0) {
+                    logger.warning("Invalid MD5 length (%d), skipping verification", TAG, md5Header.length());
+                }
+                
+                otaInitialized = true;
+                logger.info("OTA update started, expected size: %zu bytes", TAG, contentLength);
+            }
+            
+            // Write chunk to flash
+            if (len && otaInitialized) {
+                size_t written = Update.write(data, len);
+                if (written != len) {
+                    logger.error("OTA write failed: expected %zu bytes, wrote %zu bytes", TAG, len, written);
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Write failed\"}");
+                    Update.abort();
+                    otaInitialized = false;
+                    
+                    // Restore LED and resume operations
+                    Led::setOff(true);
+                    Led::unblock();
+                    // _ade7953.resumeMeterReadingTask(); // Uncomment if you have this method
+                    return;
+                }
+                
+                // Log progress every 32KB
+                if (index % 32768 == 0 && index > 0) {
+                    float progress = (float)Update.progress() / Update.size() * 100.0;
+                    logger.debug("OTA progress: %.1f%% (%zu / %zu bytes)", TAG, progress, Update.progress(), Update.size());
+                }
+            }
+            
+            // Final chunk - complete the update
+            if (final && otaInitialized) {
+                logger.info("Finalizing OTA update...", TAG);
+                
+                if (!Update.end(true)) {
+                    logger.error("OTA finalization failed: %s", TAG, Update.errorString());
+                    // Error response will be handled in the main handler above
+                    
+                    // Restore operations on error
+                    // _ade7953.resumeMeterReadingTask(); // Uncomment if you have this method
+                } else {
+                    logger.info("OTA update finalization successful", TAG);
+                    
+                    // Show success LED pattern
+                    Led::setGreen(true);
+                    delay(1000);
+                }
+                
+                // Restore LED
+                Led::setOff(true);
+                Led::unblock();
+                otaInitialized = false;
+            }
+        }
+    );
+    
+    // Get OTA update status
+    server.on("/api/v1/ota/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        JsonDocument doc;
+        
+        if (Update.isRunning()) {
+            doc["status"] = "running";
+            doc["size"] = Update.size();
+            doc["progress"] = Update.progress();
+            doc["remaining"] = Update.remaining();
+            doc["progressPercent"] = Update.size() > 0 ? (float)Update.progress() / Update.size() * 100.0 : 0.0;
+        } else {
+            doc["status"] = "idle";
+            doc["canRollback"] = Update.canRollBack();
+            if (Update.hasError()) {
+                doc["lastError"] = Update.errorString();
+            }
+        }
+        
+        // Add current firmware info
+        doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
+        doc["currentMD5"] = ESP.getSketchMD5();
+        doc["firmwareState"] = CrashMonitor::getFirmwareStatusString(CrashMonitor::getFirmwareStatus());
+        
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
+    // OTA rollback endpoint
+    server.on("/api/v1/ota/rollback", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (Update.isRunning()) {
+            Update.abort();
+            logger.info("Aborted running OTA update", TAG);
+        }
+
+        if (Update.canRollBack()) {
+            logger.warning("Performing firmware rollback", TAG);
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Rollback initiated. Device will restart.\"}");
+            
+            delay(1000); // Give time for response to be sent
+            Update.rollBack();
+            ESP.restart();
+        } else {
+            logger.error("Rollback not possible: %s", TAG, Update.errorString());
+            request->send(400, "application/json", "{\"success\":false,\"message\":\"Rollback not possible\"}");
+        }
+    });
   }
 }
 

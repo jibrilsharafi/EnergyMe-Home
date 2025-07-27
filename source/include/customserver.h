@@ -8,6 +8,7 @@
 #include <AdvancedLogger.h>
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
+#include <Update.h>
 
 #include "constants.h"
 #include "globals.h"
@@ -16,6 +17,8 @@
 
 #define WEBSERVER_MAX_REQUESTS 180
 #define WEBSERVER_WINDOW_SIZE_SECONDS 60 // in seconds
+
+#define MINIMUM_FREE_HEAP_OTA 20000 // Minimum free heap required for OTA updates
 
 namespace CustomServer {
     void begin();

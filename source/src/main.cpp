@@ -229,6 +229,11 @@ void setup() {
 
     Led::setGreen();
     logger.info("Setup done! Let's get this energetic party started!", TAG);
+
+    for (int i = 0; i < 50; i++) {
+      logger.info("TEST2", TAG);
+      delay(100); // Add a small delay to avoid flooding the log
+    }
 }
 
 void loop() {
