@@ -91,6 +91,7 @@ struct SystemStaticInfo {
     
     // Firmware state
     FirmwareState firmwareState;
+    char firmwareStateString[16]; // For convenience, can be used to store string representation of the state
     
     SystemStaticInfo() {
         // Initialize with safe defaults
@@ -159,10 +160,26 @@ struct SystemDynamicInfo {
     char wifiDnsIp[16];
     char wifiBssid[18];
     
+    // Crash monitoring data
+    uint32_t crashCount;
+    uint32_t resetCount;
+    uint32_t lastResetReason;
+    char lastResetReasonString[32];
+    bool hasCoreDump;
+    size_t coreDumpSize;
+    
     SystemDynamicInfo() {
         memset(this, 0, sizeof(*this));
         temperatureCelsius = -273.15f; // Invalid temp indicator
         wifiRssi = -100; // Invalid RSSI indicator
+        snprintf(wifiSsid, sizeof(wifiSsid), "Unknown");
+        snprintf(wifiMacAddress, sizeof(wifiMacAddress), "00:00:00:00:00:00");
+        snprintf(wifiLocalIp, sizeof(wifiLocalIp), "0.0.0.0");
+        snprintf(wifiGatewayIp, sizeof(wifiGatewayIp), "0.0.0.0");
+        snprintf(wifiSubnetMask, sizeof(wifiSubnetMask), "0.0.0.0");
+        snprintf(wifiDnsIp, sizeof(wifiDnsIp), "0.0.0.0");
+        snprintf(wifiBssid, sizeof(wifiBssid), "00:00:00:00:00:00");
+        snprintf(lastResetReasonString, sizeof(lastResetReasonString), "Unknown");
     }
 };
 

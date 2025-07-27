@@ -48,3 +48,6 @@ Provide project context and coding guidelines that AI should follow when generat
 7. **Data storage**:
     - Use Preferences wherever possible for configuration storage
     - Use SPIFFS (to update in the future to LittleFS) for historical data storage
+
+8. **Agent capabilities**:
+    - Never ask to run `pio` or `platformio` commands as they won't work directly in the terminal. Assume the user will run them manually.

@@ -1,4 +1,5 @@
 #include "buttonhandler.h"
+#include "customserver.h"
 
 static const char *TAG = "buttonhandler";
 
@@ -241,8 +242,11 @@ namespace ButtonHandler
         Led::block();
         Led::setYellow(true);
 
-        if (true) // TODO: Implement actual password reset logic
+        if (PreferencesConfig::resetWebPassword()) // Implement actual password reset logic
         {
+            // Update authentication middleware with new password
+            CustomServer::updateAuthPassword();
+            
             logger.info("Password reset to default successfully", TAG);
 
             // Success feedback - 3 green blinks

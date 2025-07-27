@@ -77,6 +77,12 @@ namespace PreferencesConfig {
     bool setMqttPassword(const char* password);
     bool getMqttPassword(char* buffer, size_t bufferSize);
     
+    // Authentication functions
+    bool setWebPassword(const char* password);
+    bool getWebPassword(char* buffer, size_t bufferSize);
+    bool resetWebPassword();
+    bool validatePasswordStrength(const char* password);
+    
     // Utility functions
     bool hasConfiguration(const char* prefsNamespace);
     

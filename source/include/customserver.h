@@ -14,15 +14,12 @@
 #include "binaries.h"
 #include "utils.h"
 
-#define WEBSERVER_DEFAULT_USERNAME "admin"
-#define WEBSERVER_DEFAULT_PASSWORD "energyme"
-#define WEBSERVER_REALM "EnergyMe - Home"
-
 #define WEBSERVER_MAX_REQUESTS 180
 #define WEBSERVER_WINDOW_SIZE_SECONDS 60 // in seconds
 
 namespace CustomServer {
     void begin();
+    void updateAuthPassword();
 }
 
 // class CustomServer

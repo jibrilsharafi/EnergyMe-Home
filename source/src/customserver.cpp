@@ -8,92 +8,142 @@ namespace CustomServer {
   static AsyncRateLimitMiddleware rateLimit;
   static AsyncLoggingMiddleware requestLogger;
 
+  static void _setupMiddleware();
+  static void _serveStaticContent();
+  static void _serveApi();
+
+
   void begin() {
     logger.debug("Setting up web server...", TAG);
-    
+
+    _setupMiddleware();
+    _serveStaticContent();
+    _serveApi();
+
+    server.begin();
+
+    logger.info("Web server started on port %d", TAG, WEBSERVER_PORT);
+  }
+
+  void _setupMiddleware() {
+        // ---- Authentication Middleware Setup ----
     // Configure digest authentication (more secure than basic auth)
     digestAuth.setUsername(WEBSERVER_DEFAULT_USERNAME);
-    digestAuth.setPassword(WEBSERVER_DEFAULT_PASSWORD);
+    
+    // Load password from Preferences or use default
+    char webPassword[AUTH_PASSWORD_BUFFER_SIZE];
+    if (PreferencesConfig::getWebPassword(webPassword, sizeof(webPassword))) 
+    {
+        digestAuth.setPassword(webPassword);
+        logger.debug("Web password loaded from Preferences", TAG);
+    } 
+    else 
+    {
+        // Fallback to default password if Preferences failed
+        digestAuth.setPassword(WEBSERVER_DEFAULT_PASSWORD);
+        logger.warning("Failed to load web password, using default", TAG);
+        
+        // Try to initialize the password in Preferences for next time
+        if (PreferencesConfig::setWebPassword(WEBSERVER_DEFAULT_PASSWORD)) {
+            logger.debug("Default password saved to Preferences for future use", TAG);
+        }
+    }
+    
     digestAuth.setRealm(WEBSERVER_REALM);
-    digestAuth.setAuthFailureMessage("Authentication required");
+    digestAuth.setAuthFailureMessage("The password is incorrect. Please try again.");
     digestAuth.setAuthType(AsyncAuthType::AUTH_DIGEST);
     digestAuth.generateHash();  // precompute hash for better performance
     
+    server.addMiddleware(&digestAuth);
+
     logger.debug("Digest authentication configured", TAG);
 
+    // ---- Rate Limiting Middleware Setup ----
     // Set rate limiting to prevent abuse
     rateLimit.setMaxRequests(WEBSERVER_MAX_REQUESTS);
     rateLimit.setWindowSize(WEBSERVER_WINDOW_SIZE_SECONDS);
-      
+
+    server.addMiddleware(&rateLimit);
+
+    logger.debug("Rate limiting configured: max requests = %d, window size = %d seconds", TAG, WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
+
+    // ---- Logging Middleware Setup ----
     requestLogger.setEnabled(true);
     requestLogger.setOutput(Serial);
+    
+    server.addMiddleware(&requestLogger);
+    
+    logger.debug("Logging middleware configured", TAG);
+  }
 
+  void _serveStaticContent()
+  {
     // === STATIC CONTENT (no auth required) ===
-    
+
     // CSS files
-    server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/css", styles_css);
-    });
-    
-    server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/css", button_css);
-    });
+    server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/css", styles_css); });
 
-    server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/css", section_css);
-    });
+    server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/css", button_css); });
 
-    server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/css", typography_css);
-    });
+    server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/css", section_css); });
+
+    server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/css", typography_css); });
 
     // Resources
-    server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "image/svg+xml", favicon_svg);
-    });
+    server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "image/svg+xml", favicon_svg); });
 
     // === AUTHENTICATED PAGES ===
-    
+
     // Main dashboard
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", index_html);
-      });
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", index_html); });
 
     // Configuration pages
-    server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", configuration_html);
-      });
+    server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", configuration_html); });
 
-    server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", calibration_html);
-      });
+    server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", calibration_html); });
 
-    server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", channel_html);
-      });
+    server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", channel_html); });
 
-    server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", info_html);
-      });
+    server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", info_html); });
 
-    server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", log_html);
-      });
+    server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", log_html); });
 
-    server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", update_html);
-      });
+    server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", update_html); });
 
     // Swagger UI
-    server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", swagger_ui_html);
-      });
+    server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/html", swagger_ui_html); });
 
-    server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/yaml", swagger_yaml);
-    });
+    server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(200, "text/yaml", swagger_yaml); });
+  }
 
-    // Combined system info (static + dynamic)
+  void updateAuthPassword() {
+    char webPassword[AUTH_PASSWORD_BUFFER_SIZE];
+    if (PreferencesConfig::getWebPassword(webPassword, sizeof(webPassword))) {
+        digestAuth.setPassword(webPassword);
+        digestAuth.generateHash();  // regenerate hash with new password
+        logger.info("Authentication password updated", TAG);
+    } else {
+        logger.error("Failed to load new password for authentication", TAG);
+    }
+  }
+
+  void _serveApi() {
+
+    // === API ENDPOINTS (requires authentication) ===
     server.on("/api/v1/system", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         JsonDocument doc;
@@ -111,7 +161,16 @@ namespace CustomServer {
         request->send(response);
     });
 
-    // Health check endpoint (lightweight)
+    server.on("/api/v1/statistics", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        JsonDocument doc;
+        
+        statisticsToJson(statistics, doc);
+        
+        serializeJson(doc, *response);
+        request->send(response);
+    });
+
     server.on("/api/v1/health", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         JsonDocument doc;
@@ -123,14 +182,102 @@ namespace CustomServer {
         request->send(response);
     });
 
-    server.addMiddleware(&digestAuth);
-    server.addMiddleware(&requestLogger);
+    // === AUTHENTICATION ENDPOINTS ===
+    
+    // Check authentication status
+    server.on("/api/v1/auth/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        JsonDocument doc;
+        
+        // Check if using default password
+        char currentPassword[AUTH_PASSWORD_BUFFER_SIZE];
+        bool isDefault = true;
+        if (PreferencesConfig::getWebPassword(currentPassword, sizeof(currentPassword))) {
+            isDefault = (strcmp(currentPassword, WEBSERVER_DEFAULT_PASSWORD) == 0);
+        }
+        
+        doc["usingDefaultPassword"] = isDefault;
+        doc["defaultUsername"] = WEBSERVER_DEFAULT_USERNAME;
+        doc["authRequired"] = true;
+        
+        serializeJson(doc, *response);
+        request->send(response);
+    });
 
+    // Change password (requires current password)
+    server.on("/api/v1/auth/change-password", HTTP_POST, [](AsyncWebServerRequest *request) {
+        // This endpoint should be protected by authentication middleware
+    }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        static String jsonData;
+        
+        if (index == 0) {
+            jsonData = "";
+        }
+        
+        for (size_t i = 0; i < len; i++) {
+            jsonData += (char)data[i];
+        }
+        
+        if (index + len == total) {
+            // Parse JSON
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, jsonData);
+            
+            if (error) {
+                request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
+                return;
+            }
+            
+            const char* currentPassword = doc["currentPassword"];
+            const char* newPassword = doc["newPassword"];
+            
+            if (!currentPassword || !newPassword) {
+                request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing currentPassword or newPassword\"}");
+                return;
+            }
+            
+            // Validate current password
+            char storedPassword[AUTH_PASSWORD_BUFFER_SIZE];
+            if (!PreferencesConfig::getWebPassword(storedPassword, sizeof(storedPassword))) {
+                request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to retrieve current password\"}");
+                return;
+            }
+            
+            if (strcmp(currentPassword, storedPassword) != 0) {
+                request->send(401, "application/json", "{\"success\":false,\"message\":\"Current password is incorrect\"}");
+                return;
+            }
+            
+            // Validate and save new password
+            if (!PreferencesConfig::setWebPassword(newPassword)) {
+                request->send(400, "application/json", "{\"success\":false,\"message\":\"New password does not meet requirements or failed to save\"}");
+                return;
+            }
+            
+            logger.info("Password changed successfully via API", TAG);
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Password changed successfully\"}");
+            
+            delay(1000); // Give time for the response to be sent before updating the password
 
-    // Start the server
-    server.begin();
-    logger.info("Web server started on port %d", TAG, WEBSERVER_PORT);
-    logger.info("Access web interface at: http://192.168.4.1/ (admin/admin)", TAG);
+            // Update authentication middleware with new password (but after sending response otherwise the client will not receive it)
+            updateAuthPassword();
+            
+            jsonData = "";
+        }
+    });
+
+    // Reset password to default (admin operation)
+    server.on("/api/v1/auth/reset-password", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (PreferencesConfig::resetWebPassword()) {
+            // Update authentication middleware with new password
+            updateAuthPassword();
+            
+            logger.warning("Password reset to default via API", TAG);
+            request->send(200, "application/json", "{\"success\":true,\"message\":\"Password reset to default\"}");
+        } else {
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to reset password\"}");
+        }
+    });
   }
 }
 

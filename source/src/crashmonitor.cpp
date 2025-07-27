@@ -12,7 +12,6 @@ namespace CrashMonitor
 
     // Private function declarations
     static void _initializeCrashData();
-    static const char* _getResetReasonString(esp_reset_reason_t reason);
     static void _logCrashInfo();
     static void _saveCrashData();
     static void _handleCrashCounter();
@@ -27,6 +26,7 @@ namespace CrashMonitor
         _crashData.crashCount = 0;
         _crashData.resetCount = 0;
         _crashData.lastResetReason = ESP_RST_UNKNOWN;
+        _crashData.lastUnixTime = 0;
     }   
     
     bool isLastResetDueToCrash() {
@@ -104,7 +104,7 @@ namespace CrashMonitor
         _saveCrashData();
     }
 
-    const char* _getResetReasonString(esp_reset_reason_t reason) {
+    const char* getResetReasonString(esp_reset_reason_t reason) {
         switch (reason) {
             case ESP_RST_UNKNOWN: return "Unknown";
             case ESP_RST_POWERON: return "Power on";
@@ -129,7 +129,7 @@ namespace CrashMonitor
     }
 
     void _logCrashInfo() {
-        const char* resetReasonStr = _getResetReasonString((esp_reset_reason_t)_crashData.lastResetReason);
+        const char* resetReasonStr = getResetReasonString((esp_reset_reason_t)_crashData.lastResetReason);
         logger.error("System was restarted due to: %s", TAG, resetReasonStr);
 
         // Check if core dump is available
@@ -157,7 +157,7 @@ namespace CrashMonitor
         if (_crashData.signature != CRASH_SIGNATURE) return false;
 
         _jsonDocument["crashCount"] = _crashData.crashCount;
-        _jsonDocument["lastResetReason"] = _getResetReasonString((esp_reset_reason_t)_crashData.lastResetReason);
+        _jsonDocument["lastResetReason"] = getResetReasonString((esp_reset_reason_t)_crashData.lastResetReason);
         _jsonDocument["lastUnixTime"] = _crashData.lastUnixTime;
         _jsonDocument["resetCount"] = _crashData.resetCount;
 
@@ -212,13 +212,13 @@ namespace CrashMonitor
         return _firmwareStatus;
     }
 
-    void getFirmwareStatusString(FirmwareState status, char* buffer, size_t bufferSize) {
+    const char* getFirmwareStatusString(FirmwareState status) {
         switch (status) {
-            case FirmwareState::STABLE: snprintf(buffer, bufferSize, "Stable"); break;
-            case FirmwareState::NEW_TO_TEST: snprintf(buffer, bufferSize, "New to test"); break;
-            case FirmwareState::TESTING: snprintf(buffer, bufferSize, "Testing"); break;
-            case FirmwareState::ROLLBACK: snprintf(buffer, bufferSize, "Rollback"); break;
-            default: snprintf(buffer, bufferSize, "Unknown"); break;
+            case FirmwareState::STABLE: return "Stable";
+            case FirmwareState::NEW_TO_TEST: return "New to test";
+            case FirmwareState::TESTING: return "Testing";
+            case FirmwareState::ROLLBACK: return "Rollback";
+            default: return "Unknown";
         }
     }
 

@@ -44,6 +44,8 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     
     // Firmware state
     info.firmwareState = CrashMonitor::getFirmwareStatus();
+    snprintf(info.firmwareStateString, sizeof(info.firmwareStateString), "%s", 
+             CrashMonitor::getFirmwareStatusString(info.firmwareState));
 
     logger.debug("Static system info populated", TAG);
 }
@@ -111,6 +113,25 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
         snprintf(info.wifiDnsIp, sizeof(info.wifiDnsIp), "0.0.0.0");
         snprintf(info.wifiBssid, sizeof(info.wifiBssid), "00:00:00:00:00:00");
     }
+    
+    // Crash monitoring data
+    info.crashCount = CrashMonitor::getCrashCount();
+    info.resetCount = CrashMonitor::getResetCount();
+    
+    // Get crash data if available
+    CrashData crashData;
+    if (CrashMonitor::getSavedCrashData(crashData)) {
+        info.lastResetReason = crashData.lastResetReason;
+        snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s", 
+                CrashMonitor::getResetReasonString((esp_reset_reason_t)crashData.lastResetReason));
+    } else {
+        info.lastResetReason = (uint32_t)esp_reset_reason();
+        snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s",
+                CrashMonitor::getResetReasonString(esp_reset_reason()));
+    }
+    
+    info.hasCoreDump = CrashMonitor::hasCoreDump();
+    info.coreDumpSize = info.hasCoreDump ? CrashMonitor::getCoreDumpSize() : 0;
 
     logger.debug("Dynamic system info populated", TAG);
 }
@@ -152,16 +173,8 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
     doc["device"]["id"] = info.deviceId;
     
     // Firmware state
-    // Convert firmware state to string
-    const char* fwStateStr;
-    switch (info.firmwareState) { // TODO: make this into a function
-        case STABLE: fwStateStr = "STABLE"; break;
-        case NEW_TO_TEST: fwStateStr = "NEW_TO_TEST"; break;
-        case TESTING: fwStateStr = "TESTING"; break;
-        case ROLLBACK: fwStateStr = "ROLLBACK"; break;
-        default: fwStateStr = "UNKNOWN"; break;
-    }
-    doc["firmware"]["state"] = fwStateStr;
+    doc["firmware"]["state"] = info.firmwareState;
+    doc["firmware"]["stateString"] = CrashMonitor::getFirmwareStatusString(info.firmwareState);
 
     logger.debug("Static system info converted to JSON", TAG);
 }
@@ -184,14 +197,12 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["memory"]["heap"]["usedPercentage"] = info.heapUsedPercentage;
     
     // Memory - PSRAM
-    if (info.psramFreeBytes > 0 || info.psramUsedBytes > 0) {
-        doc["memory"]["psram"]["freeBytes"] = info.psramFreeBytes;
-        doc["memory"]["psram"]["usedBytes"] = info.psramUsedBytes;
-        doc["memory"]["psram"]["minFreeBytes"] = info.psramMinFreeBytes;
-        doc["memory"]["psram"]["maxAllocBytes"] = info.psramMaxAllocBytes;
-        doc["memory"]["psram"]["freePercentage"] = info.psramFreePercentage;
-        doc["memory"]["psram"]["usedPercentage"] = info.psramUsedPercentage;
-    }
+    doc["memory"]["psram"]["freeBytes"] = info.psramFreeBytes;
+    doc["memory"]["psram"]["usedBytes"] = info.psramUsedBytes;
+    doc["memory"]["psram"]["minFreeBytes"] = info.psramMinFreeBytes;
+    doc["memory"]["psram"]["maxAllocBytes"] = info.psramMaxAllocBytes;
+    doc["memory"]["psram"]["freePercentage"] = info.psramFreePercentage;
+    doc["memory"]["psram"]["usedPercentage"] = info.psramUsedPercentage;
     
     // Storage
     doc["storage"]["spiffs"]["totalBytes"] = info.spiffsTotalBytes;
@@ -212,9 +223,15 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["network"]["wifiSubnetMask"] = info.wifiSubnetMask;
     doc["network"]["wifiDnsIp"] = info.wifiDnsIp;
     doc["network"]["wifiBssid"] = info.wifiBssid;
-    if (info.wifiConnected) {
-        doc["network"]["wifiRssi"] = info.wifiRssi;
-    }
+    doc["network"]["wifiRssi"] = info.wifiRssi;
+    
+    // Crash monitoring
+    doc["monitoring"]["crashCount"] = info.crashCount;
+    doc["monitoring"]["resetCount"] = info.resetCount;
+    doc["monitoring"]["lastResetReason"] = info.lastResetReason;
+    doc["monitoring"]["lastResetReasonString"] = info.lastResetReasonString;
+    doc["monitoring"]["hasCoreDump"] = info.hasCoreDump;
+    doc["monitoring"]["coreDumpSize"] = info.coreDumpSize;
 
     logger.debug("Dynamic system info converted to JSON", TAG);
 }
@@ -790,17 +807,8 @@ void printDeviceStatusStatic()
     logger.info("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", TAG, info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
     logger.info("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
     logger.info("Device ID: %s", TAG, info.deviceId);
-    
-    // Convert firmware state to string
-    const char* fwStateStr;
-    switch (info.firmwareState) { // TODO: make this into a function
-        case STABLE: fwStateStr = "STABLE"; break;
-        case NEW_TO_TEST: fwStateStr = "NEW_TO_TEST"; break;
-        case TESTING: fwStateStr = "TESTING"; break;
-        case ROLLBACK: fwStateStr = "ROLLBACK"; break;
-        default: fwStateStr = "UNKNOWN"; break;
-    }
-    logger.info("Firmware State: %s", TAG, fwStateStr);
+    logger.info("Firmware State: %s", TAG, CrashMonitor::getFirmwareStatusString(info.firmwareState));
+
     logger.info("------------------------", TAG);
 }
 
@@ -828,6 +836,14 @@ void printDeviceStatusDynamic()
     } else {
         logger.info("WiFi: Disconnected | MAC %s", TAG, info.wifiMacAddress);
     }
+    
+    // Crash monitoring info
+    logger.info("Monitoring: %lu crashes, %lu resets | Last reset: %s", TAG, 
+               info.crashCount, info.resetCount, info.lastResetReasonString);
+    if (info.hasCoreDump) {
+        logger.info("Monitoring: Core dump available (%zu bytes)", TAG, info.coreDumpSize);
+    }
+    
     logger.info("-------------------------", TAG);
 }
 
@@ -926,32 +942,39 @@ void systemInfoToJson(JsonDocument& jsonDocument) {
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
     logger.debug("Converting statistics to JSON...", TAG);
 
-    jsonDocument["ade7953TotalInterrupts"] = statistics.ade7953TotalInterrupts;
-    jsonDocument["ade7953TotalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;
-    jsonDocument["ade7953ReadingCount"] = statistics.ade7953ReadingCount;
-    jsonDocument["ade7953ReadingCountFailure"] = statistics.ade7953ReadingCountFailure;
-    
-    jsonDocument["mqttMessagesPublished"] = statistics.mqttMessagesPublished;
-    jsonDocument["mqttMessagesPublishedError"] = statistics.mqttMessagesPublishedError;
-    
-    jsonDocument["customMqttMessagesPublished"] = statistics.customMqttMessagesPublished;
-    jsonDocument["customMqttMessagesPublishedError"] = statistics.customMqttMessagesPublishedError;
-    
-    jsonDocument["modbusRequests"] = statistics.modbusRequests;
-    jsonDocument["modbusRequestsError"] = statistics.modbusRequestsError;
-    
-    jsonDocument["influxdbUploadCount"] = statistics.influxdbUploadCount;
-    jsonDocument["influxdbUploadCountError"] = statistics.influxdbUploadCountError;
-    
-    jsonDocument["wifiConnection"] = statistics.wifiConnection;
-    jsonDocument["wifiConnectionError"] = statistics.wifiConnectionError;
+    // ADE7953 statistics
+    jsonDocument["ade7953"]["totalInterrupts"] = statistics.ade7953TotalInterrupts;
+    jsonDocument["ade7953"]["totalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;
+    jsonDocument["ade7953"]["readingCount"] = statistics.ade7953ReadingCount;
+    jsonDocument["ade7953"]["readingCountFailure"] = statistics.ade7953ReadingCountFailure;
 
-    jsonDocument["logVerbose"] = statistics.logVerbose;
-    jsonDocument["logDebug"] = statistics.logDebug;
-    jsonDocument["logInfo"] = statistics.logInfo;
-    jsonDocument["logWarning"] = statistics.logWarning;
-    jsonDocument["logError"] = statistics.logError;
-    jsonDocument["logFatal"] = statistics.logFatal;
+    // MQTT statistics
+    jsonDocument["mqtt"]["messagesPublished"] = statistics.mqttMessagesPublished;
+    jsonDocument["mqtt"]["messagesPublishedError"] = statistics.mqttMessagesPublishedError;
+
+    // Custom MQTT statistics
+    jsonDocument["customMqtt"]["messagesPublished"] = statistics.customMqttMessagesPublished;
+    jsonDocument["customMqtt"]["messagesPublishedError"] = statistics.customMqttMessagesPublishedError;
+
+    // Modbus statistics
+    jsonDocument["modbus"]["requests"] = statistics.modbusRequests;
+    jsonDocument["modbus"]["requestsError"] = statistics.modbusRequestsError;
+
+    // InfluxDB statistics
+    jsonDocument["influxdb"]["uploadCount"] = statistics.influxdbUploadCount;
+    jsonDocument["influxdb"]["uploadCountError"] = statistics.influxdbUploadCountError;
+
+    // WiFi statistics
+    jsonDocument["wifi"]["connection"] = statistics.wifiConnection;
+    jsonDocument["wifi"]["connectionError"] = statistics.wifiConnectionError;
+
+    // Log statistics
+    jsonDocument["log"]["verbose"] = statistics.logVerbose;
+    jsonDocument["log"]["debug"] = statistics.logDebug;
+    jsonDocument["log"]["info"] = statistics.logInfo;
+    jsonDocument["log"]["warning"] = statistics.logWarning;
+    jsonDocument["log"]["error"] = statistics.logError;
+    jsonDocument["log"]["fatal"] = statistics.logFatal;
 
     logger.debug("Statistics converted to JSON", TAG);
 }
@@ -1080,6 +1103,8 @@ void factoryReset() {
     Led::setRed(true);
 
     clearAllPreferences();
+
+    logger.fatal("Formatting SPIFFS. This will take some time.", TAG);
     SPIFFS.format();
 
     // Directly call ESP.restart() so that a fresh start is done
@@ -1734,6 +1759,92 @@ namespace PreferencesConfig {
         String value = prefs.getString(PREF_KEY_MQTT_PASSWORD, "");
         prefs.end();
         snprintf(buffer, bufferSize, "%s", value.c_str());
+        return true;
+    }
+    
+    // Authentication functions
+    bool setWebPassword(const char* password) {
+        if (!validatePasswordStrength(password)) {
+            logger.error("Password does not meet strength requirements", TAG);
+            return false;
+        }
+        
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
+            logger.error("Failed to open auth preferences for writing", TAG);
+            return false;
+        }
+        
+        bool success = prefs.putString(PREFERENCES_KEY_PASSWORD, password) > 0;
+        prefs.end();
+        
+        if (success) {
+            logger.info("Web password updated successfully", TAG);
+        } else {
+            logger.error("Failed to save web password", TAG);
+        }
+        
+        return success;
+    }
+    
+    bool getWebPassword(char* buffer, size_t bufferSize) {
+        logger.debug("Getting web password", TAG);
+        
+        if (buffer == nullptr || bufferSize == 0) {
+            logger.error("Invalid buffer for getWebPassword", TAG);
+            return false;
+        }
+        
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
+            logger.error("Failed to open auth preferences for reading", TAG);
+            return false;
+        }
+        
+        String value = prefs.getString(PREFERENCES_KEY_PASSWORD, "");
+        prefs.end();
+        
+        if (value.isEmpty()) {
+            // Return default password if not set
+            snprintf(buffer, bufferSize, "%s", WEBSERVER_DEFAULT_PASSWORD);
+            return true;
+        }
+        
+        if (value.length() >= bufferSize) {
+            logger.error("Password too long for buffer", TAG);
+            return false;
+        }
+        
+        snprintf(buffer, bufferSize, "%s", value.c_str());
+        return true;
+    }
+    
+    bool resetWebPassword() {
+        logger.info("Resetting web password to default", TAG);
+        return setWebPassword(WEBSERVER_DEFAULT_PASSWORD);
+    }
+    
+    bool validatePasswordStrength(const char* password) {
+        if (password == nullptr) {
+            return false;
+        }
+        
+        size_t length = strlen(password);
+        
+        // Check minimum length
+        if (length < MIN_PASSWORD_LENGTH) {
+            logger.warning("Password too short", TAG);
+            return false;
+        }
+        
+        // Check maximum length
+        if (length > MAX_PASSWORD_LENGTH) {
+            logger.warning("Password too long", TAG);
+            return false;
+        }
+        
+        // For simplicity, just check length constraints
+        // Could add complexity requirements here (uppercase, numbers, etc.)
         return true;
     }
     

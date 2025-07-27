@@ -39,10 +39,11 @@
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
 
 // Authentication
-#define PREFERENCES_NAMESPACE_AUTH "auth" 
+#define PREFERENCES_NAMESPACE_AUTH "auth_ns" 
 #define PREFERENCES_KEY_PASSWORD "password"
-#define DEFAULT_WEB_PASSWORD "energyme"
-#define DEFAULT_WEB_USERNAME "admin"
+#define WEBSERVER_DEFAULT_USERNAME "admin"
+#define WEBSERVER_DEFAULT_PASSWORD "energyme"
+#define WEBSERVER_REALM "EnergyMe-Home"
 #define MAX_PASSWORD_LENGTH 64
 #define MIN_PASSWORD_LENGTH 4
 #define AUTH_SESSION_TIMEOUT (24 * 60 * 60 * 1000) // 24 hours in milliseconds

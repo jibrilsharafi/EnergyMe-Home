@@ -25,13 +25,11 @@
 #define CRASH_COUNTER_TIMEOUT (180 * 1000) // Timeout for the crash counter to reset
 
 struct CrashData {
-    unsigned int currentIndex;            // Current position in circular buffer
-    unsigned int crashCount;             // Number of crashes detected
+    unsigned int crashCount;             // Number of consecutive crashes
+    unsigned int resetCount;             // Total number of resets
     unsigned int lastResetReason;        // Last reset reason from ESP32
-    unsigned int resetCount;             // Number of resets
-    unsigned long lastUnixTime;          // Last unix time before crash
-    unsigned int signature;              // To verify RTC data validity
-    // Since this struct will be used in an RTC_NOINIT_ATTR, we cannot initialize it in the constructor
+    unsigned int signature;              // To verify RTC data validity (0xDEADBEEF)
+    unsigned int lastUnixTime;          // Last Unix time when the crash occurred
 };
 
 namespace CrashMonitor {
@@ -48,11 +46,15 @@ namespace CrashMonitor {
     bool getJsonReport(JsonDocument& _jsonDocument);
 
     bool isLastResetDueToCrash();
+    uint32_t getCrashCount();
+    uint32_t getResetCount();
+    void resetCrashCount();
+    const char* getResetReasonString(esp_reset_reason_t reason);
     
     // Core dump functions
     bool hasCoreDump();
     void clearCoreDump();
     size_t getCoreDumpSize();
 
-    void getFirmwareStatusString(FirmwareState status, char* buffer, size_t bufferSize);
+    const char* getFirmwareStatusString(FirmwareState status);
 }
