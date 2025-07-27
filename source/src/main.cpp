@@ -31,16 +31,10 @@
 static const char *TAG = "main";
 
 RestartConfiguration restartConfiguration;
-
 Statistics statistics;
-
-RTC_NOINIT_ATTR DebugFlagsRtc debugFlagsRtc;
-
 
 // Global device ID - defined here, declared as extern in constants.h
 char DEVICE_ID[DEVICE_ID_BUFFER_SIZE];
-
-// Callback variables
 
 // Utils variables
 unsigned long lastMaintenanceCheck = 0;
@@ -115,25 +109,6 @@ void setup() {
     CrashMonitor::begin();
     logger.info("Crash monitor setup done", TAG);
 
-    logger.debug( // TODO: make this a simple preferences, so we avoid having this global thing..
-        "Checking RTC debug flags. Signature: 0x%X, Enabled: %d, Duration: %lu, EndTimeMillis: %lu", 
-        TAG, 
-        debugFlagsRtc.signature, 
-        debugFlagsRtc.enableMqttDebugLogging, 
-        debugFlagsRtc.mqttDebugLoggingDurationMillis, 
-        debugFlagsRtc.mqttDebugLoggingEndTimeMillis
-    );
-    if (debugFlagsRtc.signature == DEBUG_FLAGS_RTC_SIGNATURE && debugFlagsRtc.enableMqttDebugLogging) {
-        logger.info("Resuming MQTT debug logging from RTC for %lu ms.", TAG, debugFlagsRtc.mqttDebugLoggingDurationMillis);
-        debugFlagsRtc.mqttDebugLoggingEndTimeMillis = millis() + debugFlagsRtc.mqttDebugLoggingDurationMillis;
-    } else {
-        logger.debug("No valid RTC debug flags found. Resetting to default values.", TAG);
-        debugFlagsRtc.enableMqttDebugLogging = false;
-        debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
-        debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
-        debugFlagsRtc.signature = 0;
-    }
-
     Led::setCyan();
 
     logger.debug("Checking for missing files...", TAG);
@@ -175,7 +150,7 @@ void setup() {
     CustomWifi::begin();
     logger.info("WiFi setup done", TAG);
 
-    while (!CustomWifi::isFullyConnected()) { // TODO: make better?
+    while (!CustomWifi::isFullyConnected()) {
         logger.debug("Waiting for full WiFi connection...", TAG);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -245,15 +220,6 @@ void loop() {
       if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
         logger.clearLog();
         logger.warning("Log cleared due to low memory", TAG);
-      }
-      
-      if (debugFlagsRtc.enableMqttDebugLogging && millis() >= debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
-        logger.info("MQTT debug logging period ended.", TAG);
-
-        debugFlagsRtc.enableMqttDebugLogging = false;
-        debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
-        debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
-        debugFlagsRtc.signature = 0; 
       }
     }
 

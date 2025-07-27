@@ -64,12 +64,10 @@ namespace CustomLog
         const char* message
     )
     {
-        if (!DEFAULT_IS_UDP_LOGGING_ENABLED || !_isUdpInitialized) return;
+        if (!DEFAULT_IS_UDP_LOGGING_ENABLED) return;
         if (strcmp(level, "verbose") == 0) return; // Never send verbose logs via UDP
         
-        // Skip UDP logging if heap is critically low to prevent death spiral
-        if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) return;
-
+        // Even though the inizialization has not been done yet, we can still push the logs
         _udpLogBuffer.push(
             LogJson(
                 timestamp,
@@ -80,6 +78,8 @@ namespace CustomLog
                 message
             )
         );
+
+        if (!_isUdpInitialized) return;
 
         // If not connected to WiFi or no valid IP, return (log is still stored in circular buffer for later)
         if (!CustomWifi::isFullyConnected()) return;

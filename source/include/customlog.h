@@ -14,14 +14,15 @@
 #include "utils.h"
 
 // Constants for UDP logging
+#define DEFAULT_IS_UDP_LOGGING_ENABLED true // TODO: this should disable all these functionalities, to also save on memory
+
 #define UDP_LOG_SERVERITY_FACILITY 16 // Standard syslog facility for local0.info
 #define UDP_LOG_PORT 514 // Standard syslog port
 #define UDP_LOG_BUFFER_SIZE 256 // Smaller buffer for UDP packets
-#define DEFAULT_IS_UDP_LOGGING_ENABLED true
 #define DEFAULT_UDP_LOG_DESTINATION_IP "239.255.255.250" // Multicast IP for UDP logging
-#define LOG_BUFFER_SIZE 20 // Callback queue size
+#define LOG_BUFFER_SIZE 200 // Callback queue size - (high, only for development. Make lower evenually)
 #define LOG_CALLBACK_LEVEL_SIZE 8 // Size for log level (e.g., "info", "error")
-#define LOG_CALLBACK_FUNCTION_SIZE 32 // Size for function name
+#define LOG_CALLBACK_FUNCTION_SIZE 16 // Size for function name
 #define LOG_CALLBACK_MESSAGE_SIZE 128 // Size for log message
 
 struct LogJson {

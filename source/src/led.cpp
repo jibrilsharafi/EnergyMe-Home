@@ -1,8 +1,5 @@
 #include "led.h"
 
-// TODO: we could introduce the logger here (when it will
-// be static) but it is not essential since this is a 
-// simple LED control class
 // TODO: add task for async usage
 namespace Led {
     // Static variables to maintain state

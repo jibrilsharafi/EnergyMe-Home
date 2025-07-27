@@ -19,7 +19,7 @@
 
 namespace Led {
     void begin(int redPin, int greenPin, int bluePin);
-    void resetToDefaults(); // TODO: include in factory reset
+    void resetToDefaults();
 
     void setBrightness(int brightness);
     int getBrightness();

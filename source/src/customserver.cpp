@@ -70,7 +70,7 @@ namespace CustomServer {
     logger.debug("Rate limiting configured: max requests = %d, window size = %d seconds", TAG, WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
 
     // ---- Logging Middleware Setup ----
-    // TODO: remove this in production, it's for debugging only
+    // TODO: remove this in production, it's for development only
     requestLogger.setEnabled(true);
     requestLogger.setOutput(Serial);
     

@@ -40,7 +40,7 @@ void populateSystemInfo(SystemInfo& systemInfo);
 void systemInfoToJson(JsonDocument& jsonDocument);
 
 // Preferences utilities for configuration storage
-namespace PreferencesConfig {    
+namespace PreferencesConfig {     // TODO: keep here only what we really need to be global
     // ADE7953 configuration
     bool setSampleTime(uint32_t sampleTime);
     uint32_t getSampleTime();
@@ -60,16 +60,16 @@ namespace PreferencesConfig {
     uint8_t getChannelPhase(uint8_t channel);
     
     // Custom MQTT configuration // TODO: make custom
-    bool setMqttEnabled(bool enabled);
-    bool getMqttEnabled();
-    bool setMqttServer(const char* server);
-    bool getMqttServer(char* buffer, size_t bufferSize);
-    bool setMqttPort(uint16_t port);
-    uint16_t getMqttPort();
-    bool setMqttUsername(const char* username);
-    bool getMqttUsername(char* buffer, size_t bufferSize);
-    bool setMqttPassword(const char* password);
-    bool getMqttPassword(char* buffer, size_t bufferSize);
+    bool setCustomMqttEnabled(bool enabled);
+    bool getCustomMqttEnabled();
+    bool setCustomMqttServer(const char* server);
+    bool getCustomMqttServer(char* buffer, size_t bufferSize);
+    bool setCustomMqttPort(uint16_t port);
+    uint16_t getCustomMqttPort();
+    bool setCustomMqttUsername(const char* username);
+    bool getCustomMqttUsername(char* buffer, size_t bufferSize);
+    bool setCustomMqttPassword(const char* password);
+    bool getCustomMqttPassword(char* buffer, size_t bufferSize);
     
     // Authentication functions
     bool setWebPassword(const char* password);
@@ -79,18 +79,6 @@ namespace PreferencesConfig {
     
     // Utility functions
     bool hasConfiguration(const char* prefsNamespace);
-
-    // Firmware
-    bool setFirmwareUpdatesVersion(const char* version);
-    bool getFirmwareUpdatesVersion(char* buffer, size_t bufferSize);
-    bool setFirmwareUpdatesUrl(const char* url);
-    bool getFirmwareUpdatesUrl(char* buffer, size_t bufferSize);
-
-    // MQTT
-    bool setCloudServicesEnabled(bool enabled);
-    bool getCloudServicesEnabled();
-    bool setSendPowerData(bool enabled);
-    bool getSendPowerData();
 }
 
 void setRestartEsp32(const char* functionName, const char* reason);
@@ -105,8 +93,7 @@ void updateStatistics();
 void printStatistics();
 
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
-bool loadConfigFromPreferences(const char* configType, JsonDocument& jsonDocument);
-bool saveConfigToPreferences(const char* configType, JsonDocument& jsonDocument);
+
 // Legacy SPIFFS functions for backward compatibility during transition
 bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);

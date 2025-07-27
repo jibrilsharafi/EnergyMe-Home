@@ -184,14 +184,6 @@ struct SystemInfo {
     }
 };
 
-struct DebugFlagsRtc {
-    bool enableMqttDebugLogging;
-    unsigned long mqttDebugLoggingDurationMillis;
-    unsigned long mqttDebugLoggingEndTimeMillis;
-    unsigned int signature;
-    // Since this struct will be used in an RTC_NOINIT_ATTR, we cannot initialize it in the constructor
-};
-
 enum Phase : int {
     PHASE_1 = 1,
     PHASE_2 = 2,

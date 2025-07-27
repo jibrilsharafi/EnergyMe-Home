@@ -154,15 +154,15 @@ void CustomMqtt::_setConfigurationFromSpiffs()
     }
 
     JsonDocument _jsonDocument;
-    _jsonDocument["enabled"] = preferences.getBool(PREF_KEY_MQTT_ENABLED, false);
-    _jsonDocument["server"] = preferences.getString(PREF_KEY_MQTT_SERVER, "");
-    _jsonDocument["port"] = preferences.getUInt(PREF_KEY_MQTT_PORT, 1883);
-    _jsonDocument["clientid"] = preferences.getString(PREF_KEY_MQTT_CLIENT_ID, "energyme");
-    _jsonDocument["topic"] = preferences.getString(PREF_KEY_MQTT_TOPIC, "energyme/meter");
-    _jsonDocument["frequency"] = preferences.getUInt(PREF_KEY_MQTT_FREQUENCY, 10);
-    _jsonDocument["useCredentials"] = preferences.getBool(PREF_KEY_MQTT_USE_CREDENTIALS, false);
-    _jsonDocument["username"] = preferences.getString(PREF_KEY_MQTT_USERNAME, "");
-    _jsonDocument["password"] = preferences.getString(PREF_KEY_MQTT_PASSWORD, "");
+    _jsonDocument["enabled"] = preferences.getBool(PREF_KEY_CUSTOM_MQTT_ENABLED, false);
+    _jsonDocument["server"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_SERVER, "");
+    _jsonDocument["port"] = preferences.getUInt(PREF_KEY_CUSTOM_MQTT_PORT, 1883);
+    _jsonDocument["clientid"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_CLIENT_ID, "energyme");
+    _jsonDocument["topic"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_TOPIC, "energyme/meter");
+    _jsonDocument["frequency"] = preferences.getUInt(PREF_KEY_CUSTOM_MQTT_FREQUENCY, 10);
+    _jsonDocument["useCredentials"] = preferences.getBool(PREF_KEY_CUSTOM_MQTT_USE_CREDENTIALS, false);
+    _jsonDocument["username"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_USERNAME, "");
+    _jsonDocument["password"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_PASSWORD, "");
 
     preferences.end();
 
@@ -186,15 +186,15 @@ void CustomMqtt::_saveConfigurationToSpiffs()
         return;
     }
 
-    preferences.putBool(PREF_KEY_MQTT_ENABLED, _customMqttConfiguration.enabled);
-    preferences.putString(PREF_KEY_MQTT_SERVER, _customMqttConfiguration.server);
-    preferences.putUInt(PREF_KEY_MQTT_PORT, _customMqttConfiguration.port);
-    preferences.putString(PREF_KEY_MQTT_CLIENT_ID, _customMqttConfiguration.clientid);
-    preferences.putString(PREF_KEY_MQTT_TOPIC, _customMqttConfiguration.topic);
-    preferences.putUInt(PREF_KEY_MQTT_FREQUENCY, _customMqttConfiguration.frequency);
-    preferences.putBool(PREF_KEY_MQTT_USE_CREDENTIALS, _customMqttConfiguration.useCredentials);
-    preferences.putString(PREF_KEY_MQTT_USERNAME, _customMqttConfiguration.username);
-    preferences.putString(PREF_KEY_MQTT_PASSWORD, _customMqttConfiguration.password);
+    preferences.putBool(PREF_KEY_CUSTOM_MQTT_ENABLED, _customMqttConfiguration.enabled);
+    preferences.putString(PREF_KEY_CUSTOM_MQTT_SERVER, _customMqttConfiguration.server);
+    preferences.putUInt(PREF_KEY_CUSTOM_MQTT_PORT, _customMqttConfiguration.port);
+    preferences.putString(PREF_KEY_CUSTOM_MQTT_CLIENT_ID, _customMqttConfiguration.clientid);
+    preferences.putString(PREF_KEY_CUSTOM_MQTT_TOPIC, _customMqttConfiguration.topic);
+    preferences.putUInt(PREF_KEY_CUSTOM_MQTT_FREQUENCY, _customMqttConfiguration.frequency);
+    preferences.putBool(PREF_KEY_CUSTOM_MQTT_USE_CREDENTIALS, _customMqttConfiguration.useCredentials);
+    preferences.putString(PREF_KEY_CUSTOM_MQTT_USERNAME, _customMqttConfiguration.username);
+    preferences.putString(PREF_KEY_CUSTOM_MQTT_PASSWORD, _customMqttConfiguration.password);
 
     preferences.end();
 
@@ -231,7 +231,7 @@ void CustomMqtt::_disable() {
         return;
     }
 
-    preferences.putBool(PREF_KEY_MQTT_ENABLED, false);
+    preferences.putBool(PREF_KEY_CUSTOM_MQTT_ENABLED, false);
     preferences.end();
 
     // Update the configuration object

@@ -96,18 +96,18 @@
 #define PREF_KEY_A_VA_OS "aVaOs"
 #define PREF_KEY_B_VA_OS "bVaOs"
 
-// Preferences keys for MQTT configuration // TODO: make custom MQTT
-#define PREF_KEY_MQTT_ENABLED "enabled"
-#define PREF_KEY_MQTT_SERVER "server"
-#define PREF_KEY_MQTT_PORT "port"
-#define PREF_KEY_MQTT_USERNAME "username"
-#define PREF_KEY_MQTT_PASSWORD "password"
-#define PREF_KEY_MQTT_CLIENT_ID "clientId"
-#define PREF_KEY_MQTT_TOPIC_PREFIX "topicPrefix"
-#define PREF_KEY_MQTT_PUBLISH_INTERVAL "publishInterval"
-#define PREF_KEY_MQTT_USE_CREDENTIALS "useCredentials"
-#define PREF_KEY_MQTT_TOPIC "topic"
-#define PREF_KEY_MQTT_FREQUENCY "frequency"
+// Preferences keys for MQTT configuration
+#define PREF_KEY_CUSTOM_MQTT_ENABLED "enabled"
+#define PREF_KEY_CUSTOM_MQTT_SERVER "server"
+#define PREF_KEY_CUSTOM_MQTT_PORT "port"
+#define PREF_KEY_CUSTOM_MQTT_USERNAME "username"
+#define PREF_KEY_CUSTOM_MQTT_PASSWORD "password"
+#define PREF_KEY_CUSTOM_MQTT_CLIENT_ID "clientId"
+#define PREF_KEY_CUSTOM_MQTT_TOPIC_PREFIX "topicPrefix"
+#define PREF_KEY_CUSTOM_MQTT_PUBLISH_INTERVAL "publishInterval"
+#define PREF_KEY_CUSTOM_MQTT_USE_CREDENTIALS "useCredentials"
+#define PREF_KEY_CUSTOM_MQTT_TOPIC "topic"
+#define PREF_KEY_CUSTOM_MQTT_FREQUENCY "frequency"
 
 // MQTT
 #define PREF_KEY_MQTT_CLOUD_SERVICES "cloud_services"
@@ -222,7 +222,7 @@
 
 // ESP32 status
 #define MINIMUM_FREE_HEAP_SIZE 5000 // Below this value (in bytes), the ESP32 will restart
-#define MINIMUM_FREE_SPIFFS_SIZE 100000 // Below this value (in bytes), the ESP32 will clear the log
+#define MINIMUM_FREE_SPIFFS_SIZE 10000 // Below this value (in bytes), the ESP32 will clear the log
 #define ESP32_RESTART_DELAY (2 * 1000) // The delay before restarting the ESP32 after a restart request, needed to allow the ESP32 to finish the current operations
 #define MINIMUM_FREE_HEAP_OTA 20000 // Below this, the OTA is rejected (a bit unsafe, this could block OTA)
 

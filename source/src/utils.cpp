@@ -214,7 +214,6 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     logger.debug("Dynamic system info converted to JSON", TAG);
 }
 
-// Convenience functions for API endpoints
 void getJsonDeviceStaticInfo(JsonDocument& doc) {
     SystemStaticInfo info;
     populateSystemStaticInfo(info);
@@ -253,167 +252,6 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
     serializeJson(jsonDocument, buffer, bufferSize);
     logger.debug("JSON serialized successfully (bytes: %zu): %s", TAG, _size, buffer);
     return true;
-}
-
-bool loadConfigFromPreferences(const char* configType, JsonDocument& jsonDocument) {
-    logger.debug("Loading %s configuration from Preferences", TAG, configType);
-
-    // Route to appropriate PreferencesConfig functions based on config type
-    if (strcmp(configType, "ade7953") == 0) {
-        jsonDocument["sampleTime"] = PreferencesConfig::getSampleTime();
-        jsonDocument["aVGain"] = PreferencesConfig::getVoltageGain();
-        jsonDocument["aIGain"] = PreferencesConfig::getCurrentGainA();
-        jsonDocument["bIGain"] = PreferencesConfig::getCurrentGainB();
-        
-        // Load additional ADE7953 parameters directly from Preferences
-        Preferences prefs;
-        if (prefs.begin(PREFERENCES_NAMESPACE_ADE7953, true)) {
-            jsonDocument["aIRmsOs"] = prefs.getUInt("aIRmsOs", DEFAULT_OFFSET);
-            jsonDocument["bIRmsOs"] = prefs.getUInt("bIRmsOs", DEFAULT_OFFSET);
-            jsonDocument["aWGain"] = prefs.getUInt("aWGain", DEFAULT_GAIN);
-            jsonDocument["bWGain"] = prefs.getUInt("bWGain", DEFAULT_GAIN);
-            jsonDocument["aWattOs"] = prefs.getUInt("aWattOs", DEFAULT_OFFSET);
-            jsonDocument["bWattOs"] = prefs.getUInt("bWattOs", DEFAULT_OFFSET);
-            jsonDocument["aVarGain"] = prefs.getUInt("aVarGain", DEFAULT_GAIN);
-            jsonDocument["bVarGain"] = prefs.getUInt("bVarGain", DEFAULT_GAIN);
-            jsonDocument["aVarOs"] = prefs.getUInt("aVarOs", DEFAULT_OFFSET);
-            jsonDocument["bVarOs"] = prefs.getUInt("bVarOs", DEFAULT_OFFSET);
-            jsonDocument["aVaGain"] = prefs.getUInt("aVaGain", DEFAULT_GAIN);
-            jsonDocument["bVaGain"] = prefs.getUInt("bVaGain", DEFAULT_GAIN);
-            jsonDocument["aVaOs"] = prefs.getUInt("aVaOs", DEFAULT_OFFSET);
-            jsonDocument["bVaOs"] = prefs.getUInt("bVaOs", DEFAULT_OFFSET);
-            jsonDocument["phCalA"] = prefs.getUInt("phCalA", DEFAULT_PHCAL);
-            jsonDocument["phCalB"] = prefs.getUInt("phCalB", DEFAULT_PHCAL);
-            prefs.end();
-        }
-        
-    } else if (strcmp(configType, "channels") == 0) {
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            jsonDocument[i]["active"] = PreferencesConfig::getChannelActive(i);
-            
-            char labelBuffer[64];
-            PreferencesConfig::getChannelLabel(i, labelBuffer, sizeof(labelBuffer));
-            jsonDocument[i]["label"] = labelBuffer;
-            
-            jsonDocument[i]["phase"] = PreferencesConfig::getChannelPhase(i);
-        }
-        
-    } else if (strcmp(configType, "mqtt") == 0) {
-        jsonDocument["enabled"] = PreferencesConfig::getMqttEnabled();
-        jsonDocument["port"] = PreferencesConfig::getMqttPort();
-        
-        char buffer[256];
-        if (PreferencesConfig::getMqttServer(buffer, sizeof(buffer))) {
-            jsonDocument["server"] = buffer;
-        }
-        if (PreferencesConfig::getMqttUsername(buffer, sizeof(buffer))) {
-            jsonDocument["username"] = buffer;
-        }
-        if (PreferencesConfig::getMqttPassword(buffer, sizeof(buffer))) {
-            jsonDocument["password"] = buffer;
-        }
-        
-        // Load additional MQTT parameters directly from Preferences
-        Preferences prefs;
-        if (prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
-            jsonDocument["clientid"] = prefs.getString("clientid", MQTT_CUSTOM_CLIENTID_DEFAULT);
-            jsonDocument["topic"] = prefs.getString("topic", MQTT_CUSTOM_TOPIC_DEFAULT);
-            jsonDocument["frequency"] = prefs.getUInt("frequency", MQTT_CUSTOM_FREQUENCY_DEFAULT);
-            jsonDocument["useCredentials"] = prefs.getBool("useCredentials", MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT);
-            jsonDocument["lastConnectionStatus"] = prefs.getString("lastStatus", "Never attempted");
-            jsonDocument["lastConnectionAttemptTimestamp"] = prefs.getString("lastAttempt", "");
-            prefs.end();
-        }
-    
-    } else {
-        logger.warning("Unknown config type: %s", TAG, configType);
-        return false;
-    }
-
-    char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
-    safeSerializeJson(jsonDocument, _jsonString, sizeof(_jsonString), true);
-    logger.debug("%s configuration loaded from Preferences: %s", TAG, configType, _jsonString);
-    return true;
-}
-
-bool saveConfigToPreferences(const char* configType, JsonDocument& jsonDocument) {
-    logger.debug("Saving %s configuration to Preferences", TAG, configType);
-
-    bool success = true;
-    
-    // Route to appropriate PreferencesConfig functions based on config type
-    if (strcmp(configType, "ade7953") == 0) {
-        success &= PreferencesConfig::setSampleTime(jsonDocument["sampleTime"].as<uint32_t>());
-        success &= PreferencesConfig::setVoltageGain(jsonDocument["aVGain"].as<uint32_t>());
-        success &= PreferencesConfig::setCurrentGainA(jsonDocument["aIGain"].as<uint32_t>());
-        success &= PreferencesConfig::setCurrentGainB(jsonDocument["bIGain"].as<uint32_t>());
-        
-        // Save additional ADE7953 parameters directly to Preferences
-        Preferences prefs;
-        if (prefs.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
-            prefs.putUInt("aIRmsOs", jsonDocument["aIRmsOs"].as<uint32_t>());
-            prefs.putUInt("bIRmsOs", jsonDocument["bIRmsOs"].as<uint32_t>());
-            prefs.putUInt("aWGain", jsonDocument["aWGain"].as<uint32_t>());
-            prefs.putUInt("bWGain", jsonDocument["bWGain"].as<uint32_t>());
-            prefs.putUInt("aWattOs", jsonDocument["aWattOs"].as<uint32_t>());
-            prefs.putUInt("bWattOs", jsonDocument["bWattOs"].as<uint32_t>());
-            prefs.putUInt("aVarGain", jsonDocument["aVarGain"].as<uint32_t>());
-            prefs.putUInt("bVarGain", jsonDocument["bVarGain"].as<uint32_t>());
-            prefs.putUInt("aVarOs", jsonDocument["aVarOs"].as<uint32_t>());
-            prefs.putUInt("bVarOs", jsonDocument["bVarOs"].as<uint32_t>());
-            prefs.putUInt("aVaGain", jsonDocument["aVaGain"].as<uint32_t>());
-            prefs.putUInt("bVaGain", jsonDocument["bVaGain"].as<uint32_t>());
-            prefs.putUInt("aVaOs", jsonDocument["aVaOs"].as<uint32_t>());
-            prefs.putUInt("bVaOs", jsonDocument["bVaOs"].as<uint32_t>());
-            prefs.putUInt("phCalA", jsonDocument["phCalA"].as<uint32_t>());
-            prefs.putUInt("phCalB", jsonDocument["phCalB"].as<uint32_t>());
-            prefs.end();
-        } else {
-            success = false;
-        }
-        
-    } else if (strcmp(configType, "channels") == 0) {
-        for (uint8_t i = 0; i < CHANNEL_COUNT && i < jsonDocument.size(); i++) {
-            success &= PreferencesConfig::setChannelActive(i, jsonDocument[i]["active"].as<bool>());
-            success &= PreferencesConfig::setChannelLabel(i, jsonDocument[i]["label"].as<const char*>());
-            success &= PreferencesConfig::setChannelPhase(i, jsonDocument[i]["phase"].as<uint8_t>());
-        }
-        
-    } else if (strcmp(configType, "mqtt") == 0) {
-        success &= PreferencesConfig::setMqttEnabled(jsonDocument["enabled"].as<bool>());
-        success &= PreferencesConfig::setMqttServer(jsonDocument["server"].as<const char*>());
-        success &= PreferencesConfig::setMqttPort(jsonDocument["port"].as<uint16_t>());
-        success &= PreferencesConfig::setMqttUsername(jsonDocument["username"].as<const char*>());
-        success &= PreferencesConfig::setMqttPassword(jsonDocument["password"].as<const char*>());
-        
-        // Save additional MQTT parameters directly to Preferences
-        Preferences prefs;
-        if (prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            prefs.putString("clientid", jsonDocument["clientid"].as<String>());
-            prefs.putString("topic", jsonDocument["topic"].as<String>());
-            prefs.putUInt("frequency", jsonDocument["frequency"].as<uint32_t>());
-            prefs.putBool("useCredentials", jsonDocument["useCredentials"].as<bool>());
-            prefs.putString("lastStatus", jsonDocument["lastConnectionStatus"].as<String>());
-            prefs.putString("lastAttempt", jsonDocument["lastConnectionAttemptTimestamp"].as<String>());
-            prefs.end();
-        } else {
-            success = false;
-        }
-        
-    } else {
-        logger.warning("Unknown config type: %s", TAG, configType);
-        return false;
-    }
-
-    char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
-    safeSerializeJson(jsonDocument, _jsonString, sizeof(_jsonString), true);
-    logger.debug("%s configuration saved to Preferences: %s", TAG, configType, _jsonString);
-    
-    if (!success) {
-        logger.error("Failed to save %s configuration to Preferences", TAG, configType);
-    }
-    
-    return success;
 }
 
 // Legacy SPIFFS functions for backward compatibility during transition
@@ -538,8 +376,7 @@ void createDefaultAde7953ConfigurationFile() {
     _jsonDocument["phCalA"] = DEFAULT_PHCAL;
     _jsonDocument["phCalB"] = DEFAULT_PHCAL;
 
-    // Save to Preferences instead of SPIFFS
-    saveConfigToPreferences("ade7953", _jsonDocument);
+    logger.warning("Actually save this!!!!", TAG);
 
     logger.debug("Default ADE7953 configuration created", TAG);
 }
@@ -564,8 +401,7 @@ void createDefaultChannelDataFile() { // TODO: remove this weird json to prefere
     JsonDocument _jsonDocument;
     deserializeJson(_jsonDocument, default_config_channel_json);
 
-    // Save to Preferences instead of SPIFFS
-    saveConfigToPreferences("channels", _jsonDocument);
+    logger.warning("Actually save this!!!!", TAG);
 
     logger.debug("Default channel configuration created", TAG);
 }
@@ -587,8 +423,7 @@ void createDefaultCustomMqttConfigurationFile() {
     _jsonDocument["lastConnectionStatus"] = "Never attempted";
     _jsonDocument["lastConnectionAttemptTimestamp"] = "";
 
-    // Save to Preferences instead of SPIFFS
-    saveConfigToPreferences("mqtt", _jsonDocument);
+    logger.warning("Actually save this!!!!", TAG);
 
     logger.debug("Default custom MQTT configuration created", TAG);
 }
@@ -1087,23 +922,15 @@ void clearAllPreferences() {
     logger.fatal("Clear all preferences requested", TAG);
 
     Preferences preferences;
-    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); // false = read-write mode
+    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); // false = read-write mode
     preferences.clear();
     preferences.end();
 
-    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); // false = read-write mode
+    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); // false = read-write mode
     preferences.clear();
     preferences.end();
     
-    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); // false = read-write mode
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false);
+    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); // false = read-write mode
     preferences.clear();
     preferences.end();
 
@@ -1111,7 +938,39 @@ void clearAllPreferences() {
     preferences.clear();
     preferences.end();
 
+    preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false);
+    preferences.clear();
+    preferences.end();
+
     preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false);
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false);
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); // false = read-write mode
+    preferences.clear();
+    preferences.end();
+    
+    preferences.begin(PREFERENCES_NAMESPACE_TIME, false); // false = read-write mode
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false);
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false);
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_LED, false);
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false);
     preferences.clear();
     preferences.end();
 }
@@ -1202,28 +1061,17 @@ const char* getMqttStateReason(int state)
 
     switch (state)
     {
-    case -4:
-        return "MQTT_CONNECTION_TIMEOUT";
-    case -3:
-        return "MQTT_CONNECTION_LOST";
-    case -2:
-        return "MQTT_CONNECT_FAILED";
-    case -1:
-        return "MQTT_DISCONNECTED";
-    case 0:
-        return "MQTT_CONNECTED";
-    case 1:
-        return "MQTT_CONNECT_BAD_PROTOCOL";
-    case 2:
-        return "MQTT_CONNECT_BAD_CLIENT_ID";
-    case 3:
-        return "MQTT_CONNECT_UNAVAILABLE";
-    case 4:
-        return "MQTT_CONNECT_BAD_CREDENTIALS";
-    case 5:
-        return "MQTT_CONNECT_UNAUTHORIZED";
-    default:
-        return "Unknown MQTT state";
+        case -4: return "MQTT_CONNECTION_TIMEOUT";
+        case -3: return "MQTT_CONNECTION_LOST";
+        case -2: return "MQTT_CONNECT_FAILED";
+        case -1: return "MQTT_DISCONNECTED";
+        case 0: return "MQTT_CONNECTED";
+        case 1: return "MQTT_CONNECT_BAD_PROTOCOL";
+        case 2: return "MQTT_CONNECT_BAD_CLIENT_ID";
+        case 3: return "MQTT_CONNECT_UNAVAILABLE";
+        case 4: return "MQTT_CONNECT_BAD_CREDENTIALS";
+        case 5: return "MQTT_CONNECT_UNAUTHORIZED";
+        default: return "Unknown MQTT state";
     }
 }
 
@@ -1560,116 +1408,116 @@ namespace PreferencesConfig {
         return value;
     }
     
-    // MQTT configuration TODO: this is the custom MQTT, do not mix up
-    bool setMqttEnabled(bool enabled) {
+    // Custom MQTT configuration
+    bool setCustomMqttEnabled(bool enabled) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) {
+            logger.error("Failed to open custom MQTT preferences", TAG_PREFS);
             return false;
         }
-        bool success = prefs.putBool(PREF_KEY_MQTT_ENABLED, enabled);
+        bool success = prefs.putBool(PREF_KEY_CUSTOM_MQTT_ENABLED, enabled);
         prefs.end();
         return success;
     }
     
-    bool getMqttEnabled() {
+    bool getCustomMqttEnabled() {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, true)) {
+            logger.error("Failed to open custom MQTT preferences", TAG_PREFS);
             return false; // Default to disabled
         }
-        bool value = prefs.getBool(PREF_KEY_MQTT_ENABLED, false);
+        bool value = prefs.getBool(PREF_KEY_CUSTOM_MQTT_ENABLED, false);
         prefs.end();
         return value;
     }
     
-    bool setMqttServer(const char* server) {
+    bool setCustomMqttServer(const char* server) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) {
+            logger.error("Failed to open custom MQTT preferences", TAG_PREFS);
             return false;
         }
-        bool success = prefs.putString(PREF_KEY_MQTT_SERVER, server) > 0;
+        bool success = prefs.putString(PREF_KEY_CUSTOM_MQTT_SERVER, server) > 0;
         prefs.end();
         return success;
     }
     
-    bool getMqttServer(char* buffer, size_t bufferSize) {
+    bool getCustomMqttServer(char* buffer, size_t bufferSize) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, true)) {
+            logger.error("Failed to open custom MQTT preferences", TAG_PREFS);
             buffer[0] = '\0';
             return false;
         }
-        prefs.getString(PREF_KEY_MQTT_SERVER, buffer, bufferSize);
+        prefs.getString(PREF_KEY_CUSTOM_MQTT_SERVER, buffer, bufferSize);
         prefs.end();
         return true;
     }
     
-    bool setMqttPort(uint16_t port) {
+    bool setCustomMqttPort(uint16_t port) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) {
+            logger.error("Failed to open custom MQTT preferences", TAG_PREFS);
             return false;
         }
-        bool success = prefs.putUShort(PREF_KEY_MQTT_PORT, port);
+        bool success = prefs.putUShort(PREF_KEY_CUSTOM_MQTT_PORT, port);
         prefs.end();
         return success;
     }
     
-    uint16_t getMqttPort() {
+    uint16_t getCustomMqttPort() {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
-            return 1883; // Default MQTT port
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, true)) {
+            logger.error("Failed to open custom MQTT preferences", TAG_PREFS);
+            return 1883; // Default CustomMQTT port
         }
-        uint16_t value = prefs.getUShort(PREF_KEY_MQTT_PORT, 1883);
+        uint16_t value = prefs.getUShort(PREF_KEY_CUSTOM_MQTT_PORT, 1883);
         prefs.end();
         return value;
     }
     
-    bool setMqttUsername(const char* username) {
+    bool setCustomMqttUsername(const char* username) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) {
+            logger.error("Failed to open custom MQTT preferences", TAG_PREFS);
             return false;
         }
-        bool success = prefs.putString(PREF_KEY_MQTT_USERNAME, username) > 0;
+        bool success = prefs.putString(PREF_KEY_CUSTOM_MQTT_USERNAME, username) > 0;
         prefs.end();
         return success;
     }
     
-    bool getMqttUsername(char* buffer, size_t bufferSize) {
+    bool getCustomMqttUsername(char* buffer, size_t bufferSize) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, true)) {
+            logger.error("Failed to open custom MQTT preferences", TAG_PREFS);
             buffer[0] = '\0';
             return false;
         }
-        prefs.getString(PREF_KEY_MQTT_USERNAME, buffer, bufferSize);
+        prefs.getString(PREF_KEY_CUSTOM_MQTT_USERNAME, buffer, bufferSize);
         prefs.end();
         return true;
     }
     
-    bool setMqttPassword(const char* password) {
+    bool setCustomMqttPassword(const char* password) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) {
+            logger.error("Failed to open custom MQTT preferences", TAG_PREFS);
             return false;
         }
-        bool success = prefs.putString(PREF_KEY_MQTT_PASSWORD, password) > 0;
+        bool success = prefs.putString(PREF_KEY_CUSTOM_MQTT_PASSWORD, password) > 0;
         prefs.end();
         return success;
     }
     
-    bool getMqttPassword(char* buffer, size_t bufferSize) {
+    bool getCustomMqttPassword(char* buffer, size_t bufferSize) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
+        if (!prefs.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, true)) {
+            logger.error("Failed to open custom MQTT preferences", TAG_PREFS);
             buffer[0] = '\0';
             return false;
         }
-        prefs.getString(PREF_KEY_MQTT_PASSWORD, buffer, bufferSize);
+        prefs.getString(PREF_KEY_CUSTOM_MQTT_PASSWORD, buffer, bufferSize);
         prefs.end();
         return true;
     }
@@ -1757,99 +1605,5 @@ namespace PreferencesConfig {
         bool hasKeys = prefs.getBytesLength("__check__") == 0 && prefs.freeEntries() < 500; // Rough heuristic
         prefs.end();
         return hasKeys;
-    }
-
-    // Firmware
-    bool setFirmwareUpdatesVersion(const char* version) {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false)) {
-            logger.error("Failed to open firmware updates preferences", TAG_PREFS);
-            return false;
-        }
-        bool success = prefs.putString(PREF_KEY_FW_UPDATES_VERSION, version) > 0;
-        prefs.end();
-        return success;
-    }
-
-    bool getFirmwareUpdatesVersion(char* buffer, size_t bufferSize) {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, true)) {
-            logger.error("Failed to open firmware updates preferences", TAG_PREFS);
-            buffer[0] = '\0';
-            return false;
-        }
-        prefs.getString(PREF_KEY_FW_UPDATES_VERSION, buffer, bufferSize);
-        prefs.end();
-        return true;
-    }
-
-    bool setFirmwareUpdatesUrl(const char* url) {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false)) {
-            logger.error("Failed to open firmware updates preferences", TAG_PREFS);
-            return false;
-        }
-        bool success = prefs.putString(PREF_KEY_FW_UPDATES_URL, url) > 0;
-        prefs.end();
-        return success;
-    }
-
-    bool getFirmwareUpdatesUrl(char* buffer, size_t bufferSize) {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, true)) {
-            logger.error("Failed to open firmware updates preferences", TAG_PREFS);
-            buffer[0] = '\0';
-            return false;
-        }
-        prefs.getString(PREF_KEY_FW_UPDATES_URL, buffer, bufferSize);
-        prefs.end();
-        return true;
-    }
-
-    // MQTT
-    bool setCloudServicesEnabled(bool enabled) {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
-            return false;
-        }
-        bool success = prefs.putBool(PREF_KEY_MQTT_CLOUD_SERVICES, enabled) > 0;
-        prefs.end();
-        return success;
-    }
-
-    bool getCloudServicesEnabled() {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
-            return false;
-        }
-        bool enabled;
-        enabled = prefs.getBool(PREF_KEY_MQTT_CLOUD_SERVICES);
-        prefs.end();
-        return enabled;
-    }
-
-    bool setSendPowerData(bool enabled) {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
-            return false;
-        }
-        bool success = prefs.putBool(PREF_KEY_MQTT_SEND_POWER_DATA, enabled) > 0;
-        prefs.end();
-        return success;
-    }
-
-    bool getSendPowerData() {
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
-            logger.error("Failed to open MQTT preferences", TAG_PREFS);
-            return false;
-        }
-        bool enabled;
-        enabled = prefs.getBool(PREF_KEY_MQTT_SEND_POWER_DATA);
-        prefs.end();
-        return enabled;
     }
 }

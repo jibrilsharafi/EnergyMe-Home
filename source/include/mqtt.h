@@ -23,15 +23,16 @@
 
 #define MQTT_TASK_STACK_SIZE (16 * 1024)
 #define MQTT_TASK_PRIORITY 3
-#define MQTT_LOG_QUEUE_SIZE 20
+#define MQTT_LOG_QUEUE_SIZE 200 // Callback queue size - (high, only for development. Make lower evenually)
 #define MQTT_METER_QUEUE_SIZE 50
-#define MQTT_LOG_TOPIC_BUFFER_SIZE (MQTT_TOPIC_BUFFER_SIZE * 2)
 #if HAS_SECRETS
-#define DEFAULT_IS_CLOUD_SERVICES_ENABLED true // If we compile with secrets, we might as well just directly connect
-#define DEFAULT_IS_SEND_POWER_DATA_ENABLED true // Send all the data by default
+#define DEFAULT_CLOUD_SERVICES_ENABLED true // If we compile with secrets, we might as well just directly connect
+#define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
+#define DEFAULT_DEBUG_LOGS_ENABLED false // Do not send debug logs by default
 #else
-#define DEFAULT_IS_CLOUD_SERVICES_ENABLED false
-#define DEFAULT_IS_SEND_POWER_DATA_ENABLED false
+#define DEFAULT_CLOUD_SERVICES_ENABLED false
+#define DEFAULT_SEND_POWER_DATA_ENABLED false
+#define DEFAULT_DEBUG_LOGS_ENABLED false
 #endif
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
 #define MQTT_MAX_INTERVAL_STATUS_PUBLISH (60 * 60 * 1000) // The interval between two status publish
@@ -50,7 +51,6 @@
 #define MQTT_PROVISIONING_LOOP_CHECK (1 * 1000) // Interval between two certificates check on memory
 #define MQTT_DEBUG_LOGGING_DEFAULT_DURATION (3 * 60 * 1000) 
 #define MQTT_DEBUG_LOGGING_MAX_DURATION (60 * 60 * 1000)
-#define DEBUG_FLAGS_RTC_SIGNATURE 0xDEB6F1A6 // Used to verify the RTC data validity for MQTT debugging struct
 
 #define MQTT_PREFERENCES_NAMESPACE "mqtt_ns"
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "enableCloudServices"
@@ -79,7 +79,6 @@
 #define MQTT_TOPIC_CHANNEL "channel"
 #define MQTT_TOPIC_MONITOR "monitor"
 #define MQTT_TOPIC_LOG "log"
-#define MQTT_TOPIC_GENERAL_CONFIGURATION "general-configuration" // TODO: deprecate this
 #define MQTT_TOPIC_CONNECTIVITY "connectivity"
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_PROVISIONING_REQUEST "provisioning/request"
@@ -100,6 +99,16 @@
 
 // AWS IoT Core endpoint
 #define AWS_IOT_CORE_PORT 8883
+
+#define MAGIC_WORD_RTC 0xDEADBEEF // This is crucial to ensure that the RTC data has sensible values or it is just some garbage after reboot
+
+struct DebugFlagsRtc {
+    bool enableMqttDebugLogging;
+    unsigned long mqttDebugLoggingDurationMillis;
+    unsigned long mqttDebugLoggingEndTimeMillis;
+    unsigned int signature;
+    // Since this struct will be used in an RTC_NOINIT_ATTR, we cannot initialize it in the constructor
+};
 
 struct PublishMqtt
 {
@@ -122,6 +131,8 @@ namespace Mqtt
     // Configuration methods
     void setCloudServicesEnabled(bool enabled);
     bool isCloudServicesEnabled();
+    void getFirmwareUpdatesVersion(char* buffer, size_t bufferSize);
+    void getFirmwareUpdatesUrl(char* buffer, size_t bufferSize);
     
     // Public methods for requesting MQTT publications
     void requestConnectivityPublish();

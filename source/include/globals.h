@@ -9,6 +9,5 @@
 extern AdvancedLogger logger;
 extern Statistics statistics;
 extern RestartConfiguration restartConfiguration;
-extern DebugFlagsRtc debugFlagsRtc;
 
 extern char DEVICE_ID[DEVICE_ID_BUFFER_SIZE]; // Device ID (MAC address in lowercase hex without colons)

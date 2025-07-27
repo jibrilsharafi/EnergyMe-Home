@@ -22,7 +22,7 @@
 
 namespace CustomTime {
     bool begin();
-    void resetToDefaults(); // TODO: include in factory reset
+    void resetToDefaults();
 
     bool isTimeSynched();
 

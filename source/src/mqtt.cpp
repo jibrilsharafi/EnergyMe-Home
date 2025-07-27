@@ -13,6 +13,8 @@ namespace Mqtt
     static PublishMqtt _publishMqtt;
     static CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> _payloadMeter;
     
+    RTC_NOINIT_ATTR DebugFlagsRtc _debugFlagsRtc;
+
     // FreeRTOS queues
     static QueueHandle_t _logQueue = NULL;
     static QueueHandle_t _meterQueue = NULL;
@@ -21,8 +23,13 @@ namespace Mqtt
     static TaskHandle_t _taskHandle = NULL;
     
     // Configuration state variables
-    static bool _cloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
-    static bool _sendPowerDataEnabled = DEFAULT_IS_SEND_POWER_DATA_ENABLED;
+    static bool _cloudServicesEnabled = DEFAULT_CLOUD_SERVICES_ENABLED;
+    static bool _sendPowerDataEnabled = DEFAULT_SEND_POWER_DATA_ENABLED;
+    static bool _debugLogsEnabled = DEFAULT_DEBUG_LOGS_ENABLED;
+
+    // Version for OTA information
+    static char _firmwareUpdatesUrl[256];
+    static char _firmwareUpdatesVersion[16];
     
     // Timing variables
     static unsigned long _lastMillisMqttLoop = 0;
@@ -94,12 +101,34 @@ namespace Mqtt
     static bool _isSendPowerDataEnabled();
     static void _setSendPowerDataEnabled(bool enabled);
 
+    static bool _setCloudServicesEnabled(bool enabled);
+    static bool _getCloudServicesEnabled();
+    static bool _setSendPowerData(bool enabled);
+    static bool _getSendPowerData();
+
+    static bool _setFirmwareUpdatesVersion(const char* version);
+    static bool _getFirmwareUpdatesVersion(char* buffer, size_t bufferSize);
+    static bool _setFirmwareUpdatesUrl(const char* url);
+    static bool _getFirmwareUpdatesUrl(char* buffer, size_t bufferSize);
+
     void begin()
     {
         logger.debug("Setting up MQTT client...", TAG);
 
         // Load preferences at startup
         _loadPreferences();
+
+        if (_debugFlagsRtc.signature != MAGIC_WORD_RTC) {
+            logger.debug("RTC magic word is invalid, resetting crash counters", TAG);
+            _debugFlagsRtc.enableMqttDebugLogging = false;
+            _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
+            _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
+            _debugFlagsRtc.signature = 0;
+        } else if (_debugFlagsRtc.enableMqttDebugLogging) {
+             // If the RTC is valid, and before the restart we were logging with debug info, reset the clock and start again the debugging
+            logger.debug("RTC debug logging was enabled, restarting duration", TAG);
+            _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = _debugFlagsRtc.mqttDebugLoggingDurationMillis;
+        }
 
 #if HAS_SECRETS
         // Create FreeRTOS queues
@@ -187,7 +216,7 @@ namespace Mqtt
         }
         
         // Filter debug logs if not enabled
-        if ((strcmp(level, "debug") == 0 && !debugFlagsRtc.enableMqttDebugLogging) || 
+        if ((strcmp(level, "debug") == 0 && !_debugFlagsRtc.enableMqttDebugLogging) || 
             (strcmp(level, "verbose") == 0)) {
             return; // Never send verbose logs via MQTT
         }
@@ -235,11 +264,11 @@ namespace Mqtt
             }
 
             if (jsonDocument["version"].is<const char*>()) {
-                PreferencesConfig::setFirmwareUpdatesVersion(jsonDocument["version"].as<const char*>());
+                _setFirmwareUpdatesVersion(jsonDocument["version"].as<const char*>());
             }
 
             if (jsonDocument["url"].is<const char*>()) {
-                PreferencesConfig::setFirmwareUpdatesUrl(jsonDocument["url"].as<const char*>());
+                _setFirmwareUpdatesUrl(jsonDocument["url"].as<const char*>());
             }
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_RESTART))
@@ -313,17 +342,17 @@ namespace Mqtt
                     durationMs = MQTT_DEBUG_LOGGING_DEFAULT_DURATION;
                 }
                 
-                debugFlagsRtc.enableMqttDebugLogging = true;
-                debugFlagsRtc.mqttDebugLoggingDurationMillis = durationMs;
-                debugFlagsRtc.mqttDebugLoggingEndTimeMillis = millis() + durationMs;
-                debugFlagsRtc.signature = DEBUG_FLAGS_RTC_SIGNATURE;
+                _debugFlagsRtc.enableMqttDebugLogging = true;
+                _debugFlagsRtc.mqttDebugLoggingDurationMillis = durationMs;
+                _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = millis() + durationMs;
+                _debugFlagsRtc.signature = MAGIC_WORD_RTC;
             }
             else
             {
-                debugFlagsRtc.enableMqttDebugLogging = false;
-                debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
-                debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
-                debugFlagsRtc.signature = 0;
+                _debugFlagsRtc.enableMqttDebugLogging = false;
+                _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
+                _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
+                _debugFlagsRtc.signature = 0;
             }
         }
     }
@@ -340,6 +369,15 @@ namespace Mqtt
             if (!CustomWifi::isFullyConnected())
             {
                 continue;
+            }
+
+            // Check if the debug logs have expired in duration
+            if (_debugFlagsRtc.enableMqttDebugLogging && millis() > _debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
+                logger.debug("The MQTT debug period has ended", TAG);
+                _debugFlagsRtc.enableMqttDebugLogging = false;
+                _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
+                _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
+                _debugFlagsRtc.signature = 0;
             }
 
             // Handle cloud services being disabled
@@ -1122,16 +1160,29 @@ namespace Mqtt
         logger.debug("Loading MQTT preferences from centralized config...", TAG);
         
         // Load from centralized preferences
-        _cloudServicesEnabled = PreferencesConfig::getCloudServicesEnabled();
-        _sendPowerDataEnabled = PreferencesConfig::getSendPowerData();
+        _cloudServicesEnabled = _getCloudServicesEnabled();
+        _sendPowerDataEnabled = _getSendPowerData();
+        _getFirmwareUpdatesUrl(_firmwareUpdatesUrl, sizeof(_firmwareUpdatesUrl));
+        _getFirmwareUpdatesVersion(_firmwareUpdatesVersion, sizeof(_firmwareUpdatesVersion));
         
-        logger.info("Cloud services enabled: %s, Send power data enabled: %s", TAG, 
+        logger.debug("Cloud services enabled: %s, Send power data enabled: %s", TAG, 
                    _cloudServicesEnabled ? "true" : "false",
                    _sendPowerDataEnabled ? "true" : "false");
+        logger.debug("Firmware updates | URL: %s, Version: %s", TAG, 
+                   _firmwareUpdatesUrl,
+                   _firmwareUpdatesVersion);
     }
 
     bool isCloudServicesEnabled() { return _cloudServicesEnabled; }
     static bool _isSendPowerDataEnabled() { return _sendPowerDataEnabled; }
+
+    void getFirmwareUpdatesVersion(char* buffer, size_t bufferSize) {
+        snprintf(buffer, bufferSize, "%s", _firmwareUpdatesVersion);
+    }
+
+    void getFirmwareUpdatesUrl(char* buffer, size_t bufferSize) {
+        snprintf(buffer, bufferSize, "%s", _firmwareUpdatesUrl);
+    }
 
     // Configuration methods - now using centralized PreferencesConfig
     void setCloudServicesEnabled(bool enabled)
@@ -1142,7 +1193,7 @@ namespace Mqtt
         _cloudServicesEnabled = enabled;
         
         // Save via centralized preferences
-        if (PreferencesConfig::setCloudServicesEnabled(enabled)) {
+        if (_setCloudServicesEnabled(enabled)) {
             logger.info("Cloud services %s", TAG, enabled ? "enabled" : "disabled");
         } else {
             logger.error("Failed to save cloud services setting", TAG);
@@ -1157,10 +1208,102 @@ namespace Mqtt
         _sendPowerDataEnabled = enabled;
         
         // Save via centralized preferences
-        if (PreferencesConfig::setSendPowerData(enabled)) {
+        if (_setSendPowerData(enabled)) {
             logger.info("Send power data %s", TAG, enabled ? "enabled" : "disabled");
         } else {
             logger.error("Failed to save send power data setting", TAG);
         }
+    }
+
+    static bool _setCloudServicesEnabled(bool enabled) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            logger.error("Failed to open MQTT preferences", TAG);
+            return false;
+        }
+        bool success = prefs.putBool(PREF_KEY_MQTT_CLOUD_SERVICES, enabled) > 0;
+        prefs.end();
+        return success;
+    }
+
+    static bool _getCloudServicesEnabled() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            logger.error("Failed to open MQTT preferences", TAG);
+            return false;
+        }
+        bool enabled;
+        enabled = prefs.getBool(PREF_KEY_MQTT_CLOUD_SERVICES);
+        prefs.end();
+        return enabled;
+    }
+
+    static bool _setSendPowerData(bool enabled) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            logger.error("Failed to open MQTT preferences", TAG);
+            return false;
+        }
+        bool success = prefs.putBool(PREF_KEY_MQTT_SEND_POWER_DATA, enabled) > 0;
+        prefs.end();
+        return success;
+    }
+
+    static bool _getSendPowerData() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            logger.error("Failed to open MQTT preferences", TAG);
+            return false;
+        }
+        bool enabled;
+        enabled = prefs.getBool(PREF_KEY_MQTT_SEND_POWER_DATA);
+        prefs.end();
+        return enabled;
+    }
+
+    static bool _setFirmwareUpdatesVersion(const char* version) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false)) {
+            logger.error("Failed to open firmware updates preferences", TAG);
+            return false;
+        }
+        bool success = prefs.putString(PREF_KEY_FW_UPDATES_VERSION, version) > 0;
+        prefs.end();
+        return success;
+    }
+
+    static bool _getFirmwareUpdatesVersion(char* buffer, size_t bufferSize) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, true)) {
+            logger.error("Failed to open firmware updates preferences", TAG);
+            buffer[0] = '\0';
+            return false;
+        }
+        prefs.getString(PREF_KEY_FW_UPDATES_VERSION, buffer, bufferSize);
+        prefs.end();
+        return true;
+    }
+
+    static bool _setFirmwareUpdatesUrl(const char* url) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false)) {
+            logger.error("Failed to open firmware updates preferences", TAG);
+            return false;
+        }
+        bool success = prefs.putString(PREF_KEY_FW_UPDATES_URL, url) > 0;
+        prefs.end();
+        return success;
+    }
+
+    static bool _getFirmwareUpdatesUrl(char* buffer, size_t bufferSize) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, true)) {
+            logger.error("Failed to open firmware updates preferences", TAG);
+            buffer[0] = '\0';
+            return false;
+        }
+        prefs.getString(PREF_KEY_FW_UPDATES_URL, buffer, bufferSize);
+        prefs.end();
+        return true;
     }
 }
