@@ -122,8 +122,8 @@ void createDefaultAde7953ConfigurationFile();
 void createDefaultEnergyFile();
 void createDefaultDailyEnergyFile();
 
-void getPublicLocation(PublicLocation* publicLocation);
-void getPublicTimezone(int* gmtOffset, int* dstOffset);
+bool getPublicLocation(PublicLocation* publicLocation);
+bool getPublicTimezone(int* gmtOffset, int* dstOffset);
 
 void factoryReset();
 void clearAllPreferences();

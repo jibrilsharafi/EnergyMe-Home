@@ -47,7 +47,6 @@ namespace Mqtt
     static char _mqttTopicStatus[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicMetadata[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicChannel[MQTT_TOPIC_BUFFER_SIZE];
-    static char _mqttTopicCrash[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicStatistics[MQTT_TOPIC_BUFFER_SIZE];
 
     // Private function declarations
@@ -64,7 +63,6 @@ namespace Mqtt
     static void _setTopicStatus();
     static void _setTopicMetadata();
     static void _setTopicChannel();
-    static void _setTopicCrash();
     static void _setTopicStatistics();
     static void _circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter);
     static void _publishConnectivity(bool isOnline = true);
@@ -72,7 +70,6 @@ namespace Mqtt
     static void _publishStatus();
     static void _publishMetadata();
     static void _publishChannel();
-    static void _publishCrash();
     static void _publishStatistics();
     static bool _publishProvisioningRequest();
     static bool _publishMessage(const char* topic, const char* message, bool retain = false);
@@ -180,7 +177,6 @@ namespace Mqtt
     void requestStatusPublish() {_publishMqtt.status = true; }
     void requestMetadataPublish() {_publishMqtt.metadata = true; }
     void requestChannelPublish() {_publishMqtt.channel = true; }
-    void requestCrashPublish() {_publishMqtt.crash = true; }
     void requestStatisticsPublish() {_publishMqtt.statistics = true; }
 
     // Public methods for pushing data to queues
@@ -686,7 +682,6 @@ namespace Mqtt
         _setTopicStatus();
         _setTopicMetadata();
         _setTopicChannel();    
-        _setTopicCrash();
         _setTopicStatistics();
 
         logger.debug("MQTT topics setup complete", TAG);
@@ -697,7 +692,6 @@ namespace Mqtt
     static void _setTopicStatus() { _constructMqttTopic(MQTT_TOPIC_STATUS, _mqttTopicStatus, sizeof(_mqttTopicStatus)); }
     static void _setTopicMetadata() { _constructMqttTopic(MQTT_TOPIC_METADATA, _mqttTopicMetadata, sizeof(_mqttTopicMetadata)); }
     static void _setTopicChannel() { _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel, sizeof(_mqttTopicChannel)); }
-    static void _setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash, sizeof(_mqttTopicCrash)); }
     static void _setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
 
     // TODO: use messagepack instead of JSON here for efficiency
@@ -876,33 +870,6 @@ namespace Mqtt
         logger.debug("Channel data published to MQTT", TAG);
     }
 
-    static void _publishCrash() {
-        logger.debug("Publishing crash data to MQTT", TAG);
-
-        CrashData _crashData;
-        if (!CrashMonitor::getSavedCrashData(_crashData)) {
-            logger.error("Error getting crash data", TAG);
-            return;
-        }
-
-        JsonDocument _jsonDocumentCrash;
-        if (!CrashMonitor::getJsonReport(_jsonDocumentCrash)) {
-            logger.error("Error creating JSON report", TAG);
-            return;
-        }
-
-        JsonDocument _jsonDocument;
-        _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        _jsonDocument["crashData"] = _jsonDocumentCrash;
-
-        char crashMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(_jsonDocument, crashMessage, sizeof(crashMessage));
-
-        if (_publishMessage(_mqttTopicCrash, crashMessage)) {_publishMqtt.crash = false;}
-
-        logger.debug("Crash data published to MQTT", TAG);
-    }
-
     static void _publishStatistics() {
         logger.debug("Publishing statistics to MQTT", TAG);
 
@@ -1020,7 +987,6 @@ namespace Mqtt
         if (_publishMqtt.status) {_publishStatus();}
         if (_publishMqtt.metadata) {_publishMetadata();}
         if (_publishMqtt.channel) {_publishChannel();}
-        if (_publishMqtt.crash) {_publishCrash();}
         if (_publishMqtt.statistics) {_publishStatistics();}
     }
 

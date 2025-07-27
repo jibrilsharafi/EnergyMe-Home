@@ -77,7 +77,6 @@
 #define MQTT_TOPIC_STATUS "status"
 #define MQTT_TOPIC_METADATA "metadata"
 #define MQTT_TOPIC_CHANNEL "channel"
-#define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_MONITOR "monitor"
 #define MQTT_TOPIC_LOG "log"
 #define MQTT_TOPIC_GENERAL_CONFIGURATION "general-configuration" // TODO: deprecate this
@@ -109,11 +108,10 @@ struct PublishMqtt
   bool status;
   bool metadata;
   bool channel;
-  bool crash;
   bool statistics;
 
-  // Set default to true to publish everything on first connection (except meter which needs to gather data first and crash which is needed only in case of crash)
-  PublishMqtt() : connectivity(true), meter(false), status(true), metadata(true), channel(true), crash(false), statistics(true) {}
+  // Set default to true to publish everything on first connection (except meter which needs to gather data first)
+  PublishMqtt() : connectivity(true), meter(false), status(true), metadata(true), channel(true), statistics(true) {}
 };
 
 namespace Mqtt
@@ -131,7 +129,6 @@ namespace Mqtt
     void requestStatusPublish();
     void requestMetadataPublish();
     void requestChannelPublish();
-    void requestCrashPublish();
     void requestStatisticsPublish();
     
     // Public methods for pushing data to queues

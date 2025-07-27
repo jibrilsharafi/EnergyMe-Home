@@ -12,6 +12,8 @@ namespace CustomServer {
   static void _serveStaticContent();
   static void _serveApi();
 
+  // TODO: add a task that periodically checks the health of the server by doing self-api requests, and if it fails, it restarts
+
 
   void begin() {
     logger.debug("Setting up web server...", TAG);
@@ -309,11 +311,6 @@ namespace CustomServer {
                 logger.info("OTA update completed successfully", TAG);
                 logger.info("New firmware MD5: %s", TAG, Update.md5String().c_str());
                 
-                // Set firmware status for testing
-                if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) {
-                    logger.error("Failed to set firmware status for testing", TAG);
-                }
-                
                 // Schedule restart
                 setRestartEsp32(TAG, "Restart needed after firmware update");
             }
@@ -400,9 +397,9 @@ namespace CustomServer {
                     return;
                 }
                 
-                // Log progress every 32KB or more frequently
+                // Log progress sometimes
                 static size_t lastProgressIndex = 0;
-                if (index >= lastProgressIndex + 32768 || index == 0) {
+                if (index >= lastProgressIndex + SIZE_REPORT_UPDATE_OTA || index == 0) {
                     float progress = (float)Update.progress() / Update.size() * 100.0;
                     logger.debug("OTA progress: %.1f%% (%zu / %zu bytes)", TAG, progress, Update.progress(), Update.size());
                     lastProgressIndex = index;
@@ -459,7 +456,6 @@ namespace CustomServer {
         // Add current firmware info
         doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
         doc["currentMD5"] = ESP.getSketchMD5();
-        doc["firmwareState"] = CrashMonitor::getFirmwareStatusString(CrashMonitor::getFirmwareStatus());
         
         serializeJson(doc, *response);
         request->send(response);

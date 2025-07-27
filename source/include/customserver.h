@@ -20,6 +20,7 @@
 #define WEBSERVER_WINDOW_SIZE_SECONDS 60 // in seconds
 
 #define MINIMUM_FREE_HEAP_OTA 20000 // Minimum free heap required for OTA updates
+#define SIZE_REPORT_UPDATE_OTA (128 * 1024) // Report progress every 128KB
 
 namespace CustomServer {
     void begin();

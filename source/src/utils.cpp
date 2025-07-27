@@ -35,17 +35,19 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     info.psramSizeBytes = ESP.getPsramSize();
     info.cpuFrequencyMHz = ESP.getCpuFreqMHz();
     
+    // // Crash and reset monitoring
+    info.crashCount = CrashMonitor::getCrashCount();
+    info.resetCount = CrashMonitor::getResetCount();
+    info.lastResetReason = (uint32_t)esp_reset_reason();
+    snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s", CrashMonitor::getResetReasonString(esp_reset_reason()));
+    info.lastResetWasCrash = CrashMonitor::isLastResetDueToCrash();
+    
     // SDK info
     snprintf(info.sdkVersion, sizeof(info.sdkVersion), "%s", ESP.getSdkVersion());
     snprintf(info.coreVersion, sizeof(info.coreVersion), "%s", ESP.getCoreVersion());
     
     // Device ID
     getDeviceId(info.deviceId, sizeof(info.deviceId));
-    
-    // Firmware state
-    info.firmwareState = CrashMonitor::getFirmwareStatus();
-    snprintf(info.firmwareStateString, sizeof(info.firmwareStateString), "%s", 
-             CrashMonitor::getFirmwareStatusString(info.firmwareState));
 
     logger.debug("Static system info populated", TAG);
 }
@@ -113,25 +115,6 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
         snprintf(info.wifiDnsIp, sizeof(info.wifiDnsIp), "0.0.0.0");
         snprintf(info.wifiBssid, sizeof(info.wifiBssid), "00:00:00:00:00:00");
     }
-    
-    // Crash monitoring data
-    info.crashCount = CrashMonitor::getCrashCount();
-    info.resetCount = CrashMonitor::getResetCount();
-    
-    // Get crash data if available
-    CrashData crashData;
-    if (CrashMonitor::getSavedCrashData(crashData)) {
-        info.lastResetReason = crashData.lastResetReason;
-        snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s", 
-                CrashMonitor::getResetReasonString((esp_reset_reason_t)crashData.lastResetReason));
-    } else {
-        info.lastResetReason = (uint32_t)esp_reset_reason();
-        snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s",
-                CrashMonitor::getResetReasonString(esp_reset_reason()));
-    }
-    
-    info.hasCoreDump = CrashMonitor::hasCoreDump();
-    info.coreDumpSize = info.hasCoreDump ? CrashMonitor::getCoreDumpSize() : 0;
 
     logger.debug("Dynamic system info populated", TAG);
 }
@@ -164,6 +147,13 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
     doc["hardware"]["flashChipSpeedHz"] = info.flashChipSpeedHz;
     doc["hardware"]["psramSizeBytes"] = info.psramSizeBytes;
     doc["hardware"]["cpuFrequencyMHz"] = info.cpuFrequencyMHz;
+
+    // Crash monitoring
+    doc["monitoring"]["crashCount"] = info.crashCount;
+    doc["monitoring"]["resetCount"] = info.resetCount;
+    doc["monitoring"]["lastResetReason"] = info.lastResetReason;
+    doc["monitoring"]["lastResetReasonString"] = info.lastResetReasonString;
+    doc["monitoring"]["lastResetWasCrash"] = info.lastResetWasCrash;
     
     // SDK
     doc["sdk"]["sdkVersion"] = info.sdkVersion;
@@ -171,10 +161,6 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
     
     // Device
     doc["device"]["id"] = info.deviceId;
-    
-    // Firmware state
-    doc["firmware"]["state"] = info.firmwareState;
-    doc["firmware"]["stateString"] = CrashMonitor::getFirmwareStatusString(info.firmwareState);
 
     logger.debug("Static system info converted to JSON", TAG);
 }
@@ -224,33 +210,21 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["network"]["wifiDnsIp"] = info.wifiDnsIp;
     doc["network"]["wifiBssid"] = info.wifiBssid;
     doc["network"]["wifiRssi"] = info.wifiRssi;
-    
-    // Crash monitoring
-    doc["monitoring"]["crashCount"] = info.crashCount;
-    doc["monitoring"]["resetCount"] = info.resetCount;
-    doc["monitoring"]["lastResetReason"] = info.lastResetReason;
-    doc["monitoring"]["lastResetReasonString"] = info.lastResetReasonString;
-    doc["monitoring"]["hasCoreDump"] = info.hasCoreDump;
-    doc["monitoring"]["coreDumpSize"] = info.coreDumpSize;
 
     logger.debug("Dynamic system info converted to JSON", TAG);
 }
 
 // Convenience functions for API endpoints
 void getJsonDeviceStaticInfo(JsonDocument& doc) {
-    logger.debug("Getting static device info JSON...", TAG);
     SystemStaticInfo info;
     populateSystemStaticInfo(info);
     systemStaticInfoToJson(info, doc);
-    logger.debug("Static device info JSON retrieved", TAG);
 }
 
 void getJsonDeviceDynamicInfo(JsonDocument& doc) {
-    logger.debug("Getting dynamic device info JSON...", TAG);
     SystemDynamicInfo info;
     populateSystemDynamicInfo(info);
     systemDynamicInfoToJson(info, doc);
-    logger.debug("Dynamic device info JSON retrieved", TAG);
 }
 
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError) {
@@ -713,16 +687,6 @@ void restartEsp32() {
     Led::setWhite(true);
 
     logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
-
-    // If a firmware evaluation is in progress, set the firmware to test again
-    FirmwareState _firmwareStatus = CrashMonitor::getFirmwareStatus();
-    
-    if (_firmwareStatus == TESTING) {
-        logger.info("Firmware evaluation is in progress. Setting firmware to test again", TAG);
-        
-        if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) logger.error("Failed to set firmware status", TAG);
-    }
-
     logger.end();
 
     // Give time for AsyncTCP connections to close gracefully
@@ -796,7 +760,7 @@ void printDeviceStatusStatic()
     logger.info("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", TAG, info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
     logger.info("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
     logger.info("Device ID: %s", TAG, info.deviceId);
-    logger.info("Firmware State: %s", TAG, CrashMonitor::getFirmwareStatusString(info.firmwareState));
+    logger.info("Monitoring: %lu crashes, %lu resets | Last reset: %s", TAG, info.crashCount, info.resetCount, info.lastResetReasonString);
 
     logger.info("------------------------", TAG);
 }
@@ -809,30 +773,38 @@ void printDeviceStatusDynamic()
     logger.info("--- Dynamic System Info ---", TAG);
     logger.info("Uptime: %lu s (%llu ms)", TAG, info.uptimeSeconds, (unsigned long long)info.uptimeMilliseconds);
     logger.info("Timestamp: %s", TAG, info.currentTimestamp);
-    logger.info("Heap: %lu total, %lu free, %lu min free, %lu max alloc", TAG, info.heapTotalBytes, info.heapFreeBytes, info.heapMinFreeBytes, info.heapMaxAllocBytes);
+    logger.info("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
+        TAG, 
+        info.heapTotalBytes, 
+        info.heapFreeBytes, info.heapFreePercentage, 
+        info.heapUsedBytes, info.heapUsedPercentage, 
+        info.heapMinFreeBytes, info.heapMaxAllocBytes
+    );
     if (info.psramFreeBytes > 0 || info.psramUsedBytes > 0) {
-        logger.info("PSRAM: %lu free, %lu used, %lu min free, %lu max alloc", TAG, info.psramFreeBytes, info.psramUsedBytes, info.psramMinFreeBytes, info.psramMaxAllocBytes);
+        logger.info("PSRAM: %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
+            TAG, 
+            info.psramFreeBytes, info.psramFreePercentage, 
+            info.psramUsedBytes, info.psramUsedPercentage, 
+            info.psramMinFreeBytes, info.psramMaxAllocBytes
+        );
     }
-    logger.info("SPIFFS: %lu total, %lu used, %lu free", TAG, info.spiffsTotalBytes, info.spiffsUsedBytes, info.spiffsFreeBytes);
+    logger.info("SPIFFS: %lu total, %lu used (%.2f%%), %lu free (%.2f%%)", 
+        TAG, 
+        info.spiffsTotalBytes, 
+        info.spiffsUsedBytes, info.spiffsUsedPercentage, 
+        info.spiffsFreeBytes, info.spiffsFreePercentage
+    );
     logger.info("Temperature: %.2f C", TAG, info.temperatureCelsius);
     
     // WiFi information
     if (info.wifiConnected) {
         logger.info("WiFi: Connected to '%s' (BSSID: %s)", TAG, info.wifiSsid, info.wifiBssid);
         logger.info("WiFi: RSSI %d dBm | MAC %s", TAG, info.wifiRssi, info.wifiMacAddress);
-        logger.info("WiFi: IP %s | Gateway %s | DNS %s", TAG, info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp);
-        logger.info("WiFi: Subnet %s", TAG, info.wifiSubnetMask);
+        logger.info("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", TAG, info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp, info.wifiSubnetMask);
     } else {
         logger.info("WiFi: Disconnected | MAC %s", TAG, info.wifiMacAddress);
     }
-    
-    // Crash monitoring info
-    logger.info("Monitoring: %lu crashes, %lu resets | Last reset: %s", TAG, 
-               info.crashCount, info.resetCount, info.lastResetReasonString);
-    if (info.hasCoreDump) {
-        logger.info("Monitoring: Core dump available (%zu bytes)", TAG, info.coreDumpSize);
-    }
-    
+
     logger.info("-------------------------", TAG);
 }
 
@@ -971,10 +943,10 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
 // Helper functions
 // -----------------------------
 
-void getPublicLocation(PublicLocation* publicLocation) {
+bool getPublicLocation(PublicLocation* publicLocation) {
     if (!publicLocation) {
         logger.error("Null pointer passed to getPublicLocation", TAG);
-        return;
+        return false;
     }
 
     HTTPClient _http;
@@ -991,7 +963,7 @@ void getPublicLocation(PublicLocation* publicLocation) {
             if (error) {
                 logger.error("JSON parsing failed: %s", TAG, error.c_str());
                 _http.end();
-                return;
+                return false;
             }
             
             // Validate API response
@@ -999,7 +971,7 @@ void getPublicLocation(PublicLocation* publicLocation) {
                 logger.error("API returned error status: %s", TAG, 
                            _jsonDocument["status"].as<const char*>());
                 _http.end();
-                return;
+                return false;
             }
 
             // Extract strings safely using const char* and copy to char arrays
@@ -1024,27 +996,34 @@ void getPublicLocation(PublicLocation* publicLocation) {
             );
         } else {
             logger.warning("HTTP request failed with code: %d", TAG, httpCode);
+            return false;
         }
     } else {
         logger.error("HTTP request error: %s", TAG, _http.errorToString(httpCode).c_str());
+        return false;
     }
 
     _http.end();
+    return true;
 }
 
-void getPublicTimezone(int* gmtOffset, int* dstOffset) {
+bool getPublicTimezone(int* gmtOffset, int* dstOffset) {
     if (!gmtOffset || !dstOffset) {
         logger.error("Null pointer passed to getPublicTimezone", TAG);
-        return;
+        return false;
     }
 
     PublicLocation _publicLocation;
-    getPublicLocation(&_publicLocation);
+    if (!getPublicLocation(&_publicLocation)) {
+        logger.warning("Could not retrieve the public location. Skipping timezone fetching", TAG);
+        return false;
+    }
 
     HTTPClient _http;
     JsonDocument _jsonDocument;
 
     char _url[URL_BUFFER_SIZE];
+    // The URL for the timezone API endpoint requires passing as params the latitude, longitude and username (which is a sort of free "public" api key)
     snprintf(_url, sizeof(_url), "%slat=%f&lng=%f&username=%s",
         PUBLIC_TIMEZONE_ENDPOINT,
         _publicLocation.latitude,
@@ -1056,13 +1035,14 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
 
     if (httpCode > 0) {
         if (httpCode == HTTP_CODE_OK) {
-            // Use stream directly - efficient and simple
-            DeserializationError error = deserializeJson(_jsonDocument, _http.getStream()); // FIXME: this returns null
+            // Example JSON response:
+            // {"sunrise":"2025-07-27 05:55","lng":14.168099,"countryCode":"IT","gmtOffset":1,"rawOffset":1,"sunset":"2025-07-27 20:24","timezoneId":"Europe/Rome","dstOffset":2,"countryName":"Italy","time":"2025-07-27 20:53","lat":40.813198}
+            DeserializationError error = deserializeJson(_jsonDocument, _http.getString()); // Unfortunately, the stream method returns null so we have to use string
             
             if (error) {
                 logger.error("JSON parsing failed: %s", TAG, error.c_str());
                 _http.end();
-                return;
+                return false;
             }
 
             *gmtOffset = _jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
@@ -1076,12 +1056,15 @@ void getPublicTimezone(int* gmtOffset, int* dstOffset) {
             );
         } else {
             logger.warning("HTTP request failed with code: %d", TAG, httpCode);
+            return false;
         }
     } else {
         logger.error("HTTP request error: %s", TAG, _http.errorToString(httpCode).c_str());
+        return false;
     }
 
     _http.end();
+    return true;
 }
 
 void factoryReset() { 
@@ -1105,10 +1088,6 @@ void clearAllPreferences() {
 
     Preferences preferences;
     preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); // false = read-write mode
-    preferences.clear();
-    preferences.end();
-    
-    preferences.begin(PREFERENCES_DATA_KEY, false); // false = read-write mode
     preferences.clear();
     preferences.end();
 

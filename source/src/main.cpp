@@ -36,7 +36,6 @@ Statistics statistics;
 
 RTC_NOINIT_ATTR DebugFlagsRtc debugFlagsRtc;
 
-// AsyncWebServer server(WEBSERVER_PORT);
 
 // Global device ID - defined here, declared as extern in constants.h
 char DEVICE_ID[DEVICE_ID_BUFFER_SIZE];
@@ -116,15 +115,7 @@ void setup() {
     CrashMonitor::begin();
     logger.info("Crash monitor setup done", TAG);
 
-    if (CrashMonitor::hasCoreDump()) {
-        size_t dumpSize = CrashMonitor::getCoreDumpSize();
-        logger.warning("Core dump available: %d bytes", "main", dumpSize);
-        
-        // Clear it after processing
-        CrashMonitor::clearCoreDump();
-    }
-
-    logger.debug(
+    logger.debug( // TODO: make this a simple preferences, so we avoid having this global thing..
         "Checking RTC debug flags. Signature: 0x%X, Enabled: %d, Duration: %lu, EndTimeMillis: %lu", 
         TAG, 
         debugFlagsRtc.signature, 
@@ -197,19 +188,21 @@ void setup() {
     logger.debug("Syncing time...", TAG);
     if (CustomTime::begin()) {
       int gmtOffset, dstOffset;
-      getPublicTimezone(&gmtOffset, &dstOffset);
-      CustomTime::setOffset(
-        gmtOffset, 
-        dstOffset
-      );
-      
-      char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-      CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
-      logger.info("Initial time sync successful. Current timestamp: %s", TAG, timestampBuffer);
+      if (getPublicTimezone(&gmtOffset, &dstOffset)) {
+        CustomTime::setOffset(
+          gmtOffset, 
+          dstOffset
+        );
+
+        char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
+        logger.info("Initial time sync successful. Current timestamp: %s", TAG, timestampBuffer);
+      } else {
+        logger.warning("Time synced, but the timezone could not be fetched. It will be shown as UTC", TAG);
+      }
     } else {
       logger.error("Initial time sync failed! Will retry later.", TAG);
     }
-    
     
     logger.debug("Setting up server...", TAG);
     CustomServer::begin();
@@ -234,9 +227,6 @@ void setup() {
 }
 
 void loop() {
- 
-    CrashMonitor::crashCounterLoop();
-    CrashMonitor::firmwareTestingLoop();
 
     ade7953.loop();
     
@@ -267,8 +257,5 @@ void loop() {
       }
     }
 
-    // TODO: add a periodic check doing a GET request on the is-alive API to ensure HTTP is working properly
-
-    
     checkIfRestartEsp32Required();
 }

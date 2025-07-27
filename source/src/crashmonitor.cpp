@@ -1,107 +1,76 @@
 #include "crashmonitor.h"
-#include <esp_core_dump.h>
 
 static const char *TAG = "crashmonitor";
 
 namespace CrashMonitor
 {
     // Static state variables
-    static bool _isFirmwareUpdate = false;
-    static bool _isCrashCounterReset = false;
-    static FirmwareState _firmwareStatus = FirmwareState::STABLE;
+    static TaskHandle_t _crashResetTaskHandle = NULL;
 
     // Private function declarations
-    static void _initializeCrashData();
-    static void _logCrashInfo();
-    static void _saveCrashData();
     static void _handleCrashCounter();
-    static void _handleFirmwareTesting();
-    static void _exportCoreDump();
-    static void _exportCoreDumpSerial();
-    RTC_NOINIT_ATTR CrashData _crashData; 
+    static void _crashResetTask(void *parameter);
 
-    void _initializeCrashData() {
-        memset(&_crashData, 0, sizeof(_crashData));
-        _crashData.signature = CRASH_SIGNATURE;
-        _crashData.crashCount = 0;
-        _crashData.resetCount = 0;
-        _crashData.lastResetReason = ESP_RST_UNKNOWN;
-        _crashData.lastUnixTime = 0;
-    }   
-    
+    RTC_NOINIT_ATTR unsigned int _magicWord = MAGIC_WORD_RTC; // Magic word to check RTC data validity
+    RTC_NOINIT_ATTR unsigned int _resetCount = 0; // Reset counter in RTC memory
+    RTC_NOINIT_ATTR unsigned int _crashCount = 0; // Crash counter in RTC memory
+    RTC_NOINIT_ATTR unsigned int _consecutiveCrashCount = 0; // Crash counter in RTC memory
+
     bool isLastResetDueToCrash() {
         // Only case in which it is not crash is when the reset reason is not
         // due to software reset (ESP.restart()), power on, or deep sleep (unused here)
-        return _crashData.lastResetReason != ESP_RST_SW && 
-                _crashData.lastResetReason != ESP_RST_POWERON && 
-                _crashData.lastResetReason != ESP_RST_DEEPSLEEP;
+        esp_reset_reason_t _hwResetReason = esp_reset_reason();
+
+        return (uint32_t)_hwResetReason != ESP_RST_SW && 
+                (uint32_t)_hwResetReason != ESP_RST_POWERON && 
+                (uint32_t)_hwResetReason != ESP_RST_DEEPSLEEP;
     }
 
     void begin() {
-        // Initialize crash data if needed
-        if (_crashData.signature != CRASH_SIGNATURE) {
-            _initializeCrashData();
-        }
-
         logger.debug("Setting up crash monitor...", TAG);
 
-        // Get last reset reason
-        esp_reset_reason_t _hwResetReason = esp_reset_reason();
-        _crashData.lastResetReason = (uint32_t)_hwResetReason;
+        if (_magicWord != MAGIC_WORD_RTC) {
+            logger.debug("RTC magic word is invalid, resetting crash counters", TAG);
+            _magicWord = MAGIC_WORD_RTC;
+            _resetCount = 0;
+            _crashCount = 0;
+            _consecutiveCrashCount = 0;
+        }
 
         // If it was a crash, increment counter
         if (isLastResetDueToCrash()) {
-            _crashData.crashCount++;
-            Mqtt::requestCrashPublish();
-            _logCrashInfo();
-            _saveCrashData();
+            _crashCount++;
+            _consecutiveCrashCount++;
         }
 
         // Increment reset count
-        _crashData.resetCount++;
+        _resetCount++;
 
         _handleCrashCounter();
-        _handleFirmwareTesting();
 
-        // Removed watchdog (wdt)
+        // Create task to handle the crash reset
+        xTaskCreate(_crashResetTask, CRASH_RESET_TASK_NAME, CRASH_RESET_TASK_STACK_SIZE, NULL, CRASH_RESET_TASK_PRIORITY, &_crashResetTaskHandle);
 
         logger.debug("Crash monitor setup done", TAG);
     }
 
-    void reboot(const char* reason) {
-        logger.warning("System reboot requested: %s", TAG, reason);
-        vTaskDelay(pdMS_TO_TICKS(100)); // Give time for log message to be sent
-
-        ESP.restart();
-    }
-
-    bool checkIfCrashDataExists() {
-        return _crashData.signature == CRASH_SIGNATURE;
-    }
-
-    void clearCrashData() {
-        memset(&_crashData, 0, sizeof(_crashData));
-    }
-
-    bool getSavedCrashData(CrashData& crashDataSaved) {
-        if (checkIfCrashDataExists()) {
-            crashDataSaved = _crashData;
-            return true;
+    static void _crashResetTask(void *parameter)
+    {
+        logger.debug("Starting crash reset task...", TAG);
+        vTaskDelay(pdMS_TO_TICKS(CRASH_COUNTER_TIMEOUT));
+        if (_consecutiveCrashCount > 0){
+            logger.info("Consecutive crash counter reset to 0", TAG);
         }
-        return false;
+        _consecutiveCrashCount = 0;
+        vTaskDelete(NULL);
     }
 
     uint32_t getCrashCount() {
-        return _crashData.crashCount;
+        return _crashCount;
     }
 
     uint32_t getResetCount() {
-        return _crashData.resetCount;
-    }
-
-    void resetCrashCount() {
-        _crashData.crashCount = 0;
-        _saveCrashData();
+        return _resetCount;
     }
 
     const char* getResetReasonString(esp_reset_reason_t reason) {
@@ -121,126 +90,21 @@ namespace CrashMonitor
         }
     }
 
-    void _saveCrashData() {
-        // Save crash data to persistent storage
-        // Note: Assumes RTC memory persists through most resets
-        // For full persistence, could use NVS/EEPROM instead
-        logger.debug("Crash data saved to memory", TAG);
-    }
-
-    void _logCrashInfo() {
-        const char* resetReasonStr = getResetReasonString((esp_reset_reason_t)_crashData.lastResetReason);
-        logger.error("System was restarted due to: %s", TAG, resetReasonStr);
-
-        // Check if core dump is available
-        if (esp_core_dump_image_check() == ESP_OK) {
-            logger.info("Core dump available in flash", TAG);
-            _exportCoreDump();
-        }
-    }
-
-    void _exportCoreDump() {
-        logger.info("Attempting to export core dump...", TAG);
-        
-        size_t core_dump_size = 0;
-        if (esp_core_dump_image_get(nullptr, &core_dump_size) == ESP_OK && core_dump_size > 0) {
-            logger.info("Core dump size: %d bytes", TAG, core_dump_size);
-            
-            // Set flag for MQTT export
-            Mqtt::requestCrashPublish();
-        } else {
-            logger.warning("Failed to get core dump info", TAG);
-        }
-    }
-
-    bool getJsonReport(JsonDocument& _jsonDocument) {
-        if (_crashData.signature != CRASH_SIGNATURE) return false;
-
-        _jsonDocument["crashCount"] = _crashData.crashCount;
-        _jsonDocument["lastResetReason"] = getResetReasonString((esp_reset_reason_t)_crashData.lastResetReason);
-        _jsonDocument["lastUnixTime"] = _crashData.lastUnixTime;
-        _jsonDocument["resetCount"] = _crashData.resetCount;
-
-        // Add core dump info if available
-        bool coreDumpAvailable = hasCoreDump();
-        _jsonDocument["hasCoreDump"] = coreDumpAvailable;
-        if (coreDumpAvailable) {
-            _jsonDocument["coreDumpSize"] = getCoreDumpSize();
-        }
-
-        return true;
-    }
-
     void _handleCrashCounter() {
-        logger.info("Crash count: %d, Reset count: %d", TAG, _crashData.crashCount, _crashData.resetCount);
+        logger.debug("Crash count: %d (consecutive: %d), Reset count: %d", TAG, _crashCount, _consecutiveCrashCount, _resetCount);
 
-        if (_crashData.crashCount >= MAX_CRASH_COUNT) {
-            logger.error("Too many crashes! Clearing configuration...", TAG);
-            // TODO: Clear configuration
-        }
-    }
+        if (_consecutiveCrashCount >= MAX_CRASH_COUNT) {
+            logger.fatal("The consecutive crash count has reached a limit", TAG);
+            if (Update.canRollBack()) {
+                logger.fatal("Rolling back to previous version.", TAG);
+                if (Update.rollBack()) {
+                    ESP.restart();
+                }
+            }
 
-    void crashCounterLoop() {
-        if (_isCrashCounterReset) return;
-
-        if (millis() > CRASH_COUNTER_TIMEOUT) {
-            _isCrashCounterReset = true;
-            logger.debug("Timeout reached. Resetting crash counter...", TAG);
-
-            _crashData.crashCount = 0;
-        }
-    }
-
-    void _handleFirmwareTesting() {
-        // TODO: implement this correctly
-    }
-
-    void firmwareTestingLoop() {
-        // This function is called in the loop to handle firmware testing
-        // Currently empty, but can be extended for additional testing logic
-    }
-
-    bool setFirmwareStatus(FirmwareState status) { // TODO: finish fixing this
-        _firmwareStatus = status;
-        
-        // Save to preferences if needed
-        // TODO: implement reading/writing from nvs with preferences
-        return true;
-    }
-
-    FirmwareState getFirmwareStatus() {
-        return _firmwareStatus;
-    }
-
-    const char* getFirmwareStatusString(FirmwareState status) {
-        switch (status) {
-            case FirmwareState::STABLE: return "Stable";
-            case FirmwareState::NEW_TO_TEST: return "New to test";
-            case FirmwareState::TESTING: return "Testing";
-            case FirmwareState::ROLLBACK: return "Rollback";
-            default: return "Unknown";
-        }
-    }
-
-    // Core dump utility functions
-    bool hasCoreDump() {
-        return esp_core_dump_image_check() == ESP_OK;
-    }
-
-    void clearCoreDump() {
-        if (hasCoreDump()) {
-            esp_core_dump_image_erase();
-            logger.info("Core dump cleared from flash", TAG);
-        }
-    }
-
-    size_t getCoreDumpSize() {
-        size_t size = 0;
-        if (esp_core_dump_image_get(nullptr, &size) == ESP_OK) {
-            return size;
-        } else {
-            logger.error("Failed to get core dump size", TAG);
-            return 0;
+            // If we got here, it means the rollback could not be executed, so we try at least to format everything
+            logger.fatal("Could not rollback, factory resetting", TAG);
+            factoryReset();
         }
     }
 }

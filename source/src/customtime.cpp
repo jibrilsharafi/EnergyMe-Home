@@ -33,8 +33,13 @@ namespace CustomTime {
     }
 
     void setOffset(int gmtOffset, int dstOffset) {
-        configTime(gmtOffset, dstOffset, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
+        _gmtOffset = gmtOffset;
+        _dstOffset = dstOffset;
+
+        configTime(_gmtOffset, _dstOffset, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
         setSyncInterval(TIME_SYNC_INTERVAL_S);
+        
+        _saveConfiguration();
         
         if (_getTime()) {
             _isTimeSynched = true;

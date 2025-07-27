@@ -13,13 +13,6 @@ enum class Ade7953InterruptType {
   OTHER           // Other interrupts (SAG, etc.)
 };
 
-enum FirmwareState : int {
-    STABLE,
-    NEW_TO_TEST,
-    TESTING,
-    ROLLBACK
-};
-
 struct Statistics {
   unsigned long ade7953TotalInterrupts;
   unsigned long ade7953TotalHandledInterrupts;
@@ -86,12 +79,15 @@ struct SystemStaticInfo {
     char sdkVersion[32];
     char coreVersion[32];
     
+    // Crash and reset monitoring
+    uint32_t crashCount;                    // Total crashes since last manual reset
+    uint32_t resetCount;                    // Total resets since first boot
+    uint32_t lastResetReason;               // ESP reset reason code
+    char lastResetReasonString[32];         // Human readable reset reason
+    bool lastResetWasCrash;                 // True if last reset was due to crash
+    
     // Device configuration
     char deviceId[32];
-    
-    // Firmware state
-    FirmwareState firmwareState;
-    char firmwareStateString[16]; // For convenience, can be used to store string representation of the state
     
     SystemStaticInfo() {
         // Initialize with safe defaults
@@ -110,8 +106,8 @@ struct SystemStaticInfo {
         snprintf(chipModel, sizeof(chipModel), "Unknown");
         snprintf(sdkVersion, sizeof(sdkVersion), "Unknown");
         snprintf(coreVersion, sizeof(coreVersion), "Unknown");
+        snprintf(lastResetReasonString, sizeof(lastResetReasonString), "Unknown");
         snprintf(deviceId, sizeof(deviceId), "Unknown");
-        firmwareState = STABLE;
     }
 };
 
@@ -159,15 +155,7 @@ struct SystemDynamicInfo {
     char wifiSubnetMask[16];
     char wifiDnsIp[16];
     char wifiBssid[18];
-    
-    // Crash monitoring data
-    uint32_t crashCount;
-    uint32_t resetCount;
-    uint32_t lastResetReason;
-    char lastResetReasonString[32];
-    bool hasCoreDump;
-    size_t coreDumpSize;
-    
+
     SystemDynamicInfo() {
         memset(this, 0, sizeof(*this));
         temperatureCelsius = -273.15f; // Invalid temp indicator
@@ -179,7 +167,6 @@ struct SystemDynamicInfo {
         snprintf(wifiSubnetMask, sizeof(wifiSubnetMask), "0.0.0.0");
         snprintf(wifiDnsIp, sizeof(wifiDnsIp), "0.0.0.0");
         snprintf(wifiBssid, sizeof(wifiBssid), "00:00:00:00:00:00");
-        snprintf(lastResetReasonString, sizeof(lastResetReasonString), "Unknown");
     }
 };
 
