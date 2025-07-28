@@ -119,11 +119,11 @@ namespace Mqtt
         _loadPreferences();
 
         if (_debugFlagsRtc.signature != MAGIC_WORD_RTC) {
-            logger.debug("RTC magic word is invalid, resetting crash counters", TAG);
+            logger.debug("RTC magic word is invalid, resetting debug flags", TAG);
             _debugFlagsRtc.enableMqttDebugLogging = false;
             _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
             _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
-            _debugFlagsRtc.signature = 0;
+            _debugFlagsRtc.signature = MAGIC_WORD_RTC;
         } else if (_debugFlagsRtc.enableMqttDebugLogging) {
              // If the RTC is valid, and before the restart we were logging with debug info, reset the clock and start again the debugging
             logger.debug("RTC debug logging was enabled, restarting duration", TAG);

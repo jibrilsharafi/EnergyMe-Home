@@ -222,6 +222,4 @@ void loop() {
         logger.warning("Log cleared due to low memory", TAG);
       }
     }
-
-    checkIfRestartEsp32Required();
 }

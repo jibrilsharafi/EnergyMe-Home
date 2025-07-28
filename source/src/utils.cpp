@@ -493,9 +493,24 @@ bool checkAllFiles() {
     return false;
 }
 
+// Task function that handles delayed restart
+void restartTask(void* parameter) {
+    logger.debug("Restart task started, waiting %d ms before restart", TAG, ESP32_RESTART_DELAY);
+    
+    // Wait for the specified delay
+    vTaskDelay(pdMS_TO_TICKS(ESP32_RESTART_DELAY));
+    
+    // Execute the restart
+    restartEsp32();
+    
+    // Task should never reach here, but clean up just in case
+    vTaskDelete(NULL);
+}
+
 void setRestartEsp32(const char* functionName, const char* reason) { 
     logger.info("Restart required from function %s. Reason: %s", TAG, functionName, reason);
     
+    // Store restart information for logging purposes
     restartConfiguration.isRequired = true;
     restartConfiguration.requiredAt = millis();
     snprintf(restartConfiguration.functionName, sizeof(restartConfiguration.functionName), "%s", functionName);
@@ -503,20 +518,28 @@ void setRestartEsp32(const char* functionName, const char* reason) {
 
     //TODO: we should start stopping tasks here
 
-    // Don't cleanup interrupts immediately - let MQTT finish final operations first
-    logger.debug("Restart configuration set. Function: %s, Reason: %s, Required at %u", TAG, restartConfiguration.functionName, restartConfiguration.reason, restartConfiguration.requiredAt);
-}
-
-void checkIfRestartEsp32Required() {
-    if (restartConfiguration.isRequired) {
-        if ((millis() - restartConfiguration.requiredAt) > ESP32_RESTART_DELAY) {
-            restartEsp32();
-        }
+    logger.debug("Creating restart task. Function: %s, Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
+    
+    // Create a task that will handle the delayed restart
+    TaskHandle_t restartTaskHandle = NULL;
+    BaseType_t result = xTaskCreate(
+        restartTask,
+        TASK_RESTART_NAME,
+        TASK_RESTART_STACK_SIZE,
+        NULL,
+        TASK_RESTART_PRIORITY,
+        &restartTaskHandle
+    );
+    
+    if (result != pdPASS) {
+        logger.error("Failed to create restart task, performing immediate restart", TAG);
+        restartEsp32();
+    } else {
+        logger.debug("Restart task created successfully", TAG);
     }
 }
 
 void restartEsp32() {
-    
     Led::block();
     Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
     Led::setWhite(true);
@@ -585,19 +608,19 @@ void printDeviceStatusStatic()
     SystemStaticInfo info;
     populateSystemStaticInfo(info);
 
-    logger.info("--- Static System Info ---", TAG);
-    logger.info("Product: %s (%s)", TAG, info.fullProductName, info.productName);
-    logger.info("Company: %s | Author: %s", TAG, info.companyName, info.author);
-    logger.info("Firmware: %s | Build: %s %s", TAG, info.buildVersion, info.buildDate, info.buildTime);
-    logger.info("Sketch MD5: %s", TAG, info.sketchMD5);
-    logger.info("Flash: %lu bytes, %lu Hz", TAG, info.flashChipSizeBytes, info.flashChipSpeedHz);
-    logger.info("PSRAM: %lu bytes", TAG, info.psramSizeBytes);
-    logger.info("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", TAG, info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
-    logger.info("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
-    logger.info("Device ID: %s", TAG, info.deviceId);
-    logger.info("Monitoring: %lu crashes, %lu resets | Last reset: %s", TAG, info.crashCount, info.resetCount, info.lastResetReasonString);
+    logger.debug("--- Static System Info ---", TAG);
+    logger.debug("Product: %s (%s)", TAG, info.fullProductName, info.productName);
+    logger.debug("Company: %s | Author: %s", TAG, info.companyName, info.author);
+    logger.debug("Firmware: %s | Build: %s %s", TAG, info.buildVersion, info.buildDate, info.buildTime);
+    logger.debug("Sketch MD5: %s", TAG, info.sketchMD5);
+    logger.debug("Flash: %lu bytes, %lu Hz", TAG, info.flashChipSizeBytes, info.flashChipSpeedHz);
+    logger.debug("PSRAM: %lu bytes", TAG, info.psramSizeBytes);
+    logger.debug("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", TAG, info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
+    logger.debug("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
+    logger.debug("Device ID: %s", TAG, info.deviceId);
+    logger.debug("Monitoring: %lu crashes, %lu resets | Last reset: %s", TAG, info.crashCount, info.resetCount, info.lastResetReasonString);
 
-    logger.info("------------------------", TAG);
+    logger.debug("------------------------", TAG);
 }
 
 void printDeviceStatusDynamic()
@@ -605,10 +628,10 @@ void printDeviceStatusDynamic()
     SystemDynamicInfo info;
     populateSystemDynamicInfo(info);
 
-    logger.info("--- Dynamic System Info ---", TAG);
-    logger.info("Uptime: %lu s (%llu ms)", TAG, info.uptimeSeconds, (unsigned long long)info.uptimeMilliseconds);
-    logger.info("Timestamp: %s", TAG, info.currentTimestamp);
-    logger.info("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
+    logger.debug("--- Dynamic System Info ---", TAG);
+    logger.debug("Uptime: %lu s (%llu ms)", TAG, info.uptimeSeconds, (unsigned long long)info.uptimeMilliseconds);
+    logger.debug("Timestamp: %s", TAG, info.currentTimestamp);
+    logger.debug("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
         TAG, 
         info.heapTotalBytes, 
         info.heapFreeBytes, info.heapFreePercentage, 
@@ -616,31 +639,31 @@ void printDeviceStatusDynamic()
         info.heapMinFreeBytes, info.heapMaxAllocBytes
     );
     if (info.psramFreeBytes > 0 || info.psramUsedBytes > 0) {
-        logger.info("PSRAM: %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
+        logger.debug("PSRAM: %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
             TAG, 
             info.psramFreeBytes, info.psramFreePercentage, 
             info.psramUsedBytes, info.psramUsedPercentage, 
             info.psramMinFreeBytes, info.psramMaxAllocBytes
         );
     }
-    logger.info("SPIFFS: %lu total, %lu used (%.2f%%), %lu free (%.2f%%)", 
+    logger.debug("SPIFFS: %lu total, %lu used (%.2f%%), %lu free (%.2f%%)", 
         TAG, 
         info.spiffsTotalBytes, 
         info.spiffsUsedBytes, info.spiffsUsedPercentage, 
         info.spiffsFreeBytes, info.spiffsFreePercentage
     );
-    logger.info("Temperature: %.2f C", TAG, info.temperatureCelsius);
+    logger.debug("Temperature: %.2f C", TAG, info.temperatureCelsius);
     
     // WiFi information
     if (info.wifiConnected) {
-        logger.info("WiFi: Connected to '%s' (BSSID: %s)", TAG, info.wifiSsid, info.wifiBssid);
-        logger.info("WiFi: RSSI %d dBm | MAC %s", TAG, info.wifiRssi, info.wifiMacAddress);
-        logger.info("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", TAG, info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp, info.wifiSubnetMask);
+        logger.debug("WiFi: Connected to '%s' (BSSID: %s)", TAG, info.wifiSsid, info.wifiBssid);
+        logger.debug("WiFi: RSSI %d dBm | MAC %s", TAG, info.wifiRssi, info.wifiMacAddress);
+        logger.debug("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", TAG, info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp, info.wifiSubnetMask);
     } else {
-        logger.info("WiFi: Disconnected | MAC %s", TAG, info.wifiMacAddress);
+        logger.debug("WiFi: Disconnected | MAC %s", TAG, info.wifiMacAddress);
     }
 
-    logger.info("-------------------------", TAG);
+    logger.debug("-------------------------", TAG);
 }
 
 void printDeviceStatus()

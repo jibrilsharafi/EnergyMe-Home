@@ -25,6 +25,10 @@
 #include "structs.h"
 #include "globals.h"
 
+#define TASK_RESTART_NAME "restart_task"
+#define TASK_RESTART_STACK_SIZE 4096
+#define TASK_RESTART_PRIORITY 3
+
 // New system info functions
 void populateSystemStaticInfo(SystemStaticInfo& info);
 void populateSystemDynamicInfo(SystemDynamicInfo& info);
@@ -40,7 +44,6 @@ void populateSystemInfo(SystemInfo& systemInfo);
 void systemInfoToJson(JsonDocument& jsonDocument);
 
 void setRestartEsp32(const char* functionName, const char* reason);
-void checkIfRestartEsp32Required();
 void restartEsp32();
 
 void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
