@@ -68,7 +68,7 @@ void setup()
   Serial.println("Setting up LED...");
   Led::begin(LED_RED_PIN, LED_GREEN_PIN, LED_BLUE_PIN);
   Serial.println("LED setup done");
-  Led::setYellow(); // Indicate we're in early boot/crash check
+  Led::setYellow(Led::PRIO_NORMAL); // Indicate we're in early boot/crash check
 
   if (!SPIFFS.begin(true))
   {
@@ -76,7 +76,7 @@ void setup()
     ESP.restart();
     return;
   }
-  Led::setWhite();
+  Led::setWhite(Led::PRIO_NORMAL);
 
   logger.begin();
   logger.setCallback(CustomLog::callbackMultiple);
@@ -88,7 +88,7 @@ void setup()
   CrashMonitor::begin();
   logger.info("Crash monitor setup done", TAG);
 
-  Led::setCyan();
+  Led::setCyan(Led::PRIO_NORMAL);
 
   logger.debug("Checking for missing files...", TAG);
   auto missingFiles = checkMissingFiles();
@@ -98,14 +98,14 @@ void setup()
   }
   else
   {
-    Led::setOrange();
+    Led::setOrange(Led::PRIO_MEDIUM);
     logger.info("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
     createDefaultFilesForMissingFiles(missingFiles);
 
     logger.info("Default files created for missing files", TAG);
   }
 
-  Led::setPurple();
+  Led::setPurple(Led::PRIO_NORMAL);
 
   logger.debug("Setting up multiplexer...", TAG);
   Multiplexer::begin(
@@ -129,7 +129,7 @@ void setup()
     logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG);
   }
 
-  Led::setBlue();
+  Led::setBlue(Led::PRIO_NORMAL);
   logger.debug("Setting up WiFi...", TAG);
   CustomWifi::begin();
   logger.info("WiFi setup done", TAG);
@@ -185,7 +185,7 @@ void setup()
   InfluxDbClient::begin();
   logger.info("InfluxDB client setup done", TAG);
 
-  Led::setGreen();
+  Led::setGreen(Led::PRIO_NORMAL);
   printDeviceStatusStatic();
 
   logger.debug("Starting maintenance task...", TAG);

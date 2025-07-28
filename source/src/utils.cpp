@@ -593,9 +593,8 @@ void setRestartEsp32(const char* functionName, const char* reason) {
 }
 
 void restartEsp32() {
-    Led::block();
     Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
-    Led::setWhite(true);
+    Led::setWhite(Led::PRIO_CRITICAL);
 
     logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
     logger.end();
@@ -981,9 +980,8 @@ bool getPublicTimezone(int* gmtOffset, int* dstOffset) {
 void factoryReset() { 
     logger.fatal("Factory reset requested", TAG);
 
-    Led::block();
     Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
-    Led::setRed(true);
+    Led::setRed(Led::PRIO_CRITICAL);
 
     clearAllPreferences();
 

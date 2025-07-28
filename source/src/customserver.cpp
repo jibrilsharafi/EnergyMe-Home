@@ -322,14 +322,9 @@ namespace CustomServer
                 Update.printError(Serial);
                 
                 // Flash red LED pattern for error
-                Led::setOff(true);
-                Led::unblock();
-                for (int i = 0; i < 3; i++) {
-                    Led::setRed(true);
-                    vTaskDelay(pdMS_TO_TICKS(500));
-                    Led::setOff(true);
-                    vTaskDelay(pdMS_TO_TICKS(500));
-                }
+                Led::blinkRed(Led::PRIO_CRITICAL);
+                vTaskDelay(pdMS_TO_TICKS(1500)); // Let it blink a few times
+                Led::clearPattern(Led::PRIO_CRITICAL);
             } else {
                 AsyncResponseStream *response = request->beginResponseStream("application/json");
                 JsonDocument doc;
@@ -383,8 +378,7 @@ namespace CustomServer
                 // _ade7953.pauseMeterReadingTask(); // Uncomment if you have this method
                 
                 // Start LED indication
-                Led::block();
-                Led::setPurple(true);
+                Led::setPurple(Led::PRIO_URGENT);
                 
                 // Begin OTA update with known size
                 if (!Update.begin(contentLength, U_FLASH)) {
@@ -392,8 +386,7 @@ namespace CustomServer
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Failed to begin update\"}");
                     
                     // Restore LED and resume operations
-                    Led::setOff(true);
-                    Led::unblock();
+                    Led::setOff(Led::PRIO_URGENT);
                     // _ade7953.resumeMeterReadingTask(); // Uncomment if you have this method
                     return;
                 }
@@ -423,8 +416,7 @@ namespace CustomServer
                     otaInitialized = false;
                     
                     // Restore LED and resume operations
-                    Led::setOff(true);
-                    Led::unblock();
+                    Led::setOff(Led::PRIO_URGENT);
                     // _ade7953.resumeMeterReadingTask(); // Uncomment if you have this method
                     return;
                 }
@@ -452,13 +444,12 @@ namespace CustomServer
                     logger.info("OTA update finalization successful", TAG);
                     
                     // Show success LED pattern
-                    Led::setGreen(true);
+                    Led::setGreen(Led::PRIO_CRITICAL);
                     vTaskDelay(pdMS_TO_TICKS(1000));
                 }
                 
                 // Restore LED
-                Led::setOff(true);
-                Led::unblock();
+                Led::setOff(Led::PRIO_URGENT);
                 otaInitialized = false;
             } });
 

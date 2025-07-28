@@ -129,16 +129,15 @@ namespace ButtonHandler
                     _buttonPressStartTime = ZERO_START_TIME;
 
                     // Clear visual feedback
-                    Led::unblock();
+                    Led::clearPattern(Led::PRIO_URGENT);
                 }
                 else if (_buttonPressed)
                 {
                     // Button was pressed - start visual feedback
                     logger.debug("Button pressed", TAG);
 
-                    Led::block();
                     Led::setBrightness(max(Led::getBrightness(), 1));
-                    Led::setWhite(true);
+                    Led::setWhite(Led::PRIO_URGENT);
                 }
             }
             // Here it means it is still being pressed
@@ -188,27 +187,27 @@ namespace ButtonHandler
         // Provide immediate visual feedback based on current press duration
         if (pressDuration >= BUTTON_MAX_PRESS_TIME)
         {
-            Led::setWhite(true); // Maximum press time exceeded
+            Led::setWhite(Led::PRIO_URGENT); // Maximum press time exceeded
         }
         else if (pressDuration >= BUTTON_VERY_LONG_PRESS_TIME)
         {
-            Led::setRed(true); // Factory reset - most dangerous
+            Led::setRed(Led::PRIO_URGENT); // Factory reset - most dangerous
         }
         else if (pressDuration >= BUTTON_LONG_PRESS_TIME)
         {
-            Led::setOrange(true); // WiFi reset
+            Led::setOrange(Led::PRIO_URGENT); // WiFi reset
         }
         else if (pressDuration >= BUTTON_MEDIUM_PRESS_TIME)
         {
-            Led::setYellow(true); // Password reset
+            Led::setYellow(Led::PRIO_URGENT); // Password reset
         }
         else if (pressDuration >= BUTTON_SHORT_PRESS_TIME)
         {
-            Led::setCyan(true); // Restart
+            Led::setCyan(Led::PRIO_URGENT); // Restart
         }
         else
         {
-            Led::setWhite(true); // Initial press
+            Led::setWhite(Led::PRIO_URGENT); // Initial press
         }
     }
 
@@ -221,8 +220,7 @@ namespace ButtonHandler
 
         _saveOperationData();
 
-        Led::block();
-        Led::setCyan(true);
+        Led::setCyan(Led::PRIO_CRITICAL);
 
         setRestartEsp32(TAG, "Restart via button");
 
@@ -239,8 +237,7 @@ namespace ButtonHandler
 
         _saveOperationData();
 
-        Led::block();
-        Led::setYellow(true);
+        Led::setYellow(Led::PRIO_CRITICAL);
 
         if (CustomServer::resetWebPassword()) // Implement actual password reset logic
         {
@@ -249,31 +246,20 @@ namespace ButtonHandler
             
             logger.info("Password reset to default successfully", TAG);
 
-            // Success feedback - 3 green blinks
-            for (int i = 0; i < 3; i++)
-            {
-                Led::setGreen(true);
-                vTaskDelay(pdMS_TO_TICKS(500));
-                Led::setOff(true);
-                vTaskDelay(pdMS_TO_TICKS(500));
-            }
+            // Success feedback - green blinking
+            Led::blinkGreen(Led::PRIO_CRITICAL);
+            vTaskDelay(pdMS_TO_TICKS(1500)); // Let it blink a few times
         }
         else
         {
             logger.error("Failed to reset password to default", TAG);
 
-            // Error feedback - 3 red blinks
-            for (int i = 0; i < 3; i++)
-            {
-                Led::setRed(true);
-                vTaskDelay(pdMS_TO_TICKS(500));
-                Led::setOff(true);
-                vTaskDelay(pdMS_TO_TICKS(500));
-            }
+            // Error feedback - red blinking
+            Led::blinkRed(Led::PRIO_CRITICAL);
+            vTaskDelay(pdMS_TO_TICKS(1500)); // Let it blink a few times
         }
 
-        Led::setOff(true);
-        Led::unblock();
+        Led::clearPattern(Led::PRIO_CRITICAL);
 
         _operationInProgress = false;
         _currentPressType = ButtonPressType::NONE;
@@ -288,8 +274,7 @@ namespace ButtonHandler
 
         _saveOperationData();
 
-        Led::block();
-        Led::setOrange(true);
+        Led::setOrange(Led::PRIO_CRITICAL);
 
         CustomWifi::resetWifi(); // This will restart the device
 
@@ -306,8 +291,7 @@ namespace ButtonHandler
 
         _saveOperationData();
 
-        Led::block();
-        Led::setRed(true);
+        Led::setRed(Led::PRIO_CRITICAL);
 
         factoryReset(); // This will restart the device
 
