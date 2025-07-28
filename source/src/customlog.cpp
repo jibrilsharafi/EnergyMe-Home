@@ -7,7 +7,7 @@ static const char *TAG = "logcallback";
 namespace CustomLog
 {
     // Static variables - all internal to this module
-    static CircularBuffer<LogJson, LOG_BUFFER_SIZE> _udpLogBuffer;
+    static CircularBuffer<LogJson, LOG_BUFFER_SIZE> _udpLogBuffer; // TODO: use PSRAM here?
     static WiFiUDP _udpClient;
     static IPAddress _udpDestinationIp;
     static char _udpBuffer[UDP_LOG_BUFFER_SIZE];

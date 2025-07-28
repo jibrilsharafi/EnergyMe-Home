@@ -240,9 +240,6 @@
 #define ADE7953_METER_READING_TASK_STACK_SIZE (8 * 1024) // The stack size for the ADE7953 task
 #define ADE7953_METER_READING_TASK_PRIORITY 2 // The priority for the ADE7953 task
 
-// Memory safety for JSON operations
-#define JSON_SAFE_MIN_HEAP_SIZE (16 * 1024) // Minimum free heap required for JSON operations
-
 // Interrupt handling
 #define ADE7953_INTERRUPT_TIMEOUT_MS 1000 // Timeout for waiting on interrupt semaphore (in ms)
 

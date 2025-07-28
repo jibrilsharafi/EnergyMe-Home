@@ -744,15 +744,6 @@ namespace Mqtt
             return;
         }
         
-        // Log memory usage before JSON operations
-        size_t freeHeap = ESP.getFreeHeap();
-        size_t minFreeHeap = ESP.getMinFreeHeap();
-        logger.debug("Memory before JSON: Free heap: %u bytes, Min free heap: %u bytes", TAG, freeHeap, minFreeHeap);
-        
-        if (freeHeap < JSON_SAFE_MIN_HEAP_SIZE) { // Less than safe threshold
-            logger.warning("Low heap memory detected (%u bytes), JSON operations may fail", TAG, freeHeap);
-        }
-        
         JsonArray _jsonArray = jsonDocument->to<JsonArray>();
         
         ade7953.takePayloadMeterMutex();
@@ -817,10 +808,6 @@ namespace Mqtt
         }    
         _jsonObject["unixTime"] = ade7953.meterValues[CHANNEL_0].lastUnixTimeMilliseconds;
         _jsonObject["voltage"] = ade7953.meterValues[CHANNEL_0].voltage;
-
-        // Log memory usage after JSON operations
-        size_t freeHeapAfter = ESP.getFreeHeap();
-        logger.debug("Memory after JSON: Free heap: %u bytes (change: %d bytes)", TAG, freeHeapAfter, (int)(freeHeapAfter - freeHeap));
 
         logger.debug("Circular buffer converted to JSON", TAG);
     }
@@ -967,12 +954,6 @@ namespace Mqtt
             logger.warning("Time not synced. Skipping publishing on %s", TAG, topic);
             statistics.mqttMessagesPublishedError++;
             return false;
-        }
-
-        // Check memory and stack before publishing
-        size_t currentFreeHeap = ESP.getFreeHeap();
-        if (currentFreeHeap < JSON_SAFE_MIN_HEAP_SIZE) {
-            logger.warning("Critical memory situation during publish (%u bytes free), potential crash risk", TAG, currentFreeHeap);
         }
 
         if (!_clientMqtt.publish(topic, message, retain)) {

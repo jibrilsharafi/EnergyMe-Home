@@ -3,6 +3,11 @@ applyTo: '**'
 ---
 Provide project context and coding guidelines that AI should follow when generating code, answering questions, or reviewing changes.
 
+0. **Agent instructions**:
+    - Always be as concise as possible unless the user asks for more details.
+    - Never ask to run `pio` or `platformio` commands as they won't work directly in the terminal. Assume the user will run them manually.
+    - Always stick to the request, and avoid at all costs creating new files unless asked to. Proposals are accepted.
+
 1. **Project Context**:
     - EnergyMe-Home is an open-source ESP32-based energy monitoring system using the Arduino framework with PlatformIO
     - Monitors up to 17 circuits (1 direct + 16 multiplexed) via ADE7953 energy meter IC
@@ -48,7 +53,3 @@ Provide project context and coding guidelines that AI should follow when generat
 7. **Data storage**:
     - Use Preferences wherever possible for configuration storage
     - Use SPIFFS (to update in the future to LittleFS) for historical data storage
-
-8. **Agent capabilities**:
-    - Never ask to run `pio` or `platformio` commands as they won't work directly in the terminal. Assume the user will run them manually.
-    - Always stick to the request, and avoid at all costs creating new files unless asked to. Proposals are accepted.

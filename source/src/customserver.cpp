@@ -8,11 +8,19 @@ namespace CustomServer {
   static AsyncRateLimitMiddleware rateLimit;
   static AsyncLoggingMiddleware requestLogger;
 
+  // Health check task variables
+  static TaskHandle_t _healthCheckTaskHandle = NULL;
+  static volatile bool _healthCheckRunning = false;
+  static unsigned int _consecutiveFailures = 0;
+
   static void _setupMiddleware();
   static void _serveStaticContent();
   static void _serveApi();
 
-  // TODO: add a task that periodically checks the health of the server by doing self-api requests, and if it fails, it restarts
+  static void _startHealthCheckTask();
+  static void _stopHealthCheckTask();
+  static void _healthCheckTask(void *parameter);
+  static bool _performHealthCheck();
 
 
   void begin() {
@@ -25,6 +33,9 @@ namespace CustomServer {
     server.begin();
 
     logger.info("Web server started on port %d", TAG, WEBSERVER_PORT);
+    
+    // Start health check task to ensure the web server is responsive, and if it is not, restart the ESP32
+    _startHealthCheckTask();
   }
 
   void _setupMiddleware() {
@@ -176,14 +187,15 @@ namespace CustomServer {
 
     server.on("/api/v1/health", HTTP_GET, [](AsyncWebServerRequest *request) {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
+        
         JsonDocument doc;
         doc["status"] = "ok";
         doc["uptime"] = millis();
         doc["freeHeap"] = ESP.getFreeHeap();
-        doc["timestamp"] = millis();
+        
         serializeJson(doc, *response);
         request->send(response);
-    });
+    }).skipServerMiddlewares().addMiddleware(&requestLogger); // Only the logger is required,no auth or rate limiting
 
     // === AUTHENTICATION ENDPOINTS ===
     
@@ -479,6 +491,136 @@ namespace CustomServer {
             request->send(400, "application/json", "{\"success\":false,\"message\":\"Rollback not possible\"}");
         }
     });
+  }
+
+  void _startHealthCheckTask() {
+    if (_healthCheckTaskHandle != NULL) {
+        logger.warning("Health check task already running", TAG);
+        return;
+    }
+
+    _healthCheckRunning = true;
+    _consecutiveFailures = 0;
+
+    BaseType_t result = xTaskCreate(
+        _healthCheckTask,
+        HEALTH_CHECK_TASK_NAME,
+        HEALTH_CHECK_TASK_STACK_SIZE,
+        NULL,
+        HEALTH_CHECK_TASK_PRIORITY,
+        &_healthCheckTaskHandle
+    );
+
+    if (result == pdPASS) {
+        logger.info("Health check task started successfully", TAG);
+    } else {
+        logger.error("Failed to create health check task", TAG);
+        _healthCheckRunning = false;
+    }
+  }
+
+  void _stopHealthCheckTask() {
+    if (_healthCheckTaskHandle == NULL) {
+        logger.debug("Health check task not running", TAG);
+        return;
+    }
+
+    _healthCheckRunning = false;
+    
+    // Give the task a moment to exit gracefully
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    if (_healthCheckTaskHandle != NULL) {
+        vTaskDelete(_healthCheckTaskHandle);
+        _healthCheckTaskHandle = NULL;
+        logger.info("Health check task stopped", TAG);
+    }
+  }
+
+  static void _healthCheckTask(void *parameter) {
+    logger.debug("Health check task started", TAG);
+    
+    // 
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS);
+
+    while (_healthCheckRunning) {
+        // Wait for the next cycle
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        
+        if (!_healthCheckRunning) {
+            break;
+        }
+
+        // Perform health check
+        if (_performHealthCheck()) {
+            // Reset failure counter on success
+            if (_consecutiveFailures > 0) {
+                logger.info("Health check recovered after %d failures", TAG, _consecutiveFailures);
+                _consecutiveFailures = 0;
+            }
+            logger.debug("Health check passed", TAG);
+        } else {
+            _consecutiveFailures++;
+            logger.warning("Health check failed (attempt %d/%d)", TAG, _consecutiveFailures, HEALTH_CHECK_MAX_FAILURES);
+            
+            if (_consecutiveFailures >= HEALTH_CHECK_MAX_FAILURES) {
+                logger.error("Health check failed %d consecutive times, requesting system restart", TAG, HEALTH_CHECK_MAX_FAILURES);
+                setRestartEsp32(TAG, "Server health check failures exceeded maximum threshold");
+                break; // Exit the task as we're restarting
+            }
+        }
+    }
+    
+    logger.debug("Health check task exiting", TAG);
+    _healthCheckTaskHandle = NULL;
+    vTaskDelete(NULL);
+  }
+
+  static bool _performHealthCheck() {
+    // Check if WiFi is connected
+    if (!CustomWifi::isFullyConnected()) {
+        logger.warning("Health check: WiFi not connected", TAG);
+        return false;
+    }
+
+    // Perform a simple HTTP self-request to verify server responsiveness
+    WiFiClient client;
+    client.setTimeout(HEALTH_CHECK_TIMEOUT_MS);
+    
+    if (!client.connect("127.0.0.1", WEBSERVER_PORT)) {
+        logger.warning("Health check: Cannot connect to local web server", TAG);
+        return false;
+    }
+
+    // Send a simple GET request to the health endpoint
+    client.print("GET /api/v1/health HTTP/1.1\r\n");
+    client.print("Host: 127.0.0.1\r\n");
+    client.print("Connection: close\r\n\r\n");
+
+    // Wait for response with timeout
+    unsigned long startTime = millis();
+    while (client.connected() && (millis() - startTime) < HEALTH_CHECK_TIMEOUT_MS) {
+        if (client.available()) {
+            String line = client.readStringUntil('\n');
+            if (line.startsWith("HTTP/1.1 ")) {
+                int statusCode = line.substring(9, 12).toInt();
+                client.stop();
+                
+                if (statusCode == 200) {
+                    return true;
+                } else {
+                    logger.warning("Health check: HTTP status code %d", TAG, statusCode);
+                    return false;
+                }
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to prevent busy waiting
+    }
+    
+    client.stop();
+    logger.warning("Health check: HTTP request timeout", TAG);
+    return false;
   }
 }
 

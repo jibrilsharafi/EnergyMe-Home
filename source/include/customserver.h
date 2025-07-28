@@ -22,6 +22,13 @@
 #define MINIMUM_FREE_HEAP_OTA 20000 // Minimum free heap required for OTA updates
 #define SIZE_REPORT_UPDATE_OTA (128 * 1024) // Report progress every 128KB
 
+#define HEALTH_CHECK_TASK_NAME "health_check_task"
+#define HEALTH_CHECK_TASK_STACK_SIZE (4 * 1024)
+#define HEALTH_CHECK_TASK_PRIORITY 1
+#define HEALTH_CHECK_INTERVAL_MS (30 * 1000) // 30 seconds
+#define HEALTH_CHECK_TIMEOUT_MS (5 * 1000) // 5 seconds timeout for health requests
+#define HEALTH_CHECK_MAX_FAILURES 3 // Maximum consecutive failures before restart
+
 namespace CustomServer {
     void begin();
     void updateAuthPassword();
