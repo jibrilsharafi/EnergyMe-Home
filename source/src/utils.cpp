@@ -493,6 +493,59 @@ bool checkAllFiles() {
     return false;
 }
 
+// Task function that handles periodic maintenance checks
+void maintenanceTask(void* parameter) {
+    logger.debug("Maintenance task started", TAG);
+    
+    while (true) {
+        // Wait for the maintenance check interval
+        vTaskDelay(pdMS_TO_TICKS(MAINTENANCE_CHECK_INTERVAL));
+        
+        logger.debug("Running maintenance checks...", TAG);
+        
+        // Update and print statistics
+        updateStatistics();
+        printStatistics();
+        printDeviceStatusDynamic();
+
+        // Check heap memory
+        if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) {
+            logger.fatal("Heap memory has degraded below safe minimum: %d bytes", TAG, ESP.getFreeHeap());
+            setRestartEsp32(TAG, "Heap memory has degraded below safe minimum");
+        }
+
+        // Check SPIFFS memory and clear log if needed
+        if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
+            logger.clearLog();
+            logger.warning("Log cleared due to low memory", TAG);
+        }
+        
+        logger.debug("Maintenance checks completed", TAG);
+    }
+
+    vTaskDelete(NULL);
+}
+
+void startMaintenanceTask() {
+    logger.debug("Starting maintenance task...", TAG);
+    
+    TaskHandle_t maintenanceTaskHandle = NULL;
+    BaseType_t result = xTaskCreate(
+        maintenanceTask,              // Task function
+        TASK_MAINTENANCE_NAME,        // Task name
+        TASK_MAINTENANCE_STACK_SIZE,  // Stack size (words)
+        NULL,                         // Parameter passed to task
+        TASK_MAINTENANCE_PRIORITY,    // Priority
+        &maintenanceTaskHandle        // Task handle
+    );
+    
+    if (result != pdPASS) {
+        logger.error("Failed to create maintenance task", TAG);
+    } else {
+        logger.info("Maintenance task created successfully", TAG);
+    }
+}
+
 // Task function that handles delayed restart
 void restartTask(void* parameter) {
     logger.debug("Restart task started, waiting %d ms before restart", TAG, ESP32_RESTART_DELAY);

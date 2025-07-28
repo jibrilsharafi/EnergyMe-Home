@@ -29,6 +29,10 @@
 #define TASK_RESTART_STACK_SIZE 4096
 #define TASK_RESTART_PRIORITY 3
 
+#define TASK_MAINTENANCE_NAME "maintenance_task"
+#define TASK_MAINTENANCE_STACK_SIZE 4096
+#define TASK_MAINTENANCE_PRIORITY 2
+
 // New system info functions
 void populateSystemStaticInfo(SystemStaticInfo& info);
 void populateSystemDynamicInfo(SystemDynamicInfo& info);
@@ -45,6 +49,8 @@ void systemInfoToJson(JsonDocument& jsonDocument);
 
 void setRestartEsp32(const char* functionName, const char* reason);
 void restartEsp32();
+
+void startMaintenanceTask();
 
 void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
 void printDeviceStatus();
