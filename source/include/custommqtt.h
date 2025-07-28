@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <PubSubClient.h>
 #include <Ticker.h>
+#include <Preferences.h>
 #include <WiFi.h>
 
 #include "ade7953.h"

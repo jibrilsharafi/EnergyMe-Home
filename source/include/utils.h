@@ -39,48 +39,6 @@ void getJsonDeviceDynamicInfo(JsonDocument& doc);
 void populateSystemInfo(SystemInfo& systemInfo);
 void systemInfoToJson(JsonDocument& jsonDocument);
 
-// Preferences utilities for configuration storage
-namespace PreferencesConfig {     // TODO: keep here only what we really need to be global
-    // ADE7953 configuration
-    bool setSampleTime(uint32_t sampleTime);
-    uint32_t getSampleTime();
-    bool setVoltageGain(uint32_t gain);
-    uint32_t getVoltageGain();
-    bool setCurrentGainA(uint32_t gain);
-    uint32_t getCurrentGainA();
-    bool setCurrentGainB(uint32_t gain);
-    uint32_t getCurrentGainB();
-    
-    // Channel configuration
-    bool setChannelActive(uint8_t channel, bool active);
-    bool getChannelActive(uint8_t channel);
-    bool setChannelLabel(uint8_t channel, const char* label);
-    bool getChannelLabel(uint8_t channel, char* buffer, size_t bufferSize);
-    bool setChannelPhase(uint8_t channel, uint8_t phase);
-    uint8_t getChannelPhase(uint8_t channel);
-    
-    // Custom MQTT configuration // TODO: make custom
-    bool setCustomMqttEnabled(bool enabled);
-    bool getCustomMqttEnabled();
-    bool setCustomMqttServer(const char* server);
-    bool getCustomMqttServer(char* buffer, size_t bufferSize);
-    bool setCustomMqttPort(uint16_t port);
-    uint16_t getCustomMqttPort();
-    bool setCustomMqttUsername(const char* username);
-    bool getCustomMqttUsername(char* buffer, size_t bufferSize);
-    bool setCustomMqttPassword(const char* password);
-    bool getCustomMqttPassword(char* buffer, size_t bufferSize);
-    
-    // Authentication functions
-    bool setWebPassword(const char* password);
-    bool getWebPassword(char* buffer, size_t bufferSize);
-    bool resetWebPassword();
-    bool validatePasswordStrength(const char* password);
-    
-    // Utility functions
-    bool hasConfiguration(const char* prefsNamespace);
-}
-
 void setRestartEsp32(const char* functionName, const char* reason);
 void checkIfRestartEsp32Required();
 void restartEsp32();

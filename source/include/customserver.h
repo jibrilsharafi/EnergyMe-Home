@@ -32,6 +32,8 @@
 namespace CustomServer {
     void begin();
     void updateAuthPassword();
+
+    bool resetWebPassword();
 }
 
 // class CustomServer

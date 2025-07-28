@@ -242,7 +242,7 @@ namespace ButtonHandler
         Led::block();
         Led::setYellow(true);
 
-        if (PreferencesConfig::resetWebPassword()) // Implement actual password reset logic
+        if (CustomServer::resetWebPassword()) // Implement actual password reset logic
         {
             // Update authentication middleware with new password
             CustomServer::updateAuthPassword();

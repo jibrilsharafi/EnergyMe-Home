@@ -2,163 +2,177 @@
 
 static const char *TAG = "customserver";
 
-namespace CustomServer {
-  static AsyncWebServer server(WEBSERVER_PORT);
-  static AsyncAuthenticationMiddleware digestAuth;
-  static AsyncRateLimitMiddleware rateLimit;
-  static AsyncLoggingMiddleware requestLogger;
+namespace CustomServer
+{
+    static AsyncWebServer server(WEBSERVER_PORT);
+    static AsyncAuthenticationMiddleware digestAuth;
+    static AsyncRateLimitMiddleware rateLimit;
+    static AsyncLoggingMiddleware requestLogger;
 
-  // Health check task variables
-  static TaskHandle_t _healthCheckTaskHandle = NULL;
-  static volatile bool _healthCheckRunning = false;
-  static unsigned int _consecutiveFailures = 0;
+    // Health check task variables
+    static TaskHandle_t _healthCheckTaskHandle = NULL;
+    static volatile bool _healthCheckRunning = false;
+    static unsigned int _consecutiveFailures = 0;
 
-  static void _setupMiddleware();
-  static void _serveStaticContent();
-  static void _serveApi();
+    static void _setupMiddleware();
+    static void _serveStaticContent();
+    static void _serveApi();
 
-  static void _startHealthCheckTask();
-  static void _stopHealthCheckTask();
-  static void _healthCheckTask(void *parameter);
-  static bool _performHealthCheck();
+    static void _startHealthCheckTask();
+    static void _stopHealthCheckTask();
+    static void _healthCheckTask(void *parameter);
+    static bool _performHealthCheck();
+
+    static bool _setWebPassword(const char *password);
+    static bool _getWebPassword(char *buffer, size_t bufferSize);
+    static bool _validatePasswordStrength(const char *password);
 
 
-  void begin() {
-    logger.debug("Setting up web server...", TAG);
+    void begin()
+    {
+        logger.debug("Setting up web server...", TAG);
 
-    _setupMiddleware();
-    _serveStaticContent();
-    _serveApi();
+        _setupMiddleware();
+        _serveStaticContent();
+        _serveApi();
 
-    server.begin();
+        server.begin();
 
-    logger.info("Web server started on port %d", TAG, WEBSERVER_PORT);
-    
-    // Start health check task to ensure the web server is responsive, and if it is not, restart the ESP32
-    _startHealthCheckTask();
-  }
+        logger.info("Web server started on port %d", TAG, WEBSERVER_PORT);
 
-  void _setupMiddleware() {
+        // Start health check task to ensure the web server is responsive, and if it is not, restart the ESP32
+        _startHealthCheckTask();
+    }
+
+    void _setupMiddleware()
+    {
         // ---- Authentication Middleware Setup ----
-    // Configure digest authentication (more secure than basic auth)
-    digestAuth.setUsername(WEBSERVER_DEFAULT_USERNAME);
-    
-    // Load password from Preferences or use default
-    char webPassword[AUTH_PASSWORD_BUFFER_SIZE];
-    if (PreferencesConfig::getWebPassword(webPassword, sizeof(webPassword))) 
+        // Configure digest authentication (more secure than basic auth)
+        digestAuth.setUsername(WEBSERVER_DEFAULT_USERNAME);
+
+        // Load password from Preferences or use default
+        char webPassword[AUTH_PASSWORD_BUFFER_SIZE];
+        if (_getWebPassword(webPassword, sizeof(webPassword)))
+        {
+            digestAuth.setPassword(webPassword);
+            logger.debug("Web password loaded from Preferences", TAG);
+        }
+        else
+        {
+            // Fallback to default password if Preferences failed
+            digestAuth.setPassword(WEBSERVER_DEFAULT_PASSWORD);
+            logger.warning("Failed to load web password, using default", TAG);
+
+            // Try to initialize the password in Preferences for next time
+            if (_setWebPassword(WEBSERVER_DEFAULT_PASSWORD))
+            {
+                logger.debug("Default password saved to Preferences for future use", TAG);
+            }
+        }
+
+        digestAuth.setRealm(WEBSERVER_REALM);
+        digestAuth.setAuthFailureMessage("The password is incorrect. Please try again.");
+        digestAuth.setAuthType(AsyncAuthType::AUTH_DIGEST);
+        digestAuth.generateHash(); // precompute hash for better performance
+
+        server.addMiddleware(&digestAuth);
+
+        logger.debug("Digest authentication configured", TAG);
+
+        // ---- Rate Limiting Middleware Setup ----
+        // Set rate limiting to prevent abuse
+        rateLimit.setMaxRequests(WEBSERVER_MAX_REQUESTS);
+        rateLimit.setWindowSize(WEBSERVER_WINDOW_SIZE_SECONDS);
+
+        server.addMiddleware(&rateLimit);
+
+        logger.debug("Rate limiting configured: max requests = %d, window size = %d seconds", TAG, WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
+
+        // ---- Logging Middleware Setup ----
+        // TODO: remove this in production, it's for development only
+        requestLogger.setEnabled(true);
+        requestLogger.setOutput(Serial);
+
+        server.addMiddleware(&requestLogger);
+
+        logger.debug("Logging middleware configured", TAG);
+    }
+
+    void _serveStaticContent()
     {
-        digestAuth.setPassword(webPassword);
-        logger.debug("Web password loaded from Preferences", TAG);
-    } 
-    else 
+        // === STATIC CONTENT (no auth required) ===
+
+        // CSS files
+        server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/css", styles_css); });
+
+        server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/css", button_css); });
+
+        server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/css", section_css); });
+
+        server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/css", typography_css); });
+
+        // Resources
+        server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "image/svg+xml", favicon_svg); });
+
+        // === AUTHENTICATED PAGES ===
+
+        // Main dashboard
+        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/html", index_html); });
+
+        // Configuration pages
+        server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/html", configuration_html); });
+
+        server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/html", calibration_html); });
+
+        server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/html", channel_html); });
+
+        server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/html", info_html); });
+
+        server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/html", log_html); });
+
+        server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/html", update_html); });
+
+        // Swagger UI
+        server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/html", swagger_ui_html); });
+
+        server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request)
+                  { request->send(200, "text/yaml", swagger_yaml); });
+    }
+
+    void updateAuthPassword()
     {
-        // Fallback to default password if Preferences failed
-        digestAuth.setPassword(WEBSERVER_DEFAULT_PASSWORD);
-        logger.warning("Failed to load web password, using default", TAG);
-        
-        // Try to initialize the password in Preferences for next time
-        if (PreferencesConfig::setWebPassword(WEBSERVER_DEFAULT_PASSWORD)) {
-            logger.debug("Default password saved to Preferences for future use", TAG);
+        char webPassword[AUTH_PASSWORD_BUFFER_SIZE];
+        if (_getWebPassword(webPassword, sizeof(webPassword)))
+        {
+            digestAuth.setPassword(webPassword);
+            digestAuth.generateHash(); // regenerate hash with new password
+            logger.info("Authentication password updated", TAG);
+        }
+        else
+        {
+            logger.error("Failed to load new password for authentication", TAG);
         }
     }
-    
-    digestAuth.setRealm(WEBSERVER_REALM);
-    digestAuth.setAuthFailureMessage("The password is incorrect. Please try again.");
-    digestAuth.setAuthType(AsyncAuthType::AUTH_DIGEST);
-    digestAuth.generateHash();  // precompute hash for better performance
-    
-    server.addMiddleware(&digestAuth);
 
-    logger.debug("Digest authentication configured", TAG);
+    void _serveApi()
+    {
 
-    // ---- Rate Limiting Middleware Setup ----
-    // Set rate limiting to prevent abuse
-    rateLimit.setMaxRequests(WEBSERVER_MAX_REQUESTS);
-    rateLimit.setWindowSize(WEBSERVER_WINDOW_SIZE_SECONDS);
-
-    server.addMiddleware(&rateLimit);
-
-    logger.debug("Rate limiting configured: max requests = %d, window size = %d seconds", TAG, WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
-
-    // ---- Logging Middleware Setup ----
-    // TODO: remove this in production, it's for development only
-    requestLogger.setEnabled(true);
-    requestLogger.setOutput(Serial);
-    
-    server.addMiddleware(&requestLogger);
-    
-    logger.debug("Logging middleware configured", TAG);
-  }
-
-  void _serveStaticContent()
-  {
-    // === STATIC CONTENT (no auth required) ===
-
-    // CSS files
-    server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/css", styles_css); });
-
-    server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/css", button_css); });
-
-    server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/css", section_css); });
-
-    server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/css", typography_css); });
-
-    // Resources
-    server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "image/svg+xml", favicon_svg); });
-
-    // === AUTHENTICATED PAGES ===
-
-    // Main dashboard
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/html", index_html); });
-
-    // Configuration pages
-    server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/html", configuration_html); });
-
-    server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/html", calibration_html); });
-
-    server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/html", channel_html); });
-
-    server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/html", info_html); });
-
-    server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/html", log_html); });
-
-    server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/html", update_html); });
-
-    // Swagger UI
-    server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/html", swagger_ui_html); });
-
-    server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(200, "text/yaml", swagger_yaml); });
-  }
-
-  void updateAuthPassword() {
-    char webPassword[AUTH_PASSWORD_BUFFER_SIZE];
-    if (PreferencesConfig::getWebPassword(webPassword, sizeof(webPassword))) {
-        digestAuth.setPassword(webPassword);
-        digestAuth.generateHash();  // regenerate hash with new password
-        logger.info("Authentication password updated", TAG);
-    } else {
-        logger.error("Failed to load new password for authentication", TAG);
-    }
-  }
-
-  void _serveApi() {
-
-    // === API ENDPOINTS (requires authentication) ===
-    server.on("/api/v1/system", HTTP_GET, [](AsyncWebServerRequest *request) {
+        // === API ENDPOINTS (requires authentication) ===
+        server.on("/api/v1/system", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         JsonDocument doc;
         
@@ -172,20 +186,20 @@ namespace CustomServer {
         doc["dynamic"] = dynamicDoc;
         
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 
-    server.on("/api/v1/statistics", HTTP_GET, [](AsyncWebServerRequest *request) {
+        server.on("/api/v1/statistics", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         JsonDocument doc;
         
         statisticsToJson(statistics, doc);
         
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 
-    server.on("/api/v1/health", HTTP_GET, [](AsyncWebServerRequest *request) {
+        server.on("/api/v1/health", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         
         JsonDocument doc;
@@ -194,20 +208,22 @@ namespace CustomServer {
         doc["freeHeap"] = ESP.getFreeHeap();
         
         serializeJson(doc, *response);
-        request->send(response);
-    }).skipServerMiddlewares().addMiddleware(&requestLogger); // Only the logger is required,no auth or rate limiting
+        request->send(response); })
+            .skipServerMiddlewares()
+            .addMiddleware(&requestLogger); // Only the logger is required,no auth or rate limiting
 
-    // === AUTHENTICATION ENDPOINTS ===
-    
-    // Check authentication status
-    server.on("/api/v1/auth/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        // === AUTHENTICATION ENDPOINTS ===
+
+        // Check authentication status
+        server.on("/api/v1/auth/status", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         JsonDocument doc;
         
         // Check if using default password
         char currentPassword[AUTH_PASSWORD_BUFFER_SIZE];
         bool isDefault = true;
-        if (PreferencesConfig::getWebPassword(currentPassword, sizeof(currentPassword))) {
+        if (_getWebPassword(currentPassword, sizeof(currentPassword))) {
             isDefault = (strcmp(currentPassword, WEBSERVER_DEFAULT_PASSWORD) == 0);
         }
         
@@ -216,60 +232,64 @@ namespace CustomServer {
         doc["authRequired"] = true; // In general, it is required everywhere
         
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 
-    // Change password (requires current password)
-    // Using AsyncCallbackJsonWebHandler for cleaner JSON handling
-    static AsyncCallbackJsonWebHandler* changePasswordHandler = new AsyncCallbackJsonWebHandler(
-        "/api/v1/auth/change-password", 
-        [](AsyncWebServerRequest *request, JsonVariant &json) {
-            // Parse JSON (automatically handled by AsyncCallbackJsonWebHandler)
-            JsonDocument doc;
-            doc.set(json);
-            
-            const char* currentPassword = doc["currentPassword"];
-            const char* newPassword = doc["newPassword"];
-            
-            if (!currentPassword || !newPassword) {
-                request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing currentPassword or newPassword\"}");
-                return;
-            }
-            
-            // Validate current password
-            char storedPassword[AUTH_PASSWORD_BUFFER_SIZE];
-            if (!PreferencesConfig::getWebPassword(storedPassword, sizeof(storedPassword))) {
-                request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to retrieve current password\"}");
-                return;
-            }
-            
-            if (strcmp(currentPassword, storedPassword) != 0) {
-                request->send(401, "application/json", "{\"success\":false,\"message\":\"Current password is incorrect\"}");
-                return;
-            }
-            
-            // Validate and save new password
-            if (!PreferencesConfig::setWebPassword(newPassword)) {
-                request->send(400, "application/json", "{\"success\":false,\"message\":\"New password does not meet requirements or failed to save\"}");
-                return;
-            }
-            
-            logger.info("Password changed successfully via API", TAG);
-            request->send(200, "application/json", "{\"success\":true,\"message\":\"Password changed successfully\"}");
+        // Change password (requires current password)
+        // Using AsyncCallbackJsonWebHandler for cleaner JSON handling
+        static AsyncCallbackJsonWebHandler *changePasswordHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/auth/change-password",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                // Parse JSON (automatically handled by AsyncCallbackJsonWebHandler)
+                JsonDocument doc;
+                doc.set(json);
 
-            vTaskDelay(pdMS_TO_TICKS(1000)); // Give time for the response to be sent before updating the password
+                const char *currentPassword = doc["currentPassword"];
+                const char *newPassword = doc["newPassword"];
 
-            // Update authentication middleware with new password (but after sending response otherwise the client will not receive it)
-            updateAuthPassword();
-        }
-    );
-    
-    changePasswordHandler->setMethod(HTTP_POST);
-    server.addHandler(changePasswordHandler);
+                if (!currentPassword || !newPassword)
+                {
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing currentPassword or newPassword\"}");
+                    return;
+                }
 
-    // Reset password to default (admin operation)
-    server.on("/api/v1/auth/reset-password", HTTP_POST, [](AsyncWebServerRequest *request) {
-        if (PreferencesConfig::resetWebPassword()) {
+                // Validate current password
+                char storedPassword[AUTH_PASSWORD_BUFFER_SIZE];
+                if (!_getWebPassword(storedPassword, sizeof(storedPassword)))
+                {
+                    request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to retrieve current password\"}");
+                    return;
+                }
+
+                if (strcmp(currentPassword, storedPassword) != 0)
+                {
+                    request->send(401, "application/json", "{\"success\":false,\"message\":\"Current password is incorrect\"}");
+                    return;
+                }
+
+                // Validate and save new password
+                if (!_setWebPassword(newPassword))
+                {
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"New password does not meet requirements or failed to save\"}");
+                    return;
+                }
+
+                logger.info("Password changed successfully via API", TAG);
+                request->send(200, "application/json", "{\"success\":true,\"message\":\"Password changed successfully\"}");
+
+                vTaskDelay(pdMS_TO_TICKS(1000)); // Give time for the response to be sent before updating the password
+
+                // Update authentication middleware with new password (but after sending response otherwise the client will not receive it)
+                updateAuthPassword();
+            });
+
+        changePasswordHandler->setMethod(HTTP_POST);
+        server.addHandler(changePasswordHandler);
+
+        // Reset password to default (admin operation)
+        server.on("/api/v1/auth/reset-password", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+        if (resetWebPassword()) {
             // Update authentication middleware with new password
             updateAuthPassword();
             
@@ -277,14 +297,13 @@ namespace CustomServer {
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Password reset to default\"}");
         } else {
             request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to reset password\"}");
-        }
-    });
+        } });
 
-    // === OTA UPDATE ENDPOINTS ===
-    
-    // Firmware upload endpoint with integrated MD5 support
-    server.on("/api/v1/ota/upload", HTTP_POST, 
-        [](AsyncWebServerRequest *request) {
+        // === OTA UPDATE ENDPOINTS ===
+
+        // Firmware upload endpoint with integrated MD5 support
+        server.on("/api/v1/ota/upload", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
             // Handle the completion of the upload
             if (request->getResponse()) {
                 // Response already set due to error
@@ -325,15 +344,16 @@ namespace CustomServer {
                 
                 // Schedule restart
                 setRestartEsp32(TAG, "Restart needed after firmware update");
-            }
-        },
-        [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+            } }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
+                  {
             // Handle firmware upload chunks
             static bool otaInitialized = false;
             
             if (!index) {
                 // First chunk - initialize OTA
                 logger.info("Starting OTA update with file: %s", TAG, filename.c_str());
+
+                // TODO: mutex or similar to block/pause other processes
                 
                 // Validate file extension
                 if (!filename.endsWith(".bin")) {
@@ -440,12 +460,11 @@ namespace CustomServer {
                 Led::setOff(true);
                 Led::unblock();
                 otaInitialized = false;
-            }
-        }
-    );
-    
-    // Get OTA update status
-    server.on("/api/v1/ota/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+            } });
+
+        // Get OTA update status
+        server.on("/api/v1/ota/status", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         JsonDocument doc;
         
@@ -470,11 +489,11 @@ namespace CustomServer {
         doc["currentMD5"] = ESP.getSketchMD5();
         
         serializeJson(doc, *response);
-        request->send(response);
-    });
+        request->send(response); });
 
-    // OTA rollback endpoint
-    server.on("/api/v1/ota/rollback", HTTP_POST, [](AsyncWebServerRequest *request) {
+        // OTA rollback endpoint
+        server.on("/api/v1/ota/rollback", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
         if (Update.isRunning()) {
             Update.abort();
             logger.info("Aborted running OTA update", TAG);
@@ -489,139 +508,249 @@ namespace CustomServer {
         } else {
             logger.error("Rollback not possible: %s", TAG, Update.errorString());
             request->send(400, "application/json", "{\"success\":false,\"message\":\"Rollback not possible\"}");
-        }
-    });
-  }
-
-  void _startHealthCheckTask() {
-    if (_healthCheckTaskHandle != NULL) {
-        logger.warning("Health check task already running", TAG);
-        return;
+        } });
     }
 
-    _healthCheckRunning = true;
-    _consecutiveFailures = 0;
+    void _startHealthCheckTask()
+    {
+        if (_healthCheckTaskHandle != NULL)
+        {
+            logger.warning("Health check task already running", TAG);
+            return;
+        }
 
-    BaseType_t result = xTaskCreate(
-        _healthCheckTask,
-        HEALTH_CHECK_TASK_NAME,
-        HEALTH_CHECK_TASK_STACK_SIZE,
-        NULL,
-        HEALTH_CHECK_TASK_PRIORITY,
-        &_healthCheckTaskHandle
-    );
+        _healthCheckRunning = true;
+        _consecutiveFailures = 0;
 
-    if (result == pdPASS) {
-        logger.info("Health check task started successfully", TAG);
-    } else {
-        logger.error("Failed to create health check task", TAG);
+        BaseType_t result = xTaskCreate(
+            _healthCheckTask,
+            HEALTH_CHECK_TASK_NAME,
+            HEALTH_CHECK_TASK_STACK_SIZE,
+            NULL,
+            HEALTH_CHECK_TASK_PRIORITY,
+            &_healthCheckTaskHandle);
+
+        if (result == pdPASS)
+        {
+            logger.info("Health check task started successfully", TAG);
+        }
+        else
+        {
+            logger.error("Failed to create health check task", TAG);
+            _healthCheckRunning = false;
+        }
+    }
+
+    void _stopHealthCheckTask()
+    {
+        if (_healthCheckTaskHandle == NULL)
+        {
+            logger.debug("Health check task not running", TAG);
+            return;
+        }
+
         _healthCheckRunning = false;
-    }
-  }
 
-  void _stopHealthCheckTask() {
-    if (_healthCheckTaskHandle == NULL) {
-        logger.debug("Health check task not running", TAG);
-        return;
-    }
+        // Give the task a moment to exit gracefully
+        vTaskDelay(pdMS_TO_TICKS(100));
 
-    _healthCheckRunning = false;
-    
-    // Give the task a moment to exit gracefully
-    vTaskDelay(pdMS_TO_TICKS(100));
-    
-    if (_healthCheckTaskHandle != NULL) {
-        vTaskDelete(_healthCheckTaskHandle);
-        _healthCheckTaskHandle = NULL;
-        logger.info("Health check task stopped", TAG);
-    }
-  }
-
-  static void _healthCheckTask(void *parameter) {
-    logger.debug("Health check task started", TAG);
-    
-    // 
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS);
-
-    while (_healthCheckRunning) {
-        // Wait for the next cycle
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
-        
-        if (!_healthCheckRunning) {
-            break;
-        }
-
-        // Perform health check
-        if (_performHealthCheck()) {
-            // Reset failure counter on success
-            if (_consecutiveFailures > 0) {
-                logger.info("Health check recovered after %d failures", TAG, _consecutiveFailures);
-                _consecutiveFailures = 0;
-            }
-            logger.debug("Health check passed", TAG);
-        } else {
-            _consecutiveFailures++;
-            logger.warning("Health check failed (attempt %d/%d)", TAG, _consecutiveFailures, HEALTH_CHECK_MAX_FAILURES);
-            
-            if (_consecutiveFailures >= HEALTH_CHECK_MAX_FAILURES) {
-                logger.error("Health check failed %d consecutive times, requesting system restart", TAG, HEALTH_CHECK_MAX_FAILURES);
-                setRestartEsp32(TAG, "Server health check failures exceeded maximum threshold");
-                break; // Exit the task as we're restarting
-            }
+        if (_healthCheckTaskHandle != NULL)
+        {
+            vTaskDelete(_healthCheckTaskHandle);
+            _healthCheckTaskHandle = NULL;
+            logger.info("Health check task stopped", TAG);
         }
     }
-    
-    logger.debug("Health check task exiting", TAG);
-    _healthCheckTaskHandle = NULL;
-    vTaskDelete(NULL);
-  }
 
-  static bool _performHealthCheck() {
-    // Check if WiFi is connected
-    if (!CustomWifi::isFullyConnected()) {
-        logger.warning("Health check: WiFi not connected", TAG);
-        return false;
-    }
+    static void _healthCheckTask(void *parameter)
+    {
+        logger.debug("Health check task started", TAG);
 
-    // Perform a simple HTTP self-request to verify server responsiveness
-    WiFiClient client;
-    client.setTimeout(HEALTH_CHECK_TIMEOUT_MS);
-    
-    if (!client.connect("127.0.0.1", WEBSERVER_PORT)) {
-        logger.warning("Health check: Cannot connect to local web server", TAG);
-        return false;
-    }
+        //
+        TickType_t xLastWakeTime = xTaskGetTickCount();
+        const TickType_t xFrequency = pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS);
 
-    // Send a simple GET request to the health endpoint
-    client.print("GET /api/v1/health HTTP/1.1\r\n");
-    client.print("Host: 127.0.0.1\r\n");
-    client.print("Connection: close\r\n\r\n");
+        while (_healthCheckRunning)
+        {
+            // Wait for the next cycle
+            vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
-    // Wait for response with timeout
-    unsigned long startTime = millis();
-    while (client.connected() && (millis() - startTime) < HEALTH_CHECK_TIMEOUT_MS) {
-        if (client.available()) {
-            String line = client.readStringUntil('\n');
-            if (line.startsWith("HTTP/1.1 ")) {
-                int statusCode = line.substring(9, 12).toInt();
-                client.stop();
-                
-                if (statusCode == 200) {
-                    return true;
-                } else {
-                    logger.warning("Health check: HTTP status code %d", TAG, statusCode);
-                    return false;
+            if (!_healthCheckRunning)
+            {
+                break;
+            }
+
+            // Perform health check
+            if (_performHealthCheck())
+            {
+                // Reset failure counter on success
+                if (_consecutiveFailures > 0)
+                {
+                    logger.info("Health check recovered after %d failures", TAG, _consecutiveFailures);
+                    _consecutiveFailures = 0;
+                }
+                logger.debug("Health check passed", TAG);
+            }
+            else
+            {
+                _consecutiveFailures++;
+                logger.warning("Health check failed (attempt %d/%d)", TAG, _consecutiveFailures, HEALTH_CHECK_MAX_FAILURES);
+
+                if (_consecutiveFailures >= HEALTH_CHECK_MAX_FAILURES)
+                {
+                    logger.error("Health check failed %d consecutive times, requesting system restart", TAG, HEALTH_CHECK_MAX_FAILURES);
+                    setRestartEsp32(TAG, "Server health check failures exceeded maximum threshold");
+                    break; // Exit the task as we're restarting
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to prevent busy waiting
+
+        logger.debug("Health check task exiting", TAG);
+        _healthCheckTaskHandle = NULL;
+        vTaskDelete(NULL);
     }
-    
-    client.stop();
-    logger.warning("Health check: HTTP request timeout", TAG);
-    return false;
-  }
+
+    static bool _performHealthCheck()
+    {
+        // Check if WiFi is connected
+        if (!CustomWifi::isFullyConnected())
+        {
+            logger.warning("Health check: WiFi not connected", TAG);
+            return false;
+        }
+
+        // Perform a simple HTTP self-request to verify server responsiveness
+        WiFiClient client;
+        client.setTimeout(HEALTH_CHECK_TIMEOUT_MS);
+
+        if (!client.connect("127.0.0.1", WEBSERVER_PORT))
+        {
+            logger.warning("Health check: Cannot connect to local web server", TAG);
+            return false;
+        }
+
+        // Send a simple GET request to the health endpoint
+        client.print("GET /api/v1/health HTTP/1.1\r\n");
+        client.print("Host: 127.0.0.1\r\n");
+        client.print("Connection: close\r\n\r\n");
+
+        // Wait for response with timeout
+        unsigned long startTime = millis();
+        while (client.connected() && (millis() - startTime) < HEALTH_CHECK_TIMEOUT_MS)
+        {
+            if (client.available())
+            {
+                String line = client.readStringUntil('\n');
+                if (line.startsWith("HTTP/1.1 "))
+                {
+                    int statusCode = line.substring(9, 12).toInt();
+                    client.stop();
+
+                    if (statusCode == 200)
+                    {
+                        return true;
+                    }
+                    else
+                    {
+                        logger.warning("Health check: HTTP status code %d", TAG, statusCode);
+                        return false;
+                    }
+                }
+            }
+            vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to prevent busy waiting
+        }
+
+        client.stop();
+        logger.warning("Health check: HTTP request timeout", TAG);
+        return false;
+    }
+
+    // Password management functions
+    // ------------------------------
+    static bool _setWebPassword(const char *password)
+    {
+        if (!_validatePasswordStrength(password))
+        {
+            logger.error("Password does not meet strength requirements", TAG);
+            return false;
+        }
+
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_AUTH, false))
+        {
+            logger.error("Failed to open auth preferences for writing", TAG);
+            return false;
+        }
+
+        bool success = prefs.putString(PREFERENCES_KEY_PASSWORD, password) > 0;
+        prefs.end();
+
+        if (success)
+        {
+            logger.info("Web password updated successfully", TAG);
+        }
+        else
+        {
+            logger.error("Failed to save web password", TAG);
+        }
+
+        return success;
+    }
+
+    static bool _getWebPassword(char *buffer, size_t bufferSize)
+    {
+        logger.debug("Getting web password", TAG);
+
+        if (buffer == nullptr || bufferSize == 0)
+        {
+            logger.error("Invalid buffer for getWebPassword", TAG);
+            return false;
+        }
+
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_AUTH, true))
+        {
+            logger.error("Failed to open auth preferences for reading", TAG);
+            return false;
+        }
+
+        prefs.getString(PREFERENCES_KEY_PASSWORD, buffer, bufferSize);
+        prefs.end();
+
+        return true;
+    }
+
+    bool resetWebPassword()
+    { // Has to be accessible from buttonHandler to physically reset the password
+        logger.info("Resetting web password to default", TAG);
+        return _setWebPassword(WEBSERVER_DEFAULT_PASSWORD);
+    }
+
+    // Only check length - there is no need to be picky here
+    static bool _validatePasswordStrength(const char *password)
+    {
+        if (password == nullptr)
+        {
+            return false;
+        }
+
+        size_t length = strlen(password);
+
+        // Check minimum length
+        if (length < MIN_PASSWORD_LENGTH)
+        {
+            logger.warning("Password too short", TAG);
+            return false;
+        }
+
+        // Check maximum length
+        if (length > MAX_PASSWORD_LENGTH)
+        {
+            logger.warning("Password too long", TAG);
+            return false;
+        }
+        return true;
+    }
 }
 
 // CustomServer::CustomServer(
@@ -662,7 +791,7 @@ namespace CustomServer {
 //     _configurationMutex = xSemaphoreCreateMutex();
 //     _channelMutex = xSemaphoreCreateMutex();
 //     _otaMutex = xSemaphoreCreateMutex();
-    
+
 //     if (_configurationMutex == NULL || _channelMutex == NULL || _otaMutex == NULL) {
 //         _logger.error("Failed to create semaphores for concurrency control", TAG);
 //     }
@@ -709,7 +838,7 @@ namespace CustomServer {
 //     _server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request) {
 //         request->send(200, "text/css", (const char*)styles_css);
 //     }).setSkipServerMiddlewares(true);
-    
+
 //     _server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) {
 //         request->send(200, "text/css", (const char*)button_css);
 //     }).setSkipServerMiddlewares(true);
@@ -729,7 +858,7 @@ namespace CustomServer {
 //     _server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request) {
 //         request->send(200, "image/svg+xml", (const char*)favicon_svg);
 //     }).setSkipServerMiddlewares(true);
-    
+
 //     // --- Authenticated HTML Pages ---
 //     // These will be protected by the global _authMiddleware.
 //     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -781,7 +910,7 @@ namespace CustomServer {
 //         // Refactored: Large buffers are now static to avoid stack overflow.
 //         static char responseBuffer[JSON_RESPONSE_BUFFER_SIZE];
 //         static char cookieValue[AUTH_TOKEN_LENGTH + 1 + 50];
-        
+
 //         JsonDocument doc;
 //         doc.set(json);
 
@@ -800,14 +929,14 @@ namespace CustomServer {
 //             } else {
 //                 char token[AUTH_TOKEN_LENGTH + 1];
 //                 generateAuthToken(token, sizeof(token));
-                
+
 //                 JsonDocument response;
 //                 response["success"] = true;
 //                 response["token"] = token;
-                
+
 //                 safeSerializeJson(response, responseBuffer, sizeof(responseBuffer));
 //                 snprintf(cookieValue, sizeof(cookieValue), "auth_token=%s; Path=/; Max-Age=86400; HttpOnly", token);
-                
+
 //                 AsyncWebServerResponse *resp = request->beginResponse(200, "application/json", responseBuffer);
 //                 resp->addHeader("Set-Cookie", cookieValue);
 //                 request->send(resp);
@@ -841,7 +970,7 @@ namespace CustomServer {
 //         doc.set(json);
 //         const char* currentPassword = doc["currentPassword"];
 //         const char* newPassword = doc["newPassword"];
-        
+
 //         if (!validatePassword(currentPassword)) {
 //             request->send(401, "application/json", "{\"success\":false,\"message\":\"Current password is incorrect\"}");
 //         } else if (strlen(newPassword) < MIN_PASSWORD_LENGTH || strlen(newPassword) > MAX_PASSWORD_LENGTH) {
@@ -864,7 +993,7 @@ namespace CustomServer {
 //         response["activeSessions"] = getActiveTokenCount();
 //         response["maxSessions"] = MAX_CONCURRENT_SESSIONS;
 //         response["mustChangePassword"] = isUsingDefaultPassword();
-        
+
 //         safeSerializeJson(response, responseBuffer, sizeof(responseBuffer));
 //         request->send(200, "application/json", responseBuffer);
 //     }).setSkipServerMiddlewares(true);
@@ -973,7 +1102,7 @@ namespace CustomServer {
 //         safeSerializeJson(doc, buffer, sizeof(buffer));
 //         request->send(200, "application/json", buffer);
 //     });
-    
+
 //     // Serve JSON configuration files
 //     _server.on("/rest/get-ade7953-configuration", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         request->send(SPIFFS, CONFIGURATION_ADE7953_JSON_PATH, "application/json");
@@ -982,7 +1111,7 @@ namespace CustomServer {
 //     _server.on("/rest/get-calibration", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         request->send(SPIFFS, CALIBRATION_JSON_PATH, "application/json");
 //     });
-    
+
 //     _server.on("/rest/get-custom-mqtt-configuration", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         request->send(SPIFFS, CUSTOM_MQTT_CONFIGURATION_JSON_PATH, "application/json");
 //     });
@@ -1027,9 +1156,9 @@ namespace CustomServer {
 //     _server.on("/rest/get-button-operation", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         const char* operationName = _buttonHandler.getCurrentOperationName();
 //         unsigned long operationTimestamp = _buttonHandler.getCurrentOperationTimestamp();
-        
+
 //         static char response[JSON_RESPONSE_BUFFER_SIZE];
-        
+
 //         if (operationTimestamp > 0) {
 //             char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
 //             CustomTime::timestampFromUnix(operationTimestamp, timestampBuffer);
@@ -1039,7 +1168,7 @@ namespace CustomServer {
 //             snprintf(response, sizeof(response), "{\"operationName\":\"%s\",\"operationTimestamp\":%lu}",
 //                 operationName, operationTimestamp);
 //         }
-        
+
 //         request->send(200, "application/json", response);
 //     });
 // }
@@ -1053,12 +1182,12 @@ namespace CustomServer {
 //             request->send(429, "application/json", "{\"error\":\"Rate limited\"}");
 //             return;
 //         }
-        
+
 //         if (!_acquireMutex(_channelMutex, "channel", pdMS_TO_TICKS(2000))) {
 //             request->send(409, "application/json", "{\"error\":\"Resource locked\"}");
 //             return;
 //         }
-        
+
 //         // Validate that channel 0 is not being disabled
 //         JsonDocument doc;
 //         doc.set(json);
@@ -1070,7 +1199,7 @@ namespace CustomServer {
 //                 return;
 //             }
 //         }
-        
+
 //         _lastChannelUpdateTime = currentTime;
 //         bool success = _ade7953.setChannelData(doc);
 //         _releaseMutex(_channelMutex, "channel");
@@ -1087,17 +1216,17 @@ namespace CustomServer {
 //             request->send(429, "application/json", "{\"error\":\"Rate limited\"}");
 //             return;
 //         }
-        
+
 //         if (!_acquireMutex(_configurationMutex, "configuration", pdMS_TO_TICKS(2000))) {
 //             request->send(409, "application/json", "{\"error\":\"Resource locked\"}");
 //             return;
 //         }
-        
+
 //         JsonDocument doc;
 //         doc.set(json);
 //         // Force sendPowerData to existing value (not settable by API)
 //         if (doc["sendPowerData"].is<bool>()) doc["sendPowerData"] = generalConfiguration.sendPowerData;
-        
+
 //         _lastConfigUpdateTime = currentTime;
 //         bool success = setGeneralConfiguration(doc);
 //         _releaseMutex(_configurationMutex, "configuration");
@@ -1134,14 +1263,14 @@ namespace CustomServer {
 //     });
 //     _setCustomMqttHandler->setMethod(HTTP_POST);
 //     _server.addHandler(_setCustomMqttHandler);
-    
+
 //     _setInfluxDbHandler = new AsyncCallbackJsonWebHandler("/rest/set-influxdb-configuration", [this](AsyncWebServerRequest* request, JsonVariant& json) {
-        //         JsonDocument doc;
-        //         doc.set(json);
-        //         bool success = InfluxDbClient::setConfiguration(doc);
-        //         request->send(success ? 200 : 400, "application/json", success ? "{"message":"OK"}" : "{"error":"Invalid data"}");
-        //     });
-        //     _setInfluxDbHandler->setMethod(HTTP_POST);
+//         JsonDocument doc;
+//         doc.set(json);
+//         bool success = InfluxDbClient::setConfiguration(doc);
+//         request->send(success ? 200 : 400, "application/json", success ? "{"message":"OK"}" : "{"error":"Invalid data"}");
+//     });
+//     _setInfluxDbHandler->setMethod(HTTP_POST);
 //     _server.addHandler(_setInfluxDbHandler);
 
 //     _setEnergyHandler = new AsyncCallbackJsonWebHandler("/rest/set-energy", [this](AsyncWebServerRequest* request, JsonVariant& json) {
@@ -1366,23 +1495,23 @@ namespace CustomServer {
 // void CustomServer::_setOtaHandlers()
 // {
 //     // The OTA handler remains largely the same, but it is now protected by the global auth middleware.
-//     _server.on("/do-update", HTTP_POST, 
+//     _server.on("/do-update", HTTP_POST,
 //         [](AsyncWebServerRequest *request){}, // On success (empty, handled by upload handler)
 //         [this](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
 //             _handleDoUpdate(request, filename.c_str(), index, data, len, final);
 //         }
 //     );
-    
+
 //     _server.on("/set-md5", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         if (request->hasParam("md5")) {
 //             char md5Str[MD5_BUFFER_SIZE];
 //             snprintf(md5Str, sizeof(md5Str), "%s", request->getParam("md5")->value().c_str());
-            
+
 //             // Convert to lowercase
 //             for (int i = 0; md5Str[i]; i++) {
 //                 md5Str[i] = tolower(md5Str[i]);
 //             }
-            
+
 //             if (strlen(md5Str) != 32) {
 //                 request->send(400, "application/json", "{\"message\":\"MD5 not 32 characters long\"}");
 //             } else {
@@ -1397,7 +1526,7 @@ namespace CustomServer {
 //     _server.on("/rest/update-status", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         if (Update.isRunning()) {
 //             static char statusResponse[JSON_RESPONSE_BUFFER_SIZE];
-//             snprintf(statusResponse, sizeof(statusResponse), 
+//             snprintf(statusResponse, sizeof(statusResponse),
 //                      "{\"status\":\"running\",\"size\":%zu,\"progress\":%zu,\"remaining\":%zu}",
 //                      Update.size(), Update.progress(), Update.remaining());
 //             request->send(200, "application/json", statusResponse);
@@ -1442,7 +1571,7 @@ namespace CustomServer {
 //     Led::block();
 //     Led::setPurple(true);
 
-//     
+//
 //     if (!index)
 //     {
 //         if (strstr(filename, ".bin") != nullptr)
@@ -1454,38 +1583,38 @@ namespace CustomServer {
 //             _onUpdateFailed(request, "File must be in .bin format");
 //             return;
 //         }
-        
+
 //         _ade7953.pauseMeterReadingTask();
-    
+
 //         size_t freeHeap = ESP.getFreeHeap();
 //         _logger.debug("Free heap before OTA: %zu bytes", TAG, freeHeap);
-        
+
 //         if (freeHeap < MINIMUM_FREE_HEAP_OTA) {
 //             _onUpdateFailed(request, "Insufficient memory for update");
 //             return;
 //         }
 
 //         if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH))
-//         {           
+//         {
 //             _onUpdateFailed(request, Update.errorString());
 //             return;
 //         }
 
 //         Update.setMD5(_md5);
-//     }    
+//     }
 
-//     
+//
 //     if (Update.write(data, len) != len)
 //     {
 //         _onUpdateFailed(request, Update.errorString());
 //         return;
-//     }    
-    
-//     
+//     }
+
+//
 //     if (final)
 //     {
 //         if (!Update.end(true))
-//         {   
+//         {
 //             _onUpdateFailed(request, Update.errorString());
 //         }
 //         else
@@ -1494,44 +1623,44 @@ namespace CustomServer {
 //         }
 //     }
 
-//     
+//
 //     Led::setOff(true);
 //     Led::unblock();
 // }
 
 // void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
 // {
-//     
+//
 //     // Refactored: Using a static buffer to prevent stack overflow
 //     static char response[HTTP_RESPONSE_BUFFER_SIZE];
 //     snprintf(response, sizeof(response), "{\"status\":\"success\", \"md5\":\"%s\"}", Update.md5String().c_str());
 //     request->send(200, "application/json", response);
 
-//     
+//
 //     _logger.info("Update complete", TAG);
 //     updateJsonFirmwareStatus("success", "");
 
 //     _logger.debug("MD5 of new firmware: %s", TAG, Update.md5String().c_str());
 
-//     
+//
 //     char firmwareStatus[FIRMWARE_STATUS_BUFFER_SIZE];
 //     CrashMonitor::getFirmwareStatusString(NEW_TO_TEST, firmwareStatus);
 //     _logger.debug("Setting rollback flag to %s", TAG, firmwareStatus);
-    
+
 //     if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) _logger.error("Failed to set firmware status", TAG);
 
-//     
+//
 //     setRestartEsp32(TAG, "Restart needed after update");
 //     _releaseMutex(_otaMutex, "ota");
 // }
 
 // void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *reason)
 // {
-//     
-      
+//
+
 //     _ade7953.resumeMeterReadingTask();
 //     _logger.debug("Reattached ADE7953 interrupt after OTA failure", TAG);
-    
+
 //     // Refactored: Using a static buffer to prevent stack overflow
 //     static char response[HTTP_RESPONSE_BUFFER_SIZE];
 //     snprintf(response, sizeof(response), "{\"status\":\"failed\", \"reason\":\"%s\"}", reason);
@@ -1560,7 +1689,7 @@ namespace CustomServer {
 //         _logger.warning("Mutex %s is NULL, skipping lock", TAG, mutexName);
 //         return false;
 //     }
-    
+
 //     if (xSemaphoreTake(mutex, timeout) == pdTRUE) {
 //         _logger.verbose("Successfully acquired mutex: %s", TAG, mutexName);
 //         return true;
@@ -1576,7 +1705,7 @@ namespace CustomServer {
 //         _logger.warning("Mutex %s is NULL, skipping unlock", TAG, mutexName);
 //         return;
 //     }
-    
+
 //     if (xSemaphoreGive(mutex) == pdTRUE) {
 //         _logger.debug("Successfully released mutex: %s", TAG, mutexName);
 //     } else {
