@@ -185,7 +185,7 @@ void Ade7953::loop() {
 
     // If restart required, clean up
     if (restartConfiguration.isRequired) {
-        _logger.info("Restart required. Cleaning up Ade7953 resources", TAG);
+        _logger.debug("Restart required. Cleaning up Ade7953 resources", TAG);
         cleanup();
     }
 }
@@ -233,28 +233,28 @@ void Ade7953::_reset() {
 bool Ade7953::_verifyCommunication() {
     _logger.debug("Verifying communication with Ade7953...", TAG);
     
-    int _attempt = 0;
-    bool _success = false;
-    unsigned long long _lastMillisAttempt = 0;
+    int attempt = 0;
+    bool success = false;
+    unsigned long long lastMillisAttempt = 0;
 
-    unsigned int _loops = 0;
-    while (_attempt < ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS && !_success && _loops < MAX_LOOP_ITERATIONS) {
-        _loops++;
-        if (millis64() - _lastMillisAttempt < ADE7953_VERIFY_COMMUNICATION_INTERVAL) {
+    unsigned int loops = 0;
+    while (attempt < ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS && !success && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
+        if (millis64() - lastMillisAttempt < ADE7953_VERIFY_COMMUNICATION_INTERVAL) {
             continue;
         }
 
-        _logger.debug("Attempt (%d/%d) to communicate with ADE7953", TAG, _attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+        _logger.debug("Attempt (%d/%d) to communicate with ADE7953", TAG, attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
         
         _reset();
-        _attempt++;
-        _lastMillisAttempt = millis64();
+        attempt++;
+        lastMillisAttempt = millis64();
 
         if ((readRegister(AP_NOLOAD_32, 32, false)) == DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
             _logger.debug("Communication successful with ADE7953", TAG);
             return true;
         } else {
-            _logger.warning("Failed to communicate with ADE7953 on _attempt (%d/%d). Retrying in %d ms", TAG, _attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
+            _logger.warning("Failed to communicate with ADE7953 on _attempt (%d/%d). Retrying in %d ms", TAG, attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
         }
     }
 
@@ -504,28 +504,28 @@ bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
             _kv.value()["calibrationLabel"].as<const char*>()
         );
 
-        int _index = atoi(_kv.key().c_str());
+        int index = atoi(_kv.key().c_str());
 
         // Check if _index is within bounds
-        if (_index < CHANNEL_0 || _index >= CHANNEL_COUNT) {
-            _logger.error("Index out of bounds: %d", TAG, _index);
+        if (index < CHANNEL_0 || index >= CHANNEL_COUNT) {
+            _logger.error("Index out of bounds: %d", TAG, index);
             continue;
         }
 
         // Protect channel 0 from being disabled - it's the main voltage channel and must remain active
-        if (_index == CHANNEL_0 && !_kv.value()["active"].as<bool>()) {
+        if (index == CHANNEL_0 && !_kv.value()["active"].as<bool>()) {
             _logger.warning("Attempt to disable channel 0 blocked - channel 0 must remain active", TAG);
             // Force channel 0 to stay active
-            channelData[_index].active = true;
+            channelData[index].active = true;
         } else {
-            channelData[_index].active = _kv.value()["active"].as<bool>();
+            channelData[index].active = _kv.value()["active"].as<bool>();
         }
 
-        channelData[_index].index = _index;
-        channelData[_index].reverse = _kv.value()["reverse"].as<bool>();
-        snprintf(channelData[_index].label, sizeof(channelData[_index].label), "%s", _kv.value()["label"].as<const char*>());
-        channelData[_index].phase = _kv.value()["phase"].as<Phase>();
-        snprintf(channelData[_index].calibrationValues.label, sizeof(channelData[_index].calibrationValues.label), "%s", _kv.value()["calibrationLabel"].as<const char*>());
+        channelData[index].index = index;
+        channelData[index].reverse = _kv.value()["reverse"].as<bool>();
+        snprintf(channelData[index].label, sizeof(channelData[index].label), "%s", _kv.value()["label"].as<const char*>());
+        channelData[index].phase = _kv.value()["phase"].as<Phase>();
+        snprintf(channelData[index].calibrationValues.label, sizeof(channelData[index].calibrationValues.label), "%s", _kv.value()["calibrationLabel"].as<const char*>());
     }
     _logger.debug("Successfully set data channel properties", TAG);
 
@@ -589,8 +589,8 @@ bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
     for (JsonPair kv : jsonDocument.as<JsonObject>()) {
         if (!kv.value().is<JsonObject>()) {_logger.warning("JSON pair value is not an object", TAG); return false;}
 
-        int _index = atoi(kv.key().c_str());
-        if (_index < CHANNEL_0 || _index >= CHANNEL_COUNT) {_logger.warning("Index out of bounds: %d", TAG, _index); return false;}
+        int index = atoi(kv.key().c_str());
+        if (index < CHANNEL_0 || index >= CHANNEL_COUNT) {_logger.warning("Index out of bounds: %d", TAG, index); return false;}
 
         JsonObject channelObject = kv.value().as<JsonObject>();
 
@@ -641,8 +641,8 @@ void Ade7953::_updateChannelData() {
 void Ade7953::_updateSampleTime() {
     _logger.debug("Updating sample time", TAG);
 
-    unsigned int _linecyc = _sampleTime * 50 * 2 / 1000; // 1 channel at 1000 ms: 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
-    _setLinecyc(_linecyc);
+    unsigned int linecyc = _sampleTime * 50 * 2 / 1000; // 1 channel at 1000 ms: 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
+    _setLinecyc(linecyc);
 
     _logger.debug("Successfully updated sample time", TAG);
 }
@@ -746,50 +746,50 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         return false;
     }
 
-    int _ade7953Channel = (channel == CHANNEL_0) ? CHANNEL_A : CHANNEL_B;
+    int ade7953Channel = (channel == CHANNEL_0) ? CHANNEL_A : CHANNEL_B;
 
-    float _voltage = 0.0f;
-    float _current = 0.0f;
-    float _activePower = 0.0f;
-    float _reactivePower = 0.0f;
-    float _apparentPower = 0.0f;
-    float _powerFactor = 0.0f;
-    float _activeEnergy = 0.0f;
-    float _reactiveEnergy = 0.0f;
-    float _apparentEnergy = 0.0f;
+    float voltage = 0.0f;
+    float current = 0.0f;
+    float activePower = 0.0f;
+    float reactivePower = 0.0f;
+    float apparentPower = 0.0f;
+    float powerFactor = 0.0f;
+    float activeEnergy = 0.0f;
+    float reactiveEnergy = 0.0f;
+    float apparentEnergy = 0.0f;
 
-    Phase _basePhase = channelData[CHANNEL_0].phase;
+    Phase basePhase = channelData[CHANNEL_0].phase;
 
-    if (channelData[channel].phase == _basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
+    if (channelData[channel].phase == basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
         
         // These are the three most important values to read
-        _activeEnergy = _readActiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.whLsb * (channelData[channel].reverse ? -1 : 1);
-        _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.varhLsb * (channelData[channel].reverse ? -1 : 1);
-        _apparentEnergy = _readApparentEnergy(_ade7953Channel) / channelData[channel].calibrationValues.vahLsb;        
+        activeEnergy = _readActiveEnergy(ade7953Channel) / channelData[channel].calibrationValues.whLsb * (channelData[channel].reverse ? -1 : 1);
+        reactiveEnergy = _readReactiveEnergy(ade7953Channel) / channelData[channel].calibrationValues.varhLsb * (channelData[channel].reverse ? -1 : 1);
+        apparentEnergy = _readApparentEnergy(ade7953Channel) / channelData[channel].calibrationValues.vahLsb;        
         
         // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
         // as channel 0 (sampled 100s of milliseconds before only)
         if (channel == CHANNEL_0) {
-            _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
+            voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
             
             // Update grid frequency during channel 0 reading
             float _newGridFrequency = GRID_FREQUENCY_CONVERSION_FACTOR / _readPeriod();
             if (_validateGridFrequency(_newGridFrequency)) _gridFrequency = _newGridFrequency;
         } else {
-            _voltage = meterValues[CHANNEL_0].voltage;
+            voltage = meterValues[CHANNEL_0].voltage;
         }
         
         // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
         // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
-        _activePower = _activeEnergy / (_sampleTime / 1000.0 / 3600.0); // W
-        _reactivePower = _reactiveEnergy / (_sampleTime / 1000.0 / 3600.0); // var
-        _apparentPower = _apparentEnergy / (_sampleTime / 1000.0 / 3600.0); // VA
+        activePower = activeEnergy / (_sampleTime / 1000.0 / 3600.0); // W
+        reactivePower = reactiveEnergy / (_sampleTime / 1000.0 / 3600.0); // var
+        apparentPower = apparentEnergy / (_sampleTime / 1000.0 / 3600.0); // VA
         
         // It is faster and more consistent to compute the values rather than reading them from the ADE7953
-        if (_apparentPower == 0) _powerFactor = 0.0f; // Avoid division by zero
-        else _powerFactor = _activePower / _apparentPower * (_reactivePower >= 0 ? 1 : -1); // Apply sign as by datasheet (page 38)
+        if (apparentPower == 0) powerFactor = 0.0f; // Avoid division by zero
+        else powerFactor = activePower / apparentPower * (reactivePower >= 0 ? 1 : -1); // Apply sign as by datasheet (page 38)
 
-        _current = _apparentPower / _voltage; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
+        current = apparentPower / voltage; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
     } else { 
         // TODO: understand if this can be improved using the energy registers
         // Assume everything is the same as channel 0 except the current
@@ -798,10 +798,10 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
 
         
         // Assume from channel 0
-        _voltage = meterValues[CHANNEL_0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
+        voltage = meterValues[CHANNEL_0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
         
         // Read wrong power factor due to the phase shift
-        float _powerFactorPhaseOne = _readPowerFactor(_ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR;
+        float _powerFactorPhaseOne = _readPowerFactor(ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR;
 
         // Compute the correct power factor assuming 120 degrees phase shift in voltage (weak assumption as this is normally true)
         // The idea is to:
@@ -815,11 +815,11 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         // reading instead of the one of the whole line cycle. As such, the power factor is the only reliable reading and it cannot 
         // provide information about the direction of the power.
 
-        if (channelData[channel].phase == _getLaggingPhase(_basePhase)) {
-            _powerFactor = cos(acos(_powerFactorPhaseOne) - (2 * PI / 3));
-        } else if (channelData[channel].phase == _getLeadingPhase(_basePhase)) {
+        if (channelData[channel].phase == _getLaggingPhase(basePhase)) {
+            powerFactor = cos(acos(_powerFactorPhaseOne) - (2 * PI / 3));
+        } else if (channelData[channel].phase == _getLeadingPhase(basePhase)) {
             // I cannot prove why, but I am SURE the minus is needed if the phase is leading
-            _powerFactor = - cos(acos(_powerFactorPhaseOne) + (2 * PI / 3));
+            powerFactor = - cos(acos(_powerFactorPhaseOne) + (2 * PI / 3));
         } else {
             _logger.error("Invalid phase %d for channel %d", TAG, channelData[channel].phase, channel);
             _recordFailure();
@@ -827,47 +827,47 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         }
 
         // Read the current
-        _current = _readCurrentRms(_ade7953Channel) / channelData[channel].calibrationValues.aLsb;
+        current = _readCurrentRms(ade7953Channel) / channelData[channel].calibrationValues.aLsb;
         
         // Compute power values
-        _activePower = _current * _voltage * abs(_powerFactor);
-        _apparentPower = _current * _voltage;
-        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)); // Small approximation leaving out distorted power
+        activePower = current * voltage * abs(powerFactor);
+        apparentPower = current * voltage;
+        reactivePower = sqrt(pow(apparentPower, 2) - pow(activePower, 2)); // Small approximation leaving out distorted power
     }
 
-    _apparentPower = abs(_apparentPower); // Apparent power must be positive
+    apparentPower = abs(apparentPower); // Apparent power must be positive
 
     // If the power factor is below a certain threshold, assume everything is 0 to avoid weird readings
-    if (abs(_powerFactor) < MINIMUM_POWER_FACTOR) {
-        _current = 0.0f;
-        _activePower = 0.0f;
-        _reactivePower = 0.0f;
-        _apparentPower = 0.0f;
-        _powerFactor = 0.0f;
-        _activeEnergy = 0.0f;
-        _reactiveEnergy = 0.0f;
-        _apparentEnergy = 0.0f;
+    if (abs(powerFactor) < MINIMUM_POWER_FACTOR) {
+        current = 0.0f;
+        activePower = 0.0f;
+        reactivePower = 0.0f;
+        apparentPower = 0.0f;
+        powerFactor = 0.0f;
+        activeEnergy = 0.0f;
+        reactiveEnergy = 0.0f;
+        apparentEnergy = 0.0f;
     }
 
     // Sometimes the power factor is very close to 1 but above 1. If so, clamp it to 1 as the measure is still valid
-    if (abs(_powerFactor) > VALIDATE_POWER_FACTOR_MAX && abs(_powerFactor) < MAXIMUM_POWER_FACTOR_CLAMP) {
+    if (abs(powerFactor) > VALIDATE_POWER_FACTOR_MAX && abs(powerFactor) < MAXIMUM_POWER_FACTOR_CLAMP) {
         _logger.debug(
             "%s (%d): Power factor %.3f is above %.3f, clamping it", 
             TAG,
             channelData[channel].label, 
             channel, 
-            _powerFactor,
+            powerFactor,
             MAXIMUM_POWER_FACTOR_CLAMP
         );
-        _powerFactor = (_powerFactor > 0) ? VALIDATE_POWER_FACTOR_MAX : VALIDATE_POWER_FACTOR_MIN; // Keep the sign of the power factor
-        _activePower = _apparentPower; // Recompute active power based on the clamped power factor
-        _reactivePower = 0.0f; // Small approximation leaving out distorted power
+        powerFactor = (powerFactor > 0) ? VALIDATE_POWER_FACTOR_MAX : VALIDATE_POWER_FACTOR_MIN; // Keep the sign of the power factor
+        activePower = apparentPower; // Recompute active power based on the clamped power factor
+        reactivePower = 0.0f; // Small approximation leaving out distorted power
     }    
     
     
     // For channel 0, discard readings where active or apparent energy is exactly 0,
     // unless there have been at least 100 consecutive zero readings
-    if (channel == CHANNEL_0 && (_activeEnergy == 0.0f || _apparentEnergy == 0.0f)) {
+    if (channel == CHANNEL_0 && (activeEnergy == 0.0f || apparentEnergy == 0.0f)) {
         _channelStates[channel].consecutiveZeroCount++;
         
         if (_channelStates[channel].consecutiveZeroCount < MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
@@ -884,16 +884,16 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
 
     
     if (
-        !_validateVoltage(_voltage) || 
-        !_validateCurrent(_current) || 
-        !_validatePower(_activePower) || 
-        !_validatePower(_reactivePower) || 
-        !_validatePower(_apparentPower) || 
-        !_validatePowerFactor(_powerFactor)
+        !_validateVoltage(voltage) || 
+        !_validateCurrent(current) || 
+        !_validatePower(activePower) || 
+        !_validatePower(reactivePower) || 
+        !_validatePower(apparentPower) || 
+        !_validatePowerFactor(powerFactor)
     ) {
         
         logger.warning("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", 
-            TAG, channelData[channel].label, channel, _activePower, _current, _reactivePower, _apparentPower, _powerFactor);
+            TAG, channelData[channel].label, channel, activePower, current, reactivePower, apparentPower, powerFactor);
         _recordFailure();
         return false;
     }
@@ -923,28 +923,28 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
     // }
     
     // Enough checks, now we can set the values
-    meterValues[channel].voltage = _voltage;
-    meterValues[channel].current = _current;
-    meterValues[channel].activePower = _activePower;
-    meterValues[channel].reactivePower = _reactivePower;
-    meterValues[channel].apparentPower = _apparentPower;
-    meterValues[channel].powerFactor = _powerFactor;
+    meterValues[channel].voltage = voltage;
+    meterValues[channel].current = current;
+    meterValues[channel].activePower = activePower;
+    meterValues[channel].reactivePower = reactivePower;
+    meterValues[channel].apparentPower = apparentPower;
+    meterValues[channel].powerFactor = powerFactor;
 
     // If the phase is not the phase of the main channel, set the energy not to 0 if the current
     // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation
-    if (channelData[channel].phase != _basePhase && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
-        _activeEnergy = 1;
-        _reactiveEnergy = 1;
-        _apparentEnergy = 1;
+    if (channelData[channel].phase != basePhase && current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
+        activeEnergy = 1;
+        reactiveEnergy = 1;
+        apparentEnergy = 1;
     }
 
     
     // Leverage the no-load feature of the ADE7953 to discard the noise
     // As such, when the energy read by the ADE7953 in the given linecycle is below
     // a certain threshold (set during setup), the read value is 0
-    if (_activeEnergy > 0) {
+    if (activeEnergy > 0) {
         meterValues[channel].activeEnergyImported += abs(meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0); // W * ms * s / 1000 ms * h / 3600 s = Wh
-    } else if (_activeEnergy < 0) {
+    } else if (activeEnergy < 0) {
         meterValues[channel].activeEnergyExported += abs(meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0); // W * ms * s / 1000 ms * h / 3600 s = Wh
     } else {
         _logger.debug(
@@ -957,9 +957,9 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         meterValues[channel].powerFactor = 0.0f;
     }
 
-    if (_reactiveEnergy > 0) {
+    if (reactiveEnergy > 0) {
         meterValues[channel].reactiveEnergyImported += abs(meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0); // var * ms * s / 1000 ms * h / 3600 s = VArh
-    } else if (_reactiveEnergy < 0) {
+    } else if (reactiveEnergy < 0) {
         meterValues[channel].reactiveEnergyExported += abs(meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0); // var * ms * s / 1000 ms * h / 3600 s = VArh
     } else {
         _logger.debug(
@@ -971,7 +971,7 @@ bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMi
         meterValues[channel].reactivePower = 0.0f;
     }
 
-    if (_apparentEnergy != 0) {
+    if (apparentEnergy != 0) {
         meterValues[channel].apparentEnergy += meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
     } else {
         _logger.debug(
@@ -1148,16 +1148,16 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
         _logger.warning("Saving daily energy even if time is invalid: %ld", TAG, now);
     }
     struct tm *timeinfo = localtime(&now);
-    char _currentDate[DATE_BUFFER_SIZE];
-    strftime(_currentDate, sizeof(_currentDate), "%Y-%m-%d", timeinfo);
+    char currentDate[DATE_BUFFER_SIZE];
+    strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", timeinfo);
 
     for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active) {
-            if (meterValues[i].activeEnergyImported > 1) jsonDocument[_currentDate][i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
-            if (meterValues[i].activeEnergyExported > 1) jsonDocument[_currentDate][i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
-            if (meterValues[i].reactiveEnergyImported > 1) jsonDocument[_currentDate][i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
-            if (meterValues[i].reactiveEnergyExported > 1) jsonDocument[_currentDate][i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
-            if (meterValues[i].apparentEnergy > 1) jsonDocument[_currentDate][i]["apparentEnergy"] = meterValues[i].apparentEnergy;
+            if (meterValues[i].activeEnergyImported > 1) jsonDocument[currentDate][i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
+            if (meterValues[i].activeEnergyExported > 1) jsonDocument[currentDate][i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
+            if (meterValues[i].reactiveEnergyImported > 1) jsonDocument[currentDate][i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
+            if (meterValues[i].reactiveEnergyExported > 1) jsonDocument[currentDate][i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
+            if (meterValues[i].apparentEnergy > 1) jsonDocument[currentDate][i]["apparentEnergy"] = meterValues[i].apparentEnergy;
         }
     }
 

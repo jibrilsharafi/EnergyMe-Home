@@ -15,6 +15,7 @@
 #include <esp_mac.h> // For the MAC address
 #include <ESPmDNS.h>
 #include <WiFi.h>
+#include <Preferences.h>
 #include <esp_ota_ops.h>
 
 #include "binaries.h"
@@ -27,11 +28,12 @@
 
 #define TASK_RESTART_NAME "restart_task"
 #define TASK_RESTART_STACK_SIZE 4096
-#define TASK_RESTART_PRIORITY 3
+#define TASK_RESTART_PRIORITY 5
 
 #define TASK_MAINTENANCE_NAME "maintenance_task"
 #define TASK_MAINTENANCE_STACK_SIZE 4096
 #define TASK_MAINTENANCE_PRIORITY 2
+#define MAINTENANCE_CHECK_INTERVAL (10 * 1000) // Interval to check main parameters, to avoid overloading the loop
 
 // Come one, on this ESP32S3 and in 2025 can we still use 32bits millis
 // that will overflow in just 49 days?

@@ -1,5 +1,4 @@
 #include "utils.h"
-#include <Preferences.h>
 
 static const char *TAG = "utils";
 
@@ -279,9 +278,9 @@ bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     }
     
     // For debugging purposes, serialize to a string and log it
-    char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
-    safeSerializeJson(jsonDocument, _jsonString, sizeof(_jsonString), true);
-    logger.debug("JSON deserialized from SPIFFS correctly: %s", TAG, _jsonString);
+    char jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
+    safeSerializeJson(jsonDocument, jsonString, sizeof(jsonString), true);
+    logger.debug("JSON deserialized from SPIFFS correctly: %s", TAG, jsonString);
     return true;
 }
 
@@ -302,9 +301,9 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     }
 
     // For debugging purposes, serialize to a string and log it
-    char _jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
-    safeSerializeJson(jsonDocument, _jsonString, sizeof(_jsonString), true);
-    logger.debug("JSON serialized to SPIFFS correctly: %s", TAG, _jsonString);
+    char jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
+    safeSerializeJson(jsonDocument, jsonString, sizeof(jsonString), true);
+    logger.debug("JSON serialized to SPIFFS correctly: %s", TAG, jsonString);
 
     return true;
 }
@@ -414,17 +413,7 @@ void createDefaultCustomMqttConfigurationFile() {
 
     JsonDocument jsonDocument;
 
-    jsonDocument["enabled"] = DEFAULT_IS_CUSTOM_MQTT_ENABLED;
-    jsonDocument["server"] = MQTT_CUSTOM_SERVER_DEFAULT;
-    jsonDocument["port"] = MQTT_CUSTOM_PORT_DEFAULT;
-    jsonDocument["clientid"] = MQTT_CUSTOM_CLIENTID_DEFAULT;
-    jsonDocument["topic"] = MQTT_CUSTOM_TOPIC_DEFAULT;
-    jsonDocument["frequency"] = MQTT_CUSTOM_FREQUENCY_DEFAULT;
-    jsonDocument["useCredentials"] = MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT;
-    jsonDocument["username"] = MQTT_CUSTOM_USERNAME_DEFAULT;
-    jsonDocument["password"] = MQTT_CUSTOM_PASSWORD_DEFAULT;
-    jsonDocument["lastConnectionStatus"] = "Never attempted";
-    jsonDocument["lastConnectionAttemptTimestamp"] = "";
+    // FIXME: deprecate and move this
 
     logger.warning("Actually save this!!!!", TAG);
 
@@ -898,15 +887,15 @@ bool getPublicTimezone(int* gmtOffset, int* dstOffset) {
     HTTPClient _http;
     JsonDocument jsonDocument;
 
-    char _url[URL_BUFFER_SIZE];
+    char url[URL_BUFFER_SIZE];
     // The URL for the timezone API endpoint requires passing as params the latitude, longitude and username (which is a sort of free "public" api key)
-    snprintf(_url, sizeof(_url), "%slat=%f&lng=%f&username=%s",
+    snprintf(url, sizeof(url), "%slat=%f&lng=%f&username=%s",
         PUBLIC_TIMEZONE_ENDPOINT,
         _publicLocation.latitude,
         _publicLocation.longitude,
         PUBLIC_TIMEZONE_USERNAME);
 
-    _http.begin(_url);
+    _http.begin(url);
     int httpCode = _http.GET();
 
     if (httpCode > 0) {
@@ -1027,36 +1016,36 @@ bool isLatestFirmwareInstalled() {
         return true;
     }
 
-    char _latestFirmwareVersion[VERSION_BUFFER_SIZE];
-    char _currentFirmwareVersion[VERSION_BUFFER_SIZE];
+    char latestFirmwareVersion[VERSION_BUFFER_SIZE];
+    char currentFirmwareVersion[VERSION_BUFFER_SIZE];
 
-    snprintf(_latestFirmwareVersion, sizeof(_latestFirmwareVersion), "%s", jsonDocument["buildVersion"].as<const char*>());
-    snprintf(_currentFirmwareVersion, sizeof(_currentFirmwareVersion), "%s", FIRMWARE_BUILD_VERSION);
+    snprintf(latestFirmwareVersion, sizeof(latestFirmwareVersion), "%s", jsonDocument["buildVersion"].as<const char*>());
+    snprintf(currentFirmwareVersion, sizeof(currentFirmwareVersion), "%s", FIRMWARE_BUILD_VERSION);
 
     logger.debug(
         "Latest firmware version: %s | Current firmware version: %s",
         TAG,
-        _latestFirmwareVersion,
-        _currentFirmwareVersion
+        latestFirmwareVersion,
+        currentFirmwareVersion
     );
 
-    if (strlen(_latestFirmwareVersion) == 0 || strchr(_latestFirmwareVersion, '.') == NULL) {
+    if (strlen(latestFirmwareVersion) == 0 || strchr(latestFirmwareVersion, '.') == NULL) {
         logger.warning("Latest firmware version is empty or in the wrong format", TAG);
         return true;
     }
 
     int _latestMajor, _latestMinor, _latestPatch;
-    sscanf(_latestFirmwareVersion, "%d.%d.%d", &_latestMajor, &_latestMinor, &_latestPatch);
+    sscanf(latestFirmwareVersion, "%d.%d.%d", &_latestMajor, &_latestMinor, &_latestPatch);
 
-    int _currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
-    int _currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
-    int _currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
+    int currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
+    int currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
+    int currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
 
-    if (_latestMajor < _currentMajor) return true;
-    if (_latestMajor > _currentMajor) return false;
-    if (_latestMinor < _currentMinor) return true;
-    if (_latestMinor > _currentMinor) return false;
-    return _latestPatch <= _currentPatch;
+    if (_latestMajor < currentMajor) return true;
+    if (_latestMajor > currentMajor) return false;
+    if (_latestMinor < currentMinor) return true;
+    if (_latestMinor > currentMinor) return false;
+    return _latestPatch <= currentPatch;
 }
 
 void updateJsonFirmwareStatus(const char *status, const char *reason)
@@ -1065,9 +1054,9 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
 
     jsonDocument["status"] = status;
     jsonDocument["reason"] = reason;
-    char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-    CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer)); // TODO: maybe everything should be returned in unix so it is UTC, and then converted on the other side? or standard iso utc timestamp?
-    jsonDocument["timestamp"] = _timestampBuffer;
+    char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+    CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer)); // TODO: maybe everything should be returned in unix so it is UTC, and then converted on the other side? or standard iso utc timestamp?
+    jsonDocument["timestamp"] = timestampBuffer;
 
     // Note: Firmware status is temporary data, keep in SPIFFS for now
     // This will be updated when we migrate to LittleFS for temporary data
@@ -1184,19 +1173,19 @@ void readEncryptedPreferences(const char* preference_key, const char* preshared_
         logger.error("Failed to open preferences", TAG);
     }
 
-    char _encryptedData[ENCRYPTED_DATA_BUFFER_SIZE];
-    preferences.getString(preference_key, _encryptedData, ENCRYPTED_DATA_BUFFER_SIZE);
+    char encryptedData[ENCRYPTED_DATA_BUFFER_SIZE];
+    preferences.getString(preference_key, encryptedData, ENCRYPTED_DATA_BUFFER_SIZE);
     preferences.end();
 
-    if (strlen(_encryptedData) == 0) {
+    if (strlen(encryptedData) == 0) {
         logger.warning("No encrypted data found for key: %s", TAG, preference_key);
         return;
     }
 
-    char _encryptionKey[ENCRYPTION_KEY_BUFFER_SIZE];
-    snprintf(_encryptionKey, ENCRYPTION_KEY_BUFFER_SIZE, "%s%s", preshared_encryption_key, DEVICE_ID);
+    char encryptionKey[ENCRYPTION_KEY_BUFFER_SIZE];
+    snprintf(encryptionKey, ENCRYPTION_KEY_BUFFER_SIZE, "%s%s", preshared_encryption_key, DEVICE_ID);
 
-    decryptData(_encryptedData, _encryptionKey, decryptedData, decryptedDataSize);
+    decryptData(encryptedData, encryptionKey, decryptedData, decryptedDataSize);
 }
 
 bool checkCertificatesExist() {

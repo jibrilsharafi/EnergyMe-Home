@@ -263,23 +263,23 @@ bool CustomMqtt::_connectMqtt()
         _mqttConnectionAttempt = 0; // Reset attempt counter on success
         snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), "Connected");
 
-        char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer));
-        snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", _timestampBuffer);
+        char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
+        snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
 
         _saveConfigurationToSpiffs();
 
         return true;
     } else {
-        int _currentState = _customClientMqtt.state();
-        const char* _reason = getMqttStateReason(_currentState);
+        int currentState = _customClientMqtt.state();
+        const char* _reason = getMqttStateReason(currentState);
 
         _logger.warning(
             "Failed to connect to custom MQTT (attempt %d). Reason: %s (%d). Retrying...",
             TAG,
             _mqttConnectionAttempt + 1,
             _reason,
-            _currentState);
+            currentState);
 
         _lastMillisMqttFailed = millis64();
         _mqttConnectionAttempt++;
@@ -287,17 +287,17 @@ bool CustomMqtt::_connectMqtt()
         snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), 
                  "%s (Attempt %d)", _reason, _mqttConnectionAttempt);
         
-        char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer));
-        snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", _timestampBuffer);
+        char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
+        snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
 
         _saveConfigurationToSpiffs();
 
         // Check for specific errors that warrant disabling custom MQTT
-        if (_currentState == MQTT_CONNECT_BAD_CREDENTIALS || _currentState == MQTT_CONNECT_UNAUTHORIZED) {
+        if (currentState == MQTT_CONNECT_BAD_CREDENTIALS || currentState == MQTT_CONNECT_UNAUTHORIZED) {
              _logger.error("Custom MQTT connection failed due to authorization/credentials error (%d). Disabling custom MQTT.",
                 TAG,
-                _currentState);
+                currentState);
             _disable(); // Disable custom MQTT on auth errors
             _nextMqttConnectionAttemptMillis = UINT32_MAX; // Prevent further attempts until re-enabled
             return false; // Prevent further processing in this cycle
@@ -325,13 +325,13 @@ void CustomMqtt::_publishMeter()
     JsonDocument jsonDocument;
     _ade7953.fullMeterValuesToJson(jsonDocument);
     
-    char _meterMessage[MQTT_CUSTOM_PAYLOAD_LIMIT];
-    if (!safeSerializeJson(jsonDocument, _meterMessage, sizeof(_meterMessage))) {
+    char meterMessage[MQTT_CUSTOM_PAYLOAD_LIMIT];
+    if (!safeSerializeJson(jsonDocument, meterMessage, sizeof(meterMessage))) {
         _logger.warning("Failed to serialize meter data to JSON", TAG);
         return;
     }
 
-    if (_publishMessage(_customMqttConfiguration.topic, _meterMessage)) _logger.debug("Meter data published to custom MQTT", TAG);
+    if (_publishMessage(_customMqttConfiguration.topic, meterMessage)) _logger.debug("Meter data published to custom MQTT", TAG);
 }
 
 bool CustomMqtt::_publishMessage(const char *topic, const char *message)

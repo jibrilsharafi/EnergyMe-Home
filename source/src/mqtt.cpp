@@ -625,23 +625,23 @@ namespace Mqtt
         }
         else
         {
-            int _currentState = _clientMqtt.state();
+            int currentState = _clientMqtt.state();
             logger.warning(
                 "Failed to connect to MQTT (attempt %d). Reason: %s (%d). Retrying...",
                 TAG,
                 _mqttConnectionAttempt + 1,
-                getMqttStateReason(_currentState),
-                _currentState
+                getMqttStateReason(currentState),
+                currentState
             );
 
             _lastMillisMqttFailed = millis64();
             _mqttConnectionAttempt++;
 
             // Check for specific errors that warrant clearing certificates
-            if (_currentState == MQTT_CONNECT_BAD_CREDENTIALS || _currentState == MQTT_CONNECT_UNAUTHORIZED) {
+            if (currentState == MQTT_CONNECT_BAD_CREDENTIALS || currentState == MQTT_CONNECT_UNAUTHORIZED) {
                 logger.error("MQTT connection failed due to authorization/credentials error (%d). Erasing certificates and restarting...",
                     TAG,
-                    _currentState);
+                    currentState);
                 clearCertificates();
                 setRestartSystem(TAG, "MQTT Authentication/Authorization Error");
                 _nextMqttConnectionAttemptMillis = UINT32_MAX; // Prevent further attempts before restart
@@ -708,11 +708,11 @@ namespace Mqtt
 
         logger.debug("MQTT setup for claiming certificates complete", TAG);
 
-        int _connectionAttempt = 0;
-        unsigned int _loops = 0;
-        while (_connectionAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT && _loops < MAX_LOOP_ITERATIONS) {
-            _loops++;
-            logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", TAG, _connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
+        int connectionAttempt = 0;
+        unsigned int loops = 0;
+        while (connectionAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT && loops < MAX_LOOP_ITERATIONS) {
+            loops++;
+            logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", TAG, connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
             if (_clientMqtt.connect(DEVICE_ID)) {
                 logger.debug("Connected to MQTT for claiming certificates", TAG);
@@ -722,15 +722,15 @@ namespace Mqtt
             logger.warning(
                 "Failed to connect to MQTT for claiming certificates (%d/%d). Reason: %s. Retrying...",
                 TAG,
-                _connectionAttempt + 1,
+                connectionAttempt + 1,
                 MQTT_CLAIM_MAX_CONNECTION_ATTEMPT,
                 getMqttStateReason(_clientMqtt.state())
             );
 
-            _connectionAttempt++;
+            connectionAttempt++;
         }
 
-        if (_connectionAttempt >= MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
+        if (connectionAttempt >= MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
             logger.error("Failed to connect to MQTT for claiming certificates after %d attempts", TAG, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
             setRestartSystem(TAG, "Failed to claim certificates");
             return;
@@ -738,11 +738,11 @@ namespace Mqtt
 
         _subscribeProvisioningResponse();
         
-        int _publishAttempt = 0;
-        _loops = 0;
-        while (_publishAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT && _loops < MAX_LOOP_ITERATIONS) {
-            _loops++;
-            logger.debug("Attempting to publish provisioning request (%d/%d)...", TAG, _publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
+        int publishAttempt = 0;
+        loops = 0;
+        while (publishAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT && loops < MAX_LOOP_ITERATIONS) {
+            loops++;
+            logger.debug("Attempting to publish provisioning request (%d/%d)...", TAG, publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
             if (_publishProvisioningRequest()) {
                 logger.debug("Provisioning request published", TAG);
@@ -752,11 +752,11 @@ namespace Mqtt
             logger.warning(
                 "Failed to publish provisioning request (%d/%d). Retrying...",
                 TAG,
-                _publishAttempt + 1,
+                publishAttempt + 1,
                 MQTT_CLAIM_MAX_CONNECTION_ATTEMPT
             );
 
-            _publishAttempt++;
+            publishAttempt++;
         }
     }
 
@@ -1008,10 +1008,10 @@ namespace Mqtt
         char provisioningRequestMessage[JSON_MQTT_BUFFER_SIZE];
         safeSerializeJson(jsonDocument, provisioningRequestMessage, sizeof(provisioningRequestMessage));
 
-        char _topic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructMqttTopic(MQTT_TOPIC_PROVISIONING_REQUEST, _topic, sizeof(_topic));
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopic(MQTT_TOPIC_PROVISIONING_REQUEST, topic, sizeof(topic));
 
-        return _publishMessage(_topic, provisioningRequestMessage);
+        return _publishMessage(topic, provisioningRequestMessage);
     }
 
     static bool _publishMessage(const char* topic, const char* message, bool retain) {
@@ -1107,50 +1107,50 @@ namespace Mqtt
 
     static void _subscribeUpdateFirmware() {
         logger.debug("Subscribing to firmware update topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE);
-        char _topic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE, _topic, sizeof(_topic));
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_UPDATE_FIRMWARE, topic, sizeof(topic));
         
-        if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+        if (!_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
             logger.warning("Failed to subscribe to firmware update topic", TAG);
         }
     }
 
     static void _subscribeRestart() {
         logger.debug("Subscribing to restart topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_RESTART);
-        char _topic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_RESTART, _topic, sizeof(_topic));
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_RESTART, topic, sizeof(topic));
         
-        if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+        if (!_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
             logger.warning("Failed to subscribe to restart topic", TAG);
         }
     }
 
     static void _subscribeEraseCertificates() {
         logger.debug("Subscribing to erase certificates topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES);
-        char _topic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES, _topic, sizeof(_topic));
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES, topic, sizeof(topic));
         
-        if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+        if (!_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
             logger.warning("Failed to subscribe to erase certificates topic", TAG);
         }
     }
 
     static void _subscribeEnableDebugLogging() { 
         logger.debug("Subscribing to enable debug logging topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING);
-        char _topic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING, _topic, sizeof(_topic));
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING, topic, sizeof(topic));
         
-        if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+        if (!_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
             logger.warning("Failed to subscribe to enable debug logging topic", TAG);
         }
     }
 
     static void _subscribeProvisioningResponse() {
         logger.debug("Subscribing to provisioning response topic: %s", TAG, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE);
-        char _topic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE, _topic, sizeof(_topic));
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE, topic, sizeof(topic));
         
-        if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+        if (!_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
             logger.warning("Failed to subscribe to provisioning response topic", TAG);
         }
     }

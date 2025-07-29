@@ -29,6 +29,15 @@
 #define HEALTH_CHECK_TIMEOUT_MS (5 * 1000) // 5 seconds timeout for health requests
 #define HEALTH_CHECK_MAX_FAILURES 3 // Maximum consecutive failures before restart
 
+// Authentication
+#define PREFERENCES_NAMESPACE_AUTH "auth_ns" 
+#define PREFERENCES_KEY_PASSWORD "password"
+#define WEBSERVER_DEFAULT_USERNAME "admin"
+#define WEBSERVER_DEFAULT_PASSWORD "energyme"
+#define WEBSERVER_REALM "EnergyMe-Home"
+#define MAX_PASSWORD_LENGTH 64
+#define MIN_PASSWORD_LENGTH 4
+
 namespace CustomServer {
     void begin();
     void updateAuthPassword();

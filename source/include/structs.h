@@ -326,31 +326,3 @@ struct RestartConfiguration // TODO: really needed?
     snprintf(reason, sizeof(reason), "Unknown");
   }
 };
-
-struct CustomMqttConfiguration { // TODO: deprecate this
-    bool enabled;
-    char server[SERVER_NAME_BUFFER_SIZE];
-    int port;
-    char clientid[CLIENT_ID_BUFFER_SIZE];
-    char topic[MQTT_TOPIC_BUFFER_SIZE];
-    int frequency;
-    bool useCredentials;
-    char username[USERNAME_BUFFER_SIZE];
-    char password[PASSWORD_BUFFER_SIZE];
-    char lastConnectionStatus[STATUS_BUFFER_SIZE];
-    char lastConnectionAttemptTimestamp[TIMESTAMP_STRING_BUFFER_SIZE];
-
-    CustomMqttConfiguration() 
-        : enabled(DEFAULT_IS_CUSTOM_MQTT_ENABLED), 
-          port(MQTT_CUSTOM_PORT_DEFAULT),
-          frequency(MQTT_CUSTOM_FREQUENCY_DEFAULT),
-          useCredentials(MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT) {
-      snprintf(server, sizeof(server), "%s", MQTT_CUSTOM_SERVER_DEFAULT);
-      snprintf(clientid, sizeof(clientid), "%s", MQTT_CUSTOM_CLIENTID_DEFAULT);
-      snprintf(topic, sizeof(topic), "%s", MQTT_CUSTOM_TOPIC_DEFAULT);
-      snprintf(username, sizeof(username), "%s", MQTT_CUSTOM_USERNAME_DEFAULT);
-      snprintf(password, sizeof(password), "%s", MQTT_CUSTOM_PASSWORD_DEFAULT);
-      snprintf(lastConnectionStatus, sizeof(lastConnectionStatus), "Never attempted");
-      snprintf(lastConnectionAttemptTimestamp, sizeof(lastConnectionAttemptTimestamp), "Never attempted");
-    }
-};

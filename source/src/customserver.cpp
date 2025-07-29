@@ -12,9 +12,9 @@ namespace CustomServer
     // Health check task variables
     static TaskHandle_t _healthCheckTaskHandle = NULL;
     static unsigned int _consecutiveFailures = 0;
-    
-    // Task notification bits
-    #define HEALTH_CHECK_STOP_BIT (1UL << 0)
+
+// Task notification bits
+#define HEALTH_CHECK_STOP_BIT (1UL << 0)
 
     static void _setupMiddleware();
     static void _serveStaticContent();
@@ -28,7 +28,6 @@ namespace CustomServer
     static bool _setWebPassword(const char *password);
     static bool _getWebPassword(char *buffer, size_t bufferSize);
     static bool _validatePasswordStrength(const char *password);
-
 
     void begin()
     {
@@ -169,36 +168,43 @@ namespace CustomServer
         }
     }
 
+    // Helper functions for common response patterns
+    static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc)
+    {
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    }
+
+    static void _sendSuccessResponse(AsyncWebServerRequest *request, const char *message)
+    {
+        JsonDocument doc;
+        doc["success"] = true;
+        doc["message"] = message;
+        _sendJsonResponse(request, doc);
+    }
+
+    static void _sendErrorResponse(AsyncWebServerRequest *request, int statusCode, const char *message)
+    {
+        JsonDocument doc;
+        doc["success"] = false;
+        doc["error"] = message;
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        serializeJson(doc, *response);
+        request->send(response);
+    }
+
+    // API endpoint groups
+    static void _serveSystemEndpoints();
+    static void _serveNetworkEndpoints();
+    static void _serveLoggingEndpoints();
+
     void _serveApi()
     {
-
-        // === API ENDPOINTS (requires authentication) ===
-        server.on("/api/v1/system", HTTP_GET, [](AsyncWebServerRequest *request)
-                  {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        JsonDocument doc;
-        
-        // Get both static and dynamic info
-        JsonDocument staticDoc, dynamicDoc;
-        getJsonDeviceStaticInfo(staticDoc);
-        getJsonDeviceDynamicInfo(dynamicDoc);
-
-        // Combine into a single response
-        doc["static"] = staticDoc;
-        doc["dynamic"] = dynamicDoc;
-        
-        serializeJson(doc, *response);
-        request->send(response); });
-
-        server.on("/api/v1/statistics", HTTP_GET, [](AsyncWebServerRequest *request)
-                  {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        JsonDocument doc;
-        
-        statisticsToJson(statistics, doc);
-        
-        serializeJson(doc, *response);
-        request->send(response); });
+        // Group endpoints by functionality
+        _serveSystemEndpoints();
+        _serveNetworkEndpoints();
+        _serveLoggingEndpoints();
 
         server.on("/api/v1/health", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
@@ -207,6 +213,9 @@ namespace CustomServer
         JsonDocument doc;
         doc["status"] = "ok";
         doc["uptime"] = millis64();
+        char timestamp[20];
+        CustomTime::getTimestamp(timestamp, sizeof(timestamp));
+        doc["timestamp"] = timestamp;
         
         serializeJson(doc, *response);
         request->send(response); })
@@ -230,7 +239,6 @@ namespace CustomServer
         
         doc["usingDefaultPassword"] = isDefault;
         doc["username"] = WEBSERVER_DEFAULT_USERNAME; // Only one username available in any case
-        doc["authRequired"] = true; // In general, it is required everywhere
         
         serializeJson(doc, *response);
         request->send(response); });
@@ -362,8 +370,15 @@ namespace CustomServer
                 // Get content length from header
                 size_t contentLength = request->header("Content-Length").toInt();
                 if (contentLength == 0) {
-                    logger.error("No Content-Length header found", TAG);
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing Content-Length header\"}");
+                    logger.error("No Content-Length header found or empty file", TAG);
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing Content-Length header or empty file\"}");
+                    return;
+                }
+                
+                // Validate minimum firmware size (reasonable minimum for ESP32 firmware)
+                if (contentLength < MINIMUM_FIRMWARE_SIZE) {
+                    logger.error("Firmware file too small: %zu bytes (minimum: %d bytes)", TAG, contentLength, MINIMUM_FIRMWARE_SIZE);
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Firmware file too small\"}");
                     return;
                 }
                 
@@ -399,6 +414,8 @@ namespace CustomServer
                     logger.debug("MD5 verification enabled: %s", TAG, md5Header.c_str());
                 } else if (md5Header.length() > 0) {
                     logger.warning("Invalid MD5 length (%d), skipping verification", TAG, md5Header.length());
+                } else {
+                    logger.warning("No MD5 header provided, skipping verification", TAG);
                 }
 
                 // Start LED indication for OTA progress (indefinite duration)
@@ -433,6 +450,24 @@ namespace CustomServer
             if (final && otaInitialized) {
                 logger.debug("Finalizing OTA update...", TAG);
                 
+                // Validate that we actually received data
+                if (Update.progress() == 0) {
+                    logger.error("OTA finalization failed: No data received", TAG);
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"No firmware data received\"}");
+                    Update.abort();
+                    otaInitialized = false;
+                    return;
+                }
+                
+                // Validate minimum size
+                if (Update.progress() < MINIMUM_FIRMWARE_SIZE) {
+                    logger.error("OTA finalization failed: Firmware too small (%zu bytes)", TAG, Update.progress());
+                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Firmware file too small\"}");
+                    Update.abort();
+                    otaInitialized = false;
+                    return;
+                }
+                
                 if (!Update.end(true)) {
                     logger.error("OTA finalization failed: %s", TAG, Update.errorString());
                     // Error response will be handled in the main handler above
@@ -451,31 +486,32 @@ namespace CustomServer
         // Get OTA update status
         server.on("/api/v1/ota/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        JsonDocument doc;
-        
-        if (Update.isRunning()) {
-            doc["status"] = "running";
-        } else {
-            doc["status"] = "idle";
-        }
-        
-        doc["canRollback"] = Update.canRollBack();
-        const esp_partition_t *running = esp_ota_get_running_partition();
-        doc["currentPartition"] = running->label;
-        doc["hasError"] = Update.hasError();
-        doc["lastError"] = Update.errorString();
-        doc["size"] = Update.size();
-        doc["progress"] = Update.progress();
-        doc["remaining"] = Update.remaining();
-        doc["progressPercent"] = Update.size() > 0 ? (float)Update.progress() / Update.size() * 100.0 : 0.0;
-        
-        // Add current firmware info
-        doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
-        doc["currentMD5"] = ESP.getSketchMD5();
-        
-        serializeJson(doc, *response);
-        request->send(response); });
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            JsonDocument doc;
+            
+            if (Update.isRunning()) {
+                doc["status"] = "running";
+            } else {
+                doc["status"] = "idle";
+            }
+            
+            doc["canRollback"] = Update.canRollBack();
+            const esp_partition_t *running = esp_ota_get_running_partition();
+            doc["currentPartition"] = running->label;
+            doc["hasError"] = Update.hasError();
+            doc["lastError"] = Update.errorString();
+            doc["size"] = Update.size();
+            doc["progress"] = Update.progress();
+            doc["remaining"] = Update.remaining();
+            doc["progressPercent"] = Update.size() > 0 ? (float)Update.progress() / Update.size() * 100.0 : 0.0;
+            
+            // Add current firmware info
+            doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
+            doc["currentMD5"] = ESP.getSketchMD5();
+            
+            serializeJson(doc, *response);
+            request->send(response); 
+        });
 
         // OTA rollback endpoint
         server.on("/api/v1/ota/rollback", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -486,15 +522,201 @@ namespace CustomServer
         }
 
         if (Update.canRollBack()) {
-            logger.warning("Performing firmware rollback", TAG);
+            logger.warning("Firmware rollback requested via API", TAG);
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Rollback initiated. Device will restart.\"}");
 
             Update.rollBack();
-            setRestartSystem(TAG, "Firmware rollback");
+            setRestartSystem(TAG, "Firmware rollback requested via API");
         } else {
             logger.error("Rollback not possible: %s", TAG, Update.errorString());
             request->send(400, "application/json", "{\"success\":false,\"message\":\"Rollback not possible\"}");
         } });
+    }
+
+    // === SYSTEM MANAGEMENT ENDPOINTS ===
+    void _serveSystemEndpoints()
+    {
+        // System information
+        server.on("/api/v1/system/info", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            
+            // Get both static and dynamic info
+            JsonDocument staticDoc, dynamicDoc;
+            getJsonDeviceStaticInfo(staticDoc);
+            getJsonDeviceDynamicInfo(dynamicDoc);
+
+            // Combine into a single response
+            doc["static"] = staticDoc;
+            doc["dynamic"] = dynamicDoc;
+            
+            _sendJsonResponse(request, doc); });
+
+        // Statistics
+        server.on("/api/v1/system/statistics", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            statisticsToJson(statistics, doc);
+            _sendJsonResponse(request, doc); });
+
+        // System restart
+        server.on("/api/v1/system/restart", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            _sendSuccessResponse(request, "System restart initiated");
+            
+            // Short delay to ensure response is sent
+            delay(100);
+            setRestartSystem(TAG, "System restart requested via API"); });
+
+        // Factory reset
+        server.on("/api/v1/system/factory-reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            _sendSuccessResponse(request, "Factory reset initiated");
+            
+            // Delay to ensure response is sent
+            delay(2000);
+            factoryReset(); });
+
+        // Check if secrets exist
+        server.on("/api/v1/system/secrets", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            doc["hasSecrets"] = HAS_SECRETS;
+            _sendJsonResponse(request, doc); });
+    }
+
+    // === NETWORK MANAGEMENT ENDPOINTS ===
+    void _serveNetworkEndpoints()
+    {
+        // WiFi reset
+        server.on("/api/v1/network/wifi/reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            _sendSuccessResponse(request, "WiFi credentials reset. Device will restart and enter configuration mode.");
+            
+            // Short delay to ensure response is sent
+            delay(2000);
+            CustomWifi::resetWifi(); });
+
+        // WiFi information
+        server.on("/api/v1/network/wifi/info", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            CustomWifi::getWifiInfoJson(doc);
+            _sendJsonResponse(request, doc); });
+    }
+
+    // === LOGGING ENDPOINTS ===
+    void _serveLoggingEndpoints()
+    {
+        // Get log levels
+        server.on("/api/v1/logs/level", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            doc["print"] = logger.logLevelToString(logger.getPrintLevel());
+            doc["save"] = logger.logLevelToString(logger.getSaveLevel());
+            _sendJsonResponse(request, doc); });
+
+        // Set log levels (using AsyncCallbackJsonWebHandler for JSON body)
+        static AsyncCallbackJsonWebHandler *setLogLevelHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/logs/level",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                JsonDocument doc;
+                doc.set(json);
+
+                const char *printLevel = doc["print"];
+                const char *saveLevel = doc["save"];
+
+                if (!printLevel && !saveLevel)
+                {
+                    _sendErrorResponse(request, 400, "At least one of 'print' or 'save' level must be specified");
+                    return;
+                }
+
+                bool success = true;
+                char resultMsg[256];
+                snprintf(resultMsg, sizeof(resultMsg), "Log levels updated:");
+
+                // Set print level if provided
+                if (printLevel)
+                {
+                    // Convert string to LogLevel enum
+                    LogLevel level;
+                    if (strcmp(printLevel, "VERBOSE") == 0)
+                        level = LogLevel::VERBOSE;
+                    else if (strcmp(printLevel, "DEBUG") == 0)
+                        level = LogLevel::DEBUG;
+                    else if (strcmp(printLevel, "INFO") == 0)
+                        level = LogLevel::INFO;
+                    else if (strcmp(printLevel, "WARNING") == 0)
+                        level = LogLevel::WARNING;
+                    else if (strcmp(printLevel, "ERROR") == 0)
+                        level = LogLevel::ERROR;
+                    else if (strcmp(printLevel, "FATAL") == 0)
+                        level = LogLevel::FATAL;
+                    else
+                    {
+                        success = false;
+                    }
+
+                    if (success)
+                    {
+                        logger.setPrintLevel(level);
+                        snprintf(resultMsg + strlen(resultMsg), sizeof(resultMsg) - strlen(resultMsg),
+                                 " print=%s", printLevel);
+                    }
+                }
+
+                // Set save level if provided
+                if (saveLevel)
+                {
+                    // Convert string to LogLevel enum
+                    LogLevel level;
+                    if (strcmp(saveLevel, "VERBOSE") == 0)
+                        level = LogLevel::VERBOSE;
+                    else if (strcmp(saveLevel, "DEBUG") == 0)
+                        level = LogLevel::DEBUG;
+                    else if (strcmp(saveLevel, "INFO") == 0)
+                        level = LogLevel::INFO;
+                    else if (strcmp(saveLevel, "WARNING") == 0)
+                        level = LogLevel::WARNING;
+                    else if (strcmp(saveLevel, "ERROR") == 0)
+                        level = LogLevel::ERROR;
+                    else if (strcmp(saveLevel, "FATAL") == 0)
+                        level = LogLevel::FATAL;
+                    else
+                    {
+                        success = false;
+                    }
+
+                    if (success)
+                    {
+                        logger.setSaveLevel(level);
+                        snprintf(resultMsg + strlen(resultMsg), sizeof(resultMsg) - strlen(resultMsg),
+                                 " save=%s", saveLevel);
+                    }
+                }
+
+                if (success)
+                {
+                    _sendSuccessResponse(request, resultMsg);
+                    logger.info("Log levels updated via API", TAG);
+                }
+                else
+                {
+                    _sendErrorResponse(request, 400, "Invalid log level specified. Valid levels: VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL");
+                }
+            });
+
+        setLogLevelHandler->setMethod(HTTP_PUT);
+        server.addHandler(setLogLevelHandler);
+
+        // Clear logs
+        server.on("/api/v1/logs/clear", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            logger.clearLog();
+            _sendSuccessResponse(request, "Logs cleared successfully");
+            logger.info("Logs cleared via API", TAG); });
     }
 
     void _startHealthCheckTask()
@@ -514,7 +736,7 @@ namespace CustomServer
             _healthCheckTask,
             HEALTH_CHECK_TASK_NAME,
             HEALTH_CHECK_TASK_STACK_SIZE,
-            currentTask,  // Pass caller's handle as parameter
+            currentTask, // Pass caller's handle as parameter
             HEALTH_CHECK_TASK_PRIORITY,
             &_healthCheckTaskHandle);
 
@@ -537,17 +759,17 @@ namespace CustomServer
         }
 
         logger.debug("Stopping health check task...", TAG);
-        
+
         // Signal the task to stop using notification
         xTaskNotify(_healthCheckTaskHandle, HEALTH_CHECK_STOP_BIT, eSetBits);
-        
+
         // Wake up the task if it's sleeping in vTaskDelayUntil
         xTaskAbortDelay(_healthCheckTaskHandle);
 
         // Wait for the task to acknowledge shutdown (up to 5 seconds)
         uint32_t notificationValue = 0;
         BaseType_t result = xTaskNotifyWait(0, 0, &notificationValue, pdMS_TO_TICKS(5000));
-        
+
         if (result == pdTRUE)
         {
             logger.info("Health check task stopped gracefully", TAG);
@@ -556,7 +778,7 @@ namespace CustomServer
         {
             logger.warning("Health check task did not acknowledge shutdown, assuming stopped", TAG);
         }
-        
+
         // Task handle will be set to NULL by the task itself
         _healthCheckTaskHandle = NULL;
     }
@@ -574,17 +796,17 @@ namespace CustomServer
             // Wait for the next cycle OR until we get a stop notification
             uint32_t notificationValue = 0;
             BaseType_t result = xTaskNotifyWait(0, UINT32_MAX, &notificationValue, xFrequency);
-            
+
             // Check if we received a stop signal
             if (notificationValue & HEALTH_CHECK_STOP_BIT)
             {
                 logger.debug("Health check task received stop signal", TAG);
                 break;
             }
-            
+
             // If we were woken by notification but no stop bit, continue normally
             // If we timed out (no notification), also continue normally
-            
+
             // Perform health check
             if (_performHealthCheck())
             {
@@ -611,13 +833,13 @@ namespace CustomServer
         }
 
         logger.debug("Health check task exiting", TAG);
-        
+
         // Acknowledge shutdown to the caller
         if (callerHandle != NULL)
         {
             xTaskNotify(callerHandle, 1, eSetValueWithOverwrite);
         }
-        
+
         _healthCheckTaskHandle = NULL;
         vTaskDelete(NULL);
     }
@@ -764,283 +986,6 @@ namespace CustomServer
         return true;
     }
 }
-
-// CustomServer::CustomServer(
-//     AsyncWebServer &server,
-//     AdvancedLogger &logger,
-//     Ade7953 &ade7953,
-//     CustomWifi &customWifi,
-//     CustomMqtt &customMqtt,
-//     InfluxDbClient &influxDbClient,
-//     ButtonHandler &buttonHandler) : _server(server),
-//                                     _logger(logger),
-//                                     _ade7953(ade7953),
-//                                     _customWifi(customWifi),
-//                                     _customMqtt(customMqtt),
-//                                     _influxDbClient(influxDbClient),
-//                                     _buttonHandler(buttonHandler) {}
-
-// CustomServer::~CustomServer()
-// {
-//     // Clean up semaphores
-//     if (_configurationMutex != NULL) {
-//         vSemaphoreDelete(_configurationMutex);
-//         _configurationMutex = NULL;
-//     }
-//     if (_channelMutex != NULL) {
-//         vSemaphoreDelete(_channelMutex);
-//         _channelMutex = NULL;
-//     }
-//     if (_otaMutex != NULL) {
-//         vSemaphoreDelete(_otaMutex);
-//         _otaMutex = NULL;
-//     }
-// }
-
-// void CustomServer::begin()
-// {
-//     // Initialize semaphores for concurrency control
-//     _configurationMutex = xSemaphoreCreateMutex();
-//     _channelMutex = xSemaphoreCreateMutex();
-//     _otaMutex = xSemaphoreCreateMutex();
-
-//     if (_configurationMutex == NULL || _channelMutex == NULL || _otaMutex == NULL) {
-//         _logger.error("Failed to create semaphores for concurrency control", TAG);
-//     }
-
-//     // // Refactored: Initialize Authentication Middleware
-//     // // This protects all endpoints by default unless explicitly skipped.
-//     // _authMiddleware.setUsername(DEFAULT_WEB_USERNAME);
-//     // _authMiddleware.setPassword(DEFAULT_WEB_PASSWORD); // For initial setup. Should be updated dynamically.
-//     // _authMiddleware.setAuthType(AsyncAuthType::AUTH_BASIC);
-//     // _authMiddleware.setRealm("EnergyMe Login");
-//     // _server.addMiddleware(&_authMiddleware);
-
-//     // // Refactored: Initialize Rate Limiting Middleware for sensitive APIs
-//     // _apiRateLimitMiddleware.setWindowSize(1); // in seconds
-//     // _apiRateLimitMiddleware.setMaxRequests(5); // max requests per window
-
-//     // // Refactored: Initialize Logging Middleware
-//     // _loggingMiddleware.setEnabled(true);
-//     // _loggingMiddleware.setOutput(Serial); // Or any other Print object
-//     // _server.addMiddleware(&_loggingMiddleware);
-
-//     // // Setup all handlers
-//     // _setStaticContent();
-//     // _setApiHandlers();
-//     // _setOtaHandlers();
-//     // _setNotFoundHandler();
-
-//     // _server.begin();
-
-//     // Update.onProgress([](size_t progress, size_t total) {});
-
-//     // initializeAuthentication();
-//     // initializeRateLimiting();
-// }
-
-// void CustomServer::_setStaticContent()
-// {
-//     // --- Unauthenticated HTML, CSS, JS, and other static content ---
-//     // Refactored: All these handlers skip the global authentication middleware.
-//     _server.on("/login", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/html", (const char*)login_html);
-//     }).setSkipServerMiddlewares(true);
-
-//     _server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/css", (const char*)styles_css);
-//     }).setSkipServerMiddlewares(true);
-
-//     _server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/css", (const char*)button_css);
-//     }).setSkipServerMiddlewares(true);
-
-//     _server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/css", (const char*)section_css);
-//     }).setSkipServerMiddlewares(true);
-
-//     _server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/css", (const char*)typography_css);
-//     }).setSkipServerMiddlewares(true);
-
-//     _server.on("/html/auth.js", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "application/javascript", (const char*)auth_js);
-//     }).setSkipServerMiddlewares(true);
-
-//     _server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "image/svg+xml", (const char*)favicon_svg);
-//     }).setSkipServerMiddlewares(true);
-
-//     // --- Authenticated HTML Pages ---
-//     // These will be protected by the global _authMiddleware.
-//     _server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/html", (const char*)index_html);
-//     });
-//     _server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/html", (const char*)configuration_html);
-//     });
-//     _server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/html", (const char*)calibration_html);
-//     });
-//     _server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/html", (const char*)channel_html);
-//     });
-//     _server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/html", (const char*)info_html);
-//     });
-//     _server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/html", (const char*)log_html);
-//     });
-//     _server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/html", (const char*)update_html);
-//     });
-
-//     // Swagger UI
-//     _server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/html", (const char*)swagger_ui_html);
-//     });
-//     _server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "text/yaml", (const char*)swagger_yaml);
-//     });
-// }
-
-// void CustomServer::_setApiHandlers()
-// {
-//     // --- Authentication API (Unauthenticated) ---
-//     _setupAuthApi();
-
-//     // --- General GET APIs (Authenticated by default) ---
-//     _setupGetApi();
-
-//     // --- Configuration POST/PUT APIs (Authenticated, with JSON handlers) ---
-//     _setupPostApi();
-// }
-
-// void CustomServer::_setupAuthApi() {
-//     // Refactored: Use AsyncCallbackJsonWebHandler for login
-//     _loginHandler = new AsyncCallbackJsonWebHandler("/rest/auth/login", [this](AsyncWebServerRequest *request, JsonVariant &json) {
-//         // Refactored: Large buffers are now static to avoid stack overflow.
-//         static char responseBuffer[JSON_RESPONSE_BUFFER_SIZE];
-//         static char cookieValue[AUTH_TOKEN_LENGTH + 1 + 50];
-
-//         JsonDocument doc;
-//         doc.set(json);
-
-//         char clientIp[OCTET_BUFFER_SIZE];
-//         snprintf(clientIp, sizeof(clientIp), "%s", request->client()->remoteIP().toString().c_str());
-
-//         if (isIpBlocked(clientIp)) {
-//             request->send(429, "application/json", "{\"success\":false,\"message\":\"Too many failed login attempts.\"}");
-//             return;
-//         }
-
-//         if (validatePassword(doc["password"].as<const char*>())) {
-//             recordSuccessfulLogin(clientIp);
-//             if (!canAcceptMoreTokens()) {
-//                 request->send(429, "application/json", "{\"success\":false,\"message\":\"Maximum concurrent sessions reached.\"}");
-//             } else {
-//                 char token[AUTH_TOKEN_LENGTH + 1];
-//                 generateAuthToken(token, sizeof(token));
-
-//                 JsonDocument response;
-//                 response["success"] = true;
-//                 response["token"] = token;
-
-//                 safeSerializeJson(response, responseBuffer, sizeof(responseBuffer));
-//                 snprintf(cookieValue, sizeof(cookieValue), "auth_token=%s; Path=/; Max-Age=86400; HttpOnly", token);
-
-//                 AsyncWebServerResponse *resp = request->beginResponse(200, "application/json", responseBuffer);
-//                 resp->addHeader("Set-Cookie", cookieValue);
-//                 request->send(resp);
-//             }
-//         } else {
-//             recordFailedLogin(clientIp);
-//             request->send(401, "application/json", "{\"success\":false,\"message\":\"Invalid password\"}");
-//         }
-//     });
-//     _loginHandler->setMethod(HTTP_POST);
-//     _loginHandler->setSkipServerMiddlewares(true); // Allow access without auth
-//     _server.addHandler(_loginHandler);
-
-//     // Logout endpoint
-//     _server.on("/rest/auth/logout", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         // This endpoint is protected by the global auth middleware
-//         if (request->hasHeader("Authorization")) {
-//             const char* authHeader = request->getHeader("Authorization")->value().c_str();
-//             if (strncmp(authHeader, "Bearer ", 7) == 0) {
-//                 clearAuthToken(authHeader + 7);
-//             }
-//         }
-//         AsyncWebServerResponse *resp = request->beginResponse(200, "application/json", "{\"success\":true}");
-//         resp->addHeader("Set-Cookie", "auth_token=; Path=/; Max-Age=0; HttpOnly");
-//         request->send(resp);
-//     });
-
-//     // Change password endpoint
-//     _changePasswordHandler = new AsyncCallbackJsonWebHandler("/rest/auth/change-password", [this](AsyncWebServerRequest *request, JsonVariant &json) {
-//         JsonDocument doc;
-//         doc.set(json);
-//         const char* currentPassword = doc["currentPassword"];
-//         const char* newPassword = doc["newPassword"];
-
-//         if (!validatePassword(currentPassword)) {
-//             request->send(401, "application/json", "{\"success\":false,\"message\":\"Current password is incorrect\"}");
-//         } else if (strlen(newPassword) < MIN_PASSWORD_LENGTH || strlen(newPassword) > MAX_PASSWORD_LENGTH) {
-//             request->send(400, "application/json", "{\"success\":false,\"message\":\"New password has invalid length\"}");
-//         } else if (setAuthPassword(newPassword)) {
-//             request->send(200, "application/json", "{\"success\":true,\"message\":\"Password changed successfully\"}");
-//         } else {
-//             request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to change password\"}");
-//         }
-//     });
-//     _changePasswordHandler->setMethod(HTTP_POST);
-//     _server.addHandler(_changePasswordHandler);
-
-//     // Auth status endpoint (Unauthenticated)
-//     _server.on("/rest/auth/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char responseBuffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument response;
-//         response["authenticated"] = _authMiddleware.allowed(request);
-//         response["username"] = DEFAULT_WEB_USERNAME;
-//         response["activeSessions"] = getActiveTokenCount();
-//         response["maxSessions"] = MAX_CONCURRENT_SESSIONS;
-//         response["mustChangePassword"] = isUsingDefaultPassword();
-
-//         safeSerializeJson(response, responseBuffer, sizeof(responseBuffer));
-//         request->send(200, "application/json", responseBuffer);
-//     }).setSkipServerMiddlewares(true);
-// }
-
-// void CustomServer::_setupGetApi() {
-//     _server.on("/rest/is-alive", HTTP_GET, [](AsyncWebServerRequest *request) {
-//         request->send(200, "application/json", "{\"message\":\"True\"}");
-//     }).setSkipServerMiddlewares(true); // Publicly accessible
-
-//     _server.on("/rest/product-info", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         getJsonProductInfo(doc);
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     _server.on("/rest/device-info", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         getJsonDeviceInfo(doc);
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     _server.on("/rest/wifi-info", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         _customWifi.getWifiInfoJson(doc);
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     _server.on("/rest/meter", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
 //         JsonDocument doc;
 //         _ade7953.fullMeterValuesToJson(doc);
@@ -1502,225 +1447,4 @@ namespace CustomServer
 //     _server.serveStatic("/swagger.yaml", SPIFFS, "/swagger.yaml");
 //     _server.serveStatic("/log-raw", SPIFFS, LOG_PATH);
 //     _server.serveStatic("/daily-energy", SPIFFS, DAILY_ENERGY_JSON_PATH);
-// }
-
-// void CustomServer::_setOtaHandlers()
-// {
-//     // The OTA handler remains largely the same, but it is now protected by the global auth middleware.
-//     _server.on("/do-update", HTTP_POST,
-//         [](AsyncWebServerRequest *request){}, // On success (empty, handled by upload handler)
-//         [this](AsyncWebServerRequest *request, const String& filename, size_t index, unsigned char *data, size_t len, bool final) {
-//             _handleDoUpdate(request, filename.c_str(), index, data, len, final);
-//         }
-//     );
-
-//     _server.on("/set-md5", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         if (request->hasParam("md5")) {
-//             char md5Str[MD5_BUFFER_SIZE];
-//             snprintf(md5Str, sizeof(md5Str), "%s", request->getParam("md5")->value().c_str());
-
-//             // Convert to lowercase
-//             for (int i = 0; md5Str[i]; i++) {
-//                 md5Str[i] = tolower(md5Str[i]);
-//             }
-
-//             if (strlen(md5Str) != 32) {
-//                 request->send(400, "application/json", "{\"message\":\"MD5 not 32 characters long\"}");
-//             } else {
-//                 snprintf(_md5, sizeof(_md5), "%s", md5Str);
-//                 request->send(200, "application/json", "{\"message\":\"MD5 set\"}");
-//             }
-//         } else {
-//             request->send(400, "application/json", "{\"message\":\"Missing MD5 parameter\"}");
-//         }
-//     });
-
-//     _server.on("/rest/update-status", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         if (Update.isRunning()) {
-//             static char statusResponse[JSON_RESPONSE_BUFFER_SIZE];
-//             snprintf(statusResponse, sizeof(statusResponse),
-//                      "{\"status\":\"running\",\"size\":%zu,\"progress\":%zu,\"remaining\":%zu}",
-//                      Update.size(), Update.progress(), Update.remaining());
-//             request->send(200, "application/json", statusResponse);
-//         } else {
-//             request->send(200, "application/json", "{\"status\":\"idle\"}");
-//         }
-//     });
-
-//     _server.on("/rest/update-rollback", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         if (Update.isRunning()) {
-//             Update.abort();
-//         }
-
-//         if (Update.canRollBack()) {
-//             Update.rollBack();
-//             request->send(200, "application/json", "{\"message\":\"Rollback in progress. Restarting ESP32...\"}");
-//             setRestartEsp32(TAG, "Firmware rollback in progress requested from REST API");
-//         } else {
-//             _logger.error("Rollback not possible. Reason: %s", TAG, Update.errorString());
-//             request->send(500, "application/json", "{\"message\":\"Rollback not possible\"}");
-//         }
-//     });
-// }
-
-// void CustomServer::_setNotFoundHandler() {
-//     _server.onNotFound([](AsyncWebServerRequest *request) {
-//         request->send(404, "text/plain", "Not found");
-//     });
-// }
-
-// void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const char* filename, size_t index, unsigned char *data, size_t len, bool final)
-// {
-//     // Protect OTA updates with mutex - only allow one at a time
-//     if (!index) { // First chunk of upload
-//         if (!_acquireMutex(_otaMutex, "ota", pdMS_TO_TICKS(1000))) {
-//             _logger.warning("OTA update rejected - another update in progress", TAG);
-//             _onUpdateFailed(request, "Another firmware update is already in progress");
-//             return;
-//         }
-//     }
-
-//     Led::block();
-//     Led::setPurple(true);
-
-//
-//     if (!index)
-//     {
-//         if (strstr(filename, ".bin") != nullptr)
-//         {
-//             _logger.info("Update requested for firmware", TAG);
-//         }
-//         else
-//         {
-//             _onUpdateFailed(request, "File must be in .bin format");
-//             return;
-//         }
-
-//         _ade7953.pauseMeterReadingTask();
-
-//         size_t freeHeap = ESP.getFreeHeap();
-//         _logger.debug("Free heap before OTA: %zu bytes", TAG, freeHeap);
-
-//         if (freeHeap < MINIMUM_FREE_HEAP_OTA) {
-//             _onUpdateFailed(request, "Insufficient memory for update");
-//             return;
-//         }
-
-//         if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH))
-//         {
-//             _onUpdateFailed(request, Update.errorString());
-//             return;
-//         }
-
-//         Update.setMD5(_md5);
-//     }
-
-//
-//     if (Update.write(data, len) != len)
-//     {
-//         _onUpdateFailed(request, Update.errorString());
-//         return;
-//     }
-
-//
-//     if (final)
-//     {
-//         if (!Update.end(true))
-//         {
-//             _onUpdateFailed(request, Update.errorString());
-//         }
-//         else
-//         {
-//             _onUpdateSuccessful(request);
-//         }
-//     }
-
-//
-//     Led::setOff(true);
-//     Led::unblock();
-// }
-
-// void CustomServer::_onUpdateSuccessful(AsyncWebServerRequest *request)
-// {
-//
-//     // Refactored: Using a static buffer to prevent stack overflow
-//     static char response[HTTP_RESPONSE_BUFFER_SIZE];
-//     snprintf(response, sizeof(response), "{\"status\":\"success\", \"md5\":\"%s\"}", Update.md5String().c_str());
-//     request->send(200, "application/json", response);
-
-//
-//     _logger.info("Update complete", TAG);
-//     updateJsonFirmwareStatus("success", "");
-
-//     _logger.debug("MD5 of new firmware: %s", TAG, Update.md5String().c_str());
-
-//
-//     char firmwareStatus[FIRMWARE_STATUS_BUFFER_SIZE];
-//     CrashMonitor::getFirmwareStatusString(NEW_TO_TEST, firmwareStatus);
-//     _logger.debug("Setting rollback flag to %s", TAG, firmwareStatus);
-
-//     if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) _logger.error("Failed to set firmware status", TAG);
-
-//
-//     setRestartEsp32(TAG, "Restart needed after update");
-//     _releaseMutex(_otaMutex, "ota");
-// }
-
-// void CustomServer::_onUpdateFailed(AsyncWebServerRequest *request, const char *reason)
-// {
-//
-
-//     _ade7953.resumeMeterReadingTask();
-//     _logger.debug("Reattached ADE7953 interrupt after OTA failure", TAG);
-
-//     // Refactored: Using a static buffer to prevent stack overflow
-//     static char response[HTTP_RESPONSE_BUFFER_SIZE];
-//     snprintf(response, sizeof(response), "{\"status\":\"failed\", \"reason\":\"%s\"}", reason);
-//     request->send(400, "application/json", response);
-
-//     Update.printError(Serial);
-//     _logger.debug("Size: %d bytes | Progress: %d bytes | Remaining: %d bytes", TAG, Update.size(), Update.progress(), Update.remaining());
-//     _logger.error("Update failed, keeping current firmware. Reason: %s", TAG, reason);
-//     updateJsonFirmwareStatus("failed", reason);
-
-//     for (int i = 0; i < 3; i++)
-//     {
-//         Led::setRed(true);
-//         delay(500);
-//         Led::setOff(true);
-//         delay(500);
-//     }
-
-//     _releaseMutex(_otaMutex, "ota");
-// }
-
-// // Concurrency control helper methods
-// bool CustomServer::_acquireMutex(SemaphoreHandle_t mutex, const char* mutexName, TickType_t timeout)
-// {
-//     if (mutex == NULL) {
-//         _logger.warning("Mutex %s is NULL, skipping lock", TAG, mutexName);
-//         return false;
-//     }
-
-//     if (xSemaphoreTake(mutex, timeout) == pdTRUE) {
-//         _logger.verbose("Successfully acquired mutex: %s", TAG, mutexName);
-//         return true;
-//     } else {
-//         _logger.warning("Failed to acquire mutex %s within timeout", TAG, mutexName);
-//         return false;
-//     }
-// }
-
-// void CustomServer::_releaseMutex(SemaphoreHandle_t mutex, const char* mutexName)
-// {
-//     if (mutex == NULL) {
-//         _logger.warning("Mutex %s is NULL, skipping unlock", TAG, mutexName);
-//         return;
-//     }
-
-//     if (xSemaphoreGive(mutex) == pdTRUE) {
-//         _logger.debug("Successfully released mutex: %s", TAG, mutexName);
-//     } else {
-//         _logger.warning("Failed to release mutex: %s", TAG, mutexName);
-//     }
 // }

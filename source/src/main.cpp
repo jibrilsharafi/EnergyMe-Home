@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include <esp_task_wdt.h>
 #include <WiFiUdp.h>
 
 // Project includes
@@ -69,6 +70,9 @@ void setup()
   Serial.println("LED setup done");
 
   Led::setWhite(Led::PRIO_NORMAL);
+  // Disable watchdog during SPIFFS begin because if the formatting is required, it can take a while
+  // And we don't want to continuously print an error to Serial
+  // TODO: actually do this (code 705)
   if (!SPIFFS.begin(true))
   {
     Serial.println("SPIFFS initialization failed!");
