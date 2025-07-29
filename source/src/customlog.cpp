@@ -7,7 +7,7 @@ static const char *TAG = "logcallback";
 namespace CustomLog
 {
     // Static variables - all internal to this module
-    static CircularBuffer<LogJson, LOG_BUFFER_SIZE> _udpLogBuffer; // TODO: use PSRAM here?
+    static QueueHandle_t _udpLogQueue = nullptr;
     static WiFiUDP _udpClient;
     static IPAddress _udpDestinationIp;
     static char _udpBuffer[UDP_LOG_BUFFER_SIZE];
@@ -20,6 +20,13 @@ namespace CustomLog
     {
         if (_isUdpInitialized) {
             logger.debug("UDP logging already initialized", TAG);
+            return;
+        }
+
+        // Create FreeRTOS queue for UDP logs
+        _udpLogQueue = xQueueCreate(LOG_BUFFER_SIZE, sizeof(LogJson));
+        if (_udpLogQueue == nullptr) {
+            logger.error("Failed to create UDP log queue", TAG);
             return;
         }
 
@@ -38,6 +45,13 @@ namespace CustomLog
         if (_isUdpInitialized) {
             _udpClient.stop();
             _isUdpInitialized = false;
+            
+            // Clean up the queue
+            if (_udpLogQueue != nullptr) {
+                vQueueDelete(_udpLogQueue);
+                _udpLogQueue = nullptr;
+            }
+            
             logger.debug("UDP logging stopped", TAG);
         }
     }
@@ -67,28 +81,33 @@ namespace CustomLog
         if (!DEFAULT_IS_UDP_LOGGING_ENABLED) return;
         if (strcmp(level, "verbose") == 0) return; // Never send verbose logs via UDP
         
-        // Even though the inizialization has not been done yet, we can still push the logs
-        _udpLogBuffer.push(
-            LogJson(
-                timestamp,
-                millisEsp,
-                level,
-                coreId,
-                function,
-                message
-            )
-        );
+        // Create log entry
+        LogJson logEntry(timestamp, millisEsp, level, coreId, function, message);
+        
+        // Even though the initialization has not been done yet, we can still push the logs
+        if (_udpLogQueue != nullptr) {
+            // Try to send to queue (non-blocking)
+            if (xQueueSend(_udpLogQueue, &logEntry, 0) != pdTRUE) {
+                // Queue is full, could optionally remove oldest item and try again
+                // For now, just drop the log entry
+            }
+        }
 
         if (!_isUdpInitialized) return;
 
-        // If not connected to WiFi or no valid IP, return (log is still stored in circular buffer for later)
+        // If not connected to WiFi or no valid IP, return (log is still stored in queue for later)
         if (!CustomWifi::isFullyConnected()) return;
 
         unsigned int _loops = 0;
-        while (!_udpLogBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
+        LogJson _log;
+        
+        while (uxQueueMessagesWaiting(_udpLogQueue) > 0 && _loops < MAX_LOOP_ITERATIONS) {
             _loops++;
 
-            LogJson _log = _udpLogBuffer.shift();
+            // Receive from queue (non-blocking)
+            if (xQueueReceive(_udpLogQueue, &_log, 0) != pdTRUE) {
+                break; // No more items in queue
+            }
 
             // Format as simplified syslog message
             snprintf(_udpBuffer, sizeof(_udpBuffer),
@@ -103,24 +122,25 @@ namespace CustomLog
                 _log.message);
             
             if (!_udpClient.beginPacket(_udpDestinationIp, UDP_LOG_PORT)) {
-                _udpLogBuffer.push(_log);
+                // Put the log back in the queue (front of queue)
+                xQueueSendToFront(_udpLogQueue, &_log, 0);
                 break;
             }
             
             size_t bytesWritten = _udpClient.write((const unsigned char*)_udpBuffer, strlen(_udpBuffer));
             if (bytesWritten == 0) {
-                _udpLogBuffer.push(_log);
+                xQueueSendToFront(_udpLogQueue, &_log, 0);
                 _udpClient.endPacket(); // Clean up the packet
                 break;
             }
             
             if (!_udpClient.endPacket()) {
-                _udpLogBuffer.push(_log);
+                xQueueSendToFront(_udpLogQueue, &_log, 0);
                 break;
             }
             
             // Small delay between UDP packets to avoid overwhelming the stack
-            if (!_udpLogBuffer.isEmpty()) {
+            if (uxQueueMessagesWaiting(_udpLogQueue) > 0) {
                 delayMicroseconds(100); // 0.1ms delay
             }
         }

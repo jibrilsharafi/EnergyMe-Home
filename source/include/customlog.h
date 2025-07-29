@@ -4,7 +4,8 @@
 // System includes
 #include <Arduino.h>
 #include <WiFiUdp.h>
-#include <CircularBuffer.hpp>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
 // Project includes
 #include "mqtt.h"
