@@ -88,18 +88,18 @@ void CustomMqtt::_setDefaultConfiguration()
     _logger.debug("Setting default custom MQTT configuration...", TAG);
 
     // Create default configuration JSON
-    JsonDocument _jsonDocument;
-    _jsonDocument["enabled"] = false;
-    _jsonDocument["server"] = "";
-    _jsonDocument["port"] = 1883;
-    _jsonDocument["clientid"] = "energyme";
-    _jsonDocument["topic"] = "energyme/meter";
-    _jsonDocument["frequency"] = 10;
-    _jsonDocument["useCredentials"] = false;
-    _jsonDocument["username"] = "";
-    _jsonDocument["password"] = "";
+    JsonDocument jsonDocument;
+    jsonDocument["enabled"] = false;
+    jsonDocument["server"] = "";
+    jsonDocument["port"] = 1883;
+    jsonDocument["clientid"] = "energyme";
+    jsonDocument["topic"] = "energyme/meter";
+    jsonDocument["frequency"] = 10;
+    jsonDocument["useCredentials"] = false;
+    jsonDocument["username"] = "";
+    jsonDocument["password"] = "";
 
-    setConfiguration(_jsonDocument);
+    setConfiguration(jsonDocument);
 
     _logger.debug("Default custom MQTT configuration set", TAG);
 }
@@ -152,20 +152,20 @@ void CustomMqtt::_setConfigurationFromSpiffs()
         return;
     }
 
-    JsonDocument _jsonDocument;
-    _jsonDocument["enabled"] = preferences.getBool(PREF_KEY_CUSTOM_MQTT_ENABLED, false);
-    _jsonDocument["server"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_SERVER, "");
-    _jsonDocument["port"] = preferences.getUInt(PREF_KEY_CUSTOM_MQTT_PORT, 1883);
-    _jsonDocument["clientid"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_CLIENT_ID, "energyme");
-    _jsonDocument["topic"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_TOPIC, "energyme/meter");
-    _jsonDocument["frequency"] = preferences.getUInt(PREF_KEY_CUSTOM_MQTT_FREQUENCY, 10);
-    _jsonDocument["useCredentials"] = preferences.getBool(PREF_KEY_CUSTOM_MQTT_USE_CREDENTIALS, false);
-    _jsonDocument["username"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_USERNAME, "");
-    _jsonDocument["password"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_PASSWORD, "");
+    JsonDocument jsonDocument;
+    jsonDocument["enabled"] = preferences.getBool(PREF_KEY_CUSTOM_MQTT_ENABLED, false);
+    jsonDocument["server"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_SERVER, "");
+    jsonDocument["port"] = preferences.getUInt(PREF_KEY_CUSTOM_MQTT_PORT, 1883);
+    jsonDocument["clientid"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_CLIENT_ID, "energyme");
+    jsonDocument["topic"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_TOPIC, "energyme/meter");
+    jsonDocument["frequency"] = preferences.getUInt(PREF_KEY_CUSTOM_MQTT_FREQUENCY, 10);
+    jsonDocument["useCredentials"] = preferences.getBool(PREF_KEY_CUSTOM_MQTT_USE_CREDENTIALS, false);
+    jsonDocument["username"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_USERNAME, "");
+    jsonDocument["password"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_PASSWORD, "");
 
     preferences.end();
 
-    if (!setConfiguration(_jsonDocument))
+    if (!setConfiguration(jsonDocument))
     {
         _logger.error("Failed to set custom MQTT configuration from Preferences. Using default one", TAG);
         _setDefaultConfiguration();
@@ -322,11 +322,11 @@ void CustomMqtt::_publishMeter()
 {
     _logger.debug("Publishing meter data to custom MQTT...", TAG);
 
-    JsonDocument _jsonDocument;
-    _ade7953.fullMeterValuesToJson(_jsonDocument);
+    JsonDocument jsonDocument;
+    _ade7953.fullMeterValuesToJson(jsonDocument);
     
     char _meterMessage[MQTT_CUSTOM_PAYLOAD_LIMIT];
-    if (!safeSerializeJson(_jsonDocument, _meterMessage, sizeof(_meterMessage))) {
+    if (!safeSerializeJson(jsonDocument, _meterMessage, sizeof(_meterMessage))) {
         _logger.warning("Failed to serialize meter data to JSON", TAG);
         return;
     }

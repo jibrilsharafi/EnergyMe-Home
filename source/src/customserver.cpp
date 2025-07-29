@@ -207,7 +207,6 @@ namespace CustomServer
         JsonDocument doc;
         doc["status"] = "ok";
         doc["uptime"] = millis64();
-        doc["freeHeap"] = ESP.getFreeHeap();
         
         serializeJson(doc, *response);
         request->send(response); })

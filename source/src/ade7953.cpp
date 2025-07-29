@@ -268,10 +268,10 @@ bool Ade7953::_verifyCommunication() {
 void Ade7953::_setConfigurationFromSpiffs() {
     _logger.debug("Setting configuration from SPIFFS...", TAG);
 
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, jsonDocument);
 
-    if (!setConfiguration(_jsonDocument)) {
+    if (!setConfiguration(jsonDocument)) {
         _logger.error("Failed to set configuration from SPIFFS. Keeping default one", TAG);
         setDefaultConfiguration();
         return;
@@ -303,10 +303,10 @@ void Ade7953::setDefaultConfiguration() {
 
     createDefaultAde7953ConfigurationFile();
 
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, jsonDocument);
 
-    setConfiguration(_jsonDocument);
+    setConfiguration(jsonDocument);
 
     _logger.debug("Default configuration set", TAG);
 }
@@ -389,10 +389,10 @@ bool Ade7953::_validateConfigurationJson(JsonDocument& jsonDocument) {
 void Ade7953::_setCalibrationValuesFromSpiffs() {
     _logger.debug("Setting calibration values from SPIFFS", TAG);
 
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
 
-    if (!setCalibrationValues(_jsonDocument)) {
+    if (!setCalibrationValues(jsonDocument)) {
         _logger.error("Failed to set calibration values from SPIFFS. Keeping default ones", TAG);
         setDefaultCalibrationValues();
         return;
@@ -423,10 +423,10 @@ void Ade7953::setDefaultCalibrationValues() {
 
     createDefaultCalibrationFile();
     
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
 
-    setCalibrationValues(_jsonDocument);
+    setCalibrationValues(jsonDocument);
 
     _logger.debug("Successfully set default calibration values", TAG);
 }
@@ -490,10 +490,10 @@ void Ade7953::_setChannelDataFromSpiffs() { // FIXME: this does not work:
     // [1970-01-01 00:00:02] [2 764 ms] [DEBUG   ] [Core 1] [utils] Truncating JSON to fit buffer size (256 bytes vs 1816 bytes)
     _logger.debug("Setting data channel from SPIFFS...", TAG);
 
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, jsonDocument);
 
-    if (!setChannelData(_jsonDocument)) {
+    if (!setChannelData(jsonDocument)) {
         _logger.error("Failed to set data channel from SPIFFS. Keeping default data channel", TAG);
         setDefaultChannelData();
         return;
@@ -564,10 +564,10 @@ void Ade7953::setDefaultChannelData() {
 
     createDefaultChannelDataFile();
 
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, jsonDocument);
 
-    setChannelData(_jsonDocument);
+    setChannelData(jsonDocument);
 
     _logger.debug("Successfully initialized data channel", TAG);
 }
@@ -575,10 +575,10 @@ void Ade7953::setDefaultChannelData() {
 bool Ade7953::_saveChannelDataToSpiffs() {
     _logger.debug("Saving data channel to SPIFFS...", TAG);
 
-    JsonDocument _jsonDocument;
-    channelDataToJson(_jsonDocument);
+    JsonDocument jsonDocument;
+    channelDataToJson(jsonDocument);
 
-    if (serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument)) {
+    if (serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, jsonDocument)) {
         _logger.debug("Successfully saved data channel to SPIFFS", TAG);
         return true;
     } else {
@@ -628,18 +628,18 @@ bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
 void Ade7953::_updateChannelData() {
     _logger.debug("Updating data channel...", TAG);
 
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
 
-    if (_jsonDocument.isNull()) {
+    if (jsonDocument.isNull()) {
         _logger.error("Failed to read calibration values from SPIFFS. Keeping previous values", TAG);
         return;
     }
     
     for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {        
-        if (_jsonDocument[channelData[i].calibrationValues.label]) {
+        if (jsonDocument[channelData[i].calibrationValues.label]) {
             // Extract the corresponding calibration values from the JSON
-            JsonObject _jsonCalibrationValues = _jsonDocument[channelData[i].calibrationValues.label].as<JsonObject>();
+            JsonObject _jsonCalibrationValues = jsonDocument[channelData[i].calibrationValues.label].as<JsonObject>();
 
             // Set the calibration values for the channel
             _jsonToCalibrationValues(_jsonCalibrationValues, channelData[i].calibrationValues);
@@ -1107,19 +1107,19 @@ void Ade7953::fullMeterValuesToJson(JsonDocument &jsonDocument) {
 void Ade7953::_setEnergyFromSpiffs() {
     _logger.debug("Reading energy from SPIFFS", TAG);
     
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    deserializeJsonFromSpiffs(ENERGY_JSON_PATH, jsonDocument);
 
-    if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
+    if (jsonDocument.isNull() || jsonDocument.size() == 0) {
         _logger.error("Failed to read energy from SPIFFS", TAG);
         return;
     } else {
         for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-            meterValues[i].activeEnergyImported = _jsonDocument[i]["activeEnergyImported"].as<float>();
-            meterValues[i].activeEnergyExported = _jsonDocument[i]["activeEnergyExported"].as<float>();
-            meterValues[i].reactiveEnergyImported = _jsonDocument[i]["reactiveEnergyImported"].as<float>();
-            meterValues[i].reactiveEnergyExported = _jsonDocument[i]["reactiveEnergyExported"].as<float>();
-            meterValues[i].apparentEnergy = _jsonDocument[i]["apparentEnergy"].as<float>();
+            meterValues[i].activeEnergyImported = jsonDocument[i]["activeEnergyImported"].as<float>();
+            meterValues[i].activeEnergyExported = jsonDocument[i]["activeEnergyExported"].as<float>();
+            meterValues[i].reactiveEnergyImported = jsonDocument[i]["reactiveEnergyImported"].as<float>();
+            meterValues[i].reactiveEnergyExported = jsonDocument[i]["reactiveEnergyExported"].as<float>();
+            meterValues[i].apparentEnergy = jsonDocument[i]["apparentEnergy"].as<float>();
         }
     }
         
@@ -1140,26 +1140,26 @@ void Ade7953::_saveEnergyToSpiffs() {
     _logger.debug("Saving energy to SPIFFS...", TAG);
 
     
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(ENERGY_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    deserializeJsonFromSpiffs(ENERGY_JSON_PATH, jsonDocument);
 
     for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-        _jsonDocument[i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
-        _jsonDocument[i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
-        _jsonDocument[i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
-        _jsonDocument[i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
-        _jsonDocument[i]["apparentEnergy"] = meterValues[i].apparentEnergy;
+        jsonDocument[i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
+        jsonDocument[i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
+        jsonDocument[i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
+        jsonDocument[i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
+        jsonDocument[i]["apparentEnergy"] = meterValues[i].apparentEnergy;
     }
 
-    if (serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument)) _logger.debug("Successfully saved energy to SPIFFS", TAG);
+    if (serializeJsonToSpiffs(ENERGY_JSON_PATH, jsonDocument)) _logger.debug("Successfully saved energy to SPIFFS", TAG);
 }
 
 void Ade7953::_saveDailyEnergyToSpiffs() {
     _logger.debug("Saving daily energy to SPIFFS...", TAG);
 
     
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, jsonDocument);
     
     time_t now = time(nullptr);
     if (!validateUnixTime(now, false)) {
@@ -1171,15 +1171,15 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
 
     for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active) {
-            if (meterValues[i].activeEnergyImported > 1) _jsonDocument[_currentDate][i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
-            if (meterValues[i].activeEnergyExported > 1) _jsonDocument[_currentDate][i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
-            if (meterValues[i].reactiveEnergyImported > 1) _jsonDocument[_currentDate][i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
-            if (meterValues[i].reactiveEnergyExported > 1) _jsonDocument[_currentDate][i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
-            if (meterValues[i].apparentEnergy > 1) _jsonDocument[_currentDate][i]["apparentEnergy"] = meterValues[i].apparentEnergy;
+            if (meterValues[i].activeEnergyImported > 1) jsonDocument[_currentDate][i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
+            if (meterValues[i].activeEnergyExported > 1) jsonDocument[_currentDate][i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
+            if (meterValues[i].reactiveEnergyImported > 1) jsonDocument[_currentDate][i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
+            if (meterValues[i].reactiveEnergyExported > 1) jsonDocument[_currentDate][i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
+            if (meterValues[i].apparentEnergy > 1) jsonDocument[_currentDate][i]["apparentEnergy"] = meterValues[i].apparentEnergy;
         }
     }
 
-    if (serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, _jsonDocument)) _logger.debug("Successfully saved daily energy to SPIFFS", TAG);
+    if (serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, jsonDocument)) _logger.debug("Successfully saved daily energy to SPIFFS", TAG);
 }
 
 void Ade7953::resetEnergyValues() {

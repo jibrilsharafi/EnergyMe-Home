@@ -6,7 +6,6 @@
 #include <SPI.h>
 #include <Ticker.h>
 #include <vector>
-#include <CircularBuffer.hpp>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 

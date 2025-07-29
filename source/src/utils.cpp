@@ -325,19 +325,19 @@ void createEmptyJsonFile(const char* path) {
 void createDefaultEnergyFile() {
     logger.debug("Creating default %s...", TAG, ENERGY_JSON_PATH);
 
-    JsonDocument _jsonDocument;
+    JsonDocument jsonDocument;
 
     for (int i = 0; i < CHANNEL_COUNT; i++) {
-        _jsonDocument[i]["activeEnergyImported"] = 0;
-        _jsonDocument[i]["activeEnergyExported"] = 0;
-        _jsonDocument[i]["reactiveEnergyImported"] = 0;
-        _jsonDocument[i]["reactiveEnergyExported"] = 0;
-        _jsonDocument[i]["apparentEnergy"] = 0;
+        jsonDocument[i]["activeEnergyImported"] = 0;
+        jsonDocument[i]["activeEnergyExported"] = 0;
+        jsonDocument[i]["reactiveEnergyImported"] = 0;
+        jsonDocument[i]["reactiveEnergyExported"] = 0;
+        jsonDocument[i]["apparentEnergy"] = 0;
     }
 
     // Note: Energy data will be stored in SPIFFS/LittleFS for historical data
     // This function will be updated when we migrate to LittleFS
-    serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument);
+    serializeJsonToSpiffs(ENERGY_JSON_PATH, jsonDocument);
 
     logger.debug("Default %s created", TAG, ENERGY_JSON_PATH);
 }
@@ -353,28 +353,28 @@ void createDefaultDailyEnergyFile() {
 void createDefaultAde7953ConfigurationFile() {
     logger.debug("Creating default ADE7953 configuration...", TAG);
 
-    JsonDocument _jsonDocument;
+    JsonDocument jsonDocument;
 
-    _jsonDocument["sampleTime"] = MINIMUM_SAMPLE_TIME;
-    _jsonDocument["aVGain"] = DEFAULT_GAIN;
-    _jsonDocument["aIGain"] = DEFAULT_GAIN;
-    _jsonDocument["bIGain"] = DEFAULT_GAIN;
-    _jsonDocument["aIRmsOs"] = DEFAULT_OFFSET;
-    _jsonDocument["bIRmsOs"] = DEFAULT_OFFSET;
-    _jsonDocument["aWGain"] = DEFAULT_GAIN;
-    _jsonDocument["bWGain"] = DEFAULT_GAIN;
-    _jsonDocument["aWattOs"] = DEFAULT_OFFSET;
-    _jsonDocument["bWattOs"] = DEFAULT_OFFSET;
-    _jsonDocument["aVarGain"] = DEFAULT_GAIN;
-    _jsonDocument["bVarGain"] = DEFAULT_GAIN;
-    _jsonDocument["aVarOs"] = DEFAULT_OFFSET;
-    _jsonDocument["bVarOs"] = DEFAULT_OFFSET;
-    _jsonDocument["aVaGain"] = DEFAULT_GAIN;
-    _jsonDocument["bVaGain"] = DEFAULT_GAIN;
-    _jsonDocument["aVaOs"] = DEFAULT_OFFSET;
-    _jsonDocument["bVaOs"] = DEFAULT_OFFSET;
-    _jsonDocument["phCalA"] = DEFAULT_PHCAL;
-    _jsonDocument["phCalB"] = DEFAULT_PHCAL;
+    jsonDocument["sampleTime"] = MINIMUM_SAMPLE_TIME;
+    jsonDocument["aVGain"] = DEFAULT_GAIN;
+    jsonDocument["aIGain"] = DEFAULT_GAIN;
+    jsonDocument["bIGain"] = DEFAULT_GAIN;
+    jsonDocument["aIRmsOs"] = DEFAULT_OFFSET;
+    jsonDocument["bIRmsOs"] = DEFAULT_OFFSET;
+    jsonDocument["aWGain"] = DEFAULT_GAIN;
+    jsonDocument["bWGain"] = DEFAULT_GAIN;
+    jsonDocument["aWattOs"] = DEFAULT_OFFSET;
+    jsonDocument["bWattOs"] = DEFAULT_OFFSET;
+    jsonDocument["aVarGain"] = DEFAULT_GAIN;
+    jsonDocument["bVarGain"] = DEFAULT_GAIN;
+    jsonDocument["aVarOs"] = DEFAULT_OFFSET;
+    jsonDocument["bVarOs"] = DEFAULT_OFFSET;
+    jsonDocument["aVaGain"] = DEFAULT_GAIN;
+    jsonDocument["bVaGain"] = DEFAULT_GAIN;
+    jsonDocument["aVaOs"] = DEFAULT_OFFSET;
+    jsonDocument["bVaOs"] = DEFAULT_OFFSET;
+    jsonDocument["phCalA"] = DEFAULT_PHCAL;
+    jsonDocument["phCalB"] = DEFAULT_PHCAL;
 
     logger.warning("Actually save this!!!!", TAG);
 
@@ -384,13 +384,13 @@ void createDefaultAde7953ConfigurationFile() {
 void createDefaultCalibrationFile() {
     logger.debug("Creating default calibration...", TAG);
 
-    JsonDocument _jsonDocument;
-    deserializeJson(_jsonDocument, default_config_calibration_json);
+    JsonDocument jsonDocument;
+    deserializeJson(jsonDocument, default_config_calibration_json);
 
     // Note: Calibration data is configuration, not historical data
     // This will be handled by the ADE7953 module's own Preferences
     // For now, keep SPIFFS for backward compatibility
-    serializeJsonToSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
+    serializeJsonToSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
 
     logger.debug("Default calibration created", TAG);
 }
@@ -398,8 +398,8 @@ void createDefaultCalibrationFile() {
 void createDefaultChannelDataFile() { // TODO: remove this weird json to preferences stuff
     logger.debug("Creating default channel configuration...", TAG);
 
-    JsonDocument _jsonDocument;
-    deserializeJson(_jsonDocument, default_config_channel_json);
+    JsonDocument jsonDocument;
+    deserializeJson(jsonDocument, default_config_channel_json);
 
     logger.warning("Actually save this!!!!", TAG);
 
@@ -409,19 +409,19 @@ void createDefaultChannelDataFile() { // TODO: remove this weird json to prefere
 void createDefaultCustomMqttConfigurationFile() {
     logger.debug("Creating default custom MQTT configuration...", TAG);
 
-    JsonDocument _jsonDocument;
+    JsonDocument jsonDocument;
 
-    _jsonDocument["enabled"] = DEFAULT_IS_CUSTOM_MQTT_ENABLED;
-    _jsonDocument["server"] = MQTT_CUSTOM_SERVER_DEFAULT;
-    _jsonDocument["port"] = MQTT_CUSTOM_PORT_DEFAULT;
-    _jsonDocument["clientid"] = MQTT_CUSTOM_CLIENTID_DEFAULT;
-    _jsonDocument["topic"] = MQTT_CUSTOM_TOPIC_DEFAULT;
-    _jsonDocument["frequency"] = MQTT_CUSTOM_FREQUENCY_DEFAULT;
-    _jsonDocument["useCredentials"] = MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT;
-    _jsonDocument["username"] = MQTT_CUSTOM_USERNAME_DEFAULT;
-    _jsonDocument["password"] = MQTT_CUSTOM_PASSWORD_DEFAULT;
-    _jsonDocument["lastConnectionStatus"] = "Never attempted";
-    _jsonDocument["lastConnectionAttemptTimestamp"] = "";
+    jsonDocument["enabled"] = DEFAULT_IS_CUSTOM_MQTT_ENABLED;
+    jsonDocument["server"] = MQTT_CUSTOM_SERVER_DEFAULT;
+    jsonDocument["port"] = MQTT_CUSTOM_PORT_DEFAULT;
+    jsonDocument["clientid"] = MQTT_CUSTOM_CLIENTID_DEFAULT;
+    jsonDocument["topic"] = MQTT_CUSTOM_TOPIC_DEFAULT;
+    jsonDocument["frequency"] = MQTT_CUSTOM_FREQUENCY_DEFAULT;
+    jsonDocument["useCredentials"] = MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT;
+    jsonDocument["username"] = MQTT_CUSTOM_USERNAME_DEFAULT;
+    jsonDocument["password"] = MQTT_CUSTOM_PASSWORD_DEFAULT;
+    jsonDocument["lastConnectionStatus"] = "Never attempted";
+    jsonDocument["lastConnectionAttemptTimestamp"] = "";
 
     logger.warning("Actually save this!!!!", TAG);
 
@@ -863,7 +863,7 @@ bool getPublicLocation(PublicLocation* publicLocation) {
     }
 
     HTTPClient _http;
-    JsonDocument _jsonDocument;
+    JsonDocument jsonDocument;
 
     _http.begin(PUBLIC_LOCATION_ENDPOINT);
 
@@ -871,7 +871,7 @@ bool getPublicLocation(PublicLocation* publicLocation) {
     if (httpCode > 0) {
         if (httpCode == HTTP_CODE_OK) {
             // Use stream directly - efficient and simple
-            DeserializationError error = deserializeJson(_jsonDocument, _http.getStream());
+            DeserializationError error = deserializeJson(jsonDocument, _http.getStream());
             
             if (error) {
                 logger.error("JSON parsing failed: %s", TAG, error.c_str());
@@ -880,18 +880,18 @@ bool getPublicLocation(PublicLocation* publicLocation) {
             }
             
             // Validate API response
-            if (_jsonDocument["status"] != "success") {
+            if (jsonDocument["status"] != "success") {
                 logger.error("API returned error status: %s", TAG, 
-                           _jsonDocument["status"].as<const char*>());
+                           jsonDocument["status"].as<const char*>());
                 _http.end();
                 return false;
             }
 
             // Extract strings safely using const char* and copy to char arrays
-            const char* country = _jsonDocument["country"].as<const char*>();
-            const char* city = _jsonDocument["city"].as<const char*>();
-            float latitude = _jsonDocument["lat"].as<float>();
-            float longitude = _jsonDocument["lon"].as<float>();
+            const char* country = jsonDocument["country"].as<const char*>();
+            const char* city = jsonDocument["city"].as<const char*>();
+            float latitude = jsonDocument["lat"].as<float>();
+            float longitude = jsonDocument["lon"].as<float>();
 
             // Extract strings safely - use empty string if NULL
             snprintf(publicLocation->country, sizeof(publicLocation->country), "%s", country ? country : "");
@@ -933,7 +933,7 @@ bool getPublicTimezone(int* gmtOffset, int* dstOffset) {
     }
 
     HTTPClient _http;
-    JsonDocument _jsonDocument;
+    JsonDocument jsonDocument;
 
     char _url[URL_BUFFER_SIZE];
     // The URL for the timezone API endpoint requires passing as params the latitude, longitude and username (which is a sort of free "public" api key)
@@ -950,7 +950,7 @@ bool getPublicTimezone(int* gmtOffset, int* dstOffset) {
         if (httpCode == HTTP_CODE_OK) {
             // Example JSON response:
             // {"sunrise":"2025-07-27 05:55","lng":14.168099,"countryCode":"IT","gmtOffset":1,"rawOffset":1,"sunset":"2025-07-27 20:24","timezoneId":"Europe/Rome","dstOffset":2,"countryName":"Italy","time":"2025-07-27 20:53","lat":40.813198}
-            DeserializationError error = deserializeJson(_jsonDocument, _http.getString()); // Unfortunately, the stream method returns null so we have to use string
+            DeserializationError error = deserializeJson(jsonDocument, _http.getString()); // Unfortunately, the stream method returns null so we have to use string
             
             if (error) {
                 logger.error("JSON parsing failed: %s", TAG, error.c_str());
@@ -958,14 +958,14 @@ bool getPublicTimezone(int* gmtOffset, int* dstOffset) {
                 return false;
             }
 
-            *gmtOffset = _jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
-            *dstOffset = _jsonDocument["dstOffset"].as<int>() * 3600 - *gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
+            *gmtOffset = jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
+            *dstOffset = jsonDocument["dstOffset"].as<int>() * 3600 - *gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
 
             logger.debug(
                 "GMT offset: %d | DST offset: %d",
                 TAG,
-                _jsonDocument["rawOffset"].as<int>(),
-                _jsonDocument["dstOffset"].as<int>()
+                jsonDocument["rawOffset"].as<int>(),
+                jsonDocument["dstOffset"].as<int>()
             );
         } else {
             logger.warning("HTTP request failed with code: %d", TAG, httpCode);
@@ -1053,13 +1053,13 @@ void clearAllPreferences() {
 }
 
 bool isLatestFirmwareInstalled() {
-    JsonDocument _jsonDocument;
-    // deserializeJsonFromSpiffs(FW_UPDATE_INFO_JSON_PATH, _jsonDocument);
+    JsonDocument jsonDocument;
+    // deserializeJsonFromSpiffs(FW_UPDATE_INFO_JSON_PATH, jsonDocument);
     // TODO: switch to Preferences
     logger.warning("IMPLEMENT THIS: deserializeJsonFromSpiffs for FW_UPDATE_INFO_JSON_PATH", TAG);
     return true; // For now, return true as we don't have the implementation yet
     
-    if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
+    if (jsonDocument.isNull() || jsonDocument.size() == 0) {
         logger.debug("Firmware update info file is empty", TAG);
         return true;
     }
@@ -1067,7 +1067,7 @@ bool isLatestFirmwareInstalled() {
     char _latestFirmwareVersion[VERSION_BUFFER_SIZE];
     char _currentFirmwareVersion[VERSION_BUFFER_SIZE];
 
-    snprintf(_latestFirmwareVersion, sizeof(_latestFirmwareVersion), "%s", _jsonDocument["buildVersion"].as<const char*>());
+    snprintf(_latestFirmwareVersion, sizeof(_latestFirmwareVersion), "%s", jsonDocument["buildVersion"].as<const char*>());
     snprintf(_currentFirmwareVersion, sizeof(_currentFirmwareVersion), "%s", FIRMWARE_BUILD_VERSION);
 
     logger.debug(
@@ -1098,17 +1098,17 @@ bool isLatestFirmwareInstalled() {
 
 void updateJsonFirmwareStatus(const char *status, const char *reason)
 {
-    JsonDocument _jsonDocument;
+    JsonDocument jsonDocument;
 
-    _jsonDocument["status"] = status;
-    _jsonDocument["reason"] = reason;
+    jsonDocument["status"] = status;
+    jsonDocument["reason"] = reason;
     char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
     CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer)); // TODO: maybe everything should be returned in unix so it is UTC, and then converted on the other side? or standard iso utc timestamp?
-    _jsonDocument["timestamp"] = _timestampBuffer;
+    jsonDocument["timestamp"] = _timestampBuffer;
 
     // Note: Firmware status is temporary data, keep in SPIFFS for now
     // This will be updated when we migrate to LittleFS for temporary data
-    // serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);
+    // serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, jsonDocument);
     logger.warning("IMPLEMENT THIS: updateJsonFirmwareStatus", TAG); // TODO: switch to Preferences
 }
 

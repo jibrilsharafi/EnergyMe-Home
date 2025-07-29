@@ -11,7 +11,6 @@ namespace Mqtt
     static WiFiClientSecure _net;
     static PubSubClient _clientMqtt(_net);
     static PublishMqtt _publishMqtt;
-    static CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> _payloadMeter;
     
     RTC_NOINIT_ATTR DebugFlagsRtc _debugFlagsRtc;
 
@@ -71,7 +70,7 @@ namespace Mqtt
     static void _setTopicMetadata();
     static void _setTopicChannel();
     static void _setTopicStatistics();
-    static void _circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &payloadMeter);
+    static void _meterQueueToJson(JsonDocument* jsonDocument, QueueHandle_t payloadMeterQueue);
     static void _publishConnectivity(bool isOnline = true);
     static void _publishMeter();
     static void _publishStatus();
@@ -146,6 +145,16 @@ namespace Mqtt
             return;
         }
 
+        _meterQueue = xQueueCreate(MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS, sizeof(PayloadMeter));
+        if (_meterQueue == NULL) {
+            logger.error("Failed to create MQTT payload meter queue", TAG);
+            vQueueDelete(_logQueue);
+            vQueueDelete(_meterQueue);
+            _logQueue = NULL;
+            _meterQueue = NULL;
+            return;
+        }
+
         // Start the FreeRTOS task
         if (_taskHandle == NULL)
         {
@@ -161,6 +170,10 @@ namespace Mqtt
                 if (_logQueue != NULL) {
                     vQueueDelete(_logQueue);
                     _logQueue = NULL;
+                }
+                if (_meterQueue != NULL) {
+                    vQueueDelete(_meterQueue);
+                    _meterQueue = NULL;
                 }
                 if (_meterQueue != NULL) {
                     vQueueDelete(_meterQueue);
@@ -195,6 +208,12 @@ namespace Mqtt
             vQueueDelete(_meterQueue);
             _meterQueue = NULL;
             logger.debug("MQTT meter queue deleted", TAG);
+        }
+
+        if (_meterQueue != NULL) {
+            vQueueDelete(_meterQueue);
+            _meterQueue = NULL;
+            logger.debug("MQTT payload meter queue deleted", TAG);
         }
 
         logger.info("MQTT client stopped", TAG);
@@ -735,47 +754,53 @@ namespace Mqtt
     static void _setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
 
     // TODO: use messagepack instead of JSON here for efficiency
-    static void _circularBufferToJson(JsonDocument* jsonDocument, CircularBuffer<PayloadMeter, MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS> &_payloadMeter) {
-        logger.debug("Converting circular buffer to JSON...", TAG);
+    static void _meterQueueToJson(JsonDocument* jsonDocument, QueueHandle_t payloadMeterQueue) {
+        logger.debug("Converting payload meter queue to JSON...", TAG);
         
         // Additional safety check - if restart is in progress and enough time has passed, 
         // avoid operations that might conflict with cleanup
         if (restartConfiguration.isRequired && 
             (millis64() - restartConfiguration.requiredAt) > (SYSTEM_RESTART_DELAY - 1000)) {
-            logger.warning("Restart imminent, skipping circular buffer to JSON conversion", TAG);
+            logger.warning("Restart imminent, skipping payload meter queue to JSON conversion", TAG);
             return;
         }
         
-        JsonArray _jsonArray = jsonDocument->to<JsonArray>();
+        JsonArray jsonArray = jsonDocument->to<JsonArray>();
         
         ade7953.takePayloadMeterMutex();
-        unsigned int _loops = 0;
-        while (!_payloadMeter.isEmpty() && _loops < MAX_LOOP_ITERATIONS && _isSendPowerDataEnabled()) {
-            _loops++;
-            JsonObject _jsonObject = _jsonArray.add<JsonObject>();
+        
+        // Process all items from the queue
+        PayloadMeter payloadMeter;
+        unsigned int loops = 0;
+        while (uxQueueMessagesWaiting(payloadMeterQueue) > 0 && loops < MAX_LOOP_ITERATIONS && _isSendPowerDataEnabled()) {
+            loops++;
+            
+            // Receive from queue (non-blocking)
+            if (xQueueReceive(payloadMeterQueue, &payloadMeter, 0) != pdTRUE) {
+                break; // No more items in queue
+            }
 
-            PayloadMeter _oldestPayloadMeter = _payloadMeter.shift();
-
-            if (_oldestPayloadMeter.unixTime == 0) {
+            if (payloadMeter.unixTime == 0) {
                 logger.debug("Payload meter has zero unixTime, skipping...", TAG);
                 continue;
             }
 
-            if (!validateUnixTime(_oldestPayloadMeter.unixTime)) {
-                logger.warning("Invalid unixTime in payload meter: %llu", TAG, _oldestPayloadMeter.unixTime);
+            if (!validateUnixTime(payloadMeter.unixTime)) {
+                logger.warning("Invalid unixTime in payload meter: %llu", TAG, payloadMeter.unixTime);
                 continue;
             }
 
-            _jsonObject["unixTime"] = _oldestPayloadMeter.unixTime;
-            _jsonObject["channel"] = _oldestPayloadMeter.channel;
-            _jsonObject["activePower"] = _oldestPayloadMeter.activePower;
-            _jsonObject["powerFactor"] = _oldestPayloadMeter.powerFactor;
+            JsonObject jsonObject = jsonArray.add<JsonObject>();
+            jsonObject["unixTime"] = payloadMeter.unixTime;
+            jsonObject["channel"] = payloadMeter.channel;
+            jsonObject["activePower"] = payloadMeter.activePower;
+            jsonObject["powerFactor"] = payloadMeter.powerFactor;
         }
         ade7953.givePayloadMeterMutex();
 
         for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT; i++) {
             if (ade7953.channelData[i].active) {
-                JsonObject _jsonObject = _jsonArray.add<JsonObject>();
+                JsonObject jsonObject = jsonArray.add<JsonObject>();
 
                 if (ade7953.meterValues[i].lastUnixTimeMilliseconds == 0) {
                     logger.debug("Meter values for channel %d have zero unixTime, skipping...", TAG, i);
@@ -787,17 +812,17 @@ namespace Mqtt
                     continue;
                 }
 
-                _jsonObject["unixTime"] = ade7953.meterValues[i].lastUnixTimeMilliseconds;
-                _jsonObject["channel"] = i;
-                _jsonObject["activeEnergyImported"] = ade7953.meterValues[i].activeEnergyImported;
-                _jsonObject["activeEnergyExported"] = ade7953.meterValues[i].activeEnergyExported;
-                _jsonObject["reactiveEnergyImported"] = ade7953.meterValues[i].reactiveEnergyImported;
-                _jsonObject["reactiveEnergyExported"] = ade7953.meterValues[i].reactiveEnergyExported;
-                _jsonObject["apparentEnergy"] = ade7953.meterValues[i].apparentEnergy;
+                jsonObject["unixTime"] = ade7953.meterValues[i].lastUnixTimeMilliseconds;
+                jsonObject["channel"] = i;
+                jsonObject["activeEnergyImported"] = ade7953.meterValues[i].activeEnergyImported;
+                jsonObject["activeEnergyExported"] = ade7953.meterValues[i].activeEnergyExported;
+                jsonObject["reactiveEnergyImported"] = ade7953.meterValues[i].reactiveEnergyImported;
+                jsonObject["reactiveEnergyExported"] = ade7953.meterValues[i].reactiveEnergyExported;
+                jsonObject["apparentEnergy"] = ade7953.meterValues[i].apparentEnergy;
             }
         }
 
-        JsonObject _jsonObject = _jsonArray.add<JsonObject>();
+        JsonObject jsonObject = jsonArray.add<JsonObject>();
 
         if (ade7953.meterValues[CHANNEL_0].lastUnixTimeMilliseconds == 0) {
             logger.debug("Meter values have zero unixTime, skipping...", TAG);
@@ -808,8 +833,8 @@ namespace Mqtt
             logger.warning("Invalid unixTime in meter values: %llu", TAG, ade7953.meterValues[CHANNEL_0].lastUnixTimeMilliseconds);
             return;
         }    
-        _jsonObject["unixTime"] = ade7953.meterValues[CHANNEL_0].lastUnixTimeMilliseconds;
-        _jsonObject["voltage"] = ade7953.meterValues[CHANNEL_0].voltage;
+        jsonObject["unixTime"] = ade7953.meterValues[CHANNEL_0].lastUnixTimeMilliseconds;
+        jsonObject["voltage"] = ade7953.meterValues[CHANNEL_0].voltage;
 
         logger.debug("Circular buffer converted to JSON", TAG);
     }
@@ -817,12 +842,12 @@ namespace Mqtt
     static void _publishConnectivity(bool isOnline) {
         logger.debug("Publishing connectivity to MQTT...", TAG);
 
-        JsonDocument _jsonDocument;
-        _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        _jsonDocument["connectivity"] = isOnline ? "online" : "offline";
+        JsonDocument jsonDocument;
+        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        jsonDocument["connectivity"] = isOnline ? "online" : "offline";
 
         char connectivityMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(_jsonDocument, connectivityMessage, sizeof(connectivityMessage));
+        safeSerializeJson(jsonDocument, connectivityMessage, sizeof(connectivityMessage));
 
         if (_publishMessage(_mqttTopicConnectivity, connectivityMessage, true)) {_publishMqtt.connectivity = false;} // Publish with retain
 
@@ -832,11 +857,11 @@ namespace Mqtt
     static void _publishMeter() {
         logger.debug("Publishing meter data to MQTT...", TAG);
 
-        JsonDocument _jsonDocument;
-        _circularBufferToJson(&_jsonDocument, _payloadMeter);
+        JsonDocument jsonDocument;
+        _meterQueueToJson(&jsonDocument, _meterQueue);
 
         char meterMessage[JSON_MQTT_LARGE_BUFFER_SIZE];
-        safeSerializeJson(_jsonDocument, meterMessage, sizeof(meterMessage));
+        safeSerializeJson(jsonDocument, meterMessage, sizeof(meterMessage));
 
         if (_publishMessage(_mqttTopicMeter, meterMessage)) {_publishMqtt.meter = false;}
 
@@ -846,16 +871,16 @@ namespace Mqtt
     static void _publishStatus() {
         logger.debug("Publishing status to MQTT...", TAG);
 
-        JsonDocument _jsonDocument;
+        JsonDocument jsonDocument;
 
-        _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        _jsonDocument["rssi"] = WiFi.RSSI();
-        _jsonDocument["uptime"] = millis64();
-        _jsonDocument["freeHeap"] = ESP.getFreeHeap();
-        _jsonDocument["freeSpiffs"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
+        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        jsonDocument["rssi"] = WiFi.RSSI();
+        jsonDocument["uptime"] = millis64();
+        jsonDocument["freeHeap"] = ESP.getFreeHeap();
+        jsonDocument["freeSpiffs"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
 
         char statusMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(_jsonDocument, statusMessage, sizeof(statusMessage));
+        safeSerializeJson(jsonDocument, statusMessage, sizeof(statusMessage));
 
         if (_publishMessage(_mqttTopicStatus, statusMessage)) {_publishMqtt.status = false;}
 
@@ -865,14 +890,14 @@ namespace Mqtt
     static void _publishMetadata() {
         logger.debug("Publishing metadata to MQTT...", TAG);
 
-        JsonDocument _jsonDocument;
+        JsonDocument jsonDocument;
 
-        _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        _jsonDocument["firmwareBuildVersion"] = FIRMWARE_BUILD_VERSION;
-        _jsonDocument["firmwareBuildDate"] = FIRMWARE_BUILD_DATE;
+        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        jsonDocument["firmwareBuildVersion"] = FIRMWARE_BUILD_VERSION;
+        jsonDocument["firmwareBuildDate"] = FIRMWARE_BUILD_DATE;
 
         char metadataMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(_jsonDocument, metadataMessage, sizeof(metadataMessage));
+        safeSerializeJson(jsonDocument, metadataMessage, sizeof(metadataMessage));
 
         if (_publishMessage(_mqttTopicMetadata, metadataMessage)) {_publishMqtt.metadata = false;}
         
@@ -885,12 +910,12 @@ namespace Mqtt
         JsonDocument _jsonChannelData;
         ade7953.channelDataToJson(_jsonChannelData);
         
-        JsonDocument _jsonDocument;
-        _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        _jsonDocument["data"] = _jsonChannelData;
+        JsonDocument jsonDocument;
+        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        jsonDocument["data"] = _jsonChannelData;
 
         char channelMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(_jsonDocument, channelMessage, sizeof(channelMessage));
+        safeSerializeJson(jsonDocument, channelMessage, sizeof(channelMessage));
      
         if (_publishMessage(_mqttTopicChannel, channelMessage)) {_publishMqtt.channel = false;}
 
@@ -900,15 +925,15 @@ namespace Mqtt
     static void _publishStatistics() {
         logger.debug("Publishing statistics to MQTT", TAG);
 
-        JsonDocument _jsonDocument;
-        _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        JsonDocument jsonDocument;
+        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
         
         JsonDocument _jsonDocumentStatistics;
         statisticsToJson(statistics, _jsonDocumentStatistics);
-        _jsonDocument["statistics"] = _jsonDocumentStatistics;
+        jsonDocument["statistics"] = _jsonDocumentStatistics;
 
         char statisticsMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(_jsonDocument, statisticsMessage, sizeof(statisticsMessage));
+        safeSerializeJson(jsonDocument, statisticsMessage, sizeof(statisticsMessage));
 
         if (_publishMessage(_mqttTopicStatistics, statisticsMessage)) {_publishMqtt.statistics = false;}
 
@@ -918,13 +943,13 @@ namespace Mqtt
     static bool _publishProvisioningRequest() {
         logger.debug("Publishing provisioning request to MQTT", TAG);
 
-        JsonDocument _jsonDocument;
+        JsonDocument jsonDocument;
 
-        _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        _jsonDocument["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
+        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        jsonDocument["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
 
         char provisioningRequestMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(_jsonDocument, provisioningRequestMessage, sizeof(provisioningRequestMessage));
+        safeSerializeJson(jsonDocument, provisioningRequestMessage, sizeof(provisioningRequestMessage));
 
         char _topic[MQTT_TOPIC_BUFFER_SIZE];
         _constructMqttTopic(MQTT_TOPIC_PROVISIONING_REQUEST, _topic, sizeof(_topic));
@@ -970,11 +995,12 @@ namespace Mqtt
     }
 
     static void _checkIfPublishMeterNeeded() {
+        UBaseType_t queueSize = uxQueueMessagesWaiting(_meterQueue);
         if (
-            ((_payloadMeter.size() > (MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS * 0.90)) && _isSendPowerDataEnabled()) || 
+            ((queueSize > (MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS * 0.90)) && _isSendPowerDataEnabled()) || 
             (millis64() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH
-        ) { // Either buffer is full (and we are sending power data) or time has passed
-            logger.debug("Setting flag to publish %d meter data points", TAG, _payloadMeter.size());
+        ) { // Either queue is 90% full (and we are sending power data) or time has passed
+            logger.debug("Setting flag to publish %d meter data points", TAG, queueSize);
 
             _publishMqtt.meter = true;
             
@@ -1094,12 +1120,11 @@ namespace Mqtt
     {
         PayloadMeter meterEntry;
         
-        // Transfer data from queue to circular buffer for batch processing
+        // Transfer data from meterQueue to payloadMeterQueue for batch processing
         while (xQueueReceive(_meterQueue, &meterEntry, 0) == pdTRUE) {
-            if (!_payloadMeter.isFull()) {
-                _payloadMeter.push(meterEntry);
-            } else {
-                // Buffer is full, trigger immediate publish
+            // Try to send to payload meter queue (non-blocking)
+            if (xQueueSend(_meterQueue, &meterEntry, 0) != pdTRUE) {
+                // Payload meter queue is full, trigger immediate publish
                 _publishMqtt.meter = true;
                 break;
             }

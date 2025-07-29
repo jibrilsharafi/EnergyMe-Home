@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
-#include <CircularBuffer.hpp>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"

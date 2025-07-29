@@ -8,7 +8,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
-#include <CircularBuffer.hpp>
 #include <Preferences.h>
 
 #include "ade7953.h"
