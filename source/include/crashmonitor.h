@@ -23,7 +23,7 @@ namespace CrashMonitor {
     void begin();
 
     bool isLastResetDueToCrash();
-    uint32_t getCrashCount();
-    uint32_t getResetCount();
+    unsigned long getCrashCount();
+    unsigned long getResetCount();
     const char* getResetReasonString(esp_reset_reason_t reason);
 }

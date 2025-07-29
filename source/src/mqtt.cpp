@@ -32,17 +32,17 @@ namespace Mqtt
     static char _firmwareUpdatesVersion[16];
     
     // Timing variables
-    static unsigned long _lastMillisMqttLoop = 0;
-    static unsigned long _lastMillisMqttFailed = 0;
-    static unsigned long _lastMillisMeterPublished = 0;
-    static unsigned long _lastMillisStatusPublished = 0;
-    static unsigned long _lastMillisStatisticsPublished = 0;
+    static unsigned long long _lastMillisMqttLoop = 0;
+    static unsigned long long _lastMillisMqttFailed = 0;
+    static unsigned long long _lastMillisMeterPublished = 0;
+    static unsigned long long _lastMillisStatusPublished = 0;
+    static unsigned long long _lastMillisStatisticsPublished = 0;
     
     // Connection state
     static bool _isSetupDone = false;
     static bool _isClaimInProgress = false;
-    static unsigned long _mqttConnectionAttempt = 0;
-    static unsigned long _nextMqttConnectionAttemptMillis = 0;
+    static unsigned long long _mqttConnectionAttempt = 0;
+    static unsigned long long _nextMqttConnectionAttemptMillis = 0;
     
     // Certificates storage
     static char _awsIotCoreCert[AWS_IOT_CORE_CERT_BUFFER_SIZE];
@@ -344,7 +344,7 @@ namespace Mqtt
                 
                 _debugFlagsRtc.enableMqttDebugLogging = true;
                 _debugFlagsRtc.mqttDebugLoggingDurationMillis = durationMs;
-                _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = millis() + durationMs;
+                _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = millis64() + durationMs;
                 _debugFlagsRtc.signature = MAGIC_WORD_RTC;
             }
             else
@@ -360,11 +360,13 @@ namespace Mqtt
     static void _mqttTask(void *parameter)
     {
         logger.debug("MQTT task started", TAG);
+        
+        TickType_t xLastWakeTime = xTaskGetTickCount();
+        const TickType_t xFrequency = pdMS_TO_TICKS(MQTT_LOOP_INTERVAL);
 
         while (true)
         {
-            // Wait for the MQTT loop interval
-            vTaskDelay(pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
+            vTaskDelayUntil(&xLastWakeTime, xFrequency); // TODO: is this the correct approach? Maybe more event driven?
 
             if (!CustomWifi::isFullyConnected())
             {
@@ -372,7 +374,7 @@ namespace Mqtt
             }
 
             // Check if the debug logs have expired in duration
-            if (_debugFlagsRtc.enableMqttDebugLogging && millis() > _debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
+            if (_debugFlagsRtc.enableMqttDebugLogging && millis64() > _debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
                 logger.debug("The MQTT debug period has ended", TAG);
                 _debugFlagsRtc.enableMqttDebugLogging = false;
                 _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
@@ -460,7 +462,7 @@ namespace Mqtt
             if (!_clientMqtt.connected())
             {
                 // Use exponential backoff timing
-                if (millis() >= _nextMqttConnectionAttemptMillis)
+                if (millis64() >= _nextMqttConnectionAttemptMillis)
                 {
                     logger.debug("MQTT client not connected. Attempting to reconnect...", TAG);
                     _connectMqtt();
@@ -556,7 +558,7 @@ namespace Mqtt
                 _currentState
             );
 
-            _lastMillisMqttFailed = millis();
+            _lastMillisMqttFailed = millis64();
             _mqttConnectionAttempt++;
 
             // Check for specific errors that warrant clearing certificates
@@ -577,7 +579,7 @@ namespace Mqtt
             }
             _backoffDelay = min(_backoffDelay, (unsigned long)MQTT_MAX_RECONNECT_INTERVAL);
 
-            _nextMqttConnectionAttemptMillis = millis() + _backoffDelay;
+            _nextMqttConnectionAttemptMillis = millis64() + _backoffDelay;
 
             logger.info("Next MQTT connection attempt in %lu ms", TAG, _backoffDelay);
 
@@ -739,7 +741,7 @@ namespace Mqtt
         // Additional safety check - if restart is in progress and enough time has passed, 
         // avoid operations that might conflict with cleanup
         if (restartConfiguration.isRequired && 
-            (millis() - restartConfiguration.requiredAt) > (ESP32_RESTART_DELAY - 1000)) {
+            (millis64() - restartConfiguration.requiredAt) > (ESP32_RESTART_DELAY - 1000)) {
             logger.warning("Restart imminent, skipping circular buffer to JSON conversion", TAG);
             return;
         }
@@ -848,7 +850,7 @@ namespace Mqtt
 
         _jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
         _jsonDocument["rssi"] = WiFi.RSSI();
-        _jsonDocument["uptime"] = millis();
+        _jsonDocument["uptime"] = millis64();
         _jsonDocument["freeHeap"] = ESP.getFreeHeap();
         _jsonDocument["freeSpiffs"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
 
@@ -970,33 +972,33 @@ namespace Mqtt
     static void _checkIfPublishMeterNeeded() {
         if (
             ((_payloadMeter.size() > (MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS * 0.90)) && _isSendPowerDataEnabled()) || 
-            (millis() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH
+            (millis64() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH
         ) { // Either buffer is full (and we are sending power data) or time has passed
             logger.debug("Setting flag to publish %d meter data points", TAG, _payloadMeter.size());
 
             _publishMqtt.meter = true;
             
-            _lastMillisMeterPublished = millis();
+            _lastMillisMeterPublished = millis64();
         }
     }
 
     static void _checkIfPublishStatusNeeded() {
-        if ((millis() - _lastMillisStatusPublished) > MQTT_MAX_INTERVAL_STATUS_PUBLISH) {
+        if ((millis64() - _lastMillisStatusPublished) > MQTT_MAX_INTERVAL_STATUS_PUBLISH) {
             logger.debug("Setting flag to publish status", TAG);
             
             _publishMqtt.status = true;
             
-            _lastMillisStatusPublished = millis();
+            _lastMillisStatusPublished = millis64();
         }
     }
 
     static void _checkIfPublishStatisticsNeeded() {
-        if ((millis() - _lastMillisStatisticsPublished) > MQTT_MAX_INTERVAL_STATISTICS_PUBLISH) {
+        if ((millis64() - _lastMillisStatisticsPublished) > MQTT_MAX_INTERVAL_STATISTICS_PUBLISH) {
             logger.debug("Setting flag to publish statistics", TAG);
             
             _publishMqtt.statistics = true;
             
-            _lastMillisStatisticsPublished = millis();
+            _lastMillisStatisticsPublished = millis64();
         }
     }
 

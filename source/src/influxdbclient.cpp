@@ -68,7 +68,7 @@ namespace InfluxDbClient
         while (true)
         {
             // Wait for the configured frequency
-            vTaskDelay(pdMS_TO_TICKS(influxDbConfiguration.frequencySeconds * 1000));
+            delay(influxDbConfiguration.frequencySeconds * 1000);
 
             // Check if WiFi is connected and time is synced
             if (!CustomWifi::isFullyConnected() || !CustomTime::isTimeSynched())
@@ -127,7 +127,7 @@ namespace InfluxDbClient
             char credentials[sizeof(influxDbConfiguration.username) + sizeof(influxDbConfiguration.password) + 2]; // +2 for ':' and null terminator
             snprintf(credentials, sizeof(credentials), "%s:%s", influxDbConfiguration.username, influxDbConfiguration.password);
 
-            String encodedCredentials = base64::encode((const uint8_t*)credentials, strlen(credentials));
+            String encodedCredentials = base64::encode((const unsigned char*)credentials, strlen(credentials));
 
             char authHeader[AUTH_HEADER_BUFFER_SIZE];
             snprintf(authHeader, sizeof(authHeader), "Basic %s", encodedCredentials.c_str());

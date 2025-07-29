@@ -11,8 +11,10 @@ namespace CustomServer
 
     // Health check task variables
     static TaskHandle_t _healthCheckTaskHandle = NULL;
-    static volatile bool _healthCheckRunning = false;
     static unsigned int _consecutiveFailures = 0;
+    
+    // Task notification bits
+    #define HEALTH_CHECK_STOP_BIT (1UL << 0)
 
     static void _setupMiddleware();
     static void _serveStaticContent();
@@ -204,7 +206,7 @@ namespace CustomServer
         
         JsonDocument doc;
         doc["status"] = "ok";
-        doc["uptime"] = millis();
+        doc["uptime"] = millis64();
         doc["freeHeap"] = ESP.getFreeHeap();
         
         serializeJson(doc, *response);
@@ -277,7 +279,7 @@ namespace CustomServer
                 logger.info("Password changed successfully via API", TAG);
                 request->send(200, "application/json", "{\"success\":true,\"message\":\"Password changed successfully\"}");
 
-                vTaskDelay(pdMS_TO_TICKS(1000)); // Give time for the response to be sent before updating the password
+                delay(1000); // Give time for the response to be sent before updating the password
 
                 // Update authentication middleware with new password (but after sending response otherwise the client will not receive it)
                 updateAuthPassword();
@@ -321,10 +323,9 @@ namespace CustomServer
                 logger.error("OTA update failed: %s", TAG, Update.errorString());
                 Update.printError(Serial);
                 
-                // Flash red LED pattern for error
-                Led::blinkRed(Led::PRIO_CRITICAL);
-                vTaskDelay(pdMS_TO_TICKS(1500)); // Let it blink a few times
-                Led::clearPattern(Led::PRIO_CRITICAL);
+                // Clear OTA progress pattern and flash red LED pattern for error
+                Led::clearAllPatterns(); // Clear any ongoing patterns first
+                Led::blinkRed(Led::PRIO_CRITICAL, 5000ULL);
             } else {
                 AsyncResponseStream *response = request->beginResponseStream("application/json");
                 JsonDocument doc;
@@ -337,9 +338,13 @@ namespace CustomServer
                 logger.info("OTA update completed successfully", TAG);
                 logger.info("New firmware MD5: %s", TAG, Update.md5String().c_str());
                 
+                // Clear OTA progress pattern and show success LED pattern
+                Led::clearAllPatterns(); // Clear any ongoing patterns first
+                Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
+                
                 // Schedule restart
                 setRestartEsp32(TAG, "Restart needed after firmware update");
-            } }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
+            } }, [](AsyncWebServerRequest *request, String filename, size_t index, unsigned char *data, size_t len, bool final)
                   {
             // Handle firmware upload chunks
             static bool otaInitialized = false;
@@ -348,7 +353,7 @@ namespace CustomServer
                 // First chunk - initialize OTA
                 logger.info("Starting OTA update with file: %s", TAG, filename.c_str());
 
-                // TODO: mutex or similar to block/pause other processes
+                // TODO: mutex or similar to block/pause other processes, and also remember to resume them after OTA
                 
                 // Validate file extension
                 if (!filename.endsWith(".bin")) {
@@ -377,16 +382,14 @@ namespace CustomServer
                 // Pause ADE7953 during update to free resources
                 // _ade7953.pauseMeterReadingTask(); // Uncomment if you have this method
                 
-                // Start LED indication
-                Led::setPurple(Led::PRIO_URGENT);
-                
                 // Begin OTA update with known size
                 if (!Update.begin(contentLength, U_FLASH)) {
                     logger.error("Failed to begin OTA update: %s", TAG, Update.errorString());
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Failed to begin update\"}");
                     
                     // Restore LED and resume operations
-                    Led::setOff(Led::PRIO_URGENT);
+                    Led::clearAllPatterns(); // Clear any ongoing patterns
+                    Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
                     // _ade7953.resumeMeterReadingTask(); // Uncomment if you have this method
                     return;
                 }
@@ -401,6 +404,9 @@ namespace CustomServer
                 } else if (md5Header.length() > 0) {
                     logger.warning("Invalid MD5 length (%d), skipping verification", TAG, md5Header.length());
                 }
+
+                // Start LED indication for OTA progress (indefinite duration)
+                Led::blinkPurpleSlow(Led::PRIO_MEDIUM); // Indefinite duration - will run until cleared
                 
                 otaInitialized = true;
                 logger.info("OTA update started, expected size: %zu bytes", TAG, contentLength);
@@ -416,8 +422,8 @@ namespace CustomServer
                     otaInitialized = false;
                     
                     // Restore LED and resume operations
+                    Led::clearAllPatterns(); // Clear any ongoing patterns
                     Led::setOff(Led::PRIO_URGENT);
-                    // _ade7953.resumeMeterReadingTask(); // Uncomment if you have this method
                     return;
                 }
                 
@@ -439,17 +445,14 @@ namespace CustomServer
                     // Error response will be handled in the main handler above
                     
                     // Restore operations on error
-                    // _ade7953.resumeMeterReadingTask(); // Uncomment if you have this method
+                    // TODO: fill this
                 } else {
                     logger.info("OTA update finalization successful", TAG);
                     
-                    // Show success LED pattern
-                    Led::setGreen(Led::PRIO_CRITICAL);
-                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    // Clear OTA progress pattern and show success LED pattern
+                    Led::clearAllPatterns(); // Clear any ongoing patterns first
+                    Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
                 }
-                
-                // Restore LED
-                Led::setOff(Led::PRIO_URGENT);
                 otaInitialized = false;
             } });
 
@@ -510,14 +513,16 @@ namespace CustomServer
             return;
         }
 
-        _healthCheckRunning = true;
         _consecutiveFailures = 0;
+
+        // Pass the current task handle so the health check task can notify us on exit
+        TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
 
         BaseType_t result = xTaskCreate(
             _healthCheckTask,
             HEALTH_CHECK_TASK_NAME,
             HEALTH_CHECK_TASK_STACK_SIZE,
-            NULL,
+            currentTask,  // Pass caller's handle as parameter
             HEALTH_CHECK_TASK_PRIORITY,
             &_healthCheckTaskHandle);
 
@@ -528,7 +533,6 @@ namespace CustomServer
         else
         {
             logger.error("Failed to create health check task", TAG);
-            _healthCheckRunning = false;
         }
     }
 
@@ -540,37 +544,55 @@ namespace CustomServer
             return;
         }
 
-        _healthCheckRunning = false;
+        logger.debug("Stopping health check task...", TAG);
+        
+        // Signal the task to stop using notification
+        xTaskNotify(_healthCheckTaskHandle, HEALTH_CHECK_STOP_BIT, eSetBits);
+        
+        // Wake up the task if it's sleeping in vTaskDelayUntil
+        xTaskAbortDelay(_healthCheckTaskHandle);
 
-        // Give the task a moment to exit gracefully
-        vTaskDelay(pdMS_TO_TICKS(100));
-
-        if (_healthCheckTaskHandle != NULL)
+        // Wait for the task to acknowledge shutdown (up to 5 seconds)
+        uint32_t notificationValue = 0;
+        BaseType_t result = xTaskNotifyWait(0, 0, &notificationValue, pdMS_TO_TICKS(5000));
+        
+        if (result == pdTRUE)
         {
-            vTaskDelete(_healthCheckTaskHandle);
-            _healthCheckTaskHandle = NULL;
-            logger.info("Health check task stopped", TAG);
+            logger.info("Health check task stopped gracefully", TAG);
         }
+        else
+        {
+            logger.warning("Health check task did not acknowledge shutdown, assuming stopped", TAG);
+        }
+        
+        // Task handle will be set to NULL by the task itself
+        _healthCheckTaskHandle = NULL;
     }
 
     static void _healthCheckTask(void *parameter)
     {
         logger.debug("Health check task started", TAG);
 
-        //
         TickType_t xLastWakeTime = xTaskGetTickCount();
         const TickType_t xFrequency = pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS);
+        TaskHandle_t callerHandle = (TaskHandle_t)parameter;
 
-        while (_healthCheckRunning)
+        while (true)
         {
-            // Wait for the next cycle
-            vTaskDelayUntil(&xLastWakeTime, xFrequency);
-
-            if (!_healthCheckRunning)
+            // Wait for the next cycle OR until we get a stop notification
+            uint32_t notificationValue = 0;
+            BaseType_t result = xTaskNotifyWait(0, UINT32_MAX, &notificationValue, xFrequency);
+            
+            // Check if we received a stop signal
+            if (notificationValue & HEALTH_CHECK_STOP_BIT)
             {
+                logger.debug("Health check task received stop signal", TAG);
                 break;
             }
-
+            
+            // If we were woken by notification but no stop bit, continue normally
+            // If we timed out (no notification), also continue normally
+            
             // Perform health check
             if (_performHealthCheck())
             {
@@ -597,6 +619,13 @@ namespace CustomServer
         }
 
         logger.debug("Health check task exiting", TAG);
+        
+        // Acknowledge shutdown to the caller
+        if (callerHandle != NULL)
+        {
+            xTaskNotify(callerHandle, 1, eSetValueWithOverwrite);
+        }
+        
         _healthCheckTaskHandle = NULL;
         vTaskDelete(NULL);
     }
@@ -626,8 +655,8 @@ namespace CustomServer
         client.print("Connection: close\r\n\r\n");
 
         // Wait for response with timeout
-        unsigned long startTime = millis();
-        while (client.connected() && (millis() - startTime) < HEALTH_CHECK_TIMEOUT_MS)
+        unsigned long long startTime = millis64();
+        while (client.connected() && (millis64() - startTime) < HEALTH_CHECK_TIMEOUT_MS)
         {
             if (client.available())
             {
@@ -648,7 +677,7 @@ namespace CustomServer
                     }
                 }
             }
-            vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to prevent busy waiting
+            delay(10); // Small delay to prevent busy waiting
         }
 
         client.stop();
@@ -1168,7 +1197,7 @@ namespace CustomServer
 //     // Refactored: Use dedicated JSON handlers for each POST endpoint
 //     _setChannelHandler = new AsyncCallbackJsonWebHandler("/rest/set-channel", [this](AsyncWebServerRequest* request, JsonVariant& json) {
 //         // Rate limiting
-//         unsigned long currentTime = millis();
+//         unsigned long currentTime = millis64();
 //         if (currentTime - _lastChannelUpdateTime < API_UPDATE_THROTTLE_MS) {
 //             request->send(429, "application/json", "{\"error\":\"Rate limited\"}");
 //             return;
@@ -1202,7 +1231,7 @@ namespace CustomServer
 
 //     _setGeneralConfigHandler = new AsyncCallbackJsonWebHandler("/rest/set-general-configuration", [this](AsyncWebServerRequest* request, JsonVariant& json) {
 //         // Rate limiting
-//         unsigned long currentTime = millis();
+//         unsigned long currentTime = millis64();
 //         if (currentTime - _lastConfigUpdateTime < API_UPDATE_THROTTLE_MS) {
 //             request->send(429, "application/json", "{\"error\":\"Rate limited\"}");
 //             return;
@@ -1488,7 +1517,7 @@ namespace CustomServer
 //     // The OTA handler remains largely the same, but it is now protected by the global auth middleware.
 //     _server.on("/do-update", HTTP_POST,
 //         [](AsyncWebServerRequest *request){}, // On success (empty, handled by upload handler)
-//         [this](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+//         [this](AsyncWebServerRequest *request, const String& filename, size_t index, unsigned char *data, size_t len, bool final) {
 //             _handleDoUpdate(request, filename.c_str(), index, data, len, final);
 //         }
 //     );
@@ -1548,7 +1577,7 @@ namespace CustomServer
 //     });
 // }
 
-// void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const char* filename, size_t index, uint8_t *data, size_t len, bool final)
+// void CustomServer::_handleDoUpdate(AsyncWebServerRequest *request, const char* filename, size_t index, unsigned char *data, size_t len, bool final)
 // {
 //     // Protect OTA updates with mutex - only allow one at a time
 //     if (!index) { // First chunk of upload

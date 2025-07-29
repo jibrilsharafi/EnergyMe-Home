@@ -10,6 +10,7 @@
 #include <freertos/queue.h>
 
 #include "constants.h"
+#include "utils.h"
 
 #define PREFERENCES_BRIGHTNESS_KEY "brightness"
 
@@ -37,7 +38,7 @@ enum LedPattern {
 };
 
 // Priority levels (higher number = higher priority)  
-typedef uint8_t LedPriority;
+typedef unsigned char LedPriority;
 
 namespace Led {
     // Priority constants
@@ -48,11 +49,11 @@ namespace Led {
 
     // Color structure
     struct Color {
-        uint8_t red;
-        uint8_t green;
-        uint8_t blue;
+        unsigned char red;
+        unsigned char green;
+        unsigned char blue;
         
-        Color(uint8_t r = 0, uint8_t g = 0, uint8_t b = 0) : red(r), green(g), blue(b) {}
+        Color(unsigned char r = 0, unsigned char g = 0, unsigned char b = 0) : red(r), green(g), blue(b) {}
     };
 
     // Predefined colors
@@ -76,7 +77,7 @@ namespace Led {
     int getBrightness();
 
     // Pattern control functions
-    void setPattern(LedPattern pattern, Color color, LedPriority priority = 1, uint32_t durationMs = 0); // TODO: actually use this
+    void setPattern(LedPattern pattern, Color color, LedPriority priority = 1, unsigned long durationMs = 0); // TODO: actually use this
     void clearPattern(LedPriority priority);
     void clearAllPatterns();
 
@@ -92,8 +93,10 @@ namespace Led {
     void setOff(LedPriority priority = 1);
 
     // Pattern convenience functions
-    void blinkRed(LedPriority priority = 5);
-    void blinkGreen(LedPriority priority = 1);
-    void pulseBlue(LedPriority priority = 1);
-    void doubleBlinkYellow(LedPriority priority = 10);
+    void blinkRed(LedPriority priority = 5, unsigned long long durationMs = 0);
+    void blinkGreenSlow(LedPriority priority = 1, unsigned long long durationMs = 0);
+    void blinkGreenFast(LedPriority priority = 1, unsigned long long durationMs = 0);
+    void pulseBlue(LedPriority priority = 1, unsigned long long durationMs = 0);
+    void blinkPurpleSlow(LedPriority priority = 5, unsigned long long durationMs = 0);
+    void doubleBlinkYellow(LedPriority priority = 10, unsigned long long durationMs = 0);
 }

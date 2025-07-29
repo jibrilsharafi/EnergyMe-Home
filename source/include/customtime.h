@@ -3,9 +3,9 @@
 #include <AdvancedLogger.h>
 #include <Arduino.h>
 #include <Preferences.h>
-#include <TimeLib.h>
 
 #include "constants.h"
+#include "utils.h"
 
 #define PREFERENCES_GMT_OFFSET_KEY "gmt_offset"
 #define PREFERENCES_DST_OFFSET_KEY "dst_offset"
@@ -23,13 +23,10 @@
 namespace CustomTime {
     bool begin();
     void resetToDefaults();
-
     bool isTimeSynched();
-
     void setOffset(int gmtOffset, int dstOffset);
 
     void timestampFromUnix(time_t unix, char* buffer, size_t bufferSize);
-
     unsigned long getUnixTime();
     unsigned long long getUnixTimeMilliseconds();
     void getTimestamp(char* buffer, size_t bufferSize);

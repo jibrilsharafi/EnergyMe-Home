@@ -30,8 +30,8 @@ void CustomMqtt::begin()
 
 void CustomMqtt::loop()
 {
-    if ((millis() - _lastMillisMqttLoop) < MQTT_CUSTOM_LOOP_INTERVAL) return;
-    _lastMillisMqttLoop = millis();
+    if ((millis64() - _lastMillisMqttLoop) < MQTT_CUSTOM_LOOP_INTERVAL) return;
+    _lastMillisMqttLoop = millis64();
 
     if (!CustomWifi::isFullyConnected()) return;
 
@@ -56,7 +56,7 @@ void CustomMqtt::loop()
     if (!_customClientMqtt.connected())
     {
         // Use exponential backoff timing
-        if (millis() >= _nextMqttConnectionAttemptMillis) {
+        if (millis64() >= _nextMqttConnectionAttemptMillis) {
             _logger.debug("Custom MQTT client not connected. Attempting to reconnect...", TAG);
             _connectMqtt(); // _connectMqtt now handles setting the next attempt time
         }
@@ -74,10 +74,10 @@ void CustomMqtt::loop()
         
         _customClientMqtt.loop();
 
-        if ((millis() - _lastMillisMeterPublish) > _customMqttConfiguration.frequency * 1000)
+        if ((millis64() - _lastMillisMeterPublish) > _customMqttConfiguration.frequency * 1000)
         {
             
-            _lastMillisMeterPublish = millis();
+            _lastMillisMeterPublish = millis64();
             _publishMeter();
         }
     }
@@ -128,7 +128,7 @@ bool CustomMqtt::setConfiguration(JsonDocument &jsonDocument)
     CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer));
     snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", _timestampBuffer);
 
-    _nextMqttConnectionAttemptMillis = millis(); // Try connecting immediately
+    _nextMqttConnectionAttemptMillis = millis64(); // Try connecting immediately
     _mqttConnectionAttempt = 0;
 
     _customClientMqtt.disconnect();
@@ -281,7 +281,7 @@ bool CustomMqtt::_connectMqtt()
             _reason,
             _currentState);
 
-        _lastMillisMqttFailed = millis();
+        _lastMillisMqttFailed = millis64();
         _mqttConnectionAttempt++;
 
         snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), 
@@ -310,7 +310,7 @@ bool CustomMqtt::_connectMqtt()
         }
         _backoffDelay = min(_backoffDelay, (unsigned long)MQTT_CUSTOM_MAX_RECONNECT_INTERVAL);
 
-        _nextMqttConnectionAttemptMillis = millis() + _backoffDelay;
+        _nextMqttConnectionAttemptMillis = millis64() + _backoffDelay;
 
         _logger.info("Next custom MQTT connection attempt in %lu ms", TAG, _backoffDelay);
 

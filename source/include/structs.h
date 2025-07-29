@@ -67,22 +67,22 @@ struct SystemStaticInfo {
     
     // Hardware & Chip (mostly static)
     char chipModel[32];        // ESP32, ESP32-S3, etc.
-    uint8_t chipRevision;      // Hardware revision
-    uint8_t chipCores;         // Number of CPU cores
-    uint64_t chipId;           // Unique chip ID
-    uint32_t flashChipSizeBytes;
-    uint32_t flashChipSpeedHz;
-    uint32_t psramSizeBytes;   // Total PSRAM (if available)
-    uint32_t cpuFrequencyMHz;  // CPU frequency
+    unsigned char chipRevision;      // Hardware revision
+    unsigned char chipCores;         // Number of CPU cores
+    unsigned long long chipId;           // Unique chip ID
+    unsigned long flashChipSizeBytes;
+    unsigned long flashChipSpeedHz;
+    unsigned long psramSizeBytes;   // Total PSRAM (if available)
+    unsigned long cpuFrequencyMHz;  // CPU frequency
     
     // SDK versions
     char sdkVersion[32];
     char coreVersion[32];
     
     // Crash and reset monitoring
-    uint32_t crashCount;                    // Total crashes since last manual reset
-    uint32_t resetCount;                    // Total resets since first boot
-    uint32_t lastResetReason;               // ESP reset reason code
+    unsigned long crashCount;                    // Total crashes since last manual reset
+    unsigned long resetCount;                    // Total resets since first boot
+    unsigned long lastResetReason;               // ESP reset reason code
     char lastResetReasonString[32];         // Human readable reset reason
     bool lastResetWasCrash;                 // True if last reset was due to crash
     
@@ -114,31 +114,31 @@ struct SystemStaticInfo {
 // Dynamic system information (changes frequently)
 struct SystemDynamicInfo {
     // Time & Uptime
-    uint64_t uptimeMilliseconds;
-    uint32_t uptimeSeconds;
+    unsigned long long uptimeMilliseconds;
+    unsigned long uptimeSeconds;
     char currentTimestamp[32];
     
     // Memory - Heap (DRAM)
-    uint32_t heapTotalBytes;
-    uint32_t heapFreeBytes;
-    uint32_t heapUsedBytes;
-    uint32_t heapMinFreeBytes;      // Lowest since boot
-    uint32_t heapMaxAllocBytes;     // Largest allocatable block
+    unsigned long heapTotalBytes;
+    unsigned long heapFreeBytes;
+    unsigned long heapUsedBytes;
+    unsigned long heapMinFreeBytes;      // Lowest since boot
+    unsigned long heapMaxAllocBytes;     // Largest allocatable block
     float heapFreePercentage;
     float heapUsedPercentage;
     
     // Memory - PSRAM
-    uint32_t psramFreeBytes;
-    uint32_t psramUsedBytes;
-    uint32_t psramMinFreeBytes;
-    uint32_t psramMaxAllocBytes;
+    unsigned long psramFreeBytes;
+    unsigned long psramUsedBytes;
+    unsigned long psramMinFreeBytes;
+    unsigned long psramMaxAllocBytes;
     float psramFreePercentage;
     float psramUsedPercentage;
     
     // Storage - SPIFFS
-    uint32_t spiffsTotalBytes;
-    uint32_t spiffsUsedBytes;
-    uint32_t spiffsFreeBytes;
+    unsigned long spiffsTotalBytes;
+    unsigned long spiffsUsedBytes;
+    unsigned long spiffsFreeBytes;
     float spiffsFreePercentage;
     float spiffsUsedPercentage;
     
@@ -146,7 +146,7 @@ struct SystemDynamicInfo {
     float temperatureCelsius;
     
     // Network status
-    int32_t wifiRssi;
+    long wifiRssi;
     bool wifiConnected;
     char wifiSsid[128];
     char wifiMacAddress[18];

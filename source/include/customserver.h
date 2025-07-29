@@ -58,7 +58,7 @@ namespace CustomServer {
 //     void _setOtaHandlers();
 //     void _setNotFoundHandler();
 
-//     void _handleDoUpdate(AsyncWebServerRequest *request, const char* filename, size_t index, uint8_t *data, size_t len, bool final);
+//     void _handleDoUpdate(AsyncWebServerRequest *request, const char* filename, size_t index, unsigned char *data, size_t len, bool final);
 //     void _onUpdateSuccessful(AsyncWebServerRequest *request);
 //     void _onUpdateFailed(AsyncWebServerRequest *request, const char *reason);
     

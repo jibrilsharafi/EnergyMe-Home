@@ -38,7 +38,7 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     // // Crash and reset monitoring
     info.crashCount = CrashMonitor::getCrashCount();
     info.resetCount = CrashMonitor::getResetCount();
-    info.lastResetReason = (uint32_t)esp_reset_reason();
+    info.lastResetReason = (unsigned long)esp_reset_reason();
     snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s", CrashMonitor::getResetReasonString(esp_reset_reason()));
     info.lastResetWasCrash = CrashMonitor::isLastResetDueToCrash();
     
@@ -59,7 +59,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     memset(&info, 0, sizeof(info));
 
     // Time
-    info.uptimeMilliseconds = millis();
+    info.uptimeMilliseconds = millis64();
     info.uptimeSeconds = info.uptimeMilliseconds / 1000;
     CustomTime::getTimestamp(info.currentTimestamp, sizeof(info.currentTimestamp));
     
@@ -73,7 +73,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.heapUsedPercentage = 100.0f - info.heapFreePercentage;
     
     // Memory - PSRAM
-    uint32_t psramTotal = ESP.getPsramSize();
+    unsigned long psramTotal = ESP.getPsramSize();
     if (psramTotal > 0) {
         info.psramFreeBytes = ESP.getFreePsram();
         info.psramUsedBytes = psramTotal - info.psramFreeBytes;
@@ -94,7 +94,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.temperatureCelsius = temperatureRead();
     
     // Network (if connected)
-    if (WiFi.isConnected()) {
+    if (CustomWifi::isFullyConnected()) {
         info.wifiConnected = true;
         info.wifiRssi = WiFi.RSSI();
         snprintf(info.wifiSsid, sizeof(info.wifiSsid), "%s", WiFi.SSID().c_str());
@@ -499,7 +499,7 @@ void maintenanceTask(void* parameter) {
     
     while (true) {
         // Wait for the maintenance check interval
-        vTaskDelay(pdMS_TO_TICKS(MAINTENANCE_CHECK_INTERVAL));
+        delay(MAINTENANCE_CHECK_INTERVAL);
         
         logger.debug("Running maintenance checks...", TAG);
         
@@ -551,7 +551,7 @@ void restartTask(void* parameter) {
     logger.debug("Restart task started, waiting %d ms before restart", TAG, ESP32_RESTART_DELAY);
     
     // Wait for the specified delay
-    vTaskDelay(pdMS_TO_TICKS(ESP32_RESTART_DELAY));
+    delay(ESP32_RESTART_DELAY);
     
     // Execute the restart
     restartEsp32();
@@ -565,7 +565,7 @@ void setRestartEsp32(const char* functionName, const char* reason) {
     
     // Store restart information for logging purposes
     restartConfiguration.isRequired = true;
-    restartConfiguration.requiredAt = millis();
+    restartConfiguration.requiredAt = millis64();
     snprintf(restartConfiguration.functionName, sizeof(restartConfiguration.functionName), "%s", functionName);
     snprintf(restartConfiguration.reason, sizeof(restartConfiguration.reason), "%s", reason);
 
@@ -600,14 +600,14 @@ void restartEsp32() {
     logger.end();
 
     // Give time for AsyncTCP connections to close gracefully
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    delay(1000);
 
     // Disable WiFi to prevent AsyncTCP crashes during restart
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     
     // Additional delay to ensure clean shutdown
-    vTaskDelay(pdMS_TO_TICKS(500));
+    delay(500);
 
     ESP.restart();
 }
@@ -1110,7 +1110,7 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {
-    uint8_t mac[6];
+    unsigned char mac[6];
     esp_efuse_mac_get_default(mac);
     
     // Use lowercase hex formatting without colons
@@ -1188,7 +1188,7 @@ void decryptData(const char* encryptedData, const char* key, char* decryptedData
     }
     
     // Handle PKCS7 padding removal
-    uint8_t paddingLength = output[decodedLength - 1];
+    unsigned char paddingLength = output[decodedLength - 1];
     if (paddingLength > 0 && paddingLength <= 16 && paddingLength < decodedLength) {
         output[decodedLength - paddingLength] = '\0';
     } else {

@@ -33,6 +33,17 @@
 #define TASK_MAINTENANCE_STACK_SIZE 4096
 #define TASK_MAINTENANCE_PRIORITY 2
 
+// Come one, on this ESP32S3 and in 2025 can we still use 32bits millis
+// that will overflow in just 49 days?
+// esp_timer_get_time() returns microseconds since boot in 64-bit format,
+inline unsigned long long millis64() {
+    return esp_timer_get_time() / 1000ULL;
+}
+
+inline unsigned long long micros64() {
+    return esp_timer_get_time();
+}
+
 // New system info functions
 void populateSystemStaticInfo(SystemStaticInfo& info);
 void populateSystemDynamicInfo(SystemDynamicInfo& info);

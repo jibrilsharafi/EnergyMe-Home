@@ -12,7 +12,7 @@ namespace ButtonHandler
     static SemaphoreHandle_t _buttonSemaphore = NULL;
 
     // Button state
-    static volatile unsigned long _buttonPressStartTime = ZERO_START_TIME;
+    static volatile unsigned long long _buttonPressStartTime = ZERO_START_TIME;
     static volatile bool _buttonPressed = false;
     static ButtonPressType _currentPressType = ButtonPressType::NONE;
     static bool _operationInProgress = false;
@@ -28,8 +28,8 @@ namespace ButtonHandler
     // Private function declarations
     static void _buttonISR();
     static void _buttonTask(void *parameter);
-    static void _processButtonPress(unsigned long pressDuration);
-    static void _updateVisualFeedback(unsigned long pressDuration);
+    static void _processButtonPress(unsigned long long pressDuration);
+    static void _updateVisualFeedback(unsigned long long pressDuration);
 
     // Operation handlers
     static void _handleRestart();
@@ -88,7 +88,7 @@ namespace ButtonHandler
         {
             // Button press detected
             _buttonPressed = true;
-            _buttonPressStartTime = millis();
+            _buttonPressStartTime = millis64();
 
             // Notify task of button press
             xSemaphoreGiveFromISR(_buttonSemaphore, &xHigherPriorityTaskWoken);
@@ -117,12 +117,12 @@ namespace ButtonHandler
             if (xSemaphoreTake(_buttonSemaphore, feedbackUpdateInterval))
             {
                 // Button event occurred
-                vTaskDelay(pdMS_TO_TICKS(BUTTON_DEBOUNCE_TIME)); // Simple debounce
+                delay(BUTTON_DEBOUNCE_TIME); // Simple debounce
 
                 if (!_buttonPressed && _buttonPressStartTime > ZERO_START_TIME)
                 {
                     // Button was released - process the press
-                    unsigned long pressDuration = millis() - _buttonPressStartTime;
+                    unsigned long pressDuration = millis64() - _buttonPressStartTime;
                     logger.debug("Button released after %lu ms", TAG, pressDuration);
 
                     _processButtonPress(pressDuration);
@@ -144,7 +144,7 @@ namespace ButtonHandler
             else if (_buttonPressed && _buttonPressStartTime > ZERO_START_TIME)
             {
                 // Timeout occurred while button is pressed - update visual feedback
-                unsigned long pressDuration = millis() - _buttonPressStartTime;
+                unsigned long pressDuration = millis64() - _buttonPressStartTime;
                 _updateVisualFeedback(pressDuration);
             }
         }
@@ -152,7 +152,7 @@ namespace ButtonHandler
         vTaskDelete(NULL);
     }
 
-    static void _processButtonPress(unsigned long pressDuration)
+    static void _processButtonPress(unsigned long long pressDuration)
     {
         // Determine press type based on duration
         if (pressDuration >= BUTTON_SHORT_PRESS_TIME && pressDuration < BUTTON_MEDIUM_PRESS_TIME)
@@ -182,7 +182,7 @@ namespace ButtonHandler
         }
     }
 
-    static void _updateVisualFeedback(unsigned long pressDuration)
+    static void _updateVisualFeedback(unsigned long long pressDuration)
     {
         // Provide immediate visual feedback based on current press duration
         if (pressDuration >= BUTTON_MAX_PRESS_TIME)
@@ -245,21 +245,13 @@ namespace ButtonHandler
             CustomServer::updateAuthPassword();
             
             logger.info("Password reset to default successfully", TAG);
-
-            // Success feedback - green blinking
-            Led::blinkGreen(Led::PRIO_CRITICAL);
-            vTaskDelay(pdMS_TO_TICKS(1500)); // Let it blink a few times
+            Led::blinkGreenSlow(Led::PRIO_CRITICAL, 2000ULL);
         }
         else
         {
             logger.error("Failed to reset password to default", TAG);
-
-            // Error feedback - red blinking
-            Led::blinkRed(Led::PRIO_CRITICAL);
-            vTaskDelay(pdMS_TO_TICKS(1500)); // Let it blink a few times
+            Led::blinkRed(Led::PRIO_CRITICAL, 2000ULL);
         }
-
-        Led::clearPattern(Led::PRIO_CRITICAL);
 
         _operationInProgress = false;
         _currentPressType = ButtonPressType::NONE;

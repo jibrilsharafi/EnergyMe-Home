@@ -16,8 +16,8 @@ namespace Led {
         LedPattern pattern;
         Color color;
         LedPriority priority;
-        uint32_t durationMs;  // 0 = indefinite
-        uint32_t timestamp;   // When command was issued
+        unsigned long long durationMs;  // 0 = indefinite
+        unsigned long long timestamp;   // When command was issued
     };
     
     // Current active state
@@ -25,9 +25,9 @@ namespace Led {
         LedPattern currentPattern = LED_PATTERN_OFF;
         Color currentColor = Colors::OFF;
         LedPriority currentPriority = 1; // PRIO_NORMAL
-        uint32_t patternStartTime = 0;
-        uint32_t patternDuration = 0;
-        uint32_t cycleStartTime = 0;
+        unsigned long long patternStartTime = 0;
+        unsigned long long patternDuration = 0;
+        unsigned long long cycleStartTime = 0;
         bool isActive = false;
     };
     
@@ -37,7 +37,7 @@ namespace Led {
     static void _setHardwareColor(const Color& color);
     static void _ledTask(void* parameter);
     static void _processPattern();
-    static uint8_t _calculateBrightness(uint8_t value, float factor = 1.0f);
+    static unsigned char _calculateBrightness(unsigned char value, float factor = 1.0f);
     static bool _loadConfiguration();
     static void _saveConfiguration();
 
@@ -137,7 +137,7 @@ namespace Led {
         return _brightness;
     }
 
-    void setPattern(LedPattern pattern, Color color, LedPriority priority, uint32_t durationMs) {
+    void setPattern(LedPattern pattern, Color color, LedPriority priority, unsigned long durationMs) {
         if (_ledQueue == nullptr) {
             return;
         }
@@ -147,7 +147,7 @@ namespace Led {
             color,
             priority,
             durationMs,
-            millis()
+            millis64()
         };
         
         // Try to send command to queue (non-blocking)
@@ -165,7 +165,7 @@ namespace Led {
             Colors::OFF,
             priority,
             0,
-            millis()
+            millis64()
         };
         
         xQueueSend(_ledQueue, &command, 0);
@@ -221,20 +221,28 @@ namespace Led {
     }
 
     // Pattern convenience functions
-    void blinkRed(LedPriority priority) {
-        setPattern(LED_PATTERN_BLINK_FAST, Colors::RED, priority);
+    void blinkRed(LedPriority priority, unsigned long long durationMs) {
+        setPattern(LED_PATTERN_BLINK_FAST, Colors::RED, priority, durationMs);
     }
 
-    void blinkGreen(LedPriority priority) {
-        setPattern(LED_PATTERN_BLINK_SLOW, Colors::GREEN, priority);
+    void blinkGreenSlow(LedPriority priority, unsigned long long durationMs) {
+        setPattern(LED_PATTERN_BLINK_SLOW, Colors::GREEN, priority, durationMs);
+    }
+    
+    void blinkGreenFast(LedPriority priority, unsigned long long durationMs) {
+        setPattern(LED_PATTERN_BLINK_FAST, Colors::GREEN, priority, durationMs);
     }
 
-    void pulseBlue(LedPriority priority) {
-        setPattern(LED_PATTERN_PULSE, Colors::BLUE, priority);
+    void pulseBlue(LedPriority priority, unsigned long long durationMs) {
+        setPattern(LED_PATTERN_PULSE, Colors::BLUE, priority, durationMs);
     }
 
-    void doubleBlinkYellow(LedPriority priority) {
-        setPattern(LED_PATTERN_DOUBLE_BLINK, Colors::YELLOW, priority);
+    void blinkPurpleSlow(LedPriority priority, unsigned long long durationMs) {
+        setPattern(LED_PATTERN_BLINK_SLOW, Colors::PURPLE, priority, durationMs);
+    }
+
+    void doubleBlinkYellow(LedPriority priority, unsigned long long durationMs) {
+        setPattern(LED_PATTERN_DOUBLE_BLINK, Colors::YELLOW, priority, durationMs);
     }
 
     // Private implementation functions
@@ -249,18 +257,18 @@ namespace Led {
         ledcWrite(_bluePin, _calculateBrightness(color.blue));
     }
 
-    static uint8_t _calculateBrightness(uint8_t value, float factor) {
-        return (uint8_t)(value * _brightness * factor / LED_MAX_BRIGHTNESS);
+    static unsigned char _calculateBrightness(unsigned char value, float factor) {
+        return (unsigned char)(value * _brightness * factor / LED_MAX_BRIGHTNESS);
     }
 
     static void _ledTask(void* parameter) {
         LedCommand command;
-        uint32_t currentTime;
+        unsigned long long currentTime;
         
         while (true) {
             // Check for new commands in queue
             if (xQueueReceive(_ledQueue, &command, pdMS_TO_TICKS(LED_TASK_DELAY_MS)) == pdTRUE) {
-                currentTime = millis();
+                currentTime = millis64();
                 
                 // Only accept commands with equal or higher priority
                 if (command.priority >= _state.currentPriority || !_state.isActive) {
@@ -293,25 +301,25 @@ namespace Led {
             }
             
             // Check if current pattern has expired
-            currentTime = millis();
+            currentTime = millis64();
             if (_state.isActive && _state.patternDuration > 0 && 
                 (currentTime - _state.patternStartTime) >= _state.patternDuration) {
                 _state.currentPattern = LED_PATTERN_OFF;
                 _state.currentColor = Colors::OFF;
-                _state.currentPriority = 1; // PRIO_NORMAL
+                _state.currentPriority = PRIO_NORMAL;
                 _state.isActive = false;
             }
             
             // Process current pattern
             _processPattern();
             
-            vTaskDelay(pdMS_TO_TICKS(LED_TASK_DELAY_MS));
+            delay(LED_TASK_DELAY_MS);
         }
     }
 
     static void _processPattern() {
-        uint32_t currentTime = millis();
-        uint32_t elapsed = currentTime - _state.cycleStartTime;
+        unsigned long long currentTime = millis64();
+        unsigned long long elapsed = currentTime - _state.cycleStartTime;
         Color outputColor = _state.currentColor;
         bool shouldOutput = true;
         
@@ -338,7 +346,7 @@ namespace Led {
                 
             case LED_PATTERN_PULSE: {
                 // Smooth fade in/out over 2 seconds
-                uint32_t cycle = elapsed % 2000; // 2 second cycle
+                unsigned long cycle = elapsed % 2000; // 2 second cycle
                 float factor;
                 if (cycle < 1000) {
                     // Fade in
@@ -355,7 +363,7 @@ namespace Led {
                 
             case LED_PATTERN_DOUBLE_BLINK: {
                 // Two quick blinks (100ms on, 100ms off, 100ms on, 100ms off), then 800ms pause
-                uint32_t cycle = elapsed % 1200; // 1.2 second cycle
+                unsigned long cycle = elapsed % 1200; // 1.2 second cycle
                 if (cycle < 100 || (cycle >= 200 && cycle < 300)) {
                     // On periods
                     shouldOutput = true;

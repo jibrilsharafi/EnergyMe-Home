@@ -174,11 +174,12 @@ void Ade7953::_setOptimumSettings()
 }
 
 void Ade7953::loop() {
+    micros();
     if (
-        millis() - _lastMillisSaveEnergy > SAVE_ENERGY_INTERVAL || 
+        millis64() - _lastMillisSaveEnergy > SAVE_ENERGY_INTERVAL || 
         restartConfiguration.isRequired
     ) {
-        _lastMillisSaveEnergy = millis();
+        _lastMillisSaveEnergy = millis64();
         saveEnergy();
     }
 
@@ -218,9 +219,9 @@ void Ade7953::cleanup() {
 void Ade7953::_reset() {
     _logger.debug("Resetting Ade7953", TAG);
     digitalWrite(_resetPin, LOW);
-    vTaskDelay(pdMS_TO_TICKS(ADE7953_RESET_LOW_DURATION));
+    delay(ADE7953_RESET_LOW_DURATION);
     digitalWrite(_resetPin, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(ADE7953_RESET_LOW_DURATION));
+    delay(ADE7953_RESET_LOW_DURATION);
 }
 
 /**
@@ -234,12 +235,12 @@ bool Ade7953::_verifyCommunication() {
     
     int _attempt = 0;
     bool _success = false;
-    unsigned long _lastMillisAttempt = 0;
+    unsigned long long _lastMillisAttempt = 0;
 
     unsigned int _loops = 0;
     while (_attempt < ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS && !_success && _loops < MAX_LOOP_ITERATIONS) {
         _loops++;
-        if (millis() - _lastMillisAttempt < ADE7953_VERIFY_COMMUNICATION_INTERVAL) {
+        if (millis64() - _lastMillisAttempt < ADE7953_VERIFY_COMMUNICATION_INTERVAL) {
             continue;
         }
 
@@ -247,7 +248,7 @@ bool Ade7953::_verifyCommunication() {
         
         _reset();
         _attempt++;
-        _lastMillisAttempt = millis();
+        _lastMillisAttempt = millis64();
 
         if ((readRegister(AP_NOLOAD_32, 32, false)) == DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
             _logger.debug("Communication successful with ADE7953", TAG);
@@ -727,8 +728,8 @@ can be found in the function itself.
 false if the data reading is not ready yet or valid.
 */
 bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) {
-    unsigned long _millisRead = millis();
-    unsigned long _deltaMillis = _millisRead - meterValues[channel].lastMillis;
+    unsigned long long _millisRead = millis64();
+    unsigned long long _deltaMillis = _millisRead - meterValues[channel].lastMillis;
 
     // // Ensure the reading is not being called too early if a previous valid reading exists
     // if (previousLastUnixTimeMilliseconds != 0) {
@@ -1721,7 +1722,7 @@ void Ade7953::_recordFailure() {
     _logger.debug("Recording failure for ADE7953 communication", TAG);
 
     if (_failureCount == 0) {
-        _firstFailureTime = millis();
+        _firstFailureTime = millis64();
     }
 
     _failureCount++;
@@ -1731,8 +1732,8 @@ void Ade7953::_recordFailure() {
 
 void Ade7953::_checkForTooManyFailures() {
     
-    if (millis() - _firstFailureTime > ADE7953_FAILURE_RESET_TIMEOUT_MS && _failureCount > 0) {
-        _logger.debug("Failure timeout exceeded (%lu ms). Resetting failure count (reached %d)", TAG, millis() - _firstFailureTime, _failureCount);
+    if (millis64() - _firstFailureTime > ADE7953_FAILURE_RESET_TIMEOUT_MS && _failureCount > 0) {
+        _logger.debug("Failure timeout exceeded (%lu ms). Resetting failure count (reached %d)", TAG, millis64() - _firstFailureTime, _failureCount);
         
         _failureCount = 0;
         _firstFailureTime = 0;
@@ -1959,7 +1960,7 @@ void IRAM_ATTR Ade7953::_isrHandler()
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         statistics.ade7953TotalInterrupts++;
-        _instance->_lastInterruptTime = millis();
+        _instance->_lastInterruptTime = millis64();
 
         // Signal the task to handle the interrupt - let the task determine the cause
         xSemaphoreGiveFromISR(_instance->_ade7953InterruptSemaphore, &xHigherPriorityTaskWoken);
@@ -1968,9 +1969,9 @@ void IRAM_ATTR Ade7953::_isrHandler()
 }
 
 void Ade7953::_checkInterruptTiming() {
-    if (millis() - _lastInterruptTime >= getSampleTime()) {
+    if (millis64() - _lastInterruptTime >= getSampleTime()) {
         _logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).", 
-                       TAG, millis() - _lastInterruptTime, getSampleTime());
+                       TAG, millis64() - _lastInterruptTime, getSampleTime());
     }
 }
 

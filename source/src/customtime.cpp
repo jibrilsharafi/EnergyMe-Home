@@ -1,6 +1,5 @@
 #include "customtime.h"
 
-// TAG
 static const char *TAG = "customtime";
 
 namespace CustomTime {
@@ -8,20 +7,20 @@ namespace CustomTime {
     static bool _isTimeSynched = false;
     static int _gmtOffset = DEFAULT_GMT_OFFSET;
     static int _dstOffset = DEFAULT_DST_OFFSET;
+    static unsigned long long _lastSyncAttempt = 0;
 
     // Private helper function
     static bool _getTime();
+    static void _checkAndSyncTime();
 
     static bool _loadConfiguration();
     static void _saveConfiguration();
 
     bool begin() {
-        setSyncInterval(TIME_SYNC_INTERVAL_S);
-
         _loadConfiguration();
         
-        // TimeLib will automatically retry sync at the interval we set
-        // We just check if initial sync worked, but don't need manual retry logic
+        // Initial sync attempt
+        _lastSyncAttempt = millis64();
         _isTimeSynched = _getTime();
         return _isTimeSynched;
     }
@@ -37,7 +36,6 @@ namespace CustomTime {
         _dstOffset = dstOffset;
 
         configTime(_gmtOffset, _dstOffset, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
-        setSyncInterval(TIME_SYNC_INTERVAL_S);
         
         _saveConfiguration();
         
@@ -51,6 +49,7 @@ namespace CustomTime {
     }
 
     bool isTimeSynched() {
+        _checkAndSyncTime();
         return _isTimeSynched;
     }
 
@@ -112,5 +111,20 @@ namespace CustomTime {
 
     void getTimestamp(char* buffer, size_t bufferSize) {
         timestampFromUnix(getUnixTime(), buffer, bufferSize);
+    }
+
+    void _checkAndSyncTime() {
+        unsigned long long currentTime = millis64();
+        
+        // Check if it's time to sync (every TIME_SYNC_INTERVAL_S seconds)
+        if (currentTime - _lastSyncAttempt >= (unsigned long long)TIME_SYNC_INTERVAL_S * 1000) {
+            _lastSyncAttempt = currentTime;
+            
+            // Re-configure time to trigger a new sync
+            configTime(_gmtOffset, _dstOffset, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
+            
+            // Check if sync was successful
+            _isTimeSynched = _getTime();
+        }
     }
 }

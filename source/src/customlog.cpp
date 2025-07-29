@@ -107,7 +107,7 @@ namespace CustomLog
                 break;
             }
             
-            size_t bytesWritten = _udpClient.write((const uint8_t*)_udpBuffer, strlen(_udpBuffer));
+            size_t bytesWritten = _udpClient.write((const unsigned char*)_udpBuffer, strlen(_udpBuffer));
             if (bytesWritten == 0) {
                 _udpLogBuffer.push(_log);
                 _udpClient.endPacket(); // Clean up the packet

@@ -8,13 +8,13 @@ namespace CustomWifi
   static WiFiManager _wifiManager;
   static TaskHandle_t _wifiTaskHandle = NULL;
   static bool _isInitialConnection = true;
-  static unsigned long _lastReconnectAttempt = 0;
+  static unsigned long long _lastReconnectAttempt = 0;
   static int _reconnectAttempts = 0;
 
   // WiFi event notification values for task communication
-  static const uint32_t WIFI_EVENT_CONNECTED = 1;
-  static const uint32_t WIFI_EVENT_GOT_IP = 2;
-  static const uint32_t WIFI_EVENT_DISCONNECTED = 3;
+  static const unsigned long WIFI_EVENT_CONNECTED = 1;
+  static const unsigned long WIFI_EVENT_GOT_IP = 2;
+  static const unsigned long WIFI_EVENT_DISCONNECTED = 3;
 
   // Private helper functions
   static void _onWiFiEvent(WiFiEvent_t event);
@@ -62,21 +62,25 @@ namespace CustomWifi
     // Callback when portal starts
     _wifiManager.setAPCallback([](WiFiManager *wm)
                                {
-                                //  logger.info("WiFi configuration portal started: %s", TAG, wm->getConfigPortalSSID().c_str());
-                                Serial.println("WiFi configuration portal started");
-                                 Led::setBlue(Led::PRIO_URGENT); // Distinct color for portal mode
-                               });
+                                logger.info("WiFi configuration portal started: %s", TAG, wm->getConfigPortalSSID().c_str());
+                                Led::setPattern(
+                                  LedPattern::LED_PATTERN_BLINK_SLOW,
+                                  Led::Colors::BLUE,
+                                  Led::PRIO_CRITICAL
+                                ); });
 
     // Callback when config is saved
     _wifiManager.setSaveConfigCallback([]()
                                        {
-            // logger.info("WiFi credentials saved via portal - restarting...", TAG);
-            Serial.println("WiFi credentials saved");
-            Led::setCyan(Led::PRIO_CRITICAL);
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            ESP.restart();
-          });
-          
+            logger.info("WiFi credentials saved via portal - restarting...", TAG);
+            Led::setPattern(
+              LedPattern::LED_PATTERN_BLINK_FAST,
+              Led::Colors::CYAN,
+              Led::PRIO_CRITICAL
+            );
+            delay(1000);
+            ESP.restart(); });
+
     logger.debug("WiFiManager set up", TAG);
   }
 
@@ -143,21 +147,18 @@ namespace CustomWifi
   static void _wifiConnectionTask(void *parameter)
   {
     logger.debug("Starting wifi task...", TAG);
-    uint32_t notificationValue;
-
-    // Wait for system to stabilize before WiFi connection
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    unsigned long notificationValue;
 
     // Initial connection attempt
-    Led::setBlue(Led::PRIO_MEDIUM);
+    Led::pulseBlue(Led::PRIO_MEDIUM);
     char hostname[WIFI_SSID_BUFFER_SIZE];
     snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
 
     if (!_wifiManager.autoConnect(hostname))
     {
       logger.error("Initial WiFi connection failed - restarting", TAG);
-      Led::setRed(Led::PRIO_CRITICAL);
-      vTaskDelay(pdMS_TO_TICKS(2000));
+      Led::doubleBlinkYellow(Led::PRIO_CRITICAL);
+      delay(1000);
       ESP.restart();
     }
 
@@ -165,10 +166,9 @@ namespace CustomWifi
     while (true)
     {
       // Wait for notification from event handler or timeout
-      if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(30000)))
+      if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(WIFI_PERIODIC_CHECK_INTERVAL)))
       {
         // Handle deferred operations from WiFi events (safe context)
-        // NOTE: Logging temporarily disabled due to AdvancedLogger stack issues
         switch (notificationValue)
         {
         case WIFI_EVENT_CONNECTED:
@@ -191,17 +191,17 @@ namespace CustomWifi
           break;
         }
 
-        // Handle disconnection (only for WIFI_EVENT_DISCONNECTED or legacy notifications)
-        if (notificationValue == WIFI_EVENT_DISCONNECTED || notificationValue == 1)
+        // Handle disconnection
+        if (notificationValue == WIFI_EVENT_DISCONNECTED)
         {
           // Wait a bit for auto-reconnect to work
-          vTaskDelay(pdMS_TO_TICKS(5000));
+          delay(5000);
 
           // Check if still disconnected
-          if (!WiFi.isConnected())
+          if (!isFullyConnected())
           {
             _reconnectAttempts++;
-            _lastReconnectAttempt = millis();
+            _lastReconnectAttempt = millis64();
 
             logger.warning("Auto-reconnect failed, attempt %d", TAG, _reconnectAttempts);
             Led::setOrange(Led::PRIO_MEDIUM);
@@ -218,8 +218,7 @@ namespace CustomWifi
               {
                 logger.fatal("Portal failed - restarting device", TAG);
                 Led::setRed(Led::PRIO_CRITICAL);
-                vTaskDelay(pdMS_TO_TICKS(2000));
-                ESP.restart();
+                setRestartEsp32(TAG, "Restart after portal failure");
               }
               // If portal succeeds, device will restart automatically
             }
@@ -227,7 +226,7 @@ namespace CustomWifi
         }
       }
 
-      // Periodic health check (every 30 seconds)
+      // Periodic health check
       if (isFullyConnected())
       {
         // Reset failure counter on sustained connection
@@ -247,8 +246,7 @@ namespace CustomWifi
     logger.warning("Resetting WiFi credentials and restarting...", TAG);
     Led::setRed(Led::PRIO_CRITICAL);
     _wifiManager.resetSettings();
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    ESP.restart();
+    setRestartEsp32(TAG, "Restart after WiFi reset");
   }
 
   bool _setupMdns()
@@ -257,7 +255,7 @@ namespace CustomWifi
 
     // Ensure mDNS is stopped before starting
     MDNS.end();
-    vTaskDelay(pdMS_TO_TICKS(100));
+    delay(100);
 
     if (
         MDNS.begin(MDNS_HOSTNAME) &&

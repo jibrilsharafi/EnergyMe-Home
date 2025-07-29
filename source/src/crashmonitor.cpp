@@ -21,9 +21,9 @@ namespace CrashMonitor
         // due to software reset (ESP.restart()), power on, or deep sleep (unused here)
         esp_reset_reason_t _hwResetReason = esp_reset_reason();
 
-        return (uint32_t)_hwResetReason != ESP_RST_SW && 
-                (uint32_t)_hwResetReason != ESP_RST_POWERON && 
-                (uint32_t)_hwResetReason != ESP_RST_DEEPSLEEP;
+        return (unsigned long)_hwResetReason != ESP_RST_SW && 
+                (unsigned long)_hwResetReason != ESP_RST_POWERON && 
+                (unsigned long)_hwResetReason != ESP_RST_DEEPSLEEP;
     }
 
     void begin() {
@@ -57,7 +57,7 @@ namespace CrashMonitor
     static void _crashResetTask(void *parameter)
     {
         logger.debug("Starting crash reset task...", TAG);
-        vTaskDelay(pdMS_TO_TICKS(CRASH_COUNTER_TIMEOUT));
+        delay(CRASH_COUNTER_TIMEOUT);
         if (_consecutiveCrashCount > 0){
             logger.info("Consecutive crash counter reset to 0", TAG);
         }
@@ -65,11 +65,11 @@ namespace CrashMonitor
         vTaskDelete(NULL);
     }
 
-    uint32_t getCrashCount() {
+    unsigned long getCrashCount() {
         return _crashCount;
     }
 
-    uint32_t getResetCount() {
+    unsigned long getResetCount() {
         return _resetCount;
     }
 
