@@ -58,8 +58,8 @@ void getJsonDeviceDynamicInfo(JsonDocument& doc);
 void populateSystemInfo(SystemInfo& systemInfo);
 void systemInfoToJson(JsonDocument& jsonDocument);
 
-void setRestartEsp32(const char* functionName, const char* reason);
-void restartEsp32();
+void setRestartSystem(const char* functionName, const char* reason);
+void restartSystem();
 
 void startMaintenanceTask();
 

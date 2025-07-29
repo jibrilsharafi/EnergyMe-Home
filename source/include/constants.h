@@ -220,10 +220,11 @@
 // Saving date
 #define SAVE_ENERGY_INTERVAL (6 * 60 * 1000) // Time between each energy save to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
-// ESP32 status
-#define MINIMUM_FREE_HEAP_SIZE 5000 // Below this value (in bytes), the ESP32 will restart
-#define MINIMUM_FREE_SPIFFS_SIZE 10000 // Below this value (in bytes), the ESP32 will clear the log
-#define ESP32_RESTART_DELAY (2 * 1000) // The delay before restarting the ESP32 after a restart request, needed to allow the ESP32 to finish the current operations
+// System restart thresholds
+#define MINIMUM_FREE_HEAP_SIZE 1000 // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support
+#define MINIMUM_FREE_PSRAM_SIZE 10000 // Below this value (in bytes), the system will restart
+#define MINIMUM_FREE_SPIFFS_SIZE 10000 // Below this value (in bytes), the system will clear the log
+#define SYSTEM_RESTART_DELAY (2 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations
 #define MINIMUM_FREE_HEAP_OTA 20000 // Below this, the OTA is rejected (a bit unsafe, this could block OTA)
 
 // Multiplexer

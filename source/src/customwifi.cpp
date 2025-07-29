@@ -218,7 +218,7 @@ namespace CustomWifi
               {
                 logger.fatal("Portal failed - restarting device", TAG);
                 Led::setRed(Led::PRIO_CRITICAL);
-                setRestartEsp32(TAG, "Restart after portal failure");
+                setRestartSystem(TAG, "Restart after portal failure");
               }
               // If portal succeeds, device will restart automatically
             }
@@ -246,7 +246,7 @@ namespace CustomWifi
     logger.warning("Resetting WiFi credentials and restarting...", TAG);
     Led::setRed(Led::PRIO_CRITICAL);
     _wifiManager.resetSettings();
-    setRestartEsp32(TAG, "Restart after WiFi reset");
+    setRestartSystem(TAG, "Restart after WiFi reset");
   }
 
   bool _setupMdns()

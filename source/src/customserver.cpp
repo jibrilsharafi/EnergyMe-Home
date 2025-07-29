@@ -336,14 +336,14 @@ namespace CustomServer
                 request->send(response);
                 
                 logger.info("OTA update completed successfully", TAG);
-                logger.info("New firmware MD5: %s", TAG, Update.md5String().c_str());
+                logger.debug("New firmware MD5: %s", TAG, Update.md5String().c_str());
                 
                 // Clear OTA progress pattern and show success LED pattern
                 Led::clearAllPatterns(); // Clear any ongoing patterns first
                 Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
                 
                 // Schedule restart
-                setRestartEsp32(TAG, "Restart needed after firmware update");
+                setRestartSystem(TAG, "Restart needed after firmware update");
             } }, [](AsyncWebServerRequest *request, String filename, size_t index, unsigned char *data, size_t len, bool final)
                   {
             // Handle firmware upload chunks
@@ -400,7 +400,7 @@ namespace CustomServer
                     // Convert to lowercase
                     md5Header.toLowerCase();
                     Update.setMD5(md5Header.c_str());
-                    logger.info("MD5 verification enabled: %s", TAG, md5Header.c_str());
+                    logger.debug("MD5 verification enabled: %s", TAG, md5Header.c_str());
                 } else if (md5Header.length() > 0) {
                     logger.warning("Invalid MD5 length (%d), skipping verification", TAG, md5Header.length());
                 }
@@ -409,7 +409,7 @@ namespace CustomServer
                 Led::blinkPurpleSlow(Led::PRIO_MEDIUM); // Indefinite duration - will run until cleared
                 
                 otaInitialized = true;
-                logger.info("OTA update started, expected size: %zu bytes", TAG, contentLength);
+                logger.debug("OTA update started, expected size: %zu bytes", TAG, contentLength);
             }
             
             // Write chunk to flash
@@ -438,7 +438,7 @@ namespace CustomServer
             
             // Final chunk - complete the update
             if (final && otaInitialized) {
-                logger.info("Finalizing OTA update...", TAG);
+                logger.debug("Finalizing OTA update...", TAG);
                 
                 if (!Update.end(true)) {
                     logger.error("OTA finalization failed: %s", TAG, Update.errorString());
@@ -447,7 +447,7 @@ namespace CustomServer
                     // Restore operations on error
                     // TODO: fill this
                 } else {
-                    logger.info("OTA update finalization successful", TAG);
+                    logger.debug("OTA update finalization successful", TAG);
                     
                     // Clear OTA progress pattern and show success LED pattern
                     Led::clearAllPatterns(); // Clear any ongoing patterns first
@@ -498,7 +498,7 @@ namespace CustomServer
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Rollback initiated. Device will restart.\"}");
 
             Update.rollBack();
-            setRestartEsp32(TAG, "Firmware rollback");
+            setRestartSystem(TAG, "Firmware rollback");
         } else {
             logger.error("Rollback not possible: %s", TAG, Update.errorString());
             request->send(400, "application/json", "{\"success\":false,\"message\":\"Rollback not possible\"}");
@@ -612,7 +612,7 @@ namespace CustomServer
                 if (_consecutiveFailures >= HEALTH_CHECK_MAX_FAILURES)
                 {
                     logger.error("Health check failed %d consecutive times, requesting system restart", TAG, HEALTH_CHECK_MAX_FAILURES);
-                    setRestartEsp32(TAG, "Server health check failures exceeded maximum threshold");
+                    setRestartSystem(TAG, "Server health check failures exceeded maximum threshold");
                     break; // Exit the task as we're restarting
                 }
             }

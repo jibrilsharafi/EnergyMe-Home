@@ -1744,7 +1744,7 @@ void Ade7953::_checkForTooManyFailures() {
     if (_failureCount >= ADE7953_MAX_FAILURES_BEFORE_RESTART) {
         
         _logger.fatal("Too many failures (%d) in ADE7953 communication or readings. Resetting device...", TAG, _failureCount);
-        setRestartEsp32(TAG, "Too many failures in ADE7953 communication or readings");
+        setRestartSystem(TAG, "Too many failures in ADE7953 communication or readings");
 
         // Reset the failure count and first failure time to avoid infinite loop of setting the restart
         _failureCount = 0;

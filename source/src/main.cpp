@@ -68,6 +68,14 @@ void setup()
   Serial.println("Setting up LED...");
   Led::begin(LED_RED_PIN, LED_GREEN_PIN, LED_BLUE_PIN);
   Serial.println("LED setup done");
+
+  Led::setRed(Led::PRIO_NORMAL); // Indicate we're in early boot/crash check
+  delay(1000);
+  Led::setGreen(Led::PRIO_NORMAL); // Indicate we're in early boot/crash check
+  delay(1000);
+  Led::setBlue(Led::PRIO_NORMAL); // Indicate we're in early boot/crash check
+  delay(1000);
+
   Led::setYellow(Led::PRIO_NORMAL); // Indicate we're in early boot/crash check
 
   if (!SPIFFS.begin(true))
@@ -90,7 +98,7 @@ void setup()
 
   Led::setCyan(Led::PRIO_NORMAL);
 
-  logger.debug("Checking for missing files...", TAG);
+  logger.debug("Checking for missing files...", TAG); // TODO: deprecate this
   auto missingFiles = checkMissingFiles();
   if (missingFiles.empty())
   {
@@ -185,14 +193,12 @@ void setup()
   InfluxDbClient::begin();
   logger.info("InfluxDB client setup done", TAG);
 
-  Led::setGreen(Led::PRIO_NORMAL);
-  printDeviceStatusStatic();
-
   logger.debug("Starting maintenance task...", TAG);
   startMaintenanceTask();
   logger.info("Maintenance task started", TAG);
 
   Led::blinkGreenSlow(Led::PRIO_NORMAL);
+  printDeviceStatusStatic();
   logger.info("Setup done! Let's get this energetic party started!", TAG);
 }
 

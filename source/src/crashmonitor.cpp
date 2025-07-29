@@ -8,13 +8,14 @@ namespace CrashMonitor
     static TaskHandle_t _crashResetTaskHandle = NULL;
 
     // Private function declarations
-    static void _handleCrashCounter();
+    static void _handleCounters();
     static void _crashResetTask(void *parameter);
 
     RTC_NOINIT_ATTR unsigned int _magicWord = MAGIC_WORD_RTC; // Magic word to check RTC data validity
     RTC_NOINIT_ATTR unsigned int _resetCount = 0; // Reset counter in RTC memory
     RTC_NOINIT_ATTR unsigned int _crashCount = 0; // Crash counter in RTC memory
-    RTC_NOINIT_ATTR unsigned int _consecutiveCrashCount = 0; // Crash counter in RTC memory
+    RTC_NOINIT_ATTR unsigned int _consecutiveCrashCount = 0; // Consecutive crash counter in RTC memory
+    RTC_NOINIT_ATTR unsigned int _consecutiveResetCount = 0; // Consecutive reset counter in RTC memory
 
     bool isLastResetDueToCrash() {
         // Only case in which it is not crash is when the reset reason is not
@@ -35,6 +36,7 @@ namespace CrashMonitor
             _resetCount = 0;
             _crashCount = 0;
             _consecutiveCrashCount = 0;
+            _consecutiveResetCount = 0;
         }
 
         // If it was a crash, increment counter
@@ -43,10 +45,12 @@ namespace CrashMonitor
             _consecutiveCrashCount++;
         }
 
-        // Increment reset count
+        // Increment reset count (always)
         _resetCount++;
+        _consecutiveResetCount++;
 
-        _handleCrashCounter();
+        logger.debug("Crash count: %d (consecutive: %d), Reset count: %d (consecutive: %d)", TAG, _crashCount, _consecutiveCrashCount, _resetCount, _consecutiveResetCount);
+        _handleCounters();
 
         // Create task to handle the crash reset
         xTaskCreate(_crashResetTask, CRASH_RESET_TASK_NAME, CRASH_RESET_TASK_STACK_SIZE, NULL, CRASH_RESET_TASK_PRIORITY, &_crashResetTaskHandle);
@@ -58,10 +62,11 @@ namespace CrashMonitor
     {
         logger.debug("Starting crash reset task...", TAG);
         delay(CRASH_COUNTER_TIMEOUT);
-        if (_consecutiveCrashCount > 0){
-            logger.info("Consecutive crash counter reset to 0", TAG);
+        if (_consecutiveCrashCount > 0 || _consecutiveResetCount > 0){
+            logger.info("Consecutive crash and reset counters reset to 0", TAG);
         }
         _consecutiveCrashCount = 0;
+        _consecutiveResetCount = 0;
         vTaskDelete(NULL);
     }
 
@@ -90,20 +95,25 @@ namespace CrashMonitor
         }
     }
 
-    void _handleCrashCounter() {
-        logger.debug("Crash count: %d (consecutive: %d), Reset count: %d", TAG, _crashCount, _consecutiveCrashCount, _resetCount);
+    void _handleCounters() {
+        if (_consecutiveCrashCount >= MAX_CRASH_COUNT || _consecutiveResetCount >= MAX_RESET_COUNT) {
+            logger.fatal("The consecutive crash count limit (%d) or the reset count limit (%d) has been reached", TAG, MAX_CRASH_COUNT, MAX_RESET_COUNT);
 
-        if (_consecutiveCrashCount >= MAX_CRASH_COUNT) {
-            logger.fatal("The consecutive crash count has reached a limit", TAG);
             if (Update.canRollBack()) {
-                logger.fatal("Rolling back to previous version.", TAG);
+                logger.fatal("Rolling back to previous firmware version", TAG);
                 if (Update.rollBack()) {
+                    // Reset both counters before restart since we're trying a different firmware
+                    _consecutiveCrashCount = 0;
+                    _consecutiveResetCount = 0;
+
+                    // Immediate reset to avoid any further issues
+                    logger.info("Rollback successful, restarting system", TAG);
                     ESP.restart();
                 }
             }
 
             // If we got here, it means the rollback could not be executed, so we try at least to format everything
-            logger.fatal("Could not rollback, factory resetting", TAG);
+            logger.fatal("Could not rollback, performing factory reset", TAG);
             factoryReset();
         }
     }

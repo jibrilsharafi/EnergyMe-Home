@@ -273,7 +273,7 @@ namespace Mqtt
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_RESTART))
         {
-            setRestartEsp32("subscribeCallback", "Restart requested from MQTT");
+            setRestartSystem("subscribeCallback", "Restart requested from MQTT");
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE))
         {
@@ -291,13 +291,13 @@ namespace Mqtt
                 writeEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, encryptedPrivateKey);
 
                 // Restart MQTT connection
-                setRestartEsp32("subscribeCallback", "Restarting after successful certificates provisioning");
+                setRestartSystem("subscribeCallback", "Restarting after successful certificates provisioning");
             }
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES))
         {
             clearCertificates();
-            setRestartEsp32("subscribeCallback", "Certificates erase requested from MQTT");
+            setRestartSystem("subscribeCallback", "Certificates erase requested from MQTT");
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION))
         {
@@ -567,7 +567,7 @@ namespace Mqtt
                     TAG,
                     _currentState);
                 clearCertificates();
-                setRestartEsp32(TAG, "MQTT Authentication/Authorization Error");
+                setRestartSystem(TAG, "MQTT Authentication/Authorization Error");
                 _nextMqttConnectionAttemptMillis = UINT32_MAX; // Prevent further attempts before restart
                 return false; // Prevent further processing in this cycle
             }
@@ -602,14 +602,14 @@ namespace Mqtt
         if (certLen < 10 || strstr(_awsIotCoreCert, "-----BEGIN") == nullptr) {
             logger.error("Invalid certificate format detected. Certificate may be corrupted.", TAG);
             clearCertificates();
-            setRestartEsp32(TAG, "Invalid certificate format");
+            setRestartSystem(TAG, "Invalid certificate format");
             return;
         }
 
         if (keyLen < 10 || strstr(_awsIotCorePrivateKey, "-----BEGIN") == nullptr) {
             logger.error("Invalid private key format detected. Private key may be corrupted.", TAG);
             clearCertificates();
-            setRestartEsp32(TAG, "Invalid private key format");
+            setRestartSystem(TAG, "Invalid private key format");
             return;
         }
 
@@ -656,7 +656,7 @@ namespace Mqtt
 
         if (_connectionAttempt >= MQTT_CLAIM_MAX_CONNECTION_ATTEMPT) {
             logger.error("Failed to connect to MQTT for claiming certificates after %d attempts", TAG, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
-            setRestartEsp32(TAG, "Failed to claim certificates");
+            setRestartSystem(TAG, "Failed to claim certificates");
             return;
         }
 
@@ -741,7 +741,7 @@ namespace Mqtt
         // Additional safety check - if restart is in progress and enough time has passed, 
         // avoid operations that might conflict with cleanup
         if (restartConfiguration.isRequired && 
-            (millis64() - restartConfiguration.requiredAt) > (ESP32_RESTART_DELAY - 1000)) {
+            (millis64() - restartConfiguration.requiredAt) > (SYSTEM_RESTART_DELAY - 1000)) {
             logger.warning("Restart imminent, skipping circular buffer to JSON conversion", TAG);
             return;
         }

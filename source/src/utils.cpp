@@ -510,8 +510,14 @@ void maintenanceTask(void* parameter) {
 
         // Check heap memory
         if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) {
-            logger.fatal("Heap memory has degraded below safe minimum: %d bytes", TAG, ESP.getFreeHeap());
-            setRestartEsp32(TAG, "Heap memory has degraded below safe minimum");
+            logger.fatal("Heap memory has degraded below safe minimum (%d bytes): %d bytes", TAG, MINIMUM_FREE_HEAP_SIZE, ESP.getFreeHeap());
+            setRestartSystem(TAG, "Heap memory has degraded below safe minimum");
+        }
+
+        // Check PSRAM memory
+        if (ESP.getFreePsram() < MINIMUM_FREE_PSRAM_SIZE) {
+            logger.fatal("PSRAM memory has degraded below safe minimum (%d bytes): %d bytes", TAG, MINIMUM_FREE_PSRAM_SIZE, ESP.getFreePsram());
+            setRestartSystem(TAG, "PSRAM memory has degraded below safe minimum");
         }
 
         // Check SPIFFS memory and clear log if needed
@@ -548,19 +554,19 @@ void startMaintenanceTask() {
 
 // Task function that handles delayed restart
 void restartTask(void* parameter) {
-    logger.debug("Restart task started, waiting %d ms before restart", TAG, ESP32_RESTART_DELAY);
+    logger.debug("Restart task started, waiting %d ms before restart", TAG, SYSTEM_RESTART_DELAY);
     
     // Wait for the specified delay
-    delay(ESP32_RESTART_DELAY);
+    delay(SYSTEM_RESTART_DELAY);
     
     // Execute the restart
-    restartEsp32();
+    restartSystem();
     
     // Task should never reach here, but clean up just in case
     vTaskDelete(NULL);
 }
 
-void setRestartEsp32(const char* functionName, const char* reason) { 
+void setRestartSystem(const char* functionName, const char* reason) { 
     logger.info("Restart required from function %s. Reason: %s", TAG, functionName, reason);
     
     // Store restart information for logging purposes
@@ -586,17 +592,17 @@ void setRestartEsp32(const char* functionName, const char* reason) {
     
     if (result != pdPASS) {
         logger.error("Failed to create restart task, performing immediate restart", TAG);
-        restartEsp32();
+        restartSystem();
     } else {
         logger.debug("Restart task created successfully", TAG);
     }
 }
 
-void restartEsp32() {
+void restartSystem() {
     Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
     Led::setWhite(Led::PRIO_CRITICAL);
 
-    logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
+    logger.info("Restarting system from function %s. Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
     logger.end();
 
     // Give time for AsyncTCP connections to close gracefully
@@ -665,8 +671,7 @@ void printDeviceStatusStatic()
     logger.debug("Company: %s | Author: %s", TAG, info.companyName, info.author);
     logger.debug("Firmware: %s | Build: %s %s", TAG, info.buildVersion, info.buildDate, info.buildTime);
     logger.debug("Sketch MD5: %s", TAG, info.sketchMD5);
-    logger.debug("Flash: %lu bytes, %lu Hz", TAG, info.flashChipSizeBytes, info.flashChipSpeedHz);
-    logger.debug("PSRAM: %lu bytes", TAG, info.psramSizeBytes);
+    logger.debug("Flash: %lu bytes, %lu Hz | PSRAM: %lu bytes", TAG, info.flashChipSizeBytes, info.flashChipSpeedHz, info.psramSizeBytes);
     logger.debug("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", TAG, info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
     logger.debug("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
     logger.debug("Device ID: %s", TAG, info.deviceId);
@@ -681,8 +686,7 @@ void printDeviceStatusDynamic()
     populateSystemDynamicInfo(info);
 
     logger.debug("--- Dynamic System Info ---", TAG);
-    logger.debug("Uptime: %lu s (%llu ms)", TAG, info.uptimeSeconds, (unsigned long long)info.uptimeMilliseconds);
-    logger.debug("Timestamp: %s", TAG, info.currentTimestamp);
+    logger.debug("Uptime: %lu s (%llu ms) | Timestamp: %s", TAG, info.uptimeSeconds, (unsigned long long)info.uptimeMilliseconds, info.currentTimestamp);
     logger.debug("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
         TAG, 
         info.heapTotalBytes, 
@@ -708,8 +712,7 @@ void printDeviceStatusDynamic()
     
     // WiFi information
     if (info.wifiConnected) {
-        logger.debug("WiFi: Connected to '%s' (BSSID: %s)", TAG, info.wifiSsid, info.wifiBssid);
-        logger.debug("WiFi: RSSI %d dBm | MAC %s", TAG, info.wifiRssi, info.wifiMacAddress);
+        logger.debug("WiFi: Connected to '%s' (BSSID: %s) | RSSI %d dBm | MAC %s", TAG, info.wifiSsid, info.wifiBssid, info.wifiRssi, info.wifiMacAddress);
         logger.debug("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", TAG, info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp, info.wifiSubnetMask);
     } else {
         logger.debug("WiFi: Disconnected | MAC %s", TAG, info.wifiMacAddress);

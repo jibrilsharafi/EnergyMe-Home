@@ -182,7 +182,7 @@ namespace ButtonHandler
         }
     }
 
-    static void _updateVisualFeedback(unsigned long long pressDuration)
+    static void _updateVisualFeedback(unsigned long long pressDuration) // FIXME: the previous color does not get cleared since they are the same priority
     {
         // Provide immediate visual feedback based on current press duration
         if (pressDuration >= BUTTON_MAX_PRESS_TIME)
@@ -222,7 +222,7 @@ namespace ButtonHandler
 
         Led::setCyan(Led::PRIO_CRITICAL);
 
-        setRestartEsp32(TAG, "Restart via button");
+        setRestartSystem(TAG, "Restart via button");
 
         _operationInProgress = false;
         _currentPressType = ButtonPressType::NONE;
