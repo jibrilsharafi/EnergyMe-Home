@@ -18,6 +18,76 @@ namespace Mqtt
     static QueueHandle_t _logQueue = NULL;
     static QueueHandle_t _meterQueue = NULL;
     
+    // Static queue structures and storage for PSRAM
+    static StaticQueue_t _logQueueStruct;
+    static StaticQueue_t _meterQueueStruct;
+    static uint8_t* _logQueueStorage = nullptr;
+    static uint8_t* _meterQueueStorage = nullptr;
+    static bool _isLogQueueInitialized = false;
+    static bool _isMeterQueueInitialized = false;
+
+    // Helper functions for lazy queue initialization
+    static bool _initializeLogQueue();
+    static bool _initializeMeterQueue();
+
+    bool _initializeLogQueue() // Cannot use logger here to avoid circular dependency
+    {
+        if (_isLogQueueInitialized) {
+            return true;
+        }
+
+        // Allocate queue storage in PSRAM
+        size_t queueStorageSize = MQTT_LOG_QUEUE_SIZE * sizeof(LogJson);
+        _logQueueStorage = (uint8_t*)heap_caps_malloc(queueStorageSize, MALLOC_CAP_SPIRAM);
+        
+        if (_logQueueStorage == nullptr) {
+            Serial.printf("[ERROR] Failed to allocate PSRAM for MQTT log queue (%d bytes)\n", queueStorageSize);
+            return false;
+        }
+
+        // Create FreeRTOS static queue using PSRAM buffer
+        _logQueue = xQueueCreateStatic(MQTT_LOG_QUEUE_SIZE, sizeof(LogJson), _logQueueStorage, &_logQueueStruct);
+        if (_logQueue == nullptr) {
+            Serial.printf("[ERROR] Failed to create MQTT log queue\n");
+            heap_caps_free(_logQueueStorage);
+            _logQueueStorage = nullptr;
+            return false;
+        }
+
+        _isLogQueueInitialized = true;
+        Serial.printf("[DEBUG] MQTT log queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", queueStorageSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        return true;
+    }
+
+    bool _initializeMeterQueue() // Cannot use logger here to avoid circular dependency
+    {
+        if (_isMeterQueueInitialized) {
+            return true;
+        }
+
+        // Allocate queue storage in PSRAM
+        size_t queueStorageSize = MQTT_METER_QUEUE_SIZE * sizeof(PayloadMeter);
+        _meterQueueStorage = (uint8_t*)heap_caps_malloc(queueStorageSize, MALLOC_CAP_SPIRAM);
+        
+        if (_meterQueueStorage == nullptr) {
+            Serial.printf("[ERROR] Failed to allocate PSRAM for MQTT meter queue (%d bytes)\n", queueStorageSize);
+            return false;
+        }
+
+        // Create FreeRTOS static queue using PSRAM buffer
+        _meterQueue = xQueueCreateStatic(MQTT_METER_QUEUE_SIZE, sizeof(PayloadMeter), _meterQueueStorage, &_meterQueueStruct);
+        if (_meterQueue == nullptr) {
+            Serial.printf("[ERROR] Failed to create MQTT meter queue\n");
+            heap_caps_free(_meterQueueStorage);
+            _meterQueueStorage = nullptr;
+            return false;
+        }
+
+        _isMeterQueueInitialized = true;
+        Serial.printf("[DEBUG] MQTT meter queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", queueStorageSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        return true;
+    }
+    
     // Task handle
     static TaskHandle_t _taskHandle = NULL;
     
@@ -130,35 +200,26 @@ namespace Mqtt
         }
 
 #if HAS_SECRETS
-        // Create FreeRTOS queues
-        _logQueue = xQueueCreate(MQTT_LOG_QUEUE_SIZE, sizeof(LogJson));
-        if (_logQueue == NULL) {
-            logger.error("Failed to create MQTT log queue", TAG);
-            return;
-        }
-        
-        _meterQueue = xQueueCreate(MQTT_METER_QUEUE_SIZE, sizeof(PayloadMeter));
-        if (_meterQueue == NULL) {
-            logger.error("Failed to create MQTT meter queue", TAG);
-            vQueueDelete(_logQueue);
-            _logQueue = NULL;
+        // Initialize queues if not already done
+        if (!_initializeLogQueue()) {
+            logger.error("Failed to initialize MQTT log queue", TAG);
             return;
         }
 
-        _meterQueue = xQueueCreate(MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS, sizeof(PayloadMeter));
-        if (_meterQueue == NULL) {
-            logger.error("Failed to create MQTT payload meter queue", TAG);
-            vQueueDelete(_logQueue);
-            vQueueDelete(_meterQueue);
-            _logQueue = NULL;
-            _meterQueue = NULL;
+        if (!_initializeMeterQueue()) {
+            logger.error("Failed to initialize MQTT meter queue", TAG);
             return;
         }
+
+        size_t logQueueStorageSize = MQTT_LOG_QUEUE_SIZE * sizeof(LogJson);
+        size_t meterQueueStorageSize = MQTT_METER_QUEUE_SIZE * sizeof(PayloadMeter);
+        logger.debug("MQTT queues created with PSRAM - Log: %d bytes, Meter: %d bytes", TAG,
+                   logQueueStorageSize, meterQueueStorageSize);
 
         // Start the FreeRTOS task
         if (_taskHandle == NULL)
         {
-            xTaskCreate(_mqttTask, "MqttTask", MQTT_TASK_STACK_SIZE, NULL, MQTT_TASK_PRIORITY, &_taskHandle);
+            xTaskCreate(_mqttTask, MQTT_TASK_NAME, MQTT_TASK_STACK_SIZE, NULL, MQTT_TASK_PRIORITY, &_taskHandle);
             if (_taskHandle != NULL)
             {
                 logger.debug("MQTT task started", TAG);
@@ -166,19 +227,8 @@ namespace Mqtt
             else
             {
                 logger.error("Failed to create MQTT task", TAG);
-                // Clean up queues
-                if (_logQueue != NULL) {
-                    vQueueDelete(_logQueue);
-                    _logQueue = NULL;
-                }
-                if (_meterQueue != NULL) {
-                    vQueueDelete(_meterQueue);
-                    _meterQueue = NULL;
-                }
-                if (_meterQueue != NULL) {
-                    vQueueDelete(_meterQueue);
-                    _meterQueue = NULL;
-                }
+                // Note: We don't clean up queues here since they might already contain
+                // important early logs/meter data. They'll be cleaned up in stop().
             }
         }
 #else
@@ -197,23 +247,22 @@ namespace Mqtt
             logger.debug("MQTT task stopped", TAG);
         }
         
-        // Clean up queues
-        if (_logQueue != NULL) {
-            vQueueDelete(_logQueue);
-            _logQueue = NULL;
-            logger.debug("MQTT log queue deleted", TAG);
+        // Clean up queues and PSRAM storage
+        _logQueue = nullptr;
+        _meterQueue = nullptr;
+        
+        if (_isLogQueueInitialized && _logQueueStorage != nullptr) {
+            heap_caps_free(_logQueueStorage);
+            _logQueueStorage = nullptr;
+            _isLogQueueInitialized = false;
+            logger.debug("MQTT log queue PSRAM freed", TAG);
         }
         
-        if (_meterQueue != NULL) {
-            vQueueDelete(_meterQueue);
-            _meterQueue = NULL;
-            logger.debug("MQTT meter queue deleted", TAG);
-        }
-
-        if (_meterQueue != NULL) {
-            vQueueDelete(_meterQueue);
-            _meterQueue = NULL;
-            logger.debug("MQTT payload meter queue deleted", TAG);
+        if (_isMeterQueueInitialized && _meterQueueStorage != nullptr) {
+            heap_caps_free(_meterQueueStorage);
+            _meterQueueStorage = nullptr;
+            _isMeterQueueInitialized = false;
+            logger.debug("MQTT meter queue PSRAM freed", TAG);
         }
 
         logger.info("MQTT client stopped", TAG);
@@ -230,8 +279,11 @@ namespace Mqtt
     // Public methods for pushing data to queues
     void pushLog(const char* timestamp, unsigned long millisEsp, const char* level, unsigned int coreId, const char* function, const char* message)
     {
-        if (_logQueue == NULL) {
-            return; // Queue not initialized
+        // Initialize log queue on first use if not already done
+        if (!_isLogQueueInitialized) {
+            if (!_initializeLogQueue()) {
+                return; // Failed to initialize, drop this log
+            }
         }
         
         // Filter debug logs if not enabled
@@ -251,8 +303,11 @@ namespace Mqtt
 
     void pushMeter(const PayloadMeter& payload)
     {
-        if (_meterQueue == NULL) {
-            return; // Queue not initialized
+        // Initialize meter queue on first use if not already done
+        if (!_isMeterQueueInitialized) {
+            if (!_initializeMeterQueue()) {
+                return; // Failed to initialize, drop this meter data
+            }
         }
         
         // Try to send to queue (non-blocking)
@@ -540,7 +595,9 @@ namespace Mqtt
 
         logger.info("MQTT setup complete", TAG);
         _isSetupDone = true;
-    }    static bool _connectMqtt()
+    }    
+    
+    static bool _connectMqtt()
     {
         logger.debug("Attempting to connect to MQTT (attempt %d)...", TAG, _mqttConnectionAttempt + 1);
 
@@ -780,18 +837,18 @@ namespace Mqtt
                 break; // No more items in queue
             }
 
-            if (payloadMeter.unixTime == 0) {
+            if (payloadMeter.unixTimeMs == 0) {
                 logger.debug("Payload meter has zero unixTime, skipping...", TAG);
                 continue;
             }
 
-            if (!validateUnixTime(payloadMeter.unixTime)) {
-                logger.warning("Invalid unixTime in payload meter: %llu", TAG, payloadMeter.unixTime);
+            if (!validateUnixTime(payloadMeter.unixTimeMs)) {
+                logger.warning("Invalid unixTime in payload meter: %llu", TAG, payloadMeter.unixTimeMs);
                 continue;
             }
 
             JsonObject jsonObject = jsonArray.add<JsonObject>();
-            jsonObject["unixTime"] = payloadMeter.unixTime;
+            jsonObject["unixTime"] = payloadMeter.unixTimeMs;
             jsonObject["channel"] = payloadMeter.channel;
             jsonObject["activePower"] = payloadMeter.activePower;
             jsonObject["powerFactor"] = payloadMeter.powerFactor;
@@ -997,7 +1054,7 @@ namespace Mqtt
     static void _checkIfPublishMeterNeeded() {
         UBaseType_t queueSize = uxQueueMessagesWaiting(_meterQueue);
         if (
-            ((queueSize > (MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS * 0.90)) && _isSendPowerDataEnabled()) || 
+            ((queueSize > (MQTT_METER_QUEUE_SIZE * 0.90)) && _isSendPowerDataEnabled()) || 
             (millis64() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH
         ) { // Either queue is 90% full (and we are sending power data) or time has passed
             logger.debug("Setting flag to publish %d meter data points", TAG, queueSize);
@@ -1118,17 +1175,9 @@ namespace Mqtt
     
     static void _processMeterQueue()
     {
-        PayloadMeter meterEntry;
-        
-        // Transfer data from meterQueue to payloadMeterQueue for batch processing
-        while (xQueueReceive(_meterQueue, &meterEntry, 0) == pdTRUE) {
-            // Try to send to payload meter queue (non-blocking)
-            if (xQueueSend(_meterQueue, &meterEntry, 0) != pdTRUE) {
-                // Payload meter queue is full, trigger immediate publish
-                _publishMqtt.meter = true;
-                break;
-            }
-        }
+        // This function is no longer needed since _meterQueue directly contains
+        // the data for publishing. The queue itself replaces the CircularBuffer.
+        // Data flows: pushMeter() -> _meterQueue -> _publishMeter() -> _meterQueueToJson()
     }
     
     static void _publishLogEntry(const LogJson& logEntry)

@@ -26,7 +26,7 @@ namespace CustomWifi
 
   bool begin()
   {
-    logger.info("Setting up WiFi with event-driven architecture...", TAG);
+    logger.debug("Setting up WiFi with event-driven architecture...", TAG);
 
     // Setup WiFi event handling
     WiFi.onEvent(_onWiFiEvent);
@@ -41,7 +41,7 @@ namespace CustomWifi
     // Create WiFi connection task
     xTaskCreate(_wifiConnectionTask, WIFI_TASK_NAME, WIFI_TASK_STACK_SIZE, NULL, WIFI_TASK_PRIORITY, &_wifiTaskHandle);
 
-    logger.info("WiFi setup complete - event-driven mode enabled", TAG);
+    logger.debug("WiFi setup complete - event-driven mode enabled", TAG);
     return true;
   }
 
@@ -164,7 +164,7 @@ namespace CustomWifi
           continue; // No further action needed
 
         case WIFI_EVENT_GOT_IP:
-          logger.info("WiFi got IP: %s", TAG, WiFi.localIP().toString().c_str());
+          logger.debug("WiFi got IP: %s", TAG, WiFi.localIP().toString().c_str());
           // Handle successful connection operations safely in task context
           _handleSuccessfulConnection();
           continue; // No further action needed

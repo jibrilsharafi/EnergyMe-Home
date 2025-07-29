@@ -45,7 +45,7 @@ namespace ButtonHandler
         int buttonPin)
     {
         _buttonPin = buttonPin;
-        logger.info("Initializing interrupt-driven button handler on GPIO%d", TAG, _buttonPin);
+        logger.debug("Initializing interrupt-driven button handler on GPIO%d", TAG, _buttonPin);
 
         // Setup GPIO with pull-up
         pinMode(_buttonPin, INPUT_PULLUP);
@@ -72,7 +72,7 @@ namespace ButtonHandler
         _preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false);
         _loadOperationData();
 
-        logger.info("Button handler ready - interrupt-driven with task processing", TAG);
+        logger.debug("Button handler ready - interrupt-driven with task processing", TAG);
     }
 
     static void IRAM_ATTR _buttonISR()
@@ -311,7 +311,7 @@ namespace ButtonHandler
 
         if (strlen(_operationName) > 0)
         {
-            logger.info("Loaded last button operation from NVS: %s", TAG, _operationName);
+            logger.debug("Loaded last button operation from NVS: %s", TAG, _operationName);
             
             if (_operationTimestamp > ZERO_START_TIME)
             {

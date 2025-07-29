@@ -520,7 +520,7 @@ namespace CustomServer
 
         if (result == pdPASS)
         {
-            logger.info("Health check task started successfully", TAG);
+            logger.debug("Health check task started successfully", TAG);
         }
         else
         {

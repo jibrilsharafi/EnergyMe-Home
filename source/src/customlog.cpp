@@ -20,7 +20,7 @@ namespace CustomLog
     static void _callbackUdp();
     static bool _initializeQueue();
 
-    bool _initializeQueue()
+    bool _initializeQueue() // Cannot use logger here to avoid circular dependency
     {
         if (_isQueueInitialized) {
             return true;

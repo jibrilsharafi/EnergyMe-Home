@@ -20,10 +20,13 @@
 #include "structs.h"
 #include "utils.h"
 
+#define MQTT_TASK_NAME "mqtt_task"
 #define MQTT_TASK_STACK_SIZE (16 * 1024)
 #define MQTT_TASK_PRIORITY 3
-#define MQTT_LOG_QUEUE_SIZE 200 // Callback queue size - (high, only for development. Make lower evenually)
-#define MQTT_METER_QUEUE_SIZE 50
+
+#define MQTT_LOG_QUEUE_SIZE 1000 // Generous log size thanks to PSRAM
+#define MQTT_METER_QUEUE_SIZE 50000 // Very big since we have plenty of PSRAM
+
 #if HAS_SECRETS
 #define DEFAULT_CLOUD_SERVICES_ENABLED true // If we compile with secrets, we might as well just directly connect
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
@@ -33,6 +36,7 @@
 #define DEFAULT_SEND_POWER_DATA_ENABLED false
 #define DEFAULT_DEBUG_LOGS_ENABLED false
 #endif
+
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
 #define MQTT_MAX_INTERVAL_STATUS_PUBLISH (60 * 60 * 1000) // The interval between two status publish
 #define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (60 * 60 * 1000) // The interval between two statistics publish
@@ -44,16 +48,16 @@
 #define MQTT_MAX_RECONNECT_INTERVAL (5 * 60 * 1000) // Maximum interval for MQTT reconnection attempts
 #define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
-#define MQTT_PAYLOAD_METER_MAX_NUMBER_POINTS 100 // The maximum number of points that can be sent in a single payload. Going higher than about 150 leads to unstable connections
 #define MQTT_PAYLOAD_LIMIT (16 * 1024) // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
 #define MQTT_PROVISIONING_TIMEOUT (60 * 1000) // The timeout for the provisioning response
 #define MQTT_PROVISIONING_LOOP_CHECK (1 * 1000) // Interval between two certificates check on memory
+
 #define MQTT_DEBUG_LOGGING_DEFAULT_DURATION (3 * 60 * 1000) 
 #define MQTT_DEBUG_LOGGING_MAX_DURATION (60 * 60 * 1000)
 
 #define MQTT_PREFERENCES_NAMESPACE "mqtt_ns"
-#define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "enableCloudServices"
-#define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "sendPowerData"
+#define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
+#define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 
 // Cloud services
 // --------------------

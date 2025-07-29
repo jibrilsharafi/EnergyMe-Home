@@ -15,6 +15,7 @@
 #include <esp_mac.h> // For the MAC address
 #include <ESPmDNS.h>
 #include <WiFi.h>
+#include <esp_ota_ops.h>
 
 #include "binaries.h"
 #include "constants.h"
@@ -52,10 +53,6 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc);
 // Convenience functions for JSON API endpoints
 void getJsonDeviceStaticInfo(JsonDocument& doc);
 void getJsonDeviceDynamicInfo(JsonDocument& doc);
-
-// Legacy functions (for backward compatibility)
-void populateSystemInfo(SystemInfo& systemInfo);
-void systemInfoToJson(JsonDocument& jsonDocument);
 
 void setRestartSystem(const char* functionName, const char* reason);
 void restartSystem();

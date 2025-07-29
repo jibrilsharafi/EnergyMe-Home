@@ -24,6 +24,8 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     snprintf(info.buildDate, sizeof(info.buildDate), "%s", FIRMWARE_BUILD_DATE);
     snprintf(info.buildTime, sizeof(info.buildTime), "%s", FIRMWARE_BUILD_TIME);
     snprintf(info.sketchMD5, sizeof(info.sketchMD5), "%s", ESP.getSketchMD5().c_str());
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    snprintf(info.partitionAppName, sizeof(info.partitionAppName), "%s", running->label);
     
     // Hardware info
     snprintf(info.chipModel, sizeof(info.chipModel), "%s", ESP.getChipModel());
@@ -136,7 +138,8 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
     doc["firmware"]["buildDate"] = info.buildDate;
     doc["firmware"]["buildTime"] = info.buildTime;
     doc["firmware"]["sketchMD5"] = info.sketchMD5;
-    
+    doc["firmware"]["partitionAppName"] = info.partitionAppName;
+
     // Hardware
     doc["hardware"]["chipModel"] = info.chipModel;
     doc["hardware"]["chipRevision"] = info.chipRevision;
@@ -548,7 +551,7 @@ void startMaintenanceTask() {
     if (result != pdPASS) {
         logger.error("Failed to create maintenance task", TAG);
     } else {
-        logger.info("Maintenance task created successfully", TAG);
+        logger.debug("Maintenance task created successfully", TAG);
     }
 }
 
@@ -618,26 +621,6 @@ void restartSystem() {
     ESP.restart();
 }
 
-// Convenience methods for SystemInfo struct
-void SystemInfo::updateStatic() {
-    populateSystemStaticInfo(static_info);
-}
-
-void SystemInfo::updateDynamic() {
-    populateSystemDynamicInfo(dynamic_info);
-}
-
-// Legacy compatibility function
-void populateSystemInfo(SystemInfo& systemInfo) {
-    logger.debug("Populating system info (legacy)...", TAG);
-    
-    // Use the new methods to populate both static and dynamic info
-    systemInfo.updateAll();
-
-    logger.debug("System info populated (legacy)", TAG);
-}
-
-
 // Print functions
 // -----------------------------
 
@@ -670,7 +653,7 @@ void printDeviceStatusStatic()
     logger.debug("Product: %s (%s)", TAG, info.fullProductName, info.productName);
     logger.debug("Company: %s | Author: %s", TAG, info.companyName, info.author);
     logger.debug("Firmware: %s | Build: %s %s", TAG, info.buildVersion, info.buildDate, info.buildTime);
-    logger.debug("Sketch MD5: %s", TAG, info.sketchMD5);
+    logger.debug("Sketch MD5: %s | Partition app name: %s", TAG, info.sketchMD5, info.partitionAppName);
     logger.debug("Flash: %lu bytes, %lu Hz | PSRAM: %lu bytes", TAG, info.flashChipSizeBytes, info.flashChipSpeedHz, info.psramSizeBytes);
     logger.debug("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", TAG, info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
     logger.debug("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
@@ -791,26 +774,6 @@ void printStatistics() {
         statistics.logFatal
     );
     logger.debug("-------------------", TAG);
-}
-
-void systemInfoToJson(JsonDocument& jsonDocument) {
-    logger.debug("Converting system info to JSON (legacy)...", TAG);
-
-    SystemInfo info;
-    populateSystemInfo(info);
-
-    // Combine static and dynamic info for legacy compatibility
-    systemStaticInfoToJson(info.static_info, jsonDocument);
-    
-    JsonDocument dynamicDoc;
-    systemDynamicInfoToJson(info.dynamic_info, dynamicDoc);
-    
-    // Merge dynamic info into the main document
-    for (JsonPair kv : dynamicDoc.as<JsonObject>()) {
-        jsonDocument[kv.key()] = kv.value();
-    }
-
-    logger.debug("System info converted to JSON (legacy)", TAG);
 }
 
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {

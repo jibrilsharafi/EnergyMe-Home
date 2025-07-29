@@ -64,6 +64,7 @@ struct SystemStaticInfo {
     char buildDate[32];
     char buildTime[32];
     char sketchMD5[33];  // MD5 hash (32 chars + null terminator)
+    char partitionAppName[8]; // Name of the partition for the app (e.g., "app0", "app1")
     
     // Hardware & Chip (mostly static)
     char chipModel[32];        // ESP32, ESP32-S3, etc.
@@ -103,6 +104,7 @@ struct SystemStaticInfo {
         snprintf(buildDate, sizeof(buildDate), "Unknown");
         snprintf(buildTime, sizeof(buildTime), "Unknown");
         snprintf(sketchMD5, sizeof(sketchMD5), "Unknown");
+        snprintf(partitionAppName, sizeof(partitionAppName), "Unknown");
         snprintf(chipModel, sizeof(chipModel), "Unknown");
         snprintf(sdkVersion, sizeof(sdkVersion), "Unknown");
         snprintf(coreVersion, sizeof(coreVersion), "Unknown");
@@ -167,20 +169,6 @@ struct SystemDynamicInfo {
         snprintf(wifiSubnetMask, sizeof(wifiSubnetMask), "0.0.0.0");
         snprintf(wifiDnsIp, sizeof(wifiDnsIp), "0.0.0.0");
         snprintf(wifiBssid, sizeof(wifiBssid), "00:00:00:00:00:00");
-    }
-};
-
-// Combined container for convenience
-struct SystemInfo {
-    SystemStaticInfo static_info;
-    SystemDynamicInfo dynamic_info;
-    
-    // Convenience methods
-    void updateDynamic();
-    void updateStatic();
-    void updateAll() {
-        updateStatic();
-        updateDynamic();
     }
 };
 
@@ -267,14 +255,14 @@ struct MeterValues
 struct PayloadMeter
 {
   int channel;
-  unsigned long long unixTime;
+  unsigned long long unixTimeMs;
   float activePower;
   float powerFactor;
 
-  PayloadMeter() : channel(0), unixTime(0), activePower(0.0f), powerFactor(0.0f) {}
+  PayloadMeter() : channel(0), unixTimeMs(0), activePower(0.0f), powerFactor(0.0f) {}
 
-  PayloadMeter(int channel, unsigned long long unixTime, float activePower, float powerFactor)
-      : channel(channel), unixTime(unixTime), activePower(activePower), powerFactor(powerFactor) {}
+  PayloadMeter(int channel, unsigned long long unixTimeMs, float activePower, float powerFactor)
+      : channel(channel), unixTimeMs(unixTimeMs), activePower(activePower), powerFactor(powerFactor) {}
 };
 
 struct CalibrationValues
@@ -312,11 +300,11 @@ struct ChannelData
 };
 
 // Used to track consecutive zero energy readings for channel 0
-struct ChannelState {
+struct ChannelState { // TODO: what the heck was i thinking with this?
     unsigned long consecutiveZeroCount = 0;
 };
 
-struct PublicLocation
+struct PublicLocation // TODO: Move to utils or time or where needed
 {
   char country[COUNTRY_BUFFER_SIZE];
   char city[CITY_BUFFER_SIZE];
@@ -326,7 +314,7 @@ struct PublicLocation
   PublicLocation() : country("Unknown"), city("Unknown"), latitude(45.0), longitude(9.0) {} // Default to Milan coordinates
 };
 
-struct RestartConfiguration
+struct RestartConfiguration // TODO: really needed?
 {
   bool isRequired;
   unsigned long requiredAt;
@@ -339,7 +327,7 @@ struct RestartConfiguration
   }
 };
 
-struct CustomMqttConfiguration {
+struct CustomMqttConfiguration { // TODO: deprecate this
     bool enabled;
     char server[SERVER_NAME_BUFFER_SIZE];
     int port;
