@@ -5,8 +5,9 @@ Provide project context and coding guidelines that AI should follow when generat
 
 0. **Agent instructions**:
     - Always be as concise as possible unless the user asks for more details.
-    - Never ask to run `pio` or `platformio` commands as they won't work directly in the terminal. Assume the user will run them manually.
+    - Don't be condescending or overly verbose.
     - Always stick to the request, and avoid at all costs creating new files unless asked to. Proposals are accepted.
+    - Never ask to run `pio` or `platformio` commands as they won't work directly in the terminal. Assume the user will run them manually.
 
 1. **Project Context**:
     - EnergyMe-Home is an open-source ESP32-based energy monitoring system using the Arduino framework with PlatformIO

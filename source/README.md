@@ -275,3 +275,4 @@ The system uses ESP32 Preferences for secure credential storage and implements c
 - The ArduinoJson library uses by default the PSRAM when possible, thus already optimizing memory usage.
 - The arduino framework converts delay to vTaskDelay anyway, so we use delay for cleaner APIs.
 - The custom `millis64()` function is used in place of the standard `millis()` that returns a 32-bit value and thus overflows after only 49 days.
+- The PSRAM seems to be used only when the heap is almost saturated, but it works in the end.

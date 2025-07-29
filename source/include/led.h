@@ -77,7 +77,7 @@ namespace Led {
     int getBrightness();
 
     // Pattern control functions
-    void setPattern(LedPattern pattern, Color color, LedPriority priority = 1, unsigned long durationMs = 0); // TODO: actually use this
+    void setPattern(LedPattern pattern, Color color, LedPriority priority = 1, unsigned long long durationMs = 0); // TODO: actually use this
     void clearPattern(LedPriority priority);
     void clearAllPatterns();
 
@@ -93,10 +93,14 @@ namespace Led {
     void setOff(LedPriority priority = 1);
 
     // Pattern convenience functions
+    void blinkOrangeFast(LedPriority priority = 5, unsigned long long durationMs = 0);
     void blinkRed(LedPriority priority = 5, unsigned long long durationMs = 0);
+    void blinkBlueSlow(LedPriority priority = 1, unsigned long long durationMs = 0);
+    void blinkBlueFast(LedPriority priority = 1, unsigned long long durationMs = 0);
     void blinkGreenSlow(LedPriority priority = 1, unsigned long long durationMs = 0);
     void blinkGreenFast(LedPriority priority = 1, unsigned long long durationMs = 0);
     void pulseBlue(LedPriority priority = 1, unsigned long long durationMs = 0);
     void blinkPurpleSlow(LedPriority priority = 5, unsigned long long durationMs = 0);
+    void blinkPurpleFast(LedPriority priority = 5, unsigned long long durationMs = 0);
     void doubleBlinkYellow(LedPriority priority = 10, unsigned long long durationMs = 0);
 }

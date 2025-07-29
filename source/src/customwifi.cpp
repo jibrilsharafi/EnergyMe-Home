@@ -59,16 +59,6 @@ namespace CustomWifi
     _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT);
     _wifiManager.setConnectRetries(WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS); // Let WiFiManager handle initial retries
 
-    // Callback when portal starts
-    _wifiManager.setAPCallback([](WiFiManager *wm)
-                               {
-                                logger.info("WiFi configuration portal started: %s", TAG, wm->getConfigPortalSSID().c_str());
-                                Led::setPattern(
-                                  LedPattern::LED_PATTERN_BLINK_SLOW,
-                                  Led::Colors::BLUE,
-                                  Led::PRIO_CRITICAL
-                                ); });
-
     // Callback when config is saved
     _wifiManager.setSaveConfigCallback([]()
                                        {
@@ -76,10 +66,9 @@ namespace CustomWifi
             Led::setPattern(
               LedPattern::LED_PATTERN_BLINK_FAST,
               Led::Colors::CYAN,
-              Led::PRIO_CRITICAL
-            );
-            delay(1000);
-            ESP.restart(); });
+              Led::PRIO_CRITICAL,
+              3000ULL
+            ); });
 
     logger.debug("WiFiManager set up", TAG);
   }
@@ -95,8 +84,8 @@ namespace CustomWifi
       break;
 
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-      Led::setBlue(Led::PRIO_MEDIUM);
       _reconnectAttempts = 0;
+
       // Defer logging to task
       if (_wifiTaskHandle)
         xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetValueWithOverwrite);
@@ -109,7 +98,6 @@ namespace CustomWifi
       break;
 
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      Led::setBlue(Led::PRIO_MEDIUM);
       statistics.wifiConnectionError++;
 
       // Notify task to handle fallback if needed
@@ -138,9 +126,6 @@ namespace CustomWifi
     // Print connection info
     printWifiInfo();
 
-    // LED indication
-    Led::setGreen(Led::PRIO_NORMAL);
-
     logger.info("WiFi fully connected and operational", TAG);
   }
 
@@ -154,13 +139,16 @@ namespace CustomWifi
     char hostname[WIFI_SSID_BUFFER_SIZE];
     snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
 
+    Led::blinkBlueFast(Led::PRIO_MEDIUM);
     if (!_wifiManager.autoConnect(hostname))
     {
       logger.error("Initial WiFi connection failed - restarting", TAG);
       Led::doubleBlinkYellow(Led::PRIO_CRITICAL);
       delay(1000);
+      // Do not wait for any further operations, since the WiFi is critical and this is the first connection attempt
       ESP.restart();
     }
+    Led::clearPattern(Led::PRIO_MEDIUM);
 
     // Main task loop - handles fallback scenarios and deferred logging
     while (true)
@@ -182,18 +170,9 @@ namespace CustomWifi
           continue; // No further action needed
 
         case WIFI_EVENT_DISCONNECTED:
+          Led::blinkBlueSlow(Led::PRIO_MEDIUM);
           logger.warning("WiFi disconnected - auto-reconnect will handle", TAG);
-          // Fall through to handle disconnection
-          break;
 
-        default:
-          // Legacy notification or timeout - treat as disconnection check
-          break;
-        }
-
-        // Handle disconnection
-        if (notificationValue == WIFI_EVENT_DISCONNECTED)
-        {
           // Wait a bit for auto-reconnect to work
           delay(5000);
 
@@ -204,7 +183,6 @@ namespace CustomWifi
             _lastReconnectAttempt = millis64();
 
             logger.warning("Auto-reconnect failed, attempt %d", TAG, _reconnectAttempts);
-            Led::setOrange(Led::PRIO_MEDIUM);
 
             // After several failures, try WiFiManager as fallback
             if (_reconnectAttempts >= WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS)
@@ -212,17 +190,20 @@ namespace CustomWifi
               logger.error("Multiple reconnection failures - starting portal", TAG);
 
               // Try WiFiManager portal
-              Led::setPurple(Led::PRIO_URGENT);
-
               if (!_wifiManager.startConfigPortal(hostname))
               {
                 logger.fatal("Portal failed - restarting device", TAG);
-                Led::setRed(Led::PRIO_CRITICAL);
+                Led::blinkRed(Led::PRIO_URGENT);
                 setRestartSystem(TAG, "Restart after portal failure");
               }
               // If portal succeeds, device will restart automatically
             }
           }
+          break;
+
+        default:
+          // Legacy notification or timeout - treat as disconnection check
+          break;
         }
       }
 
@@ -244,7 +225,7 @@ namespace CustomWifi
   void resetWifi()
   {
     logger.warning("Resetting WiFi credentials and restarting...", TAG);
-    Led::setRed(Led::PRIO_CRITICAL);
+    Led::blinkOrangeFast(Led::PRIO_CRITICAL);
     _wifiManager.resetSettings();
     setRestartSystem(TAG, "Restart after WiFi reset");
   }

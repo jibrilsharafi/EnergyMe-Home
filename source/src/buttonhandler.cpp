@@ -220,7 +220,7 @@ namespace ButtonHandler
 
         _saveOperationData();
 
-        Led::setCyan(Led::PRIO_CRITICAL);
+        Led::setCyan(Led::PRIO_URGENT);
 
         setRestartSystem(TAG, "Restart via button");
 
@@ -237,7 +237,7 @@ namespace ButtonHandler
 
         _saveOperationData();
 
-        Led::setYellow(Led::PRIO_CRITICAL);
+        Led::setYellow(Led::PRIO_URGENT);
 
         if (CustomServer::resetWebPassword()) // Implement actual password reset logic
         {
@@ -245,7 +245,7 @@ namespace ButtonHandler
             CustomServer::updateAuthPassword();
             
             logger.info("Password reset to default successfully", TAG);
-            Led::blinkGreenSlow(Led::PRIO_CRITICAL, 2000ULL);
+            Led::blinkGreenSlow(Led::PRIO_URGENT, 2000ULL);
         }
         else
         {
@@ -266,7 +266,7 @@ namespace ButtonHandler
 
         _saveOperationData();
 
-        Led::setOrange(Led::PRIO_CRITICAL);
+        Led::setOrange(Led::PRIO_URGENT);
 
         CustomWifi::resetWifi(); // This will restart the device
 
@@ -283,9 +283,7 @@ namespace ButtonHandler
 
         _saveOperationData();
 
-        Led::setRed(Led::PRIO_CRITICAL);
-
-        factoryReset(); // This will restart the device
+        factoryReset(); // This will also restart the device
 
         _operationInProgress = false;
         _currentPressType = ButtonPressType::NONE;

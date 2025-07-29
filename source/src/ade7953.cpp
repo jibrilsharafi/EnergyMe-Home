@@ -2012,8 +2012,6 @@ void Ade7953::_processCycendInterrupt(unsigned long long linecycUnix) {
     
     // Always process channel 0
     _processChannelReading(CHANNEL_0, linecycUnix);
-    
-    Led::setOff();
 }
 
 void Ade7953::_handleCrcChangeInterrupt() {

@@ -324,7 +324,6 @@ namespace CustomServer
                 Update.printError(Serial);
                 
                 // Clear OTA progress pattern and flash red LED pattern for error
-                Led::clearAllPatterns(); // Clear any ongoing patterns first
                 Led::blinkRed(Led::PRIO_CRITICAL, 5000ULL);
             } else {
                 AsyncResponseStream *response = request->beginResponseStream("application/json");
@@ -339,7 +338,6 @@ namespace CustomServer
                 logger.debug("New firmware MD5: %s", TAG, Update.md5String().c_str());
                 
                 // Clear OTA progress pattern and show success LED pattern
-                Led::clearAllPatterns(); // Clear any ongoing patterns first
                 Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
                 
                 // Schedule restart
@@ -388,7 +386,6 @@ namespace CustomServer
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Failed to begin update\"}");
                     
                     // Restore LED and resume operations
-                    Led::clearAllPatterns(); // Clear any ongoing patterns
                     Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
                     // _ade7953.resumeMeterReadingTask(); // Uncomment if you have this method
                     return;
@@ -406,7 +403,7 @@ namespace CustomServer
                 }
 
                 // Start LED indication for OTA progress (indefinite duration)
-                Led::blinkPurpleSlow(Led::PRIO_MEDIUM); // Indefinite duration - will run until cleared
+                Led::blinkPurpleFast(Led::PRIO_MEDIUM); // Indefinite duration - will run until cleared
                 
                 otaInitialized = true;
                 logger.debug("OTA update started, expected size: %zu bytes", TAG, contentLength);
@@ -421,9 +418,6 @@ namespace CustomServer
                     Update.abort();
                     otaInitialized = false;
                     
-                    // Restore LED and resume operations
-                    Led::clearAllPatterns(); // Clear any ongoing patterns
-                    Led::setOff(Led::PRIO_URGENT);
                     return;
                 }
                 
@@ -450,7 +444,6 @@ namespace CustomServer
                     logger.debug("OTA update finalization successful", TAG);
                     
                     // Clear OTA progress pattern and show success LED pattern
-                    Led::clearAllPatterns(); // Clear any ongoing patterns first
                     Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
                 }
                 otaInitialized = false;

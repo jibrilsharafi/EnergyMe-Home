@@ -600,7 +600,7 @@ void setRestartSystem(const char* functionName, const char* reason) {
 
 void restartSystem() {
     Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
-    Led::setWhite(Led::PRIO_CRITICAL);
+    Led::setOrange(Led::PRIO_CRITICAL);
 
     logger.info("Restarting system from function %s. Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
     logger.end();
@@ -742,7 +742,7 @@ void updateStatistics() {
 }
 
 void printStatistics() {
-    logger.info("--- Statistics ---", TAG);
+    logger.debug("--- Statistics ---", TAG);
     logger.debug("Statistics - ADE7953: %ld total interrupts | %ld handled interrupts | %ld readings | %ld reading failures", 
         TAG, 
         statistics.ade7953TotalInterrupts, 
@@ -790,7 +790,7 @@ void printStatistics() {
         statistics.logError, 
         statistics.logFatal
     );
-    logger.info("-------------------", TAG);
+    logger.debug("-------------------", TAG);
 }
 
 void systemInfoToJson(JsonDocument& jsonDocument) {
@@ -984,7 +984,7 @@ void factoryReset() {
     logger.fatal("Factory reset requested", TAG);
 
     Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
-    Led::setRed(Led::PRIO_CRITICAL);
+    Led::blinkRed(Led::PRIO_CRITICAL);
 
     clearAllPreferences();
 

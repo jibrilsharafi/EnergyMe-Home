@@ -69,23 +69,15 @@ void setup()
   Led::begin(LED_RED_PIN, LED_GREEN_PIN, LED_BLUE_PIN);
   Serial.println("LED setup done");
 
-  Led::setRed(Led::PRIO_NORMAL); // Indicate we're in early boot/crash check
-  delay(1000);
-  Led::setGreen(Led::PRIO_NORMAL); // Indicate we're in early boot/crash check
-  delay(1000);
-  Led::setBlue(Led::PRIO_NORMAL); // Indicate we're in early boot/crash check
-  delay(1000);
-
-  Led::setYellow(Led::PRIO_NORMAL); // Indicate we're in early boot/crash check
-
+  Led::setWhite(Led::PRIO_NORMAL);
   if (!SPIFFS.begin(true))
   {
     Serial.println("SPIFFS initialization failed!");
     ESP.restart();
     return;
   }
-  Led::setWhite(Led::PRIO_NORMAL);
 
+  Led::setYellow(Led::PRIO_NORMAL);
   logger.begin();
   logger.setCallback(CustomLog::callbackMultiple);
 
@@ -95,8 +87,6 @@ void setup()
   logger.debug("Setting up crash monitor...", TAG);
   CrashMonitor::begin();
   logger.info("Crash monitor setup done", TAG);
-
-  Led::setCyan(Led::PRIO_NORMAL);
 
   logger.debug("Checking for missing files...", TAG); // TODO: deprecate this
   auto missingFiles = checkMissingFiles();
@@ -114,7 +104,6 @@ void setup()
   }
 
   Led::setPurple(Led::PRIO_NORMAL);
-
   logger.debug("Setting up multiplexer...", TAG);
   Multiplexer::begin(
       MULTIPLEXER_S0_PIN,
@@ -197,7 +186,7 @@ void setup()
   startMaintenanceTask();
   logger.info("Maintenance task started", TAG);
 
-  Led::blinkGreenSlow(Led::PRIO_NORMAL);
+  Led::setGreen(Led::PRIO_NORMAL);
   printDeviceStatusStatic();
   logger.info("Setup done! Let's get this energetic party started!", TAG);
 }
