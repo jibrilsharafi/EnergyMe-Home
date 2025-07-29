@@ -188,6 +188,7 @@ void setup()
 
   Led::setGreen(Led::PRIO_NORMAL);
   printDeviceStatusStatic();
+  printDeviceStatusDynamic();
   logger.info("Setup done! Let's get this energetic party started!", TAG);
 }
 

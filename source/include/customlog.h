@@ -6,6 +6,7 @@
 #include <WiFiUdp.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <esp_heap_caps.h>
 
 // Project includes
 #include "mqtt.h"
@@ -21,7 +22,7 @@
 #define UDP_LOG_PORT 514 // Standard syslog port
 #define UDP_LOG_BUFFER_SIZE 256 // Smaller buffer for UDP packets
 #define DEFAULT_UDP_LOG_DESTINATION_IP "239.255.255.250" // Multicast IP for UDP logging
-#define LOG_BUFFER_SIZE 200 // Callback queue size - (high, only for development. Make lower evenually)
+#define LOG_BUFFER_SIZE 500 // Callback queue size - (high, only for development. Make lower evenually)
 #define TIMESTAMP_BUFFER_SIZE 20 // Size needed for TIMESTAMP_FORMAT (19 chars + null
 #define LOG_CALLBACK_LEVEL_SIZE 8 // Size for log level (e.g., "info", "error")
 #define LOG_CALLBACK_FUNCTION_SIZE 16 // Size for function name
