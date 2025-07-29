@@ -29,7 +29,7 @@ namespace CustomWifi
     logger.debug("Setting up WiFi with event-driven architecture...", TAG);
 
     // Setup WiFi event handling
-    WiFi.onEvent(_onWiFiEvent);
+    // WiFi.onEvent(_onWiFiEvent);
 
     // Enable auto-reconnect and persistence
     WiFi.setAutoReconnect(true);
@@ -59,24 +59,34 @@ namespace CustomWifi
     _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT);
     _wifiManager.setConnectRetries(WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS); // Let WiFiManager handle initial retries
 
+        // Callback when portal starts
+    _wifiManager.setAPCallback([](WiFiManager *wm) {
+                                logger.info("WiFi configuration portal started: %s", TAG, wm->getConfigPortalSSID().c_str());
+                                Led::blinkBlueFast(); 
+                              });
+
     // Callback when config is saved
-    _wifiManager.setSaveConfigCallback([]()
-                                       {
+    _wifiManager.setSaveConfigCallback([]() {
             logger.info("WiFi credentials saved via portal - restarting...", TAG);
             Led::setPattern(
               LedPattern::LED_PATTERN_BLINK_FAST,
               Led::Colors::CYAN,
               Led::PRIO_CRITICAL,
               3000ULL
-            ); });
+            );
+            // Maybe with some smart management we could avoid the restart..
+            // But we know that a reboot always solves any issues, so we leave it here
+            // to ensure we start fresh
+            setRestartSystem(TAG, "Restart after WiFi config save");
+          });
 
     logger.debug("WiFiManager set up", TAG);
   }
 
   static void _onWiFiEvent(WiFiEvent_t event)
   {
-    // Keep WiFi event handlers minimal to avoid stack overflow
-    // All logging is deferred to the WiFi task
+    // Here we cannot do ANYTHING to avoid issues. Only notify the task,
+    // which will handle all operations in a safe context.
     switch (event)
     {
     case ARDUINO_EVENT_WIFI_STA_START:
@@ -84,8 +94,6 @@ namespace CustomWifi
       break;
 
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-      _reconnectAttempts = 0;
-
       // Defer logging to task
       if (_wifiTaskHandle)
         xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetValueWithOverwrite);
@@ -98,8 +106,6 @@ namespace CustomWifi
       break;
 
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      statistics.wifiConnectionError++;
-
       // Notify task to handle fallback if needed
       if (_wifiTaskHandle)
         xTaskNotify(_wifiTaskHandle, WIFI_EVENT_DISCONNECTED, eSetValueWithOverwrite);
@@ -110,6 +116,9 @@ namespace CustomWifi
       break;
 
     default:
+      // Forward unknown events to task for logging/debugging
+      if (_wifiTaskHandle)
+        xTaskNotify(_wifiTaskHandle, (unsigned long)event, eSetValueWithOverwrite);
       break;
     }
   }
@@ -160,6 +169,8 @@ namespace CustomWifi
         switch (notificationValue)
         {
         case WIFI_EVENT_CONNECTED:
+          _reconnectAttempts = 0;
+          statistics.wifiConnection++;
           logger.info("WiFi connected to: %s", TAG, WiFi.SSID().c_str());
           continue; // No further action needed
 
@@ -170,6 +181,7 @@ namespace CustomWifi
           continue; // No further action needed
 
         case WIFI_EVENT_DISCONNECTED:
+          statistics.wifiConnectionError++;
           Led::blinkBlueSlow(Led::PRIO_MEDIUM);
           logger.warning("WiFi disconnected - auto-reconnect will handle", TAG);
 
@@ -202,7 +214,13 @@ namespace CustomWifi
           break;
 
         default:
-          // Legacy notification or timeout - treat as disconnection check
+          // Handle unknown WiFi events for debugging
+          if (notificationValue >= 100) { // WiFi events are >= 100
+            logger.debug("Unknown WiFi event received: %lu", TAG, notificationValue);
+          } else {
+            // Legacy notification or timeout - treat as disconnection check
+            logger.debug("WiFi periodic check or timeout", TAG);
+          }
           break;
         }
       }
