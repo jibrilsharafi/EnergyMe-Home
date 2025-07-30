@@ -34,6 +34,9 @@ struct Statistics {
   unsigned long wifiConnection;
   unsigned long wifiConnectionError;
 
+  unsigned long webServerRequests;
+  unsigned long webServerRequestsError;
+
   unsigned long logVerbose;
   unsigned long logDebug;
   unsigned long logInfo;
@@ -124,8 +127,8 @@ struct SystemDynamicInfo {
     unsigned long heapTotalBytes;
     unsigned long heapFreeBytes;
     unsigned long heapUsedBytes;
-    unsigned long heapMinFreeBytes;      // Lowest since boot
-    unsigned long heapMaxAllocBytes;     // Largest allocatable block
+    unsigned long heapMinFreeBytes;
+    unsigned long heapMaxAllocBytes;
     float heapFreePercentage;
     float heapUsedPercentage;
     
@@ -172,7 +175,7 @@ struct SystemDynamicInfo {
     }
 };
 
-enum Phase : int {
+enum Phase : int { // TODO: make all enum class
     PHASE_1 = 1,
     PHASE_2 = 2,
     PHASE_3 = 3,
@@ -267,7 +270,7 @@ struct PayloadMeter
 
 struct CalibrationValues
 {
-  char label[CALIBRATION_LABEL_BUFFER_SIZE];
+  char label[NAME_BUFFER_SIZE];
   float vLsb;
   float aLsb;
   float wLsb;
@@ -289,7 +292,7 @@ struct ChannelData
   int index;
   bool active;
   bool reverse;
-  char label[CHANNEL_LABEL_BUFFER_SIZE];
+  char label[NAME_BUFFER_SIZE];
   Phase phase;
   CalibrationValues calibrationValues;
 
@@ -306,23 +309,8 @@ struct ChannelState { // TODO: what the heck was i thinking with this?
 
 struct PublicLocation // TODO: Move to utils or time or where needed
 {
-  char country[COUNTRY_BUFFER_SIZE];
-  char city[CITY_BUFFER_SIZE];
   float latitude;
   float longitude;
 
-  PublicLocation() : country("Unknown"), city("Unknown"), latitude(45.0), longitude(9.0) {} // Default to Milan coordinates
-};
-
-struct RestartConfiguration // TODO: really needed?
-{
-  bool isRequired;
-  unsigned long requiredAt;
-  char functionName[FUNCTION_NAME_BUFFER_SIZE];
-  char reason[REASON_BUFFER_SIZE];
-
-  RestartConfiguration() : isRequired(false), requiredAt(0xFFFFFFFF) {
-    snprintf(functionName, sizeof(functionName), "Unknown");
-    snprintf(reason, sizeof(reason), "Unknown");
-  }
+  PublicLocation() : latitude(45.0), longitude(9.0) {} // Default to Milan coordinates
 };

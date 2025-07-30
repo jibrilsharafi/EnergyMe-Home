@@ -16,7 +16,7 @@ namespace ButtonHandler
     static volatile bool _buttonPressed = false;
     static ButtonPressType _currentPressType = ButtonPressType::NONE;
     static bool _operationInProgress = false;
-    static char _operationName[BUTTON_HANDLER_OPERATION_BUFFER_SIZE] = "";
+    static char _operationName[OPERATION_BUFFER_SIZE] = "";
     static unsigned long _operationTimestamp = 0;
 
     // Getter public methods

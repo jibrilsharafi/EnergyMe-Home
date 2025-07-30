@@ -21,6 +21,7 @@
 #include "led.h"
 #include "modbustcp.h"
 #include "mqtt.h"
+#include "custommqtt.h"
 #include "influxdbclient.h"
 #include "multiplexer.h"
 #include "customlog.h"
@@ -30,7 +31,6 @@
 
 static const char *TAG = "main";
 
-RestartConfiguration restartConfiguration;
 Statistics statistics;
 
 // Global device ID - defined here, declared as extern in constants.h
@@ -180,6 +180,10 @@ void setup()
   logger.debug("Setting up MQTT client...", TAG);
   Mqtt::begin();
   logger.info("MQTT client setup done", TAG);
+
+  logger.debug("Setting up Custom MQTT client...", TAG);
+  CustomMqtt::begin();
+  logger.info("Custom MQTT client setup done", TAG);
 
   logger.debug("Setting up InfluxDB client...", TAG);
   InfluxDbClient::begin();

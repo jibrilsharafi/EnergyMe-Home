@@ -64,11 +64,14 @@ namespace CustomServer
     // Logging helper functions
     static bool _parseLogLevel(const char *levelStr, LogLevel &level);
     
+    // HTTP method validation helper
+    static bool _validateHttpMethod(AsyncWebServerRequest *request, const char *expectedMethod);
+    
     void begin()
     {
         logger.debug("Setting up web server...", TAG);
 
-        _setupMiddleware();
+        _setupMiddleware(); // TODO: add statistics middleware
         _serveStaticContent();
         _serveApi();
 
@@ -87,7 +90,7 @@ namespace CustomServer
         digestAuth.setUsername(WEBSERVER_DEFAULT_USERNAME);
 
         // Load password from Preferences or use default
-        char webPassword[AUTH_PASSWORD_BUFFER_SIZE];
+        char webPassword[PASSWORD_BUFFER_SIZE];
         if (_getWebPassword(webPassword, sizeof(webPassword)))
         {
             digestAuth.setPassword(webPassword);
@@ -190,7 +193,7 @@ namespace CustomServer
 
     void updateAuthPassword()
     {
-        char webPassword[AUTH_PASSWORD_BUFFER_SIZE];
+        char webPassword[PASSWORD_BUFFER_SIZE];
         if (_getWebPassword(webPassword, sizeof(webPassword)))
         {
             digestAuth.setPassword(webPassword);
@@ -225,6 +228,7 @@ namespace CustomServer
         doc["success"] = false;
         doc["error"] = message;
         AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->setCode(statusCode);
         serializeJson(doc, *response);
         request->send(response);
     }
@@ -275,7 +279,7 @@ namespace CustomServer
             JsonDocument doc;
             
             // Check if using default password
-            char currentPassword[AUTH_PASSWORD_BUFFER_SIZE];
+            char currentPassword[PASSWORD_BUFFER_SIZE];
             bool isDefault = true;
             if (_getWebPassword(currentPassword, sizeof(currentPassword))) {
                 isDefault = (strcmp(currentPassword, WEBSERVER_DEFAULT_PASSWORD) == 0);
@@ -303,28 +307,28 @@ namespace CustomServer
 
                 if (!currentPassword || !newPassword)
                 {
-                    _sendErrorResponse(request, 400, "Missing currentPassword or newPassword");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing currentPassword or newPassword");
                     return;
                 }
 
                 // Validate current password
-                char storedPassword[AUTH_PASSWORD_BUFFER_SIZE];
+                char storedPassword[PASSWORD_BUFFER_SIZE];
                 if (!_getWebPassword(storedPassword, sizeof(storedPassword)))
                 {
-                    _sendErrorResponse(request, 500, "Failed to retrieve current password");
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve current password");
                     return;
                 }
 
                 if (strcmp(currentPassword, storedPassword) != 0)
                 {
-                    _sendErrorResponse(request, 401, "Current password is incorrect");
+                    _sendErrorResponse(request, HTTP_CODE_UNAUTHORIZED, "Current password is incorrect");
                     return;
                 }
 
                 // Validate and save new password
                 if (!_setWebPassword(newPassword))
                 {
-                    _sendErrorResponse(request, 400, "New password does not meet requirements or failed to save");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "New password does not meet requirements or failed to save");
                     return;
                 }
 
@@ -350,8 +354,8 @@ namespace CustomServer
                 logger.warning("Password reset to default via API", TAG);
                 _sendSuccessResponse(request, "Password reset to default");
             } else {
-                _sendErrorResponse(request, 500, "Failed to reset password");
-            } 
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to reset password");
+            }
         });
     }
 
@@ -437,7 +441,7 @@ namespace CustomServer
         // Validate file extension
         if (!filename.endsWith(".bin")) {
             logger.error("Invalid file type. Only .bin files are supported", TAG);
-            _sendErrorResponse(request, 400, "File must be in .bin format");
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File must be in .bin format");
             return false;
         }
         
@@ -445,14 +449,14 @@ namespace CustomServer
         size_t contentLength = request->header("Content-Length").toInt();
         if (contentLength == 0) {
             logger.error("No Content-Length header found or empty file", TAG);
-            _sendErrorResponse(request, 400, "Missing Content-Length header or empty file");
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing Content-Length header or empty file");
             return false;
         }
         
         // Validate minimum firmware size
         if (contentLength < MINIMUM_FIRMWARE_SIZE) {
             logger.error("Firmware file too small: %zu bytes (minimum: %d bytes)", TAG, contentLength, MINIMUM_FIRMWARE_SIZE);
-            _sendErrorResponse(request, 400, "Firmware file too small");
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware file too small");
             return false;
         }
         
@@ -461,14 +465,14 @@ namespace CustomServer
         logger.debug("Free heap before OTA: %zu bytes", TAG, freeHeap);
         if (freeHeap < MINIMUM_FREE_HEAP_OTA) {
             logger.error("Insufficient memory for OTA update", TAG);
-            _sendErrorResponse(request, 400, "Insufficient memory for update");
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Insufficient memory for update");
             return false;
         }
         
         // Begin OTA update with known size
         if (!Update.begin(contentLength, U_FLASH)) {
             logger.error("Failed to begin OTA update: %s", TAG, Update.errorString());
-            _sendErrorResponse(request, 400, "Failed to begin update");
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Failed to begin update");
             Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
             return false;
         }
@@ -517,7 +521,7 @@ namespace CustomServer
         size_t written = Update.write(data, len);
         if (written != len) {
             logger.error("OTA write failed: expected %zu bytes, wrote %zu bytes", TAG, len, written);
-            _sendErrorResponse(request, 400, "Write failed");
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Write failed");
             Update.abort();
             return false;
         }
@@ -540,7 +544,7 @@ namespace CustomServer
         // Validate that we actually received data
         if (Update.progress() == 0) {
             logger.error("OTA finalization failed: No data received", TAG);
-            _sendErrorResponse(request, 400, "No firmware data received");
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "No firmware data received");
             Update.abort();
             return;
         }
@@ -548,7 +552,7 @@ namespace CustomServer
         // Validate minimum size
         if (Update.progress() < MINIMUM_FIRMWARE_SIZE) {
             logger.error("OTA finalization failed: Firmware too small (%zu bytes)", TAG, Update.progress());
-            _sendErrorResponse(request, 400, "Firmware file too small");
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware file too small");
             Update.abort();
             return;
         }
@@ -605,7 +609,7 @@ namespace CustomServer
                 setRestartSystem(TAG, "Firmware rollback requested via API");
             } else {
                 logger.error("Rollback not possible: %s", TAG, Update.errorString());
-                _sendErrorResponse(request, 400, "Rollback not possible");
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Rollback not possible");
             }
         });
     }
@@ -673,13 +677,6 @@ namespace CustomServer
             // Short delay to ensure response is sent
             delay(HTTP_RESPONSE_DELAY);
             CustomWifi::resetWifi(); });
-
-        // WiFi information
-        server.on("/api/v1/network/wifi/info", HTTP_GET, [](AsyncWebServerRequest *request)
-                  {
-            JsonDocument doc;
-            CustomWifi::getWifiInfoJson(doc);
-            _sendJsonResponse(request, doc); });
     }
 
     // === LOGGING ENDPOINTS ===
@@ -697,9 +694,9 @@ namespace CustomServer
         static AsyncCallbackJsonWebHandler *_setLogLevelHandler = new AsyncCallbackJsonWebHandler("/api/v1/logs/level");
         _setLogLevelHandler->setMaxContentLength(64);
         _setLogLevelHandler->onRequest([](AsyncWebServerRequest *request, JsonVariant &json) { // We cannot do setMethod since it makes all PUT requests fail (404)
-                if (strcmp(request->methodToString(), "PUT") != 0)
+                // Validate HTTP method
+                if (!_validateHttpMethod(request, "PUT"))
                 {
-                    _sendErrorResponse(request, 405, "Method Not Allowed. Use PUT to set log levels.");
                     return;
                 }
             
@@ -711,7 +708,7 @@ namespace CustomServer
 
                 if (!printLevel && !saveLevel)
                 {
-                    _sendErrorResponse(request, 400, "At least one of 'print' or 'save' level must be specified");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "At least one of 'print' or 'save' level must be specified");
                     return;
                 }
 
@@ -758,7 +755,7 @@ namespace CustomServer
                 }
                 else
                 {
-                    _sendErrorResponse(request, 400, "Invalid log level specified. Valid levels: VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid log level specified. Valid levels: VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL");
                 }
             });
         server.addHandler(_setLogLevelHandler);
@@ -791,6 +788,19 @@ namespace CustomServer
         else
             return false;
             
+        return true;
+    }
+
+    // Helper function to validate HTTP method
+    static bool _validateHttpMethod(AsyncWebServerRequest *request, const char *expectedMethod)
+    {
+        if (strcmp(request->methodToString(), expectedMethod) != 0)
+        {
+            char errorMsg[128];
+            snprintf(errorMsg, sizeof(errorMsg), "Method Not Allowed. Use %s.", expectedMethod);
+            _sendErrorResponse(request, HTTP_CODE_METHOD_NOT_ALLOWED, errorMsg);
+            return false;
+        }
         return true;
     }
 
@@ -1086,13 +1096,13 @@ namespace CustomServer
 //                     safeSerializeJson(doc, buffer, sizeof(buffer));
 //                     request->send(200, "application/json", buffer);
 //                 } else {
-//                     request->send(400, "application/json", "{\"message\":\"Channel not active\"}");
+//                     request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Channel not active\"}");
 //                 }
 //             } else {
-//                 request->send(400, "application/json", "{\"message\":\"Channel index out of range\"}");
+//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Channel index out of range\"}");
 //             }
 //         } else {
-//             request->send(400, "application/json", "{\"message\":\"Missing index parameter\"}");
+//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing index parameter\"}");
 //         }
 //     });
 
@@ -1106,13 +1116,13 @@ namespace CustomServer
 //                     snprintf(response, sizeof(response), "{\"value\":%.6f}", _ade7953.meterValues[indexInt].activePower);
 //                     request->send(200, "application/json", response);
 //                 } else {
-//                     request->send(400, "application/json", "{\"message\":\"Channel not active\"}");
+//                     request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Channel not active\"}");
 //                 }
 //             } else {
-//                 request->send(400, "application/json", "{\"message\":\"Channel index out of range\"}");
+//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Channel index out of range\"}");
 //             }
 //         } else {
-//             request->send(400, "application/json", "{\"message\":\"Missing index parameter\"}");
+//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing index parameter\"}");
 //         }
 //     });
 
@@ -1232,7 +1242,7 @@ namespace CustomServer
 //             int channelIndex = atoi(kv.key().c_str());
 //             if (channelIndex == 0 && !kv.value()["active"].as<bool>()) {
 //                 _releaseMutex(_channelMutex, "channel");
-//                 request->send(400, "application/json", "{\"error\":\"Channel 0 cannot be disabled\"}");
+//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"Channel 0 cannot be disabled\"}");
 //                 return;
 //             }
 //         }
@@ -1240,7 +1250,7 @@ namespace CustomServer
 //         _lastChannelUpdateTime = currentTime;
 //         bool success = _ade7953.setChannelData(doc);
 //         _releaseMutex(_channelMutex, "channel");
-//         request->send(success ? 200 : 400, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
+//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
 //     });
 //     _setChannelHandler->setMethod(HTTP_POST);
 //     _setChannelHandler->addMiddleware(&_apiRateLimitMiddleware);
@@ -1267,7 +1277,7 @@ namespace CustomServer
 //         _lastConfigUpdateTime = currentTime;
 //         bool success = setGeneralConfiguration(doc);
 //         _releaseMutex(_configurationMutex, "configuration");
-//         request->send(success ? 200 : 400, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
+//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
 //     });
 //     _setGeneralConfigHandler->setMethod(HTTP_POST);
 //     _setGeneralConfigHandler->addMiddleware(&_apiRateLimitMiddleware);
@@ -1278,7 +1288,7 @@ namespace CustomServer
 //         JsonDocument doc;
 //         doc.set(json);
 //         bool success = _ade7953.setCalibrationValues(doc);
-//         request->send(success ? 200 : 400, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
+//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
 //     });
 //     _setCalibrationHandler->setMethod(HTTP_POST);
 //     _server.addHandler(_setCalibrationHandler);
@@ -1287,7 +1297,7 @@ namespace CustomServer
 //         JsonDocument doc;
 //         doc.set(json);
 //         bool success = _ade7953.setConfiguration(doc);
-//         request->send(success ? 200 : 400, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
+//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
 //     });
 //     _setAdeConfigHandler->setMethod(HTTP_POST);
 //     _server.addHandler(_setAdeConfigHandler);
@@ -1296,7 +1306,7 @@ namespace CustomServer
 //         JsonDocument doc;
 //         doc.set(json);
 //         bool success = _customMqtt.setConfiguration(doc);
-//         request->send(success ? 200 : 400, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
+//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
 //     });
 //     _setCustomMqttHandler->setMethod(HTTP_POST);
 //     _server.addHandler(_setCustomMqttHandler);
@@ -1305,7 +1315,7 @@ namespace CustomServer
 //         JsonDocument doc;
 //         doc.set(json);
 //         bool success = InfluxDbClient::setConfiguration(doc);
-//         request->send(success ? 200 : 400, "application/json", success ? "{"message":"OK"}" : "{"error":"Invalid data"}");
+//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{"message":"OK"}" : "{"error":"Invalid data"}");
 //     });
 //     _setInfluxDbHandler->setMethod(HTTP_POST);
 //     _server.addHandler(_setInfluxDbHandler);
@@ -1314,7 +1324,7 @@ namespace CustomServer
 //         JsonDocument doc;
 //         doc.set(json);
 //         bool success = _ade7953.setEnergyValues(doc);
-//         request->send(success ? 200 : 400, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
+//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
 //     });
 //     _setEnergyHandler->setMethod(HTTP_POST);
 //     _server.addHandler(_setEnergyHandler);
@@ -1335,7 +1345,7 @@ namespace CustomServer
 //                 request->send(500, "application/json", "{\"message\":\"Failed to open file\"}");
 //             }
 //         } else {
-//             request->send(400, "application/json", "{\"message\":\"Missing filename or data\"}");
+//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing filename or data\"}");
 //         }
 //     });
 //     _uploadFileHandler->setMethod(HTTP_POST);
@@ -1387,12 +1397,12 @@ namespace CustomServer
 //             } else if (strcmp(type, "save") == 0) {
 //                 _logger.setSaveLevel(LogLevel(level));
 //             } else {
-//                 request->send(400, "application/json", "{\"message\":\"Invalid type parameter\"}");
+//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Invalid type parameter\"}");
 //                 return;
 //             }
 //             request->send(200, "application/json", "{\"message\":\"Success\"}");
 //         } else {
-//             request->send(400, "application/json", "{\"message\":\"Missing parameter\"}");
+//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing parameter\"}");
 //         }
 //     });
 
@@ -1409,10 +1419,10 @@ namespace CustomServer
 //                 snprintf(response, sizeof(response), "{\"value\":%ld}", registerValue);
 //                 request->send(200, "application/json", response);
 //             } else {
-//                 request->send(400, "application/json", "{\"message\":\"Invalid parameters\"}");
+//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Invalid parameters\"}");
 //             }
 //         } else {
-//             request->send(400, "application/json", "{\"message\":\"Missing parameters\"}");
+//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing parameters\"}");
 //         }
 //     });
 
@@ -1426,10 +1436,10 @@ namespace CustomServer
 //                 _ade7953.writeRegister(address, nBits, data);
 //                 request->send(200, "application/json", "{\"message\":\"Success\"}");
 //             } else {
-//                 request->send(400, "application/json", "{\"message\":\"Invalid parameters\"}");
+//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Invalid parameters\"}");
 //             }
 //         } else {
-//             request->send(400, "application/json", "{\"message\":\"Missing parameters\"}");
+//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing parameters\"}");
 //         }
 //     });
 
@@ -1464,7 +1474,7 @@ namespace CustomServer
 //         }
 
 //         if (strstr(filename, "secret") != nullptr) {
-//             request->send(401, "application/json", "{\"message\":\"Unauthorized\"}");
+//             request->send(HTTP_CODE_UNAUTHORIZED, "application/json", "{\"message\":\"Unauthorized\"}");
 //             return;
 //         }
 

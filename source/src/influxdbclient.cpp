@@ -88,8 +88,8 @@ namespace InfluxDbClient
     static void _sendData()
     {
         HTTPClient http;
-        char url[URL_BUFFER_SIZE];
-        char baseUrl[URL_BUFFER_SIZE];
+        char url[SERVER_NAME_BUFFER_SIZE];
+        char baseUrl[SERVER_NAME_BUFFER_SIZE];
 
         // Build base URL
         snprintf(baseUrl, sizeof(baseUrl), "http%s://%s:%d", 
@@ -219,7 +219,7 @@ namespace InfluxDbClient
     static void _formatLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp, char *buffer, size_t bufferSize, bool isEnergyData)
     {
         // Create sanitized label directly in a char array
-        char sanitizedLabel[LABEL_BUFFER_SIZE];
+        char sanitizedLabel[sizeof(ade7953.channelData[channel].label) + 20]; // Enlarge to accommodate potential replacements
         const char *originalLabel = ade7953.channelData[channel].label;
 
         // Sanitize the label in-place without heap allocation

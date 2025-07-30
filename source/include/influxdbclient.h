@@ -5,7 +5,6 @@
 #include <base64.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
-#include <WiFi.h>
 
 #include "ade7953.h"
 #include "globals.h"
@@ -28,6 +27,15 @@
 #define INFLUXDB_TASK_NAME "influxdb_task"
 #define INFLUXDB_TASK_STACK_SIZE 8192
 #define INFLUXDB_TASK_PRIORITY 1
+
+#define DATABASE_NAME_BUFFER_SIZE 64
+#define ORGANIZATION_BUFFER_SIZE 64
+#define BUCKET_NAME_BUFFER_SIZE 64
+#define TOKEN_BUFFER_SIZE 64
+#define MEASUREMENT_BUFFER_SIZE 64
+#define AUTH_HEADER_BUFFER_SIZE 256
+#define LINE_PROTOCOL_BUFFER_SIZE 256
+#define PAYLOAD_BUFFER_SIZE 512
 
 extern Ade7953 ade7953;
 

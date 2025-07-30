@@ -28,13 +28,13 @@
 #define LED_TASK_DELAY_MS 50
 
 // LED Pattern types
-enum LedPattern {
-    LED_PATTERN_SOLID,          // Solid color
-    LED_PATTERN_BLINK_SLOW,     // 1 second on, 1 second off
-    LED_PATTERN_BLINK_FAST,     // 250ms on, 250ms off
-    LED_PATTERN_PULSE,          // Smooth fade in/out
-    LED_PATTERN_DOUBLE_BLINK,   // Two quick blinks, then pause
-    LED_PATTERN_OFF             // LED off
+enum class LedPattern {
+    SOLID,          // Solid color
+    BLINK_SLOW,     // 1 second on, 1 second off
+    BLINK_FAST,     // 250ms on, 250ms off
+    PULSE,          // Smooth fade in/out
+    DOUBLE_BLINK,   // Two quick blinks, then pause
+    OFF             // LED off
 };
 
 // Priority levels (higher number = higher priority)  

@@ -174,20 +174,22 @@ void Ade7953::_setOptimumSettings()
 }
 
 void Ade7953::loop() {
-    micros();
-    if (
-        millis64() - _lastMillisSaveEnergy > SAVE_ENERGY_INTERVAL || 
-        restartConfiguration.isRequired
-    ) {
+    // TODO: handled by the stop function
+    // if (
+    //     millis64() - _lastMillisSaveEnergy > SAVE_ENERGY_INTERVAL || 
+    //     restartConfiguration.isRequired
+    // ) {
+    if (millis64() - _lastMillisSaveEnergy > SAVE_ENERGY_INTERVAL) {
         _lastMillisSaveEnergy = millis64();
         saveEnergy();
     }
 
-    // If restart required, clean up
-    if (restartConfiguration.isRequired) {
-        _logger.debug("Restart required. Cleaning up Ade7953 resources", TAG);
-        cleanup();
-    }
+    // If restart required, clean u
+    // TODO: handled by the stop function
+    // if (restartConfiguration.isRequired) {
+    //     _logger.debug("Restart required. Cleaning up Ade7953 resources", TAG);
+    //     cleanup();
+    // }
 }
 
 void Ade7953::cleanup() {
@@ -1148,7 +1150,7 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
         _logger.warning("Saving daily energy even if time is invalid: %ld", TAG, now);
     }
     struct tm *timeinfo = localtime(&now);
-    char currentDate[DATE_BUFFER_SIZE];
+    char currentDate[TIMESTAMP_STRING_BUFFER_SIZE];
     strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", timeinfo);
 
     for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {

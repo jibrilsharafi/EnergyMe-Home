@@ -2,6 +2,8 @@
 
 static const char *TAG = "utils";
 
+static RestartConfiguration restartConfiguration;
+
 // New system info functions
 void populateSystemStaticInfo(SystemStaticInfo& info) {
     logger.debug("Populating static system info...", TAG);
@@ -99,7 +101,6 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
         info.wifiConnected = true;
         info.wifiRssi = WiFi.RSSI();
         snprintf(info.wifiSsid, sizeof(info.wifiSsid), "%s", WiFi.SSID().c_str());
-        snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str());
         snprintf(info.wifiLocalIp, sizeof(info.wifiLocalIp), "%s", WiFi.localIP().toString().c_str());
         snprintf(info.wifiGatewayIp, sizeof(info.wifiGatewayIp), "%s", WiFi.gatewayIP().toString().c_str());
         snprintf(info.wifiSubnetMask, sizeof(info.wifiSubnetMask), "%s", WiFi.subnetMask().toString().c_str());
@@ -109,14 +110,14 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
         info.wifiConnected = false;
         info.wifiRssi = -100; // Invalid RSSI
         snprintf(info.wifiSsid, sizeof(info.wifiSsid), "Not connected");
-        snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
         snprintf(info.wifiLocalIp, sizeof(info.wifiLocalIp), "0.0.0.0");
         snprintf(info.wifiGatewayIp, sizeof(info.wifiGatewayIp), "0.0.0.0");
         snprintf(info.wifiSubnetMask, sizeof(info.wifiSubnetMask), "0.0.0.0");
         snprintf(info.wifiDnsIp, sizeof(info.wifiDnsIp), "0.0.0.0");
         snprintf(info.wifiBssid, sizeof(info.wifiBssid), "00:00:00:00:00:00");
     }
-
+    snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
+   
     logger.debug("Dynamic system info populated", TAG);
 }
 
@@ -845,22 +846,16 @@ bool getPublicLocation(PublicLocation* publicLocation) {
             }
 
             // Extract strings safely using const char* and copy to char arrays
-            const char* country = jsonDocument["country"].as<const char*>();
-            const char* city = jsonDocument["city"].as<const char*>();
             float latitude = jsonDocument["lat"].as<float>();
             float longitude = jsonDocument["lon"].as<float>();
 
             // Extract strings safely - use empty string if NULL
-            snprintf(publicLocation->country, sizeof(publicLocation->country), "%s", country ? country : "");
-            snprintf(publicLocation->city, sizeof(publicLocation->city), "%s", city ? city : "");
             publicLocation->latitude = latitude;
             publicLocation->longitude = longitude;
 
             logger.debug(
-                "Location: %s, %s | Lat: %f | Lon: %f",
+                "Location: Lat: %f | Lon: %f",
                 TAG,
-                publicLocation->country,
-                publicLocation->city,
                 publicLocation->latitude,
                 publicLocation->longitude
             );
@@ -892,7 +887,7 @@ bool getPublicTimezone(int* gmtOffset, int* dstOffset) {
     HTTPClient _http;
     JsonDocument jsonDocument;
 
-    char url[URL_BUFFER_SIZE];
+    char url[SERVER_NAME_BUFFER_SIZE];
     // The URL for the timezone API endpoint requires passing as params the latitude, longitude and username (which is a sort of free "public" api key)
     snprintf(url, sizeof(url), "%slat=%f&lng=%f&username=%s",
         PUBLIC_TIMEZONE_ENDPOINT,
@@ -1107,136 +1102,6 @@ const char* getMqttStateReason(int state)
         case 5: return "MQTT_CONNECT_UNAUTHORIZED";
         default: return "Unknown MQTT state";
     }
-}
-
-void decryptData(const char* encryptedData, const char* key, char* decryptedData, size_t decryptedDataSize) {
-    // Early validation and consistent error handling
-    if (!encryptedData || !key || !decryptedData || decryptedDataSize == 0) {
-        if (decryptedData && decryptedDataSize > 0) {
-            decryptedData[0] = '\0';
-        }
-        return;
-    }
-
-    size_t inputLength = strlen(encryptedData);
-    if (inputLength == 0) {
-        decryptedData[0] = '\0';
-        return;
-    }
-
-    mbedtls_aes_context aes;
-    mbedtls_aes_init(&aes);
-    mbedtls_aes_setkey_dec(&aes, (const unsigned char *)key, KEY_SIZE);
-
-    // Use stack-allocated buffers instead of malloc
-    unsigned char decodedData[DECRYPTION_WORKING_BUFFER_SIZE];
-    unsigned char output[DECRYPTION_WORKING_BUFFER_SIZE];
-
-    size_t decodedLength = 0;
-    int ret = mbedtls_base64_decode(decodedData, sizeof(decodedData), &decodedLength,
-                                   (const unsigned char *)encryptedData, inputLength);
-    
-    if (ret != 0 || decodedLength == 0) {
-        decryptedData[0] = '\0';
-        mbedtls_aes_free(&aes);
-        return;
-    }
-    
-    // Decrypt in 16-byte blocks
-    for (size_t i = 0; i < decodedLength; i += 16) {
-        mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, &decodedData[i], &output[i]);
-    }
-    
-    // Handle PKCS7 padding removal
-    unsigned char paddingLength = output[decodedLength - 1];
-    if (paddingLength > 0 && paddingLength <= 16 && paddingLength < decodedLength) {
-        output[decodedLength - paddingLength] = '\0';
-    } else {
-        output[decodedLength - 1] = '\0'; // Fallback: just ensure null termination
-    }
-    
-    // Copy result safely
-    snprintf(decryptedData, decryptedDataSize, "%s", (char*)output);
-
-    // Clear sensitive data from stack buffers for security
-    memset(decodedData, 0, sizeof(decodedData));
-    memset(output, 0, sizeof(output));
-
-    mbedtls_aes_free(&aes);
-}
-
-void readEncryptedPreferences(const char* preference_key, const char* preshared_encryption_key, char* decryptedData, size_t decryptedDataSize) {
-    if (!preference_key || !preshared_encryption_key || !decryptedData || decryptedDataSize == 0) {
-        if (decryptedData && decryptedDataSize > 0) {
-            decryptedData[0] = '\0'; // Ensure null termination on error
-        }
-        return;
-    }
-
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) { // true = read-only mode
-        logger.error("Failed to open preferences", TAG);
-    }
-
-    char encryptedData[ENCRYPTED_DATA_BUFFER_SIZE];
-    preferences.getString(preference_key, encryptedData, ENCRYPTED_DATA_BUFFER_SIZE);
-    preferences.end();
-
-    if (strlen(encryptedData) == 0) {
-        logger.warning("No encrypted data found for key: %s", TAG, preference_key);
-        return;
-    }
-
-    char encryptionKey[ENCRYPTION_KEY_BUFFER_SIZE];
-    snprintf(encryptionKey, ENCRYPTION_KEY_BUFFER_SIZE, "%s%s", preshared_encryption_key, DEVICE_ID);
-
-    decryptData(encryptedData, encryptionKey, decryptedData, decryptedDataSize);
-}
-
-bool checkCertificatesExist() {
-    logger.debug("Checking if certificates exist...", TAG);
-
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) {
-        logger.error("Failed to open preferences", TAG);
-        return false;
-    }
-
-    bool _deviceCertExists = !preferences.getString(PREFS_KEY_CERTIFICATE, "").isEmpty(); 
-    bool _privateKeyExists = !preferences.getString(PREFS_KEY_PRIVATE_KEY, "").isEmpty();
-
-    preferences.end();
-
-    bool _allCertificatesExist = _deviceCertExists && _privateKeyExists;
-
-    logger.debug("Certificates exist: %s", TAG, _allCertificatesExist ? "true" : "false");
-    return _allCertificatesExist;
-}
-
-void writeEncryptedPreferences(const char* preference_key, const char* value) {
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) { // false = read-write mode
-        logger.error("Failed to open preferences", TAG);
-        return;
-    }
-
-    preferences.putString(preference_key, value);
-    preferences.end();
-}
-
-void clearCertificates() {
-    logger.debug("Clearing certificates...", TAG);
-
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) {
-        logger.error("Failed to open preferences", TAG);
-        return;
-    }
-
-    preferences.clear();
-    preferences.end();
-
-    logger.info("Certificates for cloud services cleared", TAG);
 }
 
 bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds) {

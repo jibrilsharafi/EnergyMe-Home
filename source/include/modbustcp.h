@@ -1,6 +1,5 @@
 #pragma once
 
-#include <WiFi.h>
 #include <ModbusServerTCPasync.h>
 #include <AdvancedLogger.h>
 

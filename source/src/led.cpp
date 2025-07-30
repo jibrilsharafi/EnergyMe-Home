@@ -25,7 +25,7 @@ namespace Led
     // Current active state
     struct LedState
     {
-        LedPattern currentPattern = LED_PATTERN_OFF;
+        LedPattern currentPattern = LedPattern::OFF;
         Color currentColor = Colors::OFF;
         LedPriority currentPriority = 1; // PRIO_NORMAL
         unsigned long long patternStartTime = 0;
@@ -179,7 +179,7 @@ namespace Led
 
         // Send OFF command with specified priority
         LedCommand command = {
-            LED_PATTERN_OFF,
+            LedPattern::OFF,
             Colors::OFF,
             priority,
             0,
@@ -199,104 +199,104 @@ namespace Led
         xQueueReset(_ledQueue);
 
         // Send OFF command with critical priority
-        setPattern(LED_PATTERN_OFF, Colors::OFF, 15); // PRIO_CRITICAL
+        setPattern(LedPattern::OFF, Colors::OFF, 15); // PRIO_CRITICAL
     }
 
     // Convenience functions
     void setRed(LedPriority priority)
     {
-        setPattern(LED_PATTERN_SOLID, Colors::RED, priority);
+        setPattern(LedPattern::SOLID, Colors::RED, priority);
     }
 
     void setGreen(LedPriority priority)
     {
-        setPattern(LED_PATTERN_SOLID, Colors::GREEN, priority);
+        setPattern(LedPattern::SOLID, Colors::GREEN, priority);
     }
 
     void setBlue(LedPriority priority)
     {
-        setPattern(LED_PATTERN_SOLID, Colors::BLUE, priority);
+        setPattern(LedPattern::SOLID, Colors::BLUE, priority);
     }
 
     void setYellow(LedPriority priority)
     {
-        setPattern(LED_PATTERN_SOLID, Colors::YELLOW, priority);
+        setPattern(LedPattern::SOLID, Colors::YELLOW, priority);
     }
 
     void setPurple(LedPriority priority)
     {
-        setPattern(LED_PATTERN_SOLID, Colors::PURPLE, priority);
+        setPattern(LedPattern::SOLID, Colors::PURPLE, priority);
     }
 
     void setCyan(LedPriority priority)
     {
-        setPattern(LED_PATTERN_SOLID, Colors::CYAN, priority);
+        setPattern(LedPattern::SOLID, Colors::CYAN, priority);
     }
 
     void setOrange(LedPriority priority)
     {
-        setPattern(LED_PATTERN_SOLID, Colors::ORANGE, priority);
+        setPattern(LedPattern::SOLID, Colors::ORANGE, priority);
     }
 
     void setWhite(LedPriority priority)
     {
-        setPattern(LED_PATTERN_SOLID, Colors::WHITE, priority);
+        setPattern(LedPattern::SOLID, Colors::WHITE, priority);
     }
 
     void setOff(LedPriority priority)
     {
-        setPattern(LED_PATTERN_OFF, Colors::OFF, priority);
+        setPattern(LedPattern::OFF, Colors::OFF, priority);
     }
 
     // Pattern convenience functions
     void blinkOrangeFast(LedPriority priority, unsigned long long durationMs)
     {
-        setPattern(LED_PATTERN_BLINK_FAST, Colors::ORANGE, priority, durationMs);
+        setPattern(LedPattern::BLINK_FAST, Colors::ORANGE, priority, durationMs);
     }
 
     void blinkRed(LedPriority priority, unsigned long long durationMs)
     {
-        setPattern(LED_PATTERN_BLINK_FAST, Colors::RED, priority, durationMs);
+        setPattern(LedPattern::BLINK_FAST, Colors::RED, priority, durationMs);
     }
 
     void blinkBlueSlow(LedPriority priority, unsigned long long durationMs)
     {
-        setPattern(LED_PATTERN_BLINK_SLOW, Colors::BLUE, priority, durationMs);
+        setPattern(LedPattern::BLINK_SLOW, Colors::BLUE, priority, durationMs);
     }
 
     void blinkBlueFast(LedPriority priority, unsigned long long durationMs)
     {
-        setPattern(LED_PATTERN_BLINK_FAST, Colors::BLUE, priority, durationMs);
+        setPattern(LedPattern::BLINK_FAST, Colors::BLUE, priority, durationMs);
     }
 
     void blinkGreenSlow(LedPriority priority, unsigned long long durationMs)
     {
-        setPattern(LED_PATTERN_BLINK_SLOW, Colors::GREEN, priority, durationMs);
+        setPattern(LedPattern::BLINK_SLOW, Colors::GREEN, priority, durationMs);
     }
 
     void blinkGreenFast(LedPriority priority, unsigned long long durationMs)
     {
-        setPattern(LED_PATTERN_BLINK_FAST, Colors::GREEN, priority, durationMs);
+        setPattern(LedPattern::BLINK_FAST, Colors::GREEN, priority, durationMs);
     }
 
     void pulseBlue(LedPriority priority, unsigned long long durationMs)
     {
-        setPattern(LED_PATTERN_PULSE, Colors::BLUE, priority, durationMs);
+        setPattern(LedPattern::PULSE, Colors::BLUE, priority, durationMs);
     }
 
     void blinkPurpleSlow(LedPriority priority, unsigned long long durationMs)
     {
-        setPattern(LED_PATTERN_BLINK_SLOW, Colors::PURPLE, priority, durationMs);
+        setPattern(LedPattern::BLINK_SLOW, Colors::PURPLE, priority, durationMs);
     }
 
     void blinkPurpleFast(LedPriority priority, unsigned long long durationMs)
     {
-        setPattern(LED_PATTERN_BLINK_FAST, Colors::PURPLE, priority, durationMs);
+        setPattern(LedPattern::BLINK_FAST, Colors::PURPLE, priority, durationMs);
     }
 
     void doubleBlinkYellow(LedPriority priority, unsigned long long durationMs)
     {
-        setPattern(LED_PATTERN_DOUBLE_BLINK, Colors::YELLOW, priority, durationMs);
+        setPattern(LedPattern::DOUBLE_BLINK, Colors::YELLOW, priority, durationMs);
     }
 
     // Private implementation functions
@@ -340,7 +340,7 @@ namespace Led
                     _state.patternStartTime = currentTime;
                     _state.patternDuration = command.durationMs;
                     _state.cycleStartTime = currentTime;
-                    _state.isActive = (command.pattern != LED_PATTERN_OFF);
+                    _state.isActive = (command.pattern != LedPattern::OFF);
                 }
                 else
                 {
@@ -354,7 +354,7 @@ namespace Led
             if (_state.isActive && _state.patternDuration > 0 &&
                 (currentTime - _state.patternStartTime) >= _state.patternDuration)
             {
-                _state.currentPattern = LED_PATTERN_OFF;
+                _state.currentPattern = LedPattern::OFF;
                 _state.currentColor = Colors::OFF;
                 _state.currentPriority = PRIO_NORMAL;
                 _state.isActive = false;
@@ -379,29 +379,29 @@ namespace Led
 
         switch (_state.currentPattern)
         {
-        case LED_PATTERN_SOLID:
+        case LedPattern::SOLID:
             // Always on with current color
             break;
 
-        case LED_PATTERN_OFF:
+        case LedPattern::OFF:
             outputColor = Colors::OFF;
             break;
 
-        case LED_PATTERN_BLINK_SLOW:
+        case LedPattern::BLINK_SLOW:
             // 1 second on, 1 second off
             shouldOutput = ((elapsed / 1000) % 2) == 0;
             if (!shouldOutput)
                 outputColor = Colors::OFF;
             break;
 
-        case LED_PATTERN_BLINK_FAST:
+        case LedPattern::BLINK_FAST:
             // 250ms on, 250ms off
             shouldOutput = ((elapsed / 250) % 2) == 0;
             if (!shouldOutput)
                 outputColor = Colors::OFF;
             break;
 
-        case LED_PATTERN_PULSE:
+        case LedPattern::PULSE:
         {
             // Smooth fade in/out over 2 seconds
             unsigned long cycle = elapsed % 2000; // 2 second cycle
@@ -422,7 +422,7 @@ namespace Led
             break;
         }
 
-        case LED_PATTERN_DOUBLE_BLINK:
+        case LedPattern::DOUBLE_BLINK:
         {
             // Two quick blinks (100ms on, 100ms off, 100ms on, 100ms off), then 800ms pause
             unsigned long cycle = elapsed % 1200; // 1.2 second cycle

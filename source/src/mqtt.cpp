@@ -114,8 +114,8 @@ namespace Mqtt
     static unsigned long long _nextMqttConnectionAttemptMillis = 0;
     
     // Certificates storage
-    static char _awsIotCoreCert[AWS_IOT_CORE_CERT_BUFFER_SIZE];
-    static char _awsIotCorePrivateKey[AWS_IOT_CORE_PRIVATE_KEY_BUFFER_SIZE];
+    static char _awsIotCoreCert[CERTIFICATE_BUFFER_SIZE];
+    static char _awsIotCorePrivateKey[CERTIFICATE_BUFFER_SIZE];
     
     // Topic buffers
     static char _mqttTopicConnectivity[MQTT_TOPIC_BUFFER_SIZE];
@@ -179,6 +179,11 @@ namespace Mqtt
     static bool _getFirmwareUpdatesVersion(char* buffer, size_t bufferSize);
     static bool _setFirmwareUpdatesUrl(const char* url);
     static bool _getFirmwareUpdatesUrl(char* buffer, size_t bufferSize);
+
+    static void _readEncryptedPreferences(const char* preference_key, const char* preshared_encryption_key, char* decryptedData, size_t decryptedDataSize);
+    static bool _checkCertificatesExist();
+    static void _writeEncryptedPreferences(const char* preference_key, const char* value);
+    static void _clearCertificates();
 
     void begin()
     {
@@ -320,12 +325,10 @@ namespace Mqtt
     static void _subscribeCallback(const char* topic, byte *payload, unsigned int length)
     {
         char message[MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE];
-        if (length >= sizeof(message) - 1) {
+        if (length >= sizeof(message)) {
             logger.warning("The MQTT message received from the topic %s has a size of %d (too big). It will be truncated", TAG, topic, length);
         }
-        size_t copyLength = (length < sizeof(message) - 1) ? length : sizeof(message) - 1;
-        memcpy(message, payload, copyLength);
-        message[copyLength] = '\0';
+        snprintf(message, sizeof(message), "%.*s", length, (char*)payload);
 
         logger.debug("Received MQTT message from %s: %s", TAG, topic, message);
 
@@ -347,10 +350,11 @@ namespace Mqtt
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_RESTART))
         {
-            setRestartSystem("subscribeCallback", "Restart requested from MQTT");
+            setRestartSystem(TAG, "Restart requested from MQTT");
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE))
         {
+            // Expected JSON format: {"status": "success", "encryptedCertificatePem": "...", "encryptedPrivateKey": "..."}
             JsonDocument jsonDocument;
             if (deserializeJson(jsonDocument, message)) {
                 return;
@@ -358,23 +362,24 @@ namespace Mqtt
 
             if (jsonDocument["status"] == "success")
             {
-                const char* encryptedCertPem = jsonDocument["encryptedCertificatePem"];
-                const char* encryptedPrivateKey = jsonDocument["encryptedPrivateKey"];
-                
-                writeEncryptedPreferences(PREFS_KEY_CERTIFICATE, encryptedCertPem);
-                writeEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, encryptedPrivateKey);
+                const char* encryptedCertPem = jsonDocument["encryptedCertificatePem"].as<const char*>();
+                const char* encryptedPrivateKey = jsonDocument["encryptedPrivateKey"].as<const char*>();
+
+                _writeEncryptedPreferences(PREFS_KEY_CERTIFICATE, encryptedCertPem);
+                _writeEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, encryptedPrivateKey);
 
                 // Restart MQTT connection
-                setRestartSystem("subscribeCallback", "Restarting after successful certificates provisioning");
+                setRestartSystem(TAG, "Restarting after successful certificates provisioning");
             }
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES))
         {
-            clearCertificates();
-            setRestartSystem("subscribeCallback", "Certificates erase requested from MQTT");
+            _clearCertificates();
+            setRestartSystem(TAG, "Certificates erase requested from MQTT");
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_SET_GENERAL_CONFIGURATION))
         {
+            // Expected JSON format: {"sendPowerData": true, "cloudServicesEnabled": true}
             JsonDocument jsonDocument;
             if (deserializeJson(jsonDocument, message)) {
                 return;
@@ -394,6 +399,7 @@ namespace Mqtt
         }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING))
         {
+            // Expected JSON format: {"enable": true, "duration_minutes": 10}
             JsonDocument jsonDocument;
             if (deserializeJson(jsonDocument, message)) {
                 return;
@@ -479,7 +485,7 @@ namespace Mqtt
                     }
                     
                     // Clear certificates since cloud services are disabled
-                    clearCertificates();
+                    _clearCertificates();
                     _isSetupDone = false;
                     _isClaimInProgress = false;
                 }
@@ -487,28 +493,29 @@ namespace Mqtt
             }
 
             // Handle restart requirement
-            if (restartConfiguration.isRequired)
-            {
-                if (_isSetupDone)
-                {
-                    logger.info("Restart required. Disconnecting MQTT", TAG);
+            // TODO: this should be handled by the stop function
+            // if (restartConfiguration.isRequired)
+            // {
+            //     if (_isSetupDone)
+            //     {
+            //         logger.info("Restart required. Disconnecting MQTT", TAG);
                     
-                    // Send last messages before disconnecting
-                    _clientMqtt.loop();
-                    _publishConnectivity(false);
-                    _publishMeter();
-                    _publishStatus();
-                    _publishMetadata();
-                    _publishChannel();
-                    _publishStatistics();
-                    _clientMqtt.loop();
+            //         // Send last messages before disconnecting
+            //         _clientMqtt.loop();
+            //         _publishConnectivity(false);
+            //         _publishMeter();
+            //         _publishStatus();
+            //         _publishMetadata();
+            //         _publishChannel();
+            //         _publishStatistics();
+            //         _clientMqtt.loop();
 
-                    _clientMqtt.disconnect();
+            //         _clientMqtt.disconnect();
                     
-                    _isSetupDone = false;
-                }
-                continue;
-            }
+            //         _isSetupDone = false;
+            //     }
+            //     continue;
+            // }
 
             // If cloud services are enabled but we're in claim process, just loop the client
             if (_isClaimInProgress)
@@ -520,7 +527,7 @@ namespace Mqtt
             // If cloud services are enabled but setup not done, check certificates and setup
             if (!_isSetupDone)
             {
-                if (!checkCertificatesExist())
+                if (!_checkCertificatesExist())
                 {
                     // Start claim process only if cloud services are enabled
                     _claimProcess();
@@ -642,7 +649,7 @@ namespace Mqtt
                 logger.error("MQTT connection failed due to authorization/credentials error (%d). Erasing certificates and restarting...",
                     TAG,
                     currentState);
-                clearCertificates();
+                _clearCertificates();
                 setRestartSystem(TAG, "MQTT Authentication/Authorization Error");
                 _nextMqttConnectionAttemptMillis = UINT32_MAX; // Prevent further attempts before restart
                 return false; // Prevent further processing in this cycle
@@ -666,8 +673,8 @@ namespace Mqtt
     static void _setCertificates() {
         logger.debug("Setting certificates...", TAG);
 
-        readEncryptedPreferences(PREFS_KEY_CERTIFICATE, preshared_encryption_key, _awsIotCoreCert, sizeof(_awsIotCoreCert));
-        readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, preshared_encryption_key, _awsIotCorePrivateKey, sizeof(_awsIotCorePrivateKey));
+        _readEncryptedPreferences(PREFS_KEY_CERTIFICATE, preshared_encryption_key, _awsIotCoreCert, sizeof(_awsIotCoreCert));
+        _readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, preshared_encryption_key, _awsIotCorePrivateKey, sizeof(_awsIotCorePrivateKey));
 
         // Debug certificate lengths and format
         size_t certLen = strlen(_awsIotCoreCert);
@@ -677,14 +684,14 @@ namespace Mqtt
         // Validate certificate format
         if (certLen < 10 || strstr(_awsIotCoreCert, "-----BEGIN") == nullptr) {
             logger.error("Invalid certificate format detected. Certificate may be corrupted.", TAG);
-            clearCertificates();
+            _clearCertificates();
             setRestartSystem(TAG, "Invalid certificate format");
             return;
         }
 
         if (keyLen < 10 || strstr(_awsIotCorePrivateKey, "-----BEGIN") == nullptr) {
             logger.error("Invalid private key format detected. Private key may be corrupted.", TAG);
-            clearCertificates();
+            _clearCertificates();
             setRestartSystem(TAG, "Invalid private key format");
             return;
         }
@@ -816,11 +823,12 @@ namespace Mqtt
         
         // Additional safety check - if restart is in progress and enough time has passed, 
         // avoid operations that might conflict with cleanup
-        if (restartConfiguration.isRequired && 
-            (millis64() - restartConfiguration.requiredAt) > (SYSTEM_RESTART_DELAY - 1000)) {
-            logger.warning("Restart imminent, skipping payload meter queue to JSON conversion", TAG);
-            return;
-        }
+        // TODO: handled by the stop function
+        // if (restartConfiguration.isRequired && 
+        //     (millis64() - restartConfiguration.requiredAt) > (SYSTEM_RESTART_DELAY - 1000)) {
+        //     logger.warning("Restart imminent, skipping payload meter queue to JSON conversion", TAG);
+        //     return;
+        // }
         
         JsonArray jsonArray = jsonDocument->to<JsonArray>();
         
@@ -930,11 +938,10 @@ namespace Mqtt
 
         JsonDocument jsonDocument;
 
+        SystemDynamicInfo systemInfo;
+        populateSystemDynamicInfo(systemInfo);
+        
         jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        jsonDocument["rssi"] = WiFi.RSSI();
-        jsonDocument["uptime"] = millis64();
-        jsonDocument["freeHeap"] = ESP.getFreeHeap();
-        jsonDocument["freeSpiffs"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
 
         char statusMessage[JSON_MQTT_BUFFER_SIZE];
         safeSerializeJson(jsonDocument, statusMessage, sizeof(statusMessage));
@@ -949,9 +956,11 @@ namespace Mqtt
 
         JsonDocument jsonDocument;
 
+        SystemStaticInfo systemStaticInfo;
+        populateSystemStaticInfo(systemStaticInfo);
+        systemStaticInfoToJson(systemStaticInfo, jsonDocument);
+
         jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        jsonDocument["firmwareBuildVersion"] = FIRMWARE_BUILD_VERSION;
-        jsonDocument["firmwareBuildDate"] = FIRMWARE_BUILD_DATE;
 
         char metadataMessage[JSON_MQTT_BUFFER_SIZE];
         safeSerializeJson(jsonDocument, metadataMessage, sizeof(metadataMessage));
@@ -1362,5 +1371,136 @@ namespace Mqtt
         prefs.getString(PREF_KEY_FW_UPDATES_URL, buffer, bufferSize);
         prefs.end();
         return true;
+    }
+
+
+    void decryptData(const char* encryptedData, const char* key, char* decryptedData, size_t decryptedDataSize) {
+        // Early validation and consistent error handling
+        if (!encryptedData || !key || !decryptedData || decryptedDataSize == 0) {
+            if (decryptedData && decryptedDataSize > 0) {
+                decryptedData[0] = '\0';
+            }
+            return;
+        }
+
+        size_t inputLength = strlen(encryptedData);
+        if (inputLength == 0) {
+            decryptedData[0] = '\0';
+            return;
+        }
+
+        mbedtls_aes_context aes;
+        mbedtls_aes_init(&aes);
+        mbedtls_aes_setkey_dec(&aes, (const unsigned char *)key, ENCRYPTION_KEY_BUFFER_SIZE);
+
+        // Use stack-allocated buffers instead of malloc
+        unsigned char decodedData[CERTIFICATE_BUFFER_SIZE];
+        unsigned char output[CERTIFICATE_BUFFER_SIZE];
+
+        size_t decodedLength = 0;
+        int ret = mbedtls_base64_decode(decodedData, sizeof(decodedData), &decodedLength,
+                                    (const unsigned char *)encryptedData, inputLength);
+        
+        if (ret != 0 || decodedLength == 0) {
+            decryptedData[0] = '\0';
+            mbedtls_aes_free(&aes);
+            return;
+        }
+        
+        // Decrypt in 16-byte blocks
+        for (size_t i = 0; i < decodedLength; i += 16) {
+            mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, &decodedData[i], &output[i]);
+        }
+        
+        // Handle PKCS7 padding removal
+        unsigned char paddingLength = output[decodedLength - 1];
+        if (paddingLength > 0 && paddingLength <= 16 && paddingLength < decodedLength) {
+            output[decodedLength - paddingLength] = '\0';
+        } else {
+            output[decodedLength - 1] = '\0'; // Fallback: just ensure null termination
+        }
+        
+        // Copy result safely
+        snprintf(decryptedData, decryptedDataSize, "%s", (char*)output);
+
+        // Clear sensitive data from stack buffers for security
+        memset(decodedData, 0, sizeof(decodedData));
+        memset(output, 0, sizeof(output));
+
+        mbedtls_aes_free(&aes);
+    }
+
+    static void _readEncryptedPreferences(const char* preference_key, const char* preshared_encryption_key, char* decryptedData, size_t decryptedDataSize) {
+        if (!preference_key || !preshared_encryption_key || !decryptedData || decryptedDataSize == 0) {
+            if (decryptedData && decryptedDataSize > 0) {
+                decryptedData[0] = '\0'; // Ensure null termination on error
+            }
+            return;
+        }
+
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) { // true = read-only mode
+            logger.error("Failed to open preferences", TAG);
+        }
+
+        char encryptedData[CERTIFICATE_BUFFER_SIZE];
+        preferences.getString(preference_key, encryptedData, CERTIFICATE_BUFFER_SIZE);
+        preferences.end();
+
+        if (strlen(encryptedData) == 0) {
+            logger.warning("No encrypted data found for key: %s", TAG, preference_key);
+            return;
+        }
+
+        char encryptionKey[ENCRYPTION_KEY_BUFFER_SIZE];
+        snprintf(encryptionKey, ENCRYPTION_KEY_BUFFER_SIZE, "%s%s", preshared_encryption_key, DEVICE_ID);
+
+        decryptData(encryptedData, encryptionKey, decryptedData, decryptedDataSize);
+    }
+
+    static bool _checkCertificatesExist() {
+        logger.debug("Checking if certificates exist...", TAG);
+
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) {
+            logger.error("Failed to open preferences", TAG);
+            return false;
+        }
+
+        bool _deviceCertExists = !preferences.getString(PREFS_KEY_CERTIFICATE, "").isEmpty(); 
+        bool _privateKeyExists = !preferences.getString(PREFS_KEY_PRIVATE_KEY, "").isEmpty();
+
+        preferences.end();
+
+        bool _allCertificatesExist = _deviceCertExists && _privateKeyExists;
+
+        logger.debug("Certificates exist: %s", TAG, _allCertificatesExist ? "true" : "false");
+        return _allCertificatesExist;
+    }
+
+    static void _writeEncryptedPreferences(const char* preference_key, const char* value) {
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) { // false = read-write mode
+            logger.error("Failed to open preferences", TAG);
+            return;
+        }
+
+        preferences.putString(preference_key, value);
+        preferences.end();
+    }
+
+    static void _clearCertificates() {
+        logger.debug("Clearing certificates...", TAG);
+
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) {
+            logger.error("Failed to open preferences", TAG);
+            return;
+        }
+
+        preferences.clear();
+        preferences.end();
+
+        logger.info("Certificates for cloud services cleared", TAG);
     }
 }

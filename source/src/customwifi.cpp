@@ -21,7 +21,6 @@ namespace CustomWifi
   static void _setupWiFiManager();
   static void _handleSuccessfulConnection();
   static bool _setupMdns();
-  static WifiInfo _getWifiInfo();
 
   bool begin()
   {
@@ -68,7 +67,7 @@ namespace CustomWifi
     _wifiManager.setSaveConfigCallback([]() {
             logger.info("WiFi credentials saved via portal - restarting...", TAG);
             Led::setPattern(
-              LedPattern::LED_PATTERN_BLINK_FAST,
+              LedPattern::BLINK_FAST,
               Led::Colors::CYAN,
               Led::PRIO_CRITICAL,
               3000ULL
@@ -126,11 +125,8 @@ namespace CustomWifi
   {
     _lastReconnectAttempt = 0;
 
-    // Setup mDNS
     _setupMdns();
-
-    // Print connection info
-    printWifiInfo();
+    printDeviceStatusDynamic();
 
     logger.info("WiFi fully connected and operational", TAG);
   }
@@ -167,7 +163,7 @@ namespace CustomWifi
         {
         case WIFI_EVENT_CONNECTED:
           statistics.wifiConnection++;
-          logger.info("WiFi connected to: %s", TAG, WiFi.SSID().c_str());
+          logger.debug("WiFi connected to: %s", TAG, WiFi.SSID().c_str());
           continue; // No further action needed
 
         case WIFI_EVENT_GOT_IP:
@@ -267,54 +263,5 @@ namespace CustomWifi
       logger.warning("Error setting up mDNS", TAG);
       return false;
     }
-  }
-
-  WifiInfo _getWifiInfo()
-  {
-    WifiInfo wifiInfo = {};
-
-    snprintf(wifiInfo.macAddress, sizeof(wifiInfo.macAddress), "%s", WiFi.macAddress().c_str());
-    snprintf(wifiInfo.localIp, sizeof(wifiInfo.localIp), "%s", WiFi.localIP().toString().c_str());
-    snprintf(wifiInfo.subnetMask, sizeof(wifiInfo.subnetMask), "%s", WiFi.subnetMask().toString().c_str());
-    snprintf(wifiInfo.gatewayIp, sizeof(wifiInfo.gatewayIp), "%s", WiFi.gatewayIP().toString().c_str());
-    snprintf(wifiInfo.dnsIp, sizeof(wifiInfo.dnsIp), "%s", WiFi.dnsIP().toString().c_str());
-
-    // Simplified status mapping
-    wl_status_t status = WiFi.status();
-    const char *statusStr = (status == WL_CONNECTED)         ? "Connected"
-                            : (status == WL_DISCONNECTED)    ? "Disconnected"
-                            : (status == WL_CONNECTION_LOST) ? "Connection Lost"
-                            : (status == WL_CONNECT_FAILED)  ? "Connection Failed"
-                            : (status == WL_IDLE_STATUS)     ? "Idle"
-                                                             : "Unknown";
-    snprintf(wifiInfo.status, sizeof(wifiInfo.status), "%s", statusStr);
-
-    snprintf(wifiInfo.ssid, sizeof(wifiInfo.ssid), "%s", WiFi.SSID().c_str());
-    snprintf(wifiInfo.bssid, sizeof(wifiInfo.bssid), "%s", WiFi.BSSIDstr().c_str());
-    wifiInfo.rssi = WiFi.RSSI();
-
-    return wifiInfo;
-  }
-
-  void getWifiInfoJson(JsonDocument &jsonDocument)
-  {
-    WifiInfo wifiInfo = _getWifiInfo();
-
-    jsonDocument["macAddress"] = wifiInfo.macAddress;
-    jsonDocument["localIp"] = wifiInfo.localIp;
-    jsonDocument["subnetMask"] = wifiInfo.subnetMask;
-    jsonDocument["gatewayIp"] = wifiInfo.gatewayIp;
-    jsonDocument["dnsIp"] = wifiInfo.dnsIp;
-    jsonDocument["status"] = wifiInfo.status;
-    jsonDocument["ssid"] = wifiInfo.ssid;
-    jsonDocument["bssid"] = wifiInfo.bssid;
-    jsonDocument["rssi"] = wifiInfo.rssi;
-  }
-
-  void printWifiInfo()
-  {
-    WifiInfo wifiInfo = _getWifiInfo();
-    logger.info("WiFi - SSID: %s | IP: %s | Status: %s | RSSI: %d dBm", TAG,
-                wifiInfo.ssid, wifiInfo.localIp, wifiInfo.status, wifiInfo.rssi);
   }
 }

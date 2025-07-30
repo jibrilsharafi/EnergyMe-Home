@@ -121,65 +121,15 @@
 
 // Buffer Sizes for String Operations
 // =================================
-
-//TODO: remove from here as much as possible
-
-// Small buffers (8-32 bytes)
-#define DEVICE_ID_BUFFER_SIZE 16      // For device IDs (increased slightly for safety)
-#define VERSION_BUFFER_SIZE 16        // For firmware version strings (major.minor.patch format)
-#define TOKEN_SHORT_KEY_BUFFER_SIZE 16 // For auth tokens "t" + 8-char hex + null terminator = 10 chars max, 16 for safety
-#define DATE_BUFFER_SIZE 11           // For date strings (YYYY-MM-DD + null terminator)
-#define CLIENT_ID_BUFFER_SIZE 32      // For MQTT client IDs
-#define DATABASE_NAME_BUFFER_SIZE 32  // For database names
-#define ORGANIZATION_BUFFER_SIZE 32   // For organization names
-#define MEASUREMENT_BUFFER_SIZE 32    // For measurement names
-#define TIMESTAMP_STRING_BUFFER_SIZE 32 // For timestamp strings
-#define MD5_BUFFER_SIZE 33            // For MD5 hashes (32 chars + null terminator)
-
-// Medium buffers (64-128 bytes)
-#define LABEL_BUFFER_SIZE 64          // For sanitized channel labels
-#define CALIBRATION_LABEL_BUFFER_SIZE 64 // For calibration labels
-#define FUNCTION_NAME_BUFFER_SIZE 64  // For function names in restart configuration
-#define SERVER_NAME_BUFFER_SIZE 64    // For MQTT/InfluxDB server names
-#define MQTT_TOPIC_BUFFER_SIZE 64          // For MQTT topics
-#define USERNAME_BUFFER_SIZE 64       // For usernames
-#define PASSWORD_BUFFER_SIZE 64       // For passwords
-#define BUCKET_NAME_BUFFER_SIZE 64    // For bucket names
-#define FIRMWARE_STATUS_BUFFER_SIZE 64 // For firmware status messages
-#define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
-#define AUTH_PASSWORD_BUFFER_SIZE 64  // For authentication passwords
-#define CHARS_TOKEN_BUFFER_SIZE 64    // For characters in token strings
-#define TOKEN_FULL_KEY_BUFFER_SIZE 64 // Full auth tokens
-#define BUTTON_HANDLER_OPERATION_BUFFER_SIZE 64 // For button handler operations
-#define CHANNEL_LABEL_BUFFER_SIZE 128 // For channel labels (let's be generous come on!)
-#define TOKEN_BUFFER_SIZE 128         // For authentication tokens
-#define COUNTRY_BUFFER_SIZE 128       // For country names
-#define CITY_BUFFER_SIZE 128          // For city names
-#define STATUS_BUFFER_SIZE 128         // For connection status messages
-
-// Large buffers (256-512 bytes)
-#define REASON_BUFFER_SIZE 128        // For restart reasons
-#define URL_BUFFER_SIZE 128           // For HTTP URLs
-#define AUTH_HEADER_BUFFER_SIZE 256   // For HTTP authorization headers
-#define ENCODED_CREDENTIALS_BUFFER_SIZE 256 // For base64 encoded credentials
-#define FILENAME_BUFFER_SIZE 256      // For file names in the filesystem
-#define LINE_PROTOCOL_BUFFER_SIZE 512 // For InfluxDB line protocol strings
-#define DECRYPTION_BUFFER_SIZE 512    // For decrypted data (certificates, tokens, etc.)
-#define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
-#define PUBLIC_LOCATION_PAYLOAD_BUFFER_SIZE 512 // For public location API payloads
-#define HTTP_RESPONSE_BUFFER_SIZE 512 // For HTTP response strings
-#define JSON_RESPONSE_BUFFER_SIZE 2048 // For JSON response strings (reduced from 512B)
-#define FULLURL_BUFFER_SIZE 512       // For full URL with query parameters
-#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE 512 // For MQTT subscribe messages (reduced from 1KB)
-#define JSON_MQTT_BUFFER_SIZE 512     // For MQTT JSON payloads
-
-// Very large buffers (1KB+)
-#define ENCRYPTED_DATA_BUFFER_SIZE 1024 // For encrypted data storage (reduced from 2KB)
-#define DECRYPTION_WORKING_BUFFER_SIZE 1024 // Working buffer for decryption operations (reduced from 2KB)
-#define JSON_MQTT_LARGE_BUFFER_SIZE 2048 // For larger JSON payloads in MQTT messages
-#define AWS_IOT_CORE_CERT_BUFFER_SIZE 2048 // For AWS IoT Core certificate
-#define AWS_IOT_CORE_PRIVATE_KEY_BUFFER_SIZE 2048 // For AWS IoT Core private key
-#define PAYLOAD_BUFFER_SIZE 1024 // For InfluxDB payload (reduced from 16KB to 4KB)
+#define DEVICE_ID_BUFFER_SIZE 16      // For device ID (increased slightly for safety)
+#define TIMESTAMP_STRING_BUFFER_SIZE 32
+#define MD5_BUFFER_SIZE 33 // 32 characters + null terminator
+#define USERNAME_BUFFER_SIZE 64
+#define PASSWORD_BUFFER_SIZE 64
+#define NAME_BUFFER_SIZE 64 // For generic names (device, user, etc.)
+#define MQTT_TOPIC_BUFFER_SIZE 64
+#define SERVER_NAME_BUFFER_SIZE 128
+#define STATUS_BUFFER_SIZE 128 // Generic status messages (e.g., connection status, error messages)
 
 // System restart thresholds
 #define MINIMUM_FREE_HEAP_SIZE 1000 // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support

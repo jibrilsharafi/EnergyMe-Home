@@ -5,7 +5,6 @@
 #include <HTTPClient.h>
 #include <PubSubClient.h>
 #include <Ticker.h>
-#include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
@@ -21,11 +20,17 @@
 #include "utils.h"
 
 #define MQTT_TASK_NAME "mqtt_task"
-#define MQTT_TASK_STACK_SIZE (16 * 1024)
+#define MQTT_TASK_STACK_SIZE (32 * 1024)
 #define MQTT_TASK_PRIORITY 3
 
 #define MQTT_LOG_QUEUE_SIZE 1000 // Generous log size thanks to PSRAM
 #define MQTT_METER_QUEUE_SIZE 50000 // Very big since we have plenty of PSRAM
+
+#define JSON_MQTT_BUFFER_SIZE 2048     // For MQTT JSON payloads
+#define JSON_MQTT_LARGE_BUFFER_SIZE (16 * 1024) // For larger MQTT JSON payloads
+#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE 2048 // For MQTT subscribe messages (reduced from 1KB)
+#define CERTIFICATE_BUFFER_SIZE 2048 // TODO: can this be reduced?
+#define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
 
 #if HAS_SECRETS
 #define DEFAULT_CLOUD_SERVICES_ENABLED true // If we compile with secrets, we might as well just directly connect
@@ -68,7 +73,6 @@
 // Certificates path
 #define PREFS_KEY_CERTIFICATE "certificate"
 #define PREFS_KEY_PRIVATE_KEY "private_key"
-#define KEY_SIZE 256
 
 // EnergyMe - Home | Custom MQTT topics
 // Base topics

@@ -6,12 +6,13 @@
 #include <PubSubClient.h>
 #include <Ticker.h>
 #include <Preferences.h>
-#include <WiFi.h>
+#include <WiFiClient.h>
 
 #include "ade7953.h"
 #include "constants.h"
 #include "customtime.h"
 #include "customwifi.h"
+#include "globals.h"
 #include "structs.h"
 #include "utils.h"
 
@@ -32,18 +33,17 @@
 #define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL (10 * 1000) // Minimum interval between two connection attempts
 #define MQTT_CUSTOM_PAYLOAD_LIMIT 512 // Increase the base limit of 256 bytes
 
-
 struct CustomMqttConfiguration { // TODO: deprecate this
     bool enabled;
     char server[SERVER_NAME_BUFFER_SIZE];
     int port;
-    char clientid[CLIENT_ID_BUFFER_SIZE];
+    char clientid[DEVICE_ID_BUFFER_SIZE];
     char topic[MQTT_TOPIC_BUFFER_SIZE];
     int frequency;
     bool useCredentials;
     char username[USERNAME_BUFFER_SIZE];
     char password[PASSWORD_BUFFER_SIZE];
-    char lastConnectionStatus[STATUS_BUFFER_SIZE];
+    char lastConnectionStatus[NAME_BUFFER_SIZE];
     char lastConnectionAttemptTimestamp[TIMESTAMP_STRING_BUFFER_SIZE];
 
     CustomMqttConfiguration() 
@@ -61,47 +61,10 @@ struct CustomMqttConfiguration { // TODO: deprecate this
     }
 };
 
-class CustomMqtt
+namespace CustomMqtt
 {
-public:
-    CustomMqtt(
-        Ade7953 &ade7953,
-        AdvancedLogger &logger,
-        PubSubClient &customClientMqtt,
-        CustomMqttConfiguration &customMqttConfiguration
-    );
-
     void begin();
     void loop();
 
     bool setConfiguration(JsonDocument &jsonDocument);
-
-private:
-    void _setDefaultConfiguration();
-    void _setConfigurationFromSpiffs();
-    void _saveConfigurationToSpiffs();
-
-    void _disable();
-
-    bool _connectMqtt();
-
-    void _publishMeter();
-
-    bool _publishMessage(const char *topic, const char *message);
-
-    bool _validateJsonConfiguration(JsonDocument &jsonDocument);
-
-    Ade7953 &_ade7953;
-    AdvancedLogger &_logger;
-    PubSubClient &_customClientMqtt;
-    CustomMqttConfiguration &_customMqttConfiguration;
-
-    bool _isSetupDone = false;
-
-    unsigned long _lastMillisMqttLoop = 0;
-    unsigned long _lastMillisMqttFailed = 0;
-    unsigned long _mqttConnectionAttempt = 0;
-    unsigned long _nextMqttConnectionAttemptMillis = 0;
-
-    unsigned long _lastMillisMeterPublish = 0;
-};
+}

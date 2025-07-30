@@ -35,6 +35,25 @@
 #define TASK_MAINTENANCE_PRIORITY 2
 #define MAINTENANCE_CHECK_INTERVAL (10 * 1000) // Interval to check main parameters, to avoid overloading the loop
 
+#define FUNCTION_NAME_BUFFER_SIZE 32
+#define REASON_BUFFER_SIZE 128
+#define VERSION_BUFFER_SIZE 32
+
+#define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
+
+struct RestartConfiguration // TODO: really needed?
+{
+  bool isRequired;
+  unsigned long requiredAt;
+  char functionName[FUNCTION_NAME_BUFFER_SIZE];
+  char reason[REASON_BUFFER_SIZE];
+
+  RestartConfiguration() : isRequired(false), requiredAt(0xFFFFFFFF) {
+    snprintf(functionName, sizeof(functionName), "Unknown");
+    snprintf(reason, sizeof(reason), "Unknown");
+  }
+};
+
 // Come one, on this ESP32S3 and in 2025 can we still use 32bits millis
 // that will overflow in just 49 days?
 // esp_timer_get_time() returns microseconds since boot in 64-bit format,
@@ -99,11 +118,5 @@ void getDeviceId(char* deviceId, size_t maxLength);
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
 
 const char* getMqttStateReason(int state);
-
-void decryptData(const char* encryptedData, const char* key, char* decryptedData, size_t decryptedDataSize);
-void readEncryptedPreferences(const char* preference_key, const char* preshared_encryption_key, char* value, size_t valueSize);
-void writeEncryptedPreferences(const char* preference_key, const char* value);
-void clearCertificates();
-bool checkCertificatesExist();
 
 bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds = true);

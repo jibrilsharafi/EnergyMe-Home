@@ -26,6 +26,8 @@
 
 #define ZERO_START_TIME 0 // Used to indicate no button press has started
 
+#define OPERATION_BUFFER_SIZE 64 // Buffer size for operation names
+
 enum class ButtonPressType
 {
   NONE,

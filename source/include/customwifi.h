@@ -31,37 +31,9 @@
 #define WIFI_STATUS_BUFFER_SIZE 18 // For connection status messages (longest expected is "Connection Failed" + null terminator)
 #define WIFI_SSID_BUFFER_SIZE 64  // For WiFi SSID
 
-struct WifiInfo
-{
-    char macAddress[MAC_ADDRESS_BUFFER_SIZE];
-    char localIp[OCTET_BUFFER_SIZE];
-    char subnetMask[OCTET_BUFFER_SIZE];
-    char gatewayIp[OCTET_BUFFER_SIZE];
-    char dnsIp[OCTET_BUFFER_SIZE];
-    char status[WIFI_STATUS_BUFFER_SIZE];
-    char ssid[WIFI_SSID_BUFFER_SIZE];
-    char bssid[MAC_ADDRESS_BUFFER_SIZE];
-    int rssi;
-
-    WifiInfo() : rssi(0)
-    {
-        snprintf(macAddress, sizeof(macAddress), "%s", "");
-        snprintf(localIp, sizeof(localIp), "%s", "");
-        snprintf(subnetMask, sizeof(subnetMask), "%s", "");
-        snprintf(gatewayIp, sizeof(gatewayIp), "%s", "");
-        snprintf(dnsIp, sizeof(dnsIp), "%s", "");
-        snprintf(status, sizeof(status), "%s", "Unknown");
-        snprintf(ssid, sizeof(ssid), "%s", "Unknown");
-        snprintf(bssid, sizeof(bssid), "%s", "");
-    }
-};
-
 namespace CustomWifi
 {
     bool begin();
     void resetWifi();
     bool isFullyConnected();
-
-    void getWifiInfoJson(JsonDocument &jsonDocument);
-    void printWifiInfo();
 }
