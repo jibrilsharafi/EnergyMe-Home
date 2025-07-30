@@ -1,7 +1,6 @@
 #include "mqtt.h"
 
-extern AdvancedLogger logger;
-extern Ade7953 ade7953;
+extern Ade7953 ade7953; // TODO: remove this when it becomes static
 
 static const char *TAG = "mqtt";
 
@@ -97,8 +96,8 @@ namespace Mqtt
     static bool _debugLogsEnabled = DEFAULT_DEBUG_LOGS_ENABLED;
 
     // Version for OTA information
-    static char _firmwareUpdatesUrl[256];
-    static char _firmwareUpdatesVersion[16];
+    static char _firmwareUpdatesUrl[SERVER_NAME_BUFFER_SIZE];
+    static char _firmwareUpdatesVersion[VERSION_BUFFER_SIZE];
     
     // Timing variables
     static unsigned long long _lastMillisMqttLoop = 0;
@@ -1287,7 +1286,7 @@ namespace Mqtt
             logger.error("Failed to open MQTT preferences", TAG);
             return false;
         }
-        bool success = prefs.putBool(PREF_KEY_MQTT_CLOUD_SERVICES, enabled) > 0;
+        bool success = prefs.putBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, enabled) > 0;
         prefs.end();
         return success;
     }
@@ -1299,7 +1298,7 @@ namespace Mqtt
             return false;
         }
         bool enabled;
-        enabled = prefs.getBool(PREF_KEY_MQTT_CLOUD_SERVICES);
+        enabled = prefs.getBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY);
         prefs.end();
         return enabled;
     }
@@ -1310,7 +1309,7 @@ namespace Mqtt
             logger.error("Failed to open MQTT preferences", TAG);
             return false;
         }
-        bool success = prefs.putBool(PREF_KEY_MQTT_SEND_POWER_DATA, enabled) > 0;
+        bool success = prefs.putBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, enabled) > 0;
         prefs.end();
         return success;
     }
@@ -1322,18 +1321,18 @@ namespace Mqtt
             return false;
         }
         bool enabled;
-        enabled = prefs.getBool(PREF_KEY_MQTT_SEND_POWER_DATA);
+        enabled = prefs.getBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY);
         prefs.end();
         return enabled;
     }
 
-    static bool _setFirmwareUpdatesVersion(const char* version) {
+    static bool _setFirmwareUpdatesVersion(const char* version) { // TODO: this could become more complex to allow for AWS IoT Core Jobs (so SHA256, etc.)
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false)) {
             logger.error("Failed to open firmware updates preferences", TAG);
             return false;
         }
-        bool success = prefs.putString(PREF_KEY_FW_UPDATES_VERSION, version) > 0;
+        bool success = prefs.putString(MQTT_PREFERENCES_FW_UPDATES_VERSION_KEY, version) > 0;
         prefs.end();
         return success;
     }
@@ -1345,7 +1344,7 @@ namespace Mqtt
             buffer[0] = '\0';
             return false;
         }
-        prefs.getString(PREF_KEY_FW_UPDATES_VERSION, buffer, bufferSize);
+        prefs.getString(MQTT_PREFERENCES_FW_UPDATES_VERSION_KEY, buffer, bufferSize);
         prefs.end();
         return true;
     }
@@ -1356,7 +1355,7 @@ namespace Mqtt
             logger.error("Failed to open firmware updates preferences", TAG);
             return false;
         }
-        bool success = prefs.putString(PREF_KEY_FW_UPDATES_URL, url) > 0;
+        bool success = prefs.putString(MQTT_PREFERENCES_FW_UPDATES_URL_KEY, url) > 0;
         prefs.end();
         return success;
     }
@@ -1368,7 +1367,7 @@ namespace Mqtt
             buffer[0] = '\0';
             return false;
         }
-        prefs.getString(PREF_KEY_FW_UPDATES_URL, buffer, bufferSize);
+        prefs.getString(MQTT_PREFERENCES_FW_UPDATES_URL_KEY, buffer, bufferSize);
         prefs.end();
         return true;
     }

@@ -37,7 +37,6 @@
 
 #define FUNCTION_NAME_BUFFER_SIZE 32
 #define REASON_BUFFER_SIZE 128
-#define VERSION_BUFFER_SIZE 32
 
 #define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
 

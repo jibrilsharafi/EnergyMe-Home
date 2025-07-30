@@ -162,22 +162,22 @@ namespace CustomMqtt
         logger.debug("Setting custom MQTT configuration from Preferences...", TAG);
 
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_MQTT, true)) { // true = read-only
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, true)) { // true = read-only
             logger.error("Failed to open Preferences namespace for MQTT. Using default configuration", TAG);
             _setDefaultConfiguration();
             return;
         }
 
         JsonDocument jsonDocument;
-        jsonDocument["enabled"] = preferences.getBool(PREF_KEY_CUSTOM_MQTT_ENABLED, false);
-        jsonDocument["server"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_SERVER, "");
-        jsonDocument["port"] = preferences.getUInt(PREF_KEY_CUSTOM_MQTT_PORT, 1883);
-        jsonDocument["clientid"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_CLIENT_ID, "energyme");
-        jsonDocument["topic"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_TOPIC, "energyme/meter");
-        jsonDocument["frequency"] = preferences.getUInt(PREF_KEY_CUSTOM_MQTT_FREQUENCY, 10);
-        jsonDocument["useCredentials"] = preferences.getBool(PREF_KEY_CUSTOM_MQTT_USE_CREDENTIALS, false);
-        jsonDocument["username"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_USERNAME, "");
-        jsonDocument["password"] = preferences.getString(PREF_KEY_CUSTOM_MQTT_PASSWORD, "");
+        jsonDocument["enabled"] = preferences.getBool(CUSTOM_MQTT_ENABLED_KEY, false);
+        jsonDocument["server"] = preferences.getString(CUSTOM_MQTT_SERVER_KEY, "");
+        jsonDocument["port"] = preferences.getUInt(CUSTOM_MQTT_PORT_KEY, 1883);
+        jsonDocument["clientid"] = preferences.getString(CUSTOM_MQTT_CLIENT_ID_KEY, "energyme");
+        jsonDocument["topic"] = preferences.getString(CUSTOM_MQTT_TOPIC_KEY, "energyme/meter");
+        jsonDocument["frequency"] = preferences.getUInt(CUSTOM_MQTT_FREQUENCY_KEY, 10);
+        jsonDocument["useCredentials"] = preferences.getBool(CUSTOM_MQTT_USE_CREDENTIALS_KEY, false);
+        jsonDocument["username"] = preferences.getString(CUSTOM_MQTT_USERNAME_KEY, "");
+        jsonDocument["password"] = preferences.getString(CUSTOM_MQTT_PASSWORD_KEY, "");
 
         preferences.end();
 
@@ -196,20 +196,20 @@ namespace CustomMqtt
         logger.debug("Saving custom MQTT configuration to Preferences...", TAG);
 
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_MQTT, false)) { // false = read-write
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) { // false = read-write
             logger.error("Failed to open Preferences namespace for MQTT", TAG);
             return;
         }
 
-        preferences.putBool(PREF_KEY_CUSTOM_MQTT_ENABLED, _customMqttConfiguration.enabled);
-        preferences.putString(PREF_KEY_CUSTOM_MQTT_SERVER, _customMqttConfiguration.server);
-        preferences.putUInt(PREF_KEY_CUSTOM_MQTT_PORT, _customMqttConfiguration.port);
-        preferences.putString(PREF_KEY_CUSTOM_MQTT_CLIENT_ID, _customMqttConfiguration.clientid);
-        preferences.putString(PREF_KEY_CUSTOM_MQTT_TOPIC, _customMqttConfiguration.topic);
-        preferences.putUInt(PREF_KEY_CUSTOM_MQTT_FREQUENCY, _customMqttConfiguration.frequency);
-        preferences.putBool(PREF_KEY_CUSTOM_MQTT_USE_CREDENTIALS, _customMqttConfiguration.useCredentials);
-        preferences.putString(PREF_KEY_CUSTOM_MQTT_USERNAME, _customMqttConfiguration.username);
-        preferences.putString(PREF_KEY_CUSTOM_MQTT_PASSWORD, _customMqttConfiguration.password);
+        preferences.putBool(CUSTOM_MQTT_ENABLED_KEY, _customMqttConfiguration.enabled);
+        preferences.putString(CUSTOM_MQTT_SERVER_KEY, _customMqttConfiguration.server);
+        preferences.putUInt(CUSTOM_MQTT_PORT_KEY, _customMqttConfiguration.port);
+        preferences.putString(CUSTOM_MQTT_CLIENT_ID_KEY, _customMqttConfiguration.clientid);
+        preferences.putString(CUSTOM_MQTT_TOPIC_KEY, _customMqttConfiguration.topic);
+        preferences.putUInt(CUSTOM_MQTT_FREQUENCY_KEY, _customMqttConfiguration.frequency);
+        preferences.putBool(CUSTOM_MQTT_USE_CREDENTIALS_KEY, _customMqttConfiguration.useCredentials);
+        preferences.putString(CUSTOM_MQTT_USERNAME_KEY, _customMqttConfiguration.username);
+        preferences.putString(CUSTOM_MQTT_PASSWORD_KEY, _customMqttConfiguration.password);
 
         preferences.end();
 
@@ -241,12 +241,12 @@ namespace CustomMqtt
         logger.debug("Disabling custom MQTT...", TAG);
 
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_MQTT, false)) { // false = read-write
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) { // false = read-write
             logger.error("Failed to open Preferences namespace for MQTT", TAG);
             return;
         }
 
-        preferences.putBool(PREF_KEY_CUSTOM_MQTT_ENABLED, false);
+        preferences.putBool(CUSTOM_MQTT_ENABLED_KEY, false);
         preferences.end();
 
         // Update the configuration object

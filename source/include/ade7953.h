@@ -113,6 +113,33 @@
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0f // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20f // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 
+// Preferences keys for ADE7953 configuration
+#define PREF_KEY_SAMPLE_TIME "sampleTime"
+#define PREF_KEY_A_V_GAIN "aVGain"
+#define PREF_KEY_A_I_GAIN "aIGain"
+#define PREF_KEY_B_I_GAIN "bIGain"
+#define PREF_KEY_A_IRMS_OS "aIRmsOs"
+#define PREF_KEY_B_IRMS_OS "bIRmsOs"
+#define PREF_KEY_A_W_GAIN "aWGain"
+#define PREF_KEY_B_W_GAIN "bWGain"
+#define PREF_KEY_A_WATT_OS "aWattOs"
+#define PREF_KEY_B_WATT_OS "bWattOs"
+#define PREF_KEY_A_VAR_GAIN "aVarGain"
+#define PREF_KEY_B_VAR_GAIN "bVarGain"
+#define PREF_KEY_A_VAR_OS "aVarOs"
+#define PREF_KEY_B_VAR_OS "bVarOs"
+#define PREF_KEY_A_VA_GAIN "aVaGain"
+#define PREF_KEY_B_VA_GAIN "bVaGain"
+#define PREF_KEY_A_VA_OS "aVaOs"
+#define PREF_KEY_B_VA_OS "bVaOs"
+
+// Preferences keys for channel configuration (per channel, format: "ch<N>_<property>")
+#define PREF_KEY_CHANNEL_ACTIVE_FMT "ch%d_active"
+#define PREF_KEY_CHANNEL_REVERSE_FMT "ch%d_reverse"
+#define PREF_KEY_CHANNEL_LABEL_FMT "ch%d_label"
+#define PREF_KEY_CHANNEL_PHASE_FMT "ch%d_phase"
+#define PREF_KEY_CHANNEL_CALIB_LABEL_FMT "ch%d_calibLabel"
+
 class Ade7953
 {
 public:

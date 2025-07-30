@@ -54,23 +54,23 @@ struct Statistics {
 // Static system information (rarely changes, only with firmware updates)
 struct SystemStaticInfo {
     // Product & Company
-    char companyName[64];
-    char productName[64];
-    char fullProductName[128];
-    char productDescription[256];
-    char githubUrl[128];
-    char author[64];
-    char authorEmail[64];
+    char companyName[NAME_BUFFER_SIZE];
+    char productName[NAME_BUFFER_SIZE];
+    char fullProductName[NAME_BUFFER_SIZE];
+    char productDescription[NAME_BUFFER_SIZE];
+    char githubUrl[SERVER_NAME_BUFFER_SIZE];
+    char author[NAME_BUFFER_SIZE];
+    char authorEmail[NAME_BUFFER_SIZE];
     
     // Firmware & Build
-    char buildVersion[32];
-    char buildDate[32];
-    char buildTime[32];
-    char sketchMD5[33];  // MD5 hash (32 chars + null terminator)
-    char partitionAppName[8]; // Name of the partition for the app (e.g., "app0", "app1")
+    char buildVersion[VERSION_BUFFER_SIZE];
+    char buildDate[TIMESTAMP_BUFFER_SIZE];
+    char buildTime[TIMESTAMP_BUFFER_SIZE];
+    char sketchMD5[MD5_BUFFER_SIZE];  // MD5 hash (32 chars + null terminator)
+    char partitionAppName[NAME_BUFFER_SIZE]; // Name of the partition for the app (e.g., "app0", "app1")
     
     // Hardware & Chip (mostly static)
-    char chipModel[32];        // ESP32, ESP32-S3, etc.
+    char chipModel[NAME_BUFFER_SIZE];        // ESP32, ESP32-S3, etc.
     unsigned char chipRevision;      // Hardware revision
     unsigned char chipCores;         // Number of CPU cores
     unsigned long long chipId;           // Unique chip ID
@@ -80,18 +80,18 @@ struct SystemStaticInfo {
     unsigned long cpuFrequencyMHz;  // CPU frequency
     
     // SDK versions
-    char sdkVersion[32];
-    char coreVersion[32];
+    char sdkVersion[NAME_BUFFER_SIZE];
+    char coreVersion[NAME_BUFFER_SIZE];
     
     // Crash and reset monitoring
     unsigned long crashCount;                    // Total crashes since last manual reset
     unsigned long resetCount;                    // Total resets since first boot
     unsigned long lastResetReason;               // ESP reset reason code
-    char lastResetReasonString[32];         // Human readable reset reason
+    char lastResetReasonString[STATUS_BUFFER_SIZE];         // Human readable reset reason
     bool lastResetWasCrash;                 // True if last reset was due to crash
     
     // Device configuration
-    char deviceId[32];
+    char deviceId[DEVICE_ID_BUFFER_SIZE];
     
     SystemStaticInfo() {
         // Initialize with safe defaults
@@ -121,7 +121,7 @@ struct SystemDynamicInfo {
     // Time & Uptime
     unsigned long long uptimeMilliseconds;
     unsigned long uptimeSeconds;
-    char currentTimestamp[32];
+    char currentTimestamp[TIMESTAMP_BUFFER_SIZE];
     
     // Memory - Heap (DRAM)
     unsigned long heapTotalBytes;
@@ -153,13 +153,13 @@ struct SystemDynamicInfo {
     // Network status
     long wifiRssi;
     bool wifiConnected;
-    char wifiSsid[128];
-    char wifiMacAddress[18];
-    char wifiLocalIp[16];
-    char wifiGatewayIp[16];
-    char wifiSubnetMask[16];
-    char wifiDnsIp[16];
-    char wifiBssid[18];
+    char wifiSsid[NAME_BUFFER_SIZE];
+    char wifiMacAddress[MAC_ADDRESS_BUFFER_SIZE];
+    char wifiLocalIp[IP_ADDRESS_BUFFER_SIZE];
+    char wifiGatewayIp[IP_ADDRESS_BUFFER_SIZE];
+    char wifiSubnetMask[IP_ADDRESS_BUFFER_SIZE];
+    char wifiDnsIp[IP_ADDRESS_BUFFER_SIZE];
+    char wifiBssid[MAC_ADDRESS_BUFFER_SIZE];
 
     SystemDynamicInfo() {
         memset(this, 0, sizeof(*this));

@@ -1,6 +1,4 @@
 #include "influxdbclient.h"
-#include <algorithm>
-
 
 static const char *TAG = "influxdbclient";
 

@@ -2,7 +2,7 @@
 
 #include "customlog.h"
 
-static const char *TAG = "logcallback";
+static const char *TAG = "customlog";
 
 namespace CustomLog
 {

@@ -33,6 +33,18 @@
 #define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL (10 * 1000) // Minimum interval between two connection attempts
 #define MQTT_CUSTOM_PAYLOAD_LIMIT 512 // Increase the base limit of 256 bytes
 
+#define CUSTOM_MQTT_ENABLED_KEY "enabled"
+#define CUSTOM_MQTT_SERVER_KEY "server"
+#define CUSTOM_MQTT_PORT_KEY "port"
+#define CUSTOM_MQTT_USERNAME_KEY "username"
+#define CUSTOM_MQTT_PASSWORD_KEY "password"
+#define CUSTOM_MQTT_CLIENT_ID_KEY "clientId"
+#define CUSTOM_MQTT_TOPIC_PREFIX_KEY "topicPrefix"
+#define CUSTOM_MQTT_PUBLISH_INTERVAL_KEY "publishInterval"
+#define CUSTOM_MQTT_USE_CREDENTIALS_KEY "useCredentials"
+#define CUSTOM_MQTT_TOPIC_KEY "topic"
+#define CUSTOM_MQTT_FREQUENCY_KEY "frequency"
+
 struct CustomMqttConfiguration { // TODO: deprecate this
     bool enabled;
     char server[SERVER_NAME_BUFFER_SIZE];

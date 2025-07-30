@@ -1,10 +1,10 @@
+/*
+EnergyMe - Home
+Copyright (C) 2025 Jibril Sharafi
+*/
+
 #include <Arduino.h>
 #include <SPIFFS.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/semphr.h"
-#include <esp_task_wdt.h>
-#include <WiFiUdp.h>
 
 // Project includes
 // Initialization before everything

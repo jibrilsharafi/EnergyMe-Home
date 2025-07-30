@@ -44,7 +44,7 @@
 #define ENERGY_JSON_PATH "/energy.json"
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
 
-// Preferences namespaces for configuration storage
+// Preferences namespaces are here to enable a full wipe from utils when factory resetting
 #define PREFERENCES_NAMESPACE_ADE7953 "ade7953_ns"
 #define PREFERENCES_NAMESPACE_CALIBRATION "calibration_ns"
 #define PREFERENCES_NAMESPACE_CHANNELS "channels_ns"
@@ -59,61 +59,6 @@
 #define PREFERENCES_NAMESPACE_LED "led_ns"
 #define PREFERENCES_NAMESPACE_FIRMWARE_UPDATES "fw_updates_ns"
 
-#define PREF_KEY_FW_UPDATES_URL "url"
-#define PREF_KEY_FW_UPDATES_VERSION "version"
-
-// Preferences keys for general configuration
-#define PREF_KEY_TIMEZONE "timezone"
-#define PREF_KEY_LOCATION_LAT "locationLat"
-#define PREF_KEY_LOCATION_LON "locationLon"
-#define PREF_KEY_SEND_POWER_DATA "sendPowerData"
-#define PREF_KEY_LOG_LEVEL_PRINT "logLevelPrint"
-#define PREF_KEY_LOG_LEVEL_SAVE "logLevelSave"
-
-// Preferences keys for ADE7953 configuration
-#define PREF_KEY_SAMPLE_TIME "sampleTime"
-#define PREF_KEY_A_V_GAIN "aVGain"
-#define PREF_KEY_A_I_GAIN "aIGain"
-#define PREF_KEY_B_I_GAIN "bIGain"
-#define PREF_KEY_A_IRMS_OS "aIRmsOs"
-#define PREF_KEY_B_IRMS_OS "bIRmsOs"
-#define PREF_KEY_A_W_GAIN "aWGain"
-#define PREF_KEY_B_W_GAIN "bWGain"
-#define PREF_KEY_A_WATT_OS "aWattOs"
-#define PREF_KEY_B_WATT_OS "bWattOs"
-#define PREF_KEY_A_VAR_GAIN "aVarGain"
-#define PREF_KEY_B_VAR_GAIN "bVarGain"
-#define PREF_KEY_A_VAR_OS "aVarOs"
-#define PREF_KEY_B_VAR_OS "bVarOs"
-#define PREF_KEY_A_VA_GAIN "aVaGain"
-#define PREF_KEY_B_VA_GAIN "bVaGain"
-#define PREF_KEY_A_VA_OS "aVaOs"
-#define PREF_KEY_B_VA_OS "bVaOs"
-
-// Preferences keys for MQTT configuration
-#define PREF_KEY_CUSTOM_MQTT_ENABLED "enabled"
-#define PREF_KEY_CUSTOM_MQTT_SERVER "server"
-#define PREF_KEY_CUSTOM_MQTT_PORT "port"
-#define PREF_KEY_CUSTOM_MQTT_USERNAME "username"
-#define PREF_KEY_CUSTOM_MQTT_PASSWORD "password"
-#define PREF_KEY_CUSTOM_MQTT_CLIENT_ID "clientId"
-#define PREF_KEY_CUSTOM_MQTT_TOPIC_PREFIX "topicPrefix"
-#define PREF_KEY_CUSTOM_MQTT_PUBLISH_INTERVAL "publishInterval"
-#define PREF_KEY_CUSTOM_MQTT_USE_CREDENTIALS "useCredentials"
-#define PREF_KEY_CUSTOM_MQTT_TOPIC "topic"
-#define PREF_KEY_CUSTOM_MQTT_FREQUENCY "frequency"
-
-// MQTT
-#define PREF_KEY_MQTT_CLOUD_SERVICES "cloud_services"
-#define PREF_KEY_MQTT_SEND_POWER_DATA "send_power_data"
-
-// Preferences keys for channel configuration (per channel, format: "ch<N>_<property>")
-#define PREF_KEY_CHANNEL_ACTIVE_FMT "ch%d_active"
-#define PREF_KEY_CHANNEL_REVERSE_FMT "ch%d_reverse"
-#define PREF_KEY_CHANNEL_LABEL_FMT "ch%d_label"
-#define PREF_KEY_CHANNEL_PHASE_FMT "ch%d_phase"
-#define PREF_KEY_CHANNEL_CALIB_LABEL_FMT "ch%d_calibLabel"
-
 // Logger
 #define LOG_PATH "/logger/log.txt"
 #define LOG_CONFIG_PATH "/logger/config.txt"
@@ -121,7 +66,10 @@
 
 // Buffer Sizes for String Operations
 // =================================
+// Only constants which are used in multiple files are defined here
 #define DEVICE_ID_BUFFER_SIZE 16      // For device ID (increased slightly for safety)
+#define IP_ADDRESS_BUFFER_SIZE 16 // For IPv4 addresses (e.g., "192.168.1.1")
+#define MAC_ADDRESS_BUFFER_SIZE 18 // For MAC addresses (e.g., "00:1A:2B:3C:4D:5E")
 #define TIMESTAMP_STRING_BUFFER_SIZE 32
 #define MD5_BUFFER_SIZE 33 // 32 characters + null terminator
 #define USERNAME_BUFFER_SIZE 64
@@ -130,6 +78,7 @@
 #define MQTT_TOPIC_BUFFER_SIZE 64
 #define SERVER_NAME_BUFFER_SIZE 128
 #define STATUS_BUFFER_SIZE 128 // Generic status messages (e.g., connection status, error messages)
+#define VERSION_BUFFER_SIZE 32
 
 // System restart thresholds
 #define MINIMUM_FREE_HEAP_SIZE 1000 // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support
