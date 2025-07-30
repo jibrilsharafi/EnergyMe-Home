@@ -561,6 +561,11 @@ void restartTask(void* parameter) {
 void setRestartSystem(const char* functionName, const char* reason) { 
     logger.info("Restart required from function %s. Reason: %s", TAG, functionName, reason);
     
+    if (restartConfiguration.isRequired) {
+        logger.warning("A restart is already scheduled. Keeping the existing configuration.", TAG);
+        return; // Prevent overwriting an existing restart request
+    }
+
     // Store restart information for logging purposes
     restartConfiguration.isRequired = true;
     restartConfiguration.requiredAt = millis64();

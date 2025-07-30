@@ -29,6 +29,41 @@ namespace CustomServer
     static bool _getWebPassword(char *buffer, size_t bufferSize);
     static bool _validatePasswordStrength(const char *password);
 
+    // Helper functions for common response patterns
+    static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc);
+    static void _sendSuccessResponse(AsyncWebServerRequest *request, const char *message);
+    static void _sendErrorResponse(AsyncWebServerRequest *request, int statusCode, const char *message);
+
+    // API endpoint groups
+    static void _serveSystemEndpoints();
+    static void _serveNetworkEndpoints();
+    static void _serveLoggingEndpoints();
+    static void _serveHealthEndpoints();
+    static void _serveAuthEndpoints();
+    static void _serveOtaEndpoints();
+    
+    // Authentication endpoints
+    static void _serveAuthStatusEndpoint();
+    static void _serveChangePasswordEndpoint();
+    static void _serveResetPasswordEndpoint();
+    
+    // OTA endpoints
+    static void _serveOtaUploadEndpoint();
+    static void _serveOtaStatusEndpoint();
+    static void _serveOtaRollbackEndpoint();
+    static void _handleOtaUploadComplete(AsyncWebServerRequest *request);
+    static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
+                                   size_t index, unsigned char *data, size_t len, bool final);
+    
+    // OTA helper functions
+    static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename);
+    static void _setupOtaMd5Verification(AsyncWebServerRequest *request);
+    static bool _writeOtaChunk(AsyncWebServerRequest *request, unsigned char *data, size_t len, size_t index);
+    static void _finalizeOtaUpload(AsyncWebServerRequest *request);
+    
+    // Logging helper functions
+    static bool _parseLogLevel(const char *levelStr, LogLevel &level);
+    
     void begin()
     {
         logger.debug("Setting up web server...", TAG);
@@ -45,7 +80,7 @@ namespace CustomServer
         _startHealthCheckTask();
     }
 
-    void _setupMiddleware()
+    static void _setupMiddleware()
     {
         // ---- Authentication Middleware Setup ----
         // Configure digest authentication (more secure than basic auth)
@@ -99,7 +134,7 @@ namespace CustomServer
         logger.debug("Logging middleware configured", TAG);
     }
 
-    void _serveStaticContent()
+    static void _serveStaticContent()
     {
         // === STATIC CONTENT (no auth required) ===
 
@@ -194,62 +229,72 @@ namespace CustomServer
         request->send(response);
     }
 
-    // API endpoint groups
-    static void _serveSystemEndpoints();
-    static void _serveNetworkEndpoints();
-    static void _serveLoggingEndpoints();
-
-    void _serveApi()
+    static void _serveApi()
     {
         // Group endpoints by functionality
         _serveSystemEndpoints();
         _serveNetworkEndpoints();
         _serveLoggingEndpoints();
+        _serveHealthEndpoints();
+        _serveAuthEndpoints();
+        _serveOtaEndpoints();
+    }
 
+    // === HEALTH ENDPOINTS ===
+    static void _serveHealthEndpoints()
+    {
         server.on("/api/v1/health", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        
-        JsonDocument doc;
-        doc["status"] = "ok";
-        doc["uptime"] = millis64();
-        char timestamp[20];
-        CustomTime::getTimestamp(timestamp, sizeof(timestamp));
-        doc["timestamp"] = timestamp;
-        
-        serializeJson(doc, *response);
-        request->send(response); })
-            .skipServerMiddlewares()
-            .addMiddleware(&requestLogger); // Only the logger is required,no auth or rate limiting
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            
+            JsonDocument doc;
+            doc["status"] = "ok";
+            doc["uptime"] = millis64();
+            char timestamp[TIMESTAMP_STRING_BUFFER_SIZE];
+            CustomTime::getTimestamp(timestamp, sizeof(timestamp));
+            doc["timestamp"] = timestamp;
+            
+            serializeJson(doc, *response);
+            request->send(response); 
+        }).skipServerMiddlewares().addMiddleware(&requestLogger);
+    }
 
-        // === AUTHENTICATION ENDPOINTS ===
+    // === AUTHENTICATION ENDPOINTS ===
+    static void _serveAuthEndpoints()
+    {
+        _serveAuthStatusEndpoint();
+        _serveChangePasswordEndpoint();
+        _serveResetPasswordEndpoint();
+    }
 
-        // Check authentication status
+    static void _serveAuthStatusEndpoint()
+    {
         server.on("/api/v1/auth/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        JsonDocument doc;
-        
-        // Check if using default password
-        char currentPassword[AUTH_PASSWORD_BUFFER_SIZE];
-        bool isDefault = true;
-        if (_getWebPassword(currentPassword, sizeof(currentPassword))) {
-            isDefault = (strcmp(currentPassword, WEBSERVER_DEFAULT_PASSWORD) == 0);
-        }
-        
-        doc["usingDefaultPassword"] = isDefault;
-        doc["username"] = WEBSERVER_DEFAULT_USERNAME; // Only one username available in any case
-        
-        serializeJson(doc, *response);
-        request->send(response); });
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            JsonDocument doc;
+            
+            // Check if using default password
+            char currentPassword[AUTH_PASSWORD_BUFFER_SIZE];
+            bool isDefault = true;
+            if (_getWebPassword(currentPassword, sizeof(currentPassword))) {
+                isDefault = (strcmp(currentPassword, WEBSERVER_DEFAULT_PASSWORD) == 0);
+            }
+            
+            doc["usingDefaultPassword"] = isDefault;
+            doc["username"] = WEBSERVER_DEFAULT_USERNAME;
+            
+            serializeJson(doc, *response);
+            request->send(response); 
+        });
+    }
 
-        // Change password (requires current password)
-        // Using AsyncCallbackJsonWebHandler for cleaner JSON handling
+    static void _serveChangePasswordEndpoint()
+    {
         static AsyncCallbackJsonWebHandler *changePasswordHandler = new AsyncCallbackJsonWebHandler(
             "/api/v1/auth/change-password",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                // Parse JSON (automatically handled by AsyncCallbackJsonWebHandler)
                 JsonDocument doc;
                 doc.set(json);
 
@@ -258,7 +303,7 @@ namespace CustomServer
 
                 if (!currentPassword || !newPassword)
                 {
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing currentPassword or newPassword\"}");
+                    _sendErrorResponse(request, 400, "Missing currentPassword or newPassword");
                     return;
                 }
 
@@ -266,236 +311,266 @@ namespace CustomServer
                 char storedPassword[AUTH_PASSWORD_BUFFER_SIZE];
                 if (!_getWebPassword(storedPassword, sizeof(storedPassword)))
                 {
-                    request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to retrieve current password\"}");
+                    _sendErrorResponse(request, 500, "Failed to retrieve current password");
                     return;
                 }
 
                 if (strcmp(currentPassword, storedPassword) != 0)
                 {
-                    request->send(401, "application/json", "{\"success\":false,\"message\":\"Current password is incorrect\"}");
+                    _sendErrorResponse(request, 401, "Current password is incorrect");
                     return;
                 }
 
                 // Validate and save new password
                 if (!_setWebPassword(newPassword))
                 {
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"New password does not meet requirements or failed to save\"}");
+                    _sendErrorResponse(request, 400, "New password does not meet requirements or failed to save");
                     return;
                 }
 
                 logger.info("Password changed successfully via API", TAG);
-                request->send(200, "application/json", "{\"success\":true,\"message\":\"Password changed successfully\"}");
+                _sendSuccessResponse(request, "Password changed successfully");
 
-                delay(1000); // Give time for the response to be sent before updating the password
+                delay(HTTP_RESPONSE_DELAY); // Give time for response to be sent
 
-                // Update authentication middleware with new password (but after sending response otherwise the client will not receive it)
+                // Update authentication middleware with new password
                 updateAuthPassword();
             });
 
         changePasswordHandler->setMethod(HTTP_POST);
         server.addHandler(changePasswordHandler);
+    }
 
-        // Reset password to default (admin operation)
+    static void _serveResetPasswordEndpoint()
+    {
         server.on("/api/v1/auth/reset-password", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
-        if (resetWebPassword()) {
-            // Update authentication middleware with new password
-            updateAuthPassword();
+            if (resetWebPassword()) {
+                updateAuthPassword();
+                logger.warning("Password reset to default via API", TAG);
+                _sendSuccessResponse(request, "Password reset to default");
+            } else {
+                _sendErrorResponse(request, 500, "Failed to reset password");
+            } 
+        });
+    }
+
+    // === OTA UPDATE ENDPOINTS ===
+    static void _serveOtaEndpoints()
+    {
+        _serveOtaUploadEndpoint();
+        _serveOtaStatusEndpoint();
+        _serveOtaRollbackEndpoint();
+    }
+
+    static void _serveOtaUploadEndpoint()
+    {
+        server.on("/api/v1/ota/upload", HTTP_POST, 
+            _handleOtaUploadComplete,
+            _handleOtaUploadData);
+    }
+
+    static void _handleOtaUploadComplete(AsyncWebServerRequest *request)
+    {
+        // Handle the completion of the upload
+        if (request->getResponse()) {
+            return; // Response already set due to error
+        }
+        
+        if (Update.hasError()) {
+            JsonDocument doc;
+            doc["success"] = false;
+            doc["message"] = Update.errorString();
+            _sendJsonResponse(request, doc);
             
-            logger.warning("Password reset to default via API", TAG);
-            request->send(200, "application/json", "{\"success\":true,\"message\":\"Password reset to default\"}");
+            logger.error("OTA update failed: %s", TAG, Update.errorString());
+            Update.printError(Serial);
+            
+            Led::blinkRed(Led::PRIO_CRITICAL, 5000ULL);
         } else {
-            request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to reset password\"}");
-        } });
+            JsonDocument doc;
+            doc["success"] = true;
+            doc["message"] = "Firmware update completed successfully";
+            doc["md5"] = Update.md5String();
+            _sendJsonResponse(request, doc);
+            
+            logger.info("OTA update completed successfully", TAG);
+            logger.debug("New firmware MD5: %s", TAG, Update.md5String().c_str());
+            
+            Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
+            setRestartSystem(TAG, "Restart needed after firmware update");
+        }
+    }
 
-        // === OTA UPDATE ENDPOINTS ===
-
-        // Firmware upload endpoint with integrated MD5 support
-        server.on("/api/v1/ota/upload", HTTP_POST, [](AsyncWebServerRequest *request)
-                  {
-            // Handle the completion of the upload
-            if (request->getResponse()) {
-                // Response already set due to error
+    static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
+                                   size_t index, unsigned char *data, size_t len, bool final)
+    {
+        static bool otaInitialized = false;
+        
+        if (!index) {
+            // First chunk - initialize OTA
+            if (!_initializeOtaUpload(request, filename)) {
                 return;
             }
-            
-            if (Update.hasError()) {
-                AsyncResponseStream *response = request->beginResponseStream("application/json");
-                JsonDocument doc;
-                doc["success"] = false;
-                doc["message"] = Update.errorString();
-                serializeJson(doc, *response);
-                request->send(response);
-                
-                logger.error("OTA update failed: %s", TAG, Update.errorString());
-                Update.printError(Serial);
-                
-                // Clear OTA progress pattern and flash red LED pattern for error
-                Led::blinkRed(Led::PRIO_CRITICAL, 5000ULL);
-            } else {
-                AsyncResponseStream *response = request->beginResponseStream("application/json");
-                JsonDocument doc;
-                doc["success"] = true;
-                doc["message"] = "Firmware update completed successfully";
-                doc["md5"] = Update.md5String();
-                serializeJson(doc, *response);
-                request->send(response);
-                
-                logger.info("OTA update completed successfully", TAG);
-                logger.debug("New firmware MD5: %s", TAG, Update.md5String().c_str());
-                
-                // Clear OTA progress pattern and show success LED pattern
-                Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
-                
-                // Schedule restart
-                setRestartSystem(TAG, "Restart needed after firmware update");
-            } }, [](AsyncWebServerRequest *request, String filename, size_t index, unsigned char *data, size_t len, bool final)
-                  {
-            // Handle firmware upload chunks
-            static bool otaInitialized = false;
-            
-            if (!index) {
-                // First chunk - initialize OTA
-                logger.info("Starting OTA update with file: %s", TAG, filename.c_str());
-
-                // TODO: mutex or similar to block/pause other processes, and also remember to resume them after OTA
-                
-                // Validate file extension
-                if (!filename.endsWith(".bin")) {
-                    logger.error("Invalid file type. Only .bin files are supported", TAG);
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"File must be in .bin format\"}");
-                    return;
-                }
-                
-                // Get content length from header
-                size_t contentLength = request->header("Content-Length").toInt();
-                if (contentLength == 0) {
-                    logger.error("No Content-Length header found or empty file", TAG);
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing Content-Length header or empty file\"}");
-                    return;
-                }
-                
-                // Validate minimum firmware size (reasonable minimum for ESP32 firmware)
-                if (contentLength < MINIMUM_FIRMWARE_SIZE) {
-                    logger.error("Firmware file too small: %zu bytes (minimum: %d bytes)", TAG, contentLength, MINIMUM_FIRMWARE_SIZE);
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Firmware file too small\"}");
-                    return;
-                }
-                
-                // Check free heap
-                size_t freeHeap = ESP.getFreeHeap();
-                logger.debug("Free heap before OTA: %zu bytes", TAG, freeHeap);
-                if (freeHeap < MINIMUM_FREE_HEAP_OTA) { // Minimum free heap for OTA
-                    logger.error("Insufficient memory for OTA update", TAG);
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Insufficient memory for update\"}");
-                    return;
-                }
-                
-                // Pause ADE7953 during update to free resources
-                // _ade7953.pauseMeterReadingTask(); // Uncomment if you have this method
-                
-                // Begin OTA update with known size
-                if (!Update.begin(contentLength, U_FLASH)) {
-                    logger.error("Failed to begin OTA update: %s", TAG, Update.errorString());
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Failed to begin update\"}");
-                    
-                    // Restore LED and resume operations
-                    Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
-                    // _ade7953.resumeMeterReadingTask(); // Uncomment if you have this method
-                    return;
-                }
-                
-                // Check for MD5 header and set it if provided
-                String md5Header = request->header("X-MD5");
-                if (md5Header.length() == 32) {
-                    // Convert to lowercase
-                    md5Header.toLowerCase();
-                    Update.setMD5(md5Header.c_str());
-                    logger.debug("MD5 verification enabled: %s", TAG, md5Header.c_str());
-                } else if (md5Header.length() > 0) {
-                    logger.warning("Invalid MD5 length (%d), skipping verification", TAG, md5Header.length());
-                } else {
-                    logger.warning("No MD5 header provided, skipping verification", TAG);
-                }
-
-                // Start LED indication for OTA progress (indefinite duration)
-                Led::blinkPurpleFast(Led::PRIO_MEDIUM); // Indefinite duration - will run until cleared
-                
-                otaInitialized = true;
-                logger.debug("OTA update started, expected size: %zu bytes", TAG, contentLength);
-            }
-            
-            // Write chunk to flash
-            if (len && otaInitialized) {
-                size_t written = Update.write(data, len);
-                if (written != len) {
-                    logger.error("OTA write failed: expected %zu bytes, wrote %zu bytes", TAG, len, written);
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Write failed\"}");
-                    Update.abort();
-                    otaInitialized = false;
-                    
-                    return;
-                }
-                
-                // Log progress sometimes
-                static size_t lastProgressIndex = 0;
-                if (index >= lastProgressIndex + SIZE_REPORT_UPDATE_OTA || index == 0) {
-                    float progress = (float)Update.progress() / Update.size() * 100.0;
-                    logger.debug("OTA progress: %.1f%% (%zu / %zu bytes)", TAG, progress, Update.progress(), Update.size());
-                    lastProgressIndex = index;
-                }
-            }
-            
-            // Final chunk - complete the update
-            if (final && otaInitialized) {
-                logger.debug("Finalizing OTA update...", TAG);
-                
-                // Validate that we actually received data
-                if (Update.progress() == 0) {
-                    logger.error("OTA finalization failed: No data received", TAG);
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"No firmware data received\"}");
-                    Update.abort();
-                    otaInitialized = false;
-                    return;
-                }
-                
-                // Validate minimum size
-                if (Update.progress() < MINIMUM_FIRMWARE_SIZE) {
-                    logger.error("OTA finalization failed: Firmware too small (%zu bytes)", TAG, Update.progress());
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Firmware file too small\"}");
-                    Update.abort();
-                    otaInitialized = false;
-                    return;
-                }
-                
-                if (!Update.end(true)) {
-                    logger.error("OTA finalization failed: %s", TAG, Update.errorString());
-                    // Error response will be handled in the main handler above
-                    
-                    // Restore operations on error
-                    // TODO: fill this
-                } else {
-                    logger.debug("OTA update finalization successful", TAG);
-                    
-                    // Clear OTA progress pattern and show success LED pattern
-                    Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
-                }
+            otaInitialized = true;
+        }
+        
+        // Write chunk to flash
+        if (len && otaInitialized) {
+            if (!_writeOtaChunk(request, data, len, index)) {
                 otaInitialized = false;
-            } });
+                return;
+            }
+        }
+        
+        // Final chunk - complete the update
+        if (final && otaInitialized) {
+            _finalizeOtaUpload(request);
+            otaInitialized = false;
+        }
+    }
 
-        // Get OTA update status
+    static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename)
+    {
+        logger.info("Starting OTA update with file: %s", TAG, filename.c_str());
+        
+        // Validate file extension
+        if (!filename.endsWith(".bin")) {
+            logger.error("Invalid file type. Only .bin files are supported", TAG);
+            _sendErrorResponse(request, 400, "File must be in .bin format");
+            return false;
+        }
+        
+        // Get content length from header
+        size_t contentLength = request->header("Content-Length").toInt();
+        if (contentLength == 0) {
+            logger.error("No Content-Length header found or empty file", TAG);
+            _sendErrorResponse(request, 400, "Missing Content-Length header or empty file");
+            return false;
+        }
+        
+        // Validate minimum firmware size
+        if (contentLength < MINIMUM_FIRMWARE_SIZE) {
+            logger.error("Firmware file too small: %zu bytes (minimum: %d bytes)", TAG, contentLength, MINIMUM_FIRMWARE_SIZE);
+            _sendErrorResponse(request, 400, "Firmware file too small");
+            return false;
+        }
+        
+        // Check free heap
+        size_t freeHeap = ESP.getFreeHeap();
+        logger.debug("Free heap before OTA: %zu bytes", TAG, freeHeap);
+        if (freeHeap < MINIMUM_FREE_HEAP_OTA) {
+            logger.error("Insufficient memory for OTA update", TAG);
+            _sendErrorResponse(request, 400, "Insufficient memory for update");
+            return false;
+        }
+        
+        // Begin OTA update with known size
+        if (!Update.begin(contentLength, U_FLASH)) {
+            logger.error("Failed to begin OTA update: %s", TAG, Update.errorString());
+            _sendErrorResponse(request, 400, "Failed to begin update");
+            Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
+            return false;
+        }
+        
+        // Handle MD5 verification if provided
+        _setupOtaMd5Verification(request);
+        
+        // Start LED indication for OTA progress
+        Led::blinkPurpleFast(Led::PRIO_MEDIUM);
+        
+        logger.debug("OTA update started, expected size: %zu bytes", TAG, contentLength);
+        return true;
+    }
+
+    static void _setupOtaMd5Verification(AsyncWebServerRequest *request)
+    {
+        if (!request->hasHeader("X-MD5")) {
+            logger.warning("No MD5 header provided, skipping verification", TAG);
+            return;
+        }
+        
+        const char* md5HeaderCStr = request->header("X-MD5").c_str();
+        size_t headerLength = strlen(md5HeaderCStr);
+        
+        if (headerLength == 32) {
+            char md5Header[MD5_BUFFER_SIZE];
+            strncpy(md5Header, md5HeaderCStr, sizeof(md5Header) - 1);
+            md5Header[sizeof(md5Header) - 1] = '\0';
+            
+            // Convert to lowercase
+            for (size_t i = 0; md5Header[i]; i++) {
+                md5Header[i] = tolower(md5Header[i]);
+            }
+            
+            Update.setMD5(md5Header);
+            logger.debug("MD5 verification enabled: %s", TAG, md5Header);
+        } else if (headerLength > 0) {
+            logger.warning("Invalid MD5 length (%zu), skipping verification", TAG, headerLength);
+        } else {
+            logger.warning("No MD5 header provided, skipping verification", TAG);
+        }
+    }
+
+    static bool _writeOtaChunk(AsyncWebServerRequest *request, unsigned char *data, size_t len, size_t index)
+    {
+        size_t written = Update.write(data, len);
+        if (written != len) {
+            logger.error("OTA write failed: expected %zu bytes, wrote %zu bytes", TAG, len, written);
+            _sendErrorResponse(request, 400, "Write failed");
+            Update.abort();
+            return false;
+        }
+        
+        // Log progress periodically
+        static size_t lastProgressIndex = 0;
+        if (index >= lastProgressIndex + SIZE_REPORT_UPDATE_OTA || index == 0) {
+            float progress = (float)Update.progress() / Update.size() * 100.0;
+            logger.debug("OTA progress: %.1f%% (%zu / %zu bytes)", TAG, progress, Update.progress(), Update.size());
+            lastProgressIndex = index;
+        }
+        
+        return true;
+    }
+
+    static void _finalizeOtaUpload(AsyncWebServerRequest *request)
+    {
+        logger.debug("Finalizing OTA update...", TAG);
+        
+        // Validate that we actually received data
+        if (Update.progress() == 0) {
+            logger.error("OTA finalization failed: No data received", TAG);
+            _sendErrorResponse(request, 400, "No firmware data received");
+            Update.abort();
+            return;
+        }
+        
+        // Validate minimum size
+        if (Update.progress() < MINIMUM_FIRMWARE_SIZE) {
+            logger.error("OTA finalization failed: Firmware too small (%zu bytes)", TAG, Update.progress());
+            _sendErrorResponse(request, 400, "Firmware file too small");
+            Update.abort();
+            return;
+        }
+        
+        if (!Update.end(true)) {
+            logger.error("OTA finalization failed: %s", TAG, Update.errorString());
+            // Error response will be handled in the main handler
+        } else {
+            logger.debug("OTA update finalization successful", TAG);
+            Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
+        }
+    }
+
+    static void _serveOtaStatusEndpoint()
+    {
         server.on("/api/v1/ota/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
             JsonDocument doc;
             
-            if (Update.isRunning()) {
-                doc["status"] = "running";
-            } else {
-                doc["status"] = "idle";
-            }
-            
+            doc["status"] = Update.isRunning() ? "running" : "idle";
             doc["canRollback"] = Update.canRollBack();
+            
             const esp_partition_t *running = esp_ota_get_running_partition();
             doc["currentPartition"] = running->label;
             doc["hasError"] = Update.hasError();
@@ -509,32 +584,34 @@ namespace CustomServer
             doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
             doc["currentMD5"] = ESP.getSketchMD5();
             
-            serializeJson(doc, *response);
-            request->send(response); 
+            _sendJsonResponse(request, doc);
         });
+    }
 
-        // OTA rollback endpoint
+    static void _serveOtaRollbackEndpoint()
+    {
         server.on("/api/v1/ota/rollback", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
-        if (Update.isRunning()) {
-            Update.abort();
-            logger.info("Aborted running OTA update", TAG);
-        }
+            if (Update.isRunning()) {
+                Update.abort();
+                logger.info("Aborted running OTA update", TAG);
+            }
 
-        if (Update.canRollBack()) {
-            logger.warning("Firmware rollback requested via API", TAG);
-            request->send(200, "application/json", "{\"success\":true,\"message\":\"Rollback initiated. Device will restart.\"}");
-
-            Update.rollBack();
-            setRestartSystem(TAG, "Firmware rollback requested via API");
-        } else {
-            logger.error("Rollback not possible: %s", TAG, Update.errorString());
-            request->send(400, "application/json", "{\"success\":false,\"message\":\"Rollback not possible\"}");
-        } });
+            if (Update.canRollBack()) {
+                logger.warning("Firmware rollback requested via API", TAG);
+                _sendSuccessResponse(request, "Rollback initiated. Device will restart.");
+                
+                Update.rollBack();
+                setRestartSystem(TAG, "Firmware rollback requested via API");
+            } else {
+                logger.error("Rollback not possible: %s", TAG, Update.errorString());
+                _sendErrorResponse(request, 400, "Rollback not possible");
+            }
+        });
     }
 
     // === SYSTEM MANAGEMENT ENDPOINTS ===
-    void _serveSystemEndpoints()
+    static void _serveSystemEndpoints()
     {
         // System information
         server.on("/api/v1/system/info", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -565,7 +642,7 @@ namespace CustomServer
             _sendSuccessResponse(request, "System restart initiated");
             
             // Short delay to ensure response is sent
-            delay(100);
+            delay(HTTP_RESPONSE_DELAY);
             setRestartSystem(TAG, "System restart requested via API"); });
 
         // Factory reset
@@ -574,7 +651,7 @@ namespace CustomServer
             _sendSuccessResponse(request, "Factory reset initiated");
             
             // Delay to ensure response is sent
-            delay(2000);
+            delay(HTTP_RESPONSE_DELAY);
             factoryReset(); });
 
         // Check if secrets exist
@@ -586,7 +663,7 @@ namespace CustomServer
     }
 
     // === NETWORK MANAGEMENT ENDPOINTS ===
-    void _serveNetworkEndpoints()
+    static void _serveNetworkEndpoints()
     {
         // WiFi reset
         server.on("/api/v1/network/wifi/reset", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -594,7 +671,7 @@ namespace CustomServer
             _sendSuccessResponse(request, "WiFi credentials reset. Device will restart and enter configuration mode.");
             
             // Short delay to ensure response is sent
-            delay(2000);
+            delay(HTTP_RESPONSE_DELAY);
             CustomWifi::resetWifi(); });
 
         // WiFi information
@@ -606,7 +683,7 @@ namespace CustomServer
     }
 
     // === LOGGING ENDPOINTS ===
-    void _serveLoggingEndpoints()
+    static void _serveLoggingEndpoints()
     {
         // Get log levels
         server.on("/api/v1/logs/level", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -617,15 +694,20 @@ namespace CustomServer
             _sendJsonResponse(request, doc); });
 
         // Set log levels (using AsyncCallbackJsonWebHandler for JSON body)
-        static AsyncCallbackJsonWebHandler *setLogLevelHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/logs/level",
-            [](AsyncWebServerRequest *request, JsonVariant &json)
-            {
+        static AsyncCallbackJsonWebHandler *_setLogLevelHandler = new AsyncCallbackJsonWebHandler("/api/v1/logs/level");
+        _setLogLevelHandler->setMaxContentLength(64);
+        _setLogLevelHandler->onRequest([](AsyncWebServerRequest *request, JsonVariant &json) { // We cannot do setMethod since it makes all PUT requests fail (404)
+                if (strcmp(request->methodToString(), "PUT") != 0)
+                {
+                    _sendErrorResponse(request, 405, "Method Not Allowed. Use PUT to set log levels.");
+                    return;
+                }
+            
                 JsonDocument doc;
                 doc.set(json);
 
-                const char *printLevel = doc["print"];
-                const char *saveLevel = doc["save"];
+                const char *printLevel = doc["print"].as<const char *>();
+                const char *saveLevel = doc["save"].as<const char *>();
 
                 if (!printLevel && !saveLevel)
                 {
@@ -633,67 +715,39 @@ namespace CustomServer
                     return;
                 }
 
-                bool success = true;
-                char resultMsg[256];
+                char resultMsg[STATUS_BUFFER_SIZE];
                 snprintf(resultMsg, sizeof(resultMsg), "Log levels updated:");
+                bool success = true;
 
                 // Set print level if provided
-                if (printLevel)
+                if (printLevel && success)
                 {
-                    // Convert string to LogLevel enum
                     LogLevel level;
-                    if (strcmp(printLevel, "VERBOSE") == 0)
-                        level = LogLevel::VERBOSE;
-                    else if (strcmp(printLevel, "DEBUG") == 0)
-                        level = LogLevel::DEBUG;
-                    else if (strcmp(printLevel, "INFO") == 0)
-                        level = LogLevel::INFO;
-                    else if (strcmp(printLevel, "WARNING") == 0)
-                        level = LogLevel::WARNING;
-                    else if (strcmp(printLevel, "ERROR") == 0)
-                        level = LogLevel::ERROR;
-                    else if (strcmp(printLevel, "FATAL") == 0)
-                        level = LogLevel::FATAL;
-                    else
-                    {
-                        success = false;
-                    }
-
-                    if (success)
+                    if (_parseLogLevel(printLevel, level))
                     {
                         logger.setPrintLevel(level);
                         snprintf(resultMsg + strlen(resultMsg), sizeof(resultMsg) - strlen(resultMsg),
                                  " print=%s", printLevel);
                     }
-                }
-
-                // Set save level if provided
-                if (saveLevel)
-                {
-                    // Convert string to LogLevel enum
-                    LogLevel level;
-                    if (strcmp(saveLevel, "VERBOSE") == 0)
-                        level = LogLevel::VERBOSE;
-                    else if (strcmp(saveLevel, "DEBUG") == 0)
-                        level = LogLevel::DEBUG;
-                    else if (strcmp(saveLevel, "INFO") == 0)
-                        level = LogLevel::INFO;
-                    else if (strcmp(saveLevel, "WARNING") == 0)
-                        level = LogLevel::WARNING;
-                    else if (strcmp(saveLevel, "ERROR") == 0)
-                        level = LogLevel::ERROR;
-                    else if (strcmp(saveLevel, "FATAL") == 0)
-                        level = LogLevel::FATAL;
                     else
                     {
                         success = false;
                     }
+                }
 
-                    if (success)
+                // Set save level if provided
+                if (saveLevel && success)
+                {
+                    LogLevel level;
+                    if (_parseLogLevel(saveLevel, level))
                     {
                         logger.setSaveLevel(level);
                         snprintf(resultMsg + strlen(resultMsg), sizeof(resultMsg) - strlen(resultMsg),
                                  " save=%s", saveLevel);
+                    }
+                    else
+                    {
+                        success = false;
                     }
                 }
 
@@ -707,9 +761,7 @@ namespace CustomServer
                     _sendErrorResponse(request, 400, "Invalid log level specified. Valid levels: VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL");
                 }
             });
-
-        setLogLevelHandler->setMethod(HTTP_PUT);
-        server.addHandler(setLogLevelHandler);
+        server.addHandler(_setLogLevelHandler);
 
         // Clear logs
         server.on("/api/v1/logs/clear", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -719,7 +771,30 @@ namespace CustomServer
             logger.info("Logs cleared via API", TAG); });
     }
 
-    void _startHealthCheckTask()
+    // Helper function to parse log level strings
+    static bool _parseLogLevel(const char *levelStr, LogLevel &level)
+    {
+        if (!levelStr) return false;
+        
+        if (strcmp(levelStr, "VERBOSE") == 0)
+            level = LogLevel::VERBOSE;
+        else if (strcmp(levelStr, "DEBUG") == 0)
+            level = LogLevel::DEBUG;
+        else if (strcmp(levelStr, "INFO") == 0)
+            level = LogLevel::INFO;
+        else if (strcmp(levelStr, "WARNING") == 0)
+            level = LogLevel::WARNING;
+        else if (strcmp(levelStr, "ERROR") == 0)
+            level = LogLevel::ERROR;
+        else if (strcmp(levelStr, "FATAL") == 0)
+            level = LogLevel::FATAL;
+        else
+            return false;
+            
+        return true;
+    }
+
+    static void _startHealthCheckTask()
     {
         if (_healthCheckTaskHandle != NULL)
         {
@@ -750,7 +825,7 @@ namespace CustomServer
         }
     }
 
-    void _stopHealthCheckTask()
+    static void _stopHealthCheckTask()
     {
         if (_healthCheckTaskHandle == NULL)
         {
@@ -874,10 +949,15 @@ namespace CustomServer
         {
             if (client.available())
             {
-                String line = client.readStringUntil('\n');
-                if (line.startsWith("HTTP/1.1 "))
+                char line[HTTP_RESPONSE_BUFFER_SIZE];
+                size_t bytesRead = client.readBytesUntil('\n', line, sizeof(line) - 1);
+                line[bytesRead] = '\0';
+                
+                if (strncmp(line, "HTTP/1.1 ", 9) == 0 && bytesRead >= 12)
                 {
-                    int statusCode = line.substring(9, 12).toInt();
+                    // Extract status code from characters 9-11
+                    char statusStr[4] = {line[9], line[10], line[11], '\0'};
+                    int statusCode = atoi(statusStr);
                     client.stop();
 
                     if (statusCode == 200)

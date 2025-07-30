@@ -20,7 +20,7 @@ namespace CustomLog
     static void _callbackUdp();
     static bool _initializeQueue();
 
-    bool _initializeQueue() // Cannot use logger here to avoid circular dependency
+    static bool _initializeQueue() // Cannot use logger here to avoid circular dependency
     {
         if (_isQueueInitialized) {
             return true;
@@ -96,7 +96,7 @@ namespace CustomLog
         }
     }
 
-    void _callbackMqtt(
+    static void _callbackMqtt(
         const char* timestamp,
         unsigned long millisEsp,
         const char* level,
@@ -109,7 +109,7 @@ namespace CustomLog
         Mqtt::pushLog(timestamp, millisEsp, level, coreId, function, message);
     }
 
-    void _callbackUdp(
+    static void _callbackUdp(
         const char* timestamp,
         unsigned long millisEsp,
         const char* level,

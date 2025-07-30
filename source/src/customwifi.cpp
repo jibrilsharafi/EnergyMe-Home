@@ -7,9 +7,8 @@ namespace CustomWifi
   // Static variables - minimal state
   static WiFiManager _wifiManager;
   static TaskHandle_t _wifiTaskHandle = NULL;
-  static bool _isInitialConnection = true;
   static unsigned long long _lastReconnectAttempt = 0;
-  static int _reconnectAttempts = 0;
+  static int _reconnectAttempts = 0; // Increased every disconnection, reset on stable (few minutes) connection
 
   // WiFi event notification values for task communication
   static const unsigned long WIFI_EVENT_CONNECTED = 1;
@@ -29,7 +28,7 @@ namespace CustomWifi
     logger.debug("Setting up WiFi with event-driven architecture...", TAG);
 
     // Setup WiFi event handling
-    // WiFi.onEvent(_onWiFiEvent);
+    WiFi.onEvent(_onWiFiEvent);
 
     // Enable auto-reconnect and persistence
     WiFi.setAutoReconnect(true);
@@ -125,8 +124,6 @@ namespace CustomWifi
 
   static void _handleSuccessfulConnection()
   {
-    _isInitialConnection = false;
-    _reconnectAttempts = 0;
     _lastReconnectAttempt = 0;
 
     // Setup mDNS
@@ -169,7 +166,6 @@ namespace CustomWifi
         switch (notificationValue)
         {
         case WIFI_EVENT_CONNECTED:
-          _reconnectAttempts = 0;
           statistics.wifiConnection++;
           logger.info("WiFi connected to: %s", TAG, WiFi.SSID().c_str());
           continue; // No further action needed
@@ -202,6 +198,8 @@ namespace CustomWifi
               logger.error("Multiple reconnection failures - starting portal", TAG);
 
               // Try WiFiManager portal
+              // TODO: this eventually will need to be async or similar since we lose meter 
+              // readings in the meanwhile (and infinite loop of portal - reboots)
               if (!_wifiManager.startConfigPortal(hostname))
               {
                 logger.fatal("Portal failed - restarting device", TAG);
@@ -229,7 +227,7 @@ namespace CustomWifi
       if (isFullyConnected())
       {
         // Reset failure counter on sustained connection
-        if (_isInitialConnection || _reconnectAttempts > 0)
+        if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
         {
           logger.debug("WiFi connection stable - resetting counters", TAG);
           _reconnectAttempts = 0;

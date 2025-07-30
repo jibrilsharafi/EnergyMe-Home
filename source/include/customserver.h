@@ -16,12 +16,15 @@
 #include "binaries.h"
 #include "utils.h"
 
+// Rate limiting
 #define WEBSERVER_MAX_REQUESTS 180
 #define WEBSERVER_WINDOW_SIZE_SECONDS 60 // in seconds
 
 #define MINIMUM_FREE_HEAP_OTA 20000 // Minimum free heap required for OTA updates
 #define SIZE_REPORT_UPDATE_OTA (128 * 1024) // Report progress every 128KB
+#define HTTP_RESPONSE_DELAY 2000 // Short delay to ensure HTTP response is sent before system actions (such as restart)
 
+// Health check task
 #define HEALTH_CHECK_TASK_NAME "health_check_task"
 #define HEALTH_CHECK_TASK_STACK_SIZE (4 * 1024)
 #define HEALTH_CHECK_TASK_PRIORITY 1
