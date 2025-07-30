@@ -64,8 +64,8 @@ struct SystemStaticInfo {
     
     // Firmware & Build
     char buildVersion[VERSION_BUFFER_SIZE];
-    char buildDate[TIMESTAMP_BUFFER_SIZE];
-    char buildTime[TIMESTAMP_BUFFER_SIZE];
+    char buildDate[TIMESTAMP_STRING_BUFFER_SIZE];
+    char buildTime[TIMESTAMP_STRING_BUFFER_SIZE];
     char sketchMD5[MD5_BUFFER_SIZE];  // MD5 hash (32 chars + null terminator)
     char partitionAppName[NAME_BUFFER_SIZE]; // Name of the partition for the app (e.g., "app0", "app1")
     
@@ -121,7 +121,7 @@ struct SystemDynamicInfo {
     // Time & Uptime
     unsigned long long uptimeMilliseconds;
     unsigned long uptimeSeconds;
-    char currentTimestamp[TIMESTAMP_BUFFER_SIZE];
+    char currentTimestamp[TIMESTAMP_STRING_BUFFER_SIZE];
     
     // Memory - Heap (DRAM)
     unsigned long heapTotalBytes;

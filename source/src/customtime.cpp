@@ -41,7 +41,7 @@ namespace CustomTime {
         
         if (_getTime()) {
             _isTimeSynched = true;
-            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
             getTimestamp(timestampBuffer, sizeof(timestampBuffer));
         } else {
             _isTimeSynched = false;
@@ -74,7 +74,7 @@ namespace CustomTime {
 
     void _saveConfiguration() {
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_TIME, false)) { // false = read-write mode
+        if (!preferences.begin(PREFERENCES_NAMESPACE_TIME, false)) {
             return;
         }
         preferences.putInt(PREFERENCES_GMT_OFFSET_KEY, _gmtOffset);

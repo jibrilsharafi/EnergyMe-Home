@@ -16,7 +16,6 @@
 #define TIME_SYNC_INTERVAL_S (60 * 60) // Sync time every hour (in seconds)
 #define TIME_SYNC_RETRY_INTERVAL_MS (60 * 1000) // Retry sync if failed
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
-#define TIMESTAMP_BUFFER_SIZE 20  // Size needed for TIMESTAMP_FORMAT (19 chars + null terminator)
 #define DEFAULT_GMT_OFFSET 0
 #define DEFAULT_DST_OFFSET 0
 

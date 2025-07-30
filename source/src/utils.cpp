@@ -951,15 +951,15 @@ void clearAllPreferences() {
     logger.fatal("Clear all preferences requested", TAG);
 
     Preferences preferences;
-    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); // false = read-write mode
+    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false);
     preferences.clear();
     preferences.end();
 
-    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); // false = read-write mode
+    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false);
     preferences.clear();
     preferences.end();
     
-    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); // false = read-write mode
+    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false);
     preferences.clear();
     preferences.end();
 
@@ -979,11 +979,11 @@ void clearAllPreferences() {
     preferences.clear();
     preferences.end();
 
-    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); // false = read-write mode
+    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false);
     preferences.clear();
     preferences.end();
     
-    preferences.begin(PREFERENCES_NAMESPACE_TIME, false); // false = read-write mode
+    preferences.begin(PREFERENCES_NAMESPACE_TIME, false);
     preferences.clear();
     preferences.end();
 
@@ -996,10 +996,6 @@ void clearAllPreferences() {
     preferences.end();
 
     preferences.begin(PREFERENCES_NAMESPACE_LED, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false);
     preferences.clear();
     preferences.end();
 }
@@ -1054,7 +1050,7 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
 
     jsonDocument["status"] = status;
     jsonDocument["reason"] = reason;
-    char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+    char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
     CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer)); // TODO: maybe everything should be returned in unix so it is UTC, and then converted on the other side? or standard iso utc timestamp?
     jsonDocument["timestamp"] = timestampBuffer;
 

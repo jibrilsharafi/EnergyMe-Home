@@ -140,7 +140,7 @@ namespace CustomMqtt
         snprintf(_customMqttConfiguration.username, sizeof(_customMqttConfiguration.username), "%s", jsonDocument["username"].as<const char*>());
         snprintf(_customMqttConfiguration.password, sizeof(_customMqttConfiguration.password), "%s", jsonDocument["password"].as<const char*>());    
         snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), "Disconnected");
-        char _timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        char _timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
         CustomTime::getTimestamp(_timestampBuffer, sizeof(_timestampBuffer));
         snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", _timestampBuffer);
 
@@ -162,7 +162,7 @@ namespace CustomMqtt
         logger.debug("Setting custom MQTT configuration from Preferences...", TAG);
 
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, true)) { // true = read-only
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, true)) {
             logger.error("Failed to open Preferences namespace for MQTT. Using default configuration", TAG);
             _setDefaultConfiguration();
             return;
@@ -279,7 +279,7 @@ namespace CustomMqtt
             _mqttConnectionAttempt = 0; // Reset attempt counter on success
             snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), "Connected");
 
-            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
             CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
             snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
 
@@ -303,7 +303,7 @@ namespace CustomMqtt
             snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), 
                      "%s (Attempt %d)", _reason, _mqttConnectionAttempt);
             
-            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
             CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
             snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
 

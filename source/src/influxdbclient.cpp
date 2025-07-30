@@ -331,7 +331,7 @@ namespace InfluxDbClient
 
         // Session-specific data
         snprintf(influxDbConfiguration.lastConnectionStatus, sizeof(influxDbConfiguration.lastConnectionStatus), "Configuration updated");
-        char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+        char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
         CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
         snprintf(influxDbConfiguration.lastConnectionAttemptTimestamp, sizeof(influxDbConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
 

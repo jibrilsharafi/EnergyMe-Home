@@ -314,7 +314,7 @@ namespace ButtonHandler
             
             if (_operationTimestamp > ZERO_START_TIME)
             {
-                char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+                char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
                 CustomTime::timestampFromUnix(_operationTimestamp, timestampBuffer, sizeof(timestampBuffer));
                 logger.info("Operation timestamp: %s", TAG, timestampBuffer);
             }

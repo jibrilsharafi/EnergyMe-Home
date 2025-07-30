@@ -1222,9 +1222,8 @@ namespace Mqtt
     
     static void _loadPreferences()
     {
-        logger.debug("Loading MQTT preferences from centralized config...", TAG);
+        logger.debug("Loading MQTT preferences...", TAG);
         
-        // Load from centralized preferences
         _cloudServicesEnabled = _getCloudServicesEnabled();
         _sendPowerDataEnabled = _getSendPowerData();
         _getFirmwareUpdatesUrl(_firmwareUpdatesUrl, sizeof(_firmwareUpdatesUrl));
@@ -1328,7 +1327,7 @@ namespace Mqtt
 
     static bool _setFirmwareUpdatesVersion(const char* version) { // TODO: this could become more complex to allow for AWS IoT Core Jobs (so SHA256, etc.)
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false)) {
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
             logger.error("Failed to open firmware updates preferences", TAG);
             return false;
         }
@@ -1339,7 +1338,7 @@ namespace Mqtt
 
     static bool _getFirmwareUpdatesVersion(char* buffer, size_t bufferSize) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, true)) {
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
             logger.error("Failed to open firmware updates preferences", TAG);
             buffer[0] = '\0';
             return false;
@@ -1351,7 +1350,7 @@ namespace Mqtt
 
     static bool _setFirmwareUpdatesUrl(const char* url) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, false)) {
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
             logger.error("Failed to open firmware updates preferences", TAG);
             return false;
         }
@@ -1362,7 +1361,7 @@ namespace Mqtt
 
     static bool _getFirmwareUpdatesUrl(char* buffer, size_t bufferSize) {
         Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_FIRMWARE_UPDATES, true)) {
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
             logger.error("Failed to open firmware updates preferences", TAG);
             buffer[0] = '\0';
             return false;
@@ -1479,7 +1478,7 @@ namespace Mqtt
 
     static void _writeEncryptedPreferences(const char* preference_key, const char* value) {
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) { // false = read-write mode
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) {
             logger.error("Failed to open preferences", TAG);
             return;
         }

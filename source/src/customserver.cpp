@@ -796,7 +796,7 @@ namespace CustomServer
     {
         if (strcmp(request->methodToString(), expectedMethod) != 0)
         {
-            char errorMsg[128];
+            char errorMsg[STATUS_BUFFER_SIZE];
             snprintf(errorMsg, sizeof(errorMsg), "Method Not Allowed. Use %s.", expectedMethod);
             _sendErrorResponse(request, HTTP_CODE_METHOD_NOT_ALLOWED, errorMsg);
             return false;
