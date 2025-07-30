@@ -23,6 +23,12 @@
 #define MQTT_TASK_STACK_SIZE (32 * 1024)
 #define MQTT_TASK_PRIORITY 3
 
+// Custom MQTT task constants
+#define CUSTOM_MQTT_TASK_NAME "custom_mqtt_task"
+#define CUSTOM_MQTT_TASK_STACK_SIZE (16 * 1024)
+#define CUSTOM_MQTT_TASK_PRIORITY 2
+#define CUSTOM_MQTT_TASK_CHECK_INTERVAL (1 * 1000) // Check connection every 1 second
+
 #define MQTT_LOG_QUEUE_SIZE 1000 // Generous log size thanks to PSRAM
 #define MQTT_METER_QUEUE_SIZE 50000 // Very big since we have plenty of PSRAM
 

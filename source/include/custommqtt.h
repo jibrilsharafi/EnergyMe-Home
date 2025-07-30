@@ -76,7 +76,12 @@ struct CustomMqttConfiguration { // TODO: deprecate this
 namespace CustomMqtt
 {
     void begin();
-    void loop();
+    void stop();
 
-    bool setConfiguration(JsonDocument &jsonDocument);
+    bool setConfiguration(CustomMqttConfiguration &config);
+    bool setConfigurationFromJson(JsonDocument &jsonDocument);
+    void getConfiguration(CustomMqttConfiguration &config);
+
+    bool configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument);
+    bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config);
 }

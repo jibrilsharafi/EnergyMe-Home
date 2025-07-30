@@ -31,6 +31,7 @@ Provide project context and coding guidelines that AI should follow when generat
     - Only optimize memory usage in frequently called or critical functions (understand from context)
 
 4. **Error Handling**:
+    - Never use try-catch blocks - they are not supported in the Arduino framework
     - Log errors and warnings appropriately using the logger
     - Return early on invalid inputs (fail-fast principle)
     - Provide meaningful error messages for debugging
