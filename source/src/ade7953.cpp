@@ -2076,28 +2076,44 @@ void Ade7953::_reinitializeAfterInterrupt() {
     // Detach interrupt handler temporarily to prevent conflicts
     _detachInterruptHandler();
     
-    try {
-        // Reinitialize the device settings (but not the hardware pins)
-        _logger.debug("Setting optimum settings...", TAG);
-        _setOptimumSettings();
-        
-        _logger.debug("Setting default parameters...", TAG);
-        _setDefaultParameters();
-        
-        _logger.debug("Setting configuration from SPIFFS...", TAG);
-        _setConfigurationFromSpiffs();
-        
-        _logger.debug("Reading calibration values from SPIFFS...", TAG);
-        _setCalibrationValuesFromSpiffs();
-        
-        _logger.debug("Setting up interrupts...", TAG);
-        _setupInterrupts();
-        
-        _logger.info("ADE7953 reinitialization completed successfully", TAG);
-    } catch (...) {
-        _logger.error("Error during ADE7953 reinitialization", TAG);
-    }
+    // Reinitialize the device settings (but not the hardware pins)
+    _logger.debug("Setting optimum settings...", TAG);
+    _setOptimumSettings();
+    
+    _logger.debug("Setting default parameters...", TAG);
+    _setDefaultParameters();
+    
+    _logger.debug("Setting configuration from SPIFFS...", TAG);
+    _setConfigurationFromSpiffs();
+    
+    _logger.debug("Reading calibration values from SPIFFS...", TAG);
+    _setCalibrationValuesFromSpiffs();
+    
+    _logger.debug("Setting up interrupts...", TAG);
+    _setupInterrupts();
+    
+    _logger.info("ADE7953 reinitialization completed successfully", TAG);
     
     // Reattach interrupt handler
     _attachInterruptHandler();
+}
+
+void Ade7953::printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
+    _logger.debug(
+        "%s (%D): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
+        TAG, 
+        channelData->label,
+        channelData->index,
+        meterValues->voltage, 
+        meterValues->current, 
+        meterValues->activePower, 
+        meterValues->reactivePower, 
+        meterValues->apparentPower, 
+        meterValues->powerFactor, 
+        meterValues->activeEnergyImported,
+        meterValues->activeEnergyExported,
+        meterValues->reactiveEnergyImported, 
+        meterValues->reactiveEnergyExported, 
+        meterValues->apparentEnergy
+    );
 }

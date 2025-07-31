@@ -281,7 +281,7 @@ namespace Mqtt
     void requestStatisticsPublish() {_publishMqtt.statistics = true; }
 
     // Public methods for pushing data to queues
-    void pushLog(const char* timestamp, unsigned long millisEsp, const char* level, unsigned int coreId, const char* function, const char* message)
+    void pushLog(const char* timestamp, unsigned long long millisEsp, const char* level, unsigned int coreId, const char* function, const char* message)
     {
         // Initialize log queue on first use if not already done
         if (!_isLogQueueInitialized) {
@@ -655,7 +655,7 @@ namespace Mqtt
             }
 
             // Calculate next attempt time using exponential backoff
-            unsigned long _backoffDelay = MQTT_INITIAL_RECONNECT_INTERVAL;
+            unsigned long _backoffDelay = MQTT_INITIAL_RECONNECT_INTERVAL; // TODO: use function from utils
             for (int i = 0; i < _mqttConnectionAttempt - 1 && _backoffDelay < MQTT_MAX_RECONNECT_INTERVAL; ++i) {
                 _backoffDelay *= MQTT_RECONNECT_MULTIPLIER;
             }

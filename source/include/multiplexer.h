@@ -11,5 +11,6 @@ namespace Multiplexer {
         int s2Pin,
         int s3Pin
     );
-    void setChannel(ChannelNumber channel);
+    
+    void setChannel(unsigned int channel);
 }

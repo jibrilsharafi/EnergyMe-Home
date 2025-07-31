@@ -13,6 +13,9 @@ namespace CustomServer
     static TaskHandle_t _healthCheckTaskHandle = NULL;
     static unsigned int _consecutiveFailures = 0;
 
+    // API request synchronization
+    static SemaphoreHandle_t _apiMutex = NULL;
+
 // Task notification bits
 #define HEALTH_CHECK_STOP_BIT (1UL << 0)
 
@@ -30,9 +33,13 @@ namespace CustomServer
     static bool _validatePasswordStrength(const char *password);
 
     // Helper functions for common response patterns
-    static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc);
+    static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int statusCode = HTTP_CODE_OK);
     static void _sendSuccessResponse(AsyncWebServerRequest *request, const char *message);
     static void _sendErrorResponse(AsyncWebServerRequest *request, int statusCode, const char *message);
+
+    // API request synchronization helpers
+    static bool _acquireApiMutex(AsyncWebServerRequest *request);
+    static void _releaseApiMutex();
 
     // API endpoint groups
     static void _serveSystemEndpoints();
@@ -67,11 +74,19 @@ namespace CustomServer
     static bool _parseLogLevel(const char *levelStr, LogLevel &level);
     
     // HTTP method validation helper
-    static bool _validateHttpMethod(AsyncWebServerRequest *request, const char *expectedMethod);
+    static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength = 0);
     
     void begin()
     {
         logger.debug("Setting up web server...", TAG);
+
+        // Initialize API synchronization mutex
+        _apiMutex = xSemaphoreCreateMutex();
+        if (_apiMutex == NULL) {
+            logger.error("Failed to create API mutex", TAG);
+            return;
+        }
+        logger.debug("API mutex created successfully", TAG);
 
         _setupMiddleware(); // TODO: add statistics middleware
         _serveStaticContent();
@@ -105,10 +120,7 @@ namespace CustomServer
             logger.warning("Failed to load web password, using default", TAG);
 
             // Try to initialize the password in Preferences for next time
-            if (_setWebPassword(WEBSERVER_DEFAULT_PASSWORD))
-            {
-                logger.debug("Default password saved to Preferences for future use", TAG);
-            }
+            if (_setWebPassword(WEBSERVER_DEFAULT_PASSWORD)) { logger.debug("Default password saved to Preferences for future use", TAG); }
         }
 
         digestAuth.setRealm(WEBSERVER_REALM);
@@ -209,9 +221,10 @@ namespace CustomServer
     }
 
     // Helper functions for common response patterns
-    static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc)
+    static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int statusCode)
     {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->setCode(statusCode);
         serializeJson(doc, *response);
         request->send(response);
     }
@@ -221,7 +234,10 @@ namespace CustomServer
         JsonDocument doc;
         doc["success"] = true;
         doc["message"] = message;
-        _sendJsonResponse(request, doc);
+        _sendJsonResponse(request, doc, HTTP_CODE_OK);
+        statistics.webServerRequests++;
+
+        _releaseApiMutex(); // Release mutex on error to avoid deadlocks
     }
 
     static void _sendErrorResponse(AsyncWebServerRequest *request, int statusCode, const char *message)
@@ -229,10 +245,10 @@ namespace CustomServer
         JsonDocument doc;
         doc["success"] = false;
         doc["error"] = message;
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        response->setCode(statusCode);
-        serializeJson(doc, *response);
-        request->send(response);
+        _sendJsonResponse(request, doc, statusCode);
+        statistics.webServerRequestsError++;
+
+        _releaseApiMutex(); // Release mutex on error to avoid deadlocks
     }
 
     static void _serveApi()
@@ -264,7 +280,7 @@ namespace CustomServer
             
             serializeJson(doc, *response);
             request->send(response); 
-        }).skipServerMiddlewares().addMiddleware(&requestLogger);
+        }).skipServerMiddlewares().addMiddleware(&requestLogger); // For the health endpoint, no authentication or rate limiting
     }
 
     // === AUTHENTICATION ENDPOINTS ===
@@ -381,9 +397,7 @@ namespace CustomServer
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request)
     {
         // Handle the completion of the upload
-        if (request->getResponse()) {
-            return; // Response already set due to error
-        }
+        if (request->getResponse()) { return; }  // Response already set due to error
         
         if (Update.hasError()) {
             JsonDocument doc;
@@ -501,7 +515,7 @@ namespace CustomServer
         const char* md5HeaderCStr = request->header("X-MD5").c_str();
         size_t headerLength = strlen(md5HeaderCStr);
         
-        if (headerLength == 32) {
+        if (headerLength == MD5_BUFFER_SIZE - 1) {
             char md5Header[MD5_BUFFER_SIZE];
             strncpy(md5Header, md5HeaderCStr, sizeof(md5Header) - 1);
             md5Header[sizeof(md5Header) - 1] = '\0';
@@ -647,19 +661,25 @@ namespace CustomServer
         // System restart
         server.on("/api/v1/system/restart", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
+            if (!_validateRequest(request, "POST")) { return; }
+
             _sendSuccessResponse(request, "System restart initiated");
             
             // Short delay to ensure response is sent
             delay(HTTP_RESPONSE_DELAY);
+            
             setRestartSystem(TAG, "System restart requested via API"); });
 
         // Factory reset
         server.on("/api/v1/system/factory-reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
+            if (!_validateRequest(request, "POST")) { return; }
+
             _sendSuccessResponse(request, "Factory reset initiated");
             
             // Delay to ensure response is sent
             delay(HTTP_RESPONSE_DELAY);
+
             factoryReset(); });
 
         // Check if secrets exist
@@ -676,11 +696,42 @@ namespace CustomServer
         // WiFi reset
         server.on("/api/v1/network/wifi/reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
+            if (!_validateRequest(request, "POST")) { return; }
+
             _sendSuccessResponse(request, "WiFi credentials reset. Device will restart and enter configuration mode.");
             
             // Short delay to ensure response is sent
             delay(HTTP_RESPONSE_DELAY);
+    
             CustomWifi::resetWifi(); });
+    }
+
+    // === API SYNCHRONIZATION HELPERS ===
+    static bool _acquireApiMutex(AsyncWebServerRequest *request)
+    {
+        if (_apiMutex == NULL) {
+            logger.error("API mutex not initialized", TAG);
+            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Server synchronization error");
+            return false;
+        }
+
+        BaseType_t result = xSemaphoreTake(_apiMutex, pdMS_TO_TICKS(API_MUTEX_TIMEOUT_MS));
+        if (result != pdTRUE) {
+            logger.warning("Failed to acquire API mutex within timeout", TAG);
+            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Server busy, please try again");
+            return false;
+        }
+
+        logger.debug("API mutex acquired", TAG);
+        return true;
+    }
+
+    static void _releaseApiMutex()
+    {
+        if (_apiMutex != NULL) {
+            xSemaphoreGive(_apiMutex);
+            logger.debug("API mutex released", TAG);
+        }
     }
 
     // === LOGGING ENDPOINTS ===
@@ -696,14 +747,11 @@ namespace CustomServer
 
         // Set log levels (using AsyncCallbackJsonWebHandler for JSON body)
         static AsyncCallbackJsonWebHandler *_setLogLevelHandler = new AsyncCallbackJsonWebHandler("/api/v1/logs/level");
-        _setLogLevelHandler->setMaxContentLength(64);
-        _setLogLevelHandler->onRequest([](AsyncWebServerRequest *request, JsonVariant &json) { // We cannot do setMethod since it makes all PUT requests fail (404)
+        _setLogLevelHandler->setMaxContentLength(HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL);
+        _setLogLevelHandler->onRequest([](AsyncWebServerRequest *request, JsonVariant &json) {
                 // Validate HTTP method
-                if (!_validateHttpMethod(request, "PUT"))
-                {
-                    return;
-                }
-            
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL))  { return; }
+
                 JsonDocument doc;
                 doc.set(json);
 
@@ -796,8 +844,18 @@ namespace CustomServer
     }
 
     // Helper function to validate HTTP method
-    static bool _validateHttpMethod(AsyncWebServerRequest *request, const char *expectedMethod)
+    // We cannot do setMethod since it makes all PUT requests fail (404) for some weird reason
+    // It is not too bad anyway since like this we have full control over the response
+    static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength)
     {
+        if (maxContentLength > 0 && request->contentLength() > maxContentLength)
+        {
+            char errorMsg[STATUS_BUFFER_SIZE];
+            snprintf(errorMsg, sizeof(errorMsg), "Payload Too Large. Max: %zu", maxContentLength);
+            _sendErrorResponse(request, HTTP_CODE_PAYLOAD_TOO_LARGE, errorMsg);
+            return false;
+        }
+
         if (strcmp(request->methodToString(), expectedMethod) != 0)
         {
             char errorMsg[STATUS_BUFFER_SIZE];
@@ -805,7 +863,8 @@ namespace CustomServer
             _sendErrorResponse(request, HTTP_CODE_METHOD_NOT_ALLOWED, errorMsg);
             return false;
         }
-        return true;
+
+        return _acquireApiMutex(request);
     }
 
     static void _startHealthCheckTask()
@@ -829,14 +888,8 @@ namespace CustomServer
             HEALTH_CHECK_TASK_PRIORITY,
             &_healthCheckTaskHandle);
 
-        if (result == pdPASS)
-        {
-            logger.debug("Health check task started successfully", TAG);
-        }
-        else
-        {
-            logger.error("Failed to create health check task", TAG);
-        }
+        if (result == pdPASS) { logger.debug("Health check task started successfully", TAG); }
+        else { logger.error("Failed to create health check task", TAG); }
     }
 
     static void _stopHealthCheckTask()
@@ -859,14 +912,8 @@ namespace CustomServer
         uint32_t notificationValue = 0;
         BaseType_t result = xTaskNotifyWait(0, 0, &notificationValue, pdMS_TO_TICKS(5000));
 
-        if (result == pdTRUE)
-        {
-            logger.info("Health check task stopped gracefully", TAG);
-        }
-        else
-        {
-            logger.warning("Health check task did not acknowledge shutdown, assuming stopped", TAG);
-        }
+        if (result == pdTRUE) { logger.info("Health check task stopped gracefully", TAG); }
+        else { logger.warning("Health check task did not acknowledge shutdown, assuming stopped", TAG); }
 
         // Task handle will be set to NULL by the task itself
         _healthCheckTaskHandle = NULL;
@@ -924,10 +971,7 @@ namespace CustomServer
         logger.debug("Health check task exiting", TAG);
 
         // Acknowledge shutdown to the caller
-        if (callerHandle != NULL)
-        {
-            xTaskNotify(callerHandle, 1, eSetValueWithOverwrite);
-        }
+        if (callerHandle != NULL) { xTaskNotify(callerHandle, 1, eSetValueWithOverwrite); }
 
         _healthCheckTaskHandle = NULL;
         vTaskDelete(NULL);
@@ -963,7 +1007,7 @@ namespace CustomServer
         {
             if (client.available())
             {
-                char line[HTTP_RESPONSE_BUFFER_SIZE];
+                char line[HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE];
                 size_t bytesRead = client.readBytesUntil('\n', line, sizeof(line) - 1);
                 line[bytesRead] = '\0';
                 
@@ -1013,14 +1057,8 @@ namespace CustomServer
         bool success = prefs.putString(PREFERENCES_KEY_PASSWORD, password) > 0;
         prefs.end();
 
-        if (success)
-        {
-            logger.info("Web password updated successfully", TAG);
-        }
-        else
-        {
-            logger.error("Failed to save web password", TAG);
-        }
+        if (success) { logger.info("Web password updated successfully", TAG); }
+        else { logger.error("Failed to save web password", TAG); }
 
         return success;
     }
@@ -1057,10 +1095,7 @@ namespace CustomServer
     // Only check length - there is no need to be picky here
     static bool _validatePasswordStrength(const char *password)
     {
-        if (password == nullptr)
-        {
-            return false;
-        }
+        if (password == nullptr) { return false; }
 
         size_t length = strlen(password);
 
@@ -1077,6 +1112,7 @@ namespace CustomServer
             logger.warning("Password too long", TAG);
             return false;
         }
+        
         return true;
     }
     
@@ -1099,10 +1135,7 @@ namespace CustomServer
             "/api/v1/mqtt/config",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateHttpMethod(request, "PUT"))
-                {
-                    return;
-                }
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT)) { return; }
 
                 JsonDocument doc;
                 doc.set(json);
@@ -1155,10 +1188,7 @@ namespace CustomServer
             "/api/v1/influxdb/config",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateHttpMethod(request, "PUT"))
-                {
-                    return;
-                }
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_INFLUXDB))  { return; }
 
                 JsonDocument doc;
                 doc.set(json);
@@ -1273,14 +1303,6 @@ namespace CustomServer
 
 //     _server.on("/rest/get-calibration", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         request->send(SPIFFS, CALIBRATION_JSON_PATH, "application/json");
-//     });
-
-//     _server.on("/rest/get-custom-mqtt-configuration", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         request->send(SPIFFS, CUSTOM_MQTT_CONFIGURATION_JSON_PATH, "application/json");
-//     });
-
-//     _server.on("/rest/get-influxdb-configuration", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         request->send(SPIFFS, INFLUXDB_CONFIGURATION_JSON_PATH, "application/json");
 //     });
 
 //     _server.on("/rest/get-general-configuration", HTTP_GET, [this](AsyncWebServerRequest *request) {
@@ -1417,24 +1439,6 @@ namespace CustomServer
 //     });
 //     _setAdeConfigHandler->setMethod(HTTP_POST);
 //     _server.addHandler(_setAdeConfigHandler);
-
-//     _setCustomMqttHandler = new AsyncCallbackJsonWebHandler("/rest/set-custom-mqtt-configuration", [this](AsyncWebServerRequest* request, JsonVariant& json) {
-//         JsonDocument doc;
-//         doc.set(json);
-//         bool success = _customMqtt.setConfiguration(doc);
-//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
-//     });
-//     _setCustomMqttHandler->setMethod(HTTP_POST);
-//     _server.addHandler(_setCustomMqttHandler);
-
-//     _setInfluxDbHandler = new AsyncCallbackJsonWebHandler("/rest/set-influxdb-configuration", [this](AsyncWebServerRequest* request, JsonVariant& json) {
-//         JsonDocument doc;
-//         doc.set(json);
-//         bool success = InfluxDbClient::setConfiguration(doc);
-//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{"message":"OK"}" : "{"error":"Invalid data"}");
-//     });
-//     _setInfluxDbHandler->setMethod(HTTP_POST);
-//     _server.addHandler(_setInfluxDbHandler);
 
 //     _setEnergyHandler = new AsyncCallbackJsonWebHandler("/rest/set-energy", [this](AsyncWebServerRequest* request, JsonVariant& json) {
 //         JsonDocument doc;

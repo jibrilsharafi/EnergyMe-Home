@@ -81,16 +81,16 @@
 #define VERSION_BUFFER_SIZE 32
 
 // System restart thresholds
-#define MINIMUM_FREE_HEAP_SIZE 1000 // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support
-#define MINIMUM_FREE_PSRAM_SIZE 10000 // Below this value (in bytes), the system will restart
-#define MINIMUM_FREE_SPIFFS_SIZE 10000 // Below this value (in bytes), the system will clear the log
+#define MINIMUM_FREE_HEAP_SIZE (1 * 1024) // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support
+#define MINIMUM_FREE_PSRAM_SIZE (10 * 1024) // Below this value (in bytes), the system will restart
+#define MINIMUM_FREE_SPIFFS_SIZE (10 * 1024) // Below this value (in bytes), the system will clear the log
 #define SYSTEM_RESTART_DELAY (2 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations
-#define MINIMUM_FREE_HEAP_OTA 20000 // Below this, the OTA is rejected (a bit unsafe, this could block OTA)
-#define MINIMUM_FIRMWARE_SIZE 100000 // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
+#define MINIMUM_FREE_HEAP_OTA (20 * 1024) // Below this, the OTA is rejected (a bit unsafe, this could block OTA)
+#define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
 
 // Timeouts and intervals
-#define TASK_STOPPING_TIMEOUT 10000 // 10 seconds for task stopping timeout
-#define TASK_STOPPING_CHECK_INTERVAL 100 // 100 milliseconds for task stopping check interval
+#define TASK_STOPPING_TIMEOUT (10 * 1000) // 10 seconds for task stopping timeout
+#define TASK_STOPPING_CHECK_INTERVAL (100) // 100 milliseconds for task stopping check interval
 
 // Multiplexer
 // --------------------

@@ -19,10 +19,14 @@ namespace Multiplexer {
 
         // At boot, set the multiplexer to channel 1 (channel 0 of the multiplexer)
         // To avoid incorrect first readings 
-        setChannel(CHANNEL_0);
+        setChannel(0);
     }
 
-    void setChannel(ChannelNumber channel) {
+    void setChannel(unsigned int channel) {
+        if (channel < 0 || channel > MULTIPLEXER_CHANNEL_COUNT-1) {
+            return;
+        }
+
         // Truth table for the multiplexer
         // Enable pin (E) is always 0 at the hardware level
         // S0 S1 S2 S3  E CHANNEL

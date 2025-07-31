@@ -21,7 +21,7 @@
 #define WEBSERVER_MAX_REQUESTS 180
 #define WEBSERVER_WINDOW_SIZE_SECONDS 60 // in seconds
 
-#define MINIMUM_FREE_HEAP_OTA 20000 // Minimum free heap required for OTA updates
+#define MINIMUM_FREE_HEAP_OTA (20 * 1024) // Minimum free heap required for OTA updates
 #define SIZE_REPORT_UPDATE_OTA (128 * 1024) // Report progress every 128KB
 #define HTTP_RESPONSE_DELAY 2000 // Short delay to ensure HTTP response is sent before system actions (such as restart)
 
@@ -42,8 +42,16 @@
 #define MAX_PASSWORD_LENGTH 64
 #define MIN_PASSWORD_LENGTH 4
 
+// API Request Synchronization
+#define API_MUTEX_TIMEOUT_MS (5 * 1000) // Time to wait for API mutex for non-GET operations before giving up
+
 // Buffer sizes
-#define HTTP_RESPONSE_BUFFER_SIZE 256
+#define HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE 256 // Only needed for health check responses, n
+
+// Content length validations
+#define HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL 64
+#define HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT 512
+#define HTTP_MAX_CONTENT_LENGTH_INFLUXDB 1024
 
 namespace CustomServer {
     void begin();

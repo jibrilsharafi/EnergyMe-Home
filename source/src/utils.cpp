@@ -2,7 +2,8 @@
 
 static const char *TAG = "utils";
 
-static RestartConfiguration restartConfiguration;
+static TaskHandle_t _restartTaskHandle = NULL;
+
 
 // New system info functions
 void populateSystemStaticInfo(SystemStaticInfo& info) {
@@ -81,6 +82,13 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
         info.psramMaxAllocBytes = ESP.getMaxAllocPsram();
         info.psramFreePercentage = ((float)info.psramFreeBytes / psramTotal) * 100.0f;
         info.psramUsedPercentage = 100.0f - info.psramFreePercentage;
+    } else {
+        info.psramFreeBytes = 0;
+        info.psramUsedBytes = 0;
+        info.psramMinFreeBytes = 0;
+        info.psramMaxAllocBytes = 0;
+        info.psramFreePercentage = 0.0f;
+        info.psramUsedPercentage = 0.0f;
     }
     
     // Storage
@@ -560,30 +568,21 @@ void restartTask(void* parameter) {
 void setRestartSystem(const char* functionName, const char* reason) { 
     logger.info("Restart required from function %s. Reason: %s", TAG, functionName, reason);
     
-    if (restartConfiguration.isRequired) {
+    if (_restartTaskHandle != NULL) {
         logger.warning("A restart is already scheduled. Keeping the existing configuration.", TAG);
         return; // Prevent overwriting an existing restart request
     }
 
-    // Store restart information for logging purposes
-    restartConfiguration.isRequired = true;
-    restartConfiguration.requiredAt = millis64();
-    snprintf(restartConfiguration.functionName, sizeof(restartConfiguration.functionName), "%s", functionName);
-    snprintf(restartConfiguration.reason, sizeof(restartConfiguration.reason), "%s", reason);
-
     //TODO: we should start stopping tasks here
 
-    logger.debug("Creating restart task. Function: %s, Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
-    
     // Create a task that will handle the delayed restart
-    TaskHandle_t restartTaskHandle = NULL;
     BaseType_t result = xTaskCreate(
         restartTask,
         TASK_RESTART_NAME,
         TASK_RESTART_STACK_SIZE,
         NULL,
         TASK_RESTART_PRIORITY,
-        &restartTaskHandle
+        &_restartTaskHandle
     );
     
     if (result != pdPASS) {
@@ -598,7 +597,7 @@ void restartSystem() {
     Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
     Led::setOrange(Led::PRIO_CRITICAL);
 
-    logger.info("Restarting system from function %s. Reason: %s", TAG, restartConfiguration.functionName, restartConfiguration.reason);
+    logger.info("Restarting system", TAG);
     logger.end();
 
     // Give time for AsyncTCP connections to close gracefully
@@ -616,26 +615,6 @@ void restartSystem() {
 
 // Print functions
 // -----------------------------
-
-void printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
-    logger.debug(
-        "%s (%D): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
-        TAG, 
-        channelData->label,
-        channelData->index,
-        meterValues->voltage, 
-        meterValues->current, 
-        meterValues->activePower, 
-        meterValues->reactivePower, 
-        meterValues->apparentPower, 
-        meterValues->powerFactor, 
-        meterValues->activeEnergyImported,
-        meterValues->activeEnergyExported,
-        meterValues->reactiveEnergyImported, 
-        meterValues->reactiveEnergyExported, 
-        meterValues->apparentEnergy
-    );
-}
 
 void printDeviceStatusStatic()
 {
@@ -757,6 +736,12 @@ void printStatistics() {
         statistics.wifiConnectionError
     );
 
+    logger.debug("Statistics - Web Server: %ld requests | %ld errors", 
+        TAG, 
+        statistics.webServerRequests, 
+        statistics.webServerRequestsError
+    );
+
     logger.debug("Statistics - Log: %ld verbose | %ld debug | %ld info | %ld warning | %ld error | %ld fatal", 
         TAG, 
         statistics.logVerbose, 
@@ -797,6 +782,10 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
     // WiFi statistics
     jsonDocument["wifi"]["connection"] = statistics.wifiConnection;
     jsonDocument["wifi"]["connectionError"] = statistics.wifiConnectionError;
+
+    // Web Server statistics
+    jsonDocument["webServer"]["requests"] = statistics.webServerRequests;
+    jsonDocument["webServer"]["requestsError"] = statistics.webServerRequestsError;
 
     // Log statistics
     jsonDocument["log"]["verbose"] = statistics.logVerbose;
@@ -1104,4 +1093,18 @@ bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds) {
     } else {
         return (unixTime >= MINIMUM_UNIX_TIME && unixTime <= MAXIMUM_UNIX_TIME);
     }
+}
+
+unsigned long long calculateExponentialBackoff(unsigned long long attempt, unsigned long long initialInterval, unsigned long long maxInterval, unsigned long long multiplier) {
+    if (attempt == 0) {
+        return 0;
+    }
+    
+    unsigned long long backoffDelay = initialInterval;
+    
+    for (unsigned long long i = 0; i < attempt - 1 && backoffDelay < maxInterval; ++i) {
+        backoffDelay *= multiplier;
+    }
+    
+    return min(backoffDelay, maxInterval);
 }

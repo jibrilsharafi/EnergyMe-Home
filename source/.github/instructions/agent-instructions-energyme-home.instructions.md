@@ -60,6 +60,8 @@ Provide project context and coding guidelines that AI should follow when generat
     - Use SPIFFS (to update in the future to LittleFS) for historical data storage
 
 8. **Timestamp and Time Handling**:
+    - **Data types**: Always use `unsigned long long` for timestamps, millis, and time intervals to avoid rollover issues
+    - **Rollover prevention**: `unsigned long` rolls over every 49.7 days and hits 2038 problem; `unsigned long long` prevents both
     - **Storage format**: Always store timestamps as Unix seconds (or milliseconds for time-critical data)
     - **Unix seconds**: Use for general events, configuration, logging, system events
     - **Unix milliseconds**: Use only for time-critical measurements (energy meter readings, precise timing)
@@ -68,6 +70,7 @@ Provide project context and coding guidelines that AI should follow when generat
     - **API format**: Use ISO 8601 UTC format (`YYYY-MM-DDTHH:MM:SS.sssZ`) for external APIs
     - **Storage efficiency**: Numeric timestamps (8 bytes) vs formatted strings (20-25 bytes)
     - **Time arithmetic**: Store as numbers to enable easy duration calculations and sorting
+    - **Printf formatting**: Use `%llu` for `unsigned long long` values in logging and string formatting
 
 9. **FreeRTOS Task Management**:
     - Use the standard task lifecycle pattern with task notifications for graceful shutdown

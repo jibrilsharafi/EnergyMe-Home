@@ -77,7 +77,7 @@ namespace Led {
     int getBrightness();
 
     // Pattern control functions
-    void setPattern(LedPattern pattern, Color color, LedPriority priority = 1, unsigned long long durationMs = 0); // TODO: actually use this
+    void setPattern(LedPattern pattern, Color color, LedPriority priority = 1, unsigned long long durationMs = 0);
     void clearPattern(LedPriority priority);
     void clearAllPatterns();
 

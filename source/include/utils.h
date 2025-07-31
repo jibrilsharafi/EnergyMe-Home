@@ -40,17 +40,12 @@
 
 #define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
 
-struct RestartConfiguration // TODO: really needed?
+struct PublicLocation 
 {
-  bool isRequired;
-  unsigned long requiredAt;
-  char functionName[FUNCTION_NAME_BUFFER_SIZE];
-  char reason[REASON_BUFFER_SIZE];
+  float latitude;
+  float longitude;
 
-  RestartConfiguration() : isRequired(false), requiredAt(0xFFFFFFFF) {
-    snprintf(functionName, sizeof(functionName), "Unknown");
-    snprintf(reason, sizeof(reason), "Unknown");
-  }
+  PublicLocation() : latitude(45.0), longitude(9.0) {} // Default to Milan coordinates
 };
 
 // Come one, on this ESP32S3 and in 2025 can we still use 32bits millis
@@ -79,7 +74,6 @@ void restartSystem();
 
 void startMaintenanceTask();
 
-void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
 void printDeviceStatus();
 void printDeviceStatusStatic();
 void printDeviceStatusDynamic();
@@ -117,5 +111,7 @@ void getDeviceId(char* deviceId, size_t maxLength);
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
 
 const char* getMqttStateReason(int state);
+
+unsigned long long calculateExponentialBackoff(unsigned long long attempt, unsigned long long initialInterval, unsigned long long maxInterval, unsigned long long multiplier);
 
 bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds = true);

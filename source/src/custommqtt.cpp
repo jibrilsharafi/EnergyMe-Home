@@ -13,8 +13,8 @@ namespace CustomMqtt
 
     // State variables
     static bool _isSetupDone = false;
-    static unsigned long _mqttConnectionAttempt = 0;
-    static unsigned long _nextMqttConnectionAttemptMillis = 0;
+    static unsigned long long _mqttConnectionAttempt = 0;
+    static unsigned long long _nextMqttConnectionAttemptMillis = 0;
     
     // Runtime connection status - kept in memory only, not saved to preferences
     static char _status[STATUS_BUFFER_SIZE];
@@ -326,15 +326,11 @@ namespace CustomMqtt
             }
 
             // Calculate next attempt time using exponential backoff
-            unsigned long _backoffDelay = MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL;
-            for (int i = 0; i < _mqttConnectionAttempt -1 && _backoffDelay < MQTT_CUSTOM_MAX_RECONNECT_INTERVAL; ++i) {
-                 _backoffDelay *= MQTT_CUSTOM_RECONNECT_MULTIPLIER;
-            }
-            _backoffDelay = min(_backoffDelay, (unsigned long)MQTT_CUSTOM_MAX_RECONNECT_INTERVAL);
+            unsigned long long _backoffDelay = calculateExponentialBackoff(_mqttConnectionAttempt, MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL, MQTT_CUSTOM_MAX_RECONNECT_INTERVAL, MQTT_CUSTOM_RECONNECT_MULTIPLIER);
 
             _nextMqttConnectionAttemptMillis = millis64() + _backoffDelay;
 
-            logger.info("Next custom MQTT connection attempt in %lu ms", TAG, _backoffDelay);
+            logger.info("Next custom MQTT connection attempt in %llu ms", TAG, _backoffDelay);
 
             return false;
         }
@@ -523,7 +519,7 @@ namespace CustomMqtt
         logger.debug("Custom MQTT task started", TAG);
         
         _taskShouldRun = true;
-        unsigned long lastPublishTime = 0;
+        unsigned long long lastPublishTime = 0;
 
         while (_taskShouldRun) {
             // Check for stop notification (non-blocking)
@@ -560,7 +556,7 @@ namespace CustomMqtt
 
                 _customClientMqtt.loop();
 
-                unsigned long currentTime = millis64();
+                unsigned long long currentTime = millis64();
                 if ((currentTime - lastPublishTime) >= (_customMqttConfiguration.frequency * 1000)) {
                     _publishMeter();
                     lastPublishTime = currentTime;

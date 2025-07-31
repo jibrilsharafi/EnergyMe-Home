@@ -118,8 +118,8 @@
 
 struct DebugFlagsRtc {
     bool enableMqttDebugLogging;
-    unsigned long mqttDebugLoggingDurationMillis;
-    unsigned long mqttDebugLoggingEndTimeMillis;
+    unsigned long long mqttDebugLoggingDurationMillis;
+    unsigned long long mqttDebugLoggingEndTimeMillis;
     unsigned int signature;
     // Since this struct will be used in an RTC_NOINIT_ATTR, we cannot initialize it in the constructor
 };
@@ -157,6 +157,6 @@ namespace Mqtt
     void requestStatisticsPublish();
     
     // Public methods for pushing data to queues
-    void pushLog(const char* timestamp, unsigned long millisEsp, const char* level, unsigned int coreId, const char* function, const char* message);
+    void pushLog(const char* timestamp, unsigned long long millisEsp, const char* level, unsigned int coreId, const char* function, const char* message);
     void pushMeter(const PayloadMeter& payload);
 }

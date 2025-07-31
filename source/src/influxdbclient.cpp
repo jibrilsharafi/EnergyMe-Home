@@ -11,6 +11,8 @@ namespace InfluxDbClient
 
     // State variables
     static bool _isSetupDone = false;
+    static unsigned long long _sendAttempt = 0;
+    static unsigned long long _nextSendAttemptMillis = 0;
     
     // Runtime connection status - kept in memory only, not saved to preferences
     static char _status[STATUS_BUFFER_SIZE];
@@ -24,6 +26,8 @@ namespace InfluxDbClient
     static void _setDefaultConfiguration();
     static void _setConfigurationFromPreferences();
     static void _saveConfigurationToPreferences();
+    
+    static void _disable();
     
     static void _sendData();
     static void _formatLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp, char *buffer, size_t bufferSize, bool isEnergyData);
@@ -79,6 +83,9 @@ namespace InfluxDbClient
         
         snprintf(_status, sizeof(_status), "Configuration updated");
         _statusTimestampUnix = CustomTime::getUnixTime();
+
+        _nextSendAttemptMillis = millis64();
+        _sendAttempt = 0;
 
         _saveConfigurationToPreferences();
 
@@ -233,6 +240,31 @@ namespace InfluxDbClient
         return false;
     }
 
+    static void _disable() {
+        logger.debug("Disabling InfluxDB due to persistent failures...", TAG);
+
+        _stopTask();
+
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false)) {
+            logger.error("Failed to open Preferences namespace for InfluxDB", TAG);
+            return;
+        }
+
+        preferences.putBool(INFLUXDB_ENABLED_KEY, false);
+        preferences.end();
+
+        _influxDbConfiguration.enabled = false;
+        
+        _sendAttempt = 0;
+        _nextSendAttemptMillis = 0;
+
+        snprintf(_status, sizeof(_status), "Disabled due to persistent failures");
+        _statusTimestampUnix = CustomTime::getUnixTime();
+
+        logger.debug("InfluxDB disabled", TAG);
+    }
+
     static void _sendData()
     {
         logger.debug("Sending data to InfluxDB...", TAG);
@@ -349,12 +381,42 @@ namespace InfluxDbClient
             logger.debug("Successfully sent data to InfluxDB (HTTP %d)", TAG, httpCode);
             statistics.influxdbUploadCount++;
             snprintf(_status, sizeof(_status), "Data sent successfully");
+            _sendAttempt = 0;
         }
         else
         {
             logger.warning("Failed to send data to InfluxDB (HTTP %d)", TAG, httpCode);
             statistics.influxdbUploadCountError++;
-            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %d)", httpCode);
+            
+            _sendAttempt++;
+            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %d) - Attempt %lu", httpCode, _sendAttempt);
+            
+            // Check for specific errors that warrant disabling InfluxDB
+            if (httpCode == 401 || httpCode == 403) {
+                logger.error("InfluxDB send failed due to authorization error (%d). Disabling InfluxDB.", TAG, httpCode);
+                _disable();
+                _nextSendAttemptMillis = UINT32_MAX;
+                _statusTimestampUnix = CustomTime::getUnixTime();
+                http.end();
+                return;
+            }
+            
+            // Check if we've exceeded the maximum number of failures
+            if (_sendAttempt >= INFLUXDB_MAX_CONSECUTIVE_FAILURES) {
+                logger.error("InfluxDB send failed %lu consecutive times. Disabling InfluxDB.", TAG, _sendAttempt);
+                _disable();
+                _nextSendAttemptMillis = UINT32_MAX;
+                _statusTimestampUnix = CustomTime::getUnixTime();
+                http.end();
+                return;
+            }
+            
+            // Calculate next attempt time using exponential backoff
+            unsigned long long backoffDelay = calculateExponentialBackoff(_sendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
+            
+            _nextSendAttemptMillis = millis64() + backoffDelay;
+            
+            logger.info("Next InfluxDB send attempt in %llu ms", TAG, backoffDelay);
         }
         
         _statusTimestampUnix = CustomTime::getUnixTime();
@@ -552,7 +614,7 @@ namespace InfluxDbClient
         logger.debug("InfluxDB task started", TAG);
         
         _taskShouldRun = true;
-        unsigned long lastSendTime = 0;
+        unsigned long long lastSendTime = 0;
 
         while (_taskShouldRun) {
             uint32_t notificationValue = ulTaskNotifyTake(pdFALSE, 0);
@@ -571,10 +633,15 @@ namespace InfluxDbClient
                 continue;
             }
 
-            unsigned long currentTime = millis64();
+            unsigned long long currentTime = millis64();
             if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) {
-                _sendData();
-                lastSendTime = currentTime;
+                // Check if we should wait due to previous failures
+                if (currentTime >= _nextSendAttemptMillis) {
+                    _sendData();
+                    lastSendTime = currentTime;
+                } else {
+                    logger.debug("Delaying InfluxDB send due to previous failures", TAG);
+                }
             }
 
             vTaskDelay(pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));

@@ -361,12 +361,46 @@ paths:
                     type: integer
                   ade7953TotalHandledInterrupts:
                     type: integer
+                  ade7953ReadingCount:
+                    type: integer
+                  ade7953ReadingCountFailure:
+                    type: integer
                   mqttMessagesPublished:
+                    type: integer
+                  mqttMessagesPublishedError:
+                    type: integer
+                  customMqttMessagesPublished:
+                    type: integer
+                  customMqttMessagesPublishedError:
+                    type: integer
+                  modbusRequests:
+                    type: integer
+                  modbusRequestsError:
+                    type: integer
+                  influxdbUploadCount:
+                    type: integer
+                  influxdbUploadCountError:
                     type: integer
                   wifiConnection:
                     type: integer
-                  logCounts:
-                    type: object
+                  wifiConnectionError:
+                    type: integer
+                  webServerRequests:
+                    type: integer
+                  webServerRequestsError:
+                    type: integer
+                  logVerbose:
+                    type: integer
+                  logDebug:
+                    type: integer
+                  logInfo:
+                    type: integer
+                  logWarning:
+                    type: integer
+                  logError:
+                    type: integer
+                  logFatal:
+                    type: integer
 
   /api/v1/system/restart:
     post:

@@ -16,7 +16,7 @@
 #include "utils.h"
 
 // Constants for UDP logging
-#define DEFAULT_IS_UDP_LOGGING_ENABLED true // TODO: this should disable all these functionalities, to also save on memory
+#define DEFAULT_IS_UDP_LOGGING_ENABLED true
 
 #define UDP_LOG_SERVERITY_FACILITY 16 // Standard syslog facility for local0.info
 #define UDP_LOG_PORT 514 // Standard syslog port
@@ -29,7 +29,7 @@
 
 struct LogJson {
     char timestamp[TIMESTAMP_BUFFER_SIZE];
-    unsigned long millisEsp;
+    unsigned long long millisEsp;
     char level[LOG_CALLBACK_LEVEL_SIZE];
     unsigned int coreId;
     char function[LOG_CALLBACK_FUNCTION_SIZE];
@@ -43,7 +43,7 @@ struct LogJson {
         snprintf(message, sizeof(message), "%s", "");
     }
 
-    LogJson(const char* timestampIn, unsigned long millisEspIn, const char* levelIn, unsigned int coreIdIn, const char* functionIn, const char* messageIn)
+    LogJson(const char* timestampIn, unsigned long long millisEspIn, const char* levelIn, unsigned int coreIdIn, const char* functionIn, const char* messageIn)
         : millisEsp(millisEspIn), coreId(coreIdIn) {
         snprintf(timestamp, sizeof(timestamp), "%s", timestampIn ? timestampIn : "");
         snprintf(level, sizeof(level), "%s", levelIn ? levelIn : "");
@@ -59,7 +59,7 @@ namespace CustomLog
     
     void callbackMultiple(
         const char* timestamp,
-        unsigned long millisEsp,
+        unsigned long long millisEsp,
         const char* level,
         unsigned int coreId,
         const char* function,

@@ -98,7 +98,7 @@ namespace CustomLog
 
     static void _callbackMqtt(
         const char* timestamp,
-        unsigned long millisEsp,
+        unsigned long long millisEsp,
         const char* level,
         unsigned int coreId,
         const char* function,
@@ -111,7 +111,7 @@ namespace CustomLog
 
     static void _callbackUdp(
         const char* timestamp,
-        unsigned long millisEsp,
+        unsigned long long millisEsp,
         const char* level,
         unsigned int coreId,
         const char* function,
@@ -191,7 +191,7 @@ namespace CustomLog
 
     void callbackMultiple(
         const char* timestamp,
-        unsigned long millisEsp,
+        unsigned long long millisEsp,
         const char* level,
         unsigned int coreId,
         const char* function,

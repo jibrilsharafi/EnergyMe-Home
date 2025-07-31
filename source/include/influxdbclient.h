@@ -10,6 +10,7 @@
 #include "globals.h"
 #include "customtime.h"
 #include "customwifi.h"
+#include "utils.h"
 
 #define INFLUXDB_ENABLED_DEFAULT false
 #define INFLUXDB_SERVER_DEFAULT "localhost"
@@ -28,6 +29,12 @@
 #define INFLUXDB_TASK_STACK_SIZE 8192
 #define INFLUXDB_TASK_PRIORITY 1
 #define INFLUXDB_TASK_CHECK_INTERVAL 1000
+
+// Failure handling constants
+#define INFLUXDB_INITIAL_RETRY_INTERVAL (30 * 1000)
+#define INFLUXDB_MAX_RETRY_INTERVAL (10 * 60 * 1000)
+#define INFLUXDB_RETRY_MULTIPLIER 2
+#define INFLUXDB_MAX_CONSECUTIVE_FAILURES 10
 
 #define INFLUXDB_ENABLED_KEY "enabled"
 #define INFLUXDB_SERVER_KEY "server"

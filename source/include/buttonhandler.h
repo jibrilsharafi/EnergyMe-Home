@@ -27,8 +27,6 @@
 
 #define ZERO_START_TIME 0 // Used to indicate no button press has started
 
-#define OPERATION_BUFFER_SIZE 64 // Buffer size for operation names
-
 enum class ButtonPressType
 {
   NONE,
@@ -43,7 +41,7 @@ namespace ButtonHandler {
 
     ButtonPressType getCurrentPressType();
     bool isOperationInProgress();
-    void getCurrentOperationName(char* buffer, size_t bufferSize);
-    unsigned long getCurrentOperationTimestamp();
+    void getOperationName(char* buffer, size_t bufferSize);
+    unsigned long long getOperationTimestamp();
     void clearCurrentOperationName();
 }

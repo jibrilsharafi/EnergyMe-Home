@@ -13,6 +13,7 @@
 #include "customtime.h"
 #include "customwifi.h"
 #include "globals.h"
+#include "utils.h"
 #include "structs.h"
 #include "utils.h"
 

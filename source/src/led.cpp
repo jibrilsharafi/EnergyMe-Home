@@ -404,7 +404,7 @@ namespace Led
         case LedPattern::PULSE:
         {
             // Smooth fade in/out over 2 seconds
-            unsigned long cycle = elapsed % 2000; // 2 second cycle
+            unsigned long long cycle = elapsed % 2000; // 2 second cycle
             float factor;
             if (cycle < 1000)
             {
@@ -425,7 +425,7 @@ namespace Led
         case LedPattern::DOUBLE_BLINK:
         {
             // Two quick blinks (100ms on, 100ms off, 100ms on, 100ms off), then 800ms pause
-            unsigned long cycle = elapsed % 1200; // 1.2 second cycle
+            unsigned long long cycle = elapsed % 1200; // 1.2 second cycle
             if (cycle < 100 || (cycle >= 200 && cycle < 300))
             {
                 // On periods

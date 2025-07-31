@@ -140,6 +140,137 @@
 #define PREF_KEY_CHANNEL_PHASE_FMT "ch%d_phase"
 #define PREF_KEY_CHANNEL_CALIB_LABEL_FMT "ch%d_calibLabel"
 
+// Enumeration for different types of ADE7953 interrupts
+enum class Ade7953InterruptType {
+  NONE,           // No interrupt or unknown
+  CYCEND,         // Line cycle end - normal meter reading
+  RESET,          // Device reset detected
+  CRC_CHANGE,     // CRC register change detected
+  OTHER           // Other interrupts (SAG, etc.)
+};
+
+
+enum Phase : int { // TODO: make all enum class
+    PHASE_1 = 1,
+    PHASE_2 = 2,
+    PHASE_3 = 3,
+};
+
+enum Channel : int {
+    CHANNEL_A,
+    CHANNEL_B,
+};
+
+enum ChannelNumber : int {
+  CHANNEL_INVALID = -1,
+  CHANNEL_0 = 0,
+  CHANNEL_1 = 1,
+  CHANNEL_2 = 2,
+  CHANNEL_3 = 3,
+  CHANNEL_4 = 4,
+  CHANNEL_5 = 5,
+  CHANNEL_6 = 6,
+  CHANNEL_7 = 7,
+  CHANNEL_8 = 8,
+  CHANNEL_9 = 9,
+  CHANNEL_10 = 10,
+  CHANNEL_11 = 11,
+  CHANNEL_12 = 12,
+  CHANNEL_13 = 13,
+  CHANNEL_14 = 14,
+  CHANNEL_15 = 15,
+  CHANNEL_16 = 16,
+  CHANNEL_COUNT = 17
+};
+
+enum Measurement : int {
+    VOLTAGE,
+    CURRENT,
+    ACTIVE_POWER,
+    REACTIVE_POWER,
+    APPARENT_POWER,
+    POWER_FACTOR,
+};
+
+
+
+/*
+ * Struct to hold the real-time meter values for a specific channel
+  * Contains:
+  * - voltage: Voltage in Volts
+  * - current: Current in Amperes
+  * - activePower: Active power in Watts
+  * - reactivePower: Reactive power in VAR
+  * - apparentPower: Apparent power in VA
+  * - powerFactor: Power factor (-1 to 1, where negative values indicate capacitive load while positive values indicate inductive load)
+  * - activeEnergyImported: Active energy imported in Wh
+  * - activeEnergyExported: Active energy exported in Wh
+  * - reactiveEnergyImported: Reactive energy imported in VArh
+  * - reactiveEnergyExported: Reactive energy exported in VArh
+  * - apparentEnergy: Apparent energy in VAh (only absolute value)
+  * - lastUnixTimeMilliseconds: Last time the values were updated in milliseconds since epoch. Useful for absolute time tracking
+ */
+struct MeterValues
+{
+  float voltage;
+  float current;
+  float activePower;
+  float reactivePower;
+  float apparentPower;
+  float powerFactor;
+  float activeEnergyImported;
+  float activeEnergyExported;
+  float reactiveEnergyImported;
+  float reactiveEnergyExported;
+  float apparentEnergy;
+  unsigned long long lastUnixTimeMilliseconds;
+  unsigned long long lastMillis;
+
+  MeterValues()
+    : voltage(230.0), current(0.0f), activePower(0.0f), reactivePower(0.0f), apparentPower(0.0f), powerFactor(0.0f),
+      activeEnergyImported(0.0f), activeEnergyExported(0.0f), reactiveEnergyImported(0.0f), 
+      reactiveEnergyExported(0.0f), apparentEnergy(0.0f), lastUnixTimeMilliseconds(0), lastMillis(0) {}
+};
+
+struct CalibrationValues
+{
+  char label[NAME_BUFFER_SIZE];
+  float vLsb;
+  float aLsb;
+  float wLsb;
+  float varLsb;
+  float vaLsb;
+  float whLsb;
+  float varhLsb;
+  float vahLsb;
+
+  CalibrationValues()
+    : vLsb(1.0), aLsb(1.0), wLsb(1.0), varLsb(1.0), vaLsb(1.0), whLsb(1.0), varhLsb(1.0), vahLsb(1.0) {
+      snprintf(label, sizeof(label), "Calibration");
+    }
+};
+
+
+struct ChannelData
+{
+  int index;
+  bool active;
+  bool reverse;
+  char label[NAME_BUFFER_SIZE];
+  Phase phase;
+  CalibrationValues calibrationValues;
+
+  ChannelData()
+    : index(0), active(false), reverse(false), phase(PHASE_1), calibrationValues(CalibrationValues()) {
+      snprintf(label, sizeof(label), "Channel");
+    }
+};
+
+// Used to track consecutive zero energy readings for channel 0
+struct ChannelState { // TODO: what the heck was i thinking with this?
+    unsigned long consecutiveZeroCount = 0;
+};
+
 class Ade7953
 {
 public:
@@ -185,6 +316,8 @@ public:
     
     void singleMeterValuesToJson(JsonDocument &jsonDocument, ChannelNumber channel);
     void fullMeterValuesToJson(JsonDocument &jsonDocument);
+
+    void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
 
     MeterValues meterValues[CHANNEL_COUNT];
     ChannelData channelData[CHANNEL_COUNT];    
@@ -299,8 +432,8 @@ private:
     float _gridFrequency = 50.0f;
 
     int _failureCount = 0;
-    unsigned long _firstFailureTime = 0;
-    unsigned long _lastMillisSaveEnergy = 0;
+    unsigned long long _firstFailureTime = 0;
+    unsigned long long _lastMillisSaveEnergy = 0;
     
     static Ade7953 *_instance;
 
@@ -310,7 +443,7 @@ private:
     
     TaskHandle_t _meterReadingTaskHandle = NULL;
     SemaphoreHandle_t _ade7953InterruptSemaphore = NULL;
-    volatile unsigned long _lastInterruptTime = 0;
+    volatile unsigned long long _lastInterruptTime = 0;
 
     void _checkInterruptTiming();
     bool _processChannelReading(int channel, unsigned long long linecycUnix);

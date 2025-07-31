@@ -6,7 +6,6 @@ namespace ButtonHandler
 {
     // Static state variables
     static int _buttonPin = INVALID_PIN; // Default pin
-    static Preferences _preferences;
     static TaskHandle_t _buttonTaskHandle = NULL;
     static SemaphoreHandle_t _buttonSemaphore = NULL;
 
@@ -15,14 +14,14 @@ namespace ButtonHandler
     static volatile bool _buttonPressed = false;
     static ButtonPressType _currentPressType = ButtonPressType::NONE;
     static bool _operationInProgress = false;
-    static char _operationName[OPERATION_BUFFER_SIZE] = "";
-    static unsigned long _operationTimestamp = 0;
+    static char _operationName[STATUS_BUFFER_SIZE] = "";
+    static unsigned long long _operationTimestamp = ZERO_START_TIME;
 
     // Getter public methods
     ButtonPressType getCurrentPressType() {return _currentPressType;};
     bool isOperationInProgress() {return _operationInProgress;};
-    void getCurrentOperationName(char* buffer, size_t bufferSize) {snprintf(buffer, bufferSize, "%s", _operationName);};
-    unsigned long getCurrentOperationTimestamp() {return _operationTimestamp;};
+    void getOperationName(char* buffer, size_t bufferSize) {snprintf(buffer, bufferSize, "%s", _operationName);};
+    unsigned long long getOperationTimestamp() {return _operationTimestamp;};
 
     // Private function declarations
     static void _buttonISR();
@@ -35,10 +34,6 @@ namespace ButtonHandler
     static void _handlePasswordReset();
     static void _handleWifiReset();
     static void _handleFactoryReset();
-
-    // NVS persistence
-    static void _loadOperationData();
-    static void _saveOperationData();
 
     void begin(
         int buttonPin)
@@ -66,10 +61,6 @@ namespace ButtonHandler
 
         // Setup interrupt on both edges (press and release)
         attachInterrupt(digitalPinToInterrupt(_buttonPin), _buttonISR, CHANGE);
-
-        // Initialize NVS and load last operation
-        _preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false);
-        _loadOperationData();
 
         logger.debug("Button handler ready - interrupt-driven with task processing", TAG);
     }
@@ -108,7 +99,7 @@ namespace ButtonHandler
     static void _buttonTask(void *parameter)
     {
         TickType_t feedbackUpdateInterval = pdMS_TO_TICKS(100); // Update visual feedback every 100ms
-        TickType_t lastFeedbackUpdate = 0;
+        TickType_t lastFeedbackUpdate = ZERO_START_TIME;
 
         while (true)
         {
@@ -121,7 +112,7 @@ namespace ButtonHandler
                 if (!_buttonPressed && _buttonPressStartTime > ZERO_START_TIME)
                 {
                     // Button was released - process the press
-                    unsigned long pressDuration = millis64() - _buttonPressStartTime;
+                    unsigned long long pressDuration = millis64() - _buttonPressStartTime;
                     logger.debug("Button released after %lu ms", TAG, pressDuration);
 
                     _processButtonPress(pressDuration);
@@ -143,7 +134,7 @@ namespace ButtonHandler
             else if (_buttonPressed && _buttonPressStartTime > ZERO_START_TIME)
             {
                 // Timeout occurred while button is pressed - update visual feedback
-                unsigned long pressDuration = millis64() - _buttonPressStartTime;
+                unsigned long long pressDuration = millis64() - _buttonPressStartTime;
                 _updateVisualFeedback(pressDuration);
             }
         }
@@ -217,8 +208,6 @@ namespace ButtonHandler
         _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
 
-        _saveOperationData();
-
         Led::setCyan(Led::PRIO_URGENT);
 
         setRestartSystem(TAG, "Restart via button");
@@ -233,8 +222,6 @@ namespace ButtonHandler
         snprintf(_operationName, sizeof(_operationName), "Password Reset");
         _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
-
-        _saveOperationData();
 
         Led::setYellow(Led::PRIO_URGENT);
 
@@ -263,8 +250,6 @@ namespace ButtonHandler
         _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
 
-        _saveOperationData();
-
         Led::setOrange(Led::PRIO_URGENT);
 
         CustomWifi::resetWifi(); // This will restart the device
@@ -280,8 +265,6 @@ namespace ButtonHandler
         _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
 
-        _saveOperationData();
-
         factoryReset(); // This will also restart the device
 
         _operationInProgress = false;
@@ -292,37 +275,5 @@ namespace ButtonHandler
     {
         snprintf(_operationName, sizeof(_operationName), "");
         _operationTimestamp = ZERO_START_TIME;
-        _saveOperationData();
     }
-
-    // NVS persistence functions
-    static void _saveOperationData()
-    {
-        _preferences.putString(PREFERENCES_LAST_OPERATION_KEY, _operationName);
-        _preferences.putULong(PREFERENCES_LAST_OPERATION_TIMESTAMP_KEY, _operationTimestamp);
-        logger.debug("Saved operation data to NVS: %s at %lu", TAG, _operationName, _operationTimestamp);
-    }
-
-    static void _loadOperationData()
-    {
-        _preferences.getString(PREFERENCES_LAST_OPERATION_KEY, _operationName, sizeof(_operationName));
-        _operationTimestamp = _preferences.getULong(PREFERENCES_LAST_OPERATION_TIMESTAMP_KEY, 0);
-
-        if (strlen(_operationName) > 0)
-        {
-            logger.debug("Loaded last button operation from NVS: %s", TAG, _operationName);
-            
-            if (_operationTimestamp > ZERO_START_TIME)
-            {
-                char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-                CustomTime::timestampFromUnix(_operationTimestamp, timestampBuffer, sizeof(timestampBuffer));
-                logger.info("Operation timestamp: %s", TAG, timestampBuffer);
-            }
-        }
-        else
-        {
-            logger.debug("No previous button operation found in NVS", TAG);
-        }
-    }
-
 }
