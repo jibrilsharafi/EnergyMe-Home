@@ -617,37 +617,30 @@ namespace InfluxDbClient
         unsigned long long lastSendTime = 0;
 
         while (_taskShouldRun) {
-            unsigned long notificationValue = ulTaskNotifyTake(pdFALSE, 0);
+            if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) {
+                if (_influxDbConfiguration.enabled) {
+                    unsigned long long currentTime = millis64();
+                    if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) {
+                        // Check if we should wait due to previous failures
+                        if (currentTime >= _nextSendAttemptMillis) {
+                            _sendData();
+                            lastSendTime = currentTime;
+                        } else {
+                            logger.debug("Delaying InfluxDB send due to previous failures", TAG);
+                        }
+                    }
+                }
+            }
+
+            // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
+            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));
             if (notificationValue > 0) {
                 _taskShouldRun = false;
                 break;
             }
-
-            if (!CustomWifi::isFullyConnected() || !CustomTime::isTimeSynched()) {
-                vTaskDelay(pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));
-                continue;
-            }
-
-            if (!_influxDbConfiguration.enabled) {
-                vTaskDelay(pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));
-                continue;
-            }
-
-            unsigned long long currentTime = millis64();
-            if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) {
-                // Check if we should wait due to previous failures
-                if (currentTime >= _nextSendAttemptMillis) {
-                    _sendData();
-                    lastSendTime = currentTime;
-                } else {
-                    logger.debug("Delaying InfluxDB send due to previous failures", TAG);
-                }
-            }
-
-            vTaskDelay(pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));
         }
 
-        logger.debug("InfluxDB task ending", TAG);
+        logger.debug("InfluxDB task stopping", TAG);
         _influxDbTaskHandle = nullptr;
         vTaskDelete(nullptr);
     }
@@ -655,10 +648,11 @@ namespace InfluxDbClient
     static void _startTask()
     {
         if (_influxDbTaskHandle != nullptr) {
-            logger.warning("InfluxDB task already running", TAG);
+            logger.debug("InfluxDB task is already running", TAG);
             return;
         }
 
+        logger.debug("Starting InfluxDB task", TAG);
         BaseType_t result = xTaskCreate(
             _influxDbTask,
             INFLUXDB_TASK_NAME,
@@ -671,34 +665,9 @@ namespace InfluxDbClient
         if (result != pdPASS) {
             logger.error("Failed to create InfluxDB task", TAG);
             _influxDbTaskHandle = nullptr;
-        } else {
-            logger.debug("InfluxDB task started successfully", TAG);
         }
     }
 
-    static void _stopTask()
-    {
-        if (_influxDbTaskHandle == nullptr) {
-            return;
-        }
-
-        logger.debug("Stopping InfluxDB task...", TAG);
-        
-        xTaskNotifyGive(_influxDbTaskHandle);
-        
-        int timeout = TASK_STOPPING_TIMEOUT;
-        while (_influxDbTaskHandle != nullptr && timeout > 0) {
-            vTaskDelay(pdMS_TO_TICKS(TASK_STOPPING_CHECK_INTERVAL));
-            timeout -= TASK_STOPPING_CHECK_INTERVAL;
-        }
-        
-        if (_influxDbTaskHandle != nullptr) {
-            logger.warning("Force deleting InfluxDB task", TAG);
-            vTaskDelete(_influxDbTaskHandle);
-            _influxDbTaskHandle = nullptr;
-        }
-
-        logger.debug("InfluxDB task stopped", TAG);
-    }
+    static void _stopTask() { stopTaskGracefully(&_influxDbTaskHandle, "InfluxDB task"); }
 
 } // namespace InfluxDbClient

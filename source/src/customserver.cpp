@@ -908,37 +908,7 @@ namespace CustomServer
         if (result != pdPASS) { logger.error("Failed to create health check task", TAG); }
     }
 
-    static void _stopHealthCheckTask()
-    {
-        if (_healthCheckTaskHandle == NULL)
-        {
-            logger.debug("Health check task was not running", TAG);
-            return;
-        }
-
-        logger.debug("Stopping health check task", TAG);
-
-        // Signal the task to stop using notification
-        xTaskNotifyGive(_healthCheckTaskHandle);
-
-        // Wait with timeout for clean shutdown
-        int timeout = 1000;
-        while (_healthCheckTaskHandle != NULL && timeout > 0)
-        {
-            vTaskDelay(pdMS_TO_TICKS(10));
-            timeout -= 10;
-        }
-
-        // Force cleanup if needed
-        if (_healthCheckTaskHandle != NULL)
-        {
-            logger.warning("Force stopping health check task", TAG);
-            vTaskDelete(_healthCheckTaskHandle);
-            _healthCheckTaskHandle = NULL;
-        } else {
-            logger.debug("Health check task stopped successfully", TAG);
-        }
-    }
+    static void _stopHealthCheckTask() { stopTaskGracefully(&_healthCheckTaskHandle, "health check task"); }
 
     static void _healthCheckTask(void *parameter)
     {
@@ -971,7 +941,7 @@ namespace CustomServer
                 }
             }
 
-            // Wait for stop notification with timeout (blocking)
+            // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
             unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS));
             if (notificationValue > 0)
             {

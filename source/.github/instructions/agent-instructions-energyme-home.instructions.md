@@ -79,6 +79,7 @@ Provide project context and coding guidelines that AI should follow when generat
     - Let tasks self-cleanup by setting handle to NULL and calling vTaskDelete(NULL)
     - **For task shutdown notifications**: Use blocking `ulTaskNotifyTake(pdTRUE, timeout)` - it's as CPU-efficient as `vTaskDelay()` but provides immediate shutdown response
     - **Only use non-blocking pattern** if you need sub-second shutdown response or must do other work during delays
+    - Have a single (private) function to start and stop tasks, while the public methods should be related to begin and stop
     - Standard pattern:
       ```cpp
       TaskHandle_t taskHandle = NULL;
@@ -114,27 +115,9 @@ Provide project context and coding guidelines that AI should follow when generat
       }
       
       void stopTask() {
-          logger.debug("Stopping task X", TAG);
-          if (taskHandle != NULL) {
-              xTaskNotifyGive(taskHandle);
-              // Wait with timeout for clean shutdown
-              int timeout = TASK_STOPPING_TIMEOUT;
-              while (taskHandle != NULL && timeout > 0) {
-                  vTaskDelay(pdMS_TO_TICKS(TASK_STOPPING_CHECK_INTERVAL));
-                  timeout -= TASK_STOPPING_CHECK_INTERVAL;
-              }
-
-              // Force cleanup if needed
-              if (taskHandle != NULL) {
-                  logger.warning("Force stopping task X", TAG);
-                  vTaskDelete(taskHandle);
-                  taskHandle = NULL;
-              } else {
-                  logger.debug("Task X stopped successfully", TAG);
-              }
-          } else {
-              logger.debug("Task X was not running", TAG);
-          }
+        // Anything else needed
+        stopTaskGracefully(&_XTaskHandle, "X task"); // Public function in utils.h
+        // Anything else needed
       }
       ```
 
@@ -164,4 +147,4 @@ Provide project context and coding guidelines that AI should follow when generat
       ```cpp
       if (!someBoolean) { return; }
       ```
-    - Use `delay(X)` instead of `vTaskDelay(pdMS_TO_TICKS(X))` since they map to the same underlying FreeRTOS function and `delay()` is more readable in this context. 
+    - Use `delay(X)` instead of `vTaskDelay(pdMS_TO_TICKS(X))` since they map to the same underlying FreeRTOS function and `delay()` is more readable in this context.

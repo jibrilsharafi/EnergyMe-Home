@@ -27,6 +27,8 @@ namespace CustomWifi
   static void _handleSuccessfulConnection();
   static bool _setupMdns();
   static void _cleanup();
+  static void _startWifiTask();
+  static void _stopWifiTask();
 
   bool begin()
   {
@@ -36,7 +38,7 @@ namespace CustomWifi
       return true;
     }
 
-    logger.debug("Starting WiFi task", TAG);
+    logger.debug("Starting WiFi...", TAG);
 
     // Enable auto-reconnect and persistence
     WiFi.setAutoReconnect(true);
@@ -45,15 +47,15 @@ namespace CustomWifi
     // Setup WiFiManager with optimal settings
     _setupWiFiManager();
 
-    // Create WiFi connection task
-    BaseType_t result = xTaskCreate(_wifiConnectionTask, WIFI_TASK_NAME, WIFI_TASK_STACK_SIZE, NULL, WIFI_TASK_PRIORITY, &_wifiTaskHandle);
+    // Start WiFi connection task
+    _startWifiTask();
     
-    if (result != pdPASS) { 
-      logger.error("Failed to create WiFi task", TAG);
-      return false;
-    }
+    return _wifiTaskHandle != NULL;
+  }
 
-    return true;
+  void stop()
+  {
+    _stopWifiTask();
   }
 
   bool isFullyConnected() // Also check IP to ensure full connectivity
@@ -252,15 +254,17 @@ namespace CustomWifi
           break;
         }
       }
-
-      // Periodic health check (only if we should still be running)
-      if (_taskShouldRun && isFullyConnected())
+      else
       {
-        // Reset failure counter on sustained connection
-        if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
+        // Timeout occurred - perform periodic health check
+        if (_taskShouldRun && isFullyConnected())
         {
-          logger.debug("WiFi connection stable - resetting counters", TAG);
-          _reconnectAttempts = 0;
+          // Reset failure counter on sustained connection
+          if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
+          {
+            logger.debug("WiFi connection stable - resetting counters", TAG);
+            _reconnectAttempts = 0;
+          }
         }
       }
     }
@@ -320,31 +324,58 @@ namespace CustomWifi
     logger.debug("WiFi cleanup completed", TAG);
   }
 
-  void stop()
+  static void _startWifiTask()
   {
-    logger.debug("Stopping WiFi task", TAG);
-    
-    if (_wifiTaskHandle != NULL) {
-      // Send shutdown notification using the special shutdown event
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_SHUTDOWN, eSetValueWithOverwrite);
-      
-      // Wait with timeout for clean shutdown
-      int timeout = 2000; // 2 seconds
-      while (_wifiTaskHandle != NULL && timeout > 0) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-        timeout -= 10;
-      }
-      
-      // Force cleanup if needed
-      if (_wifiTaskHandle != NULL) {
-        logger.warning("Force stopping WiFi task", TAG);
-        vTaskDelete(_wifiTaskHandle);
-        _wifiTaskHandle = NULL;
-      } else {
-        logger.debug("WiFi task stopped successfully", TAG);
-      }
-    } else {
+    if (_wifiTaskHandle == NULL)
+    {
+      logger.debug("Starting WiFi task", TAG);
+      BaseType_t result = xTaskCreate(
+        _wifiConnectionTask,
+        WIFI_TASK_NAME,
+        WIFI_TASK_STACK_SIZE,
+        NULL,
+        WIFI_TASK_PRIORITY,
+        &_wifiTaskHandle);
+
+      if (result != pdPASS) { logger.error("Failed to create WiFi task", TAG); }
+    }
+    else
+    {
+      logger.debug("WiFi task is already running", TAG);
+    }
+  }
+
+  static void _stopWifiTask()
+  {
+    if (_wifiTaskHandle == NULL)
+    {
       logger.debug("WiFi task was not running", TAG);
+      return;
+    }
+
+    logger.debug("Stopping WiFi task", TAG);
+
+    // Send shutdown notification using the special shutdown event (cannot use standard stopTaskGracefully)
+    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_SHUTDOWN, eSetValueWithOverwrite);
+
+    // Wait with timeout for clean shutdown using standard pattern
+    unsigned long long startTime = millis64();
+    
+    while (_wifiTaskHandle != NULL && (millis64() - startTime) < TASK_STOPPING_TIMEOUT)
+    {
+      delay(TASK_STOPPING_CHECK_INTERVAL);
+    }
+
+    // Force cleanup if needed
+    if (_wifiTaskHandle != NULL)
+    {
+      logger.warning("Force stopping WiFi task after timeout", TAG);
+      vTaskDelete(_wifiTaskHandle);
+      _wifiTaskHandle = NULL;
+    }
+    else
+    {
+      logger.debug("WiFi task stopped gracefully", TAG);
     }
   }
 }
