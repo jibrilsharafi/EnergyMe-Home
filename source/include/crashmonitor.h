@@ -13,8 +13,8 @@
 #include "utils.h"
 
 #define MAGIC_WORD_RTC 0xDEADBEEF // This is crucial to ensure that the RTC data has sensible values or it is just some garbage after reboot
-#define MAX_CRASH_COUNT 5 // Maximum amount of consecutive crashes before triggering a rollback
-#define MAX_RESET_COUNT 15 // Maximum amount of consecutive resets before triggering a rollback
+#define MAX_CRASH_COUNT 3 // Maximum amount of consecutive crashes before triggering a rollback
+#define MAX_RESET_COUNT 10 // Maximum amount of consecutive resets before triggering a rollback
 #define CRASH_COUNTER_TIMEOUT (180 * 1000) // Timeout for the crash counter to reset
 #define CRASH_RESET_TASK_NAME "crash_reset_task"
 #define CRASH_RESET_TASK_STACK_SIZE 4096 // PLEASE: never put below this as even a single log will exceed 1024 kB easily.. We don't need to optimize so much :)
@@ -27,4 +27,14 @@ namespace CrashMonitor {
     unsigned long getCrashCount();
     unsigned long getResetCount();
     const char* getResetReasonString(esp_reset_reason_t reason);
+
+    void clearCrashCount(); // Useful for avoiding crash loops (e.g. during factory reset)
+    
+    // Core dump data access functions
+    bool hasCoreDump();
+    size_t getCoreDumpSize();
+    bool getCoreDumpInfo(size_t* size, size_t* address);
+    bool getCoreDumpChunk(uint8_t* buffer, size_t offset, size_t chunkSize, size_t* bytesRead);
+    bool getFullCoreDump(uint8_t* buffer, size_t bufferSize, size_t* actualSize);
+    void clearCoreDump();
 }

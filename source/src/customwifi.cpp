@@ -27,7 +27,7 @@ namespace CustomWifi
     logger.debug("Setting up WiFi with event-driven architecture...", TAG);
 
     // Setup WiFi event handling
-    WiFi.onEvent(_onWiFiEvent);
+    // WiFi.onEvent(_onWiFiEvent); // THIS CRASHES IF AUTOCONNECT OPENS THE PORTAL (NO CREDENTIALS SAVED YET)
 
     // Enable auto-reconnect and persistence
     WiFi.setAutoReconnect(true);

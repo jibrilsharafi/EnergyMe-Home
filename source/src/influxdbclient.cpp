@@ -11,7 +11,7 @@ namespace InfluxDbClient
 
     // State variables
     static bool _isSetupDone = false;
-    static unsigned long long _sendAttempt = 0;
+    static unsigned long _sendAttempt = 0;
     static unsigned long long _nextSendAttemptMillis = 0;
     
     // Runtime connection status - kept in memory only, not saved to preferences

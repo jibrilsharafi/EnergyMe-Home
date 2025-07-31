@@ -663,7 +663,7 @@ namespace Mqtt
 
             _nextMqttConnectionAttemptMillis = millis64() + _backoffDelay;
 
-            logger.info("Next MQTT connection attempt in %lu ms", TAG, _backoffDelay);
+            logger.info("Next MQTT connection attempt in %llu ms", TAG, _backoffDelay);
 
             return false;
         }

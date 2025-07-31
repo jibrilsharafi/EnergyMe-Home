@@ -86,6 +86,7 @@ void setup()
 
   logger.info("Guess who's back, back again! EnergyMe - Home is starting up...", TAG);
   logger.info("Build version: %s | Build date: %s %s | Device ID: %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
+  printDeviceStatusStatic();
 
   logger.debug("Setting up crash monitor...", TAG);
   CrashMonitor::begin();
@@ -194,7 +195,6 @@ void setup()
   logger.info("Maintenance task started", TAG);
 
   Led::setGreen(Led::PRIO_NORMAL);
-  printDeviceStatusStatic();
   printDeviceStatusDynamic();
   logger.info("Setup done! Let's get this energetic party started!", TAG);
 }

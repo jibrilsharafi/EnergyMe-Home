@@ -69,7 +69,7 @@ namespace CustomLog
         _isUdpInitialized = true;
         
         size_t queueStorageSize = LOG_BUFFER_SIZE * sizeof(LogJson);
-        logger.debug("UDP logging configured - destination: %s:%d, PSRAM buffer: %d bytes", TAG, 
+        logger.debug("UDP logging configured - destination: %s:%d, PSRAM buffer: %zu bytes", TAG,
                     _udpDestinationIp.toString().c_str(), UDP_LOG_PORT, queueStorageSize);
     }
 
@@ -154,7 +154,7 @@ namespace CustomLog
 
             // Format as simplified syslog message
             snprintf(_udpBuffer, sizeof(_udpBuffer),
-                "<%d>%s %s[%lu]: [%s][Core%u] %s: %s",
+                "<%d>%s %s[%llu]: [%s][Core%u] %s: %s",
                 UDP_LOG_SERVERITY_FACILITY, // Facility.Severity (local0.info)
                 log.timestamp,
                 DEVICE_ID,

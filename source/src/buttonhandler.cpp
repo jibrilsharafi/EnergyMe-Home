@@ -113,7 +113,7 @@ namespace ButtonHandler
                 {
                     // Button was released - process the press
                     unsigned long long pressDuration = millis64() - _buttonPressStartTime;
-                    logger.debug("Button released after %lu ms", TAG, pressDuration);
+                    logger.debug("Button released after %llu ms", TAG, pressDuration);
 
                     _processButtonPress(pressDuration);
                     _buttonPressStartTime = ZERO_START_TIME;
@@ -168,7 +168,7 @@ namespace ButtonHandler
         else
         {
             _currentPressType = ButtonPressType::NONE;
-            logger.debug("Button press duration %lu ms - no action", TAG, pressDuration);
+            logger.debug("Button press duration %llu ms - no action", TAG, pressDuration);
         }
     }
 

@@ -598,7 +598,7 @@ void restartSystem() {
     Led::setOrange(Led::PRIO_CRITICAL);
 
     logger.info("Restarting system", TAG);
-    logger.end();
+    logger.end(); // Only stop at last to ensure stopping logs are sent
 
     // Give time for AsyncTCP connections to close gracefully
     delay(1000);
@@ -641,7 +641,7 @@ void printDeviceStatusDynamic()
     populateSystemDynamicInfo(info);
 
     logger.debug("--- Dynamic System Info ---", TAG);
-    logger.debug("Uptime: %lu s (%llu ms) | Timestamp: %s", TAG, info.uptimeSeconds, (unsigned long long)info.uptimeMilliseconds, info.currentTimestamp);
+    logger.debug("Uptime: %llu s (%llu ms) | Timestamp: %s", TAG, info.uptimeSeconds, info.uptimeMilliseconds, info.currentTimestamp);
     logger.debug("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
         TAG, 
         info.heapTotalBytes, 
@@ -929,6 +929,8 @@ void factoryReset() {
 
     logger.fatal("Formatting SPIFFS. This will take some time.", TAG);
     SPIFFS.format();
+
+    CrashMonitor::clearCrashCount(); // Reset crash monitor to clear crash count and last reset reason
 
     // Directly call ESP.restart() so that a fresh start is done
     ESP.restart();
