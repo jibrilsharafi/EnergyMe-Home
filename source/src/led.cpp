@@ -11,6 +11,7 @@ namespace Led
     // Task handles and queue
     static TaskHandle_t _ledTaskHandle = nullptr;
     static QueueHandle_t _ledQueue = nullptr;
+    static bool _ledTaskShouldRun = false;
 
     // LED command structure for queue
     struct LedCommand
@@ -46,6 +47,8 @@ namespace Led
 
     void begin(int redPin, int greenPin, int bluePin)
     {
+        if (_ledTaskHandle != nullptr) { return; }
+
         _redPin = redPin;
         _greenPin = greenPin;
         _bluePin = bluePin;
@@ -63,10 +66,7 @@ namespace Led
 
         // Create queue for LED commands
         _ledQueue = xQueueCreate(LED_QUEUE_SIZE, sizeof(LedCommand));
-        if (_ledQueue == nullptr)
-        {
-            return; // Failed to create queue
-        }
+        if (_ledQueue == nullptr) { return; } // Failed to create queue
 
         // Create LED task
         BaseType_t result = xTaskCreate(
@@ -88,13 +88,9 @@ namespace Led
         setOff();
     }
 
-    void end()
+    void stop()
     {
-        if (_ledTaskHandle != nullptr)
-        {
-            vTaskDelete(_ledTaskHandle);
-            _ledTaskHandle = nullptr;
-        }
+        stopTaskGracefully(&_ledTaskHandle, "LED task");
 
         if (_ledQueue != nullptr)
         {
@@ -104,6 +100,68 @@ namespace Led
 
         // Turn off LED
         _setHardwareColor(Colors::OFF);
+    }
+
+    static void _ledTask(void *parameter)
+    {
+        LedCommand command;
+        unsigned long long currentTime;
+
+        _ledTaskShouldRun = true;
+        while (_ledTaskShouldRun)
+        {
+            // Check for new commands in queue with timeout
+            if (xQueueReceive(_ledQueue, &command, pdMS_TO_TICKS(LED_TASK_DELAY_MS)) == pdTRUE)
+            {
+                currentTime = millis64();
+
+                // Always process commands, but handle priority logic
+                if (command.priority >= _state.currentPriority || !_state.isActive)
+                {
+                    // Higher or equal priority: execute immediately
+                    _state.currentPattern = command.pattern;
+                    _state.currentColor = command.color;
+                    _state.currentPriority = command.priority;
+                    _state.patternStartTime = currentTime;
+                    _state.patternDuration = command.durationMs;
+                    _state.cycleStartTime = currentTime;
+                    _state.isActive = (command.pattern != LedPattern::OFF);
+                }
+                else
+                {
+                    // Lower priority: put back in queue for later
+                    xQueueSendToBack(_ledQueue, &command, 0);
+                }
+            }
+
+            // Check for stop notification (non-blocking check since we're using queue timeout)
+            unsigned long notificationValue = ulTaskNotifyTake(pdFALSE, 0);
+            if (notificationValue > 0)
+            {
+                _ledTaskShouldRun = false;
+                break;
+            }
+
+            // Check if current pattern has expired
+            currentTime = millis64();
+            if (_state.isActive && _state.patternDuration > 0 &&
+                (currentTime - _state.patternStartTime) >= _state.patternDuration)
+            {
+                _state.currentPattern = LedPattern::OFF;
+                _state.currentColor = Colors::OFF;
+                _state.currentPriority = PRIO_NORMAL;
+                _state.isActive = false;
+                
+                // Process any queued commands immediately after expiration
+                // This allows lower priority commands to execute
+            }
+
+            // Process current pattern
+            _processPattern();
+        }
+
+        _ledTaskHandle = nullptr;
+        vTaskDelete(NULL);
     }
 
     void resetToDefaults()
@@ -133,10 +191,7 @@ namespace Led
     void _saveConfiguration()
     {
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_LED, false))
-        {
-            return;
-        }
+        if (!preferences.begin(PREFERENCES_NAMESPACE_LED, false)) { return; }
         preferences.putInt(PREFERENCES_BRIGHTNESS_KEY, _brightness);
         preferences.end();
     }
@@ -147,17 +202,11 @@ namespace Led
         _saveConfiguration();
     }
 
-    int getBrightness()
-    {
-        return _brightness;
-    }
+    int getBrightness() { return _brightness; }
 
     void setPattern(LedPattern pattern, Color color, LedPriority priority, unsigned long long durationMs)
     {
-        if (_ledQueue == nullptr)
-        {
-            return;
-        }
+        if (_ledQueue == nullptr) { return; }
 
         LedCommand command = {
             pattern,
@@ -172,10 +221,7 @@ namespace Led
 
     void clearPattern(LedPriority priority)
     {
-        if (_ledQueue == nullptr)
-        {
-            return;
-        }
+        if (_ledQueue == nullptr) { return; }
 
         // Send OFF command with specified priority
         LedCommand command = {
@@ -190,10 +236,7 @@ namespace Led
 
     void clearAllPatterns()
     {
-        if (_ledQueue == nullptr)
-        {
-            return;
-        }
+        if (_ledQueue == nullptr) { return; }
 
         // Clear the queue
         xQueueReset(_ledQueue);
@@ -202,111 +245,11 @@ namespace Led
         setPattern(LedPattern::OFF, Colors::OFF, 15); // PRIO_CRITICAL
     }
 
-    // Convenience functions
-    void setRed(LedPriority priority)
-    {
-        setPattern(LedPattern::SOLID, Colors::RED, priority);
-    }
-
-    void setGreen(LedPriority priority)
-    {
-        setPattern(LedPattern::SOLID, Colors::GREEN, priority);
-    }
-
-    void setBlue(LedPriority priority)
-    {
-        setPattern(LedPattern::SOLID, Colors::BLUE, priority);
-    }
-
-    void setYellow(LedPriority priority)
-    {
-        setPattern(LedPattern::SOLID, Colors::YELLOW, priority);
-    }
-
-    void setPurple(LedPriority priority)
-    {
-        setPattern(LedPattern::SOLID, Colors::PURPLE, priority);
-    }
-
-    void setCyan(LedPriority priority)
-    {
-        setPattern(LedPattern::SOLID, Colors::CYAN, priority);
-    }
-
-    void setOrange(LedPriority priority)
-    {
-        setPattern(LedPattern::SOLID, Colors::ORANGE, priority);
-    }
-
-    void setWhite(LedPriority priority)
-    {
-        setPattern(LedPattern::SOLID, Colors::WHITE, priority);
-    }
-
-    void setOff(LedPriority priority)
-    {
-        setPattern(LedPattern::OFF, Colors::OFF, priority);
-    }
-
-    // Pattern convenience functions
-    void blinkOrangeFast(LedPriority priority, unsigned long long durationMs)
-    {
-        setPattern(LedPattern::BLINK_FAST, Colors::ORANGE, priority, durationMs);
-    }
-
-    void blinkRed(LedPriority priority, unsigned long long durationMs)
-    {
-        setPattern(LedPattern::BLINK_FAST, Colors::RED, priority, durationMs);
-    }
-
-    void blinkBlueSlow(LedPriority priority, unsigned long long durationMs)
-    {
-        setPattern(LedPattern::BLINK_SLOW, Colors::BLUE, priority, durationMs);
-    }
-
-    void blinkBlueFast(LedPriority priority, unsigned long long durationMs)
-    {
-        setPattern(LedPattern::BLINK_FAST, Colors::BLUE, priority, durationMs);
-    }
-
-    void blinkGreenSlow(LedPriority priority, unsigned long long durationMs)
-    {
-        setPattern(LedPattern::BLINK_SLOW, Colors::GREEN, priority, durationMs);
-    }
-
-    void blinkGreenFast(LedPriority priority, unsigned long long durationMs)
-    {
-        setPattern(LedPattern::BLINK_FAST, Colors::GREEN, priority, durationMs);
-    }
-
-    void pulseBlue(LedPriority priority, unsigned long long durationMs)
-    {
-        setPattern(LedPattern::PULSE, Colors::BLUE, priority, durationMs);
-    }
-
-    void blinkPurpleSlow(LedPriority priority, unsigned long long durationMs)
-    {
-        setPattern(LedPattern::BLINK_SLOW, Colors::PURPLE, priority, durationMs);
-    }
-
-    void blinkPurpleFast(LedPriority priority, unsigned long long durationMs)
-    {
-        setPattern(LedPattern::BLINK_FAST, Colors::PURPLE, priority, durationMs);
-    }
-
-    void doubleBlinkYellow(LedPriority priority, unsigned long long durationMs)
-    {
-        setPattern(LedPattern::DOUBLE_BLINK, Colors::YELLOW, priority, durationMs);
-    }
-
     // Private implementation functions
     static void _setHardwareColor(const Color &color)
     {
         // Validate pins are set before using them
-        if (_redPin == INVALID_PIN || _greenPin == INVALID_PIN || _bluePin == INVALID_PIN)
-        {
-            return;
-        }
+        if (_redPin == INVALID_PIN || _greenPin == INVALID_PIN || _bluePin == INVALID_PIN) { return; }
 
         ledcWrite(_redPin, _calculateBrightness(color.red));
         ledcWrite(_greenPin, _calculateBrightness(color.green));
@@ -316,58 +259,6 @@ namespace Led
     static unsigned char _calculateBrightness(unsigned char value, float factor)
     {
         return (unsigned char)(value * _brightness * factor / LED_MAX_BRIGHTNESS);
-    }
-
-    static void _ledTask(void *parameter)
-    {
-        LedCommand command;
-        unsigned long long currentTime;
-
-        while (true)
-        {
-            // Check for new commands in queue
-            if (xQueueReceive(_ledQueue, &command, pdMS_TO_TICKS(LED_TASK_DELAY_MS)) == pdTRUE)
-            {
-                currentTime = millis64();
-
-                // Always process commands, but handle priority logic
-                if (command.priority >= _state.currentPriority || !_state.isActive)
-                {
-                    // Higher or equal priority: execute immediately
-                    _state.currentPattern = command.pattern;
-                    _state.currentColor = command.color;
-                    _state.currentPriority = command.priority;
-                    _state.patternStartTime = currentTime;
-                    _state.patternDuration = command.durationMs;
-                    _state.cycleStartTime = currentTime;
-                    _state.isActive = (command.pattern != LedPattern::OFF);
-                }
-                else
-                {
-                    // Lower priority: put back in queue for later
-                    xQueueSendToBack(_ledQueue, &command, 0);
-                }
-            }
-
-            // Check if current pattern has expired
-            currentTime = millis64();
-            if (_state.isActive && _state.patternDuration > 0 &&
-                (currentTime - _state.patternStartTime) >= _state.patternDuration)
-            {
-                _state.currentPattern = LedPattern::OFF;
-                _state.currentColor = Colors::OFF;
-                _state.currentPriority = PRIO_NORMAL;
-                _state.isActive = false;
-                
-                // Process any queued commands immediately after expiration
-                // This allows lower priority commands to execute
-            }
-
-            // Process current pattern
-            _processPattern();
-
-            delay(LED_TASK_DELAY_MS);
-        }
     }
 
     static void _processPattern()

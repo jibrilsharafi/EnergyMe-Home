@@ -11,13 +11,11 @@ namespace CustomServer
 
     // Health check task variables
     static TaskHandle_t _healthCheckTaskHandle = NULL;
+    static bool _healthCheckTaskShouldRun = false;
     static unsigned int _consecutiveFailures = 0;
 
     // API request synchronization
     static SemaphoreHandle_t _apiMutex = NULL;
-
-// Task notification bits
-#define HEALTH_CHECK_STOP_BIT (1UL << 0)
 
     static void _setupMiddleware();
     static void _serveStaticContent();
@@ -89,7 +87,7 @@ namespace CustomServer
         }
         logger.debug("API mutex created successfully", TAG);
 
-        _setupMiddleware(); // TODO: add statistics middleware
+        _setupMiddleware();
         _serveStaticContent();
         _serveApi();
 
@@ -99,6 +97,25 @@ namespace CustomServer
 
         // Start health check task to ensure the web server is responsive, and if it is not, restart the ESP32
         _startHealthCheckTask();
+    }
+
+    void stop()
+    {
+        logger.debug("Stopping web server...", TAG);
+
+        // Stop health check task
+        _stopHealthCheckTask();
+
+        // Stop the server
+        server.end();
+        logger.info("Web server stopped", TAG);
+
+        // Delete API mutex
+        if (_apiMutex != NULL) {
+            vSemaphoreDelete(_apiMutex);
+            _apiMutex = NULL;
+            logger.debug("API mutex deleted", TAG);
+        }
     }
 
     static void _setupMiddleware()
@@ -410,7 +427,7 @@ namespace CustomServer
             logger.error("OTA update failed: %s", TAG, Update.errorString());
             Update.printError(Serial);
             
-            Led::blinkRed(Led::PRIO_CRITICAL, 5000ULL);
+            Led::blinkRedFast(Led::PRIO_CRITICAL, 5000ULL);
         } else {
             JsonDocument doc;
             doc["success"] = true;
@@ -873,78 +890,63 @@ namespace CustomServer
     {
         if (_healthCheckTaskHandle != NULL)
         {
-            logger.warning("Health check task already running", TAG);
+            logger.debug("Health check task is already running", TAG);
             return;
         }
 
+        logger.debug("Starting health check task", TAG);
         _consecutiveFailures = 0;
-
-        // Pass the current task handle so the health check task can notify us on exit
-        TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
 
         BaseType_t result = xTaskCreate(
             _healthCheckTask,
             HEALTH_CHECK_TASK_NAME,
             HEALTH_CHECK_TASK_STACK_SIZE,
-            currentTask, // Pass caller's handle as parameter
+            NULL,
             HEALTH_CHECK_TASK_PRIORITY,
             &_healthCheckTaskHandle);
 
-        if (result == pdPASS) { logger.debug("Health check task started successfully", TAG); }
-        else { logger.error("Failed to create health check task", TAG); }
+        if (result != pdPASS) { logger.error("Failed to create health check task", TAG); }
     }
 
     static void _stopHealthCheckTask()
     {
         if (_healthCheckTaskHandle == NULL)
         {
-            logger.debug("Health check task not running", TAG);
+            logger.debug("Health check task was not running", TAG);
             return;
         }
 
-        logger.debug("Stopping health check task...", TAG);
+        logger.debug("Stopping health check task", TAG);
 
         // Signal the task to stop using notification
-        xTaskNotify(_healthCheckTaskHandle, HEALTH_CHECK_STOP_BIT, eSetBits);
+        xTaskNotifyGive(_healthCheckTaskHandle);
 
-        // Wake up the task if it's sleeping in vTaskDelayUntil
-        xTaskAbortDelay(_healthCheckTaskHandle);
+        // Wait with timeout for clean shutdown
+        int timeout = 1000;
+        while (_healthCheckTaskHandle != NULL && timeout > 0)
+        {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            timeout -= 10;
+        }
 
-        // Wait for the task to acknowledge shutdown (up to 5 seconds)
-        uint32_t notificationValue = 0;
-        BaseType_t result = xTaskNotifyWait(0, 0, &notificationValue, pdMS_TO_TICKS(5000));
-
-        if (result == pdTRUE) { logger.info("Health check task stopped gracefully", TAG); }
-        else { logger.warning("Health check task did not acknowledge shutdown, assuming stopped", TAG); }
-
-        // Task handle will be set to NULL by the task itself
-        _healthCheckTaskHandle = NULL;
+        // Force cleanup if needed
+        if (_healthCheckTaskHandle != NULL)
+        {
+            logger.warning("Force stopping health check task", TAG);
+            vTaskDelete(_healthCheckTaskHandle);
+            _healthCheckTaskHandle = NULL;
+        } else {
+            logger.debug("Health check task stopped successfully", TAG);
+        }
     }
 
     static void _healthCheckTask(void *parameter)
     {
         logger.debug("Health check task started", TAG);
 
-        TickType_t xLastWakeTime = xTaskGetTickCount();
-        const TickType_t xFrequency = pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS);
-        TaskHandle_t callerHandle = (TaskHandle_t)parameter;
-
-        while (true)
+        _healthCheckTaskShouldRun = true;
+        while (_healthCheckTaskShouldRun)
         {
-            // Wait for the next cycle OR until we get a stop notification
-            uint32_t notificationValue = 0;
-            BaseType_t result = xTaskNotifyWait(0, UINT32_MAX, &notificationValue, xFrequency);
-
-            // Check if we received a stop signal
-            if (notificationValue & HEALTH_CHECK_STOP_BIT) // TODO: modify this according to standard task handling
-            {
-                logger.debug("Health check task received stop signal", TAG);
-                break;
-            }
-
-            // If we were woken by notification but no stop bit, continue normally
-            // If we timed out (no notification), also continue normally
-
             // Perform health check
             if (_performHealthCheck())
             {
@@ -968,13 +970,17 @@ namespace CustomServer
                     break; // Exit the task as we're restarting
                 }
             }
+
+            // Wait for stop notification with timeout (blocking)
+            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS));
+            if (notificationValue > 0)
+            {
+                _healthCheckTaskShouldRun = false;
+                break;
+            }
         }
 
-        logger.debug("Health check task exiting", TAG);
-
-        // Acknowledge shutdown to the caller
-        if (callerHandle != NULL) { xTaskNotify(callerHandle, 1, eSetValueWithOverwrite); }
-
+        logger.debug("Health check task stopping", TAG);
         _healthCheckTaskHandle = NULL;
         vTaskDelete(NULL);
     }
@@ -1260,6 +1266,11 @@ namespace CustomServer
                 if (chunkSize == 0) {
                     chunkSize = CRASH_DUMP_DEFAULT_CHUNK_SIZE;
                 }
+            }
+
+            if (!CrashMonitor::hasCoreDump()) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No core dump available");
+                return;
             }
 
             JsonDocument doc;

@@ -49,7 +49,7 @@ namespace CustomLog
         return true;
     }
 
-    void setupUdp()
+    void begin()
     {
         if (_isUdpInitialized) {
             logger.debug("UDP logging already initialized", TAG);
@@ -73,7 +73,7 @@ namespace CustomLog
                     _udpDestinationIp.toString().c_str(), UDP_LOG_PORT, queueStorageSize);
     }
 
-    void stopUdp()
+    void stop()
     {
         if (_isUdpInitialized) {
             _udpClient.stop();
@@ -184,7 +184,7 @@ namespace CustomLog
             
             // Small delay between UDP packets to avoid overwhelming the stack
             if (uxQueueMessagesWaiting(_udpLogQueue) > 0) {
-                delayMicroseconds(100); // 0.1ms delay
+                delay(DELAY_SEND_UDP);
             }
         }
     }

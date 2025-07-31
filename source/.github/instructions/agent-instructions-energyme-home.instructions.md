@@ -77,49 +77,63 @@ Provide project context and coding guidelines that AI should follow when generat
     - Always check task handles before operations to prevent race conditions
     - Implement timeout protection when stopping tasks to prevent system hangs
     - Let tasks self-cleanup by setting handle to NULL and calling vTaskDelete(NULL)
-    - Use non-blocking task notification checks (ulTaskNotifyTake with timeout 0) in task loops
+    - **For task shutdown notifications**: Use blocking `ulTaskNotifyTake(pdTRUE, timeout)` - it's as CPU-efficient as `vTaskDelay()` but provides immediate shutdown response
+    - **Only use non-blocking pattern** if you need sub-second shutdown response or must do other work during delays
     - Standard pattern:
       ```cpp
       TaskHandle_t taskHandle = NULL;
       bool taskShouldRun = false;
       
       void myTask(void* parameter) {
+          logger.debug("Task X started", TAG);
+
           taskShouldRun = true;
           while (taskShouldRun) {
               // Task work here
               
-              // Check for stop notification (non-blocking)
-              uint32_t notificationValue = ulTaskNotifyTake(pdFALSE, 0);
+              // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
+              unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(TASK_INTERVAL_MS));
               if (notificationValue > 0) {
                   taskShouldRun = false;
                   break;
               }
-              vTaskDelay(pdMS_TO_TICKS(100)); // Adjust delay as needed
           }
+
+          logger.debug("Task X stopping", TAG);
           taskHandle = NULL;
           vTaskDelete(NULL);
       }
       
       void startTask() {
           if (taskHandle == NULL) {
-              xTaskCreate(myTask, "TaskName", 4096, NULL, 1, &taskHandle);
+              logger.debug("Starting task X", TAG);
+              xTaskCreate(myTask, X_TASK_NAME, X_TASK_STACK_SIZE, NULL, X_TASK_PRIORITY, &taskHandle);
+          } else {
+              logger.debug("Task X is already running", TAG);
           }
       }
       
       void stopTask() {
+          logger.debug("Stopping task X", TAG);
           if (taskHandle != NULL) {
               xTaskNotifyGive(taskHandle);
               // Wait with timeout for clean shutdown
-              int timeout = 1000;
+              int timeout = TASK_STOPPING_TIMEOUT;
               while (taskHandle != NULL && timeout > 0) {
-                  vTaskDelay(pdMS_TO_TICKS(10));
-                  timeout -= 10;
+                  vTaskDelay(pdMS_TO_TICKS(TASK_STOPPING_CHECK_INTERVAL));
+                  timeout -= TASK_STOPPING_CHECK_INTERVAL;
               }
+
               // Force cleanup if needed
               if (taskHandle != NULL) {
+                  logger.warning("Force stopping task X", TAG);
                   vTaskDelete(taskHandle);
                   taskHandle = NULL;
+              } else {
+                  logger.debug("Task X stopped successfully", TAG);
               }
+          } else {
+              logger.debug("Task X was not running", TAG);
           }
       }
       ```
@@ -144,3 +158,10 @@ Provide project context and coding guidelines that AI should follow when generat
           _sendSuccessResponse(request, "Operation completed");
       });
       ```
+
+11. **Coding style**:
+    - For simple ifs with a single statement, use the one-line format:
+      ```cpp
+      if (!someBoolean) { return; }
+      ```
+    - Use `delay(X)` instead of `vTaskDelay(pdMS_TO_TICKS(X))` since they map to the same underlying FreeRTOS function and `delay()` is more readable in this context. 

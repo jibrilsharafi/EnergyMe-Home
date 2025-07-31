@@ -3,6 +3,8 @@
 static const char *TAG = "utils";
 
 static TaskHandle_t _restartTaskHandle = NULL;
+static TaskHandle_t _maintenanceTaskHandle = NULL;
+static bool _maintenanceTaskShouldRun = false;
 
 
 // New system info functions
@@ -496,10 +498,8 @@ bool checkAllFiles() {
 void maintenanceTask(void* parameter) {
     logger.debug("Maintenance task started", TAG);
     
-    while (true) {
-        // Wait for the maintenance check interval
-        delay(MAINTENANCE_CHECK_INTERVAL);
-        
+    _maintenanceTaskShouldRun = true;
+    while (_maintenanceTaskShouldRun) {
         logger.debug("Running maintenance checks...", TAG);
         
         // Update and print statistics
@@ -526,32 +526,74 @@ void maintenanceTask(void* parameter) {
         }
         
         logger.debug("Maintenance checks completed", TAG);
+
+        // Wait for stop notification with timeout (blocking)
+        unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MAINTENANCE_CHECK_INTERVAL));
+        if (notificationValue > 0) {
+            _maintenanceTaskShouldRun = false;
+            break;
+        }
     }
 
+    logger.debug("Maintenance task stopping", TAG);
+    _maintenanceTaskHandle = NULL;
     vTaskDelete(NULL);
 }
 
 void startMaintenanceTask() {
-    logger.debug("Starting maintenance task...", TAG);
+    if (_maintenanceTaskHandle != NULL) {
+        logger.debug("Maintenance task is already running", TAG);
+        return;
+    }
     
-    TaskHandle_t maintenanceTaskHandle = NULL;
+    logger.debug("Starting maintenance task", TAG);
+    
     BaseType_t result = xTaskCreate(
-        maintenanceTask,              // Task function
-        TASK_MAINTENANCE_NAME,        // Task name
-        TASK_MAINTENANCE_STACK_SIZE,  // Stack size (words)
-        NULL,                         // Parameter passed to task
-        TASK_MAINTENANCE_PRIORITY,    // Priority
-        &maintenanceTaskHandle        // Task handle
+        maintenanceTask,
+        TASK_MAINTENANCE_NAME,
+        TASK_MAINTENANCE_STACK_SIZE,
+        NULL,
+        TASK_MAINTENANCE_PRIORITY,
+        &_maintenanceTaskHandle
     );
     
     if (result != pdPASS) {
         logger.error("Failed to create maintenance task", TAG);
-    } else {
-        logger.debug("Maintenance task created successfully", TAG);
     }
 }
 
-// Task function that handles delayed restart
+void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
+    if (!taskHandle || *taskHandle == NULL) {
+        logger.debug("%s was not running", TAG, taskName ? taskName : "Task");
+        return;
+    }
+
+    logger.debug("Stopping %s...", TAG, taskName ? taskName : "task");
+    
+    xTaskNotifyGive(*taskHandle);
+    
+    // Wait with timeout for clean shutdown
+    int timeout = TASK_STOPPING_TIMEOUT;
+    while (*taskHandle != NULL && timeout > 0) {
+        delay(TASK_STOPPING_CHECK_INTERVAL);
+        timeout -= TASK_STOPPING_CHECK_INTERVAL;
+    }
+    
+    // Force cleanup if needed
+    if (*taskHandle != NULL) {
+        logger.warning("Force stopping %s", TAG, taskName ? taskName : "task");
+        vTaskDelete(*taskHandle);
+        *taskHandle = NULL;
+    } else {
+        logger.debug("%s stopped successfully", TAG, taskName ? taskName : "Task");
+    }
+}
+
+void stopMaintenanceTask() {
+    stopTaskGracefully(&_maintenanceTaskHandle, "maintenance task");
+}
+
+// Task function that handles delayed restart. No need for complex handling here, just a simple delay and restart.
 void restartTask(void* parameter) {
     logger.debug("Restart task started, waiting %d ms before restart", TAG, SYSTEM_RESTART_DELAY);
     
@@ -574,6 +616,7 @@ void setRestartSystem(const char* functionName, const char* reason) {
     }
 
     //TODO: we should start stopping tasks here
+    stopMaintenanceTask();
 
     // Create a task that will handle the delayed restart
     BaseType_t result = xTaskCreate(
@@ -604,7 +647,7 @@ void restartSystem() {
     delay(1000);
 
     // Properly shutdown WiFi to prevent crashes during restart
-    CustomWifi::shutdown();
+    CustomWifi::stop();
     
     // Additional delay to ensure clean shutdown
     delay(500);
@@ -656,11 +699,11 @@ void printDeviceStatusDynamic()
             info.psramMinFreeBytes, info.psramMaxAllocBytes
         );
     }
-    logger.debug("SPIFFS: %lu total, %lu used (%.2f%%), %lu free (%.2f%%)", 
+    logger.debug("SPIFFS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%)", 
         TAG, 
         info.spiffsTotalBytes, 
-        info.spiffsUsedBytes, info.spiffsUsedPercentage, 
-        info.spiffsFreeBytes, info.spiffsFreePercentage
+        info.spiffsFreeBytes, info.spiffsFreePercentage, 
+        info.spiffsUsedBytes, info.spiffsUsedPercentage
     );
     logger.debug("Temperature: %.2f C", TAG, info.temperatureCelsius);
     
@@ -673,12 +716,6 @@ void printDeviceStatusDynamic()
     }
 
     logger.debug("-------------------------", TAG);
-}
-
-void printDeviceStatus()
-{
-    printDeviceStatusStatic();
-    printDeviceStatusDynamic();
 }
 
 void updateStatistics() {
@@ -800,129 +837,11 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
 // Helper functions
 // -----------------------------
 
-bool getPublicLocation(PublicLocation* publicLocation) {
-    if (!publicLocation) {
-        logger.error("Null pointer passed to getPublicLocation", TAG);
-        return false;
-    }
-
-    HTTPClient _http;
-    JsonDocument jsonDocument;
-
-    _http.begin(PUBLIC_LOCATION_ENDPOINT);
-
-    int httpCode = _http.GET();
-    if (httpCode > 0) {
-        if (httpCode == HTTP_CODE_OK) {
-            // Use stream directly - efficient and simple
-            DeserializationError error = deserializeJson(jsonDocument, _http.getStream());
-            
-            if (error) {
-                logger.error("JSON parsing failed: %s", TAG, error.c_str());
-                _http.end();
-                return false;
-            }
-            
-            // Validate API response
-            if (jsonDocument["status"] != "success") {
-                logger.error("API returned error status: %s", TAG, 
-                           jsonDocument["status"].as<const char*>());
-                _http.end();
-                return false;
-            }
-
-            // Extract strings safely using const char* and copy to char arrays
-            float latitude = jsonDocument["lat"].as<float>();
-            float longitude = jsonDocument["lon"].as<float>();
-
-            // Extract strings safely - use empty string if NULL
-            publicLocation->latitude = latitude;
-            publicLocation->longitude = longitude;
-
-            logger.debug(
-                "Location: Lat: %f | Lon: %f",
-                TAG,
-                publicLocation->latitude,
-                publicLocation->longitude
-            );
-        } else {
-            logger.warning("HTTP request failed with code: %d", TAG, httpCode);
-            return false;
-        }
-    } else {
-        logger.error("HTTP request error: %s", TAG, _http.errorToString(httpCode).c_str());
-        return false;
-    }
-
-    _http.end();
-    return true;
-}
-
-bool getPublicTimezone(int* gmtOffset, int* dstOffset) {
-    if (!gmtOffset || !dstOffset) {
-        logger.error("Null pointer passed to getPublicTimezone", TAG);
-        return false;
-    }
-
-    PublicLocation _publicLocation;
-    if (!getPublicLocation(&_publicLocation)) {
-        logger.warning("Could not retrieve the public location. Skipping timezone fetching", TAG);
-        return false;
-    }
-
-    HTTPClient _http;
-    JsonDocument jsonDocument;
-
-    char url[SERVER_NAME_BUFFER_SIZE];
-    // The URL for the timezone API endpoint requires passing as params the latitude, longitude and username (which is a sort of free "public" api key)
-    snprintf(url, sizeof(url), "%slat=%f&lng=%f&username=%s",
-        PUBLIC_TIMEZONE_ENDPOINT,
-        _publicLocation.latitude,
-        _publicLocation.longitude,
-        PUBLIC_TIMEZONE_USERNAME);
-
-    _http.begin(url);
-    int httpCode = _http.GET();
-
-    if (httpCode > 0) {
-        if (httpCode == HTTP_CODE_OK) {
-            // Example JSON response:
-            // {"sunrise":"2025-07-27 05:55","lng":14.168099,"countryCode":"IT","gmtOffset":1,"rawOffset":1,"sunset":"2025-07-27 20:24","timezoneId":"Europe/Rome","dstOffset":2,"countryName":"Italy","time":"2025-07-27 20:53","lat":40.813198}
-            DeserializationError error = deserializeJson(jsonDocument, _http.getString()); // Unfortunately, the stream method returns null so we have to use string
-            
-            if (error) {
-                logger.error("JSON parsing failed: %s", TAG, error.c_str());
-                _http.end();
-                return false;
-            }
-
-            *gmtOffset = jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
-            *dstOffset = jsonDocument["dstOffset"].as<int>() * 3600 - *gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
-
-            logger.debug(
-                "GMT offset: %d | DST offset: %d",
-                TAG,
-                jsonDocument["rawOffset"].as<int>(),
-                jsonDocument["dstOffset"].as<int>()
-            );
-        } else {
-            logger.warning("HTTP request failed with code: %d", TAG, httpCode);
-            return false;
-        }
-    } else {
-        logger.error("HTTP request error: %s", TAG, _http.errorToString(httpCode).c_str());
-        return false;
-    }
-
-    _http.end();
-    return true;
-}
-
 void factoryReset() { 
     logger.fatal("Factory reset requested", TAG);
 
     Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
-    Led::blinkRed(Led::PRIO_CRITICAL);
+    Led::blinkRedFast(Led::PRIO_CRITICAL);
 
     clearAllPreferences();
 
@@ -932,7 +851,7 @@ void factoryReset() {
     CrashMonitor::clearCrashCount(); // Reset crash monitor to clear crash count and last reset reason
 
     // Properly shutdown WiFi to prevent crashes during restart
-    CustomWifi::shutdown();
+    CustomWifi::stop();
     delay(500);
 
     // Directly call ESP.restart() so that a fresh start is done

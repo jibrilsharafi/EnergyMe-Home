@@ -38,6 +38,7 @@ enum class ButtonPressType
 
 namespace ButtonHandler {
     void begin(int buttonPin);
+    void stop();
 
     ButtonPressType getCurrentPressType();
     bool isOperationInProgress();

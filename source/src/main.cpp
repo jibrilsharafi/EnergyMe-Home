@@ -143,27 +143,15 @@ void setup()
 
   // Add UDP logging setup after WiFi
   logger.debug("Setting up UDP logging...", TAG);
-  CustomLog::setupUdp();
+  CustomLog::begin();
   logger.info("UDP logging setup done", TAG);
 
   logger.debug("Syncing time...", TAG);
   if (CustomTime::begin())
   {
-    int gmtOffset, dstOffset;
-    if (getPublicTimezone(&gmtOffset, &dstOffset))
-    {
-      CustomTime::setOffset(
-          gmtOffset,
-          dstOffset);
-
-      char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-      CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
-      logger.info("Initial time sync successful. Current timestamp: %s", TAG, timestampBuffer);
-    }
-    else
-    {
-      logger.warning("Time synced, but the timezone could not be fetched. It will be shown as UTC", TAG);
-    }
+    char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+    CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
+    logger.info("Initial time sync successful. Current timestamp: %s", TAG, timestampBuffer);
   }
   else
   {

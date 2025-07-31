@@ -41,14 +41,6 @@
 
 #define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
 
-struct PublicLocation 
-{
-  float latitude;
-  float longitude;
-
-  PublicLocation() : latitude(45.0), longitude(9.0) {} // Default to Milan coordinates
-};
-
 // Come one, on this ESP32S3 and in 2025 can we still use 32bits millis
 // that will overflow in just 49 days?
 // esp_timer_get_time() returns microseconds since boot in 64-bit format,
@@ -66,6 +58,13 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info);
 void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc);
 void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc);
 
+void printDeviceStatusStatic();
+void printDeviceStatusDynamic();
+
+void updateStatistics();
+void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
+void printStatistics();
+
 // Convenience functions for JSON API endpoints
 void getJsonDeviceStaticInfo(JsonDocument& doc);
 void getJsonDeviceDynamicInfo(JsonDocument& doc);
@@ -74,13 +73,10 @@ void setRestartSystem(const char* functionName, const char* reason);
 void restartSystem();
 
 void startMaintenanceTask();
+void stopMaintenanceTask();
 
-void printDeviceStatus();
-void printDeviceStatusStatic();
-void printDeviceStatusDynamic();
-void updateStatistics();
-void printStatistics();
-
+// General task management
+void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
 
 // Legacy SPIFFS functions for backward compatibility during transition
@@ -98,9 +94,6 @@ void createDefaultAde7953ConfigurationFile();
 void createDefaultEnergyFile();
 void createDefaultDailyEnergyFile();
 
-bool getPublicLocation(PublicLocation* publicLocation);
-bool getPublicTimezone(int* gmtOffset, int* dstOffset);
-
 void factoryReset();
 void clearAllPreferences();
 
@@ -109,7 +102,6 @@ void updateJsonFirmwareStatus(const char *status, const char *reason);
 
 void getDeviceId(char* deviceId, size_t maxLength);
 
-void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
 
 const char* getMqttStateReason(int state);
 

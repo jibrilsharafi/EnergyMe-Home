@@ -19,9 +19,19 @@
 #define TIMESTAMP_ISO_FORMAT "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ" // ISO 8601 format with milliseconds
 #define DEFAULT_GMT_OFFSET 0
 #define DEFAULT_DST_OFFSET 0
+    
+struct PublicLocation 
+{
+  float latitude;
+  float longitude;
+
+  PublicLocation() : latitude(45.0), longitude(9.0) {} // Default to Milan coordinates
+};
 
 namespace CustomTime {
     bool begin();
+    // No need to stop anything here since once it executes at the beginning, there is no other use for this
+
     void resetToDefaults();
     bool isTimeSynched();
     void setOffset(int gmtOffset, int dstOffset);

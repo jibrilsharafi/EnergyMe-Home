@@ -617,7 +617,7 @@ namespace InfluxDbClient
         unsigned long long lastSendTime = 0;
 
         while (_taskShouldRun) {
-            uint32_t notificationValue = ulTaskNotifyTake(pdFALSE, 0);
+            unsigned long notificationValue = ulTaskNotifyTake(pdFALSE, 0);
             if (notificationValue > 0) {
                 _taskShouldRun = false;
                 break;

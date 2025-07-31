@@ -35,8 +35,7 @@ namespace ButtonHandler
     static void _handleWifiReset();
     static void _handleFactoryReset();
 
-    void begin(
-        int buttonPin)
+    void begin(int buttonPin)
     {
         _buttonPin = buttonPin;
         logger.debug("Initializing interrupt-driven button handler on GPIO%d", TAG, _buttonPin);
@@ -63,6 +62,26 @@ namespace ButtonHandler
         attachInterrupt(digitalPinToInterrupt(_buttonPin), _buttonISR, CHANGE);
 
         logger.debug("Button handler ready - interrupt-driven with task processing", TAG);
+    }
+
+    void stop() 
+    {
+        logger.debug("Stopping button handler", TAG);
+
+        // Detach interrupt
+        detachInterrupt(_buttonPin);
+
+        // Stop task gracefully
+        stopTaskGracefully(&_buttonTaskHandle, "Button task");
+
+        // Delete semaphore
+        if (_buttonSemaphore != NULL)
+        {
+            vSemaphoreDelete(_buttonSemaphore);
+            _buttonSemaphore = NULL;
+        }
+
+        _buttonPin = INVALID_PIN; // Reset pin
     }
 
     static void IRAM_ATTR _buttonISR()
@@ -101,11 +120,11 @@ namespace ButtonHandler
         TickType_t feedbackUpdateInterval = pdMS_TO_TICKS(100); // Update visual feedback every 100ms
         TickType_t lastFeedbackUpdate = ZERO_START_TIME;
 
+        // This task should "never" be stopped, and to avoid over-complicating due to the semaphore, we don't stick to the standard approach
         while (true)
         {
             // Wait for button event or timeout for visual feedback updates
-            if (xSemaphoreTake(_buttonSemaphore, feedbackUpdateInterval))
-            {
+            if (xSemaphoreTake(_buttonSemaphore, feedbackUpdateInterval)) {
                 // Button event occurred
                 delay(BUTTON_DEBOUNCE_TIME); // Simple debounce
 
@@ -129,10 +148,8 @@ namespace ButtonHandler
                     Led::setBrightness(max(Led::getBrightness(), 1));
                     Led::setWhite(Led::PRIO_URGENT);
                 }
-            }
             // Here it means it is still being pressed
-            else if (_buttonPressed && _buttonPressStartTime > ZERO_START_TIME)
-            {
+            } else if (_buttonPressed && _buttonPressStartTime > ZERO_START_TIME) {
                 // Timeout occurred while button is pressed - update visual feedback
                 unsigned long long pressDuration = millis64() - _buttonPressStartTime;
                 _updateVisualFeedback(pressDuration);
@@ -236,7 +253,7 @@ namespace ButtonHandler
         else
         {
             logger.error("Failed to reset password to default", TAG);
-            Led::blinkRed(Led::PRIO_CRITICAL, 2000ULL);
+            Led::blinkRedFast(Led::PRIO_CRITICAL, 2000ULL);
         }
 
         _operationInProgress = false;

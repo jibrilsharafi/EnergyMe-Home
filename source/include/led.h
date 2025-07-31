@@ -70,7 +70,8 @@ namespace Led {
     }
 
     void begin(int redPin, int greenPin, int bluePin);
-    void end();
+    void stop();
+
     void resetToDefaults();
 
     void setBrightness(int brightness);
@@ -81,26 +82,27 @@ namespace Led {
     void clearPattern(LedPriority priority);
     void clearAllPatterns();
 
-    // Convenience functions for common patterns
-    void setRed(LedPriority priority = 1);
-    void setGreen(LedPriority priority = 1);
-    void setBlue(LedPriority priority = 1);
-    void setYellow(LedPriority priority = 1);
-    void setPurple(LedPriority priority = 1);
-    void setCyan(LedPriority priority = 1);
-    void setOrange(LedPriority priority = 1);
-    void setWhite(LedPriority priority = 1);
-    void setOff(LedPriority priority = 1);
+    // Convenience functions
+    inline void setRed(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::RED, priority); }
+    inline void setGreen(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::GREEN, priority); }
+    inline void setBlue(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::BLUE, priority); }
+    inline void setYellow(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::YELLOW, priority); }
+    inline void setPurple(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::PURPLE, priority); }
+    inline void setCyan(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::CYAN, priority); }   
+    inline void setOrange(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::ORANGE, priority); }
+    inline void setWhite(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::WHITE, priority); }
+    inline void setOff(LedPriority priority = 1) { setPattern(LedPattern::OFF, Colors::OFF, priority); }
 
     // Pattern convenience functions
-    void blinkOrangeFast(LedPriority priority = 5, unsigned long long durationMs = 0);
-    void blinkRed(LedPriority priority = 5, unsigned long long durationMs = 0);
-    void blinkBlueSlow(LedPriority priority = 1, unsigned long long durationMs = 0);
-    void blinkBlueFast(LedPriority priority = 1, unsigned long long durationMs = 0);
-    void blinkGreenSlow(LedPriority priority = 1, unsigned long long durationMs = 0);
-    void blinkGreenFast(LedPriority priority = 1, unsigned long long durationMs = 0);
-    void pulseBlue(LedPriority priority = 1, unsigned long long durationMs = 0);
-    void blinkPurpleSlow(LedPriority priority = 5, unsigned long long durationMs = 0);
-    void blinkPurpleFast(LedPriority priority = 5, unsigned long long durationMs = 0);
-    void doubleBlinkYellow(LedPriority priority = 10, unsigned long long durationMs = 0);
+    inline void blinkOrangeFast(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::ORANGE, priority, durationMs); }
+    inline void blinkRedSlow(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::BLINK_SLOW, Colors::RED, priority, durationMs); }
+    inline void blinkRedFast(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::RED, priority, durationMs); }
+    inline void blinkBlueSlow(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::BLINK_SLOW, Colors::BLUE, priority, durationMs); }
+    inline void blinkBlueFast(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::BLUE, priority, durationMs); }
+    inline void pulseBlue(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::PULSE, Colors::BLUE, priority, durationMs); }
+    inline void blinkGreenSlow(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::BLINK_SLOW, Colors::GREEN, priority, durationMs); }
+    inline void blinkGreenFast(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::GREEN, priority, durationMs); }
+    inline void blinkPurpleSlow(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::BLINK_SLOW, Colors::PURPLE, priority, durationMs); }
+    inline void blinkPurpleFast(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::PURPLE, priority, durationMs); }
+    inline void doubleBlinkYellow(LedPriority priority = 1, unsigned long long durationMs = 0) { setPattern(LedPattern::DOUBLE_BLINK, Colors::YELLOW, priority, durationMs); }
 }

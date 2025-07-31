@@ -11,6 +11,7 @@ namespace Multiplexer {
         int s2Pin,
         int s3Pin
     );
+    // No need to stop anything here since once it executes at the beginning, there is no other use for this
     
     void setChannel(unsigned int channel);
 }

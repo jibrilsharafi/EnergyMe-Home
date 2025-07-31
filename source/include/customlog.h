@@ -27,6 +27,8 @@
 #define LOG_CALLBACK_FUNCTION_SIZE 16 // Size for function name
 #define LOG_CALLBACK_MESSAGE_SIZE 128 // Size for log message
 
+#define DELAY_SEND_UDP 1 // Millisecond delay between UDP sends
+
 struct LogJson {
     char timestamp[TIMESTAMP_BUFFER_SIZE];
     unsigned long long millisEsp;
@@ -54,8 +56,8 @@ struct LogJson {
 
 namespace CustomLog
 {
-    void setupUdp();
-    void stopUdp();
+    void begin();
+    void stop();
     
     void callbackMultiple(
         const char* timestamp,

@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "11"
-#define FIRMWARE_BUILD_VERSION_PATCH "04"
+#define FIRMWARE_BUILD_VERSION_PATCH "05"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -89,7 +89,7 @@
 #define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
 
 // Timeouts and intervals
-#define TASK_STOPPING_TIMEOUT (10 * 1000) // 10 seconds for task stopping timeout
+#define TASK_STOPPING_TIMEOUT (3 * 1000) // 3 seconds for task stopping timeout
 #define TASK_STOPPING_CHECK_INTERVAL (100) // 100 milliseconds for task stopping check interval
 
 // Multiplexer

@@ -98,8 +98,6 @@ namespace CustomMqtt
         _nextMqttConnectionAttemptMillis = millis64();
         _mqttConnectionAttempt = 0;
 
-        _customClientMqtt.setServer(_customMqttConfiguration.server, _customMqttConfiguration.port);
-        
         _saveConfigurationToPreferences();
 
         // Start task if enabled
@@ -522,51 +520,39 @@ namespace CustomMqtt
         unsigned long long lastPublishTime = 0;
 
         while (_taskShouldRun) {
-            // Check for stop notification (non-blocking)
-            uint32_t notificationValue = ulTaskNotifyTake(pdFALSE, 0);
+            if (CustomWifi::isFullyConnected()) { // We are connected
+                if (_customMqttConfiguration.enabled) { // We have the custom MQTT enabled
+                    if (_customClientMqtt.connected()) { // We are connected to MQTT
+                        if (_mqttConnectionAttempt > 0) { // If we were having problems, reset the attempt counter
+                            logger.debug("Custom MQTT reconnected successfully after %d attempts.", TAG, _mqttConnectionAttempt);
+                            _mqttConnectionAttempt = 0;
+                        }
+
+                        _customClientMqtt.loop();
+
+                        unsigned long long currentTime = millis64();
+                        if ((currentTime - lastPublishTime) >= (_customMqttConfiguration.frequency * 1000)) {
+                            _publishMeter();
+                            lastPublishTime = currentTime;
+                        }
+                    } else {
+                        if (millis64() >= _nextMqttConnectionAttemptMillis) {
+                            logger.debug("Custom MQTT client not connected. Attempting to connect...", TAG);
+                            _connectMqtt();
+                        }
+                    }
+                }
+            }
+
+            // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
+            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL));
             if (notificationValue > 0) {
                 _taskShouldRun = false;
                 break;
             }
-
-            if (!CustomWifi::isFullyConnected()) {
-                vTaskDelay(pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL));
-                continue;
-            }
-
-            if (!_customMqttConfiguration.enabled) {
-                if (_customClientMqtt.connected()) {
-                    logger.info("Custom MQTT disabled, disconnecting...", TAG);
-                    _customClientMqtt.disconnect();
-                }
-                vTaskDelay(pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL));
-                continue;
-            }
-
-            if (!_customClientMqtt.connected()) {
-                if (millis64() >= _nextMqttConnectionAttemptMillis) {
-                    logger.debug("Custom MQTT client not connected. Attempting to reconnect...", TAG);
-                    _connectMqtt();
-                }
-            } else {
-                if (_mqttConnectionAttempt > 0) {
-                    logger.debug("Custom MQTT reconnected successfully after %d attempts.", TAG, _mqttConnectionAttempt);
-                    _mqttConnectionAttempt = 0;
-                }
-
-                _customClientMqtt.loop();
-
-                unsigned long long currentTime = millis64();
-                if ((currentTime - lastPublishTime) >= (_customMqttConfiguration.frequency * 1000)) {
-                    _publishMeter();
-                    lastPublishTime = currentTime;
-                }
-            }
-
-            vTaskDelay(pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL));
         }
 
-        logger.debug("Custom MQTT task ending", TAG);
+        logger.debug("Custom MQTT task stopping", TAG);
         _customMqttTaskHandle = nullptr;
         vTaskDelete(nullptr);
     }
@@ -574,9 +560,11 @@ namespace CustomMqtt
     static void _startTask()
     {
         if (_customMqttTaskHandle != nullptr) {
-            logger.warning("Custom MQTT task already running", TAG);
+            logger.debug("Custom MQTT task is already running", TAG);
             return;
         }
+
+        logger.debug("Starting Custom MQTT task", TAG);
 
         // Configure MQTT client before starting task
         _customClientMqtt.setServer(_customMqttConfiguration.server, _customMqttConfiguration.port);
@@ -593,33 +581,8 @@ namespace CustomMqtt
         if (result != pdPASS) {
             logger.error("Failed to create custom MQTT task", TAG);
             _customMqttTaskHandle = nullptr;
-        } else {
-            logger.debug("Custom MQTT task started successfully", TAG);
         }
     }
 
-    static void _stopTask()
-    {
-        if (_customMqttTaskHandle == nullptr) {
-            return;
-        }
-
-        logger.debug("Stopping custom MQTT task...", TAG);
-        
-        xTaskNotifyGive(_customMqttTaskHandle);
-        
-        int timeout = TASK_STOPPING_TIMEOUT;
-        while (_customMqttTaskHandle != nullptr && timeout > 0) {
-            vTaskDelay(pdMS_TO_TICKS(TASK_STOPPING_CHECK_INTERVAL));
-            timeout -= TASK_STOPPING_CHECK_INTERVAL;
-        }
-        
-        if (_customMqttTaskHandle != nullptr) {
-            logger.warning("Force deleting custom MQTT task", TAG);
-            vTaskDelete(_customMqttTaskHandle);
-            _customMqttTaskHandle = nullptr;
-        }
-
-        logger.debug("Custom MQTT task stopped", TAG);
-    }
+    static void _stopTask() { stopTaskGracefully(&_customMqttTaskHandle, "custom MQTT task"); }
 }

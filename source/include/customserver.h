@@ -60,7 +60,8 @@
 
 namespace CustomServer {
     void begin();
-    void updateAuthPassword();
+    void stop();
 
+    void updateAuthPassword();
     bool resetWebPassword();
 }

@@ -26,6 +26,15 @@ namespace ModbusTcp
         logger.debug("Modbus TCP initialized", TAG);
     }
 
+    void stop()
+    {
+        logger.debug("Stopping Modbus TCP server", TAG);
+        
+        _mbServer.stop();
+        
+        logger.debug("Modbus TCP server stopped", TAG);
+    }
+
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request)
     {
         if (request.getFunctionCode() != READ_HOLD_REGISTER)

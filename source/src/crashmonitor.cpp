@@ -70,15 +70,19 @@ namespace CrashMonitor
         logger.debug("Crash monitor setup done", TAG);
     }
 
+    // Very simple task, no need for complex stuff
     static void _crashResetTask(void *parameter)
     {
         logger.debug("Starting crash reset task...", TAG);
+
         delay(CRASH_COUNTER_TIMEOUT);
+        
         if (_consecutiveCrashCount > 0 || _consecutiveResetCount > 0){
-            logger.info("Consecutive crash and reset counters reset to 0", TAG);
+            logger.debug("Consecutive crash and reset counters reset to 0", TAG);
         }
         _consecutiveCrashCount = 0;
         _consecutiveResetCount = 0;
+        
         vTaskDelete(NULL);
     }
 
@@ -231,11 +235,11 @@ namespace CrashMonitor
     }
 
     static void _logCompleteCrashData() {
-        logger.error("=== Crash Analysis ===", TAG);
+        logger.warning("=== Crash Analysis ===", TAG);
         
         // Get reset reason and counters
         esp_reset_reason_t resetReason = esp_reset_reason();
-        logger.error("Reset reason: %s (%d) | crashes: %lu, consecutive: %lu", TAG,
+        logger.warning("Reset reason: %s (%d) | crashes: %lu, consecutive: %lu", TAG,
                     getResetReasonString(resetReason), (int)resetReason, 
                     _crashCount, _consecutiveCrashCount);
         
@@ -245,12 +249,12 @@ namespace CrashMonitor
             esp_err_t err = esp_core_dump_get_summary(summary);
             if (err == ESP_OK) {                
                 // Essential crash info
-                logger.error("Task: %s | PC: 0x%08x | TCB: 0x%08x | SHA256 (partial): %s", TAG,
+                logger.warning("Task: %s | PC: 0x%08x | TCB: 0x%08x | SHA256 (partial): %s", TAG,
                             summary->exc_task, (unsigned int)summary->exc_pc, 
                             (unsigned int)summary->exc_tcb, summary->app_elf_sha256);
                 
                 // Backtrace info
-                logger.error("Backtrace depth: %d | Corrupted: %s", TAG, 
+                logger.warning("Backtrace depth: %d | Corrupted: %s", TAG, 
                             summary->exc_bt_info.depth, summary->exc_bt_info.corrupted ? "yes" : "no");
                 
                 // The key data for debugging - backtrace addresses
@@ -262,26 +266,26 @@ namespace CrashMonitor
                         snprintf(addr, sizeof(addr), "0x%08x ", (unsigned int)summary->exc_bt_info.bt[i]);
                         strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
                     }
-                    logger.error("Backtrace addresses: %s", TAG, btAddresses);
+                    logger.warning("Backtrace addresses: %s", TAG, btAddresses);
 
                     // Ready-to-use command for debugging
-                    logger.error("Command: xtensa-esp32-elf-addr2line -pfC -e .pio/build/esp32dev/firmware.elf %s", TAG, btAddresses);
+                    logger.warning("Command: xtensa-esp32-elf-addr2line -pfC -e .pio/build/esp32dev/firmware.elf %s", TAG, btAddresses);
                 }
                 
                 // Core dump availability info
                 size_t dumpSize = 0;
                 size_t dumpAddress = 0;
                 if (esp_core_dump_image_get(&dumpAddress, &dumpSize) == ESP_OK) {
-                    logger.error("Core dump available: %zu bytes at 0x%08x", TAG,
+                    logger.warning("Core dump available: %zu bytes at 0x%08x", TAG,
                                 dumpSize, (unsigned int)dumpAddress);
                 }
             } else {
-                logger.error("Crash summary error: %d", TAG, err);
+                logger.warning("Crash summary error: %d", TAG, err);
             }
             free(summary);
         }
         
-        logger.error("=== End Crash Analysis ===", TAG);
+        logger.warning("=== End Crash Analysis ===", TAG);
     }
 
     bool getCoreDumpInfoJson(JsonDocument& doc) {
@@ -295,56 +299,60 @@ namespace CrashMonitor
         doc["consecutiveCrashCount"] = _consecutiveCrashCount;
         doc["resetCount"] = _resetCount;
         doc["consecutiveResetCount"] = _consecutiveResetCount;
-        doc["hasCoreDump"] = hasCoreDump();
+        
+        bool hasDump = hasCoreDump();
+        doc["hasCoreDump"] = hasDump;
 
-        // Core dump size and address info
-        size_t dumpSize = 0;
-        size_t dumpAddress = 0;
-        if (getCoreDumpInfo(&dumpSize, &dumpAddress)) {
-            doc["coreDumpSize"] = dumpSize;
-            doc["coreDumpAddress"] = dumpAddress;
-        }
-
-        // Get detailed crash summary if available
-        esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)malloc(sizeof(esp_core_dump_summary_t));
-        if (summary) {
-            esp_err_t err = esp_core_dump_get_summary(summary);
-            if (err == ESP_OK) {
-                doc["taskName"] = summary->exc_task;
-                doc["programCounter"] = (unsigned int)summary->exc_pc;
-                doc["taskControlBlock"] = (unsigned int)summary->exc_tcb;
-                doc["appElfSha256"] = summary->app_elf_sha256;
-                
-                // Backtrace information
-                JsonObject backtrace = doc["backtrace"].to<JsonObject>();
-                backtrace["depth"] = summary->exc_bt_info.depth;
-                backtrace["corrupted"] = summary->exc_bt_info.corrupted;
-                
-                // Backtrace addresses array
-                if (summary->exc_bt_info.depth > 0 && summary->exc_bt_info.bt != NULL) {
-                    JsonArray addresses = backtrace["addresses"].to<JsonArray>();
-                    for (int i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
-                        addresses.add((unsigned int)summary->exc_bt_info.bt[i]);
-                    }
-                    
-                    // Command for debugging
-                    char btAddresses[512] = "";
-                    for (int i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
-                        char addr[12];
-                        snprintf(addr, sizeof(addr), "0x%08x ", (unsigned int)summary->exc_bt_info.bt[i]);
-                        strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
-                    }
-                    
-                    char debugCommand[600];
-                    snprintf(debugCommand, sizeof(debugCommand), 
-                            "xtensa-esp32-elf-addr2line -pfC -e .pio/build/esp32dev/firmware.elf %s", 
-                            btAddresses);
-                    backtrace["debugCommand"] = debugCommand;
-                }
-            } else {
-                doc["summaryError"] = err;
+        if (hasDump) {
+            // Core dump size and address info
+            size_t dumpSize = 0;
+            size_t dumpAddress = 0;
+            if (getCoreDumpInfo(&dumpSize, &dumpAddress)) {
+                doc["coreDumpSize"] = dumpSize;
+                doc["coreDumpAddress"] = dumpAddress;
             }
-            free(summary);
+
+            // Get detailed crash summary if available
+            esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)malloc(sizeof(esp_core_dump_summary_t));
+            if (summary) {
+                esp_err_t err = esp_core_dump_get_summary(summary);
+                if (err == ESP_OK) {
+                    doc["taskName"] = summary->exc_task;
+                    doc["programCounter"] = (unsigned int)summary->exc_pc;
+                    doc["taskControlBlock"] = (unsigned int)summary->exc_tcb;
+                    doc["appElfSha256"] = summary->app_elf_sha256;
+                    
+                    // Backtrace information
+                    JsonObject backtrace = doc["backtrace"].to<JsonObject>();
+                    backtrace["depth"] = summary->exc_bt_info.depth;
+                    backtrace["corrupted"] = summary->exc_bt_info.corrupted;
+                    
+                    // Backtrace addresses array
+                    if (summary->exc_bt_info.depth > 0 && summary->exc_bt_info.bt != NULL) {
+                        JsonArray addresses = backtrace["addresses"].to<JsonArray>();
+                        for (int i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                            addresses.add((unsigned int)summary->exc_bt_info.bt[i]);
+                        }
+                        
+                        // Command for debugging
+                        char btAddresses[512] = "";
+                        for (int i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                            char addr[12];
+                            snprintf(addr, sizeof(addr), "0x%08x ", (unsigned int)summary->exc_bt_info.bt[i]);
+                            strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
+                        }
+                        
+                        char debugCommand[600];
+                        snprintf(debugCommand, sizeof(debugCommand), 
+                                "xtensa-esp32-elf-addr2line -pfC -e .pio/build/esp32dev/firmware.elf %s", 
+                                btAddresses);
+                        backtrace["debugCommand"] = debugCommand;
+                    }
+                } else {
+                    doc["summaryError"] = err;
+                }
+                free(summary);
+            }
         }
 
         return true;

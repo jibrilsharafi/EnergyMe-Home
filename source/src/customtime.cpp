@@ -10,6 +10,9 @@ namespace CustomTime {
     static unsigned long long _lastSyncAttempt = 0;
 
     // Private helper function
+    static bool _getPublicLocation(PublicLocation* publicLocation);
+    static bool _getPublicTimezone(int* gmtOffset, int* dstOffset);
+
     static bool _getTime();
     static void _checkAndSyncTime();
 
@@ -18,10 +21,18 @@ namespace CustomTime {
 
     bool begin() {
         _loadConfiguration();
-        
+
         // Initial sync attempt
         _lastSyncAttempt = millis64();
         _isTimeSynched = _getTime();
+
+        if (_isTimeSynched)
+        {
+            int gmtOffset, dstOffset;
+            if (_getPublicTimezone(&gmtOffset, &dstOffset)) { CustomTime::setOffset(gmtOffset, dstOffset); }
+            else { logger.warning("Time synced, but the timezone could not be fetched. It will be shown as UTC", TAG); }
+        }
+
         return _isTimeSynched;
     }
 
@@ -146,7 +157,7 @@ namespace CustomTime {
                 milliseconds);
     }
 
-    void _checkAndSyncTime() {
+    static void _checkAndSyncTime() {
         unsigned long long currentTime = millis64();
         
         // Check if it's time to sync (every TIME_SYNC_INTERVAL_S seconds)
@@ -159,5 +170,123 @@ namespace CustomTime {
             // Check if sync was successful
             _isTimeSynched = _getTime();
         }
+    }
+
+    static bool _getPublicLocation(PublicLocation* publicLocation) {
+        if (!publicLocation) {
+            logger.error("Null pointer passed to getPublicLocation", TAG);
+            return false;
+        }
+
+        HTTPClient _http;
+        JsonDocument jsonDocument;
+
+        _http.begin(PUBLIC_LOCATION_ENDPOINT);
+
+        int httpCode = _http.GET();
+        if (httpCode > 0) {
+            if (httpCode == HTTP_CODE_OK) {
+                // Use stream directly - efficient and simple
+                DeserializationError error = deserializeJson(jsonDocument, _http.getStream());
+                
+                if (error) {
+                    logger.error("JSON parsing failed: %s", TAG, error.c_str());
+                    _http.end();
+                    return false;
+                }
+                
+                // Validate API response
+                if (jsonDocument["status"] != "success") {
+                    logger.error("API returned error status: %s", TAG, 
+                            jsonDocument["status"].as<const char*>());
+                    _http.end();
+                    return false;
+                }
+
+                // Extract strings safely using const char* and copy to char arrays
+                float latitude = jsonDocument["lat"].as<float>();
+                float longitude = jsonDocument["lon"].as<float>();
+
+                // Extract strings safely - use empty string if NULL
+                publicLocation->latitude = latitude;
+                publicLocation->longitude = longitude;
+
+                logger.debug(
+                    "Location: Lat: %f | Lon: %f",
+                    TAG,
+                    publicLocation->latitude,
+                    publicLocation->longitude
+                );
+            } else {
+                logger.warning("HTTP request failed with code: %d", TAG, httpCode);
+                return false;
+            }
+        } else {
+            logger.error("HTTP request error: %s", TAG, _http.errorToString(httpCode).c_str());
+            return false;
+        }
+
+        _http.end();
+        return true;
+    }
+
+    static bool _getPublicTimezone(int* gmtOffset, int* dstOffset) {
+        if (!gmtOffset || !dstOffset) {
+            logger.error("Null pointer passed to getPublicTimezone", TAG);
+            return false;
+        }
+
+        PublicLocation _publicLocation;
+        if (!_getPublicLocation(&_publicLocation)) {
+            logger.warning("Could not retrieve the public location. Skipping timezone fetching", TAG);
+            return false;
+        }
+
+        HTTPClient _http;
+        JsonDocument jsonDocument;
+
+        char url[SERVER_NAME_BUFFER_SIZE];
+        // The URL for the timezone API endpoint requires passing as params the latitude, longitude and username (which is a sort of free "public" api key)
+        snprintf(url, sizeof(url), "%slat=%f&lng=%f&username=%s",
+            PUBLIC_TIMEZONE_ENDPOINT,
+            _publicLocation.latitude,
+            _publicLocation.longitude,
+            PUBLIC_TIMEZONE_USERNAME);
+
+        _http.begin(url);
+        int httpCode = _http.GET();
+
+        if (httpCode > 0) {
+            if (httpCode == HTTP_CODE_OK) {
+                // Example JSON response:
+                // {"sunrise":"2025-07-27 05:55","lng":14.168099,"countryCode":"IT","gmtOffset":1,"rawOffset":1,"sunset":"2025-07-27 20:24","timezoneId":"Europe/Rome","dstOffset":2,"countryName":"Italy","time":"2025-07-27 20:53","lat":40.813198}
+                DeserializationError error = deserializeJson(jsonDocument, _http.getString()); // Unfortunately, the stream method returns null so we have to use string
+                
+                if (error) {
+                    logger.error("JSON parsing failed: %s", TAG, error.c_str());
+                    _http.end();
+                    return false;
+                }
+
+                *gmtOffset = jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
+                *dstOffset = jsonDocument["dstOffset"].as<int>() * 3600 - *gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
+
+                logger.debug(
+                    "GMT offset: %d | DST offset: %d",
+                    TAG,
+                    jsonDocument["rawOffset"].as<int>(),
+                    jsonDocument["dstOffset"].as<int>()
+                );
+            } else {
+                logger.warning("HTTP request failed with code: %d", TAG, httpCode);
+                return false;
+            }
+        } else {
+            logger.error("HTTP request error: %s", TAG, _http.errorToString(httpCode).c_str());
+            return false;
+        }
+
+        _http.end();
+        return true;
     }
 }

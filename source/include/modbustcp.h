@@ -18,4 +18,5 @@ extern Ade7953 ade7953;
 namespace ModbusTcp
 {
     void begin();
+    void stop();
 }

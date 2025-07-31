@@ -34,7 +34,9 @@
 namespace CustomWifi
 {
     bool begin();
-    void resetWifi();
+    void stop();
+    
     bool isFullyConnected();
-    void shutdown();
+
+    void resetWifi();
 }

@@ -24,6 +24,7 @@
 
 namespace CrashMonitor {
     void begin();
+    // No need to stop anything here since once it executes at the beginning, there is no other use for this
 
     bool isLastResetDueToCrash();
     unsigned long getCrashCount();

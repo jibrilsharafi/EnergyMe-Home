@@ -30,7 +30,13 @@ namespace CustomWifi
 
   bool begin()
   {
-    logger.debug("Setting up WiFi with event-driven architecture...", TAG);
+    if (_wifiTaskHandle != NULL)
+    {
+      logger.debug("WiFi task is already running", TAG);
+      return true;
+    }
+
+    logger.debug("Starting WiFi task", TAG);
 
     // Enable auto-reconnect and persistence
     WiFi.setAutoReconnect(true);
@@ -40,9 +46,13 @@ namespace CustomWifi
     _setupWiFiManager();
 
     // Create WiFi connection task
-    xTaskCreate(_wifiConnectionTask, WIFI_TASK_NAME, WIFI_TASK_STACK_SIZE, NULL, WIFI_TASK_PRIORITY, &_wifiTaskHandle);
+    BaseType_t result = xTaskCreate(_wifiConnectionTask, WIFI_TASK_NAME, WIFI_TASK_STACK_SIZE, NULL, WIFI_TASK_PRIORITY, &_wifiTaskHandle);
+    
+    if (result != pdPASS) { 
+      logger.error("Failed to create WiFi task", TAG);
+      return false;
+    }
 
-    logger.debug("WiFi setup complete - event-driven mode enabled", TAG);
     return true;
   }
 
@@ -142,7 +152,7 @@ namespace CustomWifi
 
   static void _wifiConnectionTask(void *parameter)
   {
-    logger.debug("Starting wifi task...", TAG);
+    logger.debug("WiFi task started", TAG);
     unsigned long notificationValue;
     _taskShouldRun = true;
 
@@ -172,17 +182,16 @@ namespace CustomWifi
     // Main task loop - handles fallback scenarios and deferred logging
     while (_taskShouldRun)
     {
-      // Check for shutdown notification first (non-blocking)
-      uint32_t shutdownNotification = ulTaskNotifyTake(pdFALSE, 0);
-      if (shutdownNotification > 0) {
-        logger.debug("WiFi task shutdown requested", TAG);
-        _taskShouldRun = false;
-        break;
-      }
-
       // Wait for notification from event handler or timeout
       if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(WIFI_PERIODIC_CHECK_INTERVAL)))
       {
+        // Check if this is a stop notification (we use a special value for shutdown)
+        if (notificationValue == WIFI_EVENT_SHUTDOWN)
+        {
+          _taskShouldRun = false;
+          break;
+        }
+
         // Handle deferred operations from WiFi events (safe context)
         switch (notificationValue)
         {
@@ -224,7 +233,7 @@ namespace CustomWifi
               if (!_wifiManager.startConfigPortal(hostname))
               {
                 logger.fatal("Portal failed - restarting device", TAG);
-                Led::blinkRed(Led::PRIO_URGENT);
+                Led::blinkRedFast(Led::PRIO_URGENT);
                 setRestartSystem(TAG, "Restart after portal failure");
               }
               // If portal succeeds, device will restart automatically
@@ -258,6 +267,8 @@ namespace CustomWifi
 
     // Cleanup before task exit
     _cleanup();
+    
+    logger.debug("WiFi task stopping", TAG);
     _wifiTaskHandle = NULL;
     vTaskDelete(NULL);
   }
@@ -309,16 +320,15 @@ namespace CustomWifi
     logger.debug("WiFi cleanup completed", TAG);
   }
 
-  void shutdown()
+  void stop()
   {
-    logger.debug("Shutting down WiFi system...", TAG);
+    logger.debug("Stopping WiFi task", TAG);
     
     if (_wifiTaskHandle != NULL) {
-      // Signal task to stop
-      _taskShouldRun = false;
-      xTaskNotifyGive(_wifiTaskHandle);
+      // Send shutdown notification using the special shutdown event
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_SHUTDOWN, eSetValueWithOverwrite);
       
-      // Wait for task to cleanup (with timeout)
+      // Wait with timeout for clean shutdown
       int timeout = 2000; // 2 seconds
       while (_wifiTaskHandle != NULL && timeout > 0) {
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -330,12 +340,11 @@ namespace CustomWifi
         logger.warning("Force stopping WiFi task", TAG);
         vTaskDelete(_wifiTaskHandle);
         _wifiTaskHandle = NULL;
+      } else {
+        logger.debug("WiFi task stopped successfully", TAG);
       }
+    } else {
+      logger.debug("WiFi task was not running", TAG);
     }
-    
-    // Final cleanup
-    _cleanup();
-    
-    logger.debug("WiFi shutdown completed", TAG);
   }
 }
