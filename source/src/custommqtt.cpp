@@ -16,9 +16,13 @@ namespace CustomMqtt
     static unsigned long _mqttConnectionAttempt = 0;
     static unsigned long _nextMqttConnectionAttemptMillis = 0;
     
+    // Runtime connection status - kept in memory only, not saved to preferences
+    static char _lastConnectionStatus[STATUS_BUFFER_SIZE];
+    static char _lastConnectionAttemptTimestamp[TIMESTAMP_STRING_BUFFER_SIZE];
+    
     // Task variables
     static TaskHandle_t _customMqttTaskHandle = nullptr;
-    static bool _taskShouldStop = false;
+    static bool _taskShouldRun = false;
 
     // Private function declarations
     static void _setDefaultConfiguration();
@@ -38,21 +42,16 @@ namespace CustomMqtt
         logger.debug("Setting up custom MQTT...", TAG);
         
         _setConfigurationFromPreferences();
-
         _customClientMqtt.setBufferSize(MQTT_CUSTOM_PAYLOAD_LIMIT);
-        _customClientMqtt.setServer(_customMqttConfiguration.server, _customMqttConfiguration.port);
-
-        // Start the task if configuration is enabled
+        
         if (_customMqttConfiguration.enabled) {
             _startTask();
         } else {
             logger.debug("Custom MQTT not enabled", TAG);
         }
-
-        logger.debug("Custom MQTT setup complete", TAG);
-
-        // Mark setup as done regardless of enabled state - configuration has been loaded
+        
         _isSetupDone = true;
+        logger.debug("Custom MQTT setup complete", TAG);
     }
 
     void stop()
@@ -70,7 +69,6 @@ namespace CustomMqtt
 
         // Create default configuration struct
         CustomMqttConfiguration defaultConfig;
-        // Constructor already sets the defaults
 
         setConfiguration(defaultConfig);
 
@@ -88,13 +86,10 @@ namespace CustomMqtt
         // Copy the configuration
         _customMqttConfiguration = config;
         
-        // Update status and timestamp
-        snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), "Configuration updated");
-        char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
-        CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
-        snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
+        snprintf(_lastConnectionStatus, sizeof(_lastConnectionStatus), "Configuration updated");
+        CustomTime::getTimestamp(_lastConnectionAttemptTimestamp, sizeof(_lastConnectionAttemptTimestamp));
 
-        _nextMqttConnectionAttemptMillis = millis64(); // Try connecting immediately
+        _nextMqttConnectionAttemptMillis = millis64();
         _mqttConnectionAttempt = 0;
 
         _customClientMqtt.setServer(_customMqttConfiguration.server, _customMqttConfiguration.port);
@@ -152,21 +147,13 @@ namespace CustomMqtt
         config.useCredentials = preferences.getBool(CUSTOM_MQTT_USE_CREDENTIALS_KEY, false);
         snprintf(config.username, sizeof(config.username), "%s", preferences.getString(CUSTOM_MQTT_USERNAME_KEY, "").c_str());
         snprintf(config.password, sizeof(config.password), "%s", preferences.getString(CUSTOM_MQTT_PASSWORD_KEY, "").c_str());
-        snprintf(config.lastConnectionStatus, sizeof(config.lastConnectionStatus), "Loaded from Preferences");
         
-        char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
-        CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
-        snprintf(config.lastConnectionAttemptTimestamp, sizeof(config.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
+        snprintf(_lastConnectionStatus, sizeof(_lastConnectionStatus), "Configuration loaded from Preferences");
+        CustomTime::getTimestamp(_lastConnectionAttemptTimestamp, sizeof(_lastConnectionAttemptTimestamp));
 
         preferences.end();
 
-        // Use the main setConfiguration function - but don't restart task during initial setup
-        bool wasSetupDone = _isSetupDone;
         _customMqttConfiguration = config;
-        if (wasSetupDone) {
-            // Only call full setConfiguration if already initialized (to restart task)
-            setConfiguration(config);
-        }
 
         logger.debug("Successfully set custom MQTT configuration from Preferences", TAG);
     }
@@ -176,7 +163,7 @@ namespace CustomMqtt
         logger.debug("Saving custom MQTT configuration to Preferences...", TAG);
 
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) { // false = read-write
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) {
             logger.error("Failed to open Preferences namespace for custom MQTT", TAG);
             return;
         }
@@ -220,8 +207,12 @@ namespace CustomMqtt
     static void _disable() {
         logger.debug("Disabling custom MQTT...", TAG);
 
+        // Stop the task since it can't reconnect anyway
+        _stopTask();
+        _customClientMqtt.disconnect();
+
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) { // false = read-write
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) {
             logger.error("Failed to open Preferences namespace for custom MQTT", TAG);
             return;
         }
@@ -232,8 +223,9 @@ namespace CustomMqtt
         // Update the configuration object
         _customMqttConfiguration.enabled = false;
         
-        // Don't reset _isSetupDone - configuration is still loaded, just disabled
+        // Reset connection state but keep module initialized
         _mqttConnectionAttempt = 0;
+        _nextMqttConnectionAttemptMillis = 0;
 
         logger.debug("Custom MQTT disabled", TAG);
     }
@@ -256,14 +248,9 @@ namespace CustomMqtt
         if (res) {
             logger.info("Connected to custom MQTT", TAG);
 
-            _mqttConnectionAttempt = 0; // Reset attempt counter on success
-            snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), "Connected");
-
-            char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
-            CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
-            snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
-
-            _saveConfigurationToPreferences();
+            _mqttConnectionAttempt = 0;
+            snprintf(_lastConnectionStatus, sizeof(_lastConnectionStatus), "Connected");
+            CustomTime::getTimestamp(_lastConnectionAttemptTimestamp, sizeof(_lastConnectionAttemptTimestamp));
 
             return true;
         } else {
@@ -279,23 +266,19 @@ namespace CustomMqtt
 
             _mqttConnectionAttempt++;
 
-            snprintf(_customMqttConfiguration.lastConnectionStatus, sizeof(_customMqttConfiguration.lastConnectionStatus), 
+            snprintf(_lastConnectionStatus, sizeof(_lastConnectionStatus), 
                      "%s (Attempt %d)", _reason, _mqttConnectionAttempt);
             
-            char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
-            CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
-            snprintf(_customMqttConfiguration.lastConnectionAttemptTimestamp, sizeof(_customMqttConfiguration.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
-
-            _saveConfigurationToPreferences();
+            CustomTime::getTimestamp(_lastConnectionAttemptTimestamp, sizeof(_lastConnectionAttemptTimestamp));
 
             // Check for specific errors that warrant disabling custom MQTT
             if (currentState == MQTT_CONNECT_BAD_CREDENTIALS || currentState == MQTT_CONNECT_UNAUTHORIZED) {
                  logger.error("Custom MQTT connection failed due to authorization/credentials error (%d). Disabling custom MQTT.",
                     TAG,
                     currentState);
-                _disable(); // Disable custom MQTT on auth errors
-                _nextMqttConnectionAttemptMillis = UINT32_MAX; // Prevent further attempts until re-enabled
-                return false; // Prevent further processing in this cycle
+                _disable();
+                _nextMqttConnectionAttemptMillis = UINT32_MAX;
+                return false;
             }
 
             // Calculate next attempt time using exponential backoff
@@ -421,11 +404,9 @@ namespace CustomMqtt
         config.useCredentials = jsonDocument["useCredentials"].as<bool>();
         snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
         snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
-        snprintf(config.lastConnectionStatus, sizeof(config.lastConnectionStatus), "Configuration updated");
         
-        char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
-        CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
-        snprintf(config.lastConnectionAttemptTimestamp, sizeof(config.lastConnectionAttemptTimestamp), "%s", timestampBuffer);
+        snprintf(_lastConnectionStatus, sizeof(_lastConnectionStatus), "Configuration updated");
+        CustomTime::getTimestamp(_lastConnectionAttemptTimestamp, sizeof(_lastConnectionAttemptTimestamp));
 
         logger.debug("Successfully converted JSON to configuration", TAG);
         return true;
@@ -435,17 +416,22 @@ namespace CustomMqtt
     {
         logger.debug("Custom MQTT task started", TAG);
         
+        _taskShouldRun = true;
         unsigned long lastPublishTime = 0;
-        TickType_t publishInterval = pdMS_TO_TICKS(_customMqttConfiguration.frequency * 1000);
 
-        while (!_taskShouldStop) {
-            // Check if WiFi is connected
+        while (_taskShouldRun) {
+            // Check for stop notification (non-blocking)
+            uint32_t notificationValue = ulTaskNotifyTake(pdFALSE, 0);
+            if (notificationValue > 0) {
+                _taskShouldRun = false;
+                break;
+            }
+
             if (!CustomWifi::isFullyConnected()) {
                 vTaskDelay(pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL));
                 continue;
             }
 
-            // Check if MQTT is enabled
             if (!_customMqttConfiguration.enabled) {
                 if (_customClientMqtt.connected()) {
                     logger.info("Custom MQTT disabled, disconnecting...", TAG);
@@ -455,35 +441,24 @@ namespace CustomMqtt
                 continue;
             }
 
-            // Handle connection
             if (!_customClientMqtt.connected()) {
                 if (millis64() >= _nextMqttConnectionAttemptMillis) {
                     logger.debug("Custom MQTT client not connected. Attempting to reconnect...", TAG);
                     _connectMqtt();
                 }
             } else {
-                // Reset connection attempts counter on successful connection
                 if (_mqttConnectionAttempt > 0) {
                     logger.debug("Custom MQTT reconnected successfully after %d attempts.", TAG, _mqttConnectionAttempt);
                     _mqttConnectionAttempt = 0;
                 }
 
-                // Handle MQTT loop
                 _customClientMqtt.loop();
 
-                // Handle publishing
                 unsigned long currentTime = millis64();
                 if ((currentTime - lastPublishTime) >= (_customMqttConfiguration.frequency * 1000)) {
                     _publishMeter();
                     lastPublishTime = currentTime;
                 }
-            }
-
-            // Update publish interval if configuration changed
-            TickType_t newPublishInterval = pdMS_TO_TICKS(_customMqttConfiguration.frequency * 1000);
-            if (newPublishInterval != publishInterval) {
-                publishInterval = newPublishInterval;
-                logger.debug("Updated publish interval to %d seconds", TAG, _customMqttConfiguration.frequency);
             }
 
             vTaskDelay(pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL));
@@ -501,7 +476,8 @@ namespace CustomMqtt
             return;
         }
 
-        _taskShouldStop = false;
+        // Configure MQTT client before starting task
+        _customClientMqtt.setServer(_customMqttConfiguration.server, _customMqttConfiguration.port);
         
         BaseType_t result = xTaskCreate(
             _customMqttTask,
@@ -527,21 +503,21 @@ namespace CustomMqtt
         }
 
         logger.debug("Stopping custom MQTT task...", TAG);
-        _taskShouldStop = true;
-
-        // Wait for task to finish (with timeout)
-        for (int i = 0; i < 50 && _customMqttTaskHandle != nullptr; i++) {
-            vTaskDelay(pdMS_TO_TICKS(100));
+        
+        xTaskNotifyGive(_customMqttTaskHandle);
+        
+        int timeout = TASK_STOPPING_TIMEOUT;
+        while (_customMqttTaskHandle != nullptr && timeout > 0) {
+            vTaskDelay(pdMS_TO_TICKS(TASK_STOPPING_CHECK_INTERVAL));
+            timeout -= TASK_STOPPING_CHECK_INTERVAL;
         }
-
-        // Force delete if still running
+        
         if (_customMqttTaskHandle != nullptr) {
             logger.warning("Force deleting custom MQTT task", TAG);
             vTaskDelete(_customMqttTaskHandle);
             _customMqttTaskHandle = nullptr;
         }
 
-        _taskShouldStop = false;
         logger.debug("Custom MQTT task stopped", TAG);
     }
 }

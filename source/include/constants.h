@@ -87,6 +87,10 @@
 #define MINIMUM_FREE_HEAP_OTA 20000 // Below this, the OTA is rejected (a bit unsafe, this could block OTA)
 #define MINIMUM_FIRMWARE_SIZE 100000 // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
 
+// Timeouts and intervals
+#define TASK_STOPPING_TIMEOUT 10000 // 10 seconds for task stopping timeout
+#define TASK_STOPPING_CHECK_INTERVAL 100 // 100 milliseconds for task stopping check interval
+
 // Multiplexer
 // --------------------
 #define MULTIPLEXER_CHANNEL_COUNT 16

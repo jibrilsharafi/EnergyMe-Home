@@ -449,31 +449,6 @@ paths:
                     type: string
                     example: "WiFi configuration reset"
 
-  /api/v1/network/wifi/info:
-    get:
-      summary: Get WiFi information
-      description: Get current WiFi connection status and network information
-      tags:
-        - Network
-      responses:
-        '200':
-          description: WiFi information
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  connected:
-                    type: boolean
-                  ssid:
-                    type: string
-                  ipAddress:
-                    type: string
-                  signalStrength:
-                    type: integer
-                  macAddress:
-                    type: string
-
   # Logging endpoints
   /api/v1/logs/level:
     get:

@@ -55,3 +55,55 @@ Provide project context and coding guidelines that AI should follow when generat
 7. **Data storage**:
     - Use Preferences wherever possible for configuration storage
     - Use SPIFFS (to update in the future to LittleFS) for historical data storage
+
+8. **FreeRTOS Task Management**:
+    - Use the standard task lifecycle pattern with task notifications for graceful shutdown
+    - Always check task handles before operations to prevent race conditions
+    - Implement timeout protection when stopping tasks to prevent system hangs
+    - Let tasks self-cleanup by setting handle to NULL and calling vTaskDelete(NULL)
+    - Use non-blocking task notification checks (ulTaskNotifyTake with timeout 0) in task loops
+    - Standard pattern:
+      ```cpp
+      TaskHandle_t taskHandle = NULL;
+      bool taskShouldRun = false;
+      
+      void myTask(void* parameter) {
+          taskShouldRun = true;
+          while (taskShouldRun) {
+              // Task work here
+              
+              // Check for stop notification (non-blocking)
+              uint32_t notificationValue = ulTaskNotifyTake(pdFALSE, 0);
+              if (notificationValue > 0) {
+                  taskShouldRun = false;
+                  break;
+              }
+              vTaskDelay(pdMS_TO_TICKS(100)); // Adjust delay as needed
+          }
+          taskHandle = NULL;
+          vTaskDelete(NULL);
+      }
+      
+      void startTask() {
+          if (taskHandle == NULL) {
+              xTaskCreate(myTask, "TaskName", 4096, NULL, 1, &taskHandle);
+          }
+      }
+      
+      void stopTask() {
+          if (taskHandle != NULL) {
+              xTaskNotifyGive(taskHandle);
+              // Wait with timeout for clean shutdown
+              int timeout = 1000;
+              while (taskHandle != NULL && timeout > 0) {
+                  vTaskDelay(pdMS_TO_TICKS(10));
+                  timeout -= 10;
+              }
+              // Force cleanup if needed
+              if (taskHandle != NULL) {
+                  vTaskDelete(taskHandle);
+                  taskHandle = NULL;
+              }
+          }
+      }
+      ```
