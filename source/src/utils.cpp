@@ -603,9 +603,8 @@ void restartSystem() {
     // Give time for AsyncTCP connections to close gracefully
     delay(1000);
 
-    // Disable WiFi to prevent AsyncTCP crashes during restart
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
+    // Properly shutdown WiFi to prevent crashes during restart
+    CustomWifi::shutdown();
     
     // Additional delay to ensure clean shutdown
     delay(500);
@@ -931,6 +930,10 @@ void factoryReset() {
     SPIFFS.format();
 
     CrashMonitor::clearCrashCount(); // Reset crash monitor to clear crash count and last reset reason
+
+    // Properly shutdown WiFi to prevent crashes during restart
+    CustomWifi::shutdown();
+    delay(500);
 
     // Directly call ESP.restart() so that a fresh start is done
     ESP.restart();

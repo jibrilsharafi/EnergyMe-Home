@@ -21,6 +21,7 @@
 #include "binaries.h"
 #include "constants.h"
 #include "customtime.h"
+#include "customwifi.h"
 #include "crashmonitor.h"
 #include "led.h"
 #include "structs.h"

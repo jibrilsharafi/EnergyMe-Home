@@ -483,6 +483,186 @@ paths:
                     type: string
                     example: "WiFi configuration reset"
 
+  # Crash Monitor endpoints
+  /api/v1/crash/info:
+    get:
+      summary: Get crash analysis information
+      description: Retrieve comprehensive crash information including reset reason, backtrace, and core dump availability
+      tags:
+        - System
+      responses:
+        '200':
+          description: Crash information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resetReason:
+                    type: string
+                    example: "Exception/panic"
+                  resetReasonCode:
+                    type: integer
+                    example: 4
+                  crashCount:
+                    type: integer
+                    example: 2
+                  consecutiveCrashCount:
+                    type: integer
+                    example: 1
+                  resetCount:
+                    type: integer
+                    example: 15
+                  consecutiveResetCount:
+                    type: integer
+                    example: 3
+                  hasCoreDump:
+                    type: boolean
+                    example: true
+                  coreDumpSize:
+                    type: integer
+                    example: 4096
+                  coreDumpAddress:
+                    type: integer
+                    example: 851968
+                  taskName:
+                    type: string
+                    example: "main_task"
+                  programCounter:
+                    type: integer
+                    format: hex
+                    example: 1073459200
+                  backtrace:
+                    type: object
+                    properties:
+                      depth:
+                        type: integer
+                        example: 8
+                      corrupted:
+                        type: boolean
+                        example: false
+                      addresses:
+                        type: array
+                        items:
+                          type: integer
+                          format: hex
+                        example: [1073459200, 1073459184, 1073459168]
+                      debugCommand:
+                        type: string
+                        example: "xtensa-esp32-elf-addr2line -pfC -e .pio/build/esp32dev/firmware.elf 0x40080000 0x40080010"
+        '500':
+          description: Failed to retrieve crash information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/crash/dump:
+    get:
+      summary: Get core dump data
+      description: Retrieve core dump binary data as base64-encoded chunks with pagination support
+      tags:
+        - System
+      parameters:
+        - name: offset
+          in: query
+          description: Starting byte offset in the core dump
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: size
+          in: query
+          description: Chunk size in bytes
+          required: false
+          schema:
+            type: integer
+            default: 2048
+            minimum: 1
+            maximum: 8192
+      responses:
+        '200':
+          description: Core dump chunk retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalSize:
+                    type: integer
+                    description: Total size of the core dump
+                    example: 4096
+                  offset:
+                    type: integer
+                    description: Starting offset of this chunk
+                    example: 0
+                  requestedChunkSize:
+                    type: integer
+                    description: Requested chunk size
+                    example: 1024
+                  actualChunkSize:
+                    type: integer
+                    description: Actual chunk size returned
+                    example: 1024
+                  hasMore:
+                    type: boolean
+                    description: Whether more data is available
+                    example: true
+                  encoding:
+                    type: string
+                    description: Data encoding format
+                    example: "base64"
+                  data:
+                    type: string
+                    description: Base64-encoded core dump data
+                    example: "SGVsbG8gV29ybGQ="
+        '404':
+          description: No core dump available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to retrieve core dump data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/crash/clear:
+    post:
+      summary: Clear core dump from flash
+      description: Remove the stored core dump from flash memory
+      tags:
+        - System
+      responses:
+        '200':
+          description: Core dump cleared successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Core dump cleared successfully"
+        '404':
+          description: No core dump available to clear
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '405':
+          description: Method not allowed (use POST)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # Logging endpoints
   /api/v1/logs/level:
     get:

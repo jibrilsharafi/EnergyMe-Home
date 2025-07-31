@@ -14,6 +14,11 @@ namespace CustomWifi
   static const unsigned long WIFI_EVENT_CONNECTED = 1;
   static const unsigned long WIFI_EVENT_GOT_IP = 2;
   static const unsigned long WIFI_EVENT_DISCONNECTED = 3;
+  static const unsigned long WIFI_EVENT_SHUTDOWN = 4;
+
+  // Task state management
+  static bool _taskShouldRun = false;
+  static bool _eventsEnabled = false;
 
   // Private helper functions
   static void _onWiFiEvent(WiFiEvent_t event);
@@ -21,13 +26,11 @@ namespace CustomWifi
   static void _setupWiFiManager();
   static void _handleSuccessfulConnection();
   static bool _setupMdns();
+  static void _cleanup();
 
   bool begin()
   {
     logger.debug("Setting up WiFi with event-driven architecture...", TAG);
-
-    // Setup WiFi event handling
-    // WiFi.onEvent(_onWiFiEvent); // THIS CRASHES IF AUTOCONNECT OPENS THE PORTAL (NO CREDENTIALS SAVED YET)
 
     // Enable auto-reconnect and persistence
     WiFi.setAutoReconnect(true);
@@ -83,6 +86,16 @@ namespace CustomWifi
 
   static void _onWiFiEvent(WiFiEvent_t event)
   {
+    // Safety check - only process events if we're supposed to be running
+    if (!_eventsEnabled || !_taskShouldRun) {
+      return;
+    }
+
+    // Additional safety check for task handle validity
+    if (_wifiTaskHandle == NULL) {
+      return;
+    }
+
     // Here we cannot do ANYTHING to avoid issues. Only notify the task,
     // which will handle all operations in a safe context.
     switch (event)
@@ -93,20 +106,17 @@ namespace CustomWifi
 
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
       // Defer logging to task
-      if (_wifiTaskHandle)
-        xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetValueWithOverwrite);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       // Defer all operations to task - avoid any function calls that might log
-      if (_wifiTaskHandle)
-        xTaskNotify(_wifiTaskHandle, WIFI_EVENT_GOT_IP, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_GOT_IP, eSetValueWithOverwrite);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       // Notify task to handle fallback if needed
-      if (_wifiTaskHandle)
-        xTaskNotify(_wifiTaskHandle, WIFI_EVENT_DISCONNECTED, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_DISCONNECTED, eSetValueWithOverwrite);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE:
@@ -115,8 +125,7 @@ namespace CustomWifi
 
     default:
       // Forward unknown events to task for logging/debugging
-      if (_wifiTaskHandle)
-        xTaskNotify(_wifiTaskHandle, (unsigned long)event, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, (unsigned long)event, eSetValueWithOverwrite);
       break;
     }
   }
@@ -135,6 +144,7 @@ namespace CustomWifi
   {
     logger.debug("Starting wifi task...", TAG);
     unsigned long notificationValue;
+    _taskShouldRun = true;
 
     // Initial connection attempt
     Led::pulseBlue(Led::PRIO_MEDIUM);
@@ -151,10 +161,25 @@ namespace CustomWifi
       ESP.restart();
     }
     Led::clearPattern(Led::PRIO_MEDIUM);
+    
+    // If we reach here, we are connected
+    _handleSuccessfulConnection();
+
+    // Setup WiFi event handling - Only after full connection as during setup would crash sometimes probably due to the notifications
+    _eventsEnabled = true;
+    WiFi.onEvent(_onWiFiEvent);
 
     // Main task loop - handles fallback scenarios and deferred logging
-    while (true)
+    while (_taskShouldRun)
     {
+      // Check for shutdown notification first (non-blocking)
+      uint32_t shutdownNotification = ulTaskNotifyTake(pdFALSE, 0);
+      if (shutdownNotification > 0) {
+        logger.debug("WiFi task shutdown requested", TAG);
+        _taskShouldRun = false;
+        break;
+      }
+
       // Wait for notification from event handler or timeout
       if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(WIFI_PERIODIC_CHECK_INTERVAL)))
       {
@@ -219,8 +244,8 @@ namespace CustomWifi
         }
       }
 
-      // Periodic health check
-      if (isFullyConnected())
+      // Periodic health check (only if we should still be running)
+      if (_taskShouldRun && isFullyConnected())
       {
         // Reset failure counter on sustained connection
         if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
@@ -231,6 +256,9 @@ namespace CustomWifi
       }
     }
 
+    // Cleanup before task exit
+    _cleanup();
+    _wifiTaskHandle = NULL;
     vTaskDelete(NULL);
   }
 
@@ -263,5 +291,51 @@ namespace CustomWifi
       logger.warning("Error setting up mDNS", TAG);
       return false;
     }
+  }
+
+  static void _cleanup()
+  {
+    logger.debug("Cleaning up WiFi resources...", TAG);
+    
+    // Disable event handling first
+    _eventsEnabled = false;
+    
+    // Remove WiFi event handler to prevent crashes during shutdown
+    WiFi.removeEvent(_onWiFiEvent);
+    
+    // Stop mDNS
+    MDNS.end();
+    
+    logger.debug("WiFi cleanup completed", TAG);
+  }
+
+  void shutdown()
+  {
+    logger.debug("Shutting down WiFi system...", TAG);
+    
+    if (_wifiTaskHandle != NULL) {
+      // Signal task to stop
+      _taskShouldRun = false;
+      xTaskNotifyGive(_wifiTaskHandle);
+      
+      // Wait for task to cleanup (with timeout)
+      int timeout = 2000; // 2 seconds
+      while (_wifiTaskHandle != NULL && timeout > 0) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        timeout -= 10;
+      }
+      
+      // Force cleanup if needed
+      if (_wifiTaskHandle != NULL) {
+        logger.warning("Force stopping WiFi task", TAG);
+        vTaskDelete(_wifiTaskHandle);
+        _wifiTaskHandle = NULL;
+      }
+    }
+    
+    // Final cleanup
+    _cleanup();
+    
+    logger.debug("WiFi shutdown completed", TAG);
   }
 }

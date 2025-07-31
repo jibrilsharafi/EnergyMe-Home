@@ -50,6 +50,7 @@ namespace CustomServer
     static void _serveOtaEndpoints();
     static void _serveCustomMqttEndpoints();
     static void _serveInfluxDbEndpoints();
+    static void _serveCrashEndpoints();
     
     // Authentication endpoints
     static void _serveAuthStatusEndpoint();
@@ -262,6 +263,7 @@ namespace CustomServer
         _serveOtaEndpoints();
         _serveCustomMqttEndpoints();
         _serveInfluxDbEndpoints();
+        _serveCrashEndpoints();
     }
 
     // === HEALTH ENDPOINTS ===
@@ -1219,6 +1221,68 @@ namespace CustomServer
             doc["statusTimestamp"] = timestampBuffer;
             
             _sendJsonResponse(request, doc);
+        });
+    }
+
+    // === CRASH MONITOR ENDPOINTS ===
+    static void _serveCrashEndpoints()
+    {
+        // Get crash information and analysis
+        server.on("/api/v1/crash/info", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            
+            if (CrashMonitor::getCoreDumpInfoJson(doc)) {
+                _sendJsonResponse(request, doc);
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve crash information");
+            }
+        });
+
+        // Get core dump data (with offset and chunk size parameters)
+        server.on("/api/v1/crash/dump", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            // Parse query parameters
+            size_t offset = 0;
+            size_t chunkSize = CRASH_DUMP_DEFAULT_CHUNK_SIZE;
+
+            if (request->hasParam("offset")) {
+                offset = request->getParam("offset")->value().toInt();
+            }
+            
+            if (request->hasParam("size")) {
+                chunkSize = request->getParam("size")->value().toInt();
+                // Limit maximum chunk size to prevent memory issues
+                if (chunkSize > CRASH_DUMP_MAX_CHUNK_SIZE) {
+                    logger.debug("Chunk size too large, limiting to %zu bytes", TAG, CRASH_DUMP_MAX_CHUNK_SIZE);
+                    chunkSize = CRASH_DUMP_MAX_CHUNK_SIZE;
+                }
+                if (chunkSize == 0) {
+                    chunkSize = CRASH_DUMP_DEFAULT_CHUNK_SIZE;
+                }
+            }
+
+            JsonDocument doc;
+            
+            if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) {
+                _sendJsonResponse(request, doc);
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve core dump data");
+            }
+        });
+
+        // Clear core dump from flash
+        server.on("/api/v1/crash/clear", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) { return; }
+
+            if (CrashMonitor::hasCoreDump()) {
+                CrashMonitor::clearCoreDump();
+                logger.info("Core dump cleared via API", TAG);
+                _sendSuccessResponse(request, "Core dump cleared successfully");
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No core dump available to clear");
+            }
         });
     }
 }

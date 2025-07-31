@@ -123,3 +123,24 @@ Provide project context and coding guidelines that AI should follow when generat
           }
       }
       ```
+
+10. **Web Server API Patterns (CustomServer)**:
+    - **GET requests**: No explicit mutex handling needed - just use `_sendJsonResponse()` or `_sendErrorResponse()`
+    - **Non-GET requests**: Always use `_validateRequest(request, "METHOD")` which handles mutex acquisition automatically
+    - **Never manually acquire/release mutex**: The `_validateRequest()` and response functions handle this
+    - **Consistent pattern**:
+      ```cpp
+      // GET endpoint
+      server.on("/api/v1/example", HTTP_GET, [](AsyncWebServerRequest *request) {
+          JsonDocument doc;
+          // ... populate doc ...
+          _sendJsonResponse(request, doc);
+      });
+      
+      // POST/PUT/DELETE endpoint
+      server.on("/api/v1/example", HTTP_POST, [](AsyncWebServerRequest *request) {
+          if (!_validateRequest(request, "POST")) { return; }
+          // ... do work ...
+          _sendSuccessResponse(request, "Operation completed");
+      });
+      ```

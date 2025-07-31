@@ -1,5 +1,6 @@
 #include "crashmonitor.h"
 #include "esp_core_dump.h"
+#include "mbedtls/base64.h"
 
 static const char *TAG = "crashmonitor";
 
@@ -226,7 +227,7 @@ namespace CrashMonitor
 
     void clearCoreDump() {
         esp_core_dump_image_erase();
-        logger.info("Core dump cleared from flash", TAG);
+        logger.debug("Core dump cleared from flash", TAG);
     }
 
     static void _logCompleteCrashData() {
@@ -281,5 +282,136 @@ namespace CrashMonitor
         }
         
         logger.error("=== End Crash Analysis ===", TAG);
+    }
+
+    bool getCoreDumpInfoJson(JsonDocument& doc) {
+        doc.clear();
+
+        // Basic crash information
+        esp_reset_reason_t resetReason = esp_reset_reason();
+        doc["resetReason"] = getResetReasonString(resetReason);
+        doc["resetReasonCode"] = (int)resetReason;
+        doc["crashCount"] = _crashCount;
+        doc["consecutiveCrashCount"] = _consecutiveCrashCount;
+        doc["resetCount"] = _resetCount;
+        doc["consecutiveResetCount"] = _consecutiveResetCount;
+        doc["hasCoreDump"] = hasCoreDump();
+
+        // Core dump size and address info
+        size_t dumpSize = 0;
+        size_t dumpAddress = 0;
+        if (getCoreDumpInfo(&dumpSize, &dumpAddress)) {
+            doc["coreDumpSize"] = dumpSize;
+            doc["coreDumpAddress"] = dumpAddress;
+        }
+
+        // Get detailed crash summary if available
+        esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)malloc(sizeof(esp_core_dump_summary_t));
+        if (summary) {
+            esp_err_t err = esp_core_dump_get_summary(summary);
+            if (err == ESP_OK) {
+                doc["taskName"] = summary->exc_task;
+                doc["programCounter"] = (unsigned int)summary->exc_pc;
+                doc["taskControlBlock"] = (unsigned int)summary->exc_tcb;
+                doc["appElfSha256"] = summary->app_elf_sha256;
+                
+                // Backtrace information
+                JsonObject backtrace = doc["backtrace"].to<JsonObject>();
+                backtrace["depth"] = summary->exc_bt_info.depth;
+                backtrace["corrupted"] = summary->exc_bt_info.corrupted;
+                
+                // Backtrace addresses array
+                if (summary->exc_bt_info.depth > 0 && summary->exc_bt_info.bt != NULL) {
+                    JsonArray addresses = backtrace["addresses"].to<JsonArray>();
+                    for (int i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                        addresses.add((unsigned int)summary->exc_bt_info.bt[i]);
+                    }
+                    
+                    // Command for debugging
+                    char btAddresses[512] = "";
+                    for (int i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                        char addr[12];
+                        snprintf(addr, sizeof(addr), "0x%08x ", (unsigned int)summary->exc_bt_info.bt[i]);
+                        strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
+                    }
+                    
+                    char debugCommand[600];
+                    snprintf(debugCommand, sizeof(debugCommand), 
+                            "xtensa-esp32-elf-addr2line -pfC -e .pio/build/esp32dev/firmware.elf %s", 
+                            btAddresses);
+                    backtrace["debugCommand"] = debugCommand;
+                }
+            } else {
+                doc["summaryError"] = err;
+            }
+            free(summary);
+        }
+
+        return true;
+    }
+
+    bool getCoreDumpChunkJson(JsonDocument& doc, size_t offset, size_t chunkSize) {
+        doc.clear();
+
+        if (!hasCoreDump()) {
+            doc["error"] = "No core dump available";
+            return false;
+        }
+
+        size_t totalSize = getCoreDumpSize();
+        doc["totalSize"] = totalSize;
+        doc["offset"] = offset;
+        doc["requestedChunkSize"] = chunkSize;
+
+        if (offset >= totalSize) {
+            doc["error"] = "Offset beyond core dump size";
+            return false;
+        }
+
+        // Allocate buffer for the chunk
+        uint8_t* buffer = (uint8_t*)malloc(chunkSize);
+        if (!buffer) {
+            doc["error"] = "Failed to allocate buffer";
+            return false;
+        }
+
+        size_t bytesRead = 0;
+        bool success = getCoreDumpChunk(buffer, offset, chunkSize, &bytesRead);
+        
+        if (success && bytesRead > 0) {
+            doc["actualChunkSize"] = bytesRead;
+            doc["hasMore"] = (offset + bytesRead) < totalSize;
+            
+            // Encode binary data as base64 using mbedtls
+            size_t base64Length = 0;
+            
+            // First call to get required buffer size
+            int ret = mbedtls_base64_encode(NULL, 0, &base64Length, buffer, bytesRead);
+            if (ret == MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) {
+                char* base64Buffer = (char*)malloc(base64Length + 1); // +1 for null terminator
+                if (base64Buffer) {
+                    size_t actualLength = 0;
+                    ret = mbedtls_base64_encode((unsigned char*)base64Buffer, base64Length, 
+                                             &actualLength, buffer, bytesRead);
+                    if (ret == 0) {
+                        base64Buffer[actualLength] = '\0'; // Null terminate
+                        doc["data"] = base64Buffer;
+                        doc["encoding"] = "base64";
+                    } else {
+                        doc["error"] = "Base64 encoding failed";
+                    }
+                    free(base64Buffer);
+                } else {
+                    doc["error"] = "Failed to allocate base64 buffer";
+                }
+            } else {
+                doc["error"] = "Failed to calculate base64 buffer size";
+            }
+        } else {
+            doc["error"] = "Failed to read core dump chunk";
+        }
+
+        free(buffer);
+        return success;
     }
 }

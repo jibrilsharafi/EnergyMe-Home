@@ -5,6 +5,8 @@
 #include <AdvancedLogger.h>
 #include <Arduino.h>
 #include <Update.h>
+#include <ArduinoJson.h>
+#include "mbedtls/base64.h"
 
 #include "constants.h"
 #include "globals.h"
@@ -37,4 +39,8 @@ namespace CrashMonitor {
     bool getCoreDumpChunk(uint8_t* buffer, size_t offset, size_t chunkSize, size_t* bytesRead);
     bool getFullCoreDump(uint8_t* buffer, size_t bufferSize, size_t* actualSize);
     void clearCoreDump();
+
+    // JSON payload functions
+    bool getCoreDumpInfoJson(JsonDocument& doc);                                      // Comprehensive crash info with backtrace
+    bool getCoreDumpChunkJson(JsonDocument& doc, size_t offset, size_t chunkSize);    // Core dump chunk as base64
 }

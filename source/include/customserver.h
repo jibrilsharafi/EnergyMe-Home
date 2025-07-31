@@ -11,6 +11,7 @@
 #include "esp_ota_ops.h"
 
 #include "constants.h"
+#include "crashmonitor.h"
 #include "custommqtt.h"
 #include "influxdbclient.h"
 #include "globals.h"
@@ -52,6 +53,10 @@
 #define HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL 64
 #define HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT 512
 #define HTTP_MAX_CONTENT_LENGTH_INFLUXDB 1024
+
+// Crash dump chunk sizes
+#define CRASH_DUMP_DEFAULT_CHUNK_SIZE (2 * 1024)
+#define CRASH_DUMP_MAX_CHUNK_SIZE (8 * 1024) // Maximum chunk size for core dump retrieval. Can be set high thanks to chunked transfer, but above 8 kB it will crash the wdt
 
 namespace CustomServer {
     void begin();
