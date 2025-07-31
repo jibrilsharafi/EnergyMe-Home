@@ -544,6 +544,81 @@ paths:
                     type: string
                     example: "Logs cleared successfully"
 
+  # Custom MQTT endpoints
+  /api/v1/mqtt/config:
+    get:
+      summary: Get custom MQTT configuration
+      description: Retrieve the current custom MQTT configuration settings
+      tags:
+        - Custom MQTT
+      responses:
+        '200':
+          description: Current custom MQTT configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomMqttConfiguration'
+    put:
+      summary: Update custom MQTT configuration
+      description: Update the custom MQTT configuration settings
+      tags:
+        - Custom MQTT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomMqttConfiguration'
+            example:
+              enabled: true
+              server: "mqtt.example.com"
+              port: 1883
+              clientid: "energyme-home"
+              topic: "energy/meter"
+              frequency: 10
+              useCredentials: true
+              username: "mqtt_user"
+              password: "mqtt_password"
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid configuration data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/mqtt/status:
+    get:
+      summary: Get custom MQTT status
+      description: Get the current status and runtime information for custom MQTT
+      tags:
+        - Custom MQTT
+      responses:
+        '200':
+          description: Custom MQTT status and runtime information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: Status of the last connection attempt
+                    example: "Connected"
+                  statusTimestamp:
+                    type: string
+                    format: date-time
+                    description: Timestamp of the last connection attempt
+                example:
+                  status: "Connected"
+                  statusTimestamp: "2025-07-31T12:34:56Z"
+
 tags:
   - name: System
     description: System management and information endpoints
@@ -555,6 +630,8 @@ tags:
     description: Network and WiFi management endpoints
   - name: Logging
     description: Log management and configuration endpoints
+  - name: Custom MQTT
+    description: Custom MQTT broker configuration and status endpoints
 
 components:
   schemas:
@@ -582,3 +659,60 @@ components:
       type: string
       enum: [VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL]
       description: Log level enumeration
+    
+    CustomMqttConfiguration:
+      type: object
+      required:
+        - enabled
+        - server
+        - port
+        - clientid
+        - topic
+        - frequency
+        - useCredentials
+      properties:
+        enabled:
+          type: boolean
+          description: Whether custom MQTT is enabled
+          example: true
+        server:
+          type: string
+          description: MQTT broker server address or hostname
+          example: "mqtt.example.com"
+          maxLength: 64
+        port:
+          type: integer
+          description: MQTT broker port number
+          example: 1883
+          minimum: 1
+          maximum: 65535
+        clientid:
+          type: string
+          description: Unique MQTT client identifier
+          example: "energyme-home"
+          maxLength: 32
+        topic:
+          type: string
+          description: MQTT topic for publishing meter data
+          example: "energy/meter"
+          maxLength: 64
+        frequency:
+          type: integer
+          description: Publishing frequency in seconds
+          example: 10
+          minimum: 1
+          maximum: 3600
+        useCredentials:
+          type: boolean
+          description: Whether to use username/password authentication
+          example: true
+        username:
+          type: string
+          description: MQTT username (required if useCredentials is true)
+          example: "mqtt_user"
+          maxLength: 32
+        password:
+          type: string
+          description: MQTT password (required if useCredentials is true)
+          example: "mqtt_password"
+          maxLength: 64

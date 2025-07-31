@@ -28,7 +28,7 @@
 #define LOG_CALLBACK_MESSAGE_SIZE 128 // Size for log message
 
 struct LogJson {
-    char timestamp[TIMESTAMP_STRING_BUFFER_SIZE];
+    char timestamp[TIMESTAMP_BUFFER_SIZE];
     unsigned long millisEsp;
     char level[LOG_CALLBACK_LEVEL_SIZE];
     unsigned int coreId;

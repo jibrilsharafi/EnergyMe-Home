@@ -6,8 +6,6 @@ static RestartConfiguration restartConfiguration;
 
 // New system info functions
 void populateSystemStaticInfo(SystemStaticInfo& info) {
-    logger.debug("Populating static system info...", TAG);
-
     // Initialize the struct to ensure clean state
     memset(&info, 0, sizeof(info));
 
@@ -56,8 +54,6 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
 }
 
 void populateSystemDynamicInfo(SystemDynamicInfo& info) {
-    logger.debug("Populating dynamic system info...", TAG);
-
     // Initialize the struct to ensure clean state
     memset(&info, 0, sizeof(info));
 
@@ -65,7 +61,8 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.uptimeMilliseconds = millis64();
     info.uptimeSeconds = info.uptimeMilliseconds / 1000;
     CustomTime::getTimestamp(info.currentTimestamp, sizeof(info.currentTimestamp));
-    
+    CustomTime::getTimestampIso(info.currentTimestampIso, sizeof(info.currentTimestampIso));
+
     // Memory - Heap
     info.heapTotalBytes = ESP.getHeapSize();
     info.heapFreeBytes = ESP.getFreeHeap();
@@ -175,7 +172,8 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["time"]["uptimeMilliseconds"] = (uint64_t)info.uptimeMilliseconds;
     doc["time"]["uptimeSeconds"] = info.uptimeSeconds;
     doc["time"]["currentTimestamp"] = info.currentTimestamp;
-    
+    doc["time"]["currentTimestampIso"] = info.currentTimestampIso;
+
     // Memory - Heap
     doc["memory"]["heap"]["totalBytes"] = info.heapTotalBytes;
     doc["memory"]["heap"]["freeBytes"] = info.heapFreeBytes;
@@ -1050,7 +1048,7 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
 
     jsonDocument["status"] = status;
     jsonDocument["reason"] = reason;
-    char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
+    char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
     CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer)); // TODO: maybe everything should be returned in unix so it is UTC, and then converted on the other side? or standard iso utc timestamp?
     jsonDocument["timestamp"] = timestampBuffer;
 

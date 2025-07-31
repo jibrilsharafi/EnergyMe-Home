@@ -51,10 +51,10 @@
 struct CustomMqttConfiguration {
     bool enabled;
     char server[SERVER_NAME_BUFFER_SIZE];
-    int port;
-    char clientid[DEVICE_ID_BUFFER_SIZE];
+    unsigned int port;
+    char clientid[NAME_BUFFER_SIZE];
     char topic[MQTT_TOPIC_BUFFER_SIZE];
-    int frequency; // Publishing frequency in seconds
+    unsigned int frequency; // Publishing frequency in seconds
     bool useCredentials;
     char username[USERNAME_BUFFER_SIZE];
     char password[PASSWORD_BUFFER_SIZE];
@@ -83,8 +83,10 @@ namespace CustomMqtt
     bool setConfiguration(CustomMqttConfiguration &config);
     bool setConfigurationFromJson(JsonDocument &jsonDocument);
     void getConfiguration(CustomMqttConfiguration &config);
+    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
 
     // JSON serialization helpers
     bool configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument);
     bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config);
+    bool configurationFromJsonPartial(JsonDocument &jsonDocument, CustomMqttConfiguration &config);
 }

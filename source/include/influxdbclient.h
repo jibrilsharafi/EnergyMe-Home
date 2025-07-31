@@ -58,8 +58,8 @@ struct InfluxDbConfiguration {
     char measurement[MEASUREMENT_BUFFER_SIZE];
     int frequencySeconds;
     bool useSSL;
-    char lastConnectionStatus[STATUS_BUFFER_SIZE];
-    char lastConnectionAttemptTimestamp[TIMESTAMP_STRING_BUFFER_SIZE];
+    char lastConnectionStatus[STATUS_BUFFER_SIZE]; // TODO: take this out and make it not preferences and timestamp a number
+    char lastConnectionAttemptTimestamp[TIMESTAMP_BUFFER_SIZE];
 
     InfluxDbConfiguration()
         : enabled(INFLUXDB_ENABLED_DEFAULT), 

@@ -41,6 +41,7 @@ namespace CustomServer
     static void _serveHealthEndpoints();
     static void _serveAuthEndpoints();
     static void _serveOtaEndpoints();
+    static void _serveCustomMqttEndpoints();
     
     // Authentication endpoints
     static void _serveAuthStatusEndpoint();
@@ -242,6 +243,7 @@ namespace CustomServer
         _serveHealthEndpoints();
         _serveAuthEndpoints();
         _serveOtaEndpoints();
+        _serveCustomMqttEndpoints();
     }
 
     // === HEALTH ENDPOINTS ===
@@ -254,8 +256,8 @@ namespace CustomServer
             JsonDocument doc;
             doc["status"] = "ok";
             doc["uptime"] = millis64();
-            char timestamp[TIMESTAMP_STRING_BUFFER_SIZE];
-            CustomTime::getTimestamp(timestamp, sizeof(timestamp));
+            char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
+            CustomTime::getTimestampIso(timestamp, sizeof(timestamp));
             doc["timestamp"] = timestamp;
             
             serializeJson(doc, *response);
@@ -883,7 +885,7 @@ namespace CustomServer
             BaseType_t result = xTaskNotifyWait(0, UINT32_MAX, &notificationValue, xFrequency);
 
             // Check if we received a stop signal
-            if (notificationValue & HEALTH_CHECK_STOP_BIT)
+            if (notificationValue & HEALTH_CHECK_STOP_BIT) // TODO: modify this according to standard task handling
             {
                 logger.debug("Health check task received stop signal", TAG);
                 break;
@@ -1074,6 +1076,62 @@ namespace CustomServer
             return false;
         }
         return true;
+    }
+    
+    // === CUSTOM MQTT ENDPOINTS ===
+    static void _serveCustomMqttEndpoints()
+    {
+        // Get custom MQTT configuration
+        server.on("/api/v1/mqtt/config", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            CustomMqttConfiguration config;
+            CustomMqtt::getConfiguration(config);
+            
+            JsonDocument doc;
+            CustomMqtt::configurationToJson(config, doc);
+            _sendJsonResponse(request, doc);
+        });
+
+        // Set custom MQTT configuration
+        static AsyncCallbackJsonWebHandler *setCustomMqttHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/mqtt/config",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateHttpMethod(request, "PUT"))
+                {
+                    return;
+                }
+
+                JsonDocument doc;
+                doc.set(json);
+
+                if (CustomMqtt::setConfigurationFromJson(doc))
+                {
+                    logger.info("Custom MQTT configuration updated via API", TAG);
+                    _sendSuccessResponse(request, "Custom MQTT configuration updated successfully");
+                }
+                else
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid custom MQTT configuration");
+                }
+            });
+        server.addHandler(setCustomMqttHandler);
+
+        // Get custom MQTT status
+        server.on("/api/v1/mqtt/status", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            
+            JsonDocument doc;
+            
+            // Add runtime status information
+            char statusBuffer[STATUS_BUFFER_SIZE];
+            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            CustomMqtt::getRuntimeStatus(statusBuffer, sizeof(statusBuffer), timestampBuffer, sizeof(timestampBuffer));
+            doc["status"] = statusBuffer;
+            doc["statusTimestamp"] = timestampBuffer;
+            
+            _sendJsonResponse(request, doc);
+        });
     }
 }
 //         static char buffer[JSON_RESPONSE_BUFFER_SIZE];

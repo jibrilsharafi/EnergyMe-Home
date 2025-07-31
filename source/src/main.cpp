@@ -155,7 +155,7 @@ void setup()
           gmtOffset,
           dstOffset);
 
-      char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
+      char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
       CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
       logger.info("Initial time sync successful. Current timestamp: %s", TAG, timestampBuffer);
     }

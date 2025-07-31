@@ -32,7 +32,7 @@
 
 #define TASK_MAINTENANCE_NAME "maintenance_task"
 #define TASK_MAINTENANCE_STACK_SIZE 4096
-#define TASK_MAINTENANCE_PRIORITY 2
+#define TASK_MAINTENANCE_PRIORITY 3
 #define MAINTENANCE_CHECK_INTERVAL (10 * 1000) // Interval to check main parameters, to avoid overloading the loop
 
 #define FUNCTION_NAME_BUFFER_SIZE 32

@@ -11,6 +11,7 @@
 #include "esp_ota_ops.h"
 
 #include "constants.h"
+#include "custommqtt.h"
 #include "globals.h"
 #include "binaries.h"
 #include "utils.h"

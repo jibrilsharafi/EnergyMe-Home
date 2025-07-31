@@ -51,12 +51,25 @@ Provide project context and coding guidelines that AI should follow when generat
     - Initialize all configuration fields with sensible defaults
     - Log JSON parsing errors clearly
     - Don't worry about JSON document size - plenty of PSRAM available
+    - **ArduinoJson validation**: ONLY use `is<type>()` to validate field types (e.g., `json["field"].is<bool>()`)
+    - **Deprecated methods**: Never use `containsKey()` - it's deprecated in ArduinoJson
+    - **Null checks**: Only use `isNull()` at JSON document level to ensure non-empty JSON, not for individual fields
 
 7. **Data storage**:
     - Use Preferences wherever possible for configuration storage
     - Use SPIFFS (to update in the future to LittleFS) for historical data storage
 
-8. **FreeRTOS Task Management**:
+8. **Timestamp and Time Handling**:
+    - **Storage format**: Always store timestamps as Unix seconds (or milliseconds for time-critical data)
+    - **Unix seconds**: Use for general events, configuration, logging, system events
+    - **Unix milliseconds**: Use only for time-critical measurements (energy meter readings, precise timing)
+    - **Return format**: Always return timestamps in UTC format unless explicitly required to be local
+    - **Display format**: Convert to local time only for user interface display
+    - **API format**: Use ISO 8601 UTC format (`YYYY-MM-DDTHH:MM:SS.sssZ`) for external APIs
+    - **Storage efficiency**: Numeric timestamps (8 bytes) vs formatted strings (20-25 bytes)
+    - **Time arithmetic**: Store as numbers to enable easy duration calculations and sorting
+
+9. **FreeRTOS Task Management**:
     - Use the standard task lifecycle pattern with task notifications for graceful shutdown
     - Always check task handles before operations to prevent race conditions
     - Implement timeout protection when stopping tasks to prevent system hangs

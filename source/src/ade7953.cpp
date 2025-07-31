@@ -1150,7 +1150,7 @@ void Ade7953::_saveDailyEnergyToSpiffs() {
         _logger.warning("Saving daily energy even if time is invalid: %ld", TAG, now);
     }
     struct tm *timeinfo = localtime(&now);
-    char currentDate[TIMESTAMP_STRING_BUFFER_SIZE];
+    char currentDate[TIMESTAMP_BUFFER_SIZE];
     strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", timeinfo);
 
     for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {

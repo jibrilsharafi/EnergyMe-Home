@@ -69,7 +69,8 @@
 #define DEVICE_ID_BUFFER_SIZE 16      // For device ID (increased slightly for safety)
 #define IP_ADDRESS_BUFFER_SIZE 16 // For IPv4 addresses (e.g., "192.168.1.1")
 #define MAC_ADDRESS_BUFFER_SIZE 18 // For MAC addresses (e.g., "00:1A:2B:3C:4D:5E")
-#define TIMESTAMP_STRING_BUFFER_SIZE 20 // For timestamps (formatted as "YYYY-MM-DD HH:MM:SS")
+#define TIMESTAMP_BUFFER_SIZE 20 // For timestamps (formatted as "YYYY-MM-DD HH:MM:SS")
+#define TIMESTAMP_ISO_BUFFER_SIZE 25 // For ISO UTC timestamps (formatted as "YYYY-MM-DDTHH:MM:SS.sssZ")
 #define MD5_BUFFER_SIZE 33 // 32 characters + null terminator
 #define USERNAME_BUFFER_SIZE 64
 #define PASSWORD_BUFFER_SIZE 64

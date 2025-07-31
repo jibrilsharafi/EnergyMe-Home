@@ -39,13 +39,7 @@ namespace CustomTime {
         
         _saveConfiguration();
         
-        if (_getTime()) {
-            _isTimeSynched = true;
-            char timestampBuffer[TIMESTAMP_STRING_BUFFER_SIZE];
-            getTimestamp(timestampBuffer, sizeof(timestampBuffer));
-        } else {
-            _isTimeSynched = false;
-        }
+        _isTimeSynched = _getTime();
     }
 
     bool isTimeSynched() {
@@ -92,15 +86,10 @@ namespace CustomTime {
         return true;
     }
 
-    void timestampFromUnix(time_t unix, char* buffer, size_t bufferSize) {
-        struct tm* _timeinfo;
-
-        _timeinfo = localtime(&unix);
-        strftime(buffer, bufferSize, TIMESTAMP_FORMAT, _timeinfo);
-    }
-
-    unsigned long getUnixTime() {
-        return static_cast<unsigned long>(time(nullptr));
+    unsigned long long getUnixTime() {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        return static_cast<unsigned long long>(tv.tv_sec);
     }
 
     unsigned long long getUnixTimeMilliseconds() {
@@ -110,7 +99,51 @@ namespace CustomTime {
     }
 
     void getTimestamp(char* buffer, size_t bufferSize) {
-        timestampFromUnix(getUnixTime(), buffer, bufferSize);
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        
+        struct tm timeinfo;
+        localtime_r(&tv.tv_sec, &timeinfo);
+        strftime(buffer, bufferSize, TIMESTAMP_FORMAT, &timeinfo);
+    }
+
+    void timestampFromUnix(time_t unixSeconds, char* buffer, size_t bufferSize) {
+        struct tm timeinfo;
+        localtime_r(&unixSeconds, &timeinfo);
+        strftime(buffer, bufferSize, TIMESTAMP_FORMAT, &timeinfo);
+    }
+
+    void getTimestampIso(char* buffer, size_t bufferSize) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        
+        struct tm utc_tm;
+        gmtime_r(&tv.tv_sec, &utc_tm);
+        int milliseconds = tv.tv_usec / 1000;
+        
+        snprintf(buffer, bufferSize, TIMESTAMP_ISO_FORMAT,
+                utc_tm.tm_year + 1900,
+                utc_tm.tm_mon + 1,
+                utc_tm.tm_mday,
+                utc_tm.tm_hour,
+                utc_tm.tm_min,
+                utc_tm.tm_sec,
+                milliseconds);
+    }
+
+    void timestampIsoFromUnix(time_t unixSeconds, char* buffer, size_t bufferSize) {
+        struct tm utc_tm;
+        gmtime_r(&unixSeconds, &utc_tm);
+        int milliseconds = 0; // No milliseconds in time_t
+        
+        snprintf(buffer, bufferSize, TIMESTAMP_ISO_FORMAT,
+                utc_tm.tm_year + 1900,
+                utc_tm.tm_mon + 1,
+                utc_tm.tm_mday,
+                utc_tm.tm_hour,
+                utc_tm.tm_min,
+                utc_tm.tm_sec,
+                milliseconds);
     }
 
     void _checkAndSyncTime() {

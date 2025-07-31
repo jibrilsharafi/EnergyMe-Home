@@ -17,9 +17,9 @@ namespace CustomMqtt
     static unsigned long _nextMqttConnectionAttemptMillis = 0;
     
     // Runtime connection status - kept in memory only, not saved to preferences
-    static char _lastConnectionStatus[STATUS_BUFFER_SIZE];
-    static char _lastConnectionAttemptTimestamp[TIMESTAMP_STRING_BUFFER_SIZE];
-    
+    static char _status[STATUS_BUFFER_SIZE];
+    static unsigned long long _statusTimestampUnix;
+
     // Task variables
     static TaskHandle_t _customMqttTaskHandle = nullptr;
     static bool _taskShouldRun = false;
@@ -28,11 +28,17 @@ namespace CustomMqtt
     static void _setDefaultConfiguration();
     static void _setConfigurationFromPreferences();
     static void _saveConfigurationToPreferences();
+    
     static void _disable();
+    
     static bool _connectMqtt();
+    
     static void _publishMeter();
     static bool _publishMessage(const char *topic, const char *message);
+    
     static bool _validateJsonConfiguration(JsonDocument &jsonDocument);
+    static bool _validateJsonConfigurationPartial(JsonDocument &jsonDocument);
+
     static void _customMqttTask(void* parameter);
     static void _startTask();
     static void _stopTask();
@@ -86,8 +92,8 @@ namespace CustomMqtt
         // Copy the configuration
         _customMqttConfiguration = config;
         
-        snprintf(_lastConnectionStatus, sizeof(_lastConnectionStatus), "Configuration updated");
-        CustomTime::getTimestamp(_lastConnectionAttemptTimestamp, sizeof(_lastConnectionAttemptTimestamp));
+        snprintf(_status, sizeof(_status), "Configuration updated");
+        _statusTimestampUnix = CustomTime::getUnixTime();
 
         _nextMqttConnectionAttemptMillis = millis64();
         _mqttConnectionAttempt = 0;
@@ -110,14 +116,16 @@ namespace CustomMqtt
     {
         logger.debug("Setting custom MQTT configuration from JSON...", TAG);
 
-        if (!_validateJsonConfiguration(jsonDocument))
+        if (!_validateJsonConfigurationPartial(jsonDocument))
         {
             logger.error("Invalid custom MQTT configuration JSON", TAG);
             return false;
         }
 
-        CustomMqttConfiguration config;
-        if (!configurationFromJson(jsonDocument, config))
+        // Get current configuration as base
+        CustomMqttConfiguration config = _customMqttConfiguration;
+        
+        if (!configurationFromJsonPartial(jsonDocument, config))
         {
             logger.error("Failed to convert JSON to configuration struct", TAG);
             return false;
@@ -138,18 +146,18 @@ namespace CustomMqtt
         }
 
         CustomMqttConfiguration config;
-        config.enabled = preferences.getBool(CUSTOM_MQTT_ENABLED_KEY, false);
-        snprintf(config.server, sizeof(config.server), "%s", preferences.getString(CUSTOM_MQTT_SERVER_KEY, "").c_str());
-        config.port = preferences.getUInt(CUSTOM_MQTT_PORT_KEY, 1883);
-        snprintf(config.clientid, sizeof(config.clientid), "%s", preferences.getString(CUSTOM_MQTT_CLIENT_ID_KEY, "energyme").c_str());
-        snprintf(config.topic, sizeof(config.topic), "%s", preferences.getString(CUSTOM_MQTT_TOPIC_KEY, "energyme/meter").c_str());
-        config.frequency = preferences.getUInt(CUSTOM_MQTT_FREQUENCY_KEY, 10);
-        config.useCredentials = preferences.getBool(CUSTOM_MQTT_USE_CREDENTIALS_KEY, false);
-        snprintf(config.username, sizeof(config.username), "%s", preferences.getString(CUSTOM_MQTT_USERNAME_KEY, "").c_str());
-        snprintf(config.password, sizeof(config.password), "%s", preferences.getString(CUSTOM_MQTT_PASSWORD_KEY, "").c_str());
+        config.enabled = preferences.getBool(CUSTOM_MQTT_ENABLED_KEY, DEFAULT_IS_CUSTOM_MQTT_ENABLED);
+        snprintf(config.server, sizeof(config.server), "%s", preferences.getString(CUSTOM_MQTT_SERVER_KEY, MQTT_CUSTOM_SERVER_DEFAULT).c_str());
+        config.port = preferences.getUInt(CUSTOM_MQTT_PORT_KEY, MQTT_CUSTOM_PORT_DEFAULT);
+        snprintf(config.clientid, sizeof(config.clientid), "%s", preferences.getString(CUSTOM_MQTT_CLIENT_ID_KEY, MQTT_CUSTOM_CLIENTID_DEFAULT).c_str());
+        snprintf(config.topic, sizeof(config.topic), "%s", preferences.getString(CUSTOM_MQTT_TOPIC_KEY, MQTT_CUSTOM_TOPIC_DEFAULT).c_str());
+        config.frequency = preferences.getUInt(CUSTOM_MQTT_FREQUENCY_KEY, MQTT_CUSTOM_FREQUENCY_DEFAULT);
+        config.useCredentials = preferences.getBool(CUSTOM_MQTT_USE_CREDENTIALS_KEY, MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT);
+        snprintf(config.username, sizeof(config.username), "%s", preferences.getString(CUSTOM_MQTT_USERNAME_KEY, MQTT_CUSTOM_USERNAME_DEFAULT).c_str());
+        snprintf(config.password, sizeof(config.password), "%s", preferences.getString(CUSTOM_MQTT_PASSWORD_KEY, MQTT_CUSTOM_PASSWORD_DEFAULT).c_str());
         
-        snprintf(_lastConnectionStatus, sizeof(_lastConnectionStatus), "Configuration loaded from Preferences");
-        CustomTime::getTimestamp(_lastConnectionAttemptTimestamp, sizeof(_lastConnectionAttemptTimestamp));
+        snprintf(_status, sizeof(_status), "Configuration loaded from Preferences");
+        _statusTimestampUnix = CustomTime::getUnixTime();
 
         preferences.end();
 
@@ -193,15 +201,39 @@ namespace CustomMqtt
 
         if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
         if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
-        if (!jsonDocument["port"].is<int>()) { logger.warning("port field is not an integer", TAG); return false; }
+        if (!jsonDocument["port"].is<unsigned int>()) { logger.warning("port field is not an integer", TAG); return false; }
         if (!jsonDocument["clientid"].is<const char*>()) { logger.warning("clientid field is not a string", TAG); return false; }
         if (!jsonDocument["topic"].is<const char*>()) { logger.warning("topic field is not a string", TAG); return false; }
-        if (!jsonDocument["frequency"].is<int>()) { logger.warning("frequency field is not an integer", TAG); return false; }
+        if (!jsonDocument["frequency"].is<unsigned int>()) { logger.warning("frequency field is not an integer", TAG); return false; }
         if (!jsonDocument["useCredentials"].is<bool>()) { logger.warning("useCredentials field is not a boolean", TAG); return false; }
         if (!jsonDocument["username"].is<const char*>()) { logger.warning("username field is not a string", TAG); return false; }
         if (!jsonDocument["password"].is<const char*>()) { logger.warning("password field is not a string", TAG); return false; }
 
         return true;
+    }
+
+    static bool _validateJsonConfigurationPartial(JsonDocument &jsonDocument)
+    {
+        if (jsonDocument.isNull() || !jsonDocument.is<JsonObject>())
+        {
+            logger.warning("Invalid or empty JSON document", TAG);
+            return false;
+        }
+
+        // If even only one field is present, we return true
+        if (jsonDocument["enabled"].is<bool>()) {return true;}        
+        if (jsonDocument["server"].is<const char*>()) {return true;}        
+        if (jsonDocument["port"].is<unsigned int>()) {return true;}        
+        if (jsonDocument["clientid"].is<const char*>()) {return true;}        
+        if (jsonDocument["topic"].is<const char*>()) {return true;}        
+        if (jsonDocument["frequency"].is<unsigned int>()) {return true;}        
+        if (jsonDocument["useCredentials"].is<bool>()) {return true;}        
+        if (jsonDocument["username"].is<const char*>()) {return true;}        
+        if (jsonDocument["password"].is<const char*>()) {return true;}
+
+        // If we did not return true by now, it means no valid fields were found
+        logger.warning("No valid fields found in JSON document", TAG);
+        return false;
     }
 
     static void _disable() {
@@ -236,21 +268,33 @@ namespace CustomMqtt
 
         bool res;
 
+        // If the clientid is empty, use the default one
+        char clientId[NAME_BUFFER_SIZE];
+        snprintf(clientId, sizeof(clientId), "%s", _customMqttConfiguration.clientid);
+        if (strlen(_customMqttConfiguration.clientid) == 0) {
+            logger.warning("Client ID is empty, using device client ID", TAG);
+            snprintf(clientId, sizeof(clientId), "%s", DEVICE_ID);
+        }
+
         if (_customMqttConfiguration.useCredentials) {
             res = _customClientMqtt.connect(
-                _customMqttConfiguration.clientid,
+                clientId,
                 _customMqttConfiguration.username,
                 _customMqttConfiguration.password);
         } else {
-            res = _customClientMqtt.connect(_customMqttConfiguration.clientid);
+            res = _customClientMqtt.connect(clientId);
         }
 
         if (res) {
-            logger.info("Connected to custom MQTT", TAG);
+            logger.info("Connected to custom MQTT | Server: %s, Port: %d, Client ID: %s, Topic: %s", TAG,
+                        _customMqttConfiguration.server,
+                        _customMqttConfiguration.port,
+                        clientId,
+                        _customMqttConfiguration.topic);
 
             _mqttConnectionAttempt = 0;
-            snprintf(_lastConnectionStatus, sizeof(_lastConnectionStatus), "Connected");
-            CustomTime::getTimestamp(_lastConnectionAttemptTimestamp, sizeof(_lastConnectionAttemptTimestamp));
+            snprintf(_status, sizeof(_status), "Connected");
+            _statusTimestampUnix = CustomTime::getUnixTime();
 
             return true;
         } else {
@@ -266,10 +310,10 @@ namespace CustomMqtt
 
             _mqttConnectionAttempt++;
 
-            snprintf(_lastConnectionStatus, sizeof(_lastConnectionStatus), 
+            snprintf(_status, sizeof(_status), 
                      "%s (Attempt %d)", _reason, _mqttConnectionAttempt);
             
-            CustomTime::getTimestamp(_lastConnectionAttemptTimestamp, sizeof(_lastConnectionAttemptTimestamp));
+            _statusTimestampUnix = CustomTime::getUnixTime();
 
             // Check for specific errors that warrant disabling custom MQTT
             if (currentState == MQTT_CONNECT_BAD_CREDENTIALS || currentState == MQTT_CONNECT_UNAUTHORIZED) {
@@ -302,6 +346,12 @@ namespace CustomMqtt
 
         JsonDocument jsonDocument;
         ade7953.fullMeterValuesToJson(jsonDocument);
+
+        // Validate that we have actual data before serializing (since the JSON serialization allows for empty objects)
+        if (jsonDocument.isNull() || jsonDocument.size() == 0) {
+            logger.debug("No meter data available for publishing to custom MQTT", TAG);
+            return;
+        }
         
         char meterMessage[MQTT_CUSTOM_PAYLOAD_LIMIT];
         if (!safeSerializeJson(jsonDocument, meterMessage, sizeof(meterMessage))) {
@@ -349,7 +399,7 @@ namespace CustomMqtt
         }
 
         statistics.customMqttMessagesPublished++;
-        logger.debug("Message published: %s", TAG, message);
+        logger.debug("Message published (%d bytes)", TAG, strlen(message));
         return true;
     }
 
@@ -365,6 +415,16 @@ namespace CustomMqtt
 
         // Copy the current configuration
         config = _customMqttConfiguration;
+    }
+
+    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize)
+    {
+        if (statusBuffer && statusSize > 0) {
+            snprintf(statusBuffer, statusSize, "%s", _status);
+        }
+        if (timestampBuffer && timestampSize > 0) {
+            CustomTime::timestampIsoFromUnix(_statusTimestampUnix, timestampBuffer, timestampSize);
+        }
     }
 
     bool configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument)
@@ -397,16 +457,62 @@ namespace CustomMqtt
 
         config.enabled = jsonDocument["enabled"].as<bool>();
         snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-        config.port = jsonDocument["port"].as<int>();
+        config.port = jsonDocument["port"].as<unsigned int>();
         snprintf(config.clientid, sizeof(config.clientid), "%s", jsonDocument["clientid"].as<const char*>());
         snprintf(config.topic, sizeof(config.topic), "%s", jsonDocument["topic"].as<const char*>());
-        config.frequency = jsonDocument["frequency"].as<int>();
+        config.frequency = jsonDocument["frequency"].as<unsigned int>();
         config.useCredentials = jsonDocument["useCredentials"].as<bool>();
         snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
         snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
         
-        snprintf(_lastConnectionStatus, sizeof(_lastConnectionStatus), "Configuration updated");
-        CustomTime::getTimestamp(_lastConnectionAttemptTimestamp, sizeof(_lastConnectionAttemptTimestamp));
+        snprintf(_status, sizeof(_status), "Configuration updated");
+        _statusTimestampUnix = CustomTime::getUnixTime();
+
+        logger.debug("Successfully converted JSON to configuration", TAG);
+        return true;
+    }
+
+    bool configurationFromJsonPartial(JsonDocument &jsonDocument, CustomMqttConfiguration &config)
+    {
+        logger.debug("Converting JSON to custom MQTT configuration (partial update)...", TAG);
+
+        if (!_validateJsonConfigurationPartial(jsonDocument))
+        {
+            logger.error("Invalid JSON configuration", TAG);
+            return false;
+        }
+
+        // Update only fields that are present in JSON
+        if (jsonDocument["enabled"].is<bool>()) {
+            config.enabled = jsonDocument["enabled"].as<bool>();
+        }
+        if (jsonDocument["server"].is<const char*>()) {
+            snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
+        }
+        if (jsonDocument["port"].is<unsigned int>()) {
+            config.port = jsonDocument["port"].as<unsigned int>();
+        }
+        if (jsonDocument["clientid"].is<const char*>()) {
+            snprintf(config.clientid, sizeof(config.clientid), "%s", jsonDocument["clientid"].as<const char*>());
+        }
+        if (jsonDocument["topic"].is<const char*>()) {
+            snprintf(config.topic, sizeof(config.topic), "%s", jsonDocument["topic"].as<const char*>());
+        }
+        if (jsonDocument["frequency"].is<unsigned int>()) {
+            config.frequency = jsonDocument["frequency"].as<unsigned int>();
+        }
+        if (jsonDocument["useCredentials"].is<bool>()) {
+            config.useCredentials = jsonDocument["useCredentials"].as<bool>();
+        }
+        if (jsonDocument["username"].is<const char*>()) {
+            snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
+        }
+        if (jsonDocument["password"].is<const char*>()) {
+            snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
+        }
+        
+        snprintf(_status, sizeof(_status), "Configuration updated");
+        _statusTimestampUnix = CustomTime::getUnixTime();
 
         logger.debug("Successfully converted JSON to configuration", TAG);
         return true;
