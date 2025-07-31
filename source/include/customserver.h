@@ -12,6 +12,7 @@
 
 #include "constants.h"
 #include "custommqtt.h"
+#include "influxdbclient.h"
 #include "globals.h"
 #include "binaries.h"
 #include "utils.h"

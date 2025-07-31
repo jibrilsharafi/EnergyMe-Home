@@ -22,11 +22,26 @@
 #define INFLUXDB_BUCKET_DEFAULT "energyme-home"
 #define INFLUXDB_TOKEN_DEFAULT ""
 #define INFLUXDB_MEASUREMENT_DEFAULT "meter"
-#define INFLUXDB_FREQUENCY_DEFAULT 15  // In seconds
+#define INFLUXDB_FREQUENCY_DEFAULT 15
 #define INFLUXDB_USE_SSL_DEFAULT false
 #define INFLUXDB_TASK_NAME "influxdb_task"
 #define INFLUXDB_TASK_STACK_SIZE 8192
 #define INFLUXDB_TASK_PRIORITY 1
+#define INFLUXDB_TASK_CHECK_INTERVAL 1000
+
+#define INFLUXDB_ENABLED_KEY "enabled"
+#define INFLUXDB_SERVER_KEY "server"
+#define INFLUXDB_PORT_KEY "port"
+#define INFLUXDB_VERSION_KEY "version"
+#define INFLUXDB_DATABASE_KEY "database"
+#define INFLUXDB_USERNAME_KEY "username"
+#define INFLUXDB_PASSWORD_KEY "password"
+#define INFLUXDB_ORGANIZATION_KEY "organization"
+#define INFLUXDB_BUCKET_KEY "bucket"
+#define INFLUXDB_TOKEN_KEY "token"
+#define INFLUXDB_MEASUREMENT_KEY "measurement"
+#define INFLUXDB_FREQUENCY_KEY "frequency"
+#define INFLUXDB_USE_SSL_KEY "useSSL"
 
 #define DATABASE_NAME_BUFFER_SIZE 64
 #define ORGANIZATION_BUFFER_SIZE 64
@@ -43,23 +58,16 @@ struct InfluxDbConfiguration {
     bool enabled;
     char server[SERVER_NAME_BUFFER_SIZE];
     int port;
-    int version;  // 1 or 2
-    
-    // v1 fields
+    int version;
     char database[DATABASE_NAME_BUFFER_SIZE];
     char username[USERNAME_BUFFER_SIZE];
     char password[PASSWORD_BUFFER_SIZE];
-    
-    // v2 fields
     char organization[ORGANIZATION_BUFFER_SIZE];
     char bucket[BUCKET_NAME_BUFFER_SIZE];
     char token[TOKEN_BUFFER_SIZE];
-    
     char measurement[MEASUREMENT_BUFFER_SIZE];
     int frequencySeconds;
     bool useSSL;
-    char lastConnectionStatus[STATUS_BUFFER_SIZE]; // TODO: take this out and make it not preferences and timestamp a number
-    char lastConnectionAttemptTimestamp[TIMESTAMP_BUFFER_SIZE];
 
     InfluxDbConfiguration()
         : enabled(INFLUXDB_ENABLED_DEFAULT), 
@@ -75,8 +83,6 @@ struct InfluxDbConfiguration {
       snprintf(bucket, sizeof(bucket), "%s", INFLUXDB_BUCKET_DEFAULT);
       snprintf(token, sizeof(token), "%s", INFLUXDB_TOKEN_DEFAULT);
       snprintf(measurement, sizeof(measurement), "%s", INFLUXDB_MEASUREMENT_DEFAULT);
-      snprintf(lastConnectionStatus, sizeof(lastConnectionStatus), "Never attempted");
-      snprintf(lastConnectionAttemptTimestamp, sizeof(lastConnectionAttemptTimestamp), "Never attempted");
     }
 };
 
@@ -85,5 +91,12 @@ namespace InfluxDbClient
     void begin();
     void stop();
 
-    bool setConfiguration(JsonDocument &jsonDocument);
+    bool setConfiguration(InfluxDbConfiguration &config);
+    bool setConfigurationFromJson(JsonDocument &jsonDocument);
+    void getConfiguration(InfluxDbConfiguration &config);
+    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
+
+    bool configurationToJson(InfluxDbConfiguration &config, JsonDocument &jsonDocument);
+    bool configurationFromJson(JsonDocument &jsonDocument, InfluxDbConfiguration &config);
+    bool configurationFromJsonPartial(JsonDocument &jsonDocument, InfluxDbConfiguration &config);
 }

@@ -42,6 +42,7 @@ namespace CustomServer
     static void _serveAuthEndpoints();
     static void _serveOtaEndpoints();
     static void _serveCustomMqttEndpoints();
+    static void _serveInfluxDbEndpoints();
     
     // Authentication endpoints
     static void _serveAuthStatusEndpoint();
@@ -244,6 +245,7 @@ namespace CustomServer
         _serveAuthEndpoints();
         _serveOtaEndpoints();
         _serveCustomMqttEndpoints();
+        _serveInfluxDbEndpoints();
     }
 
     // === HEALTH ENDPOINTS ===
@@ -1127,6 +1129,62 @@ namespace CustomServer
             char statusBuffer[STATUS_BUFFER_SIZE];
             char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
             CustomMqtt::getRuntimeStatus(statusBuffer, sizeof(statusBuffer), timestampBuffer, sizeof(timestampBuffer));
+            doc["status"] = statusBuffer;
+            doc["statusTimestamp"] = timestampBuffer;
+            
+            _sendJsonResponse(request, doc);
+        });
+    }
+
+    // === INFLUXDB ENDPOINTS ===
+    static void _serveInfluxDbEndpoints()
+    {
+        // Get InfluxDB configuration
+        server.on("/api/v1/influxdb/config", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            InfluxDbConfiguration config;
+            InfluxDbClient::getConfiguration(config);
+            
+            JsonDocument doc;
+            InfluxDbClient::configurationToJson(config, doc);
+            _sendJsonResponse(request, doc);
+        });
+
+        // Set InfluxDB configuration
+        static AsyncCallbackJsonWebHandler *setInfluxDbHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/influxdb/config",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateHttpMethod(request, "PUT"))
+                {
+                    return;
+                }
+
+                JsonDocument doc;
+                doc.set(json);
+
+                if (InfluxDbClient::setConfigurationFromJson(doc))
+                {
+                    logger.info("InfluxDB configuration updated via API", TAG);
+                    _sendSuccessResponse(request, "InfluxDB configuration updated successfully");
+                }
+                else
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid InfluxDB configuration");
+                }
+            });
+        server.addHandler(setInfluxDbHandler);
+
+        // Get InfluxDB status
+        server.on("/api/v1/influxdb/status", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            
+            JsonDocument doc;
+            
+            // Add runtime status information
+            char statusBuffer[STATUS_BUFFER_SIZE];
+            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            InfluxDbClient::getRuntimeStatus(statusBuffer, sizeof(statusBuffer), timestampBuffer, sizeof(timestampBuffer));
             doc["status"] = statusBuffer;
             doc["statusTimestamp"] = timestampBuffer;
             

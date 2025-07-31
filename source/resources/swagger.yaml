@@ -619,6 +619,85 @@ paths:
                   status: "Connected"
                   statusTimestamp: "2025-07-31T12:34:56Z"
 
+  # InfluxDB endpoints
+  /api/v1/influxdb/config:
+    get:
+      summary: Get InfluxDB configuration
+      description: Retrieve the current InfluxDB configuration settings
+      tags:
+        - InfluxDB
+      responses:
+        '200':
+          description: Current InfluxDB configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfluxDbConfiguration'
+    put:
+      summary: Update InfluxDB configuration
+      description: Update the InfluxDB configuration settings
+      tags:
+        - InfluxDB
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InfluxDbConfiguration'
+            example:
+              enabled: true
+              server: "localhost"
+              port: 8086
+              version: 2
+              database: "energyme-home"
+              username: "user"
+              password: "password"
+              organization: "my-org"
+              bucket: "energyme-home"
+              token: "my-token"
+              measurement: "meter"
+              frequency: 15
+              useSSL: false
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid configuration data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/influxdb/status:
+    get:
+      summary: Get InfluxDB status
+      description: Get the current status and runtime information for InfluxDB
+      tags:
+        - InfluxDB
+      responses:
+        '200':
+          description: InfluxDB status and runtime information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: Status of the last operation
+                    example: "Data sent successfully"
+                  statusTimestamp:
+                    type: string
+                    format: date-time
+                    description: Timestamp of the last operation
+                example:
+                  status: "Data sent successfully"
+                  statusTimestamp: "2025-07-31T12:34:56Z"
+
 tags:
   - name: System
     description: System management and information endpoints
@@ -632,6 +711,8 @@ tags:
     description: Log management and configuration endpoints
   - name: Custom MQTT
     description: Custom MQTT broker configuration and status endpoints
+  - name: InfluxDB
+    description: InfluxDB time-series database configuration and status endpoints
 
 components:
   schemas:
@@ -716,3 +797,86 @@ components:
           description: MQTT password (required if useCredentials is true)
           example: "mqtt_password"
           maxLength: 64
+    
+    InfluxDbConfiguration:
+      type: object
+      required:
+        - enabled
+        - server
+        - port
+        - version
+        - database
+        - username
+        - password
+        - organization
+        - bucket
+        - token
+        - measurement
+        - frequency
+        - useSSL
+      properties:
+        enabled:
+          type: boolean
+          description: Whether InfluxDB integration is enabled
+          example: true
+        server:
+          type: string
+          description: InfluxDB server address or hostname
+          example: "localhost"
+          maxLength: 64
+        port:
+          type: integer
+          description: InfluxDB server port number
+          example: 8086
+          minimum: 1
+          maximum: 65535
+        version:
+          type: integer
+          description: InfluxDB version (1 or 2)
+          example: 2
+          enum: [1, 2]
+        database:
+          type: string
+          description: Database name (InfluxDB v1)
+          example: "energyme-home"
+          maxLength: 64
+        username:
+          type: string
+          description: Username for authentication (InfluxDB v1)
+          example: "user"
+          maxLength: 32
+        password:
+          type: string
+          description: Password for authentication (InfluxDB v1)
+          example: "password"
+          maxLength: 64
+        organization:
+          type: string
+          description: Organization name (InfluxDB v2)
+          example: "my-org"
+          maxLength: 64
+        bucket:
+          type: string
+          description: Bucket name (InfluxDB v2)
+          example: "energyme-home"
+          maxLength: 64
+        token:
+          type: string
+          description: Authentication token (InfluxDB v2)
+          example: "my-token"
+          maxLength: 64
+        measurement:
+          type: string
+          description: Measurement name for data points
+          example: "meter"
+          maxLength: 64
+        frequency:
+          type: integer
+          description: Data sending frequency in seconds
+          example: 15
+          minimum: 1
+          maximum: 3600
+        useSSL:
+          type: boolean
+          description: Whether to use HTTPS for connections
+          example: false
