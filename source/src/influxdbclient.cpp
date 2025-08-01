@@ -58,7 +58,7 @@ namespace InfluxDbClient
         logger.debug("Stopping InfluxDB client...", TAG);
         _stopTask();
         _isSetupDone = false;
-        logger.debug("InfluxDB client stopped", TAG);
+        logger.info("InfluxDB client stopped", TAG);
     }
 
     static void _setDefaultConfiguration()
@@ -317,22 +317,24 @@ namespace InfluxDbClient
 
         for (int i = 0; i < CHANNEL_COUNT; i++)
         {
-            if (Ade7953::channelData[i].active)
+            if (Ade7953::isChannelActive(i))
             {
-                if (Ade7953::meterValues[i].lastUnixTimeMilliseconds == 0)
+                MeterValues meterValues;
+                Ade7953::getMeterValues(meterValues, i);
+                if (meterValues.lastUnixTimeMilliseconds == 0)
                 {
                     logger.debug("Channel %d does not have real measurements yet, skipping", TAG, i);
                     continue;
                 }
 
-                if (!validateUnixTime(Ade7953::meterValues[i].lastUnixTimeMilliseconds))
+                if (!validateUnixTime(meterValues.lastUnixTimeMilliseconds))
                 {
-                    logger.warning("Invalid unixTime for channel %d: %llu", TAG, i, Ade7953::meterValues[i].lastUnixTimeMilliseconds);
+                    logger.warning("Invalid unixTime for channel %d: %llu", TAG, i, meterValues.lastUnixTimeMilliseconds);
                     continue;
                 }
 
                 char realtimeLineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
-                _formatLineProtocol(Ade7953::meterValues[i], i, Ade7953::meterValues[i].lastUnixTimeMilliseconds, realtimeLineProtocol, sizeof(realtimeLineProtocol), false);
+                _formatLineProtocol(meterValues, i, meterValues.lastUnixTimeMilliseconds, realtimeLineProtocol, sizeof(realtimeLineProtocol), false);
 
                 if (payloadLength > 0 && payloadLength + 1 < PAYLOAD_BUFFER_SIZE)
                 {
@@ -348,7 +350,7 @@ namespace InfluxDbClient
                 }
 
                 char energyLineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
-                _formatLineProtocol(Ade7953::meterValues[i], i, currentTimestamp, energyLineProtocol, sizeof(energyLineProtocol), true);
+                _formatLineProtocol(meterValues, i, currentTimestamp, energyLineProtocol, sizeof(energyLineProtocol), true);
 
                 if (payloadLength + 1 < PAYLOAD_BUFFER_SIZE)
                 {
@@ -423,8 +425,10 @@ namespace InfluxDbClient
 
     static void _formatLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp, char *buffer, size_t bufferSize, bool isEnergyData)
     {
-        char sanitizedLabel[sizeof(Ade7953::channelData[channel].label) + 20];
-        const char *originalLabel = Ade7953::channelData[channel].label;
+        ChannelData channelData;
+        Ade7953::getChannelData(channelData, channel);
+        char sanitizedLabel[sizeof(channelData.label) + 20];
+        const char *originalLabel = channelData.label;
 
         size_t labelLen = strlen(originalLabel);
         size_t writePos = 0;

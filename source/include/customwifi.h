@@ -17,10 +17,11 @@
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
 #define WIFI_LOOP_INTERVAL (1 * 1000)
-#define WIFI_CONNECT_TIMEOUT 60                   // In seconds
-#define WIFI_PORTAL_TIMEOUT (3 * 60)              // In seconds
-#define WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS 1     // One is enough since there is already quite a lot of retries in the lower layers
+#define WIFI_CONNECT_TIMEOUT_SECONDS 10
+#define WIFI_PORTAL_TIMEOUT_SECONDS (5 * 60)
+#define WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS 3     // How many times to try connecting (with timeout) before giving up
 #define WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS 5 // Maximum WiFi reconnection attempts before restart
+#define WIFI_DISCONNECT_DELAY (15 * 1000) // Delay after WiFi disconnected to allow automatic reconnection
 #define WIFI_RECONNECT_DELAY_BASE (5 * 1000)      // Base delay for exponential backoff
 #define WIFI_STABLE_CONNECTION_DURATION (5 * 60 * 1000)    // Duration of uninterrupted WiFi connection to reset the reconnection counter
 #define WIFI_PERIODIC_CHECK_INTERVAL (30 * 1000) // Interval to check WiFi connection status

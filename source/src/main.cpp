@@ -76,7 +76,7 @@ void setup()
   logger.info("Guess who's back, back again! EnergyMe - Home is starting up...", TAG);
   logger.info("Build version: %s | Build date: %s %s | Device ID: %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
   printDeviceStatusStatic();
-
+  
   logger.debug("Setting up crash monitor...", TAG);
   CrashMonitor::begin();
   logger.info("Crash monitor setup done", TAG);
@@ -110,7 +110,14 @@ void setup()
   logger.info("Button handler setup done", TAG);
 
   logger.debug("Setting up ADE7953...", TAG);
-  if (Ade7953::begin()) { logger.info("ADE7953 setup done", TAG); }
+  if (Ade7953::begin(
+      ADE7953_SS_PIN,
+      ADE7953_SCK_PIN,
+      ADE7953_MISO_PIN,
+      ADE7953_MOSI_PIN,
+      ADE7953_RESET_PIN,
+      ADE7953_INTERRUPT_PIN)
+    ) { logger.info("ADE7953 setup done", TAG); }
   else { logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG); }
 
   Led::setBlue(Led::PRIO_NORMAL);

@@ -1,10 +1,15 @@
 import time
 import json
 import os
+from typing import Any, Dict
 from pymodbus.client import ModbusTcpClient
 
+# Modbus server details
+SERVER_HOST = "192.168.1.123"  # Replace with your server's IP address
+SERVER_PORT = 502  # Replace with your server's port if different
+
 # Mapping from old string types to ModbusTcpClient.DATATYPE enum values
-def get_datatype_mapping(client):
+def get_datatype_mapping(client: ModbusTcpClient) -> Dict[str, Any]:
     """Get mapping from string types to client's DATATYPE enum."""
     return {
         "uint32": client.DATATYPE.UINT32,
@@ -20,7 +25,7 @@ def get_datatype_mapping(client):
         "bits": client.DATATYPE.BITS
     }
 
-def load_registers_from_json(json_file_path):
+def load_registers_from_json(json_file_path: str) -> Dict[str, Dict[str, Any]]:
     """Load register definitions from JSON file and convert to our format."""
     if not os.path.exists(json_file_path):
         print(f"Warning: JSON file {json_file_path} not found")
@@ -38,6 +43,7 @@ def load_registers_from_json(json_file_path):
                     cleaned_lines.append(line)
             cleaned_content = '\n'.join(cleaned_lines)
             
+            json_registers : Dict[str, Dict[str, Any]] = {}
             json_registers = json.loads(cleaned_content)
         
         converted_registers = {}
@@ -69,12 +75,8 @@ def load_registers_from_json(json_file_path):
         print(f"Error loading JSON file {json_file_path}: {e}")
         return {}
 
-# Modbus server details
-SERVER_HOST = "192.168.2.75"  # Replace with your server's IP address
-SERVER_PORT = 502  # Replace with your server's port if different
 
-
-def read_register(client: ModbusTcpClient, address, size, reg_type):
+def read_register(client: ModbusTcpClient, address: int, size: int, reg_type: str) -> Any:
     """Read a register and decode its value based on the type."""
     result = client.read_holding_registers(address=address, count=size, slave=1)
     if not result.isError():
@@ -93,7 +95,7 @@ def read_register(client: ModbusTcpClient, address, size, reg_type):
     return None
 
 
-def test_registers(client, registers):
+def test_registers(client: ModbusTcpClient, registers: Dict[str, Dict[str, Any]]):
     """Test all defined registers."""
     print("\n" + "="*80)
     print("📊 COMPREHENSIVE REGISTER TESTING")
@@ -132,7 +134,7 @@ def test_registers(client, registers):
     print("─"*80)
     
 # Now test channel 0 active power vs aggregated active power without channel 0
-def test_channel0_active_power(client, registers):
+def test_channel0_active_power(client: ModbusTcpClient, registers: Dict[str, Dict[str, Any]]):
     """Test channel 0 active power vs aggregated active power without channel 0."""
     print("\n" + "="*80)
     print("⚡ CHANNEL 0 VS AGGREGATED POWER COMPARISON")
@@ -140,8 +142,8 @@ def test_channel0_active_power(client, registers):
     
     start_time = time.time()
     counter = 0
-    abs_difference_tot = 0
-    rel_difference_tot = 0
+    abs_difference_tot = 0.0
+    rel_difference_tot = 0.0
     successful_comparisons = 0
     
     # Find the registers by their display names (with units)
@@ -202,7 +204,7 @@ def test_channel0_active_power(client, registers):
     else:
         print(f"❌ No successful comparisons out of {counter} attempts")
 
-def test_channel0_polling_speed(client, registers):
+def test_channel0_polling_speed(client: ModbusTcpClient, registers: Dict[str, Dict[str, Any]]):
     """Test the polling speed of channel 0 active power."""
     print("\n" + "="*80)
     print("🚀 CHANNEL 0 ACTIVE POWER POLLING SPEED TEST")
@@ -268,7 +270,7 @@ def test_channel0_polling_speed(client, registers):
     print(f"   🔋 Avg power reading: {avg_power:.2f}W")
     print("─"*80)
 
-def test_register_source_comparison(client, register_dict):
+def test_register_source_comparison(client: ModbusTcpClient, register_dict: Dict[str, Dict[str, Any]]):
     """Test a specific set of registers and show their source."""
     print("\n" + "="*80)
     print(f"📋 TESTING {len(register_dict)} REGISTERS FROM JSON FILE")
@@ -388,7 +390,6 @@ def main():
     finally:
         client.close()
         print("🔌 Modbus connection closed")
-
 
 if __name__ == "__main__":
     main()

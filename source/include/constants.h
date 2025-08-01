@@ -38,9 +38,7 @@
 #define MAXIMUM_UNIX_TIME_MILLISECONDS 4102444800000 // Corresponds to 2100
 
 // File path
-#define CONFIGURATION_ADE7953_JSON_PATH "/config/ade7953.json"
 #define CALIBRATION_JSON_PATH "/config/calibration.json"
-#define CHANNEL_DATA_JSON_PATH "/config/channel.json"
 #define ENERGY_JSON_PATH "/energy.json"
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
 

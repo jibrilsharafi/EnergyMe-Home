@@ -6,7 +6,7 @@ namespace Led
     static int _redPin = INVALID_PIN;
     static int _greenPin = INVALID_PIN;
     static int _bluePin = INVALID_PIN;
-    static unsigned int _brightness = DEFAULT_LED_BRIGHTNESS;
+    static unsigned int _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
 
     // Task handles and queue
     static TaskHandle_t _ledTaskHandle = nullptr;
@@ -110,6 +110,7 @@ namespace Led
         _ledTaskShouldRun = true;
         while (_ledTaskShouldRun)
         {
+
             // Check for new commands in queue with timeout
             if (xQueueReceive(_ledQueue, &command, pdMS_TO_TICKS(LED_TASK_DELAY_MS)) == pdTRUE)
             {
@@ -134,14 +135,6 @@ namespace Led
                 }
             }
 
-            // Check for stop notification (non-blocking check since we're using queue timeout)
-            unsigned long notificationValue = ulTaskNotifyTake(pdFALSE, 0);
-            if (notificationValue > 0)
-            {
-                _ledTaskShouldRun = false;
-                break;
-            }
-
             // Check if current pattern has expired
             currentTime = millis64();
             if (_state.isActive && _state.patternDuration > 0 &&
@@ -158,6 +151,14 @@ namespace Led
 
             // Process current pattern
             _processPattern();
+
+            // Wait for stop notification with timeout (blocking) - ensures proper yielding
+            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(LED_TASK_DELAY_MS));
+            if (notificationValue > 0)
+            {
+                _ledTaskShouldRun = false;
+                break;
+            }
         }
 
         _ledTaskHandle = nullptr;
@@ -166,7 +167,7 @@ namespace Led
 
     void resetToDefaults()
     {
-        _brightness = DEFAULT_LED_BRIGHTNESS;
+        _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
         _saveConfiguration();
     }
 
@@ -175,16 +176,16 @@ namespace Led
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_LED, true))
         {
-            _brightness = DEFAULT_LED_BRIGHTNESS;
+            _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
             _saveConfiguration();
             return false;
         }
 
-        _brightness = preferences.getInt(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS);
+        _brightness = preferences.getInt(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS_PERCENT);
         preferences.end();
 
         // Validate loaded value is within acceptable range
-        _brightness = min(max(_brightness, (unsigned int)0), (unsigned int)LED_MAX_BRIGHTNESS);
+        _brightness = min(max(_brightness, (unsigned int)0), (unsigned int)LED_MAX_BRIGHTNESS_PERCENT);
         return true;
     }
 
@@ -198,7 +199,7 @@ namespace Led
 
     void setBrightness(unsigned int brightness)
     {
-        _brightness = min(max(brightness, (unsigned int)0), (unsigned int)LED_MAX_BRIGHTNESS);
+        _brightness = min(max(brightness, (unsigned int)0), (unsigned int)LED_MAX_BRIGHTNESS_PERCENT);
         _saveConfiguration();
     }
 
@@ -258,7 +259,7 @@ namespace Led
 
     static unsigned char _calculateBrightness(unsigned char value, float factor)
     {
-        return (unsigned char)(value * _brightness * factor / LED_MAX_BRIGHTNESS);
+        return (unsigned char)(value * _brightness * factor / LED_MAX_BRIGHTNESS_PERCENT);
     }
 
     static void _processPattern()

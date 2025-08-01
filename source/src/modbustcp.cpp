@@ -29,10 +29,8 @@ namespace ModbusTcp
     void stop()
     {
         logger.debug("Stopping Modbus TCP server", TAG);
-        
         _mbServer.stop();
-        
-        logger.debug("Modbus TCP server stopped", TAG);
+        logger.info("Modbus TCP server stopped", TAG);
     }
 
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request)
@@ -96,42 +94,56 @@ namespace ModbusTcp
             int channel = realAddress / _stepChannelRegisters;
             int offset = realAddress % _stepChannelRegisters;
 
+            MeterValues meterValues;
+            Ade7953::getMeterValues(meterValues, channel);
+
             switch (offset)
             {
-                case 0: return _getFloatBits(Ade7953::meterValues[channel].current, true);
-                case 1: return _getFloatBits(Ade7953::meterValues[channel].current, false);
-                case 2: return _getFloatBits(Ade7953::meterValues[channel].activePower, true);
-                case 3: return _getFloatBits(Ade7953::meterValues[channel].activePower, false);
-                case 4: return _getFloatBits(Ade7953::meterValues[channel].reactivePower, true);
-                case 5: return _getFloatBits(Ade7953::meterValues[channel].reactivePower, false);
-                case 6: return _getFloatBits(Ade7953::meterValues[channel].apparentPower, true);
-                case 7: return _getFloatBits(Ade7953::meterValues[channel].apparentPower, false);
-                case 8: return _getFloatBits(Ade7953::meterValues[channel].powerFactor, true);
-                case 9: return _getFloatBits(Ade7953::meterValues[channel].powerFactor, false);
-                case 10: return _getFloatBits(Ade7953::meterValues[channel].activeEnergyImported, true);
-                case 11: return _getFloatBits(Ade7953::meterValues[channel].activeEnergyImported, false);
-                case 12: return _getFloatBits(Ade7953::meterValues[channel].activeEnergyExported, true);
-                case 13: return _getFloatBits(Ade7953::meterValues[channel].activeEnergyExported, false);
-                case 14: return _getFloatBits(Ade7953::meterValues[channel].reactiveEnergyImported, true);
-                case 15: return _getFloatBits(Ade7953::meterValues[channel].reactiveEnergyImported, false);
-                case 16: return _getFloatBits(Ade7953::meterValues[channel].reactiveEnergyExported, true);
-                case 17: return _getFloatBits(Ade7953::meterValues[channel].reactiveEnergyExported, false);
-                case 18: return _getFloatBits(Ade7953::meterValues[channel].apparentEnergy, true);
-                case 19: return _getFloatBits(Ade7953::meterValues[channel].apparentEnergy, false);
+                case 0: return _getFloatBits(meterValues.current, true);
+                case 1: return _getFloatBits(meterValues.current, false);
+                case 2: return _getFloatBits(meterValues.activePower, true);
+                case 3: return _getFloatBits(meterValues.activePower, false);
+                case 4: return _getFloatBits(meterValues.reactivePower, true);
+                case 5: return _getFloatBits(meterValues.reactivePower, false);
+                case 6: return _getFloatBits(meterValues.apparentPower, true);
+                case 7: return _getFloatBits(meterValues.apparentPower, false);
+                case 8: return _getFloatBits(meterValues.powerFactor, true);
+                case 9: return _getFloatBits(meterValues.powerFactor, false);
+                case 10: return _getFloatBits(meterValues.activeEnergyImported, true);
+                case 11: return _getFloatBits(meterValues.activeEnergyImported, false);
+                case 12: return _getFloatBits(meterValues.activeEnergyExported, true);
+                case 13: return _getFloatBits(meterValues.activeEnergyExported, false);
+                case 14: return _getFloatBits(meterValues.reactiveEnergyImported, true);
+                case 15: return _getFloatBits(meterValues.reactiveEnergyImported, false);
+                case 16: return _getFloatBits(meterValues.reactiveEnergyExported, true);
+                case 17: return _getFloatBits(meterValues.reactiveEnergyExported, false);
+                case 18: return _getFloatBits(meterValues.apparentEnergy, true);
+                case 19: return _getFloatBits(meterValues.apparentEnergy, false);
             }
         }
 
+
+        MeterValues meterValuesZeroChannel;
+        Ade7953::getMeterValues(meterValuesZeroChannel, 0);
+
         switch (address)
         {
-            // General registers
-            case 0: return CustomTime::getUnixTime() >> 16;
-            case 1: return CustomTime::getUnixTime() & 0xFFFF;
-            case 2: return millis64() >> 16;
-            case 3: return millis64() & 0xFFFF;  
+            // General registers - 64-bit values split into 4x16-bit registers each
+            // Unix timestamp (seconds)
+            case 0: return (CustomTime::getUnixTime() >> 48) & 0xFFFF;  // Bits 63-48
+            case 1: return (CustomTime::getUnixTime() >> 32) & 0xFFFF;  // Bits 47-32
+            case 2: return (CustomTime::getUnixTime() >> 16) & 0xFFFF;  // Bits 31-16
+            case 3: return CustomTime::getUnixTime() & 0xFFFF;          // Bits 15-0
+            
+            // System uptime (milliseconds)
+            case 4: return (millis64() >> 48) & 0xFFFF;  // Bits 63-48
+            case 5: return (millis64() >> 32) & 0xFFFF;  // Bits 47-32
+            case 6: return (millis64() >> 16) & 0xFFFF;  // Bits 31-16
+            case 7: return millis64() & 0xFFFF;          // Bits 15-0  
             
             // Voltage
-            case 100: return _getFloatBits(Ade7953::meterValues[0].voltage, true);
-            case 101: return _getFloatBits(Ade7953::meterValues[0].voltage, false);
+            case 100: return _getFloatBits(meterValuesZeroChannel.voltage, true);
+            case 101: return _getFloatBits(meterValuesZeroChannel.voltage, false);
 
             // Grid frequency
             case 102: return _getFloatBits(Ade7953::getGridFrequency(), true);
@@ -167,7 +179,7 @@ namespace ModbusTcp
     {
         // Define valid ranges
         bool isValid = (
-            (address >= 0 && address <= 3) ||  // General registers
+            (address >= 0 && address <= 7) ||  // General registers (64-bit values)
             (address >= 100 && address <= 103) ||  // Voltage and grid frequency
             (address >= 200 && address <= 207) ||  // Aggregated values with channel 0
             (address >= 210 && address <= 217) ||  // Aggregated values without channel 0

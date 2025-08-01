@@ -81,57 +81,13 @@ paths:
               newPassword: "newpassword456"
       responses:
         '200':
-          description: Password changed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "Password changed successfully"
+          $ref: '#/components/responses/Success'
         '400':
-          description: Bad request (missing parameters or password validation failed)
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "New password does not meet requirements or failed to save"
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Current password is incorrect
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Current password is incorrect"
+          $ref: '#/components/responses/Unauthorized'
         '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Failed to retrieve current password"
+          $ref: '#/components/responses/InternalServerError'
 
   /api/v1/auth/reset-password:
     post:
@@ -141,30 +97,9 @@ paths:
         - Authentication
       responses:
         '200':
-          description: Password reset successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "Password reset to default"
+          $ref: '#/components/responses/Success'
         '500':
-          description: Failed to reset password
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
+          $ref: '#/components/responses/InternalServerError'
 
   # OTA (Over-The-Air) Update endpoints
   /api/v1/ota/upload:
@@ -293,31 +228,9 @@ paths:
         - OTA Updates
       responses:
         '200':
-          description: Rollback initiated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "Rollback initiated. Device will restart."
+          $ref: '#/components/responses/Success'
         '400':
-          description: Rollback not possible
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Rollback not possible"
+          $ref: '#/components/responses/BadRequest'
 
   # System Management endpoints
   /api/v1/system/info:
@@ -410,18 +323,7 @@ paths:
         - System
       responses:
         '200':
-          description: Restart initiated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "System restart initiated"
+          $ref: '#/components/responses/Success'
 
   /api/v1/system/factory-reset:
     post:
@@ -431,18 +333,7 @@ paths:
         - System
       responses:
         '200':
-          description: Factory reset initiated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "Factory reset initiated"
+          $ref: '#/components/responses/Success'
 
   /api/v1/system/secrets:
     get:
@@ -470,18 +361,7 @@ paths:
         - Network
       responses:
         '200':
-          description: WiFi reset initiated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "WiFi configuration reset"
+          $ref: '#/components/responses/Success'
 
   # Crash Monitor endpoints
   /api/v1/crash/info:
@@ -699,43 +579,19 @@ paths:
               type: object
               properties:
                 print:
-                  type: string
-                  enum: [VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL]
+                  $ref: '#/components/schemas/LogLevel'
                   description: Set the print log level (optional)
                 save:
-                  type: string
-                  enum: [VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL]  
+                  $ref: '#/components/schemas/LogLevel'
                   description: Set the save log level (optional)
             example:
               print: "DEBUG"
               save: "ERROR"
       responses:
         '200':
-          description: Log levels updated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "Log levels updated: print=DEBUG save=ERROR"
+          $ref: '#/components/responses/Success'
         '400':
-          description: Invalid log level or missing parameters
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: false
-                  error:
-                    type: string
-                    example: "Invalid log level specified. Valid levels: VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL"
+          $ref: '#/components/responses/BadRequest'
 
   /api/v1/logs/clear:
     post:
@@ -745,18 +601,7 @@ paths:
         - Logging
       responses:
         '200':
-          description: Logs cleared successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "Logs cleared successfully"
+          $ref: '#/components/responses/Success'
 
   # Custom MQTT endpoints
   /api/v1/mqtt/config:
@@ -929,14 +774,14 @@ paths:
                 properties:
                   brightness:
                     type: integer
-                    description: Current brightness level (0-255)
+                    description: Current brightness level (0-100)
                     minimum: 0
-                    maximum: 255
-                    example: 191
+                    maximum: 100
+                    example: 75
                   max_brightness:
                     type: integer
                     description: Maximum possible brightness value
-                    example: 255
+                    example: 100
     put:
       summary: Set LED brightness
       description: Update the LED brightness level
@@ -953,48 +798,15 @@ paths:
               properties:
                 brightness:
                   type: integer
-                  description: Brightness level to set (0-255)
+                  description: Brightness level to set (0-100)
                   minimum: 0
-                  maximum: 255
-                  example: 128
+                  maximum: 100
+                  example: 75
       responses:
         '200':
-          description: Brightness updated successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Brightness updated successfully"
-                  brightness:
-                    type: integer
-                    description: Current brightness level after update
-                    example: 128
-                  max_brightness:
-                    type: integer
-                    description: Maximum possible brightness value
-                    example: 255
+          $ref: '#/components/responses/Success'
         '400':
-          description: Invalid brightness value or missing parameter
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Brightness value out of range"
-                  min:
-                    type: integer
-                    example: 0
-                  max:
-                    type: integer
-                    example: 255
-                  provided:
-                    type: integer
-                    example: 300
+          $ref: '#/components/responses/BadRequest'
 
 tags:
   - name: System
@@ -1015,9 +827,79 @@ tags:
     description: LED brightness control and status endpoints
 
 components:
+  # Common response patterns
+  responses:
+    Success:
+      description: Operation completed successfully
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SuccessResponse'
+    
+    BadRequest:
+      description: Bad request - invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_params:
+              summary: Invalid parameters
+              value:
+                success: false
+                error: "Invalid input parameters"
+            validation_failed:
+              summary: Validation failed
+              value:
+                success: false
+                error: "Request validation failed"
+    
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Authentication required"
+    
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Resource not found"
+    
+    MethodNotAllowed:
+      description: HTTP method not allowed for this endpoint
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Method not allowed"
+    
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Internal server error occurred"
+
   schemas:
     SuccessResponse:
       type: object
+      required:
+        - success
+        - message
       properties:
         success:
           type: boolean
@@ -1028,6 +910,9 @@ components:
     
     ErrorResponse:
       type: object
+      required:
+        - success
+        - error
       properties:
         success:
           type: boolean

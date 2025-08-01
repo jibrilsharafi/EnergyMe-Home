@@ -63,7 +63,7 @@ namespace CustomMqtt
         logger.debug("Stopping custom MQTT...", TAG);
         _stopTask();
         _isSetupDone = false;
-        logger.debug("Custom MQTT stopped", TAG);
+        logger.info("Custom MQTT stopped", TAG);
     }
 
     static void _setDefaultConfiguration()
@@ -580,7 +580,7 @@ namespace CustomMqtt
     }
 
     static void _stopTask() { 
-        stopTaskGracefully(&_customMqttTaskHandle, "custom MQTT task");
+        stopTaskGracefully(&_customMqttTaskHandle, "Custom MQTT task");
         _customClientMqtt.disconnect();
     }
 }

@@ -1,17 +1,17 @@
 {
     "40001": {
         "name": "Unix-Time",
-        "description": "Unix timestamp (32-bit)",
+        "description": "Unix timestamp (64-bit)",
         "function_codes": [3],
-        "data_type": "uint32",
+        "data_type": "uint64",
         "unit": "s",
         "access": "read"
     },
-    "40003": {
+    "40005": {
         "name": "Millis",
-        "description": "Milliseconds since startup (32-bit)",
+        "description": "Milliseconds since startup (64-bit)",
         "function_codes": [3],
-        "data_type": "uint32",
+        "data_type": "uint64",
         "unit": "ms",
         "access": "read"
     },

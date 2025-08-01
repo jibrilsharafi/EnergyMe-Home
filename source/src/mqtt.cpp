@@ -858,42 +858,48 @@ namespace Mqtt
         }
 
         for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT; i++) {
-            if (Ade7953::channelData[i].active) {
+            if (Ade7953::isChannelActive(i)) {
                 JsonObject jsonObject = jsonArray.add<JsonObject>();
 
-                if (Ade7953::meterValues[i].lastUnixTimeMilliseconds == 0) {
+                MeterValues meterValues;
+                Ade7953::getMeterValues(meterValues, i);
+
+                if (meterValues.lastUnixTimeMilliseconds == 0) {
                     logger.debug("Meter values for channel %d have zero unixTime, skipping...", TAG, i);
                     continue;
                 }
 
-                if (!validateUnixTime(Ade7953::meterValues[i].lastUnixTimeMilliseconds)) {
-                    logger.warning("Invalid unixTime in meter values for channel %d: %llu", TAG, i, Ade7953::meterValues[i].lastUnixTimeMilliseconds);
+                if (!validateUnixTime(meterValues.lastUnixTimeMilliseconds)) {
+                    logger.warning("Invalid unixTime in meter values for channel %d: %llu", TAG, i, meterValues.lastUnixTimeMilliseconds);
                     continue;
                 }
 
-                jsonObject["unixTime"] = Ade7953::meterValues[i].lastUnixTimeMilliseconds;
+                jsonObject["unixTime"] = meterValues.lastUnixTimeMilliseconds;
                 jsonObject["channel"] = i;
-                jsonObject["activeEnergyImported"] = Ade7953::meterValues[i].activeEnergyImported;
-                jsonObject["activeEnergyExported"] = Ade7953::meterValues[i].activeEnergyExported;
-                jsonObject["reactiveEnergyImported"] = Ade7953::meterValues[i].reactiveEnergyImported;
-                jsonObject["reactiveEnergyExported"] = Ade7953::meterValues[i].reactiveEnergyExported;
-                jsonObject["apparentEnergy"] = Ade7953::meterValues[i].apparentEnergy;
+                jsonObject["activeEnergyImported"] = meterValues.activeEnergyImported;
+                jsonObject["activeEnergyExported"] = meterValues.activeEnergyExported;
+                jsonObject["reactiveEnergyImported"] = meterValues.reactiveEnergyImported;
+                jsonObject["reactiveEnergyExported"] = meterValues.reactiveEnergyExported;
+                jsonObject["apparentEnergy"] = meterValues.apparentEnergy;
             }
         }
 
         JsonObject jsonObject = jsonArray.add<JsonObject>();
 
-        if (Ade7953::meterValues[0].lastUnixTimeMilliseconds == 0) {
+        MeterValues meterValuesZeroChannel;
+        Ade7953::getMeterValues(meterValuesZeroChannel, 0);
+
+        if (meterValuesZeroChannel.lastUnixTimeMilliseconds == 0) {
             logger.debug("Meter values have zero unixTime, skipping...", TAG);
             return;
         }
 
-        if (!validateUnixTime(Ade7953::meterValues[0].lastUnixTimeMilliseconds)) {
-            logger.warning("Invalid unixTime in meter values: %llu", TAG, Ade7953::meterValues[0].lastUnixTimeMilliseconds);
+        if (!validateUnixTime(meterValuesZeroChannel.lastUnixTimeMilliseconds)) {
+            logger.warning("Invalid unixTime in meter values: %llu", TAG, meterValuesZeroChannel.lastUnixTimeMilliseconds);
             return;
         }
-        jsonObject["unixTime"] = Ade7953::meterValues[0].lastUnixTimeMilliseconds;
-        jsonObject["voltage"] = Ade7953::meterValues[0].voltage;
+        jsonObject["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
+        jsonObject["voltage"] = meterValuesZeroChannel.voltage;
 
         logger.debug("Circular buffer converted to JSON", TAG);
     }

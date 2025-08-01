@@ -3,6 +3,7 @@
 #include <AdvancedLogger.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <SPI.h>
 #include <Ticker.h>
 #include <vector>
@@ -52,6 +53,50 @@
 #define DEFAULT_PHCAL 10 // 0.02°/LSB, indicating a phase calibration of 0.2° which is minimum needed for CTs
 #define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) for line cycle end detection
 #define MINIMUM_SAMPLE_TIME 200
+
+// Configuration Preferences Keys
+#define CONFIG_SAMPLE_TIME_KEY "sample_time"
+#define CONFIG_AV_GAIN_KEY "av_gain"
+#define CONFIG_AI_GAIN_KEY "ai_gain"
+#define CONFIG_BI_GAIN_KEY "bi_gain"
+#define CONFIG_AIRMS_OS_KEY "airms_os"
+#define CONFIG_BIRMS_OS_KEY "birms_os"
+#define CONFIG_AW_GAIN_KEY "aw_gain"
+#define CONFIG_BW_GAIN_KEY "bw_gain"
+#define CONFIG_AWATT_OS_KEY "awatt_os"
+#define CONFIG_BWATT_OS_KEY "bwatt_os"
+#define CONFIG_AVAR_GAIN_KEY "avar_gain"
+#define CONFIG_BVAR_GAIN_KEY "bvar_gain"
+#define CONFIG_AVAR_OS_KEY "avar_os"
+#define CONFIG_BVAR_OS_KEY "bvar_os"
+#define CONFIG_AVA_GAIN_KEY "ava_gain"
+#define CONFIG_BVA_GAIN_KEY "bva_gain"
+#define CONFIG_AVA_OS_KEY "ava_os"
+#define CONFIG_BVA_OS_KEY "bva_os"
+#define CONFIG_PHCAL_A_KEY "phcal_a"
+#define CONFIG_PHCAL_B_KEY "phcal_b"
+
+// Default configuration values
+#define DEFAULT_CONFIG_SAMPLE_TIME 1000
+#define DEFAULT_CONFIG_AV_GAIN 0
+#define DEFAULT_CONFIG_AI_GAIN 0
+#define DEFAULT_CONFIG_BI_GAIN 0
+#define DEFAULT_CONFIG_AIRMS_OS 0
+#define DEFAULT_CONFIG_BIRMS_OS 0
+#define DEFAULT_CONFIG_AW_GAIN 0
+#define DEFAULT_CONFIG_BW_GAIN 0
+#define DEFAULT_CONFIG_AWATT_OS 0
+#define DEFAULT_CONFIG_BWATT_OS 0
+#define DEFAULT_CONFIG_AVAR_GAIN 0
+#define DEFAULT_CONFIG_BVAR_GAIN 0
+#define DEFAULT_CONFIG_AVAR_OS 0
+#define DEFAULT_CONFIG_BVAR_OS 0
+#define DEFAULT_CONFIG_AVA_GAIN 0
+#define DEFAULT_CONFIG_BVA_GAIN 0
+#define DEFAULT_CONFIG_AVA_OS 0
+#define DEFAULT_CONFIG_BVA_OS 0
+#define DEFAULT_CONFIG_PHCAL_A 0
+#define DEFAULT_CONFIG_PHCAL_B 0
 
 // IRQSTATA / RSTIRQSTATA Register Bit Positions (Table 23, ADE7953 Datasheet)
 #define IRQSTATA_AEHFA_BIT         0  // Active energy register half full (Current Channel A)
@@ -112,32 +157,22 @@
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0f // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20f // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 
-// Preferences keys for ADE7953 configuration
-#define PREF_KEY_SAMPLE_TIME "sampleTime"
-#define PREF_KEY_A_V_GAIN "aVGain"
-#define PREF_KEY_A_I_GAIN "aIGain"
-#define PREF_KEY_B_I_GAIN "bIGain"
-#define PREF_KEY_A_IRMS_OS "aIRmsOs"
-#define PREF_KEY_B_IRMS_OS "bIRmsOs"
-#define PREF_KEY_A_W_GAIN "aWGain"
-#define PREF_KEY_B_W_GAIN "bWGain"
-#define PREF_KEY_A_WATT_OS "aWattOs"
-#define PREF_KEY_B_WATT_OS "bWattOs"
-#define PREF_KEY_A_VAR_GAIN "aVarGain"
-#define PREF_KEY_B_VAR_GAIN "bVarGain"
-#define PREF_KEY_A_VAR_OS "aVarOs"
-#define PREF_KEY_B_VAR_OS "bVarOs"
-#define PREF_KEY_A_VA_GAIN "aVaGain"
-#define PREF_KEY_B_VA_GAIN "bVaGain"
-#define PREF_KEY_A_VA_OS "aVaOs"
-#define PREF_KEY_B_VA_OS "bVaOs"
+// Channel Preferences Keys
+#define CHANNEL_ACTIVE_KEY "active_%u"
+#define CHANNEL_REVERSE_KEY "reverse_%u"
+#define CHANNEL_LABEL_KEY "label_%u"
+#define CHANNEL_PHASE_KEY "phase_%u"
+#define CHANNEL_CALIBRATION_LABEL_KEY "cal_label_%u"
 
-// Preferences keys for channel configuration (per channel, format: "ch<N>_<property>")
-#define PREF_KEY_CHANNEL_ACTIVE_FMT "ch%d_active"
-#define PREF_KEY_CHANNEL_REVERSE_FMT "ch%d_reverse"
-#define PREF_KEY_CHANNEL_LABEL_FMT "ch%d_label"
-#define PREF_KEY_CHANNEL_PHASE_FMT "ch%d_phase"
-#define PREF_KEY_CHANNEL_CALIB_LABEL_FMT "ch%d_calibLabel"
+// Default channel values
+#define DEFAULT_CHANNEL_ACTIVE false
+#define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
+#define DEFAULT_CHANNEL_REVERSE false
+#define DEFAULT_CHANNEL_PHASE PHASE_1
+#define DEFAULT_CHANNEL_0_LABEL "Channel 0"
+#define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
+#define DEFAULT_CHANNEL_0_CALIBRATION_LABEL "SCT-013-50A-333mV"
+#define DEFAULT_CHANNEL_CALIBRATION_LABEL "SCT-013-30A-333mV"
 
 #define BIT_8 8
 #define BIT_16 16
@@ -167,6 +202,8 @@ enum class Ade7953Channel{
     B,
 };
 
+// We don't have an enum for 17 channels since having them as unsigned int is more flexible
+
 enum class MeasurementType{
     VOLTAGE,
     CURRENT,
@@ -175,8 +212,6 @@ enum class MeasurementType{
     APPARENT_POWER,
     POWER_FACTOR,
 };
-
-
 
 /*
  * Struct to hold the real-time meter values for a specific channel
@@ -255,22 +290,71 @@ struct ChannelState { // TODO: what the heck was i thinking with this?
     unsigned long consecutiveZeroCount = 0;
 };
 
+// ADE7953 Configuration structure
+struct Ade7953Configuration
+{
+  unsigned long sampleTime;
+  long aVGain;
+  long aIGain;
+  long bIGain;
+  long aIRmsOs;
+  long bIRmsOs;
+  long aWGain;
+  long bWGain;
+  long aWattOs;
+  long bWattOs;
+  long aVarGain;
+  long bVarGain;
+  long aVarOs;
+  long bVarOs;
+  long aVaGain;
+  long bVaGain;
+  long aVaOs;
+  long bVaOs;
+  long phCalA;
+  long phCalB;
+
+  Ade7953Configuration()
+    : sampleTime(DEFAULT_CONFIG_SAMPLE_TIME),
+      aVGain(DEFAULT_CONFIG_AV_GAIN), aIGain(DEFAULT_CONFIG_AI_GAIN), bIGain(DEFAULT_CONFIG_BI_GAIN),
+      aIRmsOs(DEFAULT_CONFIG_AIRMS_OS), bIRmsOs(DEFAULT_CONFIG_BIRMS_OS),
+      aWGain(DEFAULT_CONFIG_AW_GAIN), bWGain(DEFAULT_CONFIG_BW_GAIN),
+      aWattOs(DEFAULT_CONFIG_AWATT_OS), bWattOs(DEFAULT_CONFIG_BWATT_OS),
+      aVarGain(DEFAULT_CONFIG_AVAR_GAIN), bVarGain(DEFAULT_CONFIG_BVAR_GAIN),
+      aVarOs(DEFAULT_CONFIG_AVAR_OS), bVarOs(DEFAULT_CONFIG_BVAR_OS),
+      aVaGain(DEFAULT_CONFIG_AVA_GAIN), bVaGain(DEFAULT_CONFIG_BVA_GAIN),
+      aVaOs(DEFAULT_CONFIG_AVA_OS), bVaOs(DEFAULT_CONFIG_BVA_OS),
+      phCalA(DEFAULT_CONFIG_PHCAL_A), phCalB(DEFAULT_CONFIG_PHCAL_B) {}
+};
+
 namespace Ade7953
 {
-    bool begin();
+    bool begin(
+        unsigned int ssPin,
+        unsigned int sckPin,
+        unsigned int misoPin,
+        unsigned int mosiPin,
+        unsigned int resetPin,
+        unsigned int interruptPin
+    );
+    void stop();
     void cleanup();
     void loop();
-        
-    unsigned int getSampleTime();
 
+    bool isChannelActive(unsigned int channelIndex);
+
+    void getChannelData(ChannelData &channelData, unsigned int channelIndex);
+    void getMeterValues(MeterValues &meterValues, unsigned int channelIndex);
+    
     long readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired = true);
     void writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired = true);
-
+    
     float getAggregatedActivePower(bool includeChannel0 = true);
     float getAggregatedReactivePower(bool includeChannel0 = true);
     float getAggregatedApparentPower(bool includeChannel0 = true);
     float getAggregatedPowerFactor(bool includeChannel0 = true);
-
+    
+    unsigned int getSampleTime();
     float getGridFrequency();
     
     void resetEnergyValues();
@@ -279,21 +363,22 @@ namespace Ade7953
 
     void setDefaultConfiguration();
     bool setConfiguration(JsonDocument &jsonDocument);
+    bool setSingleConfigurationValue(const char* key, long value);
+    void getConfiguration(Ade7953Configuration &config);
+    void configurationToJson(JsonDocument &jsonDocument);
 
     void setDefaultCalibrationValues();
     bool setCalibrationValues(JsonDocument &jsonDocument);
 
     void setDefaultChannelData();
     bool setChannelData(JsonDocument &jsonDocument);
+    bool setSingleChannelData(unsigned int channelIndex, bool active, bool reverse, const char* label, Phase phase, const char* calibrationLabel);
     void channelDataToJson(JsonDocument &jsonDocument);
     
     void singleMeterValuesToJson(JsonDocument &jsonDocument, unsigned int channel);
     void fullMeterValuesToJson(JsonDocument &jsonDocument);
 
     void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
-
-    MeterValues meterValues[CHANNEL_COUNT];
-    ChannelData channelData[CHANNEL_COUNT];    
     
     void pauseMeterReadingTask();
     void resumeMeterReadingTask();

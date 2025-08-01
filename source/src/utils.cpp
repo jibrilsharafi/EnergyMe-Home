@@ -406,17 +406,6 @@ void createDefaultCalibrationFile() {
     logger.debug("Default calibration created", TAG);
 }
 
-void createDefaultChannelDataFile() { // TODO: remove this weird json to preferences stuff
-    logger.debug("Creating default channel configuration...", TAG);
-
-    JsonDocument jsonDocument;
-    deserializeJson(jsonDocument, default_config_channel_json);
-
-    logger.warning("Actually save this!!!!", TAG);
-
-    logger.debug("Default channel configuration created", TAG);
-}
-
 void createDefaultCustomMqttConfigurationFile() {
     logger.debug("Creating default custom MQTT configuration...", TAG);
 
@@ -435,9 +424,7 @@ std::vector<const char*> checkMissingFiles() {
     std::vector<const char*> missingFiles;
     
     const char* CONFIG_FILE_PATHS[] = {
-        CONFIGURATION_ADE7953_JSON_PATH,
         CALIBRATION_JSON_PATH,
-        CHANNEL_DATA_JSON_PATH,
         ENERGY_JSON_PATH,
         DAILY_ENERGY_JSON_PATH,
     };
@@ -461,12 +448,8 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
 
     
     for (const char* path : missingFiles) {
-        if (strcmp(path, CONFIGURATION_ADE7953_JSON_PATH) == 0) {
-            createDefaultAde7953ConfigurationFile();
-        } else if (strcmp(path, CALIBRATION_JSON_PATH) == 0) {
+        if (strcmp(path, CALIBRATION_JSON_PATH) == 0) {
             createDefaultCalibrationFile();
-        } else if (strcmp(path, CHANNEL_DATA_JSON_PATH) == 0) {
-            createDefaultChannelDataFile();
         } else if (strcmp(path, ENERGY_JSON_PATH) == 0) {
             createDefaultEnergyFile();
         } else if (strcmp(path, DAILY_ENERGY_JSON_PATH) == 0) {
@@ -616,7 +599,8 @@ void setRestartSystem(const char* functionName, const char* reason) {
     }
 
     stopMaintenanceTask();
-    // TODO: add MQTT, ade7953
+    Ade7953::stop();
+    Mqtt::stop();
     CustomMqtt::stop();
     InfluxDbClient::stop();
     ModbusTcp::stop();
@@ -724,8 +708,6 @@ void printDeviceStatusDynamic()
 }
 
 void updateStatistics() {
-    logger.debug("Updating statistics...", TAG);
-
     // The only statistic which is (currently) updated manually here is the log count
     statistics.logVerbose = logger.getVerboseCount();
     statistics.logDebug = logger.getDebugCount();

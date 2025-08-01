@@ -40,9 +40,13 @@ namespace CustomWifi
 
     logger.debug("Starting WiFi...", TAG);
 
-    // Enable auto-reconnect and persistence
+    // Configure WiFi for better authentication reliability
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
+    
+    // Set WiFi mode explicitly and disable power saving to prevent handshake issues
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false); // Disable WiFi sleep to prevent handshake timeouts
 
     // Setup WiFiManager with optimal settings
     _setupWiFiManager();
@@ -77,14 +81,19 @@ namespace CustomWifi
   {
     logger.debug("Setting up the WiFiManager...", TAG);
 
-    _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT);
-    _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT);
+    _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SECONDS);
+    _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SECONDS);
     _wifiManager.setConnectRetries(WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS); // Let WiFiManager handle initial retries
+    
+    // Additional WiFi settings to improve handshake reliability
+    _wifiManager.setCleanConnect(true);    // Clean previous connection attempts
+    _wifiManager.setBreakAfterConfig(true); // Exit after successful config
+    _wifiManager.setRemoveDuplicateAPs(true); // Remove duplicate AP entries
 
         // Callback when portal starts
     _wifiManager.setAPCallback([](WiFiManager *wm) {
                                 logger.info("WiFi configuration portal started: %s", TAG, wm->getConfigPortalSSID().c_str());
-                                Led::blinkBlueFast(); 
+                                Led::blinkBlueFast(Led::PRIO_MEDIUM);
                               });
 
     // Callback when config is saved
@@ -172,15 +181,37 @@ namespace CustomWifi
     char hostname[WIFI_SSID_BUFFER_SIZE];
     snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
 
-    Led::blinkBlueFast(Led::PRIO_MEDIUM);
-    if (!_wifiManager.autoConnect(hostname))
-    {
-      logger.error("Initial WiFi connection failed - restarting", TAG);
+    Led::blinkBlueSlow(Led::PRIO_MEDIUM);
+    
+    // Try initial connection with retries for handshake timeouts
+    int connectionAttempts = 0;
+    const int maxAttempts = 3;
+    bool connected = false;
+    
+    while (!connected && connectionAttempts < maxAttempts) {
+      connectionAttempts++;
+      logger.debug("WiFi connection attempt %d/%d", TAG, connectionAttempts, maxAttempts);
+      
+      if (_wifiManager.autoConnect(hostname)) {
+        connected = true;
+        break;
+      }
+      
+      // If failed, wait a bit before retry (helps with handshake timeouts)
+      if (connectionAttempts < maxAttempts) {
+        logger.warning("Connection attempt %d failed, retrying in 5 seconds...", TAG, connectionAttempts);
+        delay(5000);
+      }
+    }
+    
+    if (!connected) {
+      logger.error("All WiFi connection attempts failed - restarting", TAG);
       Led::doubleBlinkYellow(Led::PRIO_CRITICAL);
       delay(1000);
       // Do not wait for any further operations, since the WiFi is critical and this is the first connection attempt
       ESP.restart();
     }
+    
     Led::clearPattern(Led::PRIO_MEDIUM);
     
     // If we reach here, we are connected
@@ -222,8 +253,8 @@ namespace CustomWifi
           Led::blinkBlueSlow(Led::PRIO_MEDIUM);
           logger.warning("WiFi disconnected - auto-reconnect will handle", TAG);
 
-          // Wait a bit for auto-reconnect to work
-          delay(5000);
+          // Wait a bit for auto-reconnect (enabled by default) to work
+          delay(WIFI_DISCONNECT_DELAY);
 
           // Check if still disconnected
           if (!isFullyConnected())

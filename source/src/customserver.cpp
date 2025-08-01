@@ -7,7 +7,6 @@ namespace CustomServer
     static AsyncWebServer server(WEBSERVER_PORT);
     static AsyncAuthenticationMiddleware digestAuth;
     static AsyncRateLimitMiddleware rateLimit;
-    static AsyncLoggingMiddleware requestLogger;
 
     // Health check task variables
     static TaskHandle_t _healthCheckTaskHandle = NULL;
@@ -109,7 +108,6 @@ namespace CustomServer
 
         // Stop the server
         server.end();
-        logger.info("Web server stopped", TAG);
 
         // Delete API mutex
         if (_apiMutex != NULL) {
@@ -117,6 +115,8 @@ namespace CustomServer
             _apiMutex = NULL;
             logger.debug("API mutex deleted", TAG);
         }
+        
+        logger.info("Web server stopped", TAG);
     }
 
     static void _setupMiddleware()
@@ -159,13 +159,6 @@ namespace CustomServer
         server.addMiddleware(&rateLimit);
 
         logger.debug("Rate limiting configured: max requests = %d, window size = %d seconds", TAG, WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
-
-        // ---- Logging Middleware Setup ----
-        // TODO: remove this in production, it's for development only
-        requestLogger.setEnabled(true);
-        requestLogger.setOutput(Serial);
-
-        server.addMiddleware(&requestLogger);
 
         logger.debug("Logging middleware configured", TAG);
     }
@@ -301,7 +294,7 @@ namespace CustomServer
             
             serializeJson(doc, *response);
             request->send(response); 
-        }).skipServerMiddlewares().addMiddleware(&requestLogger); // For the health endpoint, no authentication or rate limiting
+        }).skipServerMiddlewares(); // For the health endpoint, no authentication or rate limiting
     }
 
     // === AUTHENTICATION ENDPOINTS ===
@@ -910,7 +903,7 @@ namespace CustomServer
         if (result != pdPASS) { logger.error("Failed to create health check task", TAG); }
     }
 
-    static void _stopHealthCheckTask() { stopTaskGracefully(&_healthCheckTaskHandle, "health check task"); }
+    static void _stopHealthCheckTask() { stopTaskGracefully(&_healthCheckTaskHandle, "Health check task"); }
 
     static void _healthCheckTask(void *parameter)
     {
@@ -1277,7 +1270,7 @@ namespace CustomServer
                   {
             JsonDocument doc;
             doc["brightness"] = Led::getBrightness();
-            doc["max_brightness"] = LED_MAX_BRIGHTNESS;
+            doc["max_brightness"] = LED_MAX_BRIGHTNESS_PERCENT;
             _sendJsonResponse(request, doc);
         });
 
@@ -1292,33 +1285,22 @@ namespace CustomServer
                 doc.set(json);
 
                 // Check if brightness field is provided and is a number
-                if (!doc["brightness"].is<int>()) {
+                if (!doc["brightness"].is<unsigned int>()) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid brightness parameter");
                     return;
                 }
 
-                int brightness = doc["brightness"].as<int>();
+                unsigned int brightness = doc["brightness"].as<unsigned int>();
 
                 // Validate brightness range
-                if (brightness < 0 || brightness > LED_MAX_BRIGHTNESS) {
-                    JsonDocument responseDoc;
-                    responseDoc["message"] = "Brightness value out of range";
-                    responseDoc["min"] = 0;
-                    responseDoc["max"] = LED_MAX_BRIGHTNESS;
-                    responseDoc["provided"] = brightness;
-                    _sendJsonResponse(request, responseDoc, HTTP_CODE_BAD_REQUEST);
+                if (brightness > DEFAULT_LED_BRIGHTNESS_PERCENT) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Brightness value out of range");
                     return;
                 }
 
                 // Set the brightness
                 Led::setBrightness(brightness);
-
-                // Return success response with new brightness value
-                JsonDocument responseDoc;
-                responseDoc["message"] = "Brightness updated successfully";
-                responseDoc["brightness"] = Led::getBrightness();
-                responseDoc["max_brightness"] = LED_MAX_BRIGHTNESS;
-                _sendJsonResponse(request, responseDoc);
+                _sendSuccessResponse(request, "LED brightness updated successfully");
             });
         server.addHandler(setLedBrightnessHandler);
     }

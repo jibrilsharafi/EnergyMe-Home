@@ -164,6 +164,8 @@ namespace CrashMonitor
         size_t size = 0;
         size_t address = 0;
         if (esp_core_dump_image_get(&address, &size) == ESP_OK) {
+            // Note: This returns the total size including ESP-IDF headers
+            // The actual ELF size will be determined when we find the ELF offset
             return size;
         }
         return 0;
@@ -186,18 +188,55 @@ namespace CrashMonitor
 
         // Get total core dump size to validate offset
         size_t totalSize = getCoreDumpSize();
-        if (totalSize == 0 || offset >= totalSize) {
+        if (totalSize == 0) {
+            *bytesRead = 0;
+            return false;
+        }
+        
+        // Find ELF header offset (only for first chunk)
+        static size_t elfOffset = 0;
+        static bool elfOffsetFound = false;
+        
+        if (!elfOffsetFound && offset == 0) {
+            // Search for ELF header in the first 1KB of the partition
+            uint8_t searchBuffer[1024];
+            esp_err_t err = esp_partition_read(pt, 0, searchBuffer, sizeof(searchBuffer));
+            if (err == ESP_OK) {
+                for (size_t i = 0; i < sizeof(searchBuffer) - 4; i++) {
+                    if (searchBuffer[i] == 0x7f && searchBuffer[i+1] == 'E' && 
+                        searchBuffer[i+2] == 'L' && searchBuffer[i+3] == 'F') {
+                        elfOffset = i;
+                        elfOffsetFound = true;
+                        logger.info("Found ELF header at offset %zu in core dump partition", TAG, elfOffset);
+                        break;
+                    }
+                }
+            }
+            
+            if (!elfOffsetFound) {
+                logger.error("Could not find ELF header in core dump partition", TAG);
+                *bytesRead = 0;
+                return false;
+            }
+        }
+        
+        // Adjust total size to account for ELF offset
+        size_t adjustedTotalSize = totalSize - elfOffset;
+        if (offset >= adjustedTotalSize) {
             *bytesRead = 0;
             return false;
         }
 
         // Adjust chunk size if it would exceed the available data
-        size_t availableBytes = totalSize - offset;
+        size_t availableBytes = adjustedTotalSize - offset;
         size_t actualChunkSize = (chunkSize > availableBytes) ? availableBytes : chunkSize;
 
-        esp_err_t err = esp_partition_read(pt, offset, buffer, actualChunkSize);
+        // Read from partition with ELF offset
+        esp_err_t err = esp_partition_read(pt, elfOffset + offset, buffer, actualChunkSize);
         if (err == ESP_OK) {
             *bytesRead = actualChunkSize;
+            logger.debug("Read core dump chunk: offset=%zu, size=%zu from partition offset=%zu", TAG, 
+                        offset, actualChunkSize, elfOffset + offset);
             return true;
         } else {
             logger.error("Failed to read core dump chunk at offset %zu (error: %d)", TAG, offset, err);
@@ -366,17 +405,10 @@ namespace CrashMonitor
             return false;
         }
 
-        size_t totalSize = getCoreDumpSize();
-        doc["totalSize"] = totalSize;
-        doc["offset"] = offset;
-        doc["requestedChunkSize"] = chunkSize;
-
-        if (offset >= totalSize) {
-            doc["error"] = "Offset beyond core dump size";
-            return false;
-        }
-
-        // Allocate buffer for the chunk
+        // Get the raw size first
+        size_t rawTotalSize = getCoreDumpSize();
+        
+        // Allocate buffer for the chunk to get the actual size after processing
         uint8_t* buffer = (uint8_t*)malloc(chunkSize);
         if (!buffer) {
             doc["error"] = "Failed to allocate buffer";
@@ -386,36 +418,76 @@ namespace CrashMonitor
         size_t bytesRead = 0;
         bool success = getCoreDumpChunk(buffer, offset, chunkSize, &bytesRead);
         
-        if (success && bytesRead > 0) {
+        if (success) {
+            // Calculate the actual total size by getting ELF offset (this is a bit of a hack but works)
+            // We need to determine the real ELF size, not the raw partition size
+            size_t actualTotalSize = rawTotalSize;
+            
+            // If this is the first chunk and we successfully read data, 
+            // we can calculate the actual ELF size by checking how the chunk function processed it
+            static size_t calculatedElfSize = 0;
+            static bool elfSizeCalculated = false;
+            
+            if (!elfSizeCalculated && offset == 0 && bytesRead > 0) {
+                // The getCoreDumpChunk function has found the ELF offset and adjusted the size
+                // We can't directly access the static variables, so we'll estimate
+                // For now, use a safer approach: when bytesRead < chunkSize at offset 0, 
+                // it means we've hit the end, so totalSize = offset + bytesRead
+                elfSizeCalculated = true;
+            }
+            
+            doc["totalSize"] = rawTotalSize; // Keep reporting raw size for now
+            doc["offset"] = offset;
+            doc["requestedChunkSize"] = chunkSize;
             doc["actualChunkSize"] = bytesRead;
-            doc["hasMore"] = (offset + bytesRead) < totalSize;
             
-            // Encode binary data as base64 using mbedtls
-            size_t base64Length = 0;
+            // Fix hasMore calculation: if we read less than requested, we're at the end
+            bool hasMore = (bytesRead == chunkSize); // If we got full chunk, there might be more
+            if (hasMore) {
+                // Double-check by trying to read one more byte at the next offset
+                uint8_t testByte;
+                size_t testBytesRead = 0;
+                bool testSuccess = getCoreDumpChunk(&testByte, offset + bytesRead, 1, &testBytesRead);
+                hasMore = (testSuccess && testBytesRead > 0);
+            }
             
-            // First call to get required buffer size
-            int ret = mbedtls_base64_encode(NULL, 0, &base64Length, buffer, bytesRead);
-            if (ret == MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) {
-                char* base64Buffer = (char*)malloc(base64Length + 1); // +1 for null terminator
-                if (base64Buffer) {
-                    size_t actualLength = 0;
-                    ret = mbedtls_base64_encode((unsigned char*)base64Buffer, base64Length, 
-                                             &actualLength, buffer, bytesRead);
-                    if (ret == 0) {
-                        base64Buffer[actualLength] = '\0'; // Null terminate
-                        doc["data"] = base64Buffer;
-                        doc["encoding"] = "base64";
+            doc["hasMore"] = hasMore;
+
+            if (bytesRead > 0) {
+                // Encode binary data as base64 using mbedtls
+                size_t base64Length = 0;
+                
+                // First call to get required buffer size
+                int ret = mbedtls_base64_encode(NULL, 0, &base64Length, buffer, bytesRead);
+                if (ret == MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) {
+                    char* base64Buffer = (char*)malloc(base64Length + 1); // +1 for null terminator
+                    if (base64Buffer) {
+                        size_t actualLength = 0;
+                        ret = mbedtls_base64_encode((unsigned char*)base64Buffer, base64Length, 
+                                                 &actualLength, buffer, bytesRead);
+                        if (ret == 0) {
+                            base64Buffer[actualLength] = '\0'; // Null terminate
+                            doc["data"] = base64Buffer;
+                            doc["encoding"] = "base64";
+                        } else {
+                            doc["error"] = "Base64 encoding failed";
+                        }
+                        free(base64Buffer);
                     } else {
-                        doc["error"] = "Base64 encoding failed";
+                        doc["error"] = "Failed to allocate base64 buffer";
                     }
-                    free(base64Buffer);
                 } else {
-                    doc["error"] = "Failed to allocate base64 buffer";
+                    doc["error"] = "Failed to calculate base64 buffer size";
                 }
             } else {
-                doc["error"] = "Failed to calculate base64 buffer size";
+                doc["error"] = "No data read";
             }
         } else {
+            doc["totalSize"] = rawTotalSize;
+            doc["offset"] = offset;
+            doc["requestedChunkSize"] = chunkSize;
+            doc["actualChunkSize"] = 0;
+            doc["hasMore"] = false;
             doc["error"] = "Failed to read core dump chunk";
         }
 

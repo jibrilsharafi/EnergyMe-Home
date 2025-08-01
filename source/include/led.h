@@ -8,6 +8,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <esp_task_wdt.h>
 
 #include "constants.h"
 #include "utils.h"
@@ -15,9 +16,9 @@
 #define PREFERENCES_BRIGHTNESS_KEY "brightness"
 
 #define INVALID_PIN -1 // Used for initialization of pins
-#define DEFAULT_LED_BRIGHTNESS 191 // 75% of the maximum brightness
+#define DEFAULT_LED_BRIGHTNESS_PERCENT 75 // Default brightness percentage
 #define LED_RESOLUTION 8 // Resolution for PWM, 8 bits (0-255)
-#define LED_MAX_BRIGHTNESS 255 // 8-bit PWM
+#define LED_MAX_BRIGHTNESS_PERCENT 100 // Maximum brightness percentage
 #define LED_FREQUENCY 5000 // Frequency for PWM, in Hz. Quite standard
 
 // LED Task configuration
