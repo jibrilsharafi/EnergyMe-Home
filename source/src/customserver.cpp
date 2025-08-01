@@ -1282,46 +1282,45 @@ namespace CustomServer
         });
 
         // Set LED brightness
-        server.on("/api/v1/led/brightness", HTTP_PUT, [](AsyncWebServerRequest *request)
-                  {
-            if (!_validateRequest(request, "PUT")) { return; }
-            
-            if (!_acquireApiMutex(request)) { return; }
-            
-            // Check if brightness parameter is provided
-            if (!request->hasParam("brightness", true)) {
-                _releaseApiMutex();
-                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing brightness parameter");
-                return;
-            }
-            
-            String brightnessStr = request->getParam("brightness", true)->value();
-            int brightness = brightnessStr.toInt();
-            
-            // Validate brightness range
-            if (brightness < 0 || brightness > LED_MAX_BRIGHTNESS) {
-                _releaseApiMutex();
+        static AsyncCallbackJsonWebHandler *setLedBrightnessHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/led/brightness",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_LED_BRIGHTNESS)) { return; }
+
                 JsonDocument doc;
-                doc["message"] = "Brightness value out of range";
-                doc["min"] = 0;
-                doc["max"] = LED_MAX_BRIGHTNESS;
-                doc["provided"] = brightness;
-                _sendJsonResponse(request, doc, HTTP_CODE_BAD_REQUEST);
-                return;
-            }
-            
-            // Set the brightness
-            Led::setBrightness(brightness);
-            
-            _releaseApiMutex();
-            
-            // Return success response with new brightness value
-            JsonDocument doc;
-            doc["message"] = "Brightness updated successfully";
-            doc["brightness"] = Led::getBrightness();
-            doc["max_brightness"] = LED_MAX_BRIGHTNESS;
-            _sendJsonResponse(request, doc);
-        });
+                doc.set(json);
+
+                // Check if brightness field is provided and is a number
+                if (!doc["brightness"].is<int>()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid brightness parameter");
+                    return;
+                }
+
+                int brightness = doc["brightness"].as<int>();
+
+                // Validate brightness range
+                if (brightness < 0 || brightness > LED_MAX_BRIGHTNESS) {
+                    JsonDocument responseDoc;
+                    responseDoc["message"] = "Brightness value out of range";
+                    responseDoc["min"] = 0;
+                    responseDoc["max"] = LED_MAX_BRIGHTNESS;
+                    responseDoc["provided"] = brightness;
+                    _sendJsonResponse(request, responseDoc, HTTP_CODE_BAD_REQUEST);
+                    return;
+                }
+
+                // Set the brightness
+                Led::setBrightness(brightness);
+
+                // Return success response with new brightness value
+                JsonDocument responseDoc;
+                responseDoc["message"] = "Brightness updated successfully";
+                responseDoc["brightness"] = Led::getBrightness();
+                responseDoc["max_brightness"] = LED_MAX_BRIGHTNESS;
+                _sendJsonResponse(request, responseDoc);
+            });
+        server.addHandler(setLedBrightnessHandler);
     }
 }
 //         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
