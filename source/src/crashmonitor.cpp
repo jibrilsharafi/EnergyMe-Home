@@ -31,8 +31,7 @@ namespace CrashMonitor
                 (unsigned long)_hwResetReason != ESP_RST_DEEPSLEEP;
     }
 
-    void clearCrashCount() {
-        _crashCount = 0;
+    void clearConsecutiveCrashCount() {
         _consecutiveCrashCount = 0;
     }
 
@@ -130,7 +129,7 @@ namespace CrashMonitor
 
             // If we got here, it means the rollback could not be executed, so we try at least to format everything
             logger.fatal("Could not rollback, performing factory reset", TAG);
-            factoryReset();
+            setRestartSystem(TAG, "Consecutive crash/reset count limit reached", true);
         }
     }
 
@@ -308,7 +307,9 @@ namespace CrashMonitor
                     logger.warning("Backtrace addresses: %s", TAG, btAddresses);
 
                     // Ready-to-use command for debugging
-                    logger.warning("Command: xtensa-esp32-elf-addr2line -pfC -e .pio/build/esp32dev/firmware.elf %s", TAG, btAddresses);
+                    char debugCommand[BACKTRACE_DECODE_CMD_SIZE];
+                    snprintf(debugCommand, sizeof(debugCommand), BACKTRACE_DECODE_CMD);
+                    logger.warning("Command: %s", TAG, debugCommand);
                 }
                 
                 // Core dump availability info
@@ -383,7 +384,7 @@ namespace CrashMonitor
                         
                         char debugCommand[600];
                         snprintf(debugCommand, sizeof(debugCommand), 
-                                "xtensa-esp32-elf-addr2line -pfC -e .pio/build/esp32dev/firmware.elf %s", 
+                                BACKTRACE_DECODE_CMD, 
                                 btAddresses);
                         backtrace["debugCommand"] = debugCommand;
                     }

@@ -76,6 +76,13 @@
 #define CONFIG_PHCAL_A_KEY "phcal_a"
 #define CONFIG_PHCAL_B_KEY "phcal_b"
 
+// Energy Preferences Keys (max 15 chars)
+#define ENERGY_ACTIVE_IMP_KEY "ch%d_actImp"    // Format: ch17_actImp (11 chars)
+#define ENERGY_ACTIVE_EXP_KEY "ch%d_actExp"    // Format: ch17_actExp (11 chars)
+#define ENERGY_REACTIVE_IMP_KEY "ch%d_reactImp" // Format: ch17_reactImp (13 chars)
+#define ENERGY_REACTIVE_EXP_KEY "ch%d_reactExp" // Format: ch17_reactExp (13 chars)
+#define ENERGY_APPARENT_KEY "ch%d_apparent"   // Format: ch17_apparent (13 chars)
+
 // Default configuration values
 #define DEFAULT_CONFIG_SAMPLE_TIME 1000
 #define DEFAULT_CONFIG_AV_GAIN 0

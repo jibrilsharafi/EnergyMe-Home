@@ -108,8 +108,6 @@
 // AWS IoT Core endpoint
 #define AWS_IOT_CORE_PORT 8883
 
-#define MAGIC_WORD_RTC 0xDEADBEEF // This is crucial to ensure that the RTC data has sensible values or it is just some garbage after reboot
-
 struct DebugFlagsRtc {
     bool enableMqttDebugLogging;
     unsigned long long mqttDebugLoggingDurationMillis;

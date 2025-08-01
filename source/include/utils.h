@@ -32,17 +32,24 @@
 #include "globals.h"
 
 #define TASK_RESTART_NAME "restart_task"
-#define TASK_RESTART_STACK_SIZE 4096
+#define TASK_RESTART_STACK_SIZE (4 * 1024)
 #define TASK_RESTART_PRIORITY 5
 
 #define TASK_MAINTENANCE_NAME "maintenance_task"
-#define TASK_MAINTENANCE_STACK_SIZE 4096
+#define TASK_MAINTENANCE_STACK_SIZE (4 * 1024)
 #define TASK_MAINTENANCE_PRIORITY 3
 #define MAINTENANCE_CHECK_INTERVAL (10 * 1000) // Interval to check main parameters, to avoid overloading the loop
 
+// System restart thresholds
+#define MINIMUM_FREE_HEAP_SIZE (1 * 1024) // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support
+#define MINIMUM_FREE_PSRAM_SIZE (10 * 1024) // Below this value (in bytes), the system will restart
+#define MINIMUM_FREE_SPIFFS_SIZE (10 * 1024) // Below this value (in bytes), the system will clear the log
+#define SYSTEM_RESTART_DELAY (3 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations
+#define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
+
+// Restart infos
 #define FUNCTION_NAME_BUFFER_SIZE 32
 #define REASON_BUFFER_SIZE 128
-
 #define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
 
 // Come one, on this ESP32S3 and in 2025 can we still use 32bits millis
@@ -73,11 +80,7 @@ void printStatistics();
 void getJsonDeviceStaticInfo(JsonDocument& doc);
 void getJsonDeviceDynamicInfo(JsonDocument& doc);
 
-void setRestartSystem(const char* functionName, const char* reason);
-void restartSystem();
-
-void startMaintenanceTask();
-void stopMaintenanceTask();
+void setRestartSystem(const char* functionName, const char* reason, bool factoryReset = false);
 
 // General task management
 void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
@@ -91,24 +94,19 @@ void createEmptyJsonFile(const char* path);
 std::vector<const char*> checkMissingFiles();
 void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles);
 bool checkAllFiles();
-void createDefaultCustomMqttConfigurationFile();
-void createDefaultChannelDataFile();
 void createDefaultCalibrationFile();
-void createDefaultAde7953ConfigurationFile();
-void createDefaultEnergyFile();
 void createDefaultDailyEnergyFile();
 
-void factoryReset();
 void clearAllPreferences();
+
+void startMaintenanceTask();
+void stopMaintenanceTask();
 
 bool isLatestFirmwareInstalled();
 void updateJsonFirmwareStatus(const char *status, const char *reason);
 
 void getDeviceId(char* deviceId, size_t maxLength);
 
-
 const char* getMqttStateReason(int state);
 
 unsigned long long calculateExponentialBackoff(unsigned long long attempt, unsigned long long initialInterval, unsigned long long maxInterval, unsigned long long multiplier);
-
-bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds = true);

@@ -333,12 +333,31 @@ namespace CustomWifi
     MDNS.end();
     delay(100);
 
-    if (
-        MDNS.begin(MDNS_HOSTNAME) &&
+    // I would like to check for same MDNS_HOSTNAME on the newtork, but it seems that
+    // I cannot do this with consistency. Let's just start the mDNS on the network and
+    // hope for no other devices with the same name.
+
+    if (MDNS.begin(MDNS_HOSTNAME) &&
         MDNS.addService("http", "tcp", WEBSERVER_PORT) &&
         MDNS.addService("modbus", "tcp", MODBUS_TCP_PORT))
     {
-      logger.info("mDNS setup done", TAG);
+      // Add standard service discovery information
+      MDNS.addServiceTxt("http", "tcp", "device_id", static_cast<const char *>(DEVICE_ID));
+      MDNS.addServiceTxt("http", "tcp", "vendor", COMPANY_NAME);
+      MDNS.addServiceTxt("http", "tcp", "model", PRODUCT_NAME);
+      MDNS.addServiceTxt("http", "tcp", "version", FIRMWARE_BUILD_VERSION);
+      MDNS.addServiceTxt("http", "tcp", "path", "/");
+      MDNS.addServiceTxt("http", "tcp", "auth", "required");
+      MDNS.addServiceTxt("http", "tcp", "ssl", "false");
+      
+      // Modbus service information
+      MDNS.addServiceTxt("modbus", "tcp", "device_id", static_cast<const char *>(DEVICE_ID));
+      MDNS.addServiceTxt("modbus", "tcp", "vendor", COMPANY_NAME);
+      MDNS.addServiceTxt("modbus", "tcp", "model", PRODUCT_NAME);
+      MDNS.addServiceTxt("modbus", "tcp", "version", FIRMWARE_BUILD_VERSION);
+      MDNS.addServiceTxt("modbus", "tcp", "channels", "17");
+
+      logger.info("mDNS setup done: %s.local (device: %s)", TAG, MDNS_HOSTNAME, DEVICE_ID);
       return true;
     }
     else

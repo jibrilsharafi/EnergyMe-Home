@@ -50,8 +50,8 @@ namespace Ade7953
 
     static void _updateSampleTime();
 
-    static void _setEnergyFromSpiffs();
-    static void _saveEnergyToSpiffs();
+    static void _setEnergyFromPreferences();
+    static void _saveEnergyToPreferences();
     static void _saveDailyEnergyToSpiffs();
 
     static bool _verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool signedData, bool wasWrite);
@@ -184,9 +184,9 @@ namespace Ade7953
         logger.debug("Done reading calibration values from SPIFFS", TAG);
 
         
-        logger.debug("Reading energy from SPIFFS...", TAG);
-        _setEnergyFromSpiffs();
-        logger.debug("Done reading energy from SPIFFS", TAG);    
+        logger.debug("Reading energy from preferences...", TAG);
+        _setEnergyFromPreferences();
+        logger.debug("Done reading energy from preferences", TAG);    
         
         // Set it up only at the end to avoid premature interrupts
         
@@ -1601,54 +1601,72 @@ namespace Ade7953
     // Energy
     // --------------------
 
-    void _setEnergyFromSpiffs() {
-        logger.debug("Reading energy from SPIFFS", TAG);
+    void _setEnergyFromPreferences() {
+        logger.debug("Reading energy from preferences", TAG);
         
-        JsonDocument jsonDocument;
-        deserializeJsonFromSpiffs(ENERGY_JSON_PATH, jsonDocument);
+        Preferences preferences;
+        preferences.begin(PREFERENCES_NAMESPACE_ENERGY, true); // Read-only mode
 
-        if (jsonDocument.isNull() || jsonDocument.size() == 0) {
-            logger.error("Failed to read energy from SPIFFS", TAG);
-            return;
-        } else {
-            for (int i = 0; i < CHANNEL_COUNT; i++) {
-                _meterValues[i].activeEnergyImported = jsonDocument[i]["activeEnergyImported"].as<float>();
-                _meterValues[i].activeEnergyExported = jsonDocument[i]["activeEnergyExported"].as<float>();
-                _meterValues[i].reactiveEnergyImported = jsonDocument[i]["reactiveEnergyImported"].as<float>();
-                _meterValues[i].reactiveEnergyExported = jsonDocument[i]["reactiveEnergyExported"].as<float>();
-                _meterValues[i].apparentEnergy = jsonDocument[i]["apparentEnergy"].as<float>();
-            }
-        }
+        for (int i = 0; i < CHANNEL_COUNT; i++) {
+            char key[16];
             
-        logger.debug("Successfully read energy from SPIFFS", TAG);
+            snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, i);
+            _meterValues[i].activeEnergyImported = preferences.getFloat(key, 0.0f);
+            
+            snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, i);
+            _meterValues[i].activeEnergyExported = preferences.getFloat(key, 0.0f);
+            
+            snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, i);
+            _meterValues[i].reactiveEnergyImported = preferences.getFloat(key, 0.0f);
+            
+            snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, i);
+            _meterValues[i].reactiveEnergyExported = preferences.getFloat(key, 0.0f);
+            
+            snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, i);
+            _meterValues[i].apparentEnergy = preferences.getFloat(key, 0.0f);
+        }
+
+        preferences.end();
+        logger.debug("Successfully read energy from preferences", TAG);
     }
 
     void saveEnergy() {
         logger.debug("Saving energy...", TAG);
 
         
-        _saveEnergyToSpiffs();
+        _saveEnergyToPreferences();
         _saveDailyEnergyToSpiffs();
 
         logger.debug("Successfully saved energy", TAG);
     }
 
-    void _saveEnergyToSpiffs() {
-        logger.debug("Saving energy to SPIFFS...", TAG);
+    void _saveEnergyToPreferences() {
+        logger.debug("Saving energy to preferences...", TAG);
 
-        
-        JsonDocument jsonDocument;
-        deserializeJsonFromSpiffs(ENERGY_JSON_PATH, jsonDocument);
+        Preferences preferences;
+        preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false); // Read-write mode
 
         for (int i = 0; i < CHANNEL_COUNT; i++) {
-            jsonDocument[i]["activeEnergyImported"] = _meterValues[i].activeEnergyImported;
-            jsonDocument[i]["activeEnergyExported"] = _meterValues[i].activeEnergyExported;
-            jsonDocument[i]["reactiveEnergyImported"] = _meterValues[i].reactiveEnergyImported;
-            jsonDocument[i]["reactiveEnergyExported"] = _meterValues[i].reactiveEnergyExported;
-            jsonDocument[i]["apparentEnergy"] = _meterValues[i].apparentEnergy;
+            char key[16];
+            
+            snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, i);
+            preferences.putFloat(key, _meterValues[i].activeEnergyImported);
+            
+            snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, i);
+            preferences.putFloat(key, _meterValues[i].activeEnergyExported);
+            
+            snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, i);
+            preferences.putFloat(key, _meterValues[i].reactiveEnergyImported);
+            
+            snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, i);
+            preferences.putFloat(key, _meterValues[i].reactiveEnergyExported);
+            
+            snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, i);
+            preferences.putFloat(key, _meterValues[i].apparentEnergy);
         }
 
-        if (serializeJsonToSpiffs(ENERGY_JSON_PATH, jsonDocument)) logger.debug("Successfully saved energy to SPIFFS", TAG);
+        preferences.end();
+        logger.debug("Successfully saved energy to preferences", TAG);
     }
 
     void _saveDailyEnergyToSpiffs() {
@@ -1659,9 +1677,6 @@ namespace Ade7953
         deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, jsonDocument);
         
         time_t now = time(nullptr);
-        if (!validateUnixTime(now, false)) {
-            logger.warning("Saving daily energy even if time is invalid: %ld", TAG, now);
-        }
         struct tm *timeinfo = localtime(&now);
         char currentDate[TIMESTAMP_BUFFER_SIZE];
         strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", timeinfo);
@@ -1689,6 +1704,12 @@ namespace Ade7953
             _meterValues[i].reactiveEnergyExported = 0.0f;
             _meterValues[i].apparentEnergy = 0.0f;
         }
+
+        // Clear energy preferences
+        Preferences preferences;
+        preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false);
+        preferences.clear();
+        preferences.end();
 
         createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
         saveEnergy();

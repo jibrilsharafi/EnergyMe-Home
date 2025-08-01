@@ -20,30 +20,19 @@
 #define AUTHOR "Jibril Sharafi"
 #define AUTHOR_EMAIL "jibril.sharafi@gmail.com"
 
-// URL Utilities
-#define PUBLIC_LOCATION_ENDPOINT "http://ip-api.com/json/"
-#define PUBLIC_TIMEZONE_ENDPOINT "http://api.geonames.org/timezoneJSON?"
-#define PUBLIC_TIMEZONE_USERNAME "energymehome"
-
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32
 
 // While loops
-#define MAX_LOOP_ITERATIONS 10000 // The maximum number of iterations for a while loop
-
-// Time utilities
-#define MINIMUM_UNIX_TIME 1000000000 // In seconds, corresponds to 2001
-#define MINIMUM_UNIX_TIME_MILLISECONDS 1000000000000 // Corresponds to 2001
-#define MAXIMUM_UNIX_TIME 4102444800 // In seconds, corresponds to 2100
-#define MAXIMUM_UNIX_TIME_MILLISECONDS 4102444800000 // Corresponds to 2100
+#define MAX_LOOP_ITERATIONS 10000 // The maximum number of iterations for any while loop to avoid infinite loops
 
 // File path
 #define CALIBRATION_JSON_PATH "/config/calibration.json"
-#define ENERGY_JSON_PATH "/energy.json"
 #define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
 
 // Preferences namespaces are here to enable a full wipe from utils when factory resetting
 #define PREFERENCES_NAMESPACE_ADE7953 "ade7953_ns"
+#define PREFERENCES_NAMESPACE_ENERGY "energy_ns"
 #define PREFERENCES_NAMESPACE_CALIBRATION "calibration_ns"
 #define PREFERENCES_NAMESPACE_CHANNELS "channels_ns"
 #define PREFERENCES_NAMESPACE_MQTT "mqtt_ns"
@@ -64,37 +53,32 @@
 // Buffer Sizes for String Operations
 // =================================
 // Only constants which are used in multiple files are defined here
-#define DEVICE_ID_BUFFER_SIZE 16      // For device ID (increased slightly for safety)
-#define IP_ADDRESS_BUFFER_SIZE 16 // For IPv4 addresses (e.g., "192.168.1.1")
-#define MAC_ADDRESS_BUFFER_SIZE 18 // For MAC addresses (e.g., "00:1A:2B:3C:4D:5E")
-#define TIMESTAMP_BUFFER_SIZE 20 // For timestamps (formatted as "YYYY-MM-DD HH:MM:SS")
-#define TIMESTAMP_ISO_BUFFER_SIZE 25 // For ISO UTC timestamps (formatted as "YYYY-MM-DDTHH:MM:SS.sssZ")
-#define MD5_BUFFER_SIZE 33 // 32 characters + null terminator
-#define USERNAME_BUFFER_SIZE 64
-#define PASSWORD_BUFFER_SIZE 64
-#define NAME_BUFFER_SIZE 64 // For generic names (device, user, etc.)
-#define MQTT_TOPIC_BUFFER_SIZE 64
-#define SERVER_NAME_BUFFER_SIZE 128
-#define STATUS_BUFFER_SIZE 128 // Generic status messages (e.g., connection status, error messages)
-#define VERSION_BUFFER_SIZE 32
-
-// System restart thresholds
-#define MINIMUM_FREE_HEAP_SIZE (1 * 1024) // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support
-#define MINIMUM_FREE_PSRAM_SIZE (10 * 1024) // Below this value (in bytes), the system will restart
-#define MINIMUM_FREE_SPIFFS_SIZE (10 * 1024) // Below this value (in bytes), the system will clear the log
-#define SYSTEM_RESTART_DELAY (3 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations
-#define MINIMUM_FREE_HEAP_OTA (20 * 1024) // Below this, the OTA is rejected (a bit unsafe, this could block OTA)
-#define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
+#define PREFERENCES_KEY_BUFFER_SIZE 15  // Maximum allowed by Preferences API
+#define VERSION_BUFFER_SIZE 16          // For version strings (e.g., 1.0.0)
+#define DEVICE_ID_BUFFER_SIZE 16        // For device ID (increased slightly for safety)
+#define IP_ADDRESS_BUFFER_SIZE 16       // For IPv4 addresses (e.g., "192.168.1.1")
+#define MAC_ADDRESS_BUFFER_SIZE 18      // For MAC addresses (e.g., "00:1A:2B:3C:4D:5E")
+#define TIMESTAMP_BUFFER_SIZE 20        // For timestamps (formatted as "YYYY-MM-DD HH:MM:SS")
+#define TIMESTAMP_ISO_BUFFER_SIZE 25    // For ISO UTC timestamps (formatted as "YYYY-MM-DDTHH:MM:SS.sssZ")
+#define MD5_BUFFER_SIZE 33              // 32 characters + null terminator
+#define USERNAME_BUFFER_SIZE 64         // For usernames (e.g., WiFi SSID, MQTT username)
+#define PASSWORD_BUFFER_SIZE 64         // For passwords (e.g., WiFi password, MQTT password)
+#define NAME_BUFFER_SIZE 64             // For generic names (device, user, etc.)
+#define MQTT_TOPIC_BUFFER_SIZE 64       // For MQTT topics
+#define URL_BUFFER_SIZE 128             // For URLs
+#define STATUS_BUFFER_SIZE 128          // Generic status messages (e.g., connection status, error messages)
 
 // Timeouts and intervals
-#define TASK_STOPPING_TIMEOUT (3 * 1000) // 3 seconds for task stopping timeout
-#define TASK_STOPPING_CHECK_INTERVAL (100) // 100 milliseconds for task stopping check interval
+#define TASK_STOPPING_TIMEOUT (3 * 1000)
+#define TASK_STOPPING_CHECK_INTERVAL 100
 
-// Multiplexer
-// --------------------
+// Channel configuration
 #define MULTIPLEXER_CHANNEL_COUNT 16
 #define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // All the 16 of the multiplexer + 1 directly going to channel A of ADE7953 
 
 // Server used ports (here to ensure no conflicts)
-#define MODBUS_TCP_PORT 502 // The default port for Modbus TCP
+#define MODBUS_TCP_PORT 502
 #define WEBSERVER_PORT 80
+
+// Useful constants
+#define MAGIC_WORD_RTC 0xDEADBEEF // This is crucial to ensure that the RTC data has sensible values or it is just some garbage after reboot

@@ -6,6 +6,10 @@ static TaskHandle_t _restartTaskHandle = NULL;
 static TaskHandle_t _maintenanceTaskHandle = NULL;
 static bool _maintenanceTaskShouldRun = false;
 
+// Static function declarations
+static void _factoryReset();
+static void _restartSystem();
+static void _maintenanceTask(void* parameter);
 
 // New system info functions
 void populateSystemStaticInfo(SystemStaticInfo& info) {
@@ -244,24 +248,24 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
         return false;
     }
 
-    size_t _size = measureJson(jsonDocument);
-    if (_size >= bufferSize) {
+    size_t size = measureJson(jsonDocument);
+    if (size >= bufferSize) {
         if (truncateOnError) {
             // Truncate JSON to fit buffer
             serializeJson(jsonDocument, buffer, bufferSize);
             // Ensure null-termination (avoid weird last character issues)
             buffer[bufferSize - 1] = '\0';
             
-            logger.debug("Truncating JSON to fit buffer size (%zu bytes vs %zu bytes)", TAG, bufferSize, _size);
+            logger.debug("Truncating JSON to fit buffer size (%zu bytes vs %zu bytes)", TAG, bufferSize, size);
         } else {
-            logger.warning("JSON size (%zu bytes) exceeds buffer size (%zu bytes)", TAG, _size, bufferSize);
+            logger.warning("JSON size (%zu bytes) exceeds buffer size (%zu bytes)", TAG, size, bufferSize);
             snprintf(buffer, bufferSize, ""); // Clear buffer on failure
         }
         return false;
     }
 
     serializeJson(jsonDocument, buffer, bufferSize);
-    logger.debug("JSON serialized successfully (bytes: %zu): %s", TAG, _size, buffer);
+    logger.debug("JSON serialized successfully (bytes: %zu): %s", TAG, size, buffer);
     return true;
 }
 
@@ -269,16 +273,16 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
 bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
     logger.debug("Deserializing JSON from SPIFFS", TAG);
 
-    File _file = SPIFFS.open(path, FILE_READ);
-    if (!_file){
+    File file = SPIFFS.open(path, FILE_READ);
+    if (!file){
         logger.error("Failed to open file %s", TAG, path);
         return false;
     }
 
-    DeserializationError _error = deserializeJson(jsonDocument, _file);
-    _file.close();
-    if (_error){
-        logger.error("Failed to deserialize file %s. Error: %s", TAG, path, _error.c_str());
+    DeserializationError error = deserializeJson(jsonDocument, file);
+    file.close();
+    if (error){
+        logger.error("Failed to deserialize file %s. Error: %s", TAG, path, error.c_str());
         return false;
     }
 
@@ -296,14 +300,14 @@ bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
     logger.debug("Serializing JSON to SPIFFS...", TAG);
 
-    File _file = SPIFFS.open(path, FILE_WRITE);
-    if (!_file){
+    File file = SPIFFS.open(path, FILE_WRITE);
+    if (!file){
         logger.error("Failed to open file %s", TAG, path);
         return false;
     }
 
-    serializeJson(jsonDocument, _file);
-    _file.close();
+    serializeJson(jsonDocument, file);
+    file.close();
 
     if (jsonDocument.isNull() || jsonDocument.size() == 0){
         logger.debug("JSON being serialized is {}", TAG);
@@ -320,37 +324,16 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
 void createEmptyJsonFile(const char* path) {
     logger.debug("Creating empty JSON file %s...", TAG, path);
 
-    
-    File _file = SPIFFS.open(path, FILE_WRITE);
-    if (!_file) {
+    File file = SPIFFS.open(path, FILE_WRITE);
+    if (!file) {
         logger.error("Failed to open file %s", TAG, path);
         return;
     }
 
-    _file.print("{}");
-    _file.close();
+    file.print("{}");
+    file.close();
 
     logger.debug("Empty JSON file %s created", TAG, path);
-}
-
-void createDefaultEnergyFile() {
-    logger.debug("Creating default %s...", TAG, ENERGY_JSON_PATH);
-
-    JsonDocument jsonDocument;
-
-    for (int i = 0; i < CHANNEL_COUNT; i++) {
-        jsonDocument[i]["activeEnergyImported"] = 0;
-        jsonDocument[i]["activeEnergyExported"] = 0;
-        jsonDocument[i]["reactiveEnergyImported"] = 0;
-        jsonDocument[i]["reactiveEnergyExported"] = 0;
-        jsonDocument[i]["apparentEnergy"] = 0;
-    }
-
-    // Note: Energy data will be stored in SPIFFS/LittleFS for historical data
-    // This function will be updated when we migrate to LittleFS
-    serializeJsonToSpiffs(ENERGY_JSON_PATH, jsonDocument);
-
-    logger.debug("Default %s created", TAG, ENERGY_JSON_PATH);
 }
 
 void createDefaultDailyEnergyFile() {
@@ -425,7 +408,6 @@ std::vector<const char*> checkMissingFiles() {
     
     const char* CONFIG_FILE_PATHS[] = {
         CALIBRATION_JSON_PATH,
-        ENERGY_JSON_PATH,
         DAILY_ENERGY_JSON_PATH,
     };
 
@@ -450,8 +432,6 @@ void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFi
     for (const char* path : missingFiles) {
         if (strcmp(path, CALIBRATION_JSON_PATH) == 0) {
             createDefaultCalibrationFile();
-        } else if (strcmp(path, ENERGY_JSON_PATH) == 0) {
-            createDefaultEnergyFile();
         } else if (strcmp(path, DAILY_ENERGY_JSON_PATH) == 0) {
             createDefaultDailyEnergyFile();
         } else {
@@ -478,7 +458,7 @@ bool checkAllFiles() {
 }
 
 // Task function that handles periodic maintenance checks
-void maintenanceTask(void* parameter) {
+static void _maintenanceTask(void* parameter) {
     logger.debug("Maintenance task started", TAG);
     
     _maintenanceTaskShouldRun = true;
@@ -532,7 +512,7 @@ void startMaintenanceTask() {
     logger.debug("Starting maintenance task", TAG);
     
     BaseType_t result = xTaskCreate(
-        maintenanceTask,
+        _maintenanceTask,
         TASK_MAINTENANCE_NAME,
         TASK_MAINTENANCE_STACK_SIZE,
         NULL,
@@ -578,20 +558,24 @@ void stopMaintenanceTask() {
 
 // Task function that handles delayed restart. No need for complex handling here, just a simple delay and restart.
 void restartTask(void* parameter) {
-    logger.debug("Restart task started, waiting %d ms before restart", TAG, SYSTEM_RESTART_DELAY);
-    
+    bool factoryReset = (bool)(uintptr_t)parameter;
+
+    logger.debug("Restart task started, waiting %d ms before restart (factory reset: %s)", TAG, SYSTEM_RESTART_DELAY, factoryReset ? "true" : "false");
+
     // Wait for the specified delay
     delay(SYSTEM_RESTART_DELAY);
     
-    // Execute the restart
-    restartSystem();
+    // Execute the operation
+    if (factoryReset) { _factoryReset(); }
+    
+    _restartSystem();
     
     // Task should never reach here, but clean up just in case
     vTaskDelete(NULL);
 }
 
-void setRestartSystem(const char* functionName, const char* reason) { 
-    logger.info("Restart required from function %s. Reason: %s", TAG, functionName, reason);
+void setRestartSystem(const char* functionName, const char* reason, bool factoryReset) {
+    logger.info("Restart required from function %s. Reason: %s. Factory reset: %s", TAG, functionName, reason, factoryReset ? "true" : "false");
     
     if (_restartTaskHandle != NULL) {
         logger.warning("A restart is already scheduled. Keeping the existing configuration.", TAG);
@@ -606,25 +590,30 @@ void setRestartSystem(const char* functionName, const char* reason) {
     ModbusTcp::stop();
     CustomServer::stop();
 
-    // Create a task that will handle the delayed restart
+    // Create a task that will handle the delayed restart/factory reset
     BaseType_t result = xTaskCreate(
         restartTask,
         TASK_RESTART_NAME,
         TASK_RESTART_STACK_SIZE,
-        NULL,
+        (void*)(uintptr_t)factoryReset,
         TASK_RESTART_PRIORITY,
         &_restartTaskHandle
     );
     
     if (result != pdPASS) {
-        logger.error("Failed to create restart task, performing immediate restart", TAG);
-        restartSystem();
+        logger.error("Failed to create restart task, performing immediate operation", TAG);
+        if (factoryReset) { _factoryReset(); }
+        _restartSystem();
     } else {
         logger.debug("Restart task created successfully", TAG);
     }
 }
 
-void restartSystem() {
+void setFactoryReset(const char* functionName, const char* reason) {
+    setRestartSystem(functionName, reason, true);
+}
+
+static void _restartSystem() {
     Led::setBrightness(max(Led::getBrightness(), (unsigned int)1)); // Show a faint light even if it is off
     Led::setOrange(Led::PRIO_CRITICAL);
 
@@ -824,7 +813,7 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
 // Helper functions
 // -----------------------------
 
-void factoryReset() { 
+static void _factoryReset() { 
     logger.fatal("Factory reset requested", TAG);
 
     Led::setBrightness(max(Led::getBrightness(), (unsigned int)1)); // Show a faint light even if it is off
@@ -835,14 +824,9 @@ void factoryReset() {
     logger.fatal("Formatting SPIFFS. This will take some time.", TAG);
     SPIFFS.format();
 
-    CrashMonitor::clearCrashCount(); // Reset crash monitor to clear crash count and last reset reason
+    CrashMonitor::clearConsecutiveCrashCount(); // Reset crash monitor to clear crash count and last reset reason
 
-    // Properly shutdown WiFi to prevent crashes during restart
-    CustomWifi::stop();
-    delay(500);
-
-    // Directly call ESP.restart() so that a fresh start is done
-    ESP.restart();
+    // Removed ESP.restart() call since the factory reset can only be called from the restart task
 }
 
 void clearAllPreferences() {
@@ -858,6 +842,10 @@ void clearAllPreferences() {
     preferences.end();
     
     preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false);
+    preferences.clear();
+    preferences.end();
+
+    preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false);
     preferences.clear();
     preferences.end();
 
@@ -928,18 +916,18 @@ bool isLatestFirmwareInstalled() {
         return true;
     }
 
-    int _latestMajor, _latestMinor, _latestPatch;
-    sscanf(latestFirmwareVersion, "%d.%d.%d", &_latestMajor, &_latestMinor, &_latestPatch);
+    int latestMajor, latestMinor, latestPatch;
+    sscanf(latestFirmwareVersion, "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
 
     int currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
     int currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
     int currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
 
-    if (_latestMajor < currentMajor) return true;
-    if (_latestMajor > currentMajor) return false;
-    if (_latestMinor < currentMinor) return true;
-    if (_latestMinor > currentMinor) return false;
-    return _latestPatch <= currentPatch;
+    if (latestMajor < currentMajor) return true;
+    if (latestMajor > currentMajor) return false;
+    if (latestMinor < currentMinor) return true;
+    if (latestMinor > currentMinor) return false;
+    return latestPatch <= currentPatch;
 }
 
 void updateJsonFirmwareStatus(const char *status, const char *reason)
@@ -995,14 +983,6 @@ const char* getMqttStateReason(int state)
         case 4: return "MQTT_CONNECT_BAD_CREDENTIALS";
         case 5: return "MQTT_CONNECT_UNAUTHORIZED";
         default: return "Unknown MQTT state";
-    }
-}
-
-bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds) {
-    if (isMilliseconds) {
-        return (unixTime >= MINIMUM_UNIX_TIME_MILLISECONDS && unixTime <= MAXIMUM_UNIX_TIME_MILLISECONDS);
-    } else {
-        return (unixTime >= MINIMUM_UNIX_TIME && unixTime <= MAXIMUM_UNIX_TIME);
     }
 }
 

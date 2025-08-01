@@ -268,8 +268,8 @@ namespace InfluxDbClient
         logger.debug("Sending data to InfluxDB...", TAG);
 
         HTTPClient http;
-        char url[SERVER_NAME_BUFFER_SIZE];
-        char baseUrl[SERVER_NAME_BUFFER_SIZE];
+        char url[URL_BUFFER_SIZE];
+        char baseUrl[URL_BUFFER_SIZE];
 
         snprintf(baseUrl, sizeof(baseUrl), "http%s://%s:%d", 
                 _influxDbConfiguration.useSSL ? "s" : "", 
@@ -326,13 +326,7 @@ namespace InfluxDbClient
                     logger.debug("Channel %d does not have real measurements yet, skipping", TAG, i);
                     continue;
                 }
-
-                if (!validateUnixTime(meterValues.lastUnixTimeMilliseconds))
-                {
-                    logger.warning("Invalid unixTime for channel %d: %llu", TAG, i, meterValues.lastUnixTimeMilliseconds);
-                    continue;
-                }
-
+                
                 char realtimeLineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
                 _formatLineProtocol(meterValues, i, meterValues.lastUnixTimeMilliseconds, realtimeLineProtocol, sizeof(realtimeLineProtocol), false);
 

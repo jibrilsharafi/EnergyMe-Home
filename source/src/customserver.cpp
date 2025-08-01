@@ -368,9 +368,7 @@ namespace CustomServer
 
                 logger.info("Password changed successfully via API", TAG);
                 _sendSuccessResponse(request, "Password changed successfully");
-
-                delay(HTTP_RESPONSE_DELAY); // Give time for response to be sent
-
+                
                 // Update authentication middleware with new password
                 updateAuthPassword();
             });
@@ -678,10 +676,6 @@ namespace CustomServer
             if (!_validateRequest(request, "POST")) { return; }
 
             _sendSuccessResponse(request, "System restart initiated");
-            
-            // Short delay to ensure response is sent
-            delay(HTTP_RESPONSE_DELAY);
-            
             setRestartSystem(TAG, "System restart requested via API"); });
 
         // Factory reset
@@ -690,11 +684,7 @@ namespace CustomServer
             if (!_validateRequest(request, "POST")) { return; }
 
             _sendSuccessResponse(request, "Factory reset initiated");
-            
-            // Delay to ensure response is sent
-            delay(HTTP_RESPONSE_DELAY);
-
-            factoryReset(); });
+            setRestartSystem(TAG, "Factory reset requested via API", true); });
 
         // Check if secrets exist
         server.on("/api/v1/system/secrets", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -713,10 +703,6 @@ namespace CustomServer
             if (!_validateRequest(request, "POST")) { return; }
 
             _sendSuccessResponse(request, "WiFi credentials reset. Device will restart and enter configuration mode.");
-            
-            // Short delay to ensure response is sent
-            delay(HTTP_RESPONSE_DELAY);
-    
             CustomWifi::resetWifi(); });
     }
 

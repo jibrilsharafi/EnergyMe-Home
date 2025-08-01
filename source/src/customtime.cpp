@@ -5,19 +5,21 @@ static const char *TAG = "customtime";
 namespace CustomTime {
     // Static variables to maintain state
     static bool _isTimeSynched = false;
-    static int _gmtOffset = DEFAULT_GMT_OFFSET;
-    static int _dstOffset = DEFAULT_DST_OFFSET;
+    static int _gmtOffsetSeconds = DEFAULT_GMT_OFFSET_SECONDS;
+    static int _dstOffsetSeconds = DEFAULT_DST_OFFSET_SECONDS;
     static unsigned long long _lastSyncAttempt = 0;
 
     // Private helper function
     static bool _getPublicLocation(PublicLocation* publicLocation);
-    static bool _getPublicTimezone(int* gmtOffset, int* dstOffset);
+    static bool _getPublicTimezone(int* gmtOffsetSeconds, int* dstOffsetSeconds);
 
     static bool _getTime();
     static void _checkAndSyncTime();
 
     static bool _loadConfiguration();
     static void _saveConfiguration();
+
+    static bool _isUnixTimeValid(unsigned long long unixTime, bool isMilliseconds = true);
 
     bool begin() {
         _loadConfiguration();
@@ -37,16 +39,16 @@ namespace CustomTime {
     }
 
     void resetToDefaults() {
-        _gmtOffset = DEFAULT_GMT_OFFSET;
-        _dstOffset = DEFAULT_DST_OFFSET;
+        _gmtOffsetSeconds = DEFAULT_GMT_OFFSET_SECONDS;
+        _dstOffsetSeconds = DEFAULT_DST_OFFSET_SECONDS;
         _saveConfiguration();
     }
 
     void setOffset(int gmtOffset, int dstOffset) {
-        _gmtOffset = gmtOffset;
-        _dstOffset = dstOffset;
+        _gmtOffsetSeconds = gmtOffset;
+        _dstOffsetSeconds = dstOffset;
 
-        configTime(_gmtOffset, _dstOffset, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
+        configTime(_gmtOffsetSeconds, _dstOffsetSeconds, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
         
         _saveConfiguration();
         
@@ -62,18 +64,18 @@ namespace CustomTime {
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_TIME, true)) {
             // If preferences can't be opened, fallback to default
-            _gmtOffset = DEFAULT_GMT_OFFSET;
-            _dstOffset = DEFAULT_DST_OFFSET;
+            _gmtOffsetSeconds = DEFAULT_GMT_OFFSET_SECONDS;
+            _dstOffsetSeconds = DEFAULT_DST_OFFSET_SECONDS;
             _saveConfiguration();
-            setOffset(_gmtOffset, _dstOffset);
+            setOffset(_gmtOffsetSeconds, _dstOffsetSeconds);
             return false;
         }
 
-        _gmtOffset = preferences.getInt(PREFERENCES_GMT_OFFSET_KEY, DEFAULT_GMT_OFFSET);
-        _dstOffset = preferences.getInt(PREFERENCES_DST_OFFSET_KEY, DEFAULT_DST_OFFSET);
+        _gmtOffsetSeconds = preferences.getInt(PREFERENCES_GMT_OFFSET_KEY, DEFAULT_GMT_OFFSET_SECONDS);
+        _dstOffsetSeconds = preferences.getInt(PREFERENCES_DST_OFFSET_KEY, DEFAULT_DST_OFFSET_SECONDS);
         preferences.end();
         
-        setOffset(_gmtOffset, _dstOffset);
+        setOffset(_gmtOffsetSeconds, _dstOffsetSeconds);
         return true;
     }
 
@@ -82,8 +84,8 @@ namespace CustomTime {
         if (!preferences.begin(PREFERENCES_NAMESPACE_TIME, false)) {
             return;
         }
-        preferences.putInt(PREFERENCES_GMT_OFFSET_KEY, _gmtOffset);
-        preferences.putInt(PREFERENCES_DST_OFFSET_KEY, _dstOffset);
+        preferences.putInt(PREFERENCES_GMT_OFFSET_KEY, _gmtOffsetSeconds);
+        preferences.putInt(PREFERENCES_DST_OFFSET_KEY, _dstOffsetSeconds);
         preferences.end();
     }
 
@@ -94,7 +96,7 @@ namespace CustomTime {
             return false;
         }
         time(&_now);
-        return true;
+        return _isUnixTimeValid(_now, false);
     }
 
     unsigned long long getUnixTime() {
@@ -160,12 +162,12 @@ namespace CustomTime {
     static void _checkAndSyncTime() {
         unsigned long long currentTime = millis64();
         
-        // Check if it's time to sync (every TIME_SYNC_INTERVAL_S seconds)
-        if (currentTime - _lastSyncAttempt >= (unsigned long long)TIME_SYNC_INTERVAL_S * 1000) {
+        // Check if it's time to sync (every TIME_SYNC_INTERVAL_SECONDS seconds)
+        if (currentTime - _lastSyncAttempt >= (unsigned long long)TIME_SYNC_INTERVAL_SECONDS * 1000) {
             _lastSyncAttempt = currentTime;
             
             // Re-configure time to trigger a new sync
-            configTime(_gmtOffset, _dstOffset, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
+            configTime(_gmtOffsetSeconds, _dstOffsetSeconds, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
             
             // Check if sync was successful
             _isTimeSynched = _getTime();
@@ -230,8 +232,8 @@ namespace CustomTime {
         return true;
     }
 
-    static bool _getPublicTimezone(int* gmtOffset, int* dstOffset) {
-        if (!gmtOffset || !dstOffset) {
+    static bool _getPublicTimezone(int* gmtOffsetSeconds, int* dstOffsetSeconds) {
+        if (!gmtOffsetSeconds || !dstOffsetSeconds) {
             logger.error("Null pointer passed to getPublicTimezone", TAG);
             return false;
         }
@@ -245,7 +247,7 @@ namespace CustomTime {
         HTTPClient _http;
         JsonDocument jsonDocument;
 
-        char url[SERVER_NAME_BUFFER_SIZE];
+        char url[URL_BUFFER_SIZE];
         // The URL for the timezone API endpoint requires passing as params the latitude, longitude and username (which is a sort of free "public" api key)
         snprintf(url, sizeof(url), "%slat=%f&lng=%f&username=%s",
             PUBLIC_TIMEZONE_ENDPOINT,
@@ -268,8 +270,8 @@ namespace CustomTime {
                     return false;
                 }
 
-                *gmtOffset = jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
-                *dstOffset = jsonDocument["dstOffset"].as<int>() * 3600 - *gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
+                *gmtOffsetSeconds = jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
+                *dstOffsetSeconds = jsonDocument["dstOffset"].as<int>() * 3600 - *gmtOffsetSeconds; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
 
                 logger.debug(
                     "GMT offset: %d | DST offset: %d",
@@ -289,4 +291,9 @@ namespace CustomTime {
         _http.end();
         return true;
     }
-}
+
+    static bool _isUnixTimeValid(unsigned long long unixTime, bool isMilliseconds) {
+        if (isMilliseconds) { return (unixTime >= MINIMUM_UNIX_TIME_MILLISECONDS && unixTime <= MAXIMUM_UNIX_TIME_MILLISECONDS); }
+        else { return (unixTime >= MINIMUM_UNIX_TIME_SECONDS && unixTime <= MAXIMUM_UNIX_TIME_SECONDS); }
+    }
+};

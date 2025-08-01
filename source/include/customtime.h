@@ -7,19 +7,31 @@
 #include "constants.h"
 #include "utils.h"
 
-#define PREFERENCES_GMT_OFFSET_KEY "gmt_offset"
-#define PREFERENCES_DST_OFFSET_KEY "dst_offset"
-
 #define NTP_SERVER_1 "pool.ntp.org"
 #define NTP_SERVER_2 "time.google.com"
 #define NTP_SERVER_3 "time.apple.com"
-#define TIME_SYNC_INTERVAL_S (60 * 60) // Sync time every hour (in seconds)
-#define TIME_SYNC_RETRY_INTERVAL_MS (60 * 1000) // Retry sync if failed
+
+#define TIME_SYNC_INTERVAL_SECONDS (60 * 60)
+
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
 #define TIMESTAMP_ISO_FORMAT "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ" // ISO 8601 format with milliseconds
-#define DEFAULT_GMT_OFFSET 0
-#define DEFAULT_DST_OFFSET 0
-    
+
+#define PREFERENCES_GMT_OFFSET_KEY "gmt_offset"
+#define PREFERENCES_DST_OFFSET_KEY "dst_offset"
+
+#define DEFAULT_GMT_OFFSET_SECONDS 0
+#define DEFAULT_DST_OFFSET_SECONDS 0
+
+#define PUBLIC_LOCATION_ENDPOINT "http://ip-api.com/json/"
+#define PUBLIC_TIMEZONE_ENDPOINT "http://api.geonames.org/timezoneJSON?"
+#define PUBLIC_TIMEZONE_USERNAME "energymehome"
+
+// Time utilities
+#define MINIMUM_UNIX_TIME_SECONDS 1000000000 // Corresponds to 2001
+#define MINIMUM_UNIX_TIME_MILLISECONDS 1000000000000 // Corresponds to 2001
+#define MAXIMUM_UNIX_TIME_SECONDS 4102444800 // Corresponds to 2100
+#define MAXIMUM_UNIX_TIME_MILLISECONDS 4102444800000 // Corresponds to 2100
+
 struct PublicLocation 
 {
   float latitude;
@@ -33,6 +45,7 @@ namespace CustomTime {
     // No need to stop anything here since once it executes at the beginning, there is no other use for this
 
     void resetToDefaults();
+    // This function is called frequently from other functions, ensuring that we check and sync time if needed
     bool isTimeSynched();
     void setOffset(int gmtOffset, int dstOffset);
 

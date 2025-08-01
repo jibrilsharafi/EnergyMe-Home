@@ -48,8 +48,8 @@ struct SystemStaticInfo {
     char companyName[NAME_BUFFER_SIZE];
     char productName[NAME_BUFFER_SIZE];
     char fullProductName[NAME_BUFFER_SIZE];
-    char productDescription[NAME_BUFFER_SIZE];
-    char githubUrl[SERVER_NAME_BUFFER_SIZE];
+    char productDescription[STATUS_BUFFER_SIZE];
+    char githubUrl[URL_BUFFER_SIZE];
     char author[NAME_BUFFER_SIZE];
     char authorEmail[NAME_BUFFER_SIZE];
     

@@ -282,7 +282,7 @@ namespace ButtonHandler
         _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
 
-        factoryReset(); // This will also restart the device
+        setRestartSystem(TAG, "Factory reset via button", true);
 
         _operationInProgress = false;
         _currentPressType = ButtonPressType::NONE;

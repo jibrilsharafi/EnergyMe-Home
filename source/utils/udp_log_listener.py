@@ -7,6 +7,13 @@ This script listens for UDP multicast/unicast messages from EnergyMe-Home device
 and displays them in a formatted way. It's designed to work with the syslog
 format used by the ESP32 firmware.
 
+Features:
+- Automatic device-specific log files (creates separate .txt files per device)
+- Reboot detection (creates new log file when device restarts)
+- Real-time log filtering and colorized display
+- Multiple output formats (structured, raw, JSON)
+- Multicast and unicast support
+
 Usage:
     python udp_log_listener.py [--port 514] [--multicast 239.255.255.250] [--filter LEVEL]
 
@@ -16,6 +23,18 @@ Examples:
     python udp_log_listener.py --port 1514              # Listen on custom port
     python udp_log_listener.py --filter info            # Only show info and above
     python udp_log_listener.py --multicast 239.1.1.1    # Custom multicast group
+    python udp_log_listener.py --no-auto-device-logs    # Disable auto device logging
+
+Device-specific logging:
+    The listener automatically creates separate log files for each device in the logs/
+    directory with the format: energyme_{device_id}_{timestamp}.txt
+    
+    New log files are created when:
+    - Device reboots are detected (millis reset or "Guess who's back" message)
+    - First message from a new device is received
+    
+    Log format matches the requested output:
+    2025-08-01 22:09:10 588c81c47ad8 [110246ms] INFO    [Core0] utils: Restarting system
 """
 
 import socket
@@ -105,16 +124,21 @@ class UDPLogListener:
     """UDP log listener for EnergyMe-Home devices"""
     
     def __init__(self, host: str = '0.0.0.0', port: int = 514, log_filter: Optional[LogFilter] = None, 
-                 log_file: Optional[str] = None, log_format: str = 'structured', multicast_group: Optional[str] = None):
+                 log_file: Optional[str] = None, log_format: str = 'structured', multicast_group: Optional[str] = None,
+                 auto_device_logs: bool = True):
         self.host = host
         self.port = port
         self.filter = log_filter or LogFilter()
         self.log_file = log_file
         self.log_format = log_format  # 'structured', 'raw', or 'json'
         self.multicast_group = multicast_group  # Multicast group IP
+        self.auto_device_logs = auto_device_logs  # Enable automatic device-specific logging
         self.file_handle: Optional[TextIO] = None
         self.socket = None
         self.running = False
+        self.device_files: Dict[str, TextIO] = {}  # Track separate files per device (using session keys)
+        self.device_last_millis: Dict[str, int] = {}  # Track last seen millis per device (using actual device IDs)
+        self.device_session_ids: Dict[str, str] = {}  # Track current session ID per device
         self.stats = {
             'total_messages': 0,
             'parsed_messages': 0,
@@ -165,6 +189,10 @@ class UDPLogListener:
             self.stats['start_time'] = time.time()
             
             print(f"Filter: {self.filter.min_level_value} and above")
+            if self.auto_device_logs:
+                print("Device-specific logging: enabled (auto-creates separate txt files per device)")
+            else:
+                print("Device-specific logging: disabled")
             print(f"Press Ctrl+C to stop\n")
             
             # Write session header to log file
@@ -187,6 +215,107 @@ class UDPLogListener:
             if self.file_handle:
                 self.file_handle.close()
     
+    def _extract_device_id(self, device_string: str) -> str:
+        """Extract the actual device ID (MAC address) from the device string"""
+        # The device string might be like "22:20:55 588c81c47ad8" or just "588c81c47ad8"
+        # We want to extract the MAC-like part (12 hex characters)
+        import re
+        match = re.search(r'([a-f0-9]{12})$', device_string.strip())
+        if match:
+            return match.group(1)
+        # Fallback: clean the entire string
+        return re.sub(r'[^\w\-_]', '_', device_string.strip())
+
+    def _get_device_log_file(self, parsed: Dict[str, Any]) -> Optional[TextIO]:
+        """Get or create a device-specific log file, creating new file on reboot detection"""
+        device_raw = parsed['device']
+        current_millis = parsed['millis']
+        
+        # Extract actual device ID (MAC address)
+        actual_device_id = self._extract_device_id(device_raw)
+        
+        # Check for reboot indicators
+        is_reboot = False
+        reboot_reason = ""
+        
+        # Check for "Guess who's back" message indicating restart
+        if "Guess who's back" in parsed['message']:
+            is_reboot = True
+            reboot_reason = "'Guess who's back' message"
+        
+        # Check for millis reset (current millis significantly lower than last seen)
+        # Only check if we have previous millis and current is much smaller (indicating restart)
+        elif actual_device_id in self.device_last_millis:
+            last_millis = self.device_last_millis[actual_device_id]
+            # More conservative: only if current millis is less than 10 minutes AND 
+            # last millis was more than 30 minutes (to avoid false positives from short uptimes)
+            if (current_millis < 600000 and  # Current millis < 10 minutes
+                last_millis > 1800000 and   # Last millis was > 30 minutes  
+                current_millis < last_millis):  # And it's actually lower
+                is_reboot = True
+                reboot_reason = f"millis reset from {last_millis}ms to {current_millis}ms"
+        
+        # Update last seen millis
+        self.device_last_millis[actual_device_id] = current_millis
+        
+        # Generate session key for file tracking
+        if is_reboot or actual_device_id not in self.device_session_ids:
+            # Create new session ID
+            session_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.device_session_ids[actual_device_id] = session_timestamp
+            
+            # Close existing file if it exists
+            old_session_key = None
+            for session_key in list(self.device_files.keys()):
+                if session_key.startswith(f"{actual_device_id}_"):
+                    old_session_key = session_key
+                    break
+            
+            if old_session_key and old_session_key in self.device_files:
+                self.device_files[old_session_key].close()
+                del self.device_files[old_session_key]
+                if is_reboot:
+                    print(f"📱 Device {actual_device_id} reboot detected: {reboot_reason}")
+                else:
+                    print(f"📝 Starting log file for new device: {actual_device_id}")
+        
+        # Current session key
+        session_key = f"{actual_device_id}_{self.device_session_ids[actual_device_id]}"
+        
+        # Create file if it doesn't exist
+        if session_key not in self.device_files:
+            # Create filename 
+            filename = f"energyme_{session_key}.txt"
+            
+            # Create logs directory if it doesn't exist
+            log_dir = "logs"
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            
+            filepath = os.path.join(log_dir, filename)
+            
+            try:
+                # Open new file
+                file_handle = open(filepath, 'w', encoding='utf-8', buffering=1)
+                self.device_files[session_key] = file_handle
+                
+                # Write header
+                session_start = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                file_handle.write(f"=== EnergyMe-Home Device Log: {actual_device_id} ===\n")
+                file_handle.write(f"=== Session Started: {session_start} ===\n")
+                if is_reboot:
+                    file_handle.write(f"=== Device Reboot Detected: {reboot_reason} ===\n")
+                file_handle.write("\n")
+                file_handle.flush()
+                
+                print(f"📝 Created device log: {filepath}")
+                
+            except Exception as e:
+                print(f"{Colors.ERROR}Error creating device log file: {e}{Colors.RESET}")
+                return None
+        
+        return self.device_files.get(session_key)
+
     def _listen_loop(self):
         """Main listening loop"""
         while self.running:
@@ -209,27 +338,48 @@ class UDPLogListener:
         if parsed:
             self.stats['parsed_messages'] += 1
             
-            # Apply filter
+            # Log to device-specific file if enabled
+            if self.auto_device_logs:
+                device_file = self._get_device_log_file(parsed)
+                if device_file:
+                    self._log_to_device_file(device_file, parsed, addr)
+            
+            # Apply filter for display
             if not self.filter.should_show(parsed['level']):
                 self.stats['filtered_messages'] += 1
-                # Still log filtered messages to file if enabled
+                # Still log filtered messages to main file if enabled
                 if self.file_handle:
                     self._log_to_file(parsed, addr, message)
                 return
             
-            # Log to file before displaying
+            # Log to main file if enabled
             if self.file_handle:
                 self._log_to_file(parsed, addr, message)
             
             self._display_parsed_message(parsed, addr)
         else:
-            # Log raw message to file
+            # Log raw message to main file if enabled
             if self.file_handle:
                 self._log_to_file(None, addr, message)
             
             # Display raw message if parsing fails
             self._display_raw_message(message, addr)
     
+    def _log_to_device_file(self, file_handle: TextIO, parsed: Dict[str, Any], addr: tuple):
+        """Log parsed message to device-specific file in simple text format"""
+        try:
+            # Extract actual device ID for cleaner log format
+            actual_device_id = self._extract_device_id(parsed['device'])
+            # Use current time to ensure we have full timestamp with time
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # Format: YYYY-MM-DD HH:MM:SS DEVICE [MILLISms] LEVEL [CoreX] FUNCTION: MESSAGE
+            line = f"{current_time} {actual_device_id} [{parsed['millis']}ms] {parsed['level'].upper():<7} [Core{parsed['core']}] {parsed['function']}: {parsed['message']}\n"
+            file_handle.write(line)
+            file_handle.flush()
+            
+        except Exception as e:
+            print(f"{Colors.ERROR}Error writing to device log file: {e}{Colors.RESET}")
+
     def _display_parsed_message(self, parsed: Dict[str, Any], addr: tuple):
         """Display a parsed log message with formatting"""
         level_color = getattr(Colors, parsed['level'].upper(), Colors.RESET)
@@ -317,7 +467,18 @@ class UDPLogListener:
         if self.socket:
             self.socket.close()
         
-        # Write session end to log file
+        # Close all device-specific files
+        for session_key, file_handle in self.device_files.items():
+            try:
+                session_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                file_handle.write(f"\n=== Session Ended: {session_end} ===\n")
+                file_handle.close()
+                device_id = session_key.split('_')[0]  # Extract device ID from session key
+                print(f"📝 Closed device log for: {device_id}")
+            except Exception as e:
+                print(f"{Colors.ERROR}Error closing device log for {session_key}: {e}{Colors.RESET}")
+        
+        # Write session end to main log file
         if self.file_handle:
             session_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.file_handle.write(f"=== UDP Log Session Ended: {session_end} ===\n\n")
@@ -333,6 +494,8 @@ class UDPLogListener:
         if self.log_file:
             print(f"Logged messages: {self.stats['logged_messages']}")
             print(f"Log file: {self.log_file}")
+        if self.device_files:
+            print(f"Device-specific log files created: {len(self.device_files)}")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -391,6 +554,19 @@ def main():
         help='Log file format (default: structured)'
     )
     
+    parser.add_argument(
+        '--auto-device-logs',
+        action='store_true',
+        default=True,
+        help='Automatically create device-specific log files (default: enabled)'
+    )
+    
+    parser.add_argument(
+        '--no-auto-device-logs',
+        action='store_true',
+        help='Disable automatic device-specific log files'
+    )
+    
     args = parser.parse_args()
     
     # Auto-generate log filename if not specified but logging requested
@@ -410,8 +586,11 @@ def main():
     # Determine multicast group
     multicast_group = None if args.unicast else args.multicast
     
+    # Determine auto device logs setting
+    auto_device_logs = args.auto_device_logs and not args.no_auto_device_logs
+    
     # Start listener
-    listener = UDPLogListener(args.host, args.port, log_filter, args.log_file, args.log_format, multicast_group)
+    listener = UDPLogListener(args.host, args.port, log_filter, args.log_file, args.log_format, multicast_group, auto_device_logs)
     listener.start()
 
 if __name__ == '__main__':

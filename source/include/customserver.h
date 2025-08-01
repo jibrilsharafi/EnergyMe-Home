@@ -21,18 +21,19 @@
 
 // Rate limiting
 #define WEBSERVER_MAX_REQUESTS 180
-#define WEBSERVER_WINDOW_SIZE_SECONDS 60 // in seconds
+#define WEBSERVER_WINDOW_SIZE_SECONDS 60
 
 #define MINIMUM_FREE_HEAP_OTA (20 * 1024) // Minimum free heap required for OTA updates
-#define SIZE_REPORT_UPDATE_OTA (128 * 1024) // Report progress every 128KB
-#define HTTP_RESPONSE_DELAY 2000 // Short delay to ensure HTTP response is sent before system actions (such as restart)
+#define SIZE_REPORT_UPDATE_OTA (128 * 1024) // Print progress every X bytes during OTA update
+// Here used to lie the delay before restarting or doing some operations to ensure the response is sent
+// but then I undestood that the delay was (also) blocking the AsyncTCP task itself, so it was useless ¯\_(ツ)_/¯
 
 // Health check task
 #define HEALTH_CHECK_TASK_NAME "health_check_task"
 #define HEALTH_CHECK_TASK_STACK_SIZE (4 * 1024)
 #define HEALTH_CHECK_TASK_PRIORITY 1
-#define HEALTH_CHECK_INTERVAL_MS (30 * 1000) // 30 seconds
-#define HEALTH_CHECK_TIMEOUT_MS (5 * 1000) // 5 seconds timeout for health requests
+#define HEALTH_CHECK_INTERVAL_MS (60 * 1000)
+#define HEALTH_CHECK_TIMEOUT_MS (5 * 1000)
 #define HEALTH_CHECK_MAX_FAILURES 3 // Maximum consecutive failures before restart
 
 // Authentication
@@ -48,7 +49,7 @@
 #define API_MUTEX_TIMEOUT_MS (5 * 1000) // Time to wait for API mutex for non-GET operations before giving up
 
 // Buffer sizes
-#define HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE 256 // Only needed for health check responses, n
+#define HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE 256 // Only needed for health check HTTP response to own server
 
 // Content length validations
 #define HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL 64
@@ -57,8 +58,8 @@
 #define HTTP_MAX_CONTENT_LENGTH_LED_BRIGHTNESS 64
 
 // Crash dump chunk sizes
-#define CRASH_DUMP_DEFAULT_CHUNK_SIZE (2 * 1024)
-#define CRASH_DUMP_MAX_CHUNK_SIZE (8 * 1024) // Maximum chunk size for core dump retrieval. Can be set high thanks to chunked transfer, but above 8 kB it will crash the wdt
+#define CRASH_DUMP_DEFAULT_CHUNK_SIZE (1 * 1024)
+#define CRASH_DUMP_MAX_CHUNK_SIZE (4 * 1024) // Maximum chunk size for core dump retrieval. Can be set high thanks to chunked transfer, but above 4-8 kB it will crash the wdt
 
 namespace CustomServer {
     void begin();

@@ -61,7 +61,7 @@
 
 struct InfluxDbConfiguration {
     bool enabled;
-    char server[SERVER_NAME_BUFFER_SIZE];
+    char server[URL_BUFFER_SIZE];
     int port;
     int version;
     char database[DATABASE_NAME_BUFFER_SIZE];

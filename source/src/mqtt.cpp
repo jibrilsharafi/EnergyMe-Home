@@ -94,7 +94,7 @@ namespace Mqtt
     static bool _debugLogsEnabled = DEFAULT_DEBUG_LOGS_ENABLED;
 
     // Version for OTA information
-    static char _firmwareUpdatesUrl[SERVER_NAME_BUFFER_SIZE];
+    static char _firmwareUpdatesUrl[URL_BUFFER_SIZE];
     static char _firmwareUpdatesVersion[VERSION_BUFFER_SIZE];
     
     // Timing variables
@@ -845,11 +845,6 @@ namespace Mqtt
                 continue;
             }
 
-            if (!validateUnixTime(payloadMeter.unixTimeMs)) {
-                logger.warning("Invalid unixTime in payload meter: %llu", TAG, payloadMeter.unixTimeMs);
-                continue;
-            }
-
             JsonObject jsonObject = jsonArray.add<JsonObject>();
             jsonObject["unixTime"] = payloadMeter.unixTimeMs;
             jsonObject["channel"] = payloadMeter.channel;
@@ -866,11 +861,6 @@ namespace Mqtt
 
                 if (meterValues.lastUnixTimeMilliseconds == 0) {
                     logger.debug("Meter values for channel %d have zero unixTime, skipping...", TAG, i);
-                    continue;
-                }
-
-                if (!validateUnixTime(meterValues.lastUnixTimeMilliseconds)) {
-                    logger.warning("Invalid unixTime in meter values for channel %d: %llu", TAG, i, meterValues.lastUnixTimeMilliseconds);
                     continue;
                 }
 
@@ -894,10 +884,6 @@ namespace Mqtt
             return;
         }
 
-        if (!validateUnixTime(meterValuesZeroChannel.lastUnixTimeMilliseconds)) {
-            logger.warning("Invalid unixTime in meter values: %llu", TAG, meterValuesZeroChannel.lastUnixTimeMilliseconds);
-            return;
-        }
         jsonObject["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
         jsonObject["voltage"] = meterValuesZeroChannel.voltage;
 
