@@ -95,6 +95,7 @@
 // Multiplexer
 // --------------------
 #define MULTIPLEXER_CHANNEL_COUNT 16
+#define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // All the 16 of the multiplexer + 1 directly going to channel A of ADE7953 
 
 // Server used ports (here to ensure no conflicts)
 #define MODBUS_TCP_PORT 502 // The default port for Modbus TCP

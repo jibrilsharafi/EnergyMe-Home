@@ -1,7 +1,5 @@
 #include "custommqtt.h"
 
-extern Ade7953 ade7953; // TODO: remove this once ade7953 becomes static
-
 static const char *TAG = "custommqtt";
 
 namespace CustomMqtt
@@ -64,7 +62,6 @@ namespace CustomMqtt
     {
         logger.debug("Stopping custom MQTT...", TAG);
         _stopTask();
-        _customClientMqtt.disconnect();
         _isSetupDone = false;
         logger.debug("Custom MQTT stopped", TAG);
     }
@@ -87,7 +84,6 @@ namespace CustomMqtt
 
         // Stop current task if running
         _stopTask();
-        _customClientMqtt.disconnect();
 
         // Copy the configuration
         _customMqttConfiguration = config;
@@ -239,7 +235,6 @@ namespace CustomMqtt
 
         // Stop the task since it can't reconnect anyway
         _stopTask();
-        _customClientMqtt.disconnect();
 
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) {
@@ -339,7 +334,7 @@ namespace CustomMqtt
         logger.debug("Publishing meter data to custom MQTT...", TAG);
 
         JsonDocument jsonDocument;
-        ade7953.fullMeterValuesToJson(jsonDocument);
+        Ade7953::fullMeterValuesToJson(jsonDocument);
 
         // Validate that we have actual data before serializing (since the JSON serialization allows for empty objects)
         if (jsonDocument.isNull() || jsonDocument.size() == 0) {
@@ -584,5 +579,8 @@ namespace CustomMqtt
         }
     }
 
-    static void _stopTask() { stopTaskGracefully(&_customMqttTaskHandle, "custom MQTT task"); }
+    static void _stopTask() { 
+        stopTaskGracefully(&_customMqttTaskHandle, "custom MQTT task");
+        _customClientMqtt.disconnect();
+    }
 }

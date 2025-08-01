@@ -17,6 +17,7 @@
 #include "globals.h"
 #include "binaries.h"
 #include "utils.h"
+#include "led.h"
 
 // Rate limiting
 #define WEBSERVER_MAX_REQUESTS 180

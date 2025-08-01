@@ -2,1945 +2,2029 @@
 
 static const char *TAG = "ade7953";
 
-// Define the static instance pointer
-Ade7953* Ade7953::_instance = nullptr;
-
-Ade7953::Ade7953(
-    int ssPin,
-    int sckPin,
-    int misoPin,
-    int mosiPin,
-    int resetPin,
-    int interruptPin,
-    AdvancedLogger &logger) : 
-                            _ssPin(ssPin),
-                            _sckPin(sckPin),
-                            _misoPin(misoPin),
-                            _mosiPin(mosiPin),
-                            _resetPin(resetPin),
-                            _interruptPin(interruptPin),                            
-                            _logger(logger) {}
-
-bool Ade7953::begin() {
-    _logger.debug("Initializing Ade7953", TAG);
-
-    
-    if (_instance != nullptr) {
-        _logger.error("Ade7953 instance already exists", TAG);
-        return false;
-    }
-
-    
-    _logger.debug("Creating Ade7953 instance", TAG);
-    _initializeSpiMutexes();
-    _logger.debug("Successfully created Ade7953 instance", TAG);
-
-    
-    _logger.debug("Setting up hardware pins...", TAG);
-    _setHardwarePins();
-    _logger.debug("Successfully set up hardware pins", TAG);
-
-    
-    _logger.debug("Verifying communication with Ade7953...", TAG);
-    if (!_verifyCommunication()) {
-        _logger.error("Failed to communicate with Ade7953", TAG);
-        return false;
-    }
-    _logger.debug("Successfully initialized Ade7953", TAG);
-    
-    
-    _logger.debug("Setting optimum settings...", TAG);
-    _setOptimumSettings();
-    _logger.debug("Successfully set optimum settings", TAG);
-
-    
-    _logger.debug("Setting default parameters...", TAG);
-    _setDefaultParameters();
-    _logger.debug("Successfully set default parameters", TAG);
-
-    
-    _logger.debug("Setting configuration from SPIFFS...", TAG);
-    _setConfigurationFromSpiffs();
-    _logger.debug("Done setting configuration from SPIFFS", TAG);
-
-    
-    _logger.debug("Reading channel data from SPIFFS...", TAG);
-    _setChannelDataFromSpiffs();
-    _logger.debug("Done reading channel data from SPIFFS", TAG);
-
-    
-    _logger.debug("Reading calibration values from SPIFFS...", TAG);
-    _setCalibrationValuesFromSpiffs();
-    _logger.debug("Done reading calibration values from SPIFFS", TAG);
-
-    
-    _logger.debug("Reading energy from SPIFFS...", TAG);
-    _setEnergyFromSpiffs();
-    _logger.debug("Done reading energy from SPIFFS", TAG);    
-    
-    // Set it up only at the end to avoid premature interrupts
-    
-    _logger.debug("Setting up interrupts...", TAG);
-    _setupInterrupts();
-    _logger.debug("Successfully set up interrupts", TAG);
-
-    
-    _logger.debug("Starting meter reading task...", TAG);
-    _startMeterReadingTask();
-    _logger.debug("Meter reading task started", TAG);
-
-    return true;
-}
-
-void Ade7953::_initializeSpiMutexes()
+namespace Ade7953
 {
+    static void _initializeSpiMutexes();
+    static Ade7953InterruptType _handleInterrupt();
+    static void _reinitializeAfterInterrupt();
+    static void IRAM_ATTR _isrHandler();
+    static void _meterReadingTask(void* parameter);
+    static void _stopMeterReadingTask();
+    static void _attachInterruptHandler();
+    static void _detachInterruptHandler();
     
-    _spiMutex = xSemaphoreCreateMutex();
-    if (_spiMutex == NULL)
+    static void _irqstataBitName(int bit, char *buffer, size_t bufferSize);
+
+    static void _setHardwarePins();
+    static void _setOptimumSettings();
+
+    static void _reset();
+    static bool _verifyCommunication();
+
+    static void _setDefaultParameters();
+
+    static void _setupInterrupts();
+    static void _startMeterReadingTask();
+
+    static void _setConfigurationFromSpiffs();
+    static void _applyConfiguration(JsonDocument &jsonDocument);
+    static bool _validateConfigurationJson(JsonDocument &jsonDocument);
+
+    static void _setCalibrationValuesFromSpiffs();
+    static void _jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues);
+    static bool _validateCalibrationValuesJson(JsonDocument &jsonDocument);
+
+    static bool _saveChannelDataToSpiffs();
+    static void _setChannelDataFromSpiffs();
+    static void _updateChannelData();
+    static bool _validateChannelDataJson(JsonDocument &jsonDocument);
+
+    static Phase _getLaggingPhase(Phase phase);
+    static Phase _getLeadingPhase(Phase phase);
+
+    static bool _readMeterValues(int channel, unsigned long long linecycUnixTime);
+
+    static unsigned int _findNextActiveChannel(unsigned int currentChannel);
+
+    static void _updateSampleTime();
+
+    static void _setEnergyFromSpiffs();
+    static void _saveEnergyToSpiffs();
+    static void _saveDailyEnergyToSpiffs();
+
+    static bool _verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool signedData, bool wasWrite);
+
+    static long _readApparentPowerInstantaneous(Ade7953Channel channel);
+    static long _readActivePowerInstantaneous(Ade7953Channel channel);
+    static long _readReactivePowerInstantaneous(Ade7953Channel channel);
+    static long _readCurrentInstantaneous(Ade7953Channel channel);
+    static long _readVoltageInstantaneous();
+    static long _readCurrentRms(Ade7953Channel channel);
+    static long _readVoltageRms();
+    static long _readActiveEnergy(Ade7953Channel channel);
+    static long _readReactiveEnergy(Ade7953Channel channel);
+    static long _readApparentEnergy(Ade7953Channel channel);
+    static long _readPowerFactor(Ade7953Channel channel);
+    static long _readAngle(Ade7953Channel channel);
+    static long _readPeriod();
+
+    static bool _validateValue(float newValue, float min, float max);
+    static bool _validateVoltage(float newValue);
+    static bool _validateCurrent(float newValue);
+    static bool _validatePower(float newValue);
+    static bool _validatePowerFactor(float newValue);
+    static bool _validateGridFrequency(float newValue);
+
+    static void _setLinecyc(unsigned int linecyc);
+    static void _setPgaGain(long pgaGain, Ade7953Channel channel, MeasurementType measurementType);
+    static void _setPhaseCalibration(long phaseCalibration, Ade7953Channel channel);
+    static void _setGain(long gain, Ade7953Channel channel, MeasurementType measurementType);
+    static void _setOffset(long offset, Ade7953Channel channel, MeasurementType measurementType);
+
+    static void _recordFailure();
+    static void _checkForTooManyFailures();
+
+    static int _ssPin;
+    static int _sckPin;
+    static int _misoPin;
+    static int _mosiPin;
+    static int _resetPin;
+    static int _interruptPin;
+
+    static unsigned int _sampleTime; // in milliseconds, time between linecycles readings
+
+    static unsigned int _currentChannel = 0;
+
+    static ChannelState _channelStates[CHANNEL_COUNT];
+
+    static float _gridFrequency = 50.0f;
+
+    static int _failureCount = 0;
+    static unsigned long long _firstFailureTime = 0;
+    static unsigned long long _lastMillisSaveEnergy = 0;
+
+    static SemaphoreHandle_t _spiMutex = NULL;
+    static SemaphoreHandle_t _spiOperationMutex = NULL;
+
+    static TaskHandle_t _meterReadingTaskHandle = NULL;
+    static SemaphoreHandle_t _ade7953InterruptSemaphore = NULL;
+    static volatile unsigned long long _lastInterruptTime = 0;
+
+    static void _checkInterruptTiming();
+    static bool _processChannelReading(int channel, unsigned long long linecycUnix);
+    static void _addMeterDataToPayload(int channel, unsigned long long linecycUnix);
+    static void _processCycendInterrupt(unsigned long long linecycUnix);
+    static void _handleCrcChangeInterrupt();
+
+    bool begin(
+        int ssPin,
+        int sckPin,
+        int misoPin,
+        int mosiPin,
+        int resetPin,
+        int interruptPin) {
+        logger.debug("Initializing Ade7953", TAG);
+
+        _ssPin = ssPin;
+        _sckPin = sckPin;
+        _misoPin = misoPin;
+        _mosiPin = mosiPin;
+        _resetPin = resetPin;
+        _interruptPin = interruptPin;
+        
+        logger.debug("Creating ADE7953 instance", TAG);
+        _initializeSpiMutexes();
+        logger.debug("Successfully created ADE7953 instance", TAG);
+
+        
+        logger.debug("Setting up hardware pins...", TAG);
+        _setHardwarePins();
+        logger.debug("Successfully set up hardware pins", TAG);
+
+        
+        logger.debug("Verifying communication with ADE7953...", TAG);
+        if (!_verifyCommunication()) {
+            logger.error("Failed to communicate with ADE7953", TAG);
+            return false;
+        }
+        logger.debug("Successfully initialized ADE7953", TAG);
+        
+        
+        logger.debug("Setting optimum settings...", TAG);
+        _setOptimumSettings();
+        logger.debug("Successfully set optimum settings", TAG);
+
+        
+        logger.debug("Setting default parameters...", TAG);
+        _setDefaultParameters();
+        logger.debug("Successfully set default parameters", TAG);
+
+        
+        logger.debug("Setting configuration from SPIFFS...", TAG);
+        _setConfigurationFromSpiffs();
+        logger.debug("Done setting configuration from SPIFFS", TAG);
+
+        
+        logger.debug("Reading channel data from SPIFFS...", TAG);
+        _setChannelDataFromSpiffs();
+        logger.debug("Done reading channel data from SPIFFS", TAG);
+
+        
+        logger.debug("Reading calibration values from SPIFFS...", TAG);
+        _setCalibrationValuesFromSpiffs();
+        logger.debug("Done reading calibration values from SPIFFS", TAG);
+
+        
+        logger.debug("Reading energy from SPIFFS...", TAG);
+        _setEnergyFromSpiffs();
+        logger.debug("Done reading energy from SPIFFS", TAG);    
+        
+        // Set it up only at the end to avoid premature interrupts
+        
+        logger.debug("Setting up interrupts...", TAG);
+        _setupInterrupts();
+        logger.debug("Successfully set up interrupts", TAG);
+
+        
+        logger.debug("Starting meter reading task...", TAG);
+        _startMeterReadingTask();
+        logger.debug("Meter reading task started", TAG);
+
+        return true;
+    }
+
+    void _initializeSpiMutexes()
     {
-        _logger.error("Failed to create SPI mutex", TAG);
-        return;
-    }
-    _logger.debug("SPI mutex created successfully", TAG);
+        
+        _spiMutex = xSemaphoreCreateMutex();
+        if (_spiMutex == NULL)
+        {
+            logger.error("Failed to create SPI mutex", TAG);
+            return;
+        }
+        logger.debug("SPI mutex created successfully", TAG);
 
-    
-    _spiOperationMutex = xSemaphoreCreateMutex();
-    if (_spiOperationMutex == NULL)
+        
+        _spiOperationMutex = xSemaphoreCreateMutex();
+        if (_spiOperationMutex == NULL)
+        {
+            logger.error("Failed to create SPI operation mutex", TAG);
+            vSemaphoreDelete(_spiMutex);
+            _spiMutex = NULL;
+            return;
+        }
+        logger.debug("SPI operation mutex created successfully", TAG);
+    }
+
+    void _setHardwarePins() {
+        logger.debug("Setting hardware pins...", TAG);
+
+        pinMode(_ssPin, OUTPUT);
+        pinMode(_sckPin, OUTPUT);
+        pinMode(_misoPin, INPUT);
+        pinMode(_mosiPin, OUTPUT);
+        pinMode(_resetPin, OUTPUT);
+        pinMode(_interruptPin, INPUT);
+
+        SPI.begin(_sckPin, _misoPin, _mosiPin, _ssPin);
+        SPI.setFrequency(ADE7953_SPI_FREQUENCY); //  Max ADE7953 clock is 2MHz
+        SPI.setDataMode(SPI_MODE0);
+        SPI.setBitOrder(MSBFIRST);
+        digitalWrite(_ssPin, HIGH);
+
+        logger.debug("Successfully set hardware pins", TAG);
+    }
+
+    void _setDefaultParameters()
     {
-        _logger.error("Failed to create SPI operation mutex", TAG);
-        vSemaphoreDelete(_spiMutex);
-        _spiMutex = NULL;
-        return;
-    }
-    _logger.debug("SPI operation mutex created successfully", TAG);
+        _setPgaGain(DEFAULT_PGA_REGISTER, Ade7953Channel::A, MeasurementType::VOLTAGE);
+        _setPgaGain(DEFAULT_PGA_REGISTER, Ade7953Channel::A, MeasurementType::CURRENT);
+        _setPgaGain(DEFAULT_PGA_REGISTER, Ade7953Channel::B, MeasurementType::CURRENT);
 
-    
-    _payloadMeterMutex = xSemaphoreCreateMutex();
-    if (_payloadMeterMutex == NULL)
+        writeRegister(DISNOLOAD_8, 8, DEFAULT_DISNOLOAD_REGISTER);
+
+        writeRegister(AP_NOLOAD_32, 32, DEFAULT_X_NOLOAD_REGISTER);
+        writeRegister(VAR_NOLOAD_32, 32, DEFAULT_X_NOLOAD_REGISTER);
+        writeRegister(VA_NOLOAD_32, 32, DEFAULT_X_NOLOAD_REGISTER);
+
+        writeRegister(LCYCMODE_8, 8, DEFAULT_LCYCMODE_REGISTER);
+
+        writeRegister(CONFIG_16, 16, DEFAULT_CONFIG_REGISTER);
+    }
+
+    /*
+    * According to the datasheet, setting these registers is mandatory for optimal operation
+    */
+    void _setOptimumSettings()
     {
-        _logger.error("Failed to create payload meter mutex", TAG);
-        vSemaphoreDelete(_spiMutex);
-        vSemaphoreDelete(_spiOperationMutex);
-        _spiMutex = NULL;
-        _spiOperationMutex = NULL;
-        return;
-    }
-    _logger.debug("Payload meter mutex created successfully", TAG);
-}
-
-void Ade7953::_setHardwarePins() {
-    _logger.debug("Setting hardware pins...", TAG);
-
-    pinMode(_ssPin, OUTPUT);
-    pinMode(_sckPin, OUTPUT);
-    pinMode(_misoPin, INPUT);
-    pinMode(_mosiPin, OUTPUT);
-    pinMode(_resetPin, OUTPUT);
-    pinMode(_interruptPin, INPUT);
-
-    SPI.begin(_sckPin, _misoPin, _mosiPin, _ssPin);
-    SPI.setFrequency(ADE7953_SPI_FREQUENCY); //  Max ADE7953 clock is 2MHz
-    SPI.setDataMode(SPI_MODE0);
-    SPI.setBitOrder(MSBFIRST);
-    digitalWrite(_ssPin, HIGH);
-
-    _logger.debug("Successfully set hardware pins", TAG);
-}
-
-void Ade7953::_setDefaultParameters()
-{
-    _setPgaGain(DEFAULT_PGA_REGISTER, CHANNEL_A, VOLTAGE);
-    _setPgaGain(DEFAULT_PGA_REGISTER, CHANNEL_A, CURRENT);
-    _setPgaGain(DEFAULT_PGA_REGISTER, CHANNEL_B, CURRENT);
-
-    writeRegister(DISNOLOAD_8, 8, DEFAULT_DISNOLOAD_REGISTER);
-
-    writeRegister(AP_NOLOAD_32, 32, DEFAULT_X_NOLOAD_REGISTER);
-    writeRegister(VAR_NOLOAD_32, 32, DEFAULT_X_NOLOAD_REGISTER);
-    writeRegister(VA_NOLOAD_32, 32, DEFAULT_X_NOLOAD_REGISTER);
-
-    writeRegister(LCYCMODE_8, 8, DEFAULT_LCYCMODE_REGISTER);
-
-    writeRegister(CONFIG_16, 16, DEFAULT_CONFIG_REGISTER);
-}
-
-/*
- * According to the datasheet, setting these registers is mandatory for optimal operation
-*/
-void Ade7953::_setOptimumSettings()
-{
-    writeRegister(UNLOCK_OPTIMUM_REGISTER, 8, UNLOCK_OPTIMUM_REGISTER_VALUE);
-    writeRegister(Reserved_16, 16, DEFAULT_OPTIMUM_REGISTER);
-}
-
-void Ade7953::loop() {
-    // TODO: handled by the stop function
-    // if (
-    //     millis64() - _lastMillisSaveEnergy > SAVE_ENERGY_INTERVAL || 
-    //     restartConfiguration.isRequired
-    // ) {
-    if (millis64() - _lastMillisSaveEnergy > SAVE_ENERGY_INTERVAL) {
-        _lastMillisSaveEnergy = millis64();
-        saveEnergy();
+        writeRegister(UNLOCK_OPTIMUM_REGISTER, 8, UNLOCK_OPTIMUM_REGISTER_VALUE);
+        writeRegister(Reserved_16, 16, DEFAULT_OPTIMUM_REGISTER);
     }
 
-    // If restart required, clean u
-    // TODO: handled by the stop function
-    // if (restartConfiguration.isRequired) {
-    //     _logger.debug("Restart required. Cleaning up Ade7953 resources", TAG);
-    //     cleanup();
-    // }
-}
-
-void Ade7953::cleanup() {
-    _logger.debug("Cleaning up Ade7953 resources", TAG);
-    
-    // Stop meter reading task and interrupt handling first
-    _stopMeterReadingTask();
-    
-    // Clean up SPI mutex
-    if (_spiMutex != NULL) {
-        vSemaphoreDelete(_spiMutex);
-        _spiMutex = NULL;
-        _logger.debug("SPI mutex deleted", TAG);
-    }
-
-    if (_spiOperationMutex != NULL) {
-        vSemaphoreDelete(_spiOperationMutex);
-        _spiOperationMutex = NULL;
-        _logger.debug("SPI operation mutex deleted", TAG);
-    }
-
-    if (_payloadMeterMutex != NULL) {
-        vSemaphoreDelete(_payloadMeterMutex);
-        _payloadMeterMutex = NULL;
-        _logger.debug("Payload meter mutex deleted", TAG);
-    }
-}
-
-void Ade7953::_reset() {
-    _logger.debug("Resetting Ade7953", TAG);
-    digitalWrite(_resetPin, LOW);
-    delay(ADE7953_RESET_LOW_DURATION);
-    digitalWrite(_resetPin, HIGH);
-    delay(ADE7953_RESET_LOW_DURATION);
-}
-
-/**
- * Verifies the communication with the ADE7953 device.
- * This function reads a specific register from the device and checks if it matches the default value.
- * 
- * @return true if the communication with the ADE7953 is successful, false otherwise.
- */
-bool Ade7953::_verifyCommunication() {
-    _logger.debug("Verifying communication with Ade7953...", TAG);
-    
-    int attempt = 0;
-    bool success = false;
-    unsigned long long lastMillisAttempt = 0;
-
-    unsigned int loops = 0;
-    while (attempt < ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS && !success && loops < MAX_LOOP_ITERATIONS) {
-        loops++;
-        if (millis64() - lastMillisAttempt < ADE7953_VERIFY_COMMUNICATION_INTERVAL) {
-            continue;
+    void loop() { // TODO: depracate this and move to a task
+        // TODO: handled by the stop function
+        // if (
+        //     millis64() - _lastMillisSaveEnergy > SAVE_ENERGY_INTERVAL || 
+        //     restartConfiguration.isRequired
+        // ) {
+        if (millis64() - _lastMillisSaveEnergy > SAVE_ENERGY_INTERVAL) {
+            _lastMillisSaveEnergy = millis64();
+            saveEnergy();
         }
 
-        _logger.debug("Attempt (%d/%d) to communicate with ADE7953", TAG, attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
-        
-        _reset();
-        attempt++;
-        lastMillisAttempt = millis64();
+        // If restart required, clean u
+        // TODO: handled by the stop function
+        // if (restartConfiguration.isRequired) {
+        //     logger.debug("Restart required. Cleaning up Ade7953 resources", TAG);
+        //     cleanup();
+        // }
+    }
 
-        if ((readRegister(AP_NOLOAD_32, 32, false)) == DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
-            _logger.debug("Communication successful with ADE7953", TAG);
+    void cleanup() {
+        logger.debug("Cleaning up Ade7953 resources", TAG);
+        
+        // Stop meter reading task and interrupt handling first
+        _stopMeterReadingTask();
+        
+        // Clean up SPI mutex
+        if (_spiMutex != NULL) {
+            vSemaphoreDelete(_spiMutex);
+            _spiMutex = NULL;
+            logger.debug("SPI mutex deleted", TAG);
+        }
+
+        if (_spiOperationMutex != NULL) {
+            vSemaphoreDelete(_spiOperationMutex);
+            _spiOperationMutex = NULL;
+            logger.debug("SPI operation mutex deleted", TAG);
+        }
+    }
+
+    void _reset() {
+        logger.debug("Resetting Ade7953", TAG);
+        digitalWrite(_resetPin, LOW);
+        delay(ADE7953_RESET_LOW_DURATION);
+        digitalWrite(_resetPin, HIGH);
+        delay(ADE7953_RESET_LOW_DURATION);
+    }
+
+    /**
+     * Verifies the communication with the ADE7953 device.
+     * This function reads a specific register from the device and checks if it matches the default value.
+     * 
+     * @return true if the communication with the ADE7953 is successful, false otherwise.
+     */
+    bool _verifyCommunication() {
+        logger.debug("Verifying communication with Ade7953...", TAG);
+        
+        int attempt = 0;
+        bool success = false;
+        unsigned long long lastMillisAttempt = 0;
+
+        unsigned int loops = 0;
+        while (attempt < ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS && !success && loops < MAX_LOOP_ITERATIONS) {
+            loops++;
+            if (millis64() - lastMillisAttempt < ADE7953_VERIFY_COMMUNICATION_INTERVAL) {
+                continue;
+            }
+
+            logger.debug("Attempt (%d/%d) to communicate with ADE7953", TAG, attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+            
+            _reset();
+            attempt++;
+            lastMillisAttempt = millis64();
+
+            if ((readRegister(AP_NOLOAD_32, 32, false)) == DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
+                logger.debug("Communication successful with ADE7953", TAG);
+                return true;
+            } else {
+                logger.warning("Failed to communicate with ADE7953 on _attempt (%d/%d). Retrying in %d ms", TAG, attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
+            }
+        }
+
+        logger.error("Failed to communicate with ADE7953 after %d attempts", TAG, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+        return false;
+    }
+
+    // Configuration
+    // --------------------
+
+    void _setConfigurationFromSpiffs() {
+        logger.debug("Setting configuration from SPIFFS...", TAG);
+
+        JsonDocument jsonDocument;
+        deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, jsonDocument);
+
+        if (!setConfiguration(jsonDocument)) {
+            logger.error("Failed to set configuration from SPIFFS. Keeping default one", TAG);
+            setDefaultConfiguration();
+            return;
+        }
+
+        logger.debug("Successfully set configuration from SPIFFS", TAG);
+    }
+
+    bool setConfiguration(JsonDocument &jsonDocument) {
+        logger.debug("Setting configuration...", TAG);
+
+        if (!_validateConfigurationJson(jsonDocument)) {
+            logger.warning("Invalid configuration JSON. Keeping previous configuration", TAG);
+            return false;
+        }
+        
+        if (!serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, jsonDocument)) {
+            logger.error("Failed to save configuration to SPIFFS. Keeping previous configuration", TAG);
+            return false;
+        } else {
+            _applyConfiguration(jsonDocument);
+            logger.debug("Successfully saved configuration to SPIFFS", TAG);
+            return true;
+        }
+    }
+
+    void setDefaultConfiguration() {
+        logger.debug("Setting default configuration...", TAG);
+
+        createDefaultAde7953ConfigurationFile();
+
+        JsonDocument jsonDocument;
+        deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, jsonDocument);
+
+        setConfiguration(jsonDocument);
+
+        logger.debug("Default configuration set", TAG);
+    }
+
+    void _applyConfiguration(JsonDocument &jsonDocument) {
+        logger.debug("Applying configuration...", TAG);
+
+        // TODO: should validate first
+
+        _sampleTime = jsonDocument["sampleTime"].as<unsigned long>();
+        _updateSampleTime();
+
+        _setGain(jsonDocument["aVGain"].as<long>(), Ade7953Channel::A, MeasurementType::VOLTAGE);
+        // Channel B voltage gain should not be set as by datasheet
+
+        _setGain(jsonDocument["aIGain"].as<long>(), Ade7953Channel::A, MeasurementType::CURRENT);
+        _setGain(jsonDocument["bIGain"].as<long>(), Ade7953Channel::B, MeasurementType::CURRENT);
+
+        _setOffset(jsonDocument["aIRmsOs"].as<long>(), Ade7953Channel::A, MeasurementType::CURRENT);
+        _setOffset(jsonDocument["bIRmsOs"].as<long>(), Ade7953Channel::B, MeasurementType::CURRENT);
+
+        _setGain(jsonDocument["aWGain"].as<long>(), Ade7953Channel::A, MeasurementType::ACTIVE_POWER);
+        _setGain(jsonDocument["bWGain"].as<long>(), Ade7953Channel::B, MeasurementType::ACTIVE_POWER);
+
+        _setOffset(jsonDocument["aWattOs"].as<long>(), Ade7953Channel::A, MeasurementType::ACTIVE_POWER);
+        _setOffset(jsonDocument["bWattOs"].as<long>(), Ade7953Channel::B, MeasurementType::ACTIVE_POWER);
+
+        _setGain(jsonDocument["aVarGain"].as<long>(), Ade7953Channel::A, MeasurementType::REACTIVE_POWER);
+        _setGain(jsonDocument["bVarGain"].as<long>(), Ade7953Channel::B, MeasurementType::REACTIVE_POWER);
+
+        _setOffset(jsonDocument["aVarOs"].as<long>(), Ade7953Channel::A, MeasurementType::REACTIVE_POWER);
+        _setOffset(jsonDocument["bVarOs"].as<long>(), Ade7953Channel::B, MeasurementType::ACTIVE_POWER);
+
+        _setGain(jsonDocument["aVaGain"].as<long>(), Ade7953Channel::A, MeasurementType::APPARENT_POWER);
+        _setGain(jsonDocument["bVaGain"].as<long>(), Ade7953Channel::B, MeasurementType::APPARENT_POWER);
+
+        _setOffset(jsonDocument["aVaOs"].as<long>(), Ade7953Channel::A, MeasurementType::APPARENT_POWER);
+        _setOffset(jsonDocument["bVaOs"].as<long>(), Ade7953Channel::B, MeasurementType::APPARENT_POWER);
+
+        _setPhaseCalibration(jsonDocument["phCalA"].as<long>(), Ade7953Channel::A);
+        _setPhaseCalibration(jsonDocument["phCalB"].as<long>(), Ade7953Channel::B);
+
+        logger.debug("Successfully applied configuration", TAG);
+    }
+
+    bool _validateConfigurationJson(JsonDocument& jsonDocument) {
+        if (!jsonDocument.is<JsonObject>()) {logger.warning("JSON is not an object", TAG); return false;}
+
+        if (!jsonDocument["sampleTime"].is<unsigned long>()) {logger.warning("sampleTime is not unsigned long", TAG); return false;}
+        // Ensure sampleTime is not below MINIMUM_SAMPLE_TIME
+        if (jsonDocument["sampleTime"].as<unsigned long>() < MINIMUM_SAMPLE_TIME) {
+            logger.warning("sampleTime %lu is below the minimum value of %lu", TAG, 
+                jsonDocument["sampleTime"].as<unsigned long>(), MINIMUM_SAMPLE_TIME);
+            return false;
+        }
+        if (!jsonDocument["aVGain"].is<long>()) {logger.warning("aVGain is not long", TAG); return false;}
+        if (!jsonDocument["aIGain"].is<long>()) {logger.warning("aIGain is not long", TAG); return false;}
+        if (!jsonDocument["bIGain"].is<long>()) {logger.warning("bIGain is not long", TAG); return false;}
+        if (!jsonDocument["aIRmsOs"].is<long>()) {logger.warning("aIRmsOs is not long", TAG); return false;}
+        if (!jsonDocument["bIRmsOs"].is<long>()) {logger.warning("bIRmsOs is not long", TAG); return false;}
+        if (!jsonDocument["aWGain"].is<long>()) {logger.warning("aWGain is not long", TAG); return false;}
+        if (!jsonDocument["bWGain"].is<long>()) {logger.warning("bWGain is not long", TAG); return false;}
+        if (!jsonDocument["aWattOs"].is<long>()) {logger.warning("aWattOs is not long", TAG); return false;}
+        if (!jsonDocument["bWattOs"].is<long>()) {logger.warning("bWattOs is not long", TAG); return false;} 
+        if (!jsonDocument["aVarGain"].is<long>()) {logger.warning("aVarGain is not long", TAG); return false;}
+        if (!jsonDocument["bVarGain"].is<long>()) {logger.warning("bVarGain is not long", TAG); return false;}
+        if (!jsonDocument["aVarOs"].is<long>()) {logger.warning("aVarOs is not long", TAG); return false;}
+        if (!jsonDocument["bVarOs"].is<long>()) {logger.warning("bVarOs is not long", TAG); return false;}
+        if (!jsonDocument["aVaGain"].is<long>()) {logger.warning("aVaGain is not long", TAG); return false;}
+        if (!jsonDocument["bVaGain"].is<long>()) {logger.warning("bVaGain is not long", TAG); return false;}
+        if (!jsonDocument["aVaOs"].is<long>()) {logger.warning("aVaOs is not long", TAG); return false;}
+        if (!jsonDocument["bVaOs"].is<long>()) {logger.warning("bVaOs is not long", TAG); return false;}
+        if (!jsonDocument["phCalA"].is<long>()) {logger.warning("phCalA is not long", TAG); return false;}
+        if (!jsonDocument["phCalB"].is<long>()) {logger.warning("phCalB is not long", TAG); return false;}
+
+        return true;
+    }
+
+    // Calibration values
+    // --------------------
+
+    void _setCalibrationValuesFromSpiffs() {
+        logger.debug("Setting calibration values from SPIFFS", TAG);
+
+        JsonDocument jsonDocument;
+        deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
+
+        if (!setCalibrationValues(jsonDocument)) {
+            logger.error("Failed to set calibration values from SPIFFS. Keeping default ones", TAG);
+            setDefaultCalibrationValues();
+            return;
+        }
+
+        logger.debug("Successfully set calibration values from SPIFFS", TAG);
+    }
+
+    bool setCalibrationValues(JsonDocument &jsonDocument) {
+        logger.debug("Setting new calibration values...", TAG);
+
+        if (!_validateCalibrationValuesJson(jsonDocument)) {
+            logger.warning("Invalid calibration JSON. Keeping previous calibration values", TAG);
+            return false;
+        }
+
+        serializeJsonToSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
+
+        _updateChannelData();
+
+        logger.debug("Successfully set new calibration values", TAG);
+
+        return true;
+    }
+
+    void setDefaultCalibrationValues() {
+        logger.debug("Setting default calibration values", TAG);
+
+        createDefaultCalibrationFile();
+        
+        JsonDocument jsonDocument;
+        deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
+
+        setCalibrationValues(jsonDocument);
+
+        logger.debug("Successfully set default calibration values", TAG);
+    }
+
+    void _jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues) {
+        logger.verbose("Parsing JSON calibration values for label %s", TAG, calibrationValues.label);
+
+        // The label is not parsed as it is already set in the channel data
+        calibrationValues.vLsb = jsonObject["vLsb"].as<float>();
+        calibrationValues.aLsb = jsonObject["aLsb"].as<float>();
+        calibrationValues.wLsb = jsonObject["wLsb"].as<float>();
+        calibrationValues.varLsb = jsonObject["varLsb"].as<float>();
+        calibrationValues.vaLsb = jsonObject["vaLsb"].as<float>();
+        calibrationValues.whLsb = jsonObject["whLsb"].as<float>();
+        calibrationValues.varhLsb = jsonObject["varhLsb"].as<float>();
+        calibrationValues.vahLsb = jsonObject["vahLsb"].as<float>();
+    }
+
+    bool _validateCalibrationValuesJson(JsonDocument& jsonDocument) {
+        if (!jsonDocument.is<JsonObject>()) {logger.warning("JSON is not an object", TAG); return false;}
+
+        for (JsonPair kv : jsonDocument.as<JsonObject>()) {
+            if (!kv.value().is<JsonObject>()) {logger.warning("JSON pair value is not an object", TAG); return false;}
+
+            JsonObject calibrationObject = kv.value().as<JsonObject>();
+
+            if (!calibrationObject["vLsb"].is<float>() && !calibrationObject["vLsb"].is<int>()) {logger.warning("vLsb is not float or int", TAG); return false;}
+            if (!calibrationObject["aLsb"].is<float>() && !calibrationObject["aLsb"].is<int>()) {logger.warning("aLsb is not float or int", TAG); return false;}
+            if (!calibrationObject["wLsb"].is<float>() && !calibrationObject["wLsb"].is<int>()) {logger.warning("wLsb is not float or int", TAG); return false;}
+            if (!calibrationObject["varLsb"].is<float>() && !calibrationObject["varLsb"].is<int>()) {logger.warning("varLsb is not float or int", TAG); return false;}
+            if (!calibrationObject["vaLsb"].is<float>() && !calibrationObject["vaLsb"].is<int>()) {logger.warning("vaLsb is not float or int", TAG); return false;}
+            if (!calibrationObject["whLsb"].is<float>() && !calibrationObject["whLsb"].is<int>()) {logger.warning("whLsb is not float or int", TAG); return false;}
+            if (!calibrationObject["varhLsb"].is<float>() && !calibrationObject["varhLsb"].is<int>()) {logger.warning("varhLsb is not float or int", TAG); return false;}
+            if (!calibrationObject["vahLsb"].is<float>() && !calibrationObject["vahLsb"].is<int>()) {logger.warning("vahLsb is or not float or int", TAG); return false;}
+        }
+
+        return true;
+    }
+
+    // Data channel
+    // --------------------
+
+    void _setChannelDataFromSpiffs() { // FIXME: this does not work:
+        logger.debug("Setting data channel from SPIFFS...", TAG);
+
+        JsonDocument jsonDocument;
+        deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, jsonDocument);
+
+        if (!setChannelData(jsonDocument)) {
+            logger.error("Failed to set data channel from SPIFFS. Keeping default data channel", TAG);
+            setDefaultChannelData();
+            return;
+        }
+
+        logger.debug("Successfully set data channel from SPIFFS", TAG);
+    }
+
+    bool setChannelData(JsonDocument &jsonDocument) {
+        logger.debug("Setting channel data...", TAG);
+
+        if (!_validateChannelDataJson(jsonDocument)) {
+            logger.warning("Invalid JSON data channel. Keeping previous data channel", TAG);
+            return false;
+        }
+
+        for (JsonPair _kv : jsonDocument.as<JsonObject>()) {
+            logger.verbose(
+                "Parsing JSON data channel %s | Active: %d | Reverse: %d | Label: %s | Phase: %d | Calibration Label: %s", 
+                TAG, 
+                _kv.key().c_str(),
+                _kv.value()["active"].as<bool>(), 
+                _kv.value()["reverse"].as<bool>(), 
+                _kv.value()["label"].as<const char*>(), 
+                _kv.value()["phase"].as<Phase>(),
+                _kv.value()["calibrationLabel"].as<const char*>()
+            );
+
+            int index = atoi(_kv.key().c_str());
+
+            // Check if _index is within bounds
+            if (index < 0 || index >= CHANNEL_COUNT) {
+                logger.error("Index out of bounds: %d", TAG, index);
+                continue;
+            }
+
+            // Protect channel 0 from being disabled - it's the main voltage channel and must remain active
+            if (index == 0 && !_kv.value()["active"].as<bool>()) {
+                logger.warning("Attempt to disable channel 0 blocked - channel 0 must remain active", TAG);
+                // Force channel 0 to stay active
+                channelData[index].active = true;
+            } else {
+                channelData[index].active = _kv.value()["active"].as<bool>();
+            }
+
+            channelData[index].index = index;
+            channelData[index].reverse = _kv.value()["reverse"].as<bool>();
+            snprintf(channelData[index].label, sizeof(channelData[index].label), "%s", _kv.value()["label"].as<const char*>());
+            channelData[index].phase = _kv.value()["phase"].as<Phase>();
+            snprintf(channelData[index].calibrationValues.label, sizeof(channelData[index].calibrationValues.label), "%s", _kv.value()["calibrationLabel"].as<const char*>());
+        }
+        logger.debug("Successfully set data channel properties", TAG);
+
+        // Add the calibration values to the channel data
+        _updateChannelData();
+
+        _saveChannelDataToSpiffs();
+
+        Mqtt::requestChannelPublish();
+
+        logger.debug("Successfully parsed JSON data channel", TAG);
+
+        return true;
+    }
+
+    void setDefaultChannelData() {
+        logger.debug("Setting default data channel...", TAG);
+
+        createDefaultChannelDataFile();
+
+        JsonDocument jsonDocument;
+        deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, jsonDocument);
+
+        setChannelData(jsonDocument);
+
+        logger.debug("Successfully initialized data channel", TAG);
+    }
+
+    bool _saveChannelDataToSpiffs() {
+        logger.debug("Saving data channel to SPIFFS...", TAG);
+
+        JsonDocument jsonDocument;
+        channelDataToJson(jsonDocument);
+
+        if (serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, jsonDocument)) {
+            logger.debug("Successfully saved data channel to SPIFFS", TAG);
             return true;
         } else {
-            _logger.warning("Failed to communicate with ADE7953 on _attempt (%d/%d). Retrying in %d ms", TAG, attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
+            logger.error("Failed to save data channel to SPIFFS", TAG);
+            return false;
         }
     }
 
-    _logger.error("Failed to communicate with ADE7953 after %d attempts", TAG, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
-    return false;
-}
+    void channelDataToJson(JsonDocument &jsonDocument) {
+        logger.debug("Converting data channel to JSON...", TAG);
 
-// Configuration
-// --------------------
+        for (int i = 0; i < CHANNEL_COUNT; i++) {
+            jsonDocument[i]["active"] = channelData[i].active;
+            jsonDocument[i]["reverse"] = channelData[i].reverse;
+            jsonDocument[i]["label"] = channelData[i].label;
+            jsonDocument[i]["phase"] = channelData[i].phase;
+            jsonDocument[i]["calibrationLabel"] = channelData[i].calibrationValues.label;
+        }
 
-void Ade7953::_setConfigurationFromSpiffs() {
-    _logger.debug("Setting configuration from SPIFFS...", TAG);
-
-    JsonDocument jsonDocument;
-    deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, jsonDocument);
-
-    if (!setConfiguration(jsonDocument)) {
-        _logger.error("Failed to set configuration from SPIFFS. Keeping default one", TAG);
-        setDefaultConfiguration();
-        return;
+        logger.debug("Successfully converted data channel to JSON", TAG);
     }
 
-    _logger.debug("Successfully set configuration from SPIFFS", TAG);
-}
+    bool _validateChannelDataJson(JsonDocument &jsonDocument) {
+        if (!jsonDocument.is<JsonObject>()) {logger.warning("JSON is not an object", TAG); return false;}
 
-bool Ade7953::setConfiguration(JsonDocument &jsonDocument) {
-    _logger.debug("Setting configuration...", TAG);
+        for (JsonPair kv : jsonDocument.as<JsonObject>()) {
+            if (!kv.value().is<JsonObject>()) {logger.warning("JSON pair value is not an object", TAG); return false;}
 
-    if (!_validateConfigurationJson(jsonDocument)) {
-        _logger.warning("Invalid configuration JSON. Keeping previous configuration", TAG);
-        return false;
-    }
-    
-    if (!serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, jsonDocument)) {
-        _logger.error("Failed to save configuration to SPIFFS. Keeping previous configuration", TAG);
-        return false;
-    } else {
-        _applyConfiguration(jsonDocument);
-        _logger.debug("Successfully saved configuration to SPIFFS", TAG);
+            int index = atoi(kv.key().c_str());
+            if (index < 0 || index >= CHANNEL_COUNT) {logger.warning("Index out of bounds: %d", TAG, index); return false;}
+
+            JsonObject channelObject = kv.value().as<JsonObject>();
+
+            if (!channelObject["active"].is<bool>()) {logger.warning("active is not bool", TAG); return false;}
+            if (!channelObject["reverse"].is<bool>()) {logger.warning("reverse is not bool", TAG); return false;}
+            if (!channelObject["label"].is<const char*>()) {logger.warning("label is not string", TAG); return false;}
+            if (!channelObject["phase"].is<int>()) {logger.warning("phase is not int", TAG); return false;}
+            if (kv.value()["phase"].as<int>() != PHASE_1 && kv.value()["phase"].as<int>() != PHASE_2 && kv.value()["phase"].as<int>() != PHASE_3) {
+                logger.warning("phase is not between 1 and 3", TAG); return false;
+            }
+            if (!channelObject["calibrationLabel"].is<const char*>()) {logger.warning("calibrationLabel is not string", TAG); return false;}
+        }
+
         return true;
     }
-}
 
-void Ade7953::setDefaultConfiguration() {
-    _logger.debug("Setting default configuration...", TAG);
+    void _updateChannelData() {
+        logger.debug("Updating data channel...", TAG);
 
-    createDefaultAde7953ConfigurationFile();
+        JsonDocument jsonDocument;
+        deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
 
-    JsonDocument jsonDocument;
-    deserializeJsonFromSpiffs(CONFIGURATION_ADE7953_JSON_PATH, jsonDocument);
+        if (jsonDocument.isNull()) {
+            logger.error("Failed to read calibration values from SPIFFS. Keeping previous values", TAG);
+            return;
+        }
+        
+        for (int i = 0; i < CHANNEL_COUNT; i++) {        
+            if (jsonDocument[channelData[i].calibrationValues.label]) {
+                // Extract the corresponding calibration values from the JSON
+                JsonObject _jsonCalibrationValues = jsonDocument[channelData[i].calibrationValues.label].as<JsonObject>();
 
-    setConfiguration(jsonDocument);
-
-    _logger.debug("Default configuration set", TAG);
-}
-
-void Ade7953::_applyConfiguration(JsonDocument &jsonDocument) {
-    _logger.debug("Applying configuration...", TAG);
-
-    _sampleTime = jsonDocument["sampleTime"].as<unsigned long>();
-    _updateSampleTime();
-    
-    _setGain(jsonDocument["aVGain"].as<long>(), CHANNEL_A, VOLTAGE);
-    // Channel B voltage gain should not be set as by datasheet
-
-    _setGain(jsonDocument["aIGain"].as<long>(), CHANNEL_A, CURRENT);
-    _setGain(jsonDocument["bIGain"].as<long>(), CHANNEL_B, CURRENT);
-
-    _setOffset(jsonDocument["aIRmsOs"].as<long>(), CHANNEL_A, CURRENT);
-    _setOffset(jsonDocument["bIRmsOs"].as<long>(), CHANNEL_B, CURRENT);
-
-    _setGain(jsonDocument["aWGain"].as<long>(), CHANNEL_A, ACTIVE_POWER);
-    _setGain(jsonDocument["bWGain"].as<long>(), CHANNEL_B, ACTIVE_POWER);
-
-    _setOffset(jsonDocument["aWattOs"].as<long>(), CHANNEL_A, ACTIVE_POWER);
-    _setOffset(jsonDocument["bWattOs"].as<long>(), CHANNEL_B, ACTIVE_POWER);
-
-    _setGain(jsonDocument["aVarGain"].as<long>(), CHANNEL_A, REACTIVE_POWER);
-    _setGain(jsonDocument["bVarGain"].as<long>(), CHANNEL_B, REACTIVE_POWER);
-
-    _setOffset(jsonDocument["aVarOs"].as<long>(), CHANNEL_A, REACTIVE_POWER);
-    _setOffset(jsonDocument["bVarOs"].as<long>(), CHANNEL_B, ACTIVE_POWER);
-
-    _setGain(jsonDocument["aVaGain"].as<long>(), CHANNEL_A, APPARENT_POWER);
-    _setGain(jsonDocument["bVaGain"].as<long>(), CHANNEL_B, APPARENT_POWER);
-
-    _setOffset(jsonDocument["aVaOs"].as<long>(), CHANNEL_A, APPARENT_POWER);
-    _setOffset(jsonDocument["bVaOs"].as<long>(), CHANNEL_B, APPARENT_POWER);
-
-    _setPhaseCalibration(jsonDocument["phCalA"].as<long>(), CHANNEL_A);
-    _setPhaseCalibration(jsonDocument["phCalB"].as<long>(), CHANNEL_B);
-
-    _logger.debug("Successfully applied configuration", TAG);
-}
-
-bool Ade7953::_validateConfigurationJson(JsonDocument& jsonDocument) {
-    if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", TAG); return false;}
-
-    if (!jsonDocument["sampleTime"].is<unsigned long>()) {_logger.warning("sampleTime is not unsigned long", TAG); return false;}
-    // Ensure sampleTime is not below MINIMUM_SAMPLE_TIME
-    if (jsonDocument["sampleTime"].as<unsigned long>() < MINIMUM_SAMPLE_TIME) {
-        _logger.warning("sampleTime %lu is below the minimum value of %lu", TAG, 
-            jsonDocument["sampleTime"].as<unsigned long>(), MINIMUM_SAMPLE_TIME);
-        return false;
-    }
-    if (!jsonDocument["aVGain"].is<long>()) {_logger.warning("aVGain is not long", TAG); return false;}
-    if (!jsonDocument["aIGain"].is<long>()) {_logger.warning("aIGain is not long", TAG); return false;}
-    if (!jsonDocument["bIGain"].is<long>()) {_logger.warning("bIGain is not long", TAG); return false;}
-    if (!jsonDocument["aIRmsOs"].is<long>()) {_logger.warning("aIRmsOs is not long", TAG); return false;}
-    if (!jsonDocument["bIRmsOs"].is<long>()) {_logger.warning("bIRmsOs is not long", TAG); return false;}
-    if (!jsonDocument["aWGain"].is<long>()) {_logger.warning("aWGain is not long", TAG); return false;}
-    if (!jsonDocument["bWGain"].is<long>()) {_logger.warning("bWGain is not long", TAG); return false;}
-    if (!jsonDocument["aWattOs"].is<long>()) {_logger.warning("aWattOs is not long", TAG); return false;}
-    if (!jsonDocument["bWattOs"].is<long>()) {_logger.warning("bWattOs is not long", TAG); return false;} 
-    if (!jsonDocument["aVarGain"].is<long>()) {_logger.warning("aVarGain is not long", TAG); return false;}
-    if (!jsonDocument["bVarGain"].is<long>()) {_logger.warning("bVarGain is not long", TAG); return false;}
-    if (!jsonDocument["aVarOs"].is<long>()) {_logger.warning("aVarOs is not long", TAG); return false;}
-    if (!jsonDocument["bVarOs"].is<long>()) {_logger.warning("bVarOs is not long", TAG); return false;}
-    if (!jsonDocument["aVaGain"].is<long>()) {_logger.warning("aVaGain is not long", TAG); return false;}
-    if (!jsonDocument["bVaGain"].is<long>()) {_logger.warning("bVaGain is not long", TAG); return false;}
-    if (!jsonDocument["aVaOs"].is<long>()) {_logger.warning("aVaOs is not long", TAG); return false;}
-    if (!jsonDocument["bVaOs"].is<long>()) {_logger.warning("bVaOs is not long", TAG); return false;}
-    if (!jsonDocument["phCalA"].is<long>()) {_logger.warning("phCalA is not long", TAG); return false;}
-    if (!jsonDocument["phCalB"].is<long>()) {_logger.warning("phCalB is not long", TAG); return false;}
-
-    return true;
-}
-
-// Calibration values
-// --------------------
-
-void Ade7953::_setCalibrationValuesFromSpiffs() {
-    _logger.debug("Setting calibration values from SPIFFS", TAG);
-
-    JsonDocument jsonDocument;
-    deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
-
-    if (!setCalibrationValues(jsonDocument)) {
-        _logger.error("Failed to set calibration values from SPIFFS. Keeping default ones", TAG);
-        setDefaultCalibrationValues();
-        return;
-    }
-
-    _logger.debug("Successfully set calibration values from SPIFFS", TAG);
-}
-
-bool Ade7953::setCalibrationValues(JsonDocument &jsonDocument) {
-    _logger.debug("Setting new calibration values...", TAG);
-
-    if (!_validateCalibrationValuesJson(jsonDocument)) {
-        _logger.warning("Invalid calibration JSON. Keeping previous calibration values", TAG);
-        return false;
-    }
-
-    serializeJsonToSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
-
-    _updateChannelData();
-
-    _logger.debug("Successfully set new calibration values", TAG);
-
-    return true;
-}
-
-void Ade7953::setDefaultCalibrationValues() {
-    _logger.debug("Setting default calibration values", TAG);
-
-    createDefaultCalibrationFile();
-    
-    JsonDocument jsonDocument;
-    deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
-
-    setCalibrationValues(jsonDocument);
-
-    _logger.debug("Successfully set default calibration values", TAG);
-}
-
-void Ade7953::_jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues) {
-    _logger.verbose("Parsing JSON calibration values for label %s", TAG, calibrationValues.label);
-
-    // The label is not parsed as it is already set in the channel data
-    calibrationValues.vLsb = jsonObject["vLsb"].as<float>();
-    calibrationValues.aLsb = jsonObject["aLsb"].as<float>();
-    calibrationValues.wLsb = jsonObject["wLsb"].as<float>();
-    calibrationValues.varLsb = jsonObject["varLsb"].as<float>();
-    calibrationValues.vaLsb = jsonObject["vaLsb"].as<float>();
-    calibrationValues.whLsb = jsonObject["whLsb"].as<float>();
-    calibrationValues.varhLsb = jsonObject["varhLsb"].as<float>();
-    calibrationValues.vahLsb = jsonObject["vahLsb"].as<float>();
-}
-
-bool Ade7953::_validateCalibrationValuesJson(JsonDocument& jsonDocument) {
-    if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", TAG); return false;}
-
-    for (JsonPair kv : jsonDocument.as<JsonObject>()) {
-        if (!kv.value().is<JsonObject>()) {_logger.warning("JSON pair value is not an object", TAG); return false;}
-
-        JsonObject calibrationObject = kv.value().as<JsonObject>();
-
-        if (!calibrationObject["vLsb"].is<float>() && !calibrationObject["vLsb"].is<int>()) {_logger.warning("vLsb is not float or int", TAG); return false;}
-        if (!calibrationObject["aLsb"].is<float>() && !calibrationObject["aLsb"].is<int>()) {_logger.warning("aLsb is not float or int", TAG); return false;}
-        if (!calibrationObject["wLsb"].is<float>() && !calibrationObject["wLsb"].is<int>()) {_logger.warning("wLsb is not float or int", TAG); return false;}
-        if (!calibrationObject["varLsb"].is<float>() && !calibrationObject["varLsb"].is<int>()) {_logger.warning("varLsb is not float or int", TAG); return false;}
-        if (!calibrationObject["vaLsb"].is<float>() && !calibrationObject["vaLsb"].is<int>()) {_logger.warning("vaLsb is not float or int", TAG); return false;}
-        if (!calibrationObject["whLsb"].is<float>() && !calibrationObject["whLsb"].is<int>()) {_logger.warning("whLsb is not float or int", TAG); return false;}
-        if (!calibrationObject["varhLsb"].is<float>() && !calibrationObject["varhLsb"].is<int>()) {_logger.warning("varhLsb is not float or int", TAG); return false;}
-        if (!calibrationObject["vahLsb"].is<float>() && !calibrationObject["vahLsb"].is<int>()) {_logger.warning("vahLsb is or not float or int", TAG); return false;}
-    }
-
-    return true;
-}
-
-// Data channel
-// --------------------
-
-void Ade7953::_setChannelDataFromSpiffs() { // FIXME: this does not work:
-    _logger.debug("Setting data channel from SPIFFS...", TAG);
-
-    JsonDocument jsonDocument;
-    deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, jsonDocument);
-
-    if (!setChannelData(jsonDocument)) {
-        _logger.error("Failed to set data channel from SPIFFS. Keeping default data channel", TAG);
-        setDefaultChannelData();
-        return;
-    }
-
-    _logger.debug("Successfully set data channel from SPIFFS", TAG);
-}
-
-bool Ade7953::setChannelData(JsonDocument &jsonDocument) {
-    _logger.debug("Setting channel data...", TAG);
-
-    if (!_validateChannelDataJson(jsonDocument)) {
-        _logger.warning("Invalid JSON data channel. Keeping previous data channel", TAG);
-        return false;
-    }
-
-    for (JsonPair _kv : jsonDocument.as<JsonObject>()) {
-        _logger.verbose(
-            "Parsing JSON data channel %s | Active: %d | Reverse: %d | Label: %s | Phase: %d | Calibration Label: %s", 
-            TAG, 
-            _kv.key().c_str(),
-            _kv.value()["active"].as<bool>(), 
-            _kv.value()["reverse"].as<bool>(), 
-            _kv.value()["label"].as<const char*>(), 
-            _kv.value()["phase"].as<Phase>(),
-            _kv.value()["calibrationLabel"].as<const char*>()
-        );
-
-        int index = atoi(_kv.key().c_str());
-
-        // Check if _index is within bounds
-        if (index < CHANNEL_0 || index >= CHANNEL_COUNT) {
-            _logger.error("Index out of bounds: %d", TAG, index);
-            continue;
+                // Set the calibration values for the channel
+                _jsonToCalibrationValues(_jsonCalibrationValues, channelData[i].calibrationValues);
+            } else {
+                logger.warning(
+                    "Calibration label %s for channel %d not found in calibration JSON", 
+                    TAG, 
+                    channelData[i].calibrationValues.label, 
+                    i
+                );
+            }
         }
 
-        // Protect channel 0 from being disabled - it's the main voltage channel and must remain active
-        if (index == CHANNEL_0 && !_kv.value()["active"].as<bool>()) {
-            _logger.warning("Attempt to disable channel 0 blocked - channel 0 must remain active", TAG);
-            // Force channel 0 to stay active
-            channelData[index].active = true;
-        } else {
-            channelData[index].active = _kv.value()["active"].as<bool>();
+        logger.debug("Successfully updated data channel", TAG);
+    }
+
+    void _updateSampleTime() {
+        logger.debug("Updating sample time", TAG);
+
+        unsigned int linecyc = _sampleTime * 50 * 2 / 1000; // 1 channel at 1000 ms: 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
+        _setLinecyc(linecyc);
+
+        logger.debug("Successfully updated sample time", TAG);
+    }
+
+    // This returns the next channel (except 0) that is active
+    unsigned int _findNextActiveChannel(unsigned int currentChannel) {
+        for (unsigned int i = currentChannel + 1; i < CHANNEL_COUNT; i++) {
+            if (channelData[i].active && i != 0) {
+                return i;
+            }
+        }
+        for (unsigned int i = 1; i < currentChannel; i++) {
+            if (channelData[i].active && i != 0) {
+                return i;
+            }
         }
 
-        channelData[index].index = index;
-        channelData[index].reverse = _kv.value()["reverse"].as<bool>();
-        snprintf(channelData[index].label, sizeof(channelData[index].label), "%s", _kv.value()["label"].as<const char*>());
-        channelData[index].phase = _kv.value()["phase"].as<Phase>();
-        snprintf(channelData[index].calibrationValues.label, sizeof(channelData[index].calibrationValues.label), "%s", _kv.value()["calibrationLabel"].as<const char*>());
-    }
-    _logger.debug("Successfully set data channel properties", TAG);
-
-    // Add the calibration values to the channel data
-    _updateChannelData();
-
-    _saveChannelDataToSpiffs();
-
-    Mqtt::requestChannelPublish();
-
-    _logger.debug("Successfully parsed JSON data channel", TAG);
-
-    return true;
-}
-
-void Ade7953::setDefaultChannelData() {
-    _logger.debug("Setting default data channel...", TAG);
-
-    createDefaultChannelDataFile();
-
-    JsonDocument jsonDocument;
-    deserializeJsonFromSpiffs(CHANNEL_DATA_JSON_PATH, jsonDocument);
-
-    setChannelData(jsonDocument);
-
-    _logger.debug("Successfully initialized data channel", TAG);
-}
-
-bool Ade7953::_saveChannelDataToSpiffs() {
-    _logger.debug("Saving data channel to SPIFFS...", TAG);
-
-    JsonDocument jsonDocument;
-    channelDataToJson(jsonDocument);
-
-    if (serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, jsonDocument)) {
-        _logger.debug("Successfully saved data channel to SPIFFS", TAG);
-        return true;
-    } else {
-        _logger.error("Failed to save data channel to SPIFFS", TAG);
-        return false;
-    }
-}
-
-void Ade7953::channelDataToJson(JsonDocument &jsonDocument) {
-    _logger.debug("Converting data channel to JSON...", TAG);
-
-    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-        jsonDocument[i]["active"] = channelData[i].active;
-        jsonDocument[i]["reverse"] = channelData[i].reverse;
-        jsonDocument[i]["label"] = channelData[i].label;
-        jsonDocument[i]["phase"] = channelData[i].phase;
-        jsonDocument[i]["calibrationLabel"] = channelData[i].calibrationValues.label;
+        return INVALID_CHANNEL; // Invalid channel, no active channels found
     }
 
-    _logger.debug("Successfully converted data channel to JSON", TAG);
-}
 
-bool Ade7953::_validateChannelDataJson(JsonDocument &jsonDocument) {
-    if (!jsonDocument.is<JsonObject>()) {_logger.warning("JSON is not an object", TAG); return false;}
+    // Meter values
+    // --------------------
 
-    for (JsonPair kv : jsonDocument.as<JsonObject>()) {
-        if (!kv.value().is<JsonObject>()) {_logger.warning("JSON pair value is not an object", TAG); return false;}
+    /*
+    There is no better way to read the values from the ADE7953 
+    than this. Since we use a multiplexer, we cannot read the data
+    more often than 200 ms as that is the settling time for the
+    RMS current. 
 
-        int index = atoi(kv.key().c_str());
-        if (index < CHANNEL_0 || index >= CHANNEL_COUNT) {_logger.warning("Index out of bounds: %d", TAG, index); return false;}
+    Moreover, as we switch the multiplexer just after the line cycle has
+    ended, we need to make 1 line cycle go empty before we can actually
+    read the data. This is because we want the power factor reading
+    to be as accurate as possible.
 
-        JsonObject channelObject = kv.value().as<JsonObject>();
+    In the end we can have a channel 0 reading every 200 ms, while the
+    other will need 400 ms per channel.
 
-        if (!channelObject["active"].is<bool>()) {_logger.warning("active is not bool", TAG); return false;}
-        if (!channelObject["reverse"].is<bool>()) {_logger.warning("reverse is not bool", TAG); return false;}
-        if (!channelObject["label"].is<const char*>()) {_logger.warning("label is not string", TAG); return false;}
-        if (!channelObject["phase"].is<int>()) {_logger.warning("phase is not int", TAG); return false;}
-        if (kv.value()["phase"].as<int>() != PHASE_1 && kv.value()["phase"].as<int>() != PHASE_2 && kv.value()["phase"].as<int>() != PHASE_3) {
-            _logger.warning("phase is not between 1 and 3", TAG); return false;
+    The read values from which everything is computed afterwards are:
+    - Voltage RMS
+    - Current RMS (needs 200 ms to settle, and is computed by the ADE7953 at every zero crossing)
+    - Sign of the active power (as we use RMS values, the signedData will indicate the direction of the power)
+    - Power factor (computed by the ADE7953 by averaging on the whole line cycle, thus why we need to read only every other line cycle)
+    - Active energy, reactive energy, apparent energy (only to make use of the no-load feature)
+
+    For the three phase, we assume that the phase shift is 120 degrees. 
+
+    It the energies are 0, all the previously computed values are set to 0 as the no-load feature is enabled.
+
+    All the values are validated to be within the limits of the hardware/system used.
+
+    There could be a way to improve the measurements by directly using the energy registers and computing the average
+    power during the last line cycle. This proved to be a bit unstable and complex to calibrate with respect to the 
+    direct voltage, current and power factor readings. The time limitation of 200 ms would still be present. The only
+    real advantage would be an accurate value of reactive power, which now is only an approximation.
+
+    */
+
+    /*
+    Read all the meter values from the ADE7953.
+    A detailed explanation of the inner workings and assumptions
+    can be found in the function itself.
+
+    @param channel The channel to read the values from. Returns
+    false if the data reading is not ready yet or valid.
+    */
+    bool _readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) {
+        unsigned long long _millisRead = millis64();
+        unsigned long long _deltaMillis = _millisRead - meterValues[channel].lastMillis;
+
+        // // Ensure the reading is not being called too early if a previous valid reading exists
+        // if (previousLastUnixTimeMilliseconds != 0) {
+        //     unsigned long long timeSinceLastRead = linecycUnixTimeMillis - previousLastUnixTimeMilliseconds;
+            
+        //     // Not useful anymore since the measurement timing (_sampleTime) is handled indipendently
+        //     // by the linecyc of the ADE7953. The actual reading of the data may be not coordinated,
+        //     // and that is ok
+        //     // // Ensure the reading is not being called too early (should not happen anyway)
+        //     // // This was introduced as in channel 0 it was noticed that sometimes two meter values
+        //     // // were sent with 1 ms difference, where the second one had 0 active power (since most
+        //     // // probably the next line cycle was not yet finished)
+        //     // // We use the time multiplied by 0.8 to keep some headroom
+        //     // if (timeSinceLastRead < _sampleTime * 0.8) {
+        //     //     logger.warning("Reading too early for channel %d: %llu ms since last read, expected at least %0.0f ms", TAG, channel, timeSinceLastRead, _sampleTime * 0.8);
+        //     //     _recordFailure();
+        //     //     return false;
+        //     // }
+        //     _deltaMillis = timeSinceLastRead;
+        // } else {
+        //     // This is the first attempt to get a valid reading for this channel,
+        //     // or previous attempts failed before setting the timestamp.
+        //     // For energy accumulation of the first valid point, the period is _sampleTime.
+        //     _deltaMillis = _sampleTime; 
+        // }
+
+        // We cannot put an higher limit here because if the channel happened to be disabled, then
+        // enabled again, this would result in an infinite error.
+        if (meterValues[channel].lastMillis != 0 && _deltaMillis == 0) {
+            logger.warning("%s (%d): delta millis (%llu) is invalid. Discarding reading", TAG, channelData[channel].label, channel, _deltaMillis);
+            // _recordFailure();
+            return false;
         }
-        if (!channelObject["calibrationLabel"].is<const char*>()) {_logger.warning("calibrationLabel is not string", TAG); return false;}
-    }
 
-    return true;
-}
+        Ade7953Channel ade7953Channel = (channel == 0) ? Ade7953Channel::A : Ade7953Channel::B;
 
-void Ade7953::_updateChannelData() {
-    _logger.debug("Updating data channel...", TAG);
+        float voltage = 0.0f;
+        float current = 0.0f;
+        float activePower = 0.0f;
+        float reactivePower = 0.0f;
+        float apparentPower = 0.0f;
+        float powerFactor = 0.0f;
+        float activeEnergy = 0.0f;
+        float reactiveEnergy = 0.0f;
+        float apparentEnergy = 0.0f;
 
-    JsonDocument jsonDocument;
-    deserializeJsonFromSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
+        Phase basePhase = channelData[0].phase;
 
-    if (jsonDocument.isNull()) {
-        _logger.error("Failed to read calibration values from SPIFFS. Keeping previous values", TAG);
-        return;
-    }
-    
-    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {        
-        if (jsonDocument[channelData[i].calibrationValues.label]) {
-            // Extract the corresponding calibration values from the JSON
-            JsonObject _jsonCalibrationValues = jsonDocument[channelData[i].calibrationValues.label].as<JsonObject>();
+        if (channelData[channel].phase == basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
+            
+            // These are the three most important values to read
+            activeEnergy = _readActiveEnergy(ade7953Channel) / channelData[channel].calibrationValues.whLsb * (channelData[channel].reverse ? -1 : 1);
+            reactiveEnergy = _readReactiveEnergy(ade7953Channel) / channelData[channel].calibrationValues.varhLsb * (channelData[channel].reverse ? -1 : 1);
+            apparentEnergy = _readApparentEnergy(ade7953Channel) / channelData[channel].calibrationValues.vahLsb;        
+            
+            // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
+            // as channel 0 (sampled 100s of milliseconds before only)
+            if (channel == 0) {
+                voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
+                
+                // Update grid frequency during channel 0 reading
+                float _newGridFrequency = GRID_FREQUENCY_CONVERSION_FACTOR / _readPeriod();
+                if (_validateGridFrequency(_newGridFrequency)) _gridFrequency = _newGridFrequency;
+            } else {
+                voltage = meterValues[0].voltage;
+            }
+            
+            // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
+            // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
+            activePower = activeEnergy / (_sampleTime / 1000.0 / 3600.0); // W
+            reactivePower = reactiveEnergy / (_sampleTime / 1000.0 / 3600.0); // var
+            apparentPower = apparentEnergy / (_sampleTime / 1000.0 / 3600.0); // VA
+            
+            // It is faster and more consistent to compute the values rather than reading them from the ADE7953
+            if (apparentPower == 0) powerFactor = 0.0f; // Avoid division by zero
+            else powerFactor = activePower / apparentPower * (reactivePower >= 0 ? 1 : -1); // Apply sign as by datasheet (page 38)
 
-            // Set the calibration values for the channel
-            _jsonToCalibrationValues(_jsonCalibrationValues, channelData[i].calibrationValues);
-        } else {
-            _logger.warning(
-                "Calibration label %s for channel %d not found in calibration JSON", 
-                TAG, 
-                channelData[i].calibrationValues.label, 
-                i
+            current = apparentPower / voltage; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
+        } else { 
+            // TODO: understand if this can be improved using the energy registers
+            // Assume everything is the same as channel 0 except the current
+            // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
+            // It is easier just to ensure during installation that the CTs are installed correctly
+
+            
+            // Assume from channel 0
+            voltage = meterValues[0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
+            
+            // Read wrong power factor due to the phase shift
+            float _powerFactorPhaseOne = _readPowerFactor(ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR;
+
+            // Compute the correct power factor assuming 120 degrees phase shift in voltage (weak assumption as this is normally true)
+            // The idea is to:
+            // 1. Compute the angle between the voltage and the current with the arc cosine of the just read power factor
+            // 2. Add or subtract 120 degrees to the angle depending on the phase (phase is lagging 120 degrees, phase 3 is leading 120 degrees)
+            // 3. Compute the cosine of the new corrected angle to get the corrected power factor
+            // 4. Multiply by -1 if the channel is reversed (as normal)
+
+            // Note that the direction of the current (and consequently the power) cannot be determined (or at least, I couldn't manage to do it reliably). 
+            // This is because the only reliable reading is the power factor, while the angle only gives the angle difference of the current 
+            // reading instead of the one of the whole line cycle. As such, the power factor is the only reliable reading and it cannot 
+            // provide information about the direction of the power.
+
+            if (channelData[channel].phase == _getLaggingPhase(basePhase)) {
+                powerFactor = cos(acos(_powerFactorPhaseOne) - (2 * PI / 3));
+            } else if (channelData[channel].phase == _getLeadingPhase(basePhase)) {
+                // I cannot prove why, but I am SURE the minus is needed if the phase is leading
+                powerFactor = - cos(acos(_powerFactorPhaseOne) + (2 * PI / 3));
+            } else {
+                logger.error("Invalid phase %d for channel %d", TAG, channelData[channel].phase, channel);
+                _recordFailure();
+                return false;
+            }
+
+            // Read the current
+            current = _readCurrentRms(ade7953Channel) / channelData[channel].calibrationValues.aLsb;
+            
+            // Compute power values
+            activePower = current * voltage * abs(powerFactor);
+            apparentPower = current * voltage;
+            reactivePower = sqrt(pow(apparentPower, 2) - pow(activePower, 2)); // Small approximation leaving out distorted power
+        }
+
+        apparentPower = abs(apparentPower); // Apparent power must be positive
+
+        // If the power factor is below a certain threshold, assume everything is 0 to avoid weird readings
+        if (abs(powerFactor) < MINIMUM_POWER_FACTOR) {
+            current = 0.0f;
+            activePower = 0.0f;
+            reactivePower = 0.0f;
+            apparentPower = 0.0f;
+            powerFactor = 0.0f;
+            activeEnergy = 0.0f;
+            reactiveEnergy = 0.0f;
+            apparentEnergy = 0.0f;
+        }
+
+        // Sometimes the power factor is very close to 1 but above 1. If so, clamp it to 1 as the measure is still valid
+        if (abs(powerFactor) > VALIDATE_POWER_FACTOR_MAX && abs(powerFactor) < MAXIMUM_POWER_FACTOR_CLAMP) {
+            logger.debug(
+                "%s (%d): Power factor %.3f is above %.3f, clamping it", 
+                TAG,
+                channelData[channel].label, 
+                channel, 
+                powerFactor,
+                MAXIMUM_POWER_FACTOR_CLAMP
             );
-        }
-    }
-
-    _logger.debug("Successfully updated data channel", TAG);
-}
-
-void Ade7953::_updateSampleTime() {
-    _logger.debug("Updating sample time", TAG);
-
-    unsigned int linecyc = _sampleTime * 50 * 2 / 1000; // 1 channel at 1000 ms: 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
-    _setLinecyc(linecyc);
-
-    _logger.debug("Successfully updated sample time", TAG);
-}
-
-// This returns the next channel (except CHANNEL_0) that is active
-ChannelNumber Ade7953::_findNextActiveChannel(ChannelNumber currentChannel) {
-    for (ChannelNumber i = static_cast<ChannelNumber>(currentChannel + 1); i < CHANNEL_COUNT; i = static_cast<ChannelNumber>(i + 1)) {
-        if (channelData[i].active && i != CHANNEL_0) {
-            return i;
-        }
-    }
-    for (ChannelNumber i = static_cast<ChannelNumber>(1); i < currentChannel; i = static_cast<ChannelNumber>(i + 1)) {
-        if (channelData[i].active && i != CHANNEL_0) {
-            return i;
-        }
-    }
-
-    return CHANNEL_INVALID;
-}
-
-
-// Meter values
-// --------------------
-
-/*
-There is no better way to read the values from the ADE7953 
-than this. Since we use a multiplexer, we cannot read the data
-more often than 200 ms as that is the settling time for the
-RMS current. 
-
-Moreover, as we switch the multiplexer just after the line cycle has
-ended, we need to make 1 line cycle go empty before we can actually
-read the data. This is because we want the power factor reading
-to be as accurate as possible.
-
-In the end we can have a channel 0 reading every 200 ms, while the
-other will need 400 ms per channel.
-
-The read values from which everything is computed afterwards are:
-- Voltage RMS
-- Current RMS (needs 200 ms to settle, and is computed by the ADE7953 at every zero crossing)
-- Sign of the active power (as we use RMS values, the signedData will indicate the direction of the power)
-- Power factor (computed by the ADE7953 by averaging on the whole line cycle, thus why we need to read only every other line cycle)
-- Active energy, reactive energy, apparent energy (only to make use of the no-load feature)
-
-For the three phase, we assume that the phase shift is 120 degrees. 
-
-It the energies are 0, all the previously computed values are set to 0 as the no-load feature is enabled.
-
-All the values are validated to be within the limits of the hardware/system used.
-
-There could be a way to improve the measurements by directly using the energy registers and computing the average
-power during the last line cycle. This proved to be a bit unstable and complex to calibrate with respect to the 
-direct voltage, current and power factor readings. The time limitation of 200 ms would still be present. The only
-real advantage would be an accurate value of reactive power, which now is only an approximation.
-
-*/
-
-/*
-Read all the meter values from the ADE7953.
-A detailed explanation of the inner workings and assumptions
-can be found in the function itself.
-
-@param channel The channel to read the values from. Returns
-false if the data reading is not ready yet or valid.
-*/
-bool Ade7953::_readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) {
-    unsigned long long _millisRead = millis64();
-    unsigned long long _deltaMillis = _millisRead - meterValues[channel].lastMillis;
-
-    // // Ensure the reading is not being called too early if a previous valid reading exists
-    // if (previousLastUnixTimeMilliseconds != 0) {
-    //     unsigned long long timeSinceLastRead = linecycUnixTimeMillis - previousLastUnixTimeMilliseconds;
+            powerFactor = (powerFactor > 0) ? VALIDATE_POWER_FACTOR_MAX : VALIDATE_POWER_FACTOR_MIN; // Keep the sign of the power factor
+            activePower = apparentPower; // Recompute active power based on the clamped power factor
+            reactivePower = 0.0f; // Small approximation leaving out distorted power
+        }    
         
-    //     // Not useful anymore since the measurement timing (_sampleTime) is handled indipendently
-    //     // by the linecyc of the ADE7953. The actual reading of the data may be not coordinated,
-    //     // and that is ok
-    //     // // Ensure the reading is not being called too early (should not happen anyway)
-    //     // // This was introduced as in channel 0 it was noticed that sometimes two meter values
-    //     // // were sent with 1 ms difference, where the second one had 0 active power (since most
-    //     // // probably the next line cycle was not yet finished)
-    //     // // We use the time multiplied by 0.8 to keep some headroom
-    //     // if (timeSinceLastRead < _sampleTime * 0.8) {
-    //     //     _logger.warning("Reading too early for channel %d: %llu ms since last read, expected at least %0.0f ms", TAG, channel, timeSinceLastRead, _sampleTime * 0.8);
-    //     //     _recordFailure();
-    //     //     return false;
-    //     // }
-    //     _deltaMillis = timeSinceLastRead;
-    // } else {
-    //     // This is the first attempt to get a valid reading for this channel,
-    //     // or previous attempts failed before setting the timestamp.
-    //     // For energy accumulation of the first valid point, the period is _sampleTime.
-    //     _deltaMillis = _sampleTime; 
-    // }
-
-    // We cannot put an higher limit here because if the channel happened to be disabled, then
-    // enabled again, this would result in an infinite error.
-    if (meterValues[channel].lastMillis != 0 && _deltaMillis == 0) {
-        _logger.warning("%s (%d): delta millis (%llu) is invalid. Discarding reading", TAG, channelData[channel].label, channel, _deltaMillis);
-        // _recordFailure();
-        return false;
-    }
-
-    int ade7953Channel = (channel == CHANNEL_0) ? CHANNEL_A : CHANNEL_B;
-
-    float voltage = 0.0f;
-    float current = 0.0f;
-    float activePower = 0.0f;
-    float reactivePower = 0.0f;
-    float apparentPower = 0.0f;
-    float powerFactor = 0.0f;
-    float activeEnergy = 0.0f;
-    float reactiveEnergy = 0.0f;
-    float apparentEnergy = 0.0f;
-
-    Phase basePhase = channelData[CHANNEL_0].phase;
-
-    if (channelData[channel].phase == basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
         
-        // These are the three most important values to read
-        activeEnergy = _readActiveEnergy(ade7953Channel) / channelData[channel].calibrationValues.whLsb * (channelData[channel].reverse ? -1 : 1);
-        reactiveEnergy = _readReactiveEnergy(ade7953Channel) / channelData[channel].calibrationValues.varhLsb * (channelData[channel].reverse ? -1 : 1);
-        apparentEnergy = _readApparentEnergy(ade7953Channel) / channelData[channel].calibrationValues.vahLsb;        
-        
-        // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
-        // as channel 0 (sampled 100s of milliseconds before only)
-        if (channel == CHANNEL_0) {
-            voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
+        // For channel 0, discard readings where active or apparent energy is exactly 0,
+        // unless there have been at least 100 consecutive zero readings
+        if (channel == 0 && (activeEnergy == 0.0f || apparentEnergy == 0.0f)) {
+            _channelStates[channel].consecutiveZeroCount++;
             
-            // Update grid frequency during channel 0 reading
-            float _newGridFrequency = GRID_FREQUENCY_CONVERSION_FACTOR / _readPeriod();
-            if (_validateGridFrequency(_newGridFrequency)) _gridFrequency = _newGridFrequency;
+            if (_channelStates[channel].consecutiveZeroCount < MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
+                
+                logger.debug("%s (%d): Zero energy reading on channel 0 discarded (count: %lu/%d)", 
+                    TAG, channelData[channel].label,channel, _channelStates[channel].consecutiveZeroCount, MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE);
+                _recordFailure();
+                return false;
+            }
         } else {
-            voltage = meterValues[CHANNEL_0].voltage;
+            // Reset counter for non-zero readings
+            _channelStates[channel].consecutiveZeroCount = 0;
         }
-        
-        // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
-        // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
-        activePower = activeEnergy / (_sampleTime / 1000.0 / 3600.0); // W
-        reactivePower = reactiveEnergy / (_sampleTime / 1000.0 / 3600.0); // var
-        apparentPower = apparentEnergy / (_sampleTime / 1000.0 / 3600.0); // VA
-        
-        // It is faster and more consistent to compute the values rather than reading them from the ADE7953
-        if (apparentPower == 0) powerFactor = 0.0f; // Avoid division by zero
-        else powerFactor = activePower / apparentPower * (reactivePower >= 0 ? 1 : -1); // Apply sign as by datasheet (page 38)
-
-        current = apparentPower / voltage; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
-    } else { 
-        // TODO: understand if this can be improved using the energy registers
-        // Assume everything is the same as channel 0 except the current
-        // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
-        // It is easier just to ensure during installation that the CTs are installed correctly
 
         
-        // Assume from channel 0
-        voltage = meterValues[CHANNEL_0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
-        
-        // Read wrong power factor due to the phase shift
-        float _powerFactorPhaseOne = _readPowerFactor(ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR;
-
-        // Compute the correct power factor assuming 120 degrees phase shift in voltage (weak assumption as this is normally true)
-        // The idea is to:
-        // 1. Compute the angle between the voltage and the current with the arc cosine of the just read power factor
-        // 2. Add or subtract 120 degrees to the angle depending on the phase (phase is lagging 120 degrees, phase 3 is leading 120 degrees)
-        // 3. Compute the cosine of the new corrected angle to get the corrected power factor
-        // 4. Multiply by -1 if the channel is reversed (as normal)
-
-        // Note that the direction of the current (and consequently the power) cannot be determined (or at least, I couldn't manage to do it reliably). 
-        // This is because the only reliable reading is the power factor, while the angle only gives the angle difference of the current 
-        // reading instead of the one of the whole line cycle. As such, the power factor is the only reliable reading and it cannot 
-        // provide information about the direction of the power.
-
-        if (channelData[channel].phase == _getLaggingPhase(basePhase)) {
-            powerFactor = cos(acos(_powerFactorPhaseOne) - (2 * PI / 3));
-        } else if (channelData[channel].phase == _getLeadingPhase(basePhase)) {
-            // I cannot prove why, but I am SURE the minus is needed if the phase is leading
-            powerFactor = - cos(acos(_powerFactorPhaseOne) + (2 * PI / 3));
-        } else {
-            _logger.error("Invalid phase %d for channel %d", TAG, channelData[channel].phase, channel);
+        if (
+            !_validateVoltage(voltage) || 
+            !_validateCurrent(current) || 
+            !_validatePower(activePower) || 
+            !_validatePower(reactivePower) || 
+            !_validatePower(apparentPower) || 
+            !_validatePowerFactor(powerFactor)
+        ) {
+            
+            logger.warning("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", 
+                TAG, channelData[channel].label, channel, activePower, current, reactivePower, apparentPower, powerFactor);
             _recordFailure();
             return false;
         }
 
-        // Read the current
-        current = _readCurrentRms(ade7953Channel) / channelData[channel].calibrationValues.aLsb;
+        // This part makes no sense to use anymore as the current is computed from the apparent power and voltage
+        // // Ensure the current * voltage is not too different from the apparent power (both in absolute and relative terms)
+        // // Skip this check if apparent power is below 1 to avoid issues with low power readings
+        // // Channel 0 does not have this problem since it has a dedicated ADC on the ADE7953, while the other channels
+        // // use a multiplexer and some weird behavior can happen sometimes
+        // 
+        // if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != 0 &&
+        //     (abs(_current * _voltage - _apparentPower) > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE || 
+        //      abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) 
+        // {
+        //     logger.warning(
+        //         "%s (%D): Current (%.3f * Voltage %.1f = %.1f) is too different from measured Apparent Power (%.1f). Discarding data point", 
+        //         TAG,
+        //         channelData[channel].label,
+        //         channel, 
+        //         _current, 
+        //         _voltage,
+        //         _current * _voltage, 
+        //         _apparentPower
+        //     );
+        //     _recordFailure();
+        //     return false;
+        // }
         
-        // Compute power values
-        activePower = current * voltage * abs(powerFactor);
-        apparentPower = current * voltage;
-        reactivePower = sqrt(pow(apparentPower, 2) - pow(activePower, 2)); // Small approximation leaving out distorted power
-    }
+        // Enough checks, now we can set the values
+        meterValues[channel].voltage = voltage;
+        meterValues[channel].current = current;
+        meterValues[channel].activePower = activePower;
+        meterValues[channel].reactivePower = reactivePower;
+        meterValues[channel].apparentPower = apparentPower;
+        meterValues[channel].powerFactor = powerFactor;
 
-    apparentPower = abs(apparentPower); // Apparent power must be positive
-
-    // If the power factor is below a certain threshold, assume everything is 0 to avoid weird readings
-    if (abs(powerFactor) < MINIMUM_POWER_FACTOR) {
-        current = 0.0f;
-        activePower = 0.0f;
-        reactivePower = 0.0f;
-        apparentPower = 0.0f;
-        powerFactor = 0.0f;
-        activeEnergy = 0.0f;
-        reactiveEnergy = 0.0f;
-        apparentEnergy = 0.0f;
-    }
-
-    // Sometimes the power factor is very close to 1 but above 1. If so, clamp it to 1 as the measure is still valid
-    if (abs(powerFactor) > VALIDATE_POWER_FACTOR_MAX && abs(powerFactor) < MAXIMUM_POWER_FACTOR_CLAMP) {
-        _logger.debug(
-            "%s (%d): Power factor %.3f is above %.3f, clamping it", 
-            TAG,
-            channelData[channel].label, 
-            channel, 
-            powerFactor,
-            MAXIMUM_POWER_FACTOR_CLAMP
-        );
-        powerFactor = (powerFactor > 0) ? VALIDATE_POWER_FACTOR_MAX : VALIDATE_POWER_FACTOR_MIN; // Keep the sign of the power factor
-        activePower = apparentPower; // Recompute active power based on the clamped power factor
-        reactivePower = 0.0f; // Small approximation leaving out distorted power
-    }    
-    
-    
-    // For channel 0, discard readings where active or apparent energy is exactly 0,
-    // unless there have been at least 100 consecutive zero readings
-    if (channel == CHANNEL_0 && (activeEnergy == 0.0f || apparentEnergy == 0.0f)) {
-        _channelStates[channel].consecutiveZeroCount++;
-        
-        if (_channelStates[channel].consecutiveZeroCount < MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
-            
-            _logger.debug("%s (%d): Zero energy reading on channel 0 discarded (count: %lu/%d)", 
-                TAG, channelData[channel].label,channel, _channelStates[channel].consecutiveZeroCount, MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE);
-            _recordFailure();
-            return false;
-        }
-    } else {
-        // Reset counter for non-zero readings
-        _channelStates[channel].consecutiveZeroCount = 0;
-    }
-
-    
-    if (
-        !_validateVoltage(voltage) || 
-        !_validateCurrent(current) || 
-        !_validatePower(activePower) || 
-        !_validatePower(reactivePower) || 
-        !_validatePower(apparentPower) || 
-        !_validatePowerFactor(powerFactor)
-    ) {
-        
-        logger.warning("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", 
-            TAG, channelData[channel].label, channel, activePower, current, reactivePower, apparentPower, powerFactor);
-        _recordFailure();
-        return false;
-    }
-
-    // This part makes no sense to use anymore as the current is computed from the apparent power and voltage
-    // // Ensure the current * voltage is not too different from the apparent power (both in absolute and relative terms)
-    // // Skip this check if apparent power is below 1 to avoid issues with low power readings
-    // // Channel 0 does not have this problem since it has a dedicated ADC on the ADE7953, while the other channels
-    // // use a multiplexer and some weird behavior can happen sometimes
-    // 
-    // if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != CHANNEL_0 &&
-    //     (abs(_current * _voltage - _apparentPower) > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE || 
-    //      abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) 
-    // {
-    //     _logger.warning(
-    //         "%s (%D): Current (%.3f * Voltage %.1f = %.1f) is too different from measured Apparent Power (%.1f). Discarding data point", 
-    //         TAG,
-    //         channelData[channel].label,
-    //         channel, 
-    //         _current, 
-    //         _voltage,
-    //         _current * _voltage, 
-    //         _apparentPower
-    //     );
-    //     _recordFailure();
-    //     return false;
-    // }
-    
-    // Enough checks, now we can set the values
-    meterValues[channel].voltage = voltage;
-    meterValues[channel].current = current;
-    meterValues[channel].activePower = activePower;
-    meterValues[channel].reactivePower = reactivePower;
-    meterValues[channel].apparentPower = apparentPower;
-    meterValues[channel].powerFactor = powerFactor;
-
-    // If the phase is not the phase of the main channel, set the energy not to 0 if the current
-    // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation
-    if (channelData[channel].phase != basePhase && current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
-        activeEnergy = 1;
-        reactiveEnergy = 1;
-        apparentEnergy = 1;
-    }
-
-    
-    // Leverage the no-load feature of the ADE7953 to discard the noise
-    // As such, when the energy read by the ADE7953 in the given linecycle is below
-    // a certain threshold (set during setup), the read value is 0
-    if (activeEnergy > 0) {
-        meterValues[channel].activeEnergyImported += abs(meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0); // W * ms * s / 1000 ms * h / 3600 s = Wh
-    } else if (activeEnergy < 0) {
-        meterValues[channel].activeEnergyExported += abs(meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0); // W * ms * s / 1000 ms * h / 3600 s = Wh
-    } else {
-        _logger.debug(
-            "%s (%d): No load active energy reading. Setting active power and power factor to 0", 
-            TAG,
-            channelData[channel].label,
-            channel
-        );
-        meterValues[channel].activePower = 0.0f;
-        meterValues[channel].powerFactor = 0.0f;
-    }
-
-    if (reactiveEnergy > 0) {
-        meterValues[channel].reactiveEnergyImported += abs(meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0); // var * ms * s / 1000 ms * h / 3600 s = VArh
-    } else if (reactiveEnergy < 0) {
-        meterValues[channel].reactiveEnergyExported += abs(meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0); // var * ms * s / 1000 ms * h / 3600 s = VArh
-    } else {
-        _logger.debug(
-            "%s (%d): No load reactive energy reading. Setting reactive power to 0", 
-            TAG,
-            channelData[channel].label,
-            channel
-        );
-        meterValues[channel].reactivePower = 0.0f;
-    }
-
-    if (apparentEnergy != 0) {
-        meterValues[channel].apparentEnergy += meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
-    } else {
-        _logger.debug(
-            "%s (%d): No load apparent energy reading. Setting apparent power and current to 0", 
-            TAG,
-            channelData[channel].label,
-            channel
-        );
-        meterValues[channel].current = 0.0f;
-        meterValues[channel].apparentPower = 0.0f;
-    }
-
-    // We actually set the timestamp of the channel (used for the energy calculations)
-    // only if we actually reached the end. Otherwise it would mean the point had to be
-    // discarded
-    statistics.ade7953ReadingCount++;
-    meterValues[channel].lastMillis = _millisRead;
-    meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
-    return true;
-}
-
-
-// Poor man's phase shift (doing with modulus didn't work properly,
-// and in any case the phases will always be at most 3)
-Phase Ade7953::_getLaggingPhase(Phase phase) {
-    switch (phase) {
-        case PHASE_1:
-            return PHASE_2;
-        case PHASE_2:
-            return PHASE_3;
-        case PHASE_3:
-            return PHASE_1;
-        default:
-            return PHASE_1;
-    }
-}
-
-Phase Ade7953::_getLeadingPhase(Phase phase) {
-    switch (phase) {
-        case PHASE_1:
-            return PHASE_3;
-        case PHASE_2:
-            return PHASE_1;
-        case PHASE_3:
-            return PHASE_2;
-        default:
-            return PHASE_1;
-    }
-}
-
-bool Ade7953::_validateValue(float newValue, float min, float max) {
-    if (newValue < min || newValue > max) {
-        _logger.warning("Value %f out of range (minimum: %f, maximum: %f)", TAG, newValue, min, max);
-        return false;
-    }
-    return true;
-}
-
-bool Ade7953::_validateVoltage(float newValue) {
-    return _validateValue(newValue, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
-}
-
-bool Ade7953::_validateCurrent(float newValue) {
-    return _validateValue(newValue, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
-}
-
-bool Ade7953::_validatePower(float newValue) {
-    return _validateValue(newValue, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
-}
-
-bool Ade7953::_validatePowerFactor(float newValue) {
-    return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
-}
-
-bool Ade7953::_validateGridFrequency(float newValue) {
-    return _validateValue(newValue, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
-}
-
-void Ade7953::singleMeterValuesToJson(JsonDocument &jsonDocument, ChannelNumber channel) {
-    JsonObject _jsonValues = jsonDocument.to<JsonObject>();
-
-    // TODO: make this names with defines to ensure consistency
-    _jsonValues["voltage"] = meterValues[channel].voltage;
-    _jsonValues["current"] = meterValues[channel].current;
-    _jsonValues["activePower"] = meterValues[channel].activePower;
-    _jsonValues["apparentPower"] = meterValues[channel].apparentPower;
-    _jsonValues["reactivePower"] = meterValues[channel].reactivePower;
-    _jsonValues["powerFactor"] = meterValues[channel].powerFactor;
-    _jsonValues["activeEnergyImported"] = meterValues[channel].activeEnergyImported;
-    _jsonValues["activeEnergyExported"] = meterValues[channel].activeEnergyExported;
-    _jsonValues["reactiveEnergyImported"] = meterValues[channel].reactiveEnergyImported;
-    _jsonValues["reactiveEnergyExported"] = meterValues[channel].reactiveEnergyExported;
-    _jsonValues["apparentEnergy"] = meterValues[channel].apparentEnergy;
-}
-
-
-void Ade7953::fullMeterValuesToJson(JsonDocument &jsonDocument) {
-    for (ChannelNumber i = CHANNEL_0; i < CHANNEL_COUNT; i = static_cast<ChannelNumber>(i + 1)) {
-        if (channelData[i].active) {
-            JsonObject _jsonChannel = jsonDocument.add<JsonObject>();
-            _jsonChannel["index"] = i;
-            _jsonChannel["label"] = channelData[i].label;
-            // TODO: add the phase here as well
-
-            JsonDocument _jsonData;
-            singleMeterValuesToJson(_jsonData, i);
-            _jsonChannel["data"] = _jsonData.as<JsonObject>();
-        }
-    }
-}
-
-// Energy
-// --------------------
-
-void Ade7953::_setEnergyFromSpiffs() {
-    _logger.debug("Reading energy from SPIFFS", TAG);
-    
-    JsonDocument jsonDocument;
-    deserializeJsonFromSpiffs(ENERGY_JSON_PATH, jsonDocument);
-
-    if (jsonDocument.isNull() || jsonDocument.size() == 0) {
-        _logger.error("Failed to read energy from SPIFFS", TAG);
-        return;
-    } else {
-        for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-            meterValues[i].activeEnergyImported = jsonDocument[i]["activeEnergyImported"].as<float>();
-            meterValues[i].activeEnergyExported = jsonDocument[i]["activeEnergyExported"].as<float>();
-            meterValues[i].reactiveEnergyImported = jsonDocument[i]["reactiveEnergyImported"].as<float>();
-            meterValues[i].reactiveEnergyExported = jsonDocument[i]["reactiveEnergyExported"].as<float>();
-            meterValues[i].apparentEnergy = jsonDocument[i]["apparentEnergy"].as<float>();
-        }
-    }
-        
-    _logger.debug("Successfully read energy from SPIFFS", TAG);
-}
-
-void Ade7953::saveEnergy() {
-    _logger.debug("Saving energy...", TAG);
-
-    
-    _saveEnergyToSpiffs();
-    _saveDailyEnergyToSpiffs();
-
-    _logger.debug("Successfully saved energy", TAG);
-}
-
-void Ade7953::_saveEnergyToSpiffs() {
-    _logger.debug("Saving energy to SPIFFS...", TAG);
-
-    
-    JsonDocument jsonDocument;
-    deserializeJsonFromSpiffs(ENERGY_JSON_PATH, jsonDocument);
-
-    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-        jsonDocument[i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
-        jsonDocument[i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
-        jsonDocument[i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
-        jsonDocument[i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
-        jsonDocument[i]["apparentEnergy"] = meterValues[i].apparentEnergy;
-    }
-
-    if (serializeJsonToSpiffs(ENERGY_JSON_PATH, jsonDocument)) _logger.debug("Successfully saved energy to SPIFFS", TAG);
-}
-
-void Ade7953::_saveDailyEnergyToSpiffs() {
-    _logger.debug("Saving daily energy to SPIFFS...", TAG);
-
-    
-    JsonDocument jsonDocument;
-    deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, jsonDocument);
-    
-    time_t now = time(nullptr);
-    if (!validateUnixTime(now, false)) {
-        _logger.warning("Saving daily energy even if time is invalid: %ld", TAG, now);
-    }
-    struct tm *timeinfo = localtime(&now);
-    char currentDate[TIMESTAMP_BUFFER_SIZE];
-    strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", timeinfo);
-
-    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-        if (channelData[i].active) {
-            if (meterValues[i].activeEnergyImported > 1) jsonDocument[currentDate][i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
-            if (meterValues[i].activeEnergyExported > 1) jsonDocument[currentDate][i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
-            if (meterValues[i].reactiveEnergyImported > 1) jsonDocument[currentDate][i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
-            if (meterValues[i].reactiveEnergyExported > 1) jsonDocument[currentDate][i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
-            if (meterValues[i].apparentEnergy > 1) jsonDocument[currentDate][i]["apparentEnergy"] = meterValues[i].apparentEnergy;
-        }
-    }
-
-    if (serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, jsonDocument)) _logger.debug("Successfully saved daily energy to SPIFFS", TAG);
-}
-
-void Ade7953::resetEnergyValues() {
-    _logger.warning("Resetting energy values to 0", TAG);
-
-    for (int i = CHANNEL_0; i < CHANNEL_COUNT; i++) {
-        meterValues[i].activeEnergyImported = 0.0f;
-        meterValues[i].activeEnergyExported = 0.0f;
-        meterValues[i].reactiveEnergyImported = 0.0f;
-        meterValues[i].reactiveEnergyExported = 0.0f;
-        meterValues[i].apparentEnergy = 0.0f;
-    }
-
-    createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
-    saveEnergy();
-
-    _logger.info("Successfully reset energy values to 0", TAG);
-}
-
-bool Ade7953::setEnergyValues(JsonDocument &jsonDocument) {
-    _logger.warning("Setting selective energy values", TAG);
-
-    if (!jsonDocument.is<JsonObject>()) {
-        _logger.error("Invalid JSON format for energy values", TAG);
-        return false;
-    }
-
-    bool hasChanges = false;
-    bool clearDailyEnergy = false;
-
-    for (JsonPair kv : jsonDocument.as<JsonObject>()) {
-        int channel = atoi(kv.key().c_str());
-        
-        if (channel < CHANNEL_0 || channel >= CHANNEL_COUNT) {
-            _logger.warning("Invalid channel index %d", TAG, channel);
-            continue;
+        // If the phase is not the phase of the main channel, set the energy not to 0 if the current
+        // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation
+        if (channelData[channel].phase != basePhase && current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
+            activeEnergy = 1;
+            reactiveEnergy = 1;
+            apparentEnergy = 1;
         }
 
-        JsonObject energyData = kv.value().as<JsonObject>();
         
-        if (energyData["activeEnergyImported"].is<float>()) {
-            meterValues[channel].activeEnergyImported = energyData["activeEnergyImported"];
-            hasChanges = true;
-            clearDailyEnergy = true;
+        // Leverage the no-load feature of the ADE7953 to discard the noise
+        // As such, when the energy read by the ADE7953 in the given linecycle is below
+        // a certain threshold (set during setup), the read value is 0
+        if (activeEnergy > 0) {
+            meterValues[channel].activeEnergyImported += abs(meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0); // W * ms * s / 1000 ms * h / 3600 s = Wh
+        } else if (activeEnergy < 0) {
+            meterValues[channel].activeEnergyExported += abs(meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0); // W * ms * s / 1000 ms * h / 3600 s = Wh
+        } else {
+            logger.debug(
+                "%s (%d): No load active energy reading. Setting active power and power factor to 0", 
+                TAG,
+                channelData[channel].label,
+                channel
+            );
+            meterValues[channel].activePower = 0.0f;
+            meterValues[channel].powerFactor = 0.0f;
         }
-        
-        if (energyData["activeEnergyExported"].is<float>()) {
-            meterValues[channel].activeEnergyExported = energyData["activeEnergyExported"];
-            hasChanges = true;
-            clearDailyEnergy = true;
-        }
-        
-        if (energyData["reactiveEnergyImported"].is<float>()) {
-            meterValues[channel].reactiveEnergyImported = energyData["reactiveEnergyImported"];
-            hasChanges = true;
-            clearDailyEnergy = true;
-        }
-        
-        if (energyData["reactiveEnergyExported"].is<float>()) {
-            meterValues[channel].reactiveEnergyExported = energyData["reactiveEnergyExported"];
-            hasChanges = true;
-            clearDailyEnergy = true;
-        }
-        
-        if (energyData["apparentEnergy"].is<float>()) {
-            meterValues[channel].apparentEnergy = energyData["apparentEnergy"];
-            hasChanges = true;
-            clearDailyEnergy = true;
-        }
-    }
 
-    if (hasChanges) {
-        if (clearDailyEnergy) {
-            _logger.warning("Clearing daily energy data due to energy value changes", TAG);
-            createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
+        if (reactiveEnergy > 0) {
+            meterValues[channel].reactiveEnergyImported += abs(meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0); // var * ms * s / 1000 ms * h / 3600 s = VArh
+        } else if (reactiveEnergy < 0) {
+            meterValues[channel].reactiveEnergyExported += abs(meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0); // var * ms * s / 1000 ms * h / 3600 s = VArh
+        } else {
+            logger.debug(
+                "%s (%d): No load reactive energy reading. Setting reactive power to 0", 
+                TAG,
+                channelData[channel].label,
+                channel
+            );
+            meterValues[channel].reactivePower = 0.0f;
         }
-        
-        saveEnergy();
-        _logger.info("Successfully set selective energy values", TAG);
+
+        if (apparentEnergy != 0) {
+            meterValues[channel].apparentEnergy += meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
+        } else {
+            logger.debug(
+                "%s (%d): No load apparent energy reading. Setting apparent power and current to 0", 
+                TAG,
+                channelData[channel].label,
+                channel
+            );
+            meterValues[channel].current = 0.0f;
+            meterValues[channel].apparentPower = 0.0f;
+        }
+
+        // We actually set the timestamp of the channel (used for the energy calculations)
+        // only if we actually reached the end. Otherwise it would mean the point had to be
+        // discarded
+        statistics.ade7953ReadingCount++;
+        meterValues[channel].lastMillis = _millisRead;
+        meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
         return true;
     }
 
-    _logger.warning("No valid energy values found to set", TAG);
-    return false;
-}
 
-// Others
-// --------------------
-
-void Ade7953::_setLinecyc(unsigned int linecyc) {
-    linecyc = min(max(linecyc, ADE7953_MIN_LINECYC), ADE7953_MAX_LINECYC);
-
-    _logger.debug(
-        "Setting linecyc to %d",
-        TAG,
-        linecyc
-    );
-
-    writeRegister(LINECYC_16, 16, long(linecyc));
-}
-
-void Ade7953::_setPhaseCalibration(long phaseCalibration, int channel) {
-    _logger.debug(
-        "Setting phase calibration to %d on channel %d",
-        TAG,
-        phaseCalibration,
-        channel
-    );
-    
-    if (channel == CHANNEL_A) {
-        writeRegister(PHCALA_16, 16, phaseCalibration);
-    } else {
-        writeRegister(PHCALB_16, 16, phaseCalibration);
-    }
-}
-
-void Ade7953::_setPgaGain(long pgaGain, int channel, int measurementType) {
-    _logger.debug(
-        "Setting PGA gain to %d on channel %d for measurement type %d",
-        TAG,
-        pgaGain,
-        channel,
-        measurementType
-    );
-
-    if (channel == CHANNEL_A) {
-        switch (measurementType) {
-            case VOLTAGE:
-                writeRegister(PGA_V_8, 8, pgaGain);
-                break;
-            case CURRENT:
-                writeRegister(PGA_IA_8, 8, pgaGain);
-                break;
-        }
-    } else {
-        switch (measurementType) {
-            case VOLTAGE:
-                writeRegister(PGA_V_8, 8, pgaGain);
-                break;
-            case CURRENT:
-                writeRegister(PGA_IB_8, 8, pgaGain);
-                break;
+    // Poor man's phase shift (doing with modulus didn't work properly,
+    // and in any case the phases will always be at most 3)
+    Phase _getLaggingPhase(Phase phase) {
+        switch (phase) {
+            case PHASE_1:
+                return PHASE_2;
+            case PHASE_2:
+                return PHASE_3;
+            case PHASE_3:
+                return PHASE_1;
+            default:
+                return PHASE_1;
         }
     }
-}
 
-void Ade7953::_setGain(long gain, int channel, int measurementType) {
-    _logger.debug(
-        "Setting gain to %ld on channel %d for measurement type %d",
-        TAG,
-        gain,
-        channel,
-        measurementType
-    );
-
-    if (channel == CHANNEL_A) {
-        switch (measurementType) {
-            case VOLTAGE:
-                writeRegister(AVGAIN_32, 32, gain);
-                break;
-            case CURRENT:
-                writeRegister(AIGAIN_32, 32, gain);
-                break;
-            case ACTIVE_POWER:
-                writeRegister(AWGAIN_32, 32, gain);
-                break;
-            case REACTIVE_POWER:
-                writeRegister(AVARGAIN_32, 32, gain);
-                break;
-            case APPARENT_POWER:
-                writeRegister(AVAGAIN_32, 32, gain);
-                break;
-        }
-    } else {
-        switch (measurementType) {
-            case VOLTAGE:
-                writeRegister(AVGAIN_32, 32, gain);
-                break;
-            case CURRENT:
-                writeRegister(BIGAIN_32, 32, gain);
-                break;
-            case ACTIVE_POWER:
-                writeRegister(BWGAIN_32, 32, gain);
-                break;
-            case REACTIVE_POWER:
-                writeRegister(BVARGAIN_32, 32, gain);
-                break;
-            case APPARENT_POWER:
-                writeRegister(BVAGAIN_32, 32, gain);
-                break;
+    Phase _getLeadingPhase(Phase phase) {
+        switch (phase) {
+            case PHASE_1:
+                return PHASE_3;
+            case PHASE_2:
+                return PHASE_1;
+            case PHASE_3:
+                return PHASE_2;
+            default:
+                return PHASE_1;
         }
     }
-}
 
-void Ade7953::_setOffset(long offset, int channel, int measurementType) {
-    _logger.debug(
-        "Setting offset to %ld on channel %d for measurement type %d",
-        TAG,
-        offset,
-        channel,
-        measurementType
-    );
-
-    if (channel == CHANNEL_A) {
-        switch (measurementType) {
-            case VOLTAGE:
-                writeRegister(VRMSOS_32, 32, offset);
-                break;
-            case CURRENT:
-                writeRegister(AIRMSOS_32, 32, offset);
-                break;
-            case ACTIVE_POWER:
-                writeRegister(AWATTOS_32, 32, offset);
-                break;
-            case REACTIVE_POWER:
-                writeRegister(AVAROS_32, 32, offset);
-                break;
-            case APPARENT_POWER:
-                writeRegister(AVAOS_32, 32, offset);
-                break;
+    bool _validateValue(float newValue, float min, float max) {
+        if (newValue < min || newValue > max) {
+            logger.warning("Value %f out of range (minimum: %f, maximum: %f)", TAG, newValue, min, max);
+            return false;
         }
-    } else {
-        switch (measurementType) {
-            case VOLTAGE:
-                writeRegister(VRMSOS_32, 32, offset);
-                break;
-            case CURRENT:
-                writeRegister(BIRMSOS_32, 32, offset);
-                break;
-            case ACTIVE_POWER:
-                writeRegister(BWATTOS_32, 32, offset);
-                break;
-            case REACTIVE_POWER:
-                writeRegister(BVAROS_32, 32, offset);
-                break;
-            case APPARENT_POWER:
-                writeRegister(BVAOS_32, 32, offset);
-                break;
+        return true;
+    }
+
+    bool _validateVoltage(float newValue) {
+        return _validateValue(newValue, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
+    }
+
+    bool _validateCurrent(float newValue) {
+        return _validateValue(newValue, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
+    }
+
+    bool _validatePower(float newValue) {
+        return _validateValue(newValue, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
+    }
+
+    bool _validatePowerFactor(float newValue) {
+        return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
+    }
+
+    bool _validateGridFrequency(float newValue) {
+        return _validateValue(newValue, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
+    }
+
+    void singleMeterValuesToJson(JsonDocument &jsonDocument, unsigned int  channel) {
+        JsonObject _jsonValues = jsonDocument.to<JsonObject>();
+
+        // TODO: make this names with defines to ensure consistency
+        _jsonValues["voltage"] = meterValues[channel].voltage;
+        _jsonValues["current"] = meterValues[channel].current;
+        _jsonValues["activePower"] = meterValues[channel].activePower;
+        _jsonValues["apparentPower"] = meterValues[channel].apparentPower;
+        _jsonValues["reactivePower"] = meterValues[channel].reactivePower;
+        _jsonValues["powerFactor"] = meterValues[channel].powerFactor;
+        _jsonValues["activeEnergyImported"] = meterValues[channel].activeEnergyImported;
+        _jsonValues["activeEnergyExported"] = meterValues[channel].activeEnergyExported;
+        _jsonValues["reactiveEnergyImported"] = meterValues[channel].reactiveEnergyImported;
+        _jsonValues["reactiveEnergyExported"] = meterValues[channel].reactiveEnergyExported;
+        _jsonValues["apparentEnergy"] = meterValues[channel].apparentEnergy;
+    }
+
+
+    void fullMeterValuesToJson(JsonDocument &jsonDocument) {
+        for (unsigned int i = 0; i < CHANNEL_COUNT; i++) {
+            if (channelData[i].active) {
+                JsonObject _jsonChannel = jsonDocument.add<JsonObject>();
+                _jsonChannel["index"] = i;
+                _jsonChannel["label"] = channelData[i].label;
+                _jsonChannel["phase"] = channelData[i].phase;
+
+                JsonDocument _jsonData;
+                singleMeterValuesToJson(_jsonData, i);
+                _jsonChannel["data"] = _jsonData.as<JsonObject>();
+            }
         }
     }
-}
 
-long Ade7953::_readApparentPowerInstantaneous(int channel) {
-    if (channel == CHANNEL_A) {return readRegister(AVA_32, 32, true);} 
-    else {return readRegister(BVA_32, 32, true);}
-}
+    // Energy
+    // --------------------
 
-/*
-Reads the "instantaneous" active power.
+    void _setEnergyFromSpiffs() {
+        logger.debug("Reading energy from SPIFFS", TAG);
+        
+        JsonDocument jsonDocument;
+        deserializeJsonFromSpiffs(ENERGY_JSON_PATH, jsonDocument);
 
-"Instantaneous" because the active power is only defined as the dc component
-of the instantaneous power signal, which is V_RMS * I_RMS - V_RMS * I_RMS * cos(2*omega*t). 
-It is updated at 6.99 kHz.
+        if (jsonDocument.isNull() || jsonDocument.size() == 0) {
+            logger.error("Failed to read energy from SPIFFS", TAG);
+            return;
+        } else {
+            for (int i = 0; i < CHANNEL_COUNT; i++) {
+                meterValues[i].activeEnergyImported = jsonDocument[i]["activeEnergyImported"].as<float>();
+                meterValues[i].activeEnergyExported = jsonDocument[i]["activeEnergyExported"].as<float>();
+                meterValues[i].reactiveEnergyImported = jsonDocument[i]["reactiveEnergyImported"].as<float>();
+                meterValues[i].reactiveEnergyExported = jsonDocument[i]["reactiveEnergyExported"].as<float>();
+                meterValues[i].apparentEnergy = jsonDocument[i]["apparentEnergy"].as<float>();
+            }
+        }
+            
+        logger.debug("Successfully read energy from SPIFFS", TAG);
+    }
 
-@param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
-@return The active power in LSB.
-*/
-long Ade7953::_readActivePowerInstantaneous(int channel) {
-    if (channel == CHANNEL_A) {return readRegister(AWATT_32, 32, true);} 
-    else {return readRegister(BWATT_32, 32, true);}
-}
+    void saveEnergy() {
+        logger.debug("Saving energy...", TAG);
 
-long Ade7953::_readReactivePowerInstantaneous(int channel) {
-    if (channel == CHANNEL_A) {return readRegister(AVAR_32, 32, true);} 
-    else {return readRegister(BVAR_32, 32, true);}
-}
+        
+        _saveEnergyToSpiffs();
+        _saveDailyEnergyToSpiffs();
+
+        logger.debug("Successfully saved energy", TAG);
+    }
+
+    void _saveEnergyToSpiffs() {
+        logger.debug("Saving energy to SPIFFS...", TAG);
+
+        
+        JsonDocument jsonDocument;
+        deserializeJsonFromSpiffs(ENERGY_JSON_PATH, jsonDocument);
+
+        for (int i = 0; i < CHANNEL_COUNT; i++) {
+            jsonDocument[i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
+            jsonDocument[i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
+            jsonDocument[i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
+            jsonDocument[i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
+            jsonDocument[i]["apparentEnergy"] = meterValues[i].apparentEnergy;
+        }
+
+        if (serializeJsonToSpiffs(ENERGY_JSON_PATH, jsonDocument)) logger.debug("Successfully saved energy to SPIFFS", TAG);
+    }
+
+    void _saveDailyEnergyToSpiffs() {
+        logger.debug("Saving daily energy to SPIFFS...", TAG);
+
+        
+        JsonDocument jsonDocument;
+        deserializeJsonFromSpiffs(DAILY_ENERGY_JSON_PATH, jsonDocument);
+        
+        time_t now = time(nullptr);
+        if (!validateUnixTime(now, false)) {
+            logger.warning("Saving daily energy even if time is invalid: %ld", TAG, now);
+        }
+        struct tm *timeinfo = localtime(&now);
+        char currentDate[TIMESTAMP_BUFFER_SIZE];
+        strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", timeinfo);
+
+        for (int i = 0; i < CHANNEL_COUNT; i++) {
+            if (channelData[i].active) {
+                if (meterValues[i].activeEnergyImported > 1) jsonDocument[currentDate][i]["activeEnergyImported"] = meterValues[i].activeEnergyImported;
+                if (meterValues[i].activeEnergyExported > 1) jsonDocument[currentDate][i]["activeEnergyExported"] = meterValues[i].activeEnergyExported;
+                if (meterValues[i].reactiveEnergyImported > 1) jsonDocument[currentDate][i]["reactiveEnergyImported"] = meterValues[i].reactiveEnergyImported;
+                if (meterValues[i].reactiveEnergyExported > 1) jsonDocument[currentDate][i]["reactiveEnergyExported"] = meterValues[i].reactiveEnergyExported;
+                if (meterValues[i].apparentEnergy > 1) jsonDocument[currentDate][i]["apparentEnergy"] = meterValues[i].apparentEnergy;
+            }
+        }
+
+        if (serializeJsonToSpiffs(DAILY_ENERGY_JSON_PATH, jsonDocument)) logger.debug("Successfully saved daily energy to SPIFFS", TAG);
+    }
+
+    void resetEnergyValues() {
+        logger.warning("Resetting energy values to 0", TAG);
+
+        for (int i = 0; i < CHANNEL_COUNT; i++) {
+            meterValues[i].activeEnergyImported = 0.0f;
+            meterValues[i].activeEnergyExported = 0.0f;
+            meterValues[i].reactiveEnergyImported = 0.0f;
+            meterValues[i].reactiveEnergyExported = 0.0f;
+            meterValues[i].apparentEnergy = 0.0f;
+        }
+
+        createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
+        saveEnergy();
+
+        logger.info("Successfully reset energy values to 0", TAG);
+    }
+
+    bool setEnergyValues(JsonDocument &jsonDocument) {
+        logger.warning("Setting selective energy values", TAG);
+
+        if (!jsonDocument.is<JsonObject>()) {
+            logger.error("Invalid JSON format for energy values", TAG);
+            return false;
+        }
+
+        bool hasChanges = false;
+        bool clearDailyEnergy = false;
+
+        for (JsonPair kv : jsonDocument.as<JsonObject>()) {
+            int channel = atoi(kv.key().c_str());
+            
+            if (channel < 0 || channel >= CHANNEL_COUNT) {
+                logger.warning("Invalid channel index %d", TAG, channel);
+                continue;
+            }
+
+            JsonObject energyData = kv.value().as<JsonObject>();
+            
+            if (energyData["activeEnergyImported"].is<float>()) {
+                meterValues[channel].activeEnergyImported = energyData["activeEnergyImported"];
+                hasChanges = true;
+                clearDailyEnergy = true;
+            }
+            
+            if (energyData["activeEnergyExported"].is<float>()) {
+                meterValues[channel].activeEnergyExported = energyData["activeEnergyExported"];
+                hasChanges = true;
+                clearDailyEnergy = true;
+            }
+            
+            if (energyData["reactiveEnergyImported"].is<float>()) {
+                meterValues[channel].reactiveEnergyImported = energyData["reactiveEnergyImported"];
+                hasChanges = true;
+                clearDailyEnergy = true;
+            }
+            
+            if (energyData["reactiveEnergyExported"].is<float>()) {
+                meterValues[channel].reactiveEnergyExported = energyData["reactiveEnergyExported"];
+                hasChanges = true;
+                clearDailyEnergy = true;
+            }
+            
+            if (energyData["apparentEnergy"].is<float>()) {
+                meterValues[channel].apparentEnergy = energyData["apparentEnergy"];
+                hasChanges = true;
+                clearDailyEnergy = true;
+            }
+        }
+
+        if (hasChanges) {
+            if (clearDailyEnergy) {
+                logger.warning("Clearing daily energy data due to energy value changes", TAG);
+                createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
+            }
+            
+            saveEnergy();
+            logger.info("Successfully set selective energy values", TAG);
+            return true;
+        }
+
+        logger.warning("No valid energy values found to set", TAG);
+        return false;
+    }
+
+    // Others
+    // --------------------
+
+    void _setLinecyc(unsigned int linecyc) {
+        linecyc = min(max(linecyc, ADE7953_MIN_LINECYC), ADE7953_MAX_LINECYC);
+
+        logger.debug(
+            "Setting linecyc to %d",
+            TAG,
+            linecyc
+        );
+
+        writeRegister(LINECYC_16, 16, long(linecyc));
+    }
+
+    void _setPhaseCalibration(long phaseCalibration, Ade7953Channel channel) {
+        logger.debug(
+            "Setting phase calibration to %d on channel %d",
+            TAG,
+            phaseCalibration,
+            channel
+        );
+
+        if (channel == Ade7953Channel::A) {
+            writeRegister(PHCALA_16, BIT_16, phaseCalibration);
+        } else {
+            writeRegister(PHCALB_16, BIT_16, phaseCalibration);
+        }
+    }
+
+    void _setPgaGain(long pgaGain, Ade7953Channel channel, MeasurementType measurementType) {
+        logger.debug(
+            "Setting PGA gain to %d on channel %d for measurement type %d",
+            TAG,
+            pgaGain,
+            channel,
+            measurementType
+        );
+
+        if (channel == Ade7953Channel::A) {
+            switch (measurementType) {
+                case MeasurementType::VOLTAGE:
+                    writeRegister(PGA_V_8, 8, pgaGain);
+                    break;
+                case MeasurementType::CURRENT:
+                    writeRegister(PGA_IA_8, 8, pgaGain);
+                    break;
+            }
+        } else {
+            switch (measurementType) {
+                case MeasurementType::VOLTAGE:
+                    writeRegister(PGA_V_8, 8, pgaGain);
+                    break;
+                case MeasurementType::CURRENT:
+                    writeRegister(PGA_IB_8, 8, pgaGain);
+                    break;
+            }
+        }
+    }
+
+    void _setGain(long gain, Ade7953Channel channel, MeasurementType measurementType) {
+        logger.debug(
+            "Setting gain to %ld on channel %d for measurement type %d",
+            TAG,
+            gain,
+            channel,
+            measurementType
+        );
+
+        if (channel == Ade7953Channel::A) {
+            switch (measurementType) {
+                case MeasurementType::VOLTAGE:
+                    writeRegister(AVGAIN_32, BIT_32, gain);
+                    break;
+                case MeasurementType::CURRENT:
+                    writeRegister(AIGAIN_32, BIT_32, gain);
+                    break;
+                case MeasurementType::ACTIVE_POWER:
+                    writeRegister(AWGAIN_32, BIT_32, gain);
+                    break;
+                case MeasurementType::REACTIVE_POWER:
+                    writeRegister(AVARGAIN_32, BIT_32, gain);
+                    break;
+                case MeasurementType::APPARENT_POWER:
+                    writeRegister(AVAGAIN_32, BIT_32, gain);
+                    break;
+            }
+        } else {
+            switch (measurementType) {
+                case MeasurementType::VOLTAGE:
+                    writeRegister(AVGAIN_32, BIT_32, gain);
+                    break;
+                case MeasurementType::CURRENT:
+                    writeRegister(BIGAIN_32, BIT_32, gain);
+                    break;
+                case MeasurementType::ACTIVE_POWER:
+                    writeRegister(BWGAIN_32, BIT_32, gain);
+                    break;
+                case MeasurementType::REACTIVE_POWER:
+                    writeRegister(BVARGAIN_32, BIT_32, gain);
+                    break;
+                case MeasurementType::APPARENT_POWER:
+                    writeRegister(BVAGAIN_32, BIT_32, gain);
+                    break;
+            }
+        }
+    }
+
+    void _setOffset(long offset, Ade7953Channel channel, MeasurementType measurementType) {
+        logger.debug(
+            "Setting offset to %ld on channel %d for measurement type %d",
+            TAG,
+            offset,
+            channel,
+            measurementType
+        );
+
+        if (channel == Ade7953Channel::A) {
+            switch (measurementType) {
+                case MeasurementType::VOLTAGE:
+                    writeRegister(VRMSOS_32, BIT_32, offset);
+                    break;
+                case MeasurementType::CURRENT:
+                    writeRegister(AIRMSOS_32, BIT_32, offset);
+                    break;
+                case MeasurementType::ACTIVE_POWER:
+                    writeRegister(AWATTOS_32, BIT_32, offset);
+                    break;
+                case MeasurementType::REACTIVE_POWER:
+                    writeRegister(AVAROS_32, BIT_32, offset);
+                    break;
+                case MeasurementType::APPARENT_POWER:
+                    writeRegister(AVAOS_32, BIT_32, offset);
+                    break;
+            }
+        } else {
+            switch (measurementType) {
+                case MeasurementType::VOLTAGE:
+                    writeRegister(VRMSOS_32, BIT_32, offset);
+                    break;
+                case MeasurementType::CURRENT:
+                    writeRegister(BIRMSOS_32, BIT_32, offset);
+                    break;
+                case MeasurementType::ACTIVE_POWER:
+                    writeRegister(BWATTOS_32, BIT_32, offset);
+                    break;
+                case MeasurementType::REACTIVE_POWER:
+                    writeRegister(BVAROS_32, BIT_32, offset);
+                    break;
+                case MeasurementType::APPARENT_POWER:
+                    writeRegister(BVAOS_32, BIT_32, offset);
+                    break;
+            }
+        }
+    }
+
+    long _readApparentPowerInstantaneous(Ade7953Channel channel) {
+        if (channel == Ade7953Channel::A) {return readRegister(AVA_32, BIT_32, true);} 
+        else {return readRegister(BVA_32, BIT_32, true);}
+    }
+
+    /*
+    Reads the "instantaneous" active power.
+
+    "Instantaneous" because the active power is only defined as the dc component
+    of the instantaneous power signal, which is V_RMS * I_RMS - V_RMS * I_RMS * cos(2*omega*t). 
+    It is updated at 6.99 kHz.
+
+    @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
+    @return The active power in LSB.
+    */
+    long _readActivePowerInstantaneous(Ade7953Channel channel) {
+        if (channel == Ade7953Channel::A) {return readRegister(AWATT_32, BIT_32, true);} 
+        else {return readRegister(BWATT_32, BIT_32, true);}
+    }
+
+    long _readReactivePowerInstantaneous(Ade7953Channel channel) {
+        if (channel == Ade7953Channel::A) {return readRegister(AVAR_32, BIT_32, true);} 
+        else {return readRegister(BVAR_32, BIT_32, true);}
+    }
 
 
-/*
-Reads the actual instantaneous current. 
+    /*
+    Reads the actual instantaneous current. 
 
-This allows you see the actual sinusoidal waveform, so both positive and 
-negative values. At full scale (so 500 mV), the value returned is 9032007d.
+    This allows you see the actual sinusoidal waveform, so both positive and 
+    negative values. At full scale (so 500 mV), the value returned is 9032007d.
 
-@param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
-@return The actual instantaneous current in LSB.
-*/
-long Ade7953::_readCurrentInstantaneous(int channel) {
-    if (channel == CHANNEL_A) {return readRegister(IA_32, 32, true);} 
-    else {return readRegister(IB_32, 32, true);}
-}
+    @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
+    @return The actual instantaneous current in LSB.
+    */
+    long _readCurrentInstantaneous(Ade7953Channel channel) {
+        if (channel == Ade7953Channel::A) {return readRegister(IA_32, BIT_32, true);} 
+        else {return readRegister(IB_32, BIT_32, true);}
+    }
 
-/*
-Reads the actual instantaneous voltage. 
+    /*
+    Reads the actual instantaneous voltage. 
 
-This allows you 
-to see the actual sinusoidal waveform, so both positive
-and negative values. At full scale (so 500 mV), the value
-returned is 9032007d.
+    This allows you 
+    to see the actual sinusoidal waveform, so both positive
+    and negative values. At full scale (so 500 mV), the value
+    returned is 9032007d.
 
-@return The actual instantaneous voltage in LSB.
-*/
-long Ade7953::_readVoltageInstantaneous() {
-    return readRegister(V_32, 32, true);
-}
+    @return The actual instantaneous voltage in LSB.
+    */
+    long _readVoltageInstantaneous() {
+        return readRegister(V_32, BIT_32, true);
+    }
 
-/*
-Reads the current in RMS.
+    /*
+    Reads the current in RMS.
 
-This measurement is updated at 6.99 kHz and has a settling
-time of 200 ms. The value is in LSB.
+    This measurement is updated at 6.99 kHz and has a settling
+    time of 200 ms. The value is in LSB.
 
-@param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
-@return The current in RMS in LSB.
-*/
-long Ade7953::_readCurrentRms(int channel) {
-    if (channel == CHANNEL_A) {return readRegister(IRMSA_32, 32, false);} 
-    else {return readRegister(IRMSB_32, 32, false);}
-}
+    @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
+    @return The current in RMS in LSB.
+    */
+    long _readCurrentRms(Ade7953Channel channel) {
+        if (channel == Ade7953Channel::A) {return readRegister(IRMSA_32, BIT_32, false);} 
+        else {return readRegister(IRMSB_32, BIT_32, false);}
+    }
 
-/*
-Reads the voltage in RMS.
+    /*
+    Reads the voltage in RMS.
 
-This measurement is updated at 6.99 kHz and has a settling
-time of 200 ms. The value is in LSB.
+    This measurement is updated at 6.99 kHz and has a settling
+    time of 200 ms. The value is in LSB.
 
-@return The voltage in RMS in LSB.
-*/
-long Ade7953::_readVoltageRms() {
-    return readRegister(VRMS_32, 32, false);
-}
+    @return The voltage in RMS in LSB.
+    */
+    long _readVoltageRms() {
+        return readRegister(VRMS_32, BIT_32, false);
+    }
 
-long Ade7953::_readActiveEnergy(int channel) {
-    if (channel == CHANNEL_A) {return readRegister(AENERGYA_32, 32, true);} 
-    else {return readRegister(AENERGYB_32, 32, true);}
-}
+    long _readActiveEnergy(Ade7953Channel channel) {
+        if (channel == Ade7953Channel::A) {return readRegister(AENERGYA_32, BIT_32, true);} 
+        else {return readRegister(AENERGYB_32, BIT_32, true);}
+    }
 
-long Ade7953::_readReactiveEnergy(int channel) {
-    if (channel == CHANNEL_A) {return readRegister(RENERGYA_32, 32, true);} 
-    else {return readRegister(RENERGYB_32, 32, true);}
-}
+    long _readReactiveEnergy(Ade7953Channel channel) {
+        if (channel == Ade7953Channel::A) {return readRegister(RENERGYA_32, BIT_32, true);} 
+        else {return readRegister(RENERGYB_32, BIT_32, true);}
+    }
 
-long Ade7953::_readApparentEnergy(int channel) {
-    if (channel == CHANNEL_A) {return readRegister(APENERGYA_32, 32, true);} 
-    else {return readRegister(APENERGYB_32, 32, true);}
-}
+    long _readApparentEnergy(Ade7953Channel channel) {
+        if (channel == Ade7953Channel::A) {return readRegister(APENERGYA_32, BIT_32, true);} 
+        else {return readRegister(APENERGYB_32, BIT_32, true);}
+    }
 
-long Ade7953::_readPowerFactor(int channel) {
-    if (channel == CHANNEL_A) {return readRegister(PFA_16, 16, true);} 
-    else {return readRegister(PFB_16, 16, true);}
-}
+    long _readPowerFactor(Ade7953Channel channel) {
+        if (channel == Ade7953Channel::A) {return readRegister(PFA_16, BIT_16, true);} 
+        else {return readRegister(PFB_16, BIT_16, true);}
+    }
 
-long Ade7953::_readAngle(int channel) {
-    if (channel == CHANNEL_A) {return readRegister(ANGLE_A_16, 16, true);} 
-    else {return readRegister(ANGLE_B_16, 16, true);}
-}
+    long _readAngle(Ade7953Channel channel) {
+        if (channel == Ade7953Channel::A) {return readRegister(ANGLE_A_16, BIT_16, true);} 
+        else {return readRegister(ANGLE_B_16, BIT_16, true);}
+    }
 
-long Ade7953::_readPeriod() {
-    return readRegister(PERIOD_16, 16, false);
-}
+    long _readPeriod() {
+        return readRegister(PERIOD_16, BIT_16, false);
+    }
 
-/**
- * Reads the value from a register in the ADE7953 energy meter.
- * 
- * @param registerAddress The address of the register to read from. Expected range: 0 to 65535
- * @param numBits The number of bits to read from the register. Expected values: 8, 16, 24 or 32.
- * @param isSignedData Flag indicating whether the data is signed (true) or unsigned (false).
- * @param isVerificationRequired Flag indicating whether to verify the last communication.
- * @return The value read from the register.
- */
-long Ade7953::readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired) {
+    /**
+     * Reads the value from a register in the ADE7953 energy meter.
+     * 
+     * @param registerAddress The address of the register to read from. Expected range: 0 to 65535
+     * @param numBits The number of bits to read from the register. Expected values: 8, 16, 24 or 32.
+     * @param isSignedData Flag indicating whether the data is signed (true) or unsigned (false).
+     * @param isVerificationRequired Flag indicating whether to verify the last communication.
+     * @return The value read from the register.
+     */
+    long readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired) {
 
-    if (isVerificationRequired) {
-        if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
-            _logger.error("Failed to acquire SPI operation mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
+        if (isVerificationRequired) {
+            if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+                logger.error("Failed to acquire SPI operation mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
+                return INVALID_SPI_READ_WRITE;
+            }
+        }
+
+        // Acquire SPI mutex with timeout to prevent deadlocks
+        if (_spiMutex == NULL || xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            logger.error("Failed to acquire SPI mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
+            if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
             return INVALID_SPI_READ_WRITE;
         }
-    }
 
-    // Acquire SPI mutex with timeout to prevent deadlocks
-    if (_spiMutex == NULL || xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        _logger.error("Failed to acquire SPI mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
-        if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
-        return INVALID_SPI_READ_WRITE;
-    }
+        digitalWrite(_ssPin, LOW);
 
-    digitalWrite(_ssPin, LOW);
+        SPI.transfer(registerAddress >> 8);
+        SPI.transfer(registerAddress & 0xFF);
+        SPI.transfer(READ_TRANSFER);
 
-    SPI.transfer(registerAddress >> 8);
-    SPI.transfer(registerAddress & 0xFF);
-    SPI.transfer(READ_TRANSFER);
-
-    byte _response[nBits / 8];
-    for (int i = 0; i < nBits / 8; i++) {
-        _response[i] = SPI.transfer(READ_TRANSFER);
-    }
-
-    digitalWrite(_ssPin, HIGH);
-
-    xSemaphoreGive(_spiMutex);
-
-    long _long_response = 0;
-    for (int i = 0; i < nBits / 8; i++) {
-        _long_response = (_long_response << 8) | _response[i];
-    }
-    if (signedData) {
-        if (_long_response & (1 << (nBits - 1))) {
-            _long_response -= (1 << nBits);
+        byte _response[nBits / 8];
+        for (int i = 0; i < nBits / 8; i++) {
+            _response[i] = SPI.transfer(READ_TRANSFER);
         }
-    }
-    _logger.verbose(
-        "Read %ld from register %ld with %d bits",
-        TAG,
-        _long_response,
-        registerAddress,
-        nBits
-    );
 
-    if (isVerificationRequired) {
-        if (!_verifyLastCommunication(registerAddress, nBits, _long_response, signedData, false)) {
-            _logger.debug("Failed to verify last read communication for register %ld (0x%04lX). Value was %ld (0x%04lX)", TAG, registerAddress, registerAddress, _long_response, _long_response);
-            _recordFailure();
-            _long_response = INVALID_SPI_READ_WRITE; // Return an invalid value if verification fails
+        digitalWrite(_ssPin, HIGH);
+
+        xSemaphoreGive(_spiMutex);
+
+        long _long_response = 0;
+        for (int i = 0; i < nBits / 8; i++) {
+            _long_response = (_long_response << 8) | _response[i];
         }
-        xSemaphoreGive(_spiOperationMutex);
-    }
-
-    return _long_response;
-}
-
-/**
- * Writes data to a register in the ADE7953 energy meter.
- * 
- * @param registerAddress The address of the register to write to. (16-bit value)
- * @param nBits The number of bits in the register. (8, 16, 24, or 32)
- * @param data The data to write to the register. (nBits-bit value)
- * @param isVerificationRequired Flag indicating whether to verify the last communication.
- */
-void Ade7953::writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired) {
-    _logger.debug(
-        "Writing %ld (0x%04lX) to register %ld (0x%04lX) with %d bits",
-        TAG,
-        data, data,
-        registerAddress, registerAddress,
-        nBits
-    );
-
-    if (isVerificationRequired) {
-        if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
-            _logger.error("Failed to acquire SPI operation mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
-            return;
+        if (signedData) {
+            if (_long_response & (1 << (nBits - 1))) {
+                _long_response -= (1 << nBits);
+            }
         }
-    }
-
-    // Acquire SPI mutex with timeout to prevent deadlocks
-    if (_spiMutex == NULL || xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
-        _logger.error("Failed to acquire SPI mutex for write operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
-        if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
-        return;
-    }
-
-    digitalWrite(_ssPin, LOW);
-
-    SPI.transfer(registerAddress >> 8);
-    SPI.transfer(registerAddress & 0xFF);
-    SPI.transfer(WRITE_TRANSFER);
-
-    if (nBits / 8 == 4) {
-        SPI.transfer((data >> 24) &  0xFF);
-        SPI.transfer((data >> 16) & 0xFF);
-        SPI.transfer((data >> 8) & 0xFF);
-        SPI.transfer(data & 0xFF);
-    } else if (nBits / 8 == 3) {
-        SPI.transfer((data >> 16) & 0xFF);
-        SPI.transfer((data >> 8) & 0xFF);
-        SPI.transfer(data & 0xFF);
-    } else if (nBits / 8 == 2) {
-        SPI.transfer((data >> 8) & 0xFF);
-        SPI.transfer(data & 0xFF);
-    } else if (nBits / 8 == 1) {
-        SPI.transfer(data & 0xFF);
-    }
-
-    digitalWrite(_ssPin, HIGH);
-
-    xSemaphoreGive(_spiMutex);
-
-    if (isVerificationRequired) {
-        if (!_verifyLastCommunication(registerAddress, nBits, data, false, true)) {
-            _logger.warning("Failed to verify last write communication for register %ld", TAG, registerAddress);
-            _recordFailure();
-        }
-        xSemaphoreGive(_spiOperationMutex);
-    }
-}
-
-bool Ade7953::_verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool signedData, bool wasWrite) {    
-    
-    long lastAddress = readRegister(LAST_ADD_16, 16, false, false);
-    if (lastAddress != expectedAddress) {
-        _logger.warning(
-            "Last address %ld (0x%04lX) (write: %d) does not match expected %ld (0x%04lX). Expected data %ld (0x%04lX)", 
-            TAG, 
-            lastAddress, lastAddress, 
-            wasWrite, 
-            expectedAddress, expectedAddress, 
-            expectedData, expectedData);
-        return false;
-    }
-    
-    long lastOp = readRegister(LAST_OP_8, 8, false, false);
-    if (wasWrite && lastOp != LAST_OP_WRITE_VALUE) {
-        _logger.warning("Last operation was not a write (expected %d, got %ld)", TAG, LAST_OP_WRITE_VALUE, lastOp);
-        return false;
-    } else if (!wasWrite && lastOp != LAST_OP_READ_VALUE) {
-        _logger.warning("Last operation was not a read (expected %d, got %ld)", TAG, LAST_OP_READ_VALUE, lastOp);
-        return false;
-    }    
-    
-    // Select the appropriate LAST_RWDATA register based on the bit size
-    long dataRegister;
-    int dataRegisterBits;
-    
-    if (expectedBits == 8) {
-        dataRegister = LAST_RWDATA_8;
-        dataRegisterBits = 8;
-    } else if (expectedBits == 16) {
-        dataRegister = LAST_RWDATA_16;
-        dataRegisterBits = 16;
-    } else if (expectedBits == 24) {
-        dataRegister = LAST_RWDATA_24;
-        dataRegisterBits = 24;
-    } else { // 32 bits or any other value defaults to 32-bit register
-        dataRegister = LAST_RWDATA_32;
-        dataRegisterBits = 32;
-    }
-    
-    long lastData = readRegister(dataRegister, dataRegisterBits, signedData, false);
-    if (lastData != expectedData) {
-        _logger.warning("Last data %ld does not match expected %ld", TAG, lastData, expectedData);
-        return false;
-    }
-
-    _logger.verbose("Last communication verified successfully", TAG);
-    return true;
-}
-
-void Ade7953::_recordFailure() {
-    
-    _logger.debug("Recording failure for ADE7953 communication", TAG);
-
-    if (_failureCount == 0) {
-        _firstFailureTime = millis64();
-    }
-
-    _failureCount++;
-    statistics.ade7953ReadingCountFailure++;
-    _checkForTooManyFailures();
-}
-
-void Ade7953::_checkForTooManyFailures() {
-    
-    if (millis64() - _firstFailureTime > ADE7953_FAILURE_RESET_TIMEOUT_MS && _failureCount > 0) {
-        _logger.debug("Failure timeout exceeded (%lu ms). Resetting failure count (reached %d)", TAG, millis64() - _firstFailureTime, _failureCount);
-        
-        _failureCount = 0;
-        _firstFailureTime = 0;
-        
-        return;
-    }
-
-    if (_failureCount >= ADE7953_MAX_FAILURES_BEFORE_RESTART) {
-        
-        _logger.fatal("Too many failures (%d) in ADE7953 communication or readings. Resetting device...", TAG, _failureCount);
-        setRestartSystem(TAG, "Too many failures in ADE7953 communication or readings");
-
-        // Reset the failure count and first failure time to avoid infinite loop of setting the restart
-        _failureCount = 0;
-        _firstFailureTime = 0;
-    }
-}
-
-// Helper functions
-// --------------------
-
-// Aggregate data
-
-float Ade7953::getAggregatedActivePower(bool includeChannel0) {
-    float sum = 0.0f;
-    int activeChannelCount = 0;
-
-    for (int i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
-        if (channelData[i].active) {
-            sum += meterValues[i].activePower;
-            activeChannelCount++;
-        }
-    }
-    return activeChannelCount > 0 ? sum : 0.0f;
-}
-
-float Ade7953::getAggregatedReactivePower(bool includeChannel0) {
-    float sum = 0.0f;
-    int activeChannelCount = 0;
-
-    for (int i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
-        if (channelData[i].active) {
-            sum += meterValues[i].reactivePower;
-            activeChannelCount++;
-        }
-    }
-    return activeChannelCount > 0 ? sum : 0.0f;
-}
-
-float Ade7953::getAggregatedApparentPower(bool includeChannel0) {
-    float sum = 0.0f;
-    int activeChannelCount = 0;
-
-    for (int i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
-        if (channelData[i].active) {
-            sum += meterValues[i].apparentPower;
-            activeChannelCount++;
-        }
-    }
-    return activeChannelCount > 0 ? sum : 0.0f;
-}
-
-float Ade7953::getAggregatedPowerFactor(bool includeChannel0) {
-    float _aggregatedActivePower = getAggregatedActivePower(includeChannel0);
-    float _aggregatedApparentPower = getAggregatedApparentPower(includeChannel0);
-
-    return _aggregatedApparentPower > 0 ? _aggregatedActivePower / _aggregatedApparentPower : 0.0f;
-}
-
-// Interrupt handling methods
-// --------------------
-
-void Ade7953::_setupInterrupts() {
-    _logger.debug("Setting up ADE7953 interrupts...", TAG);
-    
-    // Enable only CYCEND interrupt for line cycle end detection (bit 18)
-    writeRegister(IRQENA_32, 32, DEFAULT_IRQENA_REGISTER);
-    
-    // Clear any existing interrupt status
-    readRegister(RSTIRQSTATA_32, 32, false);
-    readRegister(RSTIRQSTATB_32, 32, false);
-
-    _logger.debug("ADE7953 interrupts enabled: CYCEND, RESET", TAG);
-}
-
-// Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
-void Ade7953::_irqstataBitName(int bit, char *buffer, size_t bufferSize) {
-    switch (bit) {
-        case IRQSTATA_AEHFA_BIT:       snprintf(buffer, bufferSize, "AEHFA");
-        case IRQSTATA_VAREHFA_BIT:     snprintf(buffer, bufferSize, "VAREHFA");
-        case IRQSTATA_VAEHFA_BIT:      snprintf(buffer, bufferSize, "VAEHFA");
-        case IRQSTATA_AEOFA_BIT:       snprintf(buffer, bufferSize, "AEOFA");
-        case IRQSTATA_VAREOFA_BIT:     snprintf(buffer, bufferSize, "VAREOFA");
-        case IRQSTATA_VAEOFA_BIT:      snprintf(buffer, bufferSize, "VAEOFA");
-        case IRQSTATA_AP_NOLOADA_BIT:  snprintf(buffer, bufferSize, "AP_NOLOADA");
-        case IRQSTATA_VAR_NOLOADA_BIT: snprintf(buffer, bufferSize, "VAR_NOLOADA");
-        case IRQSTATA_VA_NOLOADA_BIT:  snprintf(buffer, bufferSize, "VA_NOLOADA");
-        case IRQSTATA_APSIGN_A_BIT:    snprintf(buffer, bufferSize, "APSIGN_A");
-        case IRQSTATA_VARSIGN_A_BIT:   snprintf(buffer, bufferSize, "VARSIGN_A");
-        case IRQSTATA_ZXTO_IA_BIT:     snprintf(buffer, bufferSize, "ZXTO_IA");
-        case IRQSTATA_ZXIA_BIT:        snprintf(buffer, bufferSize, "ZXIA");
-        case IRQSTATA_OIA_BIT:         snprintf(buffer, bufferSize, "OIA");
-        case IRQSTATA_ZXTO_BIT:        snprintf(buffer, bufferSize, "ZXTO");
-        case IRQSTATA_ZXV_BIT:         snprintf(buffer, bufferSize, "ZXV");
-        case IRQSTATA_OV_BIT:          snprintf(buffer, bufferSize, "OV");
-        case IRQSTATA_WSMP_BIT:        snprintf(buffer, bufferSize, "WSMP");
-        case IRQSTATA_CYCEND_BIT:      snprintf(buffer, bufferSize, "CYCEND");
-        case IRQSTATA_SAG_BIT:         snprintf(buffer, bufferSize, "SAG");
-        case IRQSTATA_RESET_BIT:       snprintf(buffer, bufferSize, "RESET");
-        case IRQSTATA_CRC_BIT:         snprintf(buffer, bufferSize, "CRC");
-        default:                       snprintf(buffer, bufferSize, "UNKNOWN");
-    }
-}
-
-Ade7953InterruptType Ade7953::_handleInterrupt() {
-    
-    long statusA = readRegister(RSTIRQSTATA_32, 32, false);
-    // No need to read for channel B
-
-    // Very important: if we detected a reset or a CRC change in the configurations, 
-    // we must reinitialize the device
-    if (statusA & (1 << IRQSTATA_RESET_BIT)) {
-        
-        _logger.warning("Reset interrupt detected. Device needs reinitialization", TAG);
-        return Ade7953InterruptType::RESET;
-    } else if (statusA & (1 << IRQSTATA_CRC_BIT)) {
-        // TODO: how to handle this? if we change a setting in the ADE7953, we should expect a CRC change and avoid a loop.
-        
-        _logger.warning("CRC changed detected. Device configuration may have changed", TAG);
-        return Ade7953InterruptType::CRC_CHANGE;
-        // Check for CYCEND interrupt (bit 18) - Line cycle end
-    } else if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
-        statistics.ade7953TotalHandledInterrupts++;
-        _logger.verbose("Line cycle end detected on Channel A", TAG);
-        
-        // Only for CYCEND interrupts, switch to next channel and set multiplexer
-        _currentChannel = _findNextActiveChannel(_currentChannel);
-        Multiplexer::setChannel(static_cast<ChannelNumber>(std::max(_currentChannel - 1, 0)));
-        
-        return Ade7953InterruptType::CYCEND;
-    } else {
-        // Just log the unhandled status
-        _logger.warning("Unhandled ADE7953 interrupt status: 0x%08lX", TAG, statusA);
-        return Ade7953InterruptType::OTHER;
-    }
-}
-
-void Ade7953::_startMeterReadingTask() {
-    
-    if (_ade7953InterruptSemaphore == NULL) {
-        _ade7953InterruptSemaphore = xSemaphoreCreateBinary();
-        if (_ade7953InterruptSemaphore == NULL) {
-            _logger.error("Failed to create ADE7953 interrupt semaphore", TAG);
-            return;
-        }
-    }
-
-    
-    _instance = this;
-    _attachInterruptHandler();
-    if (_meterReadingTaskHandle == NULL) {
-        BaseType_t result = xTaskCreate(
-            _meterReadingTask, 
-            ADE7953_METER_READING_TASK_NAME, 
-            ADE7953_METER_READING_TASK_STACK_SIZE, 
-            this, 
-            ADE7953_METER_READING_TASK_PRIORITY, 
-            &_meterReadingTaskHandle
+        logger.verbose(
+            "Read %ld from register %ld with %d bits",
+            TAG,
+            _long_response,
+            registerAddress,
+            nBits
         );
-        if (result != pdPASS) {
-            _logger.error("Failed to create meter reading task", TAG);
+
+        if (isVerificationRequired) {
+            if (!_verifyLastCommunication(registerAddress, nBits, _long_response, signedData, false)) {
+                logger.debug("Failed to verify last read communication for register %ld (0x%04lX). Value was %ld (0x%04lX)", TAG, registerAddress, registerAddress, _long_response, _long_response);
+                _recordFailure();
+                _long_response = INVALID_SPI_READ_WRITE; // Return an invalid value if verification fails
+            }
+            xSemaphoreGive(_spiOperationMutex);
+        }
+
+        return _long_response;
+    }
+
+    /**
+     * Writes data to a register in the ADE7953 energy meter.
+     * 
+     * @param registerAddress The address of the register to write to. (16-bit value)
+     * @param nBits The number of bits in the register. (8, 16, 24, or 32)
+     * @param data The data to write to the register. (nBits-bit value)
+     * @param isVerificationRequired Flag indicating whether to verify the last communication.
+     */
+    void writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired) {
+        logger.debug(
+            "Writing %ld (0x%04lX) to register %ld (0x%04lX) with %d bits",
+            TAG,
+            data, data,
+            registerAddress, registerAddress,
+            nBits
+        );
+
+        if (isVerificationRequired) {
+            if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+                logger.error("Failed to acquire SPI operation mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
+                return;
+            }
+        }
+
+        // Acquire SPI mutex with timeout to prevent deadlocks
+        if (_spiMutex == NULL || xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            logger.error("Failed to acquire SPI mutex for write operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
+            if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
             return;
         }
+
+        digitalWrite(_ssPin, LOW);
+
+        SPI.transfer(registerAddress >> 8);
+        SPI.transfer(registerAddress & 0xFF);
+        SPI.transfer(WRITE_TRANSFER);
+
+        if (nBits / 8 == 4) {
+            SPI.transfer((data >> 24) &  0xFF);
+            SPI.transfer((data >> 16) & 0xFF);
+            SPI.transfer((data >> 8) & 0xFF);
+            SPI.transfer(data & 0xFF);
+        } else if (nBits / 8 == 3) {
+            SPI.transfer((data >> 16) & 0xFF);
+            SPI.transfer((data >> 8) & 0xFF);
+            SPI.transfer(data & 0xFF);
+        } else if (nBits / 8 == 2) {
+            SPI.transfer((data >> 8) & 0xFF);
+            SPI.transfer(data & 0xFF);
+        } else if (nBits / 8 == 1) {
+            SPI.transfer(data & 0xFF);
+        }
+
+        digitalWrite(_ssPin, HIGH);
+
+        xSemaphoreGive(_spiMutex);
+
+        if (isVerificationRequired) {
+            if (!_verifyLastCommunication(registerAddress, nBits, data, false, true)) {
+                logger.warning("Failed to verify last write communication for register %ld", TAG, registerAddress);
+                _recordFailure();
+            }
+            xSemaphoreGive(_spiOperationMutex);
+        }
     }
-}
 
-void Ade7953::_stopMeterReadingTask() {
-    
-    _detachInterruptHandler();
-    if (_meterReadingTaskHandle != NULL) {
-        vTaskDelete(_meterReadingTaskHandle);
-        _meterReadingTaskHandle = NULL;
+    bool _verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool signedData, bool wasWrite) {    
+        
+        long lastAddress = readRegister(LAST_ADD_16, 16, false, false);
+        if (lastAddress != expectedAddress) {
+            logger.warning(
+                "Last address %ld (0x%04lX) (write: %d) does not match expected %ld (0x%04lX). Expected data %ld (0x%04lX)", 
+                TAG, 
+                lastAddress, lastAddress, 
+                wasWrite, 
+                expectedAddress, expectedAddress, 
+                expectedData, expectedData);
+            return false;
+        }
+        
+        long lastOp = readRegister(LAST_OP_8, 8, false, false);
+        if (wasWrite && lastOp != LAST_OP_WRITE_VALUE) {
+            logger.warning("Last operation was not a write (expected %d, got %ld)", TAG, LAST_OP_WRITE_VALUE, lastOp);
+            return false;
+        } else if (!wasWrite && lastOp != LAST_OP_READ_VALUE) {
+            logger.warning("Last operation was not a read (expected %d, got %ld)", TAG, LAST_OP_READ_VALUE, lastOp);
+            return false;
+        }    
+        
+        // Select the appropriate LAST_RWDATA register based on the bit size
+        long dataRegister;
+        int dataRegisterBits;
+        
+        if (expectedBits == 8) {
+            dataRegister = LAST_RWDATA_8;
+            dataRegisterBits = 8;
+        } else if (expectedBits == 16) {
+            dataRegister = LAST_RWDATA_16;
+            dataRegisterBits = 16;
+        } else if (expectedBits == 24) {
+            dataRegister = LAST_RWDATA_24;
+            dataRegisterBits = 24;
+        } else { // 32 bits or any other value defaults to 32-bit register
+            dataRegister = LAST_RWDATA_32;
+            dataRegisterBits = 32;
+        }
+        
+        long lastData = readRegister(dataRegister, dataRegisterBits, signedData, false);
+        if (lastData != expectedData) {
+            logger.warning("Last data %ld does not match expected %ld", TAG, lastData, expectedData);
+            return false;
+        }
+
+        logger.verbose("Last communication verified successfully", TAG);
+        return true;
     }
-    if (_ade7953InterruptSemaphore != NULL) {
-        vSemaphoreDelete(_ade7953InterruptSemaphore);
-        _ade7953InterruptSemaphore = NULL;
+
+    void _recordFailure() {
+        
+        logger.debug("Recording failure for ADE7953 communication", TAG);
+
+        if (_failureCount == 0) {
+            _firstFailureTime = millis64();
+        }
+
+        _failureCount++;
+        statistics.ade7953ReadingCountFailure++;
+        _checkForTooManyFailures();
     }
-    _instance = nullptr;
-}
 
-void Ade7953::pauseMeterReadingTask() {
-    
-    _logger.info("Pausing ADE7953 meter reading task", TAG);
+    void _checkForTooManyFailures() {
+        
+        if (millis64() - _firstFailureTime > ADE7953_FAILURE_RESET_TIMEOUT_MS && _failureCount > 0) {
+            logger.debug("Failure timeout exceeded (%lu ms). Resetting failure count (reached %d)", TAG, millis64() - _firstFailureTime, _failureCount);
+            
+            _failureCount = 0;
+            _firstFailureTime = 0;
+            
+            return;
+        }
 
-    _detachInterruptHandler();
-    if (_meterReadingTaskHandle != NULL) {
-        vTaskSuspend(_meterReadingTaskHandle);
+        if (_failureCount >= ADE7953_MAX_FAILURES_BEFORE_RESTART) {
+            
+            logger.fatal("Too many failures (%d) in ADE7953 communication or readings. Resetting device...", TAG, _failureCount);
+            setRestartSystem(TAG, "Too many failures in ADE7953 communication or readings");
+
+            // Reset the failure count and first failure time to avoid infinite loop of setting the restart
+            _failureCount = 0;
+            _firstFailureTime = 0;
+        }
     }
-}
 
-void Ade7953::resumeMeterReadingTask() {
-    
-    _logger.info("Resuming ADE7953 meter reading task", TAG);
-    
-    if (_meterReadingTaskHandle != NULL) vTaskResume(_meterReadingTaskHandle);
-    _attachInterruptHandler();
-}
+    unsigned int getSampleTime() { return _sampleTime; }
+    float getGridFrequency() { return _gridFrequency; }
 
-void Ade7953::_attachInterruptHandler() {
-    // Detach only if already attached (avoid priting error)
-    if (_meterReadingTaskHandle != NULL) {
+
+    // Helper functions
+    // --------------------
+
+    // Aggregate data
+
+    float getAggregatedActivePower(bool includeChannel0) {
+        float sum = 0.0f;
+        int activeChannelCount = 0;
+
+        for (int i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
+            if (channelData[i].active) {
+                sum += meterValues[i].activePower;
+                activeChannelCount++;
+            }
+        }
+        return activeChannelCount > 0 ? sum : 0.0f;
+    }
+
+    float getAggregatedReactivePower(bool includeChannel0) {
+        float sum = 0.0f;
+        int activeChannelCount = 0;
+
+        for (int i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
+            if (channelData[i].active) {
+                sum += meterValues[i].reactivePower;
+                activeChannelCount++;
+            }
+        }
+        return activeChannelCount > 0 ? sum : 0.0f;
+    }
+
+    float getAggregatedApparentPower(bool includeChannel0) {
+        float sum = 0.0f;
+        int activeChannelCount = 0;
+
+        for (int i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
+            if (channelData[i].active) {
+                sum += meterValues[i].apparentPower;
+                activeChannelCount++;
+            }
+        }
+        return activeChannelCount > 0 ? sum : 0.0f;
+    }
+
+    float getAggregatedPowerFactor(bool includeChannel0) {
+        float _aggregatedActivePower = getAggregatedActivePower(includeChannel0);
+        float _aggregatedApparentPower = getAggregatedApparentPower(includeChannel0);
+
+        return _aggregatedApparentPower > 0 ? _aggregatedActivePower / _aggregatedApparentPower : 0.0f;
+    }
+
+    // Interrupt handling methods
+    // --------------------
+
+    void _setupInterrupts() {
+        logger.debug("Setting up ADE7953 interrupts...", TAG);
+        
+        // Enable only CYCEND interrupt for line cycle end detection (bit 18)
+        writeRegister(IRQENA_32, 32, DEFAULT_IRQENA_REGISTER);
+        
+        // Clear any existing interrupt status
+        readRegister(RSTIRQSTATA_32, 32, false);
+        readRegister(RSTIRQSTATB_32, 32, false);
+
+        logger.debug("ADE7953 interrupts enabled: CYCEND, RESET", TAG);
+    }
+
+    // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
+    void _irqstataBitName(int bit, char *buffer, size_t bufferSize) {
+        switch (bit) {
+            case IRQSTATA_AEHFA_BIT:       snprintf(buffer, bufferSize, "AEHFA");
+            case IRQSTATA_VAREHFA_BIT:     snprintf(buffer, bufferSize, "VAREHFA");
+            case IRQSTATA_VAEHFA_BIT:      snprintf(buffer, bufferSize, "VAEHFA");
+            case IRQSTATA_AEOFA_BIT:       snprintf(buffer, bufferSize, "AEOFA");
+            case IRQSTATA_VAREOFA_BIT:     snprintf(buffer, bufferSize, "VAREOFA");
+            case IRQSTATA_VAEOFA_BIT:      snprintf(buffer, bufferSize, "VAEOFA");
+            case IRQSTATA_AP_NOLOADA_BIT:  snprintf(buffer, bufferSize, "AP_NOLOADA");
+            case IRQSTATA_VAR_NOLOADA_BIT: snprintf(buffer, bufferSize, "VAR_NOLOADA");
+            case IRQSTATA_VA_NOLOADA_BIT:  snprintf(buffer, bufferSize, "VA_NOLOADA");
+            case IRQSTATA_APSIGN_A_BIT:    snprintf(buffer, bufferSize, "APSIGN_A");
+            case IRQSTATA_VARSIGN_A_BIT:   snprintf(buffer, bufferSize, "VARSIGN_A");
+            case IRQSTATA_ZXTO_IA_BIT:     snprintf(buffer, bufferSize, "ZXTO_IA");
+            case IRQSTATA_ZXIA_BIT:        snprintf(buffer, bufferSize, "ZXIA");
+            case IRQSTATA_OIA_BIT:         snprintf(buffer, bufferSize, "OIA");
+            case IRQSTATA_ZXTO_BIT:        snprintf(buffer, bufferSize, "ZXTO");
+            case IRQSTATA_ZXV_BIT:         snprintf(buffer, bufferSize, "ZXV");
+            case IRQSTATA_OV_BIT:          snprintf(buffer, bufferSize, "OV");
+            case IRQSTATA_WSMP_BIT:        snprintf(buffer, bufferSize, "WSMP");
+            case IRQSTATA_CYCEND_BIT:      snprintf(buffer, bufferSize, "CYCEND");
+            case IRQSTATA_SAG_BIT:         snprintf(buffer, bufferSize, "SAG");
+            case IRQSTATA_RESET_BIT:       snprintf(buffer, bufferSize, "RESET");
+            case IRQSTATA_CRC_BIT:         snprintf(buffer, bufferSize, "CRC");
+            default:                       snprintf(buffer, bufferSize, "UNKNOWN");
+        }
+    }
+
+    Ade7953InterruptType _handleInterrupt() {
+        
+        long statusA = readRegister(RSTIRQSTATA_32, 32, false);
+        // No need to read for channel B
+
+        // Very important: if we detected a reset or a CRC change in the configurations, 
+        // we must reinitialize the device
+        if (statusA & (1 << IRQSTATA_RESET_BIT)) {
+            
+            logger.warning("Reset interrupt detected. Device needs reinitialization", TAG);
+            return Ade7953InterruptType::RESET;
+        } else if (statusA & (1 << IRQSTATA_CRC_BIT)) {
+            // TODO: how to handle this? if we change a setting in the ADE7953, we should expect a CRC change and avoid a loop.
+            
+            logger.warning("CRC changed detected. Device configuration may have changed", TAG);
+            return Ade7953InterruptType::CRC_CHANGE;
+            // Check for CYCEND interrupt (bit 18) - Line cycle end
+        } else if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
+            statistics.ade7953TotalHandledInterrupts++;
+            logger.verbose("Line cycle end detected on Channel A", TAG);
+            
+            // Only for CYCEND interrupts, switch to next channel and set multiplexer
+            _currentChannel = _findNextActiveChannel(_currentChannel);
+            Multiplexer::setChannel(max(_currentChannel - (unsigned int)1, (unsigned int)0));
+
+            return Ade7953InterruptType::CYCEND;
+        } else {
+            // Just log the unhandled status
+            logger.warning("Unhandled ADE7953 interrupt status: 0x%08lX", TAG, statusA);
+            return Ade7953InterruptType::OTHER;
+        }
+    }
+
+    void _startMeterReadingTask() {
+        
+        if (_ade7953InterruptSemaphore == NULL) {
+            _ade7953InterruptSemaphore = xSemaphoreCreateBinary();
+            if (_ade7953InterruptSemaphore == NULL) {
+                logger.error("Failed to create ADE7953 interrupt semaphore", TAG);
+                return;
+            }
+        }
+
+        
+        _attachInterruptHandler();
+        if (_meterReadingTaskHandle == NULL) {
+            BaseType_t result = xTaskCreate(
+                _meterReadingTask, 
+                ADE7953_METER_READING_TASK_NAME, 
+                ADE7953_METER_READING_TASK_STACK_SIZE, 
+                nullptr, 
+                ADE7953_METER_READING_TASK_PRIORITY, 
+                &_meterReadingTaskHandle
+            );
+            if (result != pdPASS) {
+                logger.error("Failed to create meter reading task", TAG);
+                return;
+            }
+        }
+    }
+
+    void _stopMeterReadingTask() {
+        
         _detachInterruptHandler();
+        if (_meterReadingTaskHandle != NULL) {
+            vTaskDelete(_meterReadingTaskHandle);
+            _meterReadingTaskHandle = NULL;
+        }
+        if (_ade7953InterruptSemaphore != NULL) {
+            vSemaphoreDelete(_ade7953InterruptSemaphore);
+            _ade7953InterruptSemaphore = NULL;
+        }
     }
-    ::attachInterrupt(digitalPinToInterrupt(_interruptPin), _isrHandler, FALLING);
-}
 
-void Ade7953::_detachInterruptHandler() {
-    ::detachInterrupt(digitalPinToInterrupt(_interruptPin));
-}
+    void pauseMeterReadingTask() {
+        
+        logger.info("Pausing ADE7953 meter reading task", TAG);
 
-void IRAM_ATTR Ade7953::_isrHandler()
-{
-    if (_instance && _instance->_ade7953InterruptSemaphore != NULL)
+        _detachInterruptHandler();
+        if (_meterReadingTaskHandle != NULL) {
+            vTaskSuspend(_meterReadingTaskHandle);
+        }
+    }
+
+    void resumeMeterReadingTask() {
+        
+        logger.info("Resuming ADE7953 meter reading task", TAG);
+        
+        if (_meterReadingTaskHandle != NULL) vTaskResume(_meterReadingTaskHandle);
+        _attachInterruptHandler();
+    }
+
+    void _attachInterruptHandler() {
+        // Detach only if already attached (avoid priting error)
+        if (_meterReadingTaskHandle != NULL) {
+            _detachInterruptHandler();
+        }
+        ::attachInterrupt(digitalPinToInterrupt(_interruptPin), _isrHandler, FALLING);
+    }
+
+    void _detachInterruptHandler() {
+        ::detachInterrupt(digitalPinToInterrupt(_interruptPin));
+    }
+
+    void IRAM_ATTR _isrHandler()
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         statistics.ade7953TotalInterrupts++;
@@ -1950,170 +2034,161 @@ void IRAM_ATTR Ade7953::_isrHandler()
         xSemaphoreGiveFromISR(_instance->_ade7953InterruptSemaphore, &xHigherPriorityTaskWoken);
         if (xHigherPriorityTaskWoken == pdTRUE) portYIELD_FROM_ISR();
     }
-}
 
-void Ade7953::_checkInterruptTiming() {
-    if (millis64() - _lastInterruptTime >= getSampleTime()) {
-        _logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).", 
-                       TAG, millis64() - _lastInterruptTime, getSampleTime());
+    void _checkInterruptTiming() {
+        if (millis64() - _lastInterruptTime >= getSampleTime()) {
+            logger.warning("ADE7953 interrupt not handled within the sample time. We are %lu ms late (sample time is %lu ms).", 
+                        TAG, millis64() - _lastInterruptTime, getSampleTime());
+        }
     }
-}
 
-bool Ade7953::_processChannelReading(int channel, unsigned long long linecycUnix) {
-    if (!_readMeterValues(channel, linecycUnix)) {
-        return false;
+    bool _processChannelReading(int channel, unsigned long long linecycUnix) {
+        if (!_readMeterValues(channel, linecycUnix)) {
+            return false;
+        }
+        
+        _addMeterDataToPayload(channel, linecycUnix);
+        printMeterValues(&meterValues[channel], &channelData[channel]);
+        return true;
     }
-    
-    _addMeterDataToPayload(channel, linecycUnix);
-    printMeterValues(&meterValues[channel], &channelData[channel]);
-    return true;
-}
 
-void Ade7953::_addMeterDataToPayload(int channel, unsigned long long linecycUnix) {
-    if (!CustomTime::isTimeSynched()) {
-        return;
+    void _addMeterDataToPayload(int channel, unsigned long long linecycUnix) {
+        if (!CustomTime::isTimeSynched()) {
+            return;
+        }
+        
+        Mqtt::pushMeter(PayloadMeter(
+            channel, 
+            linecycUnix, 
+            meterValues[channel].activePower, 
+            meterValues[channel].powerFactor
+        ));
     }
-    
-    if (_payloadMeterMutex) xSemaphoreTake(_payloadMeterMutex, pdMS_TO_TICKS(5000));
-    
-    Mqtt::pushMeter(PayloadMeter(
-        channel, 
-        linecycUnix, 
-        meterValues[channel].activePower, 
-        meterValues[channel].powerFactor
-    ));
-    
-    if (_payloadMeterMutex) xSemaphoreGive(_payloadMeterMutex);
-}
 
-void Ade7953::_processCycendInterrupt(unsigned long long linecycUnix) {
-    Led::setGreen();
-    
-    // Process current channel (if active)
-    if (_currentChannel != CHANNEL_INVALID) {
-        _processChannelReading(_currentChannel, linecycUnix);
+    void _processCycendInterrupt(unsigned long long linecycUnix) {
+        // Process current channel (if active)
+        if (_currentChannel != INVALID_CHANNEL) {
+            _processChannelReading(_currentChannel, linecycUnix);
+        }
+        
+        // Always process channel 0
+        _processChannelReading(0, linecycUnix);
     }
-    
-    // Always process channel 0
-    _processChannelReading(CHANNEL_0, linecycUnix);
-}
 
-void Ade7953::_handleCrcChangeInterrupt() {
-    _logger.warning("CRC change detected - this may indicate configuration changes", TAG);
-    
-    // For now, we'll just log this. In the future, you might want to:
-    // 1. Check if this was an expected change (e.g., during calibration)
-    // 2. Verify device configuration integrity
-    // 3. Potentially trigger a reinitialization if unexpected
-    
-    // TODO: Implement smarter CRC change handling to avoid reinitialization loops
-    // when making intentional configuration changes
-}
+    void _handleCrcChangeInterrupt() {
+        logger.warning("CRC change detected - this may indicate configuration changes", TAG);
+        
+        // For now, we'll just log this. In the future, you might want to:
+        // 1. Check if this was an expected change (e.g., during calibration)
+        // 2. Verify device configuration integrity
+        // 3. Potentially trigger a reinitialization if unexpected
+        
+        // TODO: Implement smarter CRC change handling to avoid reinitialization loops
+        // when making intentional configuration changes
+    }
 
-void Ade7953::_meterReadingTask(void *parameter)
-{
-    Ade7953 *self = static_cast<Ade7953 *>(parameter);
-    if (!self) vTaskDelete(NULL);
-
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t timeoutTicks = pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + self->getSampleTime());
-    
-    while (true)
+    void _meterReadingTask(void *parameter)
     {
-        // Wait for interrupt signal
-        if (self->_ade7953InterruptSemaphore != NULL &&
-            xSemaphoreTake(self->_ade7953InterruptSemaphore, timeoutTicks) == pdTRUE)
+        TickType_t xLastWakeTime = xTaskGetTickCount();
+        const TickType_t timeoutTicks = pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + self->getSampleTime());
+        
+        while (true)
         {
-            unsigned long long linecycUnix = CustomTime::getUnixTimeMilliseconds();
-            
-            // Check if interrupt timing is within expected bounds
-            self->_checkInterruptTiming();
-
-            // Handle the interrupt and determine its type
-            Ade7953InterruptType interruptType = self->_handleInterrupt();
-
-            // Process based on interrupt type
-            switch (interruptType)
+            // Wait for interrupt signal
+            if (self->_ade7953InterruptSemaphore != NULL &&
+                xSemaphoreTake(self->_ade7953InterruptSemaphore, timeoutTicks) == pdTRUE)
             {
-            case Ade7953InterruptType::CYCEND:
-                self->_processCycendInterrupt(linecycUnix);
-                break;
+                unsigned long long linecycUnix = CustomTime::getUnixTimeMilliseconds();
+                
+                // Check if interrupt timing is within expected bounds
+                self->_checkInterruptTiming();
 
-            case Ade7953InterruptType::RESET:
-                self->_reinitializeAfterInterrupt();
-                break;
-            case Ade7953InterruptType::CRC_CHANGE:
-                self->_handleCrcChangeInterrupt();
-                break;
+                // Handle the interrupt and determine its type
+                Ade7953InterruptType interruptType = self->_handleInterrupt();
 
-            case Ade7953InterruptType::OTHER:
-            case Ade7953InterruptType::NONE:
-            default:
-                // Already logged in _handleInterrupt(), just continue
-                break;
+                // Process based on interrupt type
+                switch (interruptType)
+                {
+                case Ade7953InterruptType::CYCEND:
+                    self->_processCycendInterrupt(linecycUnix);
+                    break;
+
+                case Ade7953InterruptType::RESET:
+                    self->_reinitializeAfterInterrupt();
+                    break;
+                case Ade7953InterruptType::CRC_CHANGE:
+                    self->_handleCrcChangeInterrupt();
+                    break;
+
+                case Ade7953InterruptType::OTHER:
+                case Ade7953InterruptType::NONE:
+                default:
+                    // Already logged in _handleInterrupt(), just continue
+                    break;
+                }
+            }
+            else
+            {
+                // Timeout or semaphore error
+                if (self->_ade7953InterruptSemaphore == NULL) {
+                    self->logger.debug("Semaphore is NULL, task exiting...", TAG);
+                    break;
+                }
+                vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100));
             }
         }
-        else
-        {
-            // Timeout or semaphore error
-            if (self->_ade7953InterruptSemaphore == NULL) {
-                self->_logger.debug("Semaphore is NULL, task exiting...", TAG);
-                break;
-            }
-            vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(100));
-        }
+
+        vTaskDelete(NULL);
     }
 
-    vTaskDelete(NULL);
-}
+    void _reinitializeAfterInterrupt() {
+        logger.warning("Reinitializing ADE7953 after reset/CRC change interrupt", TAG);
+        
+        // Note: We don't pause/resume meter reading task here because this method
+        // is called from within the meter reading task itself. Pausing would cause a deadlock.
+        
+        // Detach interrupt handler temporarily to prevent conflicts
+        _detachInterruptHandler();
+        
+        // Reinitialize the device settings (but not the hardware pins)
+        logger.debug("Setting optimum settings...", TAG);
+        _setOptimumSettings();
+        
+        logger.debug("Setting default parameters...", TAG);
+        _setDefaultParameters();
+        
+        logger.debug("Setting configuration from SPIFFS...", TAG);
+        _setConfigurationFromSpiffs();
+        
+        logger.debug("Reading calibration values from SPIFFS...", TAG);
+        _setCalibrationValuesFromSpiffs();
+        
+        logger.debug("Setting up interrupts...", TAG);
+        _setupInterrupts();
+        
+        logger.info("ADE7953 reinitialization completed successfully", TAG);
+        
+        // Reattach interrupt handler
+        _attachInterruptHandler();
+    }
 
-void Ade7953::_reinitializeAfterInterrupt() {
-    _logger.warning("Reinitializing ADE7953 after reset/CRC change interrupt", TAG);
-    
-    // Note: We don't pause/resume meter reading task here because this method
-    // is called from within the meter reading task itself. Pausing would cause a deadlock.
-    
-    // Detach interrupt handler temporarily to prevent conflicts
-    _detachInterruptHandler();
-    
-    // Reinitialize the device settings (but not the hardware pins)
-    _logger.debug("Setting optimum settings...", TAG);
-    _setOptimumSettings();
-    
-    _logger.debug("Setting default parameters...", TAG);
-    _setDefaultParameters();
-    
-    _logger.debug("Setting configuration from SPIFFS...", TAG);
-    _setConfigurationFromSpiffs();
-    
-    _logger.debug("Reading calibration values from SPIFFS...", TAG);
-    _setCalibrationValuesFromSpiffs();
-    
-    _logger.debug("Setting up interrupts...", TAG);
-    _setupInterrupts();
-    
-    _logger.info("ADE7953 reinitialization completed successfully", TAG);
-    
-    // Reattach interrupt handler
-    _attachInterruptHandler();
-}
-
-void Ade7953::printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
-    _logger.debug(
-        "%s (%D): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
-        TAG, 
-        channelData->label,
-        channelData->index,
-        meterValues->voltage, 
-        meterValues->current, 
-        meterValues->activePower, 
-        meterValues->reactivePower, 
-        meterValues->apparentPower, 
-        meterValues->powerFactor, 
-        meterValues->activeEnergyImported,
-        meterValues->activeEnergyExported,
-        meterValues->reactiveEnergyImported, 
-        meterValues->reactiveEnergyExported, 
-        meterValues->apparentEnergy
-    );
+    void printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
+        logger.debug(
+            "%s (%D): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
+            TAG, 
+            channelData->label,
+            channelData->index,
+            meterValues->voltage, 
+            meterValues->current, 
+            meterValues->activePower, 
+            meterValues->reactivePower, 
+            meterValues->apparentPower, 
+            meterValues->powerFactor, 
+            meterValues->activeEnergyImported,
+            meterValues->activeEnergyExported,
+            meterValues->reactiveEnergyImported, 
+            meterValues->reactiveEnergyExported, 
+            meterValues->apparentEnergy
+        );
+    }
 }

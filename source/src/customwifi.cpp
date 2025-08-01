@@ -56,6 +56,15 @@ namespace CustomWifi
   void stop()
   {
     _stopWifiTask();
+
+    // Disconnect WiFi and clean up
+    if (WiFi.isConnected())
+    {
+      logger.debug("Disconnecting WiFi...", TAG);
+      WiFi.disconnect(true);
+      delay(1000); // Allow time for disconnection
+      _cleanup();
+    }
   }
 
   bool isFullyConnected() // Also check IP to ensure full connectivity
@@ -377,5 +386,7 @@ namespace CustomWifi
     {
       logger.debug("WiFi task stopped gracefully", TAG);
     }
+
+    WiFi.disconnect(true);
   }
 }

@@ -28,13 +28,19 @@
 #define MQTT_CUSTOM_USERNAME_DEFAULT "username"
 #define MQTT_CUSTOM_PASSWORD_DEFAULT "password"
 
+// Custom MQTT task constants
+#define CUSTOM_MQTT_TASK_NAME "custom_mqtt_task"
+#define CUSTOM_MQTT_TASK_STACK_SIZE (16 * 1024)
+#define CUSTOM_MQTT_TASK_PRIORITY 1
+#define CUSTOM_MQTT_TASK_CHECK_INTERVAL (1 * 100) // Cannot send mqtt messages faster than this
+
 // Reconnection strategy constants
 #define MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL (5 * 1000)
 #define MQTT_CUSTOM_MAX_RECONNECT_INTERVAL (5 * 60 * 1000)
 #define MQTT_CUSTOM_RECONNECT_MULTIPLIER 2
 #define MQTT_CUSTOM_LOOP_INTERVAL 100
 #define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL (10 * 1000)
-#define MQTT_CUSTOM_PAYLOAD_LIMIT 512
+#define MQTT_CUSTOM_PAYLOAD_LIMIT (2 * 1024)
 
 // Preferences keys for persistent storage
 #define CUSTOM_MQTT_ENABLED_KEY "enabled"

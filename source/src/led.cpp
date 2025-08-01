@@ -6,7 +6,7 @@ namespace Led
     static int _redPin = INVALID_PIN;
     static int _greenPin = INVALID_PIN;
     static int _bluePin = INVALID_PIN;
-    static int _brightness = DEFAULT_LED_BRIGHTNESS;
+    static unsigned int _brightness = DEFAULT_LED_BRIGHTNESS;
 
     // Task handles and queue
     static TaskHandle_t _ledTaskHandle = nullptr;
@@ -184,7 +184,7 @@ namespace Led
         preferences.end();
 
         // Validate loaded value is within acceptable range
-        _brightness = min(max(_brightness, 0), LED_MAX_BRIGHTNESS);
+        _brightness = min(max(_brightness, (unsigned int)0), (unsigned int)LED_MAX_BRIGHTNESS);
         return true;
     }
 
@@ -196,13 +196,13 @@ namespace Led
         preferences.end();
     }
 
-    void setBrightness(int brightness)
+    void setBrightness(unsigned int brightness)
     {
-        _brightness = min(max(brightness, 0), LED_MAX_BRIGHTNESS);
+        _brightness = min(max(brightness, (unsigned int)0), (unsigned int)LED_MAX_BRIGHTNESS);
         _saveConfiguration();
     }
 
-    int getBrightness() { return _brightness; }
+    unsigned int getBrightness() { return _brightness; }
 
     void setPattern(LedPattern pattern, Color color, LedPriority priority, unsigned long long durationMs)
     {

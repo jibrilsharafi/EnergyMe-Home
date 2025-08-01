@@ -615,8 +615,12 @@ void setRestartSystem(const char* functionName, const char* reason) {
         return; // Prevent overwriting an existing restart request
     }
 
-    //TODO: we should start stopping tasks here
     stopMaintenanceTask();
+    // TODO: add MQTT, ade7953
+    CustomMqtt::stop();
+    InfluxDbClient::stop();
+    ModbusTcp::stop();
+    CustomServer::stop();
 
     // Create a task that will handle the delayed restart
     BaseType_t result = xTaskCreate(
@@ -637,7 +641,7 @@ void setRestartSystem(const char* functionName, const char* reason) {
 }
 
 void restartSystem() {
-    Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
+    Led::setBrightness(max(Led::getBrightness(), (unsigned int)1)); // Show a faint light even if it is off
     Led::setOrange(Led::PRIO_CRITICAL);
 
     logger.info("Restarting system", TAG);
@@ -646,7 +650,8 @@ void restartSystem() {
     // Give time for AsyncTCP connections to close gracefully
     delay(1000);
 
-    // Properly shutdown WiFi to prevent crashes during restart
+    // Stop at last to ensure all logs are sent
+    CustomLog::stop();
     CustomWifi::stop();
     
     // Additional delay to ensure clean shutdown
@@ -840,7 +845,7 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
 void factoryReset() { 
     logger.fatal("Factory reset requested", TAG);
 
-    Led::setBrightness(max(Led::getBrightness(), 1)); // Show a faint light even if it is off
+    Led::setBrightness(max(Led::getBrightness(), (unsigned int)1)); // Show a faint light even if it is off
     Led::blinkRedFast(Led::PRIO_CRITICAL);
 
     clearAllPreferences();

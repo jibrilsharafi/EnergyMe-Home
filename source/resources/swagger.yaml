@@ -912,6 +912,90 @@ paths:
                   status: "Data sent successfully"
                   statusTimestamp: "2025-07-31T12:34:56Z"
 
+  # LED Management endpoints
+  /api/v1/led/brightness:
+    get:
+      summary: Get LED brightness
+      description: Get the current LED brightness level
+      tags:
+        - LED
+      responses:
+        '200':
+          description: Current LED brightness level
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brightness:
+                    type: integer
+                    description: Current brightness level (0-255)
+                    minimum: 0
+                    maximum: 255
+                    example: 191
+                  max_brightness:
+                    type: integer
+                    description: Maximum possible brightness value
+                    example: 255
+    put:
+      summary: Set LED brightness
+      description: Update the LED brightness level
+      tags:
+        - LED
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - brightness
+              properties:
+                brightness:
+                  type: integer
+                  description: Brightness level to set (0-255)
+                  minimum: 0
+                  maximum: 255
+                  example: 128
+      responses:
+        '200':
+          description: Brightness updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Brightness updated successfully"
+                  brightness:
+                    type: integer
+                    description: Current brightness level after update
+                    example: 128
+                  max_brightness:
+                    type: integer
+                    description: Maximum possible brightness value
+                    example: 255
+        '400':
+          description: Invalid brightness value or missing parameter
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Brightness value out of range"
+                  min:
+                    type: integer
+                    example: 0
+                  max:
+                    type: integer
+                    example: 255
+                  provided:
+                    type: integer
+                    example: 300
+
 tags:
   - name: System
     description: System management and information endpoints
@@ -927,6 +1011,8 @@ tags:
     description: Custom MQTT broker configuration and status endpoints
   - name: InfluxDB
     description: InfluxDB time-series database configuration and status endpoints
+  - name: LED
+    description: LED brightness control and status endpoints
 
 components:
   schemas:

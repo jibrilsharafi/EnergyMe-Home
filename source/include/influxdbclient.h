@@ -59,8 +59,6 @@
 #define LINE_PROTOCOL_BUFFER_SIZE 256
 #define PAYLOAD_BUFFER_SIZE 512
 
-extern Ade7953 ade7953;
-
 struct InfluxDbConfiguration {
     bool enabled;
     char server[SERVER_NAME_BUFFER_SIZE];

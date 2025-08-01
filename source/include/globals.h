@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Arduino.h>
 #include <AdvancedLogger.h>
 
+#include "ade7953.h"
 #include "constants.h"
 #include "structs.h"
 

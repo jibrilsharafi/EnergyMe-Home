@@ -32,8 +32,6 @@ Copyright (C) 2025 Jibril Sharafi
 static const char *TAG = "main";
 
 Statistics statistics;
-
-// Global device ID - defined here, declared as extern in constants.h
 char DEVICE_ID[DEVICE_ID_BUFFER_SIZE];
 
 // Classes instances
@@ -43,15 +41,6 @@ AdvancedLogger logger(
     LOG_PATH,
     LOG_CONFIG_PATH,
     LOG_TIMESTAMP_FORMAT);
-
-Ade7953 ade7953(
-    ADE7953_SS_PIN,
-    ADE7953_SCK_PIN,
-    ADE7953_MISO_PIN,
-    ADE7953_MOSI_PIN,
-    ADE7953_RESET_PIN,
-    ADE7953_INTERRUPT_PIN,
-    logger);
 
 void setup()
 {
@@ -121,14 +110,8 @@ void setup()
   logger.info("Button handler setup done", TAG);
 
   logger.debug("Setting up ADE7953...", TAG);
-  if (ade7953.begin())
-  {
-    logger.info("ADE7953 setup done", TAG);
-  }
-  else
-  {
-    logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG);
-  }
+  if (Ade7953::begin()) { logger.info("ADE7953 setup done", TAG); }
+  else { logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG); }
 
   Led::setBlue(Led::PRIO_NORMAL);
   logger.debug("Setting up WiFi...", TAG);
@@ -192,6 +175,4 @@ void loop()
   // Oh yes, it took a long time but finally we have a loop in which "nothing" happens
   // This is because all of the tasks are running in their own FreeRTOS tasks
   // Much better than the old way of having everything in the main loop blocking
-
-  ade7953.loop();
 }

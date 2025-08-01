@@ -49,6 +49,7 @@ namespace CustomServer
     static void _serveCustomMqttEndpoints();
     static void _serveInfluxDbEndpoints();
     static void _serveCrashEndpoints();
+    static void _serveLedEndpoints();
     
     // Authentication endpoints
     static void _serveAuthStatusEndpoint();
@@ -281,6 +282,7 @@ namespace CustomServer
         _serveCustomMqttEndpoints();
         _serveInfluxDbEndpoints();
         _serveCrashEndpoints();
+        _serveLedEndpoints();
     }
 
     // === HEALTH ENDPOINTS ===
@@ -1264,6 +1266,61 @@ namespace CustomServer
             } else {
                 _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No core dump available to clear");
             }
+        });
+    }
+
+    // === LED ENDPOINTS ===
+    static void _serveLedEndpoints()
+    {
+        // Get LED brightness
+        server.on("/api/v1/led/brightness", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            doc["brightness"] = Led::getBrightness();
+            doc["max_brightness"] = LED_MAX_BRIGHTNESS;
+            _sendJsonResponse(request, doc);
+        });
+
+        // Set LED brightness
+        server.on("/api/v1/led/brightness", HTTP_PUT, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "PUT")) { return; }
+            
+            if (!_acquireApiMutex(request)) { return; }
+            
+            // Check if brightness parameter is provided
+            if (!request->hasParam("brightness", true)) {
+                _releaseApiMutex();
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing brightness parameter");
+                return;
+            }
+            
+            String brightnessStr = request->getParam("brightness", true)->value();
+            int brightness = brightnessStr.toInt();
+            
+            // Validate brightness range
+            if (brightness < 0 || brightness > LED_MAX_BRIGHTNESS) {
+                _releaseApiMutex();
+                JsonDocument doc;
+                doc["message"] = "Brightness value out of range";
+                doc["min"] = 0;
+                doc["max"] = LED_MAX_BRIGHTNESS;
+                doc["provided"] = brightness;
+                _sendJsonResponse(request, doc, HTTP_CODE_BAD_REQUEST);
+                return;
+            }
+            
+            // Set the brightness
+            Led::setBrightness(brightness);
+            
+            _releaseApiMutex();
+            
+            // Return success response with new brightness value
+            JsonDocument doc;
+            doc["message"] = "Brightness updated successfully";
+            doc["brightness"] = Led::getBrightness();
+            doc["max_brightness"] = LED_MAX_BRIGHTNESS;
+            _sendJsonResponse(request, doc);
         });
     }
 }

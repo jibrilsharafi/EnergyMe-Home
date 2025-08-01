@@ -13,8 +13,6 @@
 #define MODBUS_TCP_MAX_CLIENTS 3 // The maximum number of clients that can connect to the Modbus TCP server
 #define MODBUS_TCP_TIMEOUT (10 * 1000) // The timeout for the Modbus TCP server
 
-extern Ade7953 ade7953;
-
 namespace ModbusTcp
 {
     void begin();

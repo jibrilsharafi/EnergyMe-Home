@@ -74,8 +74,8 @@ namespace Led {
 
     void resetToDefaults();
 
-    void setBrightness(int brightness);
-    int getBrightness();
+    void setBrightness(unsigned int brightness);
+    unsigned int getBrightness();
 
     // Pattern control functions
     void setPattern(LedPattern pattern, Color color, LedPriority priority = 1, unsigned long long durationMs = 0);

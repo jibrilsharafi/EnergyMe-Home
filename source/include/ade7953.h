@@ -10,7 +10,6 @@
 #include "freertos/semphr.h"
 
 #include "ade7953registers.h"
-#include "led.h"
 #include "multiplexer.h"
 #include "customtime.h"
 #include "mqtt.h"
@@ -140,6 +139,13 @@
 #define PREF_KEY_CHANNEL_PHASE_FMT "ch%d_phase"
 #define PREF_KEY_CHANNEL_CALIB_LABEL_FMT "ch%d_calibLabel"
 
+#define BIT_8 8
+#define BIT_16 16
+#define BIT_24 24
+#define BIT_32 32
+
+#define INVALID_CHANNEL -1 // Invalid channel identifier, used to indicate no active channel
+
 // Enumeration for different types of ADE7953 interrupts
 enum class Ade7953InterruptType {
   NONE,           // No interrupt or unknown
@@ -150,40 +156,18 @@ enum class Ade7953InterruptType {
 };
 
 
-enum Phase : int { // TODO: make all enum class
+enum Phase : unsigned int { // Not a class so that we can directly use it in JSON serialization
     PHASE_1 = 1,
     PHASE_2 = 2,
     PHASE_3 = 3,
 };
 
-enum Channel : int {
-    CHANNEL_A,
-    CHANNEL_B,
+enum class Ade7953Channel{
+    A,
+    B,
 };
 
-enum ChannelNumber : int {
-  CHANNEL_INVALID = -1,
-  CHANNEL_0 = 0,
-  CHANNEL_1 = 1,
-  CHANNEL_2 = 2,
-  CHANNEL_3 = 3,
-  CHANNEL_4 = 4,
-  CHANNEL_5 = 5,
-  CHANNEL_6 = 6,
-  CHANNEL_7 = 7,
-  CHANNEL_8 = 8,
-  CHANNEL_9 = 9,
-  CHANNEL_10 = 10,
-  CHANNEL_11 = 11,
-  CHANNEL_12 = 12,
-  CHANNEL_13 = 13,
-  CHANNEL_14 = 14,
-  CHANNEL_15 = 15,
-  CHANNEL_16 = 16,
-  CHANNEL_COUNT = 17
-};
-
-enum Measurement : int {
+enum class MeasurementType{
     VOLTAGE,
     CURRENT,
     ACTIVE_POWER,
@@ -271,24 +255,13 @@ struct ChannelState { // TODO: what the heck was i thinking with this?
     unsigned long consecutiveZeroCount = 0;
 };
 
-class Ade7953
+namespace Ade7953
 {
-public:
-    Ade7953(
-        int ssPin,
-        int sckPin,
-        int misoPin,
-        int mosiPin,
-        int resetPin,
-        int interruptPin,        
-        AdvancedLogger &logger
-    );
-
     bool begin();
     void cleanup();
     void loop();
         
-    unsigned int getSampleTime() const { return _sampleTime; }
+    unsigned int getSampleTime();
 
     long readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired = true);
     void writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired = true);
@@ -298,7 +271,7 @@ public:
     float getAggregatedApparentPower(bool includeChannel0 = true);
     float getAggregatedPowerFactor(bool includeChannel0 = true);
 
-    float getGridFrequency() const { return _gridFrequency; }
+    float getGridFrequency();
     
     void resetEnergyValues();
     bool setEnergyValues(JsonDocument &jsonDocument);
@@ -314,7 +287,7 @@ public:
     bool setChannelData(JsonDocument &jsonDocument);
     void channelDataToJson(JsonDocument &jsonDocument);
     
-    void singleMeterValuesToJson(JsonDocument &jsonDocument, ChannelNumber channel);
+    void singleMeterValuesToJson(JsonDocument &jsonDocument, unsigned int channel);
     void fullMeterValuesToJson(JsonDocument &jsonDocument);
 
     void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
@@ -324,130 +297,4 @@ public:
     
     void pauseMeterReadingTask();
     void resumeMeterReadingTask();
-    
-    void takePayloadMeterMutex(TickType_t waitTicks = portMAX_DELAY) {
-        if (_payloadMeterMutex != NULL) xSemaphoreTake(_payloadMeterMutex, waitTicks); 
-    }
-    void givePayloadMeterMutex() {
-        if (_payloadMeterMutex != NULL) xSemaphoreGive(_payloadMeterMutex);
-    }
-
-private:
-
-    void _initializeSpiMutexes();
-    Ade7953InterruptType _handleInterrupt();
-    void _reinitializeAfterInterrupt();
-    static void IRAM_ATTR _isrHandler();
-    static void _meterReadingTask(void* parameter);
-    void _stopMeterReadingTask();
-    void _attachInterruptHandler();
-    void _detachInterruptHandler();
-    
-    static void _irqstataBitName(int bit, char *buffer, size_t bufferSize);
-    
-    void _setHardwarePins();
-    void _setOptimumSettings();
-    
-    void _reset();
-    bool _verifyCommunication();
-    
-    void _setDefaultParameters();
-    
-    void _setupInterrupts();
-    void _startMeterReadingTask();
-    
-    void _setConfigurationFromSpiffs();
-    void _applyConfiguration(JsonDocument &jsonDocument);
-    bool _validateConfigurationJson(JsonDocument &jsonDocument);
-    
-    void _setCalibrationValuesFromSpiffs();
-    void _jsonToCalibrationValues(JsonObject &jsonObject, CalibrationValues &calibrationValues);
-    bool _validateCalibrationValuesJson(JsonDocument &jsonDocument);
-
-    bool _saveChannelDataToSpiffs();
-    void _setChannelDataFromSpiffs();
-    void _updateChannelData();
-    bool _validateChannelDataJson(JsonDocument &jsonDocument);
-
-    Phase _getLaggingPhase(Phase phase);
-    Phase _getLeadingPhase(Phase phase);
-    
-    bool _readMeterValues(int channel, unsigned long long linecycUnixTime);
-    
-    ChannelNumber _findNextActiveChannel(ChannelNumber currentChannel);
-
-    void _updateSampleTime();
-    
-    void _setEnergyFromSpiffs();
-    void _saveEnergyToSpiffs();
-    void _saveDailyEnergyToSpiffs();
-    
-    bool _verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool signedData, bool wasWrite);
-    
-    long _readApparentPowerInstantaneous(int channel);
-    long _readActivePowerInstantaneous(int channel);
-    long _readReactivePowerInstantaneous(int channel);
-    long _readCurrentInstantaneous(int channel);
-    long _readVoltageInstantaneous();
-    long _readCurrentRms(int channel);
-    long _readVoltageRms();
-    long _readActiveEnergy(int channel);
-    long _readReactiveEnergy(int channel);
-    long _readApparentEnergy(int channel);
-    long _readPowerFactor(int channel);
-    long _readAngle(int channel);
-    long _readPeriod();
-    
-    bool _validateValue(float newValue, float min, float max);
-    bool _validateVoltage(float newValue);
-    bool _validateCurrent(float newValue);
-    bool _validatePower(float newValue);
-    bool _validatePowerFactor(float newValue);
-    bool _validateGridFrequency(float newValue);
-
-    void _setLinecyc(unsigned int linecyc);
-    void _setPgaGain(long pgaGain, int channel, int measurementType);
-    void _setPhaseCalibration(long phaseCalibration, int channel);
-    void _setGain(long gain, int channel, int measurementType);
-    void _setOffset(long offset, int channel, int measurementType);
-
-    void _recordFailure();
-    void _checkForTooManyFailures();
-
-    int _ssPin;
-    int _sckPin;
-    int _misoPin;
-    int _mosiPin;
-    int _resetPin;
-    int _interruptPin;
-
-    unsigned int _sampleTime; // in milliseconds, time between linecycles readings
-    
-    ChannelNumber _currentChannel = CHANNEL_0;
-
-    AdvancedLogger &_logger;
-    
-    ChannelState _channelStates[CHANNEL_COUNT];
-
-    float _gridFrequency = 50.0f;
-
-    int _failureCount = 0;
-    unsigned long long _firstFailureTime = 0;
-    unsigned long long _lastMillisSaveEnergy = 0;
-    
-    static Ade7953 *_instance;
-
-    SemaphoreHandle_t _spiMutex = NULL;
-    SemaphoreHandle_t _spiOperationMutex = NULL;
-    SemaphoreHandle_t _payloadMeterMutex = NULL;
-    
-    TaskHandle_t _meterReadingTaskHandle = NULL;
-    SemaphoreHandle_t _ade7953InterruptSemaphore = NULL;
-    volatile unsigned long long _lastInterruptTime = 0;
-
-    void _checkInterruptTiming();
-    bool _processChannelReading(int channel, unsigned long long linecycUnix);
-    void _addMeterDataToPayload(int channel, unsigned long long linecycUnix);
-    void _processCycendInterrupt(unsigned long long linecycUnix);
-    void _handleCrcChangeInterrupt();
 };

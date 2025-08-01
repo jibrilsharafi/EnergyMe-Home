@@ -98,26 +98,26 @@ namespace ModbusTcp
 
             switch (offset)
             {
-                case 0: return _getFloatBits(ade7953.meterValues[channel].current, true);
-                case 1: return _getFloatBits(ade7953.meterValues[channel].current, false);
-                case 2: return _getFloatBits(ade7953.meterValues[channel].activePower, true);
-                case 3: return _getFloatBits(ade7953.meterValues[channel].activePower, false);
-                case 4: return _getFloatBits(ade7953.meterValues[channel].reactivePower, true);
-                case 5: return _getFloatBits(ade7953.meterValues[channel].reactivePower, false);
-                case 6: return _getFloatBits(ade7953.meterValues[channel].apparentPower, true);
-                case 7: return _getFloatBits(ade7953.meterValues[channel].apparentPower, false);
-                case 8: return _getFloatBits(ade7953.meterValues[channel].powerFactor, true);
-                case 9: return _getFloatBits(ade7953.meterValues[channel].powerFactor, false);
-                case 10: return _getFloatBits(ade7953.meterValues[channel].activeEnergyImported, true);
-                case 11: return _getFloatBits(ade7953.meterValues[channel].activeEnergyImported, false);
-                case 12: return _getFloatBits(ade7953.meterValues[channel].activeEnergyExported, true);
-                case 13: return _getFloatBits(ade7953.meterValues[channel].activeEnergyExported, false);
-                case 14: return _getFloatBits(ade7953.meterValues[channel].reactiveEnergyImported, true);
-                case 15: return _getFloatBits(ade7953.meterValues[channel].reactiveEnergyImported, false);
-                case 16: return _getFloatBits(ade7953.meterValues[channel].reactiveEnergyExported, true);
-                case 17: return _getFloatBits(ade7953.meterValues[channel].reactiveEnergyExported, false);
-                case 18: return _getFloatBits(ade7953.meterValues[channel].apparentEnergy, true);
-                case 19: return _getFloatBits(ade7953.meterValues[channel].apparentEnergy, false);
+                case 0: return _getFloatBits(Ade7953::meterValues[channel].current, true);
+                case 1: return _getFloatBits(Ade7953::meterValues[channel].current, false);
+                case 2: return _getFloatBits(Ade7953::meterValues[channel].activePower, true);
+                case 3: return _getFloatBits(Ade7953::meterValues[channel].activePower, false);
+                case 4: return _getFloatBits(Ade7953::meterValues[channel].reactivePower, true);
+                case 5: return _getFloatBits(Ade7953::meterValues[channel].reactivePower, false);
+                case 6: return _getFloatBits(Ade7953::meterValues[channel].apparentPower, true);
+                case 7: return _getFloatBits(Ade7953::meterValues[channel].apparentPower, false);
+                case 8: return _getFloatBits(Ade7953::meterValues[channel].powerFactor, true);
+                case 9: return _getFloatBits(Ade7953::meterValues[channel].powerFactor, false);
+                case 10: return _getFloatBits(Ade7953::meterValues[channel].activeEnergyImported, true);
+                case 11: return _getFloatBits(Ade7953::meterValues[channel].activeEnergyImported, false);
+                case 12: return _getFloatBits(Ade7953::meterValues[channel].activeEnergyExported, true);
+                case 13: return _getFloatBits(Ade7953::meterValues[channel].activeEnergyExported, false);
+                case 14: return _getFloatBits(Ade7953::meterValues[channel].reactiveEnergyImported, true);
+                case 15: return _getFloatBits(Ade7953::meterValues[channel].reactiveEnergyImported, false);
+                case 16: return _getFloatBits(Ade7953::meterValues[channel].reactiveEnergyExported, true);
+                case 17: return _getFloatBits(Ade7953::meterValues[channel].reactiveEnergyExported, false);
+                case 18: return _getFloatBits(Ade7953::meterValues[channel].apparentEnergy, true);
+                case 19: return _getFloatBits(Ade7953::meterValues[channel].apparentEnergy, false);
             }
         }
 
@@ -130,33 +130,33 @@ namespace ModbusTcp
             case 3: return millis64() & 0xFFFF;  
             
             // Voltage
-            case 100: return _getFloatBits(ade7953.meterValues[CHANNEL_0].voltage, true);
-            case 101: return _getFloatBits(ade7953.meterValues[CHANNEL_0].voltage, false);
+            case 100: return _getFloatBits(Ade7953::meterValues[0].voltage, true);
+            case 101: return _getFloatBits(Ade7953::meterValues[0].voltage, false);
 
             // Grid frequency
-            case 102: return _getFloatBits(ade7953.getGridFrequency(), true);
-            case 103: return _getFloatBits(ade7953.getGridFrequency(), false);
+            case 102: return _getFloatBits(Ade7953::getGridFrequency(), true);
+            case 103: return _getFloatBits(Ade7953::getGridFrequency(), false);
 
             // Aggregated values
             // With channel 0
-            case 200: return _getFloatBits(ade7953.getAggregatedActivePower(), true);
-            case 201: return _getFloatBits(ade7953.getAggregatedActivePower(), false);
-            case 202: return _getFloatBits(ade7953.getAggregatedReactivePower(), true);
-            case 203: return _getFloatBits(ade7953.getAggregatedReactivePower(), false);
-            case 204: return _getFloatBits(ade7953.getAggregatedApparentPower(), true);
-            case 205: return _getFloatBits(ade7953.getAggregatedApparentPower(), false);
-            case 206: return _getFloatBits(ade7953.getAggregatedPowerFactor(), true);
-            case 207: return _getFloatBits(ade7953.getAggregatedPowerFactor(), false);
+            case 200: return _getFloatBits(Ade7953::getAggregatedActivePower(), true);
+            case 201: return _getFloatBits(Ade7953::getAggregatedActivePower(), false);
+            case 202: return _getFloatBits(Ade7953::getAggregatedReactivePower(), true);
+            case 203: return _getFloatBits(Ade7953::getAggregatedReactivePower(), false);
+            case 204: return _getFloatBits(Ade7953::getAggregatedApparentPower(), true);
+            case 205: return _getFloatBits(Ade7953::getAggregatedApparentPower(), false);
+            case 206: return _getFloatBits(Ade7953::getAggregatedPowerFactor(), true);
+            case 207: return _getFloatBits(Ade7953::getAggregatedPowerFactor(), false);
 
             // Without channel 0
-            case 210: return _getFloatBits(ade7953.getAggregatedActivePower(false), true);
-            case 211: return _getFloatBits(ade7953.getAggregatedActivePower(false), false);
-            case 212: return _getFloatBits(ade7953.getAggregatedReactivePower(false), true);
-            case 213: return _getFloatBits(ade7953.getAggregatedReactivePower(false), false);
-            case 214: return _getFloatBits(ade7953.getAggregatedApparentPower(false), true);
-            case 215: return _getFloatBits(ade7953.getAggregatedApparentPower(false), false);
-            case 216: return _getFloatBits(ade7953.getAggregatedPowerFactor(false), true);
-            case 217: return _getFloatBits(ade7953.getAggregatedPowerFactor(false), false);
+            case 210: return _getFloatBits(Ade7953::getAggregatedActivePower(false), true);
+            case 211: return _getFloatBits(Ade7953::getAggregatedActivePower(false), false);
+            case 212: return _getFloatBits(Ade7953::getAggregatedReactivePower(false), true);
+            case 213: return _getFloatBits(Ade7953::getAggregatedReactivePower(false), false);
+            case 214: return _getFloatBits(Ade7953::getAggregatedApparentPower(false), true);
+            case 215: return _getFloatBits(Ade7953::getAggregatedApparentPower(false), false);
+            case 216: return _getFloatBits(Ade7953::getAggregatedPowerFactor(false), true);
+            case 217: return _getFloatBits(Ade7953::getAggregatedPowerFactor(false), false);
 
             // Default case to handle unexpected addresses
             default: return (unsigned int)0;
