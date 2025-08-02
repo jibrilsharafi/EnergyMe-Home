@@ -32,7 +32,9 @@ namespace CrashMonitor {
 
     bool isLastResetDueToCrash();
     uint32_t getCrashCount();
+    uint32_t getConsecutiveCrashCount();
     uint32_t getResetCount();
+    uint32_t getConsecutiveResetCount();
     const char* getResetReasonString(esp_reset_reason_t reason);
 
     void clearConsecutiveCrashCount(); // Useful for avoiding crash loops (e.g. during factory reset)

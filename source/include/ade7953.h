@@ -174,8 +174,8 @@
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_POWER_FACTOR 0.05f // Measuring such low power factors is virtually impossible with such CTs
 #define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 100 // Threshold to transition to a legitimate zero state for channel 0
-#define ADE7953_MIN_LINECYC 10UL // The minimum line cycle settable for the ADE7953. Must be unsigned
-#define ADE7953_MAX_LINECYC 1000UL // The maximum line cycle settable for the ADE7953. Must be unsigned
+#define ADE7953_MIN_LINECYC 10UL // Below this the readings are unstable (200 ms)
+#define ADE7953_MAX_LINECYC 1000UL // Above this too much time passes (20 seconds)
 
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
 
@@ -330,7 +330,6 @@ struct ChannelData
 // ADE7953 Configuration structure
 struct Ade7953Configuration
 {
-  uint32_t sampleTime;
   int32_t aVGain;
   int32_t aIGain;
   int32_t bIGain;
@@ -352,8 +351,7 @@ struct Ade7953Configuration
   int32_t phCalB;
 
   Ade7953Configuration()
-    : sampleTime(DEFAULT_CONFIG_SAMPLE_TIME),
-      aVGain(DEFAULT_CONFIG_AV_GAIN), aIGain(DEFAULT_CONFIG_AI_GAIN), bIGain(DEFAULT_CONFIG_BI_GAIN),
+    : aVGain(DEFAULT_CONFIG_AV_GAIN), aIGain(DEFAULT_CONFIG_AI_GAIN), bIGain(DEFAULT_CONFIG_BI_GAIN),
       aIRmsOs(DEFAULT_CONFIG_AIRMS_OS), bIRmsOs(DEFAULT_CONFIG_BIRMS_OS),
       aWGain(DEFAULT_CONFIG_AW_GAIN), bWGain(DEFAULT_CONFIG_BW_GAIN),
       aWattOs(DEFAULT_CONFIG_AWATT_OS), bWattOs(DEFAULT_CONFIG_BWATT_OS),
@@ -397,14 +395,15 @@ namespace Ade7953
 
     // System parameters
     uint32_t getSampleTime();
+    bool setSampleTime(uint32_t sampleTime);
+    
     float getGridFrequency();
 
     // Configuration management
-    void setDefaultConfiguration();
-    bool setConfiguration(JsonDocument &jsonDocument);
-    bool setSingleConfigurationValue(const char* key, int32_t value);
     void getConfiguration(Ade7953Configuration &config);
-    void configurationToJson(JsonDocument &jsonDocument);
+    bool setConfiguration(const Ade7953Configuration &config);
+    bool configurationToJson(const Ade7953Configuration &config, JsonDocument &jsonDocument);
+    bool configurationFromJson(JsonDocument &jsonDocument, Ade7953Configuration &config, bool partial = false);
 
     // Calibration management
     void setDefaultCalibrationValues();

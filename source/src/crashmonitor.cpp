@@ -20,6 +20,7 @@ namespace CrashMonitor
     RTC_NOINIT_ATTR uint32_t _crashCount = 0; // Crash counter in RTC memory
     RTC_NOINIT_ATTR uint32_t _consecutiveCrashCount = 0; // Consecutive crash counter in RTC memory
     RTC_NOINIT_ATTR uint32_t _consecutiveResetCount = 0; // Consecutive reset counter in RTC memory
+    RTC_NOINIT_ATTR bool _rollbackTried = false; // Flag to indicate if rollback was attempted
 
     bool isLastResetDueToCrash() {
         // Only case in which it is not crash is when the reset reason is not
@@ -45,6 +46,7 @@ namespace CrashMonitor
             _crashCount = 0;
             _consecutiveCrashCount = 0;
             _consecutiveResetCount = 0;
+            _rollbackTried = false;
         }
 
         // If it was a crash, increment counter
@@ -85,13 +87,10 @@ namespace CrashMonitor
         vTaskDelete(NULL);
     }
 
-    uint32_t getCrashCount() {
-        return _crashCount;
-    }
-
-    uint32_t getResetCount() {
-        return _resetCount;
-    }
+    uint32_t getCrashCount() {return _crashCount;}
+    uint32_t getConsecutiveCrashCount() {return _consecutiveCrashCount;}
+    uint32_t getResetCount() {return _resetCount;}
+    uint32_t getConsecutiveResetCount() {return _consecutiveResetCount;}
 
     const char* getResetReasonString(esp_reset_reason_t reason) {
         switch (reason) {
@@ -114,12 +113,14 @@ namespace CrashMonitor
         if (_consecutiveCrashCount >= MAX_CRASH_COUNT || _consecutiveResetCount >= MAX_RESET_COUNT) {
             logger.fatal("The consecutive crash count limit (%d) or the reset count limit (%d) has been reached", TAG, MAX_CRASH_COUNT, MAX_RESET_COUNT);
 
-            if (Update.canRollBack()) {
+            // If we can rollback, but most importantly, if we have not tried it yet (to avoid infinite rollback loops - IT CAN HAPPEN!)
+            if (Update.canRollBack() && !_rollbackTried) {
                 logger.fatal("Rolling back to previous firmware version", TAG);
                 if (Update.rollBack()) {
                     // Reset both counters before restart since we're trying a different firmware
                     _consecutiveCrashCount = 0;
                     _consecutiveResetCount = 0;
+                    _rollbackTried = true; // Indicate rollback was attempted
 
                     // Immediate reset to avoid any further issues
                     logger.info("Rollback successful, restarting system", TAG);
@@ -147,12 +148,6 @@ namespace CrashMonitor
         
         // Log only essential crash data for analysis
         _logCompleteCrashData();
-        
-        // Skip verbose output - core dump remains available in flash for future transmission
-        // Raw core dump can be accessed via esp_core_dump_image_get() when needed
-        
-        // Clear the core dump after reading (comment out to keep for transmission)
-        // esp_core_dump_image_erase();
     }
 
     bool hasCoreDump() {
@@ -461,11 +456,10 @@ namespace CrashMonitor
                 // First call to get required buffer size
                 int32_t ret = mbedtls_base64_encode(NULL, 0, &base64Length, buffer, bytesRead);
                 if (ret == MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) {
-                    char* base64Buffer = (char*)malloc(base64Length + 1); // +1 for null terminator
+                    uint8_t* base64Buffer = (uint8_t*)malloc(base64Length + 1); // +1 for null terminator
                     if (base64Buffer) {
                         size_t actualLength = 0;
-                        ret = mbedtls_base64_encode((uint8_t*)base64Buffer, base64Length, 
-                                                 &actualLength, buffer, bytesRead);
+                        ret = mbedtls_base64_encode(base64Buffer, base64Length, &actualLength, buffer, bytesRead);
                         if (ret == 0) {
                             base64Buffer[actualLength] = '\0'; // Null terminate
                             doc["data"] = base64Buffer;

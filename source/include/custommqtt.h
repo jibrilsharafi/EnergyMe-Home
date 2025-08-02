@@ -87,13 +87,10 @@ namespace CustomMqtt
     void stop();
 
     // Configuration management
-    bool setConfiguration(CustomMqttConfiguration &config);
-    bool setConfigurationFromJson(JsonDocument &jsonDocument);
     void getConfiguration(CustomMqttConfiguration &config);
-    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
-
-    // JSON serialization helpers
+    bool setConfiguration(CustomMqttConfiguration &config);
     bool configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument);
-    bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config);
-    bool configurationFromJsonPartial(JsonDocument &jsonDocument, CustomMqttConfiguration &config);
+    bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config, bool partial = false);
+    
+    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
 }

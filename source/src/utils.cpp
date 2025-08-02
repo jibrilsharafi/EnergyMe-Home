@@ -45,7 +45,9 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     
     // // Crash and reset monitoring
     info.crashCount = CrashMonitor::getCrashCount();
+    info.consecutiveCrashCount = CrashMonitor::getConsecutiveCrashCount();
     info.resetCount = CrashMonitor::getResetCount();
+    info.consecutiveResetCount = CrashMonitor::getConsecutiveResetCount();
     info.lastResetReason = (uint32_t)esp_reset_reason();
     snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s", CrashMonitor::getResetReasonString(esp_reset_reason()));
     info.lastResetWasCrash = CrashMonitor::isLastResetDueToCrash();
@@ -164,7 +166,9 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
 
     // Crash monitoring
     doc["monitoring"]["crashCount"] = info.crashCount;
+    doc["monitoring"]["consecutiveCrashCount"] = info.consecutiveCrashCount;
     doc["monitoring"]["resetCount"] = info.resetCount;
+    doc["monitoring"]["consecutiveResetCount"] = info.consecutiveResetCount;
     doc["monitoring"]["lastResetReason"] = info.lastResetReason;
     doc["monitoring"]["lastResetReasonString"] = info.lastResetReasonString;
     doc["monitoring"]["lastResetWasCrash"] = info.lastResetWasCrash;
@@ -472,13 +476,13 @@ static void _maintenanceTask(void* parameter) {
 
         // Check heap memory
         if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) {
-            logger.fatal("Heap memory has degraded below safe minimum (%d bytes): %d bytes", TAG, MINIMUM_FREE_HEAP_SIZE, ESP.getFreeHeap());
+            logger.fatal("Heap memory has degraded below safe minimum (%d bytes): %lu bytes", TAG, MINIMUM_FREE_HEAP_SIZE, ESP.getFreeHeap());
             setRestartSystem(TAG, "Heap memory has degraded below safe minimum");
         }
 
         // Check PSRAM memory
         if (ESP.getFreePsram() < MINIMUM_FREE_PSRAM_SIZE) {
-            logger.fatal("PSRAM memory has degraded below safe minimum (%d bytes): %d bytes", TAG, MINIMUM_FREE_PSRAM_SIZE, ESP.getFreePsram());
+            logger.fatal("PSRAM memory has degraded below safe minimum (%d bytes): %lu bytes", TAG, MINIMUM_FREE_PSRAM_SIZE, ESP.getFreePsram());
             setRestartSystem(TAG, "PSRAM memory has degraded below safe minimum");
         }
 
@@ -650,7 +654,7 @@ void printDeviceStatusStatic()
     logger.debug("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", TAG, info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
     logger.debug("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
     logger.debug("Device ID: %s", TAG, info.deviceId);
-    logger.debug("Monitoring: %lu crashes, %lu resets | Last reset: %s", TAG, info.crashCount, info.resetCount, info.lastResetReasonString);
+    logger.debug("Monitoring: %lu crashes (%lu consecutive), %lu resets (%lu consecutive) | Last reset: %s", TAG, info.crashCount, info.consecutiveCrashCount, info.resetCount, info.consecutiveResetCount, info.lastResetReasonString);
 
     logger.debug("------------------------", TAG);
 }
@@ -687,7 +691,7 @@ void printDeviceStatusDynamic()
     
     // WiFi information
     if (info.wifiConnected) {
-        logger.debug("WiFi: Connected to '%s' (BSSID: %s) | RSSI %d dBm | MAC %s", TAG, info.wifiSsid, info.wifiBssid, info.wifiRssi, info.wifiMacAddress);
+        logger.debug("WiFi: Connected to '%s' (BSSID: %s) | RSSI %ld dBm | MAC %s", TAG, info.wifiSsid, info.wifiBssid, info.wifiRssi, info.wifiMacAddress);
         logger.debug("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", TAG, info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp, info.wifiSubnetMask);
     } else {
         logger.debug("WiFi: Disconnected | MAC %s", TAG, info.wifiMacAddress);
@@ -917,7 +921,7 @@ bool isLatestFirmwareInstalled() {
     }
 
     int32_t latestMajor, latestMinor, latestPatch;
-    sscanf(latestFirmwareVersion, "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
+    sscanf(latestFirmwareVersion, "%ld.%ld.%ld", &latestMajor, &latestMinor, &latestPatch);
 
     int32_t currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
     int32_t currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);

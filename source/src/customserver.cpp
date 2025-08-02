@@ -7,6 +7,7 @@ namespace CustomServer
     static AsyncWebServer server(WEBSERVER_PORT);
     static AsyncAuthenticationMiddleware digestAuth;
     static AsyncRateLimitMiddleware rateLimit;
+    //TODO: custom middleware for statistics
 
     // Health check task variables
     static TaskHandle_t _healthCheckTaskHandle = NULL;
@@ -409,7 +410,7 @@ namespace CustomServer
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request)
     {
         // Handle the completion of the upload
-        if (request->getResponse()) { return; }  // Response already set due to error
+        if (request->getResponse()) return;  // Response already set due to error
         
         if (Update.hasError()) {
             JsonDocument doc;
@@ -673,7 +674,7 @@ namespace CustomServer
         // System restart
         server.on("/api/v1/system/restart", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
-            if (!_validateRequest(request, "POST")) { return; }
+            if (!_validateRequest(request, "POST")) return;
 
             _sendSuccessResponse(request, "System restart initiated");
             setRestartSystem(TAG, "System restart requested via API"); });
@@ -681,7 +682,7 @@ namespace CustomServer
         // Factory reset
         server.on("/api/v1/system/factory-reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
-            if (!_validateRequest(request, "POST")) { return; }
+            if (!_validateRequest(request, "POST")) return;
 
             _sendSuccessResponse(request, "Factory reset initiated");
             setRestartSystem(TAG, "Factory reset requested via API", true); });
@@ -700,7 +701,7 @@ namespace CustomServer
         // WiFi reset
         server.on("/api/v1/network/wifi/reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
-            if (!_validateRequest(request, "POST")) { return; }
+            if (!_validateRequest(request, "POST")) return;
 
             _sendSuccessResponse(request, "WiFi credentials reset. Device will restart and enter configuration mode.");
             CustomWifi::resetWifi(); });
@@ -722,7 +723,7 @@ namespace CustomServer
             return false;
         }
 
-        logger.debug("API mutex acquired", TAG);
+        logger.debug("API mutex acquired for request: %s", TAG, request->url().c_str());
         return true;
     }
 
@@ -750,7 +751,7 @@ namespace CustomServer
         _setLogLevelHandler->setMaxContentLength(HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL);
         _setLogLevelHandler->onRequest([](AsyncWebServerRequest *request, JsonVariant &json) {
                 // Validate HTTP method
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL))  { return; }
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL)) return;
 
                 JsonDocument doc;
                 doc.set(json);
@@ -1078,7 +1079,6 @@ namespace CustomServer
     // === CUSTOM MQTT ENDPOINTS ===
     static void _serveCustomMqttEndpoints()
     {
-        // Get custom MQTT configuration
         server.on("/api/v1/mqtt/config", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             CustomMqttConfiguration config;
@@ -1086,32 +1086,38 @@ namespace CustomServer
             
             JsonDocument doc;
             CustomMqtt::configurationToJson(config, doc);
+            
             _sendJsonResponse(request, doc);
         });
 
-        // Set custom MQTT configuration
         static AsyncCallbackJsonWebHandler *setCustomMqttHandler = new AsyncCallbackJsonWebHandler(
             "/api/v1/mqtt/config",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT)) { return; }
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT)) return;
 
                 JsonDocument doc;
                 doc.set(json);
 
-                if (CustomMqtt::setConfigurationFromJson(doc))
+                CustomMqttConfiguration config;
+                if (!CustomMqtt::configurationFromJson(doc, config, true))
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid custom MQTT configuration");
+                    return;
+                }
+
+                if (CustomMqtt::setConfiguration(config))
                 {
                     logger.info("Custom MQTT configuration updated via API", TAG);
                     _sendSuccessResponse(request, "Custom MQTT configuration updated successfully");
                 }
                 else
                 {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid custom MQTT configuration");
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to set custom MQTT configuration");
                 }
             });
         server.addHandler(setCustomMqttHandler);
 
-        // Get custom MQTT status
         server.on("/api/v1/mqtt/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             
@@ -1134,11 +1140,9 @@ namespace CustomServer
         // Get InfluxDB configuration
         server.on("/api/v1/influxdb/config", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            InfluxDbConfiguration config;
-            InfluxDbClient::getConfiguration(config);
-            
             JsonDocument doc;
-            InfluxDbClient::configurationToJson(config, doc);
+            InfluxDbClient::getConfigurationAsJson(doc);
+
             _sendJsonResponse(request, doc);
         });
 
@@ -1147,12 +1151,12 @@ namespace CustomServer
             "/api/v1/influxdb/config",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_INFLUXDB))  { return; }
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_INFLUXDB)) return;
 
                 JsonDocument doc;
                 doc.set(json);
 
-                if (InfluxDbClient::setConfigurationFromJson(doc))
+                if (InfluxDbClient::setConfigurationFromJson(doc, true))
                 {
                     logger.info("InfluxDB configuration updated via API", TAG);
                     _sendSuccessResponse(request, "InfluxDB configuration updated successfully");
@@ -1163,6 +1167,15 @@ namespace CustomServer
                 }
             });
         server.addHandler(setInfluxDbHandler);
+
+        // Reset configuration
+        server.on("/api/v1/influxdb/config/reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            InfluxDbClient::resetConfiguration();
+            _sendSuccessResponse(request, "InfluxDB configuration reset successfully");
+        });
 
         // Get InfluxDB status
         server.on("/api/v1/influxdb/status", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -1236,7 +1249,7 @@ namespace CustomServer
         // Clear core dump from flash
         server.on("/api/v1/crash/clear", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
-            if (!_validateRequest(request, "POST")) { return; }
+            if (!_validateRequest(request, "POST")) return;
 
             if (CrashMonitor::hasCoreDump()) {
                 CrashMonitor::clearCoreDump();
@@ -1265,7 +1278,7 @@ namespace CustomServer
             "/api/v1/led/brightness",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_LED_BRIGHTNESS)) { return; }
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_LED_BRIGHTNESS)) return;
 
                 JsonDocument doc;
                 doc.set(json);

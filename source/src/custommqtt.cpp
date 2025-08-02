@@ -11,7 +11,7 @@ namespace CustomMqtt
 
     // State variables
     static bool _isSetupDone = false;
-    static uint64_t _mqttConnectionAttempt = 0;
+    static uint32_t _mqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
     
     // Runtime connection status - kept in memory only, not saved to preferences
@@ -21,6 +21,9 @@ namespace CustomMqtt
     // Task variables
     static TaskHandle_t _customMqttTaskHandle = nullptr;
     static bool _taskShouldRun = false;
+
+    // Thread safety
+    static SemaphoreHandle_t _configMutex = nullptr;
 
     // Private function declarations
     static void _setDefaultConfiguration();
@@ -34,8 +37,7 @@ namespace CustomMqtt
     static void _publishMeter();
     static bool _publishMessage(const char *topic, const char *message);
     
-    static bool _validateJsonConfiguration(JsonDocument &jsonDocument);
-    static bool _validateJsonConfigurationPartial(JsonDocument &jsonDocument);
+    static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial = false);
 
     static void _customMqttTask(void* parameter);
     static void _startTask();
@@ -44,6 +46,15 @@ namespace CustomMqtt
     void begin()
     {
         logger.debug("Setting up custom MQTT...", TAG);
+        
+        // Create configuration mutex
+        if (_configMutex == nullptr) {
+            _configMutex = xSemaphoreCreateMutex();
+            if (_configMutex == nullptr) {
+                logger.error("Failed to create configuration mutex", TAG);
+                return;
+            }
+        }
         
         _setConfigurationFromPreferences();
         _customClientMqtt.setBufferSize(MQTT_CUSTOM_PAYLOAD_LIMIT);
@@ -62,6 +73,13 @@ namespace CustomMqtt
     {
         logger.debug("Stopping custom MQTT...", TAG);
         _stopTask();
+        
+        // Clean up mutex
+        if (_configMutex != nullptr) {
+            vSemaphoreDelete(_configMutex);
+            _configMutex = nullptr;
+        }
+        
         _isSetupDone = false;
         logger.info("Custom MQTT stopped", TAG);
     }
@@ -82,6 +100,12 @@ namespace CustomMqtt
     {
         logger.debug("Setting custom MQTT configuration...", TAG);
 
+        // Acquire mutex with timeout
+        if (_configMutex == nullptr || xSemaphoreTake(_configMutex, pdMS_TO_TICKS(CONFIG_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            logger.error("Failed to acquire configuration mutex for setConfiguration", TAG);
+            return false;
+        }
+
         // Stop current task if running
         _stopTask();
 
@@ -101,31 +125,11 @@ namespace CustomMqtt
             _startTask();
         }
 
+        // Release mutex
+        xSemaphoreGive(_configMutex);
+
         logger.debug("Custom MQTT configuration set", TAG);
-
         return true;
-    }
-
-    bool setConfigurationFromJson(JsonDocument &jsonDocument)
-    {
-        logger.debug("Setting custom MQTT configuration from JSON...", TAG);
-
-        if (!_validateJsonConfigurationPartial(jsonDocument))
-        {
-            logger.error("Invalid custom MQTT configuration JSON", TAG);
-            return false;
-        }
-
-        // Get current configuration as base
-        CustomMqttConfiguration config = _customMqttConfiguration;
-        
-        if (!configurationFromJsonPartial(jsonDocument, config))
-        {
-            logger.error("Failed to convert JSON to configuration struct", TAG);
-            return false;
-        }
-
-        return setConfiguration(config);
     }
 
     static void _setConfigurationFromPreferences()
@@ -185,7 +189,7 @@ namespace CustomMqtt
         logger.debug("Successfully saved custom MQTT configuration to Preferences", TAG);
     }
 
-    static bool _validateJsonConfiguration(JsonDocument &jsonDocument)
+    static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial)
     {
         if (jsonDocument.isNull() || !jsonDocument.is<JsonObject>())
         {
@@ -193,41 +197,34 @@ namespace CustomMqtt
             return false;
         }
 
-        if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
-        if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
-        if (!jsonDocument["port"].is<uint32_t>()) { logger.warning("port field is not an integer", TAG); return false; }
-        if (!jsonDocument["clientid"].is<const char*>()) { logger.warning("clientid field is not a string", TAG); return false; }
-        if (!jsonDocument["topic"].is<const char*>()) { logger.warning("topic field is not a string", TAG); return false; }
-        if (!jsonDocument["frequency"].is<uint32_t>()) { logger.warning("frequency field is not an integer", TAG); return false; }
-        if (!jsonDocument["useCredentials"].is<bool>()) { logger.warning("useCredentials field is not a boolean", TAG); return false; }
-        if (!jsonDocument["username"].is<const char*>()) { logger.warning("username field is not a string", TAG); return false; }
-        if (!jsonDocument["password"].is<const char*>()) { logger.warning("password field is not a string", TAG); return false; }
+        if (partial) {
+            // Partial validation - at least one valid field must be present
+            if (jsonDocument["enabled"].is<bool>()) return true;        
+            if (jsonDocument["server"].is<const char*>()) return true;        
+            if (jsonDocument["port"].is<uint32_t>()) return true;        
+            if (jsonDocument["clientid"].is<const char*>()) return true;        
+            if (jsonDocument["topic"].is<const char*>()) return true;        
+            if (jsonDocument["frequency"].is<uint32_t>()) return true;        
+            if (jsonDocument["useCredentials"].is<bool>()) return true;        
+            if (jsonDocument["username"].is<const char*>()) return true;        
+            if (jsonDocument["password"].is<const char*>()) return true;
 
-        return true;
-    }
-
-    static bool _validateJsonConfigurationPartial(JsonDocument &jsonDocument)
-    {
-        if (jsonDocument.isNull() || !jsonDocument.is<JsonObject>())
-        {
-            logger.warning("Invalid or empty JSON document", TAG);
+            logger.warning("No valid fields found in JSON document", TAG);
             return false;
+        } else {
+            // Full validation - all fields must be present and valid
+            if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
+            if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
+            if (!jsonDocument["port"].is<uint32_t>()) { logger.warning("port field is not an integer", TAG); return false; }
+            if (!jsonDocument["clientid"].is<const char*>()) { logger.warning("clientid field is not a string", TAG); return false; }
+            if (!jsonDocument["topic"].is<const char*>()) { logger.warning("topic field is not a string", TAG); return false; }
+            if (!jsonDocument["frequency"].is<uint32_t>()) { logger.warning("frequency field is not an integer", TAG); return false; }
+            if (!jsonDocument["useCredentials"].is<bool>()) { logger.warning("useCredentials field is not a boolean", TAG); return false; }
+            if (!jsonDocument["username"].is<const char*>()) { logger.warning("username field is not a string", TAG); return false; }
+            if (!jsonDocument["password"].is<const char*>()) { logger.warning("password field is not a string", TAG); return false; }
+
+            return true;
         }
-
-        // If even only one field is present, we return true
-        if (jsonDocument["enabled"].is<bool>()) {return true;}        
-        if (jsonDocument["server"].is<const char*>()) {return true;}        
-        if (jsonDocument["port"].is<uint32_t>()) {return true;}        
-        if (jsonDocument["clientid"].is<const char*>()) {return true;}        
-        if (jsonDocument["topic"].is<const char*>()) {return true;}        
-        if (jsonDocument["frequency"].is<uint32_t>()) {return true;}        
-        if (jsonDocument["useCredentials"].is<bool>()) {return true;}        
-        if (jsonDocument["username"].is<const char*>()) {return true;}        
-        if (jsonDocument["password"].is<const char*>()) {return true;}
-
-        // If we did not return true by now, it means no valid fields were found
-        logger.warning("No valid fields found in JSON document", TAG);
-        return false;
     }
 
     static void _disable() {
@@ -295,7 +292,7 @@ namespace CustomMqtt
             const char* _reason = getMqttStateReason(currentState);
 
             logger.warning(
-                "Failed to connect to custom MQTT (attempt %d). Reason: %s (%d). Retrying...",
+                "Failed to connect to custom MQTT (attempt %lu). Reason: %s (%lu). Retrying...",
                 TAG,
                 _mqttConnectionAttempt + 1,
                 _reason,
@@ -303,9 +300,8 @@ namespace CustomMqtt
 
             _mqttConnectionAttempt++;
 
-            snprintf(_status, sizeof(_status), 
-                     "%s (Attempt %d)", _reason, _mqttConnectionAttempt);
-            
+            snprintf(_status, sizeof(_status), "%s (Attempt %lu)", _reason, _mqttConnectionAttempt);
+
             _statusTimestampUnix = CustomTime::getUnixTime();
 
             // Check for specific errors that warrant disabling custom MQTT
@@ -394,16 +390,20 @@ namespace CustomMqtt
 
     void getConfiguration(CustomMqttConfiguration &config)
     {
-        logger.debug("Getting custom MQTT configuration...", TAG);
-
         // Ensure configuration is loaded
-        if (!_isSetupDone)
-        {
-            begin();
+        if (!_isSetupDone) begin();
+
+        // Acquire mutex with timeout
+        if (_configMutex == nullptr || xSemaphoreTake(_configMutex, pdMS_TO_TICKS(CONFIG_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            logger.error("Failed to acquire configuration mutex for getConfiguration", TAG);
+            return;
         }
 
         // Copy the current configuration
         config = _customMqttConfiguration;
+
+        // Release mutex
+        xSemaphoreGive(_configMutex);
     }
 
     void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize)
@@ -418,8 +418,6 @@ namespace CustomMqtt
 
     bool configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument)
     {
-        logger.debug("Converting custom MQTT configuration to JSON...", TAG);
-
         jsonDocument["enabled"] = config.enabled;
         jsonDocument["server"] = config.server;
         jsonDocument["port"] = config.port;
@@ -434,76 +432,42 @@ namespace CustomMqtt
         return true;
     }
 
-    bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config)
+    bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config, bool partial)
     {
-        logger.debug("Converting JSON to custom MQTT configuration...", TAG);
-
-        if (!_validateJsonConfiguration(jsonDocument))
+        if (!_validateJsonConfiguration(jsonDocument, partial))
         {
             logger.error("Invalid JSON configuration", TAG);
             return false;
         }
 
-        config.enabled = jsonDocument["enabled"].as<bool>();
-        snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-        config.port = jsonDocument["port"].as<uint32_t>();
-        snprintf(config.clientid, sizeof(config.clientid), "%s", jsonDocument["clientid"].as<const char*>());
-        snprintf(config.topic, sizeof(config.topic), "%s", jsonDocument["topic"].as<const char*>());
-        config.frequency = jsonDocument["frequency"].as<uint32_t>();
-        config.useCredentials = jsonDocument["useCredentials"].as<bool>();
-        snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
-        snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
-        
-        snprintf(_status, sizeof(_status), "Configuration updated");
-        _statusTimestampUnix = CustomTime::getUnixTime();
-
-        logger.debug("Successfully converted JSON to configuration", TAG);
-        return true;
-    }
-
-    bool configurationFromJsonPartial(JsonDocument &jsonDocument, CustomMqttConfiguration &config)
-    {
-        logger.debug("Converting JSON to custom MQTT configuration (partial update)...", TAG);
-
-        if (!_validateJsonConfigurationPartial(jsonDocument))
-        {
-            logger.error("Invalid JSON configuration", TAG);
-            return false;
-        }
-
-        // Update only fields that are present in JSON
-        if (jsonDocument["enabled"].is<bool>()) {
+        if (partial) {
+            // Update only fields that are present in JSON
+            if (jsonDocument["enabled"].is<bool>()) config.enabled = jsonDocument["enabled"].as<bool>();
+            if (jsonDocument["server"].is<const char*>()) snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
+            if (jsonDocument["port"].is<uint32_t>()) config.port = jsonDocument["port"].as<uint32_t>();
+            if (jsonDocument["clientid"].is<const char*>()) snprintf(config.clientid, sizeof(config.clientid), "%s", jsonDocument["clientid"].as<const char*>());
+            if (jsonDocument["topic"].is<const char*>()) snprintf(config.topic, sizeof(config.topic), "%s", jsonDocument["topic"].as<const char*>());
+            if (jsonDocument["frequency"].is<uint32_t>()) config.frequency = jsonDocument["frequency"].as<uint32_t>();
+            if (jsonDocument["useCredentials"].is<bool>()) config.useCredentials = jsonDocument["useCredentials"].as<bool>();
+            if (jsonDocument["username"].is<const char*>()) snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
+            if (jsonDocument["password"].is<const char*>()) snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
+        } else {
+            // Full update - set all fields
             config.enabled = jsonDocument["enabled"].as<bool>();
-        }
-        if (jsonDocument["server"].is<const char*>()) {
             snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-        }
-        if (jsonDocument["port"].is<uint32_t>()) {
             config.port = jsonDocument["port"].as<uint32_t>();
-        }
-        if (jsonDocument["clientid"].is<const char*>()) {
             snprintf(config.clientid, sizeof(config.clientid), "%s", jsonDocument["clientid"].as<const char*>());
-        }
-        if (jsonDocument["topic"].is<const char*>()) {
             snprintf(config.topic, sizeof(config.topic), "%s", jsonDocument["topic"].as<const char*>());
-        }
-        if (jsonDocument["frequency"].is<uint32_t>()) {
             config.frequency = jsonDocument["frequency"].as<uint32_t>();
-        }
-        if (jsonDocument["useCredentials"].is<bool>()) {
             config.useCredentials = jsonDocument["useCredentials"].as<bool>();
-        }
-        if (jsonDocument["username"].is<const char*>()) {
             snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
-        }
-        if (jsonDocument["password"].is<const char*>()) {
             snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
         }
         
         snprintf(_status, sizeof(_status), "Configuration updated");
         _statusTimestampUnix = CustomTime::getUnixTime();
 
-        logger.debug("Successfully converted JSON to configuration", TAG);
+        logger.debug("Successfully converted JSON to configuration%s...", TAG, partial ? " (partial update)" : "");
         return true;
     }
 

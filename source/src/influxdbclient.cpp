@@ -5,12 +5,17 @@ static const char *TAG = "influxdbclient";
 namespace InfluxDbClient
 {
     // Static variables
-    static InfluxDbConfiguration _influxDbConfiguration;
-
+    // ==========================================================
+    
     // State variables
     static bool _isSetupDone = false;
-    static uint32_t _sendAttempt = 0;
+    static uint32_t _currentSendAttempt = 0;
     static uint64_t _nextSendAttemptMillis = 0;
+    static InfluxDbConfiguration _influxDbConfiguration;
+
+    // InfluxDB helper variables
+    static char _fullUrl[URL_BUFFER_SIZE];
+    static char _authHeader[AUTH_HEADER_BUFFER_SIZE];
     
     // Runtime connection status - kept in memory only, not saved to preferences
     static char _status[STATUS_BUFFER_SIZE];
@@ -20,36 +25,51 @@ namespace InfluxDbClient
     static TaskHandle_t _influxDbTaskHandle = nullptr;
     static bool _taskShouldRun = false;
 
+    // Thread safety
+    static SemaphoreHandle_t _configMutex = nullptr;
+
     // Private function declarations
-    static void _setDefaultConfiguration();
+    // =========================================================
+
+    // Configuration management
     static void _setConfigurationFromPreferences();
     static void _saveConfigurationToPreferences();
     
-    static void _disable();
-    
+    // InfluxDB helper functions
+    static void _setInfluxFullUrl();
+    static void _setInfluxHeader();
+
+    // Data sending
     static void _sendData();
     static void _formatLineProtocol(const MeterValues &meterValues, int32_t channel, uint64_t timestamp, char *buffer, size_t bufferSize, bool isEnergyData);
     
-    static bool _validateJsonConfiguration(JsonDocument &jsonDocument);
-    static bool _validateJsonConfigurationPartial(JsonDocument &jsonDocument);
-
+    // JSON validation
+    static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial = false);
+    
+    // Task management
     static void _influxDbTask(void* parameter);
     static void _startTask();
     static void _stopTask();
+    static void _disable();
+
+    // Public API functions
+    // =========================================================
 
     void begin()
     {
         logger.debug("Setting up InfluxDB client...", TAG);
         
-        _setConfigurationFromPreferences();
-        
-        if (_influxDbConfiguration.enabled) {
-            _startTask();
-        } else {
-            logger.debug("InfluxDB not enabled", TAG);
+        // Create configuration mutex
+        if (_configMutex == nullptr) {
+            _configMutex = xSemaphoreCreateMutex();
+            if (_configMutex == nullptr) {
+                logger.error("Failed to create configuration mutex", TAG);
+                return;
+            }
         }
         
-        _isSetupDone = true;
+        _isSetupDone = true; // Must set before since we have checks on the setup later
+        _setConfigurationFromPreferences(); // Here we load and set the config. The setConfig will handle starting the task if enabled
         logger.debug("InfluxDB client setup complete", TAG);
     }
 
@@ -57,97 +77,261 @@ namespace InfluxDbClient
     {
         logger.debug("Stopping InfluxDB client...", TAG);
         _stopTask();
+        
+        // Clean up mutex
+        if (_configMutex != nullptr) {
+            vSemaphoreDelete(_configMutex);
+            _configMutex = nullptr;
+        }
+        
         _isSetupDone = false;
         logger.info("InfluxDB client stopped", TAG);
     }
 
-    static void _setDefaultConfiguration()
+    void getConfiguration(InfluxDbConfiguration &config)
     {
-        logger.debug("Setting default InfluxDB configuration...", TAG);
-
-        InfluxDbConfiguration defaultConfig;
-        setConfiguration(defaultConfig);
-
-        logger.debug("Default InfluxDB configuration set", TAG);
+        if (!_isSetupDone) begin();
+        config = _influxDbConfiguration;
     }
 
     bool setConfiguration(InfluxDbConfiguration &config)
     {
         logger.debug("Setting InfluxDB configuration...", TAG);
+        
+        if (!_isSetupDone) begin();
+
+        // Acquire mutex with timeout
+        if (_configMutex == nullptr || xSemaphoreTake(_configMutex, pdMS_TO_TICKS(CONFIG_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            logger.error("Failed to acquire configuration mutex for setConfiguration", TAG);
+            return false;
+        }
 
         _stopTask();
 
-        _influxDbConfiguration = config;
+        _influxDbConfiguration = config; // Copy to the static configuration variable
         
         snprintf(_status, sizeof(_status), "Configuration updated");
         _statusTimestampUnix = CustomTime::getUnixTime();
 
-        _nextSendAttemptMillis = millis64();
-        _sendAttempt = 0;
+        _nextSendAttemptMillis = millis64(); // Immediately attempt to send data
+        _currentSendAttempt = 0;
 
         _saveConfigurationToPreferences();
 
-        if (_influxDbConfiguration.enabled) {
-            _startTask();
-        }
+        _setInfluxFullUrl();
+        _setInfluxHeader();
+
+        if (_influxDbConfiguration.enabled) _startTask();
+
+        // Release mutex
+        xSemaphoreGive(_configMutex);
 
         logger.debug("InfluxDB configuration set", TAG);
         return true;
     }
 
-    bool setConfigurationFromJson(JsonDocument &jsonDocument)
-    {
-        logger.debug("Setting InfluxDB configuration from JSON...", TAG);
-
-        if (!_validateJsonConfigurationPartial(jsonDocument))
-        {
-            logger.error("Invalid InfluxDB configuration JSON", TAG);
-            return false;
-        }
-
-        InfluxDbConfiguration config = _influxDbConfiguration;
+    void resetConfiguration() {
+        logger.debug("Resetting InfluxDB configuration to default", TAG);
         
-        if (!configurationFromJsonPartial(jsonDocument, config))
-        {
-            logger.error("Failed to convert JSON to configuration struct", TAG);
+        if (!_isSetupDone) begin();
+
+        InfluxDbConfiguration defaultConfig;
+        setConfiguration(defaultConfig);
+
+        logger.info("InfluxDB configuration reset to default", TAG);
+    }
+
+    void getConfigurationAsJson(JsonDocument &jsonDocument) {
+        if (!_isSetupDone) begin();
+        configurationToJson(_influxDbConfiguration, jsonDocument);
+    }
+
+    bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial)
+    {
+        if (!_isSetupDone) begin();
+
+        InfluxDbConfiguration config;
+        if (!configurationFromJson(jsonDocument, config, partial)) {
+            logger.error("Failed to set configuration from JSON", TAG);
             return false;
         }
 
         return setConfiguration(config);
     }
 
+    void configurationToJson(InfluxDbConfiguration &config, JsonDocument &jsonDocument)
+    {
+        if (!_isSetupDone) begin();
+
+        jsonDocument["enabled"] = config.enabled;
+        jsonDocument["server"] = config.server;
+        jsonDocument["port"] = config.port;
+        jsonDocument["version"] = config.version;
+        jsonDocument["database"] = config.database;
+        jsonDocument["username"] = config.username;
+        jsonDocument["password"] = config.password;
+        jsonDocument["organization"] = config.organization;
+        jsonDocument["bucket"] = config.bucket;
+        jsonDocument["token"] = config.token;
+        jsonDocument["measurement"] = config.measurement;
+        jsonDocument["frequency"] = config.frequencySeconds;
+        jsonDocument["useSSL"] = config.useSSL;
+
+        logger.debug("Successfully converted configuration to JSON", TAG);
+    }
+
+    bool configurationFromJson(JsonDocument &jsonDocument, InfluxDbConfiguration &config, bool partial)
+    {
+        if (!_isSetupDone) begin();
+
+        if (!_validateJsonConfiguration(jsonDocument, partial))
+        {
+            logger.error("Invalid JSON configuration", TAG);
+            return false;
+        }
+
+        if (partial) {
+            // Update only fields that are present in JSON
+            if (jsonDocument["enabled"].is<bool>())             config.enabled = jsonDocument["enabled"].as<bool>();
+            if (jsonDocument["server"].is<const char*>())       snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
+            if (jsonDocument["port"].is<int32_t>())             config.port = jsonDocument["port"].as<int32_t>();
+            if (jsonDocument["version"].is<int32_t>())          config.version = jsonDocument["version"].as<int32_t>();
+            if (jsonDocument["database"].is<const char*>())     snprintf(config.database, sizeof(config.database), "%s", jsonDocument["database"].as<const char*>());
+            if (jsonDocument["username"].is<const char*>())     snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
+            if (jsonDocument["password"].is<const char*>())     snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
+            if (jsonDocument["organization"].is<const char*>()) snprintf(config.organization, sizeof(config.organization), "%s", jsonDocument["organization"].as<const char*>());
+            if (jsonDocument["bucket"].is<const char*>())       snprintf(config.bucket, sizeof(config.bucket), "%s", jsonDocument["bucket"].as<const char*>());
+            if (jsonDocument["token"].is<const char*>())        snprintf(config.token, sizeof(config.token), "%s", jsonDocument["token"].as<const char*>());
+            if (jsonDocument["measurement"].is<const char*>())  snprintf(config.measurement, sizeof(config.measurement), "%s", jsonDocument["measurement"].as<const char*>());
+            if (jsonDocument["frequency"].is<int32_t>())        config.frequencySeconds = jsonDocument["frequency"].as<int32_t>();
+            if (jsonDocument["useSSL"].is<bool>())              config.useSSL = jsonDocument["useSSL"].as<bool>();
+        } else {
+            // Full update - set all fields
+            config.enabled = jsonDocument["enabled"].as<bool>();
+            snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
+            config.port = jsonDocument["port"].as<int32_t>();
+            config.version = jsonDocument["version"].as<int32_t>();
+            snprintf(config.database, sizeof(config.database), "%s", jsonDocument["database"].as<const char*>());
+            snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
+            snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
+            snprintf(config.organization, sizeof(config.organization), "%s", jsonDocument["organization"].as<const char*>());
+            snprintf(config.bucket, sizeof(config.bucket), "%s", jsonDocument["bucket"].as<const char*>());
+            snprintf(config.token, sizeof(config.token), "%s", jsonDocument["token"].as<const char*>());
+            snprintf(config.measurement, sizeof(config.measurement), "%s", jsonDocument["measurement"].as<const char*>());
+            config.frequencySeconds = jsonDocument["frequency"].as<int32_t>();
+            config.useSSL = jsonDocument["useSSL"].as<bool>();
+        }
+        
+        snprintf(_status, sizeof(_status), "Configuration updated");
+        _statusTimestampUnix = CustomTime::getUnixTime();
+
+        logger.debug("Successfully converted JSON to configuration%s", TAG, partial ? " (partial)" : "");
+        return true;
+    }
+
+    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize)
+    {
+        if (!_isSetupDone) begin();
+
+        if (statusBuffer && statusSize > 0) snprintf(statusBuffer, statusSize, "%s", _status);
+        if (timestampBuffer && timestampSize > 0) CustomTime::timestampIsoFromUnix(_statusTimestampUnix, timestampBuffer, timestampSize);
+    }
+
+    // Private function implementations
+    // =========================================================
+
+    static void _startTask()
+    {
+        if (_influxDbTaskHandle != nullptr) {
+            logger.debug("InfluxDB task is already running", TAG);
+            return;
+        }
+
+        logger.debug("Starting InfluxDB task", TAG);
+        BaseType_t result = xTaskCreate(
+            _influxDbTask,
+            INFLUXDB_TASK_NAME,
+            INFLUXDB_TASK_STACK_SIZE,
+            nullptr,
+            INFLUXDB_TASK_PRIORITY,
+            &_influxDbTaskHandle
+        );
+
+        if (result != pdPASS) {
+            logger.error("Failed to create InfluxDB task", TAG);
+            _influxDbTaskHandle = nullptr;
+        }
+    }
+
+    static void _stopTask() { stopTaskGracefully(&_influxDbTaskHandle, "InfluxDB task"); }
+
+    static void _influxDbTask(void* parameter)
+    {
+        logger.debug("InfluxDB task started", TAG);
+        
+        _taskShouldRun = true;
+        uint64_t lastSendTime = 0;
+
+        while (_taskShouldRun) {
+            if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) {
+                if (_influxDbConfiguration.enabled) {
+                    uint64_t currentTime = millis64();
+                    if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) {
+                        // Check if we should wait due to previous failures
+                        if (currentTime >= _nextSendAttemptMillis) {
+                            _sendData();
+                            lastSendTime = currentTime;
+                        } else {
+                            logger.debug("Delaying InfluxDB send due to previous failures", TAG);
+                        }
+                    }
+                }
+            }
+
+            // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));
+            if (notificationValue > 0) {
+                _taskShouldRun = false;
+                break;
+            }
+        }
+
+        logger.debug("InfluxDB task stopping", TAG);
+        _influxDbTaskHandle = nullptr;
+        vTaskDelete(nullptr);
+    }
+
     static void _setConfigurationFromPreferences()
     {
         logger.debug("Setting InfluxDB configuration from Preferences...", TAG);
 
+        InfluxDbConfiguration config; // Start with default configuration
+
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, true)) {
+        if (preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, true)) {
+            config.enabled = preferences.getBool(INFLUXDB_ENABLED_KEY, INFLUXDB_ENABLED_DEFAULT);
+            snprintf(config.server, sizeof(config.server), "%s", preferences.getString(INFLUXDB_SERVER_KEY, INFLUXDB_SERVER_DEFAULT).c_str());
+            config.port = preferences.getInt(INFLUXDB_PORT_KEY, INFLUXDB_PORT_DEFAULT);
+            config.version = preferences.getInt(INFLUXDB_VERSION_KEY, INFLUXDB_VERSION_DEFAULT);
+            snprintf(config.database, sizeof(config.database), "%s", preferences.getString(INFLUXDB_DATABASE_KEY, INFLUXDB_DATABASE_DEFAULT).c_str());
+            snprintf(config.username, sizeof(config.username), "%s", preferences.getString(INFLUXDB_USERNAME_KEY, INFLUXDB_USERNAME_DEFAULT).c_str());
+            snprintf(config.password, sizeof(config.password), "%s", preferences.getString(INFLUXDB_PASSWORD_KEY, INFLUXDB_PASSWORD_DEFAULT).c_str());
+            snprintf(config.organization, sizeof(config.organization), "%s", preferences.getString(INFLUXDB_ORGANIZATION_KEY, INFLUXDB_ORGANIZATION_DEFAULT).c_str());
+            snprintf(config.bucket, sizeof(config.bucket), "%s", preferences.getString(INFLUXDB_BUCKET_KEY, INFLUXDB_BUCKET_DEFAULT).c_str());
+            snprintf(config.token, sizeof(config.token), "%s", preferences.getString(INFLUXDB_TOKEN_KEY, INFLUXDB_TOKEN_DEFAULT).c_str());
+            snprintf(config.measurement, sizeof(config.measurement), "%s", preferences.getString(INFLUXDB_MEASUREMENT_KEY, INFLUXDB_MEASUREMENT_DEFAULT).c_str());
+            config.frequencySeconds = preferences.getInt(INFLUXDB_FREQUENCY_KEY, INFLUXDB_FREQUENCY_DEFAULT);
+            config.useSSL = preferences.getBool(INFLUXDB_USE_SSL_KEY, INFLUXDB_USE_SSL_DEFAULT);
+            
+            snprintf(_status, sizeof(_status), "Configuration loaded from Preferences");
+            _statusTimestampUnix = CustomTime::getUnixTime();
+
+            preferences.end();
+        } else {
             logger.error("Failed to open Preferences namespace for InfluxDB. Using default configuration", TAG);
-            _setDefaultConfiguration();
-            return;
         }
 
-        InfluxDbConfiguration config;
-        config.enabled = preferences.getBool(INFLUXDB_ENABLED_KEY, INFLUXDB_ENABLED_DEFAULT);
-        snprintf(config.server, sizeof(config.server), "%s", preferences.getString(INFLUXDB_SERVER_KEY, INFLUXDB_SERVER_DEFAULT).c_str());
-        config.port = preferences.getInt(INFLUXDB_PORT_KEY, INFLUXDB_PORT_DEFAULT);
-        config.version = preferences.getInt(INFLUXDB_VERSION_KEY, INFLUXDB_VERSION_DEFAULT);
-        snprintf(config.database, sizeof(config.database), "%s", preferences.getString(INFLUXDB_DATABASE_KEY, INFLUXDB_DATABASE_DEFAULT).c_str());
-        snprintf(config.username, sizeof(config.username), "%s", preferences.getString(INFLUXDB_USERNAME_KEY, INFLUXDB_USERNAME_DEFAULT).c_str());
-        snprintf(config.password, sizeof(config.password), "%s", preferences.getString(INFLUXDB_PASSWORD_KEY, INFLUXDB_PASSWORD_DEFAULT).c_str());
-        snprintf(config.organization, sizeof(config.organization), "%s", preferences.getString(INFLUXDB_ORGANIZATION_KEY, INFLUXDB_ORGANIZATION_DEFAULT).c_str());
-        snprintf(config.bucket, sizeof(config.bucket), "%s", preferences.getString(INFLUXDB_BUCKET_KEY, INFLUXDB_BUCKET_DEFAULT).c_str());
-        snprintf(config.token, sizeof(config.token), "%s", preferences.getString(INFLUXDB_TOKEN_KEY, INFLUXDB_TOKEN_DEFAULT).c_str());
-        snprintf(config.measurement, sizeof(config.measurement), "%s", preferences.getString(INFLUXDB_MEASUREMENT_KEY, INFLUXDB_MEASUREMENT_DEFAULT).c_str());
-        config.frequencySeconds = preferences.getInt(INFLUXDB_FREQUENCY_KEY, INFLUXDB_FREQUENCY_DEFAULT);
-        config.useSSL = preferences.getBool(INFLUXDB_USE_SSL_KEY, INFLUXDB_USE_SSL_DEFAULT);
-        
-        snprintf(_status, sizeof(_status), "Configuration loaded from Preferences");
-        _statusTimestampUnix = CustomTime::getUnixTime();
-
-        preferences.end();
-
-        _influxDbConfiguration = config;
+        setConfiguration(config);
 
         logger.debug("Successfully set InfluxDB configuration from Preferences", TAG);
     }
@@ -181,7 +365,7 @@ namespace InfluxDbClient
         logger.debug("Successfully saved InfluxDB configuration to Preferences", TAG);
     }
 
-    static bool _validateJsonConfiguration(JsonDocument &jsonDocument)
+    static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial)
     {
         if (jsonDocument.isNull() || !jsonDocument.is<JsonObject>())
         {
@@ -189,53 +373,48 @@ namespace InfluxDbClient
             return false;
         }
 
-        if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
-        if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
-        if (!jsonDocument["port"].is<int32_t>()) { logger.warning("port field is not an integer", TAG); return false; }
-        if (!jsonDocument["version"].is<int32_t>()) { logger.warning("version field is not an integer", TAG); return false; }
-        if (!jsonDocument["database"].is<const char*>()) { logger.warning("database field is not a string", TAG); return false; }
-        if (!jsonDocument["username"].is<const char*>()) { logger.warning("username field is not a string", TAG); return false; }
-        if (!jsonDocument["password"].is<const char*>()) { logger.warning("password field is not a string", TAG); return false; }
-        if (!jsonDocument["organization"].is<const char*>()) { logger.warning("organization field is not a string", TAG); return false; }
-        if (!jsonDocument["bucket"].is<const char*>()) { logger.warning("bucket field is not a string", TAG); return false; }
-        if (!jsonDocument["token"].is<const char*>()) { logger.warning("token field is not a string", TAG); return false; }
-        if (!jsonDocument["measurement"].is<const char*>()) { logger.warning("measurement field is not a string", TAG); return false; }
-        if (!jsonDocument["frequency"].is<int32_t>()) { logger.warning("frequency field is not an integer", TAG); return false; }
-        if (!jsonDocument["useSSL"].is<bool>()) { logger.warning("useSSL field is not a boolean", TAG); return false; }
+        if (partial) {
+            // Partial validation - at least one valid field must be present
+            if (jsonDocument["enabled"].is<bool>()) return true;        
+            if (jsonDocument["server"].is<const char*>()) return true;        
+            if (jsonDocument["port"].is<int32_t>()) return true;        
+            if (jsonDocument["version"].is<int32_t>()) return true;        
+            if (jsonDocument["database"].is<const char*>()) return true;        
+            if (jsonDocument["username"].is<const char*>()) return true;        
+            if (jsonDocument["password"].is<const char*>()) return true;        
+            if (jsonDocument["organization"].is<const char*>()) return true;        
+            if (jsonDocument["bucket"].is<const char*>()) return true;        
+            if (jsonDocument["token"].is<const char*>()) return true;        
+            if (jsonDocument["measurement"].is<const char*>()) return true;        
+            if (jsonDocument["frequency"].is<int32_t>()) return true;        
+            if (jsonDocument["useSSL"].is<bool>()) return true;
 
-        if (jsonDocument["frequency"].as<int32_t>() < 1 || jsonDocument["frequency"].as<int32_t>() > 3600)
-        {
-            logger.warning("frequency field must be between 1 and 3600 seconds", TAG);
+            logger.warning("No valid fields found in JSON document", TAG);
             return false;
+        } else {
+            // Full validation - all fields must be present and valid
+            if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
+            if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
+            if (!jsonDocument["port"].is<int32_t>()) { logger.warning("port field is not an integer", TAG); return false; }
+            if (!jsonDocument["version"].is<int32_t>()) { logger.warning("version field is not an integer", TAG); return false; }
+            if (!jsonDocument["database"].is<const char*>()) { logger.warning("database field is not a string", TAG); return false; }
+            if (!jsonDocument["username"].is<const char*>()) { logger.warning("username field is not a string", TAG); return false; }
+            if (!jsonDocument["password"].is<const char*>()) { logger.warning("password field is not a string", TAG); return false; }
+            if (!jsonDocument["organization"].is<const char*>()) { logger.warning("organization field is not a string", TAG); return false; }
+            if (!jsonDocument["bucket"].is<const char*>()) { logger.warning("bucket field is not a string", TAG); return false; }
+            if (!jsonDocument["token"].is<const char*>()) { logger.warning("token field is not a string", TAG); return false; }
+            if (!jsonDocument["measurement"].is<const char*>()) { logger.warning("measurement field is not a string", TAG); return false; }
+            if (!jsonDocument["frequency"].is<int32_t>()) { logger.warning("frequency field is not an integer", TAG); return false; }
+            if (!jsonDocument["useSSL"].is<bool>()) { logger.warning("useSSL field is not a boolean", TAG); return false; }
+
+            if (jsonDocument["frequency"].as<int32_t>() < INFLUXDB_MINIMUM_FREQUENCY || jsonDocument["frequency"].as<int32_t>() > INFLUXDB_MAXIMUM_FREQUENCY)
+            {
+                logger.warning("frequency field must be between %d and %d seconds", TAG, INFLUXDB_MINIMUM_FREQUENCY, INFLUXDB_MAXIMUM_FREQUENCY);
+                return false;
+            }
+
+            return true;
         }
-
-        return true;
-    }
-
-    static bool _validateJsonConfigurationPartial(JsonDocument &jsonDocument)
-    {
-        if (jsonDocument.isNull() || !jsonDocument.is<JsonObject>())
-        {
-            logger.warning("Invalid or empty JSON document", TAG);
-            return false;
-        }
-
-        if (jsonDocument["enabled"].is<bool>()) {return true;}        
-        if (jsonDocument["server"].is<const char*>()) {return true;}        
-        if (jsonDocument["port"].is<int32_t>()) {return true;}        
-        if (jsonDocument["version"].is<int32_t>()) {return true;}        
-        if (jsonDocument["database"].is<const char*>()) {return true;}        
-        if (jsonDocument["username"].is<const char*>()) {return true;}        
-        if (jsonDocument["password"].is<const char*>()) {return true;}        
-        if (jsonDocument["organization"].is<const char*>()) {return true;}        
-        if (jsonDocument["bucket"].is<const char*>()) {return true;}        
-        if (jsonDocument["token"].is<const char*>()) {return true;}        
-        if (jsonDocument["measurement"].is<const char*>()) {return true;}        
-        if (jsonDocument["frequency"].is<int32_t>()) {return true;}        
-        if (jsonDocument["useSSL"].is<bool>()) {return true;}
-
-        logger.warning("No valid fields found in JSON document", TAG);
-        return false;
     }
 
     static void _disable() {
@@ -254,7 +433,7 @@ namespace InfluxDbClient
 
         _influxDbConfiguration.enabled = false;
         
-        _sendAttempt = 0;
+        _currentSendAttempt = 0;
         _nextSendAttemptMillis = 0;
 
         snprintf(_status, sizeof(_status), "Disabled due to persistent failures");
@@ -263,12 +442,7 @@ namespace InfluxDbClient
         logger.debug("InfluxDB disabled", TAG);
     }
 
-    static void _sendData()
-    {
-        logger.debug("Sending data to InfluxDB...", TAG);
-
-        HTTPClient http;
-        char url[URL_BUFFER_SIZE];
+    static void _setInfluxFullUrl() {
         char baseUrl[URL_BUFFER_SIZE];
 
         snprintf(baseUrl, sizeof(baseUrl), "http%s://%s:%d", 
@@ -278,26 +452,28 @@ namespace InfluxDbClient
 
         if (_influxDbConfiguration.version == 2)
         {
-            snprintf(url, sizeof(url), "%s/api/v2/write?org=%s&bucket=%s",
+            snprintf(_fullUrl, sizeof(_fullUrl), "%s/api/v2/write?org=%s&bucket=%s",
                      baseUrl,
                      _influxDbConfiguration.organization,
                      _influxDbConfiguration.bucket);
         }
-        else
+        else if (_influxDbConfiguration.version == 1)
         {
-            snprintf(url, sizeof(url), "%s/write?db=%s",
+            snprintf(_fullUrl, sizeof(_fullUrl), "%s/write?db=%s",
                      baseUrl,
                      _influxDbConfiguration.database);
+        } else {
+            logger.error("Unsupported InfluxDB version: %d", TAG, _influxDbConfiguration.version);
+            return;
         }
 
-        http.begin(url);
-        http.addHeader("Content-Type", "text/plain");
+        logger.debug("InfluxDB full URL set to: %s", TAG, _fullUrl);
+    }
 
+    static void _setInfluxHeader() {
         if (_influxDbConfiguration.version == 2)
         {
-            char authHeader[AUTH_HEADER_BUFFER_SIZE];
-            snprintf(authHeader, sizeof(authHeader), "Token %s", _influxDbConfiguration.token);
-            http.addHeader("Authorization", authHeader);
+            snprintf(_authHeader, sizeof(_authHeader), "Token %s", _influxDbConfiguration.token);
         }
         else if (_influxDbConfiguration.version == 1)
         {
@@ -306,10 +482,21 @@ namespace InfluxDbClient
 
             String encodedCredentials = base64::encode((const uint8_t*)credentials, strlen(credentials));
 
-            char authHeader[AUTH_HEADER_BUFFER_SIZE];
-            snprintf(authHeader, sizeof(authHeader), "Basic %s", encodedCredentials.c_str());
-            http.addHeader("Authorization", authHeader);
+            snprintf(_authHeader, sizeof(_authHeader), "Basic %s", encodedCredentials.c_str());
+        } else {
+            logger.error("Unsupported InfluxDB version for authorization header: %d", TAG, _influxDbConfiguration.version);
+            return;
         }
+
+        logger.debug("InfluxDB authorization header set", TAG);
+    }
+
+    static void _sendData()
+    {
+        HTTPClient http;
+        http.begin(_fullUrl);
+        http.addHeader("Authorization", _authHeader);
+        http.addHeader("Content-Type", "text/plain");
 
         char payload[PAYLOAD_BUFFER_SIZE] = "";
         size_t payloadLength = 0;
@@ -375,15 +562,15 @@ namespace InfluxDbClient
             logger.debug("Successfully sent data to InfluxDB (HTTP %d)", TAG, httpCode);
             statistics.influxdbUploadCount++;
             snprintf(_status, sizeof(_status), "Data sent successfully");
-            _sendAttempt = 0;
+            _currentSendAttempt = 0;
         }
         else
         {
             logger.warning("Failed to send data to InfluxDB (HTTP %d)", TAG, httpCode);
             statistics.influxdbUploadCountError++;
             
-            _sendAttempt++;
-            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %d) - Attempt %lu", httpCode, _sendAttempt);
+            _currentSendAttempt++;
+            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %d) - Attempt %lu", httpCode, _currentSendAttempt);
             
             // Check for specific errors that warrant disabling InfluxDB
             if (httpCode == 401 || httpCode == 403) {
@@ -396,8 +583,8 @@ namespace InfluxDbClient
             }
             
             // Check if we've exceeded the maximum number of failures
-            if (_sendAttempt >= INFLUXDB_MAX_CONSECUTIVE_FAILURES) {
-                logger.error("InfluxDB send failed %lu consecutive times. Disabling InfluxDB.", TAG, _sendAttempt);
+            if (_currentSendAttempt >= INFLUXDB_MAX_CONSECUTIVE_FAILURES) {
+                logger.error("InfluxDB send failed %lu consecutive times. Disabling InfluxDB.", TAG, _currentSendAttempt);
                 _disable();
                 _nextSendAttemptMillis = UINT32_MAX;
                 _statusTimestampUnix = CustomTime::getUnixTime();
@@ -406,7 +593,7 @@ namespace InfluxDbClient
             }
             
             // Calculate next attempt time using exponential backoff
-            uint64_t backoffDelay = calculateExponentialBackoff(_sendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
+            uint64_t backoffDelay = calculateExponentialBackoff(_currentSendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
             
             _nextSendAttemptMillis = millis64() + backoffDelay;
             
@@ -472,198 +659,4 @@ namespace InfluxDbClient
                      timestamp);
         }
     }
-
-    void getConfiguration(InfluxDbConfiguration &config)
-    {
-        logger.debug("Getting InfluxDB configuration...", TAG);
-
-        if (!_isSetupDone)
-        {
-            begin();
-        }
-
-        config = _influxDbConfiguration;
-    }
-
-    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize)
-    {
-        if (statusBuffer && statusSize > 0) {
-            snprintf(statusBuffer, statusSize, "%s", _status);
-        }
-        if (timestampBuffer && timestampSize > 0) {
-            CustomTime::timestampIsoFromUnix(_statusTimestampUnix, timestampBuffer, timestampSize);
-        }
-    }
-
-    bool configurationToJson(InfluxDbConfiguration &config, JsonDocument &jsonDocument)
-    {
-        logger.debug("Converting InfluxDB configuration to JSON...", TAG);
-
-        jsonDocument["enabled"] = config.enabled;
-        jsonDocument["server"] = config.server;
-        jsonDocument["port"] = config.port;
-        jsonDocument["version"] = config.version;
-        jsonDocument["database"] = config.database;
-        jsonDocument["username"] = config.username;
-        jsonDocument["password"] = config.password;
-        jsonDocument["organization"] = config.organization;
-        jsonDocument["bucket"] = config.bucket;
-        jsonDocument["token"] = config.token;
-        jsonDocument["measurement"] = config.measurement;
-        jsonDocument["frequency"] = config.frequencySeconds;
-        jsonDocument["useSSL"] = config.useSSL;
-
-        logger.debug("Successfully converted configuration to JSON", TAG);
-        return true;
-    }
-
-    bool configurationFromJson(JsonDocument &jsonDocument, InfluxDbConfiguration &config)
-    {
-        logger.debug("Converting JSON to InfluxDB configuration...", TAG);
-
-        if (!_validateJsonConfiguration(jsonDocument))
-        {
-            logger.error("Invalid JSON configuration", TAG);
-            return false;
-        }
-
-        config.enabled = jsonDocument["enabled"].as<bool>();
-        snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-        config.port = jsonDocument["port"].as<int32_t>();
-        config.version = jsonDocument["version"].as<int32_t>();
-        snprintf(config.database, sizeof(config.database), "%s", jsonDocument["database"].as<const char*>());
-        snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
-        snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
-        snprintf(config.organization, sizeof(config.organization), "%s", jsonDocument["organization"].as<const char*>());
-        snprintf(config.bucket, sizeof(config.bucket), "%s", jsonDocument["bucket"].as<const char*>());
-        snprintf(config.token, sizeof(config.token), "%s", jsonDocument["token"].as<const char*>());
-        snprintf(config.measurement, sizeof(config.measurement), "%s", jsonDocument["measurement"].as<const char*>());
-        config.frequencySeconds = jsonDocument["frequency"].as<int32_t>();
-        config.useSSL = jsonDocument["useSSL"].as<bool>();
-        
-        snprintf(_status, sizeof(_status), "Configuration updated");
-        _statusTimestampUnix = CustomTime::getUnixTime();
-
-        logger.debug("Successfully converted JSON to configuration", TAG);
-        return true;
-    }
-
-    bool configurationFromJsonPartial(JsonDocument &jsonDocument, InfluxDbConfiguration &config)
-    {
-        logger.debug("Converting JSON to InfluxDB configuration (partial update)...", TAG);
-
-        if (!_validateJsonConfigurationPartial(jsonDocument))
-        {
-            logger.error("Invalid JSON configuration", TAG);
-            return false;
-        }
-
-        if (jsonDocument["enabled"].is<bool>()) {
-            config.enabled = jsonDocument["enabled"].as<bool>();
-        }
-        if (jsonDocument["server"].is<const char*>()) {
-            snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-        }
-        if (jsonDocument["port"].is<int32_t>()) {
-            config.port = jsonDocument["port"].as<int32_t>();
-        }
-        if (jsonDocument["version"].is<int32_t>()) {
-            config.version = jsonDocument["version"].as<int32_t>();
-        }
-        if (jsonDocument["database"].is<const char*>()) {
-            snprintf(config.database, sizeof(config.database), "%s", jsonDocument["database"].as<const char*>());
-        }
-        if (jsonDocument["username"].is<const char*>()) {
-            snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
-        }
-        if (jsonDocument["password"].is<const char*>()) {
-            snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
-        }
-        if (jsonDocument["organization"].is<const char*>()) {
-            snprintf(config.organization, sizeof(config.organization), "%s", jsonDocument["organization"].as<const char*>());
-        }
-        if (jsonDocument["bucket"].is<const char*>()) {
-            snprintf(config.bucket, sizeof(config.bucket), "%s", jsonDocument["bucket"].as<const char*>());
-        }
-        if (jsonDocument["token"].is<const char*>()) {
-            snprintf(config.token, sizeof(config.token), "%s", jsonDocument["token"].as<const char*>());
-        }
-        if (jsonDocument["measurement"].is<const char*>()) {
-            snprintf(config.measurement, sizeof(config.measurement), "%s", jsonDocument["measurement"].as<const char*>());
-        }
-        if (jsonDocument["frequency"].is<int32_t>()) {
-            config.frequencySeconds = jsonDocument["frequency"].as<int32_t>();
-        }
-        if (jsonDocument["useSSL"].is<bool>()) {
-            config.useSSL = jsonDocument["useSSL"].as<bool>();
-        }
-        
-        snprintf(_status, sizeof(_status), "Configuration updated");
-        _statusTimestampUnix = CustomTime::getUnixTime();
-
-        logger.debug("Successfully converted JSON to configuration", TAG);
-        return true;
-    }
-
-    static void _influxDbTask(void* parameter)
-    {
-        logger.debug("InfluxDB task started", TAG);
-        
-        _taskShouldRun = true;
-        uint64_t lastSendTime = 0;
-
-        while (_taskShouldRun) {
-            if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) {
-                if (_influxDbConfiguration.enabled) {
-                    uint64_t currentTime = millis64();
-                    if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) {
-                        // Check if we should wait due to previous failures
-                        if (currentTime >= _nextSendAttemptMillis) {
-                            _sendData();
-                            lastSendTime = currentTime;
-                        } else {
-                            logger.debug("Delaying InfluxDB send due to previous failures", TAG);
-                        }
-                    }
-                }
-            }
-
-            // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));
-            if (notificationValue > 0) {
-                _taskShouldRun = false;
-                break;
-            }
-        }
-
-        logger.debug("InfluxDB task stopping", TAG);
-        _influxDbTaskHandle = nullptr;
-        vTaskDelete(nullptr);
-    }
-
-    static void _startTask()
-    {
-        if (_influxDbTaskHandle != nullptr) {
-            logger.debug("InfluxDB task is already running", TAG);
-            return;
-        }
-
-        logger.debug("Starting InfluxDB task", TAG);
-        BaseType_t result = xTaskCreate(
-            _influxDbTask,
-            INFLUXDB_TASK_NAME,
-            INFLUXDB_TASK_STACK_SIZE,
-            nullptr,
-            INFLUXDB_TASK_PRIORITY,
-            &_influxDbTaskHandle
-        );
-
-        if (result != pdPASS) {
-            logger.error("Failed to create InfluxDB task", TAG);
-            _influxDbTaskHandle = nullptr;
-        }
-    }
-
-    static void _stopTask() { stopTaskGracefully(&_influxDbTaskHandle, "InfluxDB task"); }
-
 } // namespace InfluxDbClient

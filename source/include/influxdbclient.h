@@ -12,6 +12,7 @@
 #include "customwifi.h"
 #include "utils.h"
 
+// Default configuration values
 #define INFLUXDB_ENABLED_DEFAULT false
 #define INFLUXDB_SERVER_DEFAULT "localhost"
 #define INFLUXDB_PORT_DEFAULT 8086
@@ -25,10 +26,16 @@
 #define INFLUXDB_MEASUREMENT_DEFAULT "meter"
 #define INFLUXDB_FREQUENCY_DEFAULT 15
 #define INFLUXDB_USE_SSL_DEFAULT false
+
+// Task configuration
 #define INFLUXDB_TASK_NAME "influxdb_task"
-#define INFLUXDB_TASK_STACK_SIZE 8192
+#define INFLUXDB_TASK_STACK_SIZE (8 * 1024)
 #define INFLUXDB_TASK_PRIORITY 1
 #define INFLUXDB_TASK_CHECK_INTERVAL 1000
+
+// Helper constants
+#define INFLUXDB_MINIMUM_FREQUENCY 1
+#define INFLUXDB_MAXIMUM_FREQUENCY 3600
 
 // Failure handling constants
 #define INFLUXDB_INITIAL_RETRY_INTERVAL (30 * 1000)
@@ -36,6 +43,7 @@
 #define INFLUXDB_RETRY_MULTIPLIER 2
 #define INFLUXDB_MAX_CONSECUTIVE_FAILURES 10
 
+// Preferences keys for persistent storage
 #define INFLUXDB_ENABLED_KEY "enabled"
 #define INFLUXDB_SERVER_KEY "server"
 #define INFLUXDB_PORT_KEY "port"
@@ -50,11 +58,8 @@
 #define INFLUXDB_FREQUENCY_KEY "frequency"
 #define INFLUXDB_USE_SSL_KEY "useSSL"
 
-#define DATABASE_NAME_BUFFER_SIZE 64
-#define ORGANIZATION_BUFFER_SIZE 64
-#define BUCKET_NAME_BUFFER_SIZE 64
+// Buffer sizes for various fields
 #define TOKEN_BUFFER_SIZE 64
-#define MEASUREMENT_BUFFER_SIZE 64
 #define AUTH_HEADER_BUFFER_SIZE 256
 #define LINE_PROTOCOL_BUFFER_SIZE 256
 #define PAYLOAD_BUFFER_SIZE 512
@@ -64,13 +69,13 @@ struct InfluxDbConfiguration {
     char server[URL_BUFFER_SIZE];
     int32_t port;
     int32_t version;
-    char database[DATABASE_NAME_BUFFER_SIZE];
+    char database[NAME_BUFFER_SIZE];
     char username[USERNAME_BUFFER_SIZE];
     char password[PASSWORD_BUFFER_SIZE];
-    char organization[ORGANIZATION_BUFFER_SIZE];
-    char bucket[BUCKET_NAME_BUFFER_SIZE];
+    char organization[NAME_BUFFER_SIZE];
+    char bucket[NAME_BUFFER_SIZE];
     char token[TOKEN_BUFFER_SIZE];
-    char measurement[MEASUREMENT_BUFFER_SIZE];
+    char measurement[NAME_BUFFER_SIZE];
     int32_t frequencySeconds;
     bool useSSL;
 
@@ -96,12 +101,17 @@ namespace InfluxDbClient
     void begin();
     void stop();
 
-    bool setConfiguration(InfluxDbConfiguration &config);
-    bool setConfigurationFromJson(JsonDocument &jsonDocument);
+    // Manage configuration directly
     void getConfiguration(InfluxDbConfiguration &config);
-    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
+    bool setConfiguration(InfluxDbConfiguration &config);
+    void resetConfiguration();
+    
+    // Manage configuration from JSON
+    void getConfigurationAsJson(JsonDocument &jsonDocument);
+    bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial = false);
+    void configurationToJson(InfluxDbConfiguration &config, JsonDocument &jsonDocument);
+    bool configurationFromJson(JsonDocument &jsonDocument, InfluxDbConfiguration &config, bool partial = false);
 
-    bool configurationToJson(InfluxDbConfiguration &config, JsonDocument &jsonDocument);
-    bool configurationFromJson(JsonDocument &jsonDocument, InfluxDbConfiguration &config);
-    bool configurationFromJsonPartial(JsonDocument &jsonDocument, InfluxDbConfiguration &config);
+    // Get runtime status
+    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
 }

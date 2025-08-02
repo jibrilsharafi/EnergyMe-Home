@@ -45,7 +45,7 @@ Provide project context and coding guidelines that AI should follow when generat
     - Follow existing naming conventions in the codebase
     - Add comments for business logic, not obvious code
 
-6. **JSON and Configuration**:
+6. **JSON and Configuration Management**:
     - Always validate JSON structure before accessing fields
     - Use `JsonDocument` everywhere - automatically uses 2MB PSRAM on ESP32-S3
     - Pass streams directly to `deserializeJson()` for efficiency (e.g., `deserializeJson(doc, file)` or `deserializeJson(doc, http.getStream())`)
@@ -55,6 +55,36 @@ Provide project context and coding guidelines that AI should follow when generat
     - **ArduinoJson validation**: ONLY use `is<type>()` to validate field types (e.g., `json["field"].is<bool>()`)
     - **Deprecated methods**: Never use `containsKey()` - it's deprecated in ArduinoJson
     - **Null checks**: Only use `isNull()` at JSON document level to ensure non-empty JSON, not for individual fields
+
+    **Configuration Management Standard Pattern**:
+    - **Configuration struct**: Always include constructor with default values using constants from `constants.h`
+    - **Public API**: Standard functions for all configuration modules:
+      ```cpp
+      void getConfiguration(ConfigStruct &config);                   // Get current configuration
+      bool setConfiguration(ConfigStruct &config);                    // Set configuration
+      bool configurationToJson(ConfigStruct &config, JsonDocument &jsonDocument);     // Struct to JSON
+      bool configurationFromJson(JsonDocument &jsonDocument, ConfigStruct &config, bool partial = false);   // Full (or partial) JSON to struct
+      ```
+    - **Private validation functions**: Use consistent naming and validation approach:
+      ```cpp
+      static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial = false); // Single validation function
+      ```
+    - **Validation logic**: 
+      - When `partial = false`: Validate ALL required fields are present and correct type
+      - When `partial = true`: Validate at least ONE field is present and valid type, return `true` immediately when first valid field is found
+      - Use `JsonDocument &jsonDocument` parameter style consistently
+    - **JSON processing**: 
+      - `configurationFromJson()` uses full (or partial) validation (`_validateJsonConfiguration(doc, false)`)
+    - **Error handling**: Log specific field validation errors in validation functions, not in calling functions
+    - **Thread Safety**: Configuration modules with tasks must use semaphores for thread-safe access:
+      ```cpp
+      static SemaphoreHandle_t _configMutex = nullptr;  // Created in begin()
+      #define CONFIG_MUTEX_TIMEOUT_MS 5000               // Timeout constant in constants.h
+      ```
+      - `setConfiguration()` must acquire mutex with timeout before modifying shared state
+      - `getConfiguration()` should also use mutex for consistency (though less critical)
+      - Always release mutex in all code paths (success and error cases)
+      - Log timeout errors clearly for debugging
 
 7. **Data storage**:
     - Use Preferences wherever possible for configuration storage

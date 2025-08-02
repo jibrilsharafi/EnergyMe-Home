@@ -62,7 +62,7 @@ struct SystemStaticInfo {
     
     // Hardware & Chip (mostly static)
     char chipModel[NAME_BUFFER_SIZE];        // ESP32, ESP32-S3, etc.
-    uint8_t chipRevision;      // Hardware revision
+    uint16_t chipRevision;      // Hardware revision
     uint8_t chipCores;         // Number of CPU cores
     uint64_t chipId;           // Unique chip ID
     uint32_t flashChipSizeBytes;
@@ -76,7 +76,9 @@ struct SystemStaticInfo {
     
     // Crash and reset monitoring
     uint32_t crashCount;                    // Total crashes since last manual reset
+    uint32_t consecutiveCrashCount;         // Consecutive crashes since last reset
     uint32_t resetCount;                    // Total resets since first boot
+    uint32_t consecutiveResetCount;         // Consecutive resets since last manual reset
     uint32_t lastResetReason;               // ESP reset reason code
     char lastResetReasonString[STATUS_BUFFER_SIZE];         // Human readable reset reason
     bool lastResetWasCrash;                 // True if last reset was due to crash

@@ -71,6 +71,7 @@
 // Timeouts and intervals
 #define TASK_STOPPING_TIMEOUT (3 * 1000)
 #define TASK_STOPPING_CHECK_INTERVAL 100
+#define CONFIG_MUTEX_TIMEOUT_MS 5000
 
 // Channel configuration
 #define MULTIPLEXER_CHANNEL_COUNT 16

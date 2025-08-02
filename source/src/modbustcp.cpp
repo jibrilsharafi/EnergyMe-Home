@@ -38,7 +38,7 @@ namespace ModbusTcp
     {
         if (request.getFunctionCode() != READ_HOLD_REGISTER)
         {
-            logger.debug("Invalid function code: %d", TAG, request.getFunctionCode());
+            logger.warning("Invalid function code: %d", TAG, request.getFunctionCode());
             statistics.modbusRequestsError++;
             ModbusMessage errorResponse;
             errorResponse.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
@@ -53,7 +53,7 @@ namespace ModbusTcp
         // Validate register count (Modbus standard allows max 125 registers)
         if (registerCount == 0 || registerCount > 125)
         {
-            logger.debug("Invalid register count: %u - returning ILLEGAL_DATA_VALUE", TAG, registerCount);
+            logger.warning("Invalid register count: %u - returning ILLEGAL_DATA_VALUE", TAG, registerCount);
             statistics.modbusRequestsError++;
             ModbusMessage errorResponse;
             errorResponse.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
@@ -88,6 +88,8 @@ namespace ModbusTcp
         }
         
         statistics.modbusRequests++;
+        logger.verbose("Modbus TCP request handled: Server ID: %d, Function Code: %d, Start Address: %u, Register Count: %u", 
+                      TAG, request.getServerID(), request.getFunctionCode(), startAddress, registerCount);
         return response;
     }
 
@@ -95,14 +97,8 @@ namespace ModbusTcp
     static uint16_t _getFloatBits(float value, bool high)
     {
         uint32_t intValue = *reinterpret_cast<uint32_t*>(&value);
-        if (high)
-        {
-            return intValue >> 16;
-        }
-        else
-        {
-            return intValue & 0xFFFF;
-        }
+        if (high) return intValue >> 16;
+        return intValue & 0xFFFF;
     }
 
     static uint16_t _getRegisterValue(uint32_t address)

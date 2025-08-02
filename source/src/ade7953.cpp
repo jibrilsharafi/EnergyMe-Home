@@ -30,6 +30,7 @@ namespace Ade7953
     static SemaphoreHandle_t _spiMutex = NULL; // To handle single SPI operations
     static SemaphoreHandle_t _spiOperationMutex = NULL; // To handle full SPI operations (like read with verification, which is 2 SPI operations)
     static SemaphoreHandle_t _ade7953InterruptSemaphore = NULL; // TODO: maybe notification is better here?
+    static SemaphoreHandle_t _configMutex = NULL; // For thread-safe configuration access
 
     // FreeRTOS task handles and control flags
     static TaskHandle_t _meterReadingTaskHandle = NULL;
@@ -91,7 +92,7 @@ namespace Ade7953
     static void _setConfigurationFromPreferences();
     static bool _saveConfigurationToPreferences();
     static void _applyConfiguration(const Ade7953Configuration &config);
-    static bool _validateConfigurationJson(JsonDocument &jsonDocument);
+    static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial = false);
 
     // Calibration management
     static void _setCalibrationValuesFromSpiffs();
@@ -262,6 +263,18 @@ namespace Ade7953
             return;
         }
         logger.debug("SPI operation mutex created successfully", TAG);
+
+        _configMutex = xSemaphoreCreateMutex();
+        if (_configMutex == NULL)
+        {
+            logger.error("Failed to create config mutex", TAG);
+            vSemaphoreDelete(_spiMutex);
+            vSemaphoreDelete(_spiOperationMutex);
+            _spiMutex = NULL;
+            _spiOperationMutex = NULL;
+            return;
+        }
+        logger.debug("Config mutex created successfully", TAG);
     }
 
     static void _setHardwarePins(
@@ -347,6 +360,12 @@ namespace Ade7953
             _spiOperationMutex = NULL;
             logger.debug("SPI operation mutex deleted", TAG);
         }
+
+        if (_configMutex != NULL) {
+            vSemaphoreDelete(_configMutex);
+            _configMutex = NULL;
+            logger.debug("Config mutex deleted", TAG);
+        }
     }
 
     void _reset() {
@@ -366,7 +385,7 @@ namespace Ade7953
     bool _verifyCommunication() {
         logger.debug("Verifying communication with Ade7953...", TAG);
         
-        int32_t attempt = 0;
+        uint32_t attempt = 0;
         bool success = false;
         uint64_t lastMillisAttempt = 0;
 
@@ -377,7 +396,7 @@ namespace Ade7953
                 continue;
             }
 
-            logger.debug("Attempt (%d/%d) to communicate with ADE7953", TAG, attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+            logger.debug("Attempt (%lu/%lu) to communicate with ADE7953", TAG, attempt+1, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
             
             _reset();
             attempt++;
@@ -387,11 +406,11 @@ namespace Ade7953
                 logger.debug("Communication successful with ADE7953", TAG);
                 return true;
             } else {
-                logger.warning("Failed to communicate with ADE7953 on _attempt (%d/%d). Retrying in %d ms", TAG, attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
+                logger.warning("Failed to communicate with ADE7953 on attempt (%lu/%lu). Retrying in %lu ms", TAG, attempt, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS, ADE7953_VERIFY_COMMUNICATION_INTERVAL);
             }
         }
 
-        logger.error("Failed to communicate with ADE7953 after %d attempts", TAG, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
+        logger.error("Failed to communicate with ADE7953 after %lu attempts", TAG, ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS);
         return false;
     }
 
@@ -404,12 +423,15 @@ namespace Ade7953
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_ADE7953, true)) { // true = read-only
             logger.error("Failed to open Preferences for ADE7953 configuration", TAG);
-            setDefaultConfiguration();
+            // Set default configuration
+            _configuration = Ade7953Configuration();
+            _sampleTime = DEFAULT_CONFIG_SAMPLE_TIME;
+            _updateSampleTime();
             return;
         }
 
         // Load configuration values (use defaults if not found)
-        _configuration.sampleTime = preferences.getULong(CONFIG_SAMPLE_TIME_KEY, DEFAULT_CONFIG_SAMPLE_TIME);
+        _sampleTime = preferences.getULong(CONFIG_SAMPLE_TIME_KEY, DEFAULT_CONFIG_SAMPLE_TIME);
         _configuration.aVGain = preferences.getLong(CONFIG_AV_GAIN_KEY, DEFAULT_CONFIG_AV_GAIN);
         _configuration.aIGain = preferences.getLong(CONFIG_AI_GAIN_KEY, DEFAULT_CONFIG_AI_GAIN);
         _configuration.bIGain = preferences.getLong(CONFIG_BI_GAIN_KEY, DEFAULT_CONFIG_BI_GAIN);
@@ -433,188 +455,136 @@ namespace Ade7953
         preferences.end();
 
         // Validate sample time
-        if (_configuration.sampleTime < MINIMUM_SAMPLE_TIME) {
-            logger.warning("Sample time %lu is below minimum %d, using default", TAG, _configuration.sampleTime, MINIMUM_SAMPLE_TIME);
-            _configuration.sampleTime = DEFAULT_CONFIG_SAMPLE_TIME;
+        if (_sampleTime < MINIMUM_SAMPLE_TIME) {
+            logger.warning("Sample time %lu is below minimum %lu, using default", TAG, _sampleTime, MINIMUM_SAMPLE_TIME);
+            _sampleTime = DEFAULT_CONFIG_SAMPLE_TIME;
         }
 
         // Apply the configuration
         _applyConfiguration(_configuration);
+        _updateSampleTime();
 
         logger.debug("Successfully set configuration from Preferences", TAG);
     }
 
-    bool setConfiguration(JsonDocument &jsonDocument) {
-        logger.debug("Setting configuration from JSON...", TAG);
+    // Thread-safe configuration management using standardized pattern
+    void getConfiguration(Ade7953Configuration &config) {
+        if (xSemaphoreTake(_configMutex, pdMS_TO_TICKS(CONFIG_MUTEX_TIMEOUT_MS)) == pdTRUE) {
+            config = _configuration;
+            xSemaphoreGive(_configMutex);
+        } else {
+            logger.error("Failed to acquire config mutex for getConfiguration", TAG);
+            config = Ade7953Configuration(); // Return default if mutex acquisition fails
+        } // TODO: fix this, better approach
+    }
 
-        if (!_validateConfigurationJson(jsonDocument)) {
-            logger.warning("Invalid configuration JSON. Keeping previous configuration", TAG);
+    bool setConfiguration(const Ade7953Configuration &config) {
+        if (xSemaphoreTake(_configMutex, pdMS_TO_TICKS(CONFIG_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            logger.error("Failed to acquire config mutex for setConfiguration", TAG);
             return false;
         }
 
-        // Parse JSON and update configuration struct
-        _configuration.sampleTime = jsonDocument["sampleTime"].as<uint32_t>();
-        _configuration.aVGain = jsonDocument["aVGain"].as<int32_t>();
-        _configuration.aIGain = jsonDocument["aIGain"].as<int32_t>();
-        _configuration.bIGain = jsonDocument["bIGain"].as<int32_t>();
-        _configuration.aIRmsOs = jsonDocument["aIRmsOs"].as<int32_t>();
-        _configuration.bIRmsOs = jsonDocument["bIRmsOs"].as<int32_t>();
-        _configuration.aWGain = jsonDocument["aWGain"].as<int32_t>();
-        _configuration.bWGain = jsonDocument["bWGain"].as<int32_t>();
-        _configuration.aWattOs = jsonDocument["aWattOs"].as<int32_t>();
-        _configuration.bWattOs = jsonDocument["bWattOs"].as<int32_t>();
-        _configuration.aVarGain = jsonDocument["aVarGain"].as<int32_t>();
-        _configuration.bVarGain = jsonDocument["bVarGain"].as<int32_t>();
-        _configuration.aVarOs = jsonDocument["aVarOs"].as<int32_t>();
-        _configuration.bVarOs = jsonDocument["bVarOs"].as<int32_t>();
-        _configuration.aVaGain = jsonDocument["aVaGain"].as<int32_t>();
-        _configuration.bVaGain = jsonDocument["bVaGain"].as<int32_t>();
-        _configuration.aVaOs = jsonDocument["aVaOs"].as<int32_t>();
-        _configuration.bVaOs = jsonDocument["bVaOs"].as<int32_t>();
-        _configuration.phCalA = jsonDocument["phCalA"].as<int32_t>();
-        _configuration.phCalB = jsonDocument["phCalB"].as<int32_t>();
-
-        // Validate sample time
-        if (_configuration.sampleTime < MINIMUM_SAMPLE_TIME) {
-            logger.warning("Sample time %lu is below minimum %d, rejecting configuration", TAG, _configuration.sampleTime, MINIMUM_SAMPLE_TIME);
-            return false;
-        }
-
-        // Apply the configuration
+        _configuration = config;
         _applyConfiguration(_configuration);
-
-        // Save to Preferences
-        if (!_saveConfigurationToPreferences()) {
+        
+        bool result = _saveConfigurationToPreferences();
+        if (!result) {
             logger.error("Failed to save configuration to Preferences", TAG);
-            return false;
         }
+        
+        xSemaphoreGive(_configMutex);
+        return result;
+    }
 
-        logger.debug("Successfully set configuration from JSON", TAG);
+    bool configurationToJson(const Ade7953Configuration &config, JsonDocument &jsonDocument) {
+        jsonDocument["aVGain"] = config.aVGain;
+        jsonDocument["aIGain"] = config.aIGain;
+        jsonDocument["bIGain"] = config.bIGain;
+        jsonDocument["aIRmsOs"] = config.aIRmsOs;
+        jsonDocument["bIRmsOs"] = config.bIRmsOs;
+        jsonDocument["aWGain"] = config.aWGain;
+        jsonDocument["bWGain"] = config.bWGain;
+        jsonDocument["aWattOs"] = config.aWattOs;
+        jsonDocument["bWattOs"] = config.bWattOs;
+        jsonDocument["aVarGain"] = config.aVarGain;
+        jsonDocument["bVarGain"] = config.bVarGain;
+        jsonDocument["aVarOs"] = config.aVarOs;
+        jsonDocument["bVarOs"] = config.bVarOs;
+        jsonDocument["aVaGain"] = config.aVaGain;
+        jsonDocument["bVaGain"] = config.bVaGain;
+        jsonDocument["aVaOs"] = config.aVaOs;
+        jsonDocument["bVaOs"] = config.bVaOs;
+        jsonDocument["phCalA"] = config.phCalA;
+        jsonDocument["phCalB"] = config.phCalB;
         return true;
     }
 
-    void setDefaultConfiguration() {
-        logger.debug("Setting default configuration...", TAG);
-
-        // Reset to default values
-        _configuration = Ade7953Configuration();
-
-        // Apply the default configuration
-        _applyConfiguration(_configuration);
-
-        // Save to Preferences
-        _saveConfigurationToPreferences();
-
-        logger.debug("Default configuration set", TAG);
-    }
-
-    void getConfiguration(Ade7953Configuration &config) {
-        config = _configuration;
-    }
-
-    void configurationToJson(JsonDocument &jsonDocument) {
-        logger.debug("Converting configuration to JSON...", TAG);
-
-        jsonDocument["sampleTime"] = _configuration.sampleTime;
-        jsonDocument["aVGain"] = _configuration.aVGain;
-        jsonDocument["aIGain"] = _configuration.aIGain;
-        jsonDocument["bIGain"] = _configuration.bIGain;
-        jsonDocument["aIRmsOs"] = _configuration.aIRmsOs;
-        jsonDocument["bIRmsOs"] = _configuration.bIRmsOs;
-        jsonDocument["aWGain"] = _configuration.aWGain;
-        jsonDocument["bWGain"] = _configuration.bWGain;
-        jsonDocument["aWattOs"] = _configuration.aWattOs;
-        jsonDocument["bWattOs"] = _configuration.bWattOs;
-        jsonDocument["aVarGain"] = _configuration.aVarGain;
-        jsonDocument["bVarGain"] = _configuration.bVarGain;
-        jsonDocument["aVarOs"] = _configuration.aVarOs;
-        jsonDocument["bVarOs"] = _configuration.bVarOs;
-        jsonDocument["aVaGain"] = _configuration.aVaGain;
-        jsonDocument["bVaGain"] = _configuration.bVaGain;
-        jsonDocument["aVaOs"] = _configuration.aVaOs;
-        jsonDocument["bVaOs"] = _configuration.bVaOs;
-        jsonDocument["phCalA"] = _configuration.phCalA;
-        jsonDocument["phCalB"] = _configuration.phCalB;
-
-        logger.debug("Successfully converted configuration to JSON", TAG);
-    }
-
-    bool setSingleConfigurationValue(const char* key, int32_t value) {
-        if (!key) {
-            logger.error("Configuration key is null", TAG);
+    bool configurationFromJson(JsonDocument &jsonDocument, Ade7953Configuration &config, bool partial) {
+        if (!_validateJsonConfiguration(jsonDocument, partial)) {
             return false;
         }
 
-        logger.debug("Setting single configuration value: %s = %ld", TAG, key, value);
-
-        // Update the configuration struct based on the key
-        if (strcmp(key, "sampleTime") == 0) {
-            if (value < MINIMUM_SAMPLE_TIME) {
-                logger.warning("Sample time %ld is below minimum %d", TAG, value, MINIMUM_SAMPLE_TIME);
-                return false;
-            }
-            _configuration.sampleTime = (uint32_t)value;
-        } else if (strcmp(key, "aVGain") == 0) {
-            _configuration.aVGain = value;
-        } else if (strcmp(key, "aIGain") == 0) {
-            _configuration.aIGain = value;
-        } else if (strcmp(key, "bIGain") == 0) {
-            _configuration.bIGain = value;
-        } else if (strcmp(key, "aIRmsOs") == 0) {
-            _configuration.aIRmsOs = value;
-        } else if (strcmp(key, "bIRmsOs") == 0) {
-            _configuration.bIRmsOs = value;
-        } else if (strcmp(key, "aWGain") == 0) {
-            _configuration.aWGain = value;
-        } else if (strcmp(key, "bWGain") == 0) {
-            _configuration.bWGain = value;
-        } else if (strcmp(key, "aWattOs") == 0) {
-            _configuration.aWattOs = value;
-        } else if (strcmp(key, "bWattOs") == 0) {
-            _configuration.bWattOs = value;
-        } else if (strcmp(key, "aVarGain") == 0) {
-            _configuration.aVarGain = value;
-        } else if (strcmp(key, "bVarGain") == 0) {
-            _configuration.bVarGain = value;
-        } else if (strcmp(key, "aVarOs") == 0) {
-            _configuration.aVarOs = value;
-        } else if (strcmp(key, "bVarOs") == 0) {
-            _configuration.bVarOs = value;
-        } else if (strcmp(key, "aVaGain") == 0) {
-            _configuration.aVaGain = value;
-        } else if (strcmp(key, "bVaGain") == 0) {
-            _configuration.bVaGain = value;
-        } else if (strcmp(key, "aVaOs") == 0) {
-            _configuration.aVaOs = value;
-        } else if (strcmp(key, "bVaOs") == 0) {
-            _configuration.bVaOs = value;
-        } else if (strcmp(key, "phCalA") == 0) {
-            _configuration.phCalA = value;
-        } else if (strcmp(key, "phCalB") == 0) {
-            _configuration.phCalB = value;
+        if (partial) {
+            // For partial updates, start with current config
+            getConfiguration(config);
         } else {
-            logger.error("Unknown configuration key: %s", TAG, key);
+            // For full updates, start with default
+            config = Ade7953Configuration();
+        }
+
+        if (jsonDocument["aVGain"].is<int32_t>()) config.aVGain = jsonDocument["aVGain"].as<int32_t>();
+        if (jsonDocument["aIGain"].is<int32_t>()) config.aIGain = jsonDocument["aIGain"].as<int32_t>();
+        if (jsonDocument["bIGain"].is<int32_t>()) config.bIGain = jsonDocument["bIGain"].as<int32_t>();
+        if (jsonDocument["aIRmsOs"].is<int32_t>()) config.aIRmsOs = jsonDocument["aIRmsOs"].as<int32_t>();
+        if (jsonDocument["bIRmsOs"].is<int32_t>()) config.bIRmsOs = jsonDocument["bIRmsOs"].as<int32_t>();
+        if (jsonDocument["aWGain"].is<int32_t>()) config.aWGain = jsonDocument["aWGain"].as<int32_t>();
+        if (jsonDocument["bWGain"].is<int32_t>()) config.bWGain = jsonDocument["bWGain"].as<int32_t>();
+        if (jsonDocument["bWGain"].is<int32_t>()) config.bWGain = jsonDocument["bWGain"].as<int32_t>();
+        if (jsonDocument["aWattOs"].is<int32_t>()) config.aWattOs = jsonDocument["aWattOs"].as<int32_t>();
+        if (jsonDocument["bWattOs"].is<int32_t>()) config.bWattOs = jsonDocument["bWattOs"].as<int32_t>();
+        if (jsonDocument["aVarGain"].is<int32_t>()) config.aVarGain = jsonDocument["aVarGain"].as<int32_t>();
+        if (jsonDocument["bVarGain"].is<int32_t>()) config.bVarGain = jsonDocument["bVarGain"].as<int32_t>();
+        if (jsonDocument["aVarOs"].is<int32_t>()) config.aVarOs = jsonDocument["aVarOs"].as<int32_t>();
+        if (jsonDocument["bVarOs"].is<int32_t>()) config.bVarOs = jsonDocument["bVarOs"].as<int32_t>();
+        if (jsonDocument["aVarOs"].is<int32_t>()) config.aVarOs = jsonDocument["aVarOs"].as<int32_t>();
+        if (jsonDocument["bVarOs"].is<int32_t>()) config.bVarOs = jsonDocument["bVarOs"].as<int32_t>();
+        if (jsonDocument["aVaGain"].is<int32_t>()) config.aVaGain = jsonDocument["aVaGain"].as<int32_t>();
+        if (jsonDocument["bVaGain"].is<int32_t>()) config.bVaGain = jsonDocument["bVaGain"].as<int32_t>();
+        if (jsonDocument["aVaOs"].is<int32_t>()) config.aVaOs = jsonDocument["aVaOs"].as<int32_t>();
+        if (jsonDocument["bVaOs"].is<int32_t>()) config.bVaOs = jsonDocument["bVaOs"].as<int32_t>();
+        if (jsonDocument["phCalA"].is<int32_t>()) config.phCalA = jsonDocument["phCalA"].as<int32_t>();
+        if (jsonDocument["phCalB"].is<int32_t>()) config.phCalB = jsonDocument["phCalB"].as<int32_t>();
+
+        return true;
+    }
+
+    // Simple setSampleTime and getSampleTime functions
+    uint32_t getSampleTime() { 
+        return _sampleTime; 
+    }
+
+    bool setSampleTime(uint32_t sampleTime) {
+        if (sampleTime < MINIMUM_SAMPLE_TIME) {
+            logger.warning("Sample time %lu is below minimum %lu", TAG, sampleTime, MINIMUM_SAMPLE_TIME);
             return false;
         }
 
-        // Apply the updated configuration
-        _applyConfiguration(_configuration);
+        _sampleTime = sampleTime;
+        _updateSampleTime();
 
-        // Save to Preferences
-        if (!_saveConfigurationToPreferences()) {
-            logger.error("Failed to save configuration to Preferences", TAG);
-            return false;
+        // Save to preferences
+        Preferences preferences;
+        if (preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
+            preferences.putULong(CONFIG_SAMPLE_TIME_KEY, _sampleTime);
+            preferences.end();
         }
 
-        logger.debug("Successfully set single configuration value: %s = %ld", TAG, key, value);
+        return true;
         return true;
     }
 
     void _applyConfiguration(const Ade7953Configuration &config) {
         logger.debug("Applying configuration...", TAG);
-
-        _sampleTime = config.sampleTime;
-        _updateSampleTime();
 
         _setGain(config.aVGain, Ade7953Channel::A, MeasurementType::VOLTAGE);
         // Channel B voltage gain should not be set as by datasheet
@@ -653,12 +623,12 @@ namespace Ade7953
         logger.debug("Saving configuration to Preferences...", TAG);
 
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false)) { // false = read-write
+        if (!preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
             logger.error("Failed to open Preferences for saving ADE7953 configuration", TAG);
             return false;
         }
 
-        preferences.putULong(CONFIG_SAMPLE_TIME_KEY, _configuration.sampleTime);
+        preferences.putULong(CONFIG_SAMPLE_TIME_KEY, _sampleTime);
         preferences.putLong(CONFIG_AV_GAIN_KEY, _configuration.aVGain);
         preferences.putLong(CONFIG_AI_GAIN_KEY, _configuration.aIGain);
         preferences.putLong(CONFIG_BI_GAIN_KEY, _configuration.bIGain);
@@ -685,35 +655,170 @@ namespace Ade7953
         return true;
     }
 
-    bool _validateConfigurationJson(JsonDocument& jsonDocument) {
-        if (!jsonDocument.is<JsonObject>()) {logger.warning("JSON is not an object", TAG); return false;}
-
-        if (!jsonDocument["sampleTime"].is<uint32_t>()) {logger.warning("sampleTime is not uint32_t", TAG); return false;}
-        // Ensure sampleTime is not below MINIMUM_SAMPLE_TIME
-        if (jsonDocument["sampleTime"].as<uint32_t>() < MINIMUM_SAMPLE_TIME) {
-            logger.warning("sampleTime %lu is below the minimum value of %lu", TAG, 
-                jsonDocument["sampleTime"].as<uint32_t>(), MINIMUM_SAMPLE_TIME);
+    bool _validateJsonConfiguration(JsonDocument& jsonDocument, bool partial) {
+        if (!jsonDocument.is<JsonObject>()) {
+            logger.warning("JSON is not an object", TAG);
             return false;
         }
-        if (!jsonDocument["aVGain"].is<int32_t>()) {logger.warning("aVGain is not int32_t", TAG); return false;}
-        if (!jsonDocument["aIGain"].is<int32_t>()) {logger.warning("aIGain is not int32_t", TAG); return false;}
-        if (!jsonDocument["bIGain"].is<int32_t>()) {logger.warning("bIGain is not int32_t", TAG); return false;}
-        if (!jsonDocument["aIRmsOs"].is<int32_t>()) {logger.warning("aIRmsOs is not int32_t", TAG); return false;}
-        if (!jsonDocument["bIRmsOs"].is<int32_t>()) {logger.warning("bIRmsOs is not int32_t", TAG); return false;}
-        if (!jsonDocument["aWGain"].is<int32_t>()) {logger.warning("aWGain is not int32_t", TAG); return false;}
-        if (!jsonDocument["bWGain"].is<int32_t>()) {logger.warning("bWGain is not int32_t", TAG); return false;}
-        if (!jsonDocument["aWattOs"].is<int32_t>()) {logger.warning("aWattOs is not int32_t", TAG); return false;}
-        if (!jsonDocument["bWattOs"].is<int32_t>()) {logger.warning("bWattOs is not int32_t", TAG); return false;} 
-        if (!jsonDocument["aVarGain"].is<int32_t>()) {logger.warning("aVarGain is not int32_t", TAG); return false;}
-        if (!jsonDocument["bVarGain"].is<int32_t>()) {logger.warning("bVarGain is not int32_t", TAG); return false;}
-        if (!jsonDocument["aVarOs"].is<int32_t>()) {logger.warning("aVarOs is not int32_t", TAG); return false;}
-        if (!jsonDocument["bVarOs"].is<int32_t>()) {logger.warning("bVarOs is not int32_t", TAG); return false;}
-        if (!jsonDocument["aVaGain"].is<int32_t>()) {logger.warning("aVaGain is not int32_t", TAG); return false;}
-        if (!jsonDocument["bVaGain"].is<int32_t>()) {logger.warning("bVaGain is not int32_t", TAG); return false;}
-        if (!jsonDocument["aVaOs"].is<int32_t>()) {logger.warning("aVaOs is not int32_t", TAG); return false;}
-        if (!jsonDocument["bVaOs"].is<int32_t>()) {logger.warning("bVaOs is not int32_t", TAG); return false;}
-        if (!jsonDocument["phCalA"].is<int32_t>()) {logger.warning("phCalA is not int32_t", TAG); return false;}
-        if (!jsonDocument["phCalB"].is<int32_t>()) {logger.warning("phCalB is not int32_t", TAG); return false;}
+
+        // For partial updates, we don't require all fields to be present
+        if (!partial) {
+            // Full validation - all fields must be present and valid
+            if (!jsonDocument["aVGain"].is<int32_t>()) {
+                logger.warning("aVGain is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aIGain"].is<int32_t>()) {
+                logger.warning("aIGain is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bIGain"].is<int32_t>()) {
+                logger.warning("bIGain is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aIRmsOs"].is<int32_t>()) {
+                logger.warning("aIRmsOs is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bIRmsOs"].is<int32_t>()) {
+                logger.warning("bIRmsOs is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aWGain"].is<int32_t>()) {
+                logger.warning("aWGain is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bWGain"].is<int32_t>()) {
+                logger.warning("bWGain is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aWattOs"].is<int32_t>()) {
+                logger.warning("aWattOs is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bWattOs"].is<int32_t>()) {
+                logger.warning("bWattOs is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aVarGain"].is<int32_t>()) {
+                logger.warning("aVarGain is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bVarGain"].is<int32_t>()) {
+                logger.warning("bVarGain is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aVarOs"].is<int32_t>()) {
+                logger.warning("aVarOs is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bVarOs"].is<int32_t>()) {
+                logger.warning("bVarOs is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aVaGain"].is<int32_t>()) {
+                logger.warning("aVaGain is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bVaGain"].is<int32_t>()) {
+                logger.warning("bVaGain is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aVaOs"].is<int32_t>()) {
+                logger.warning("aVaOs is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bVaOs"].is<int32_t>()) {
+                logger.warning("bVaOs is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["phCalA"].is<int32_t>()) {
+                logger.warning("phCalA is missing or not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["phCalB"].is<int32_t>()) {
+                logger.warning("phCalB is missing or not int32_t", TAG);
+                return false;
+            }
+        } else {
+            // Partial validation - only validate fields that are present
+            if (!jsonDocument["aVGain"].is<int32_t>()) {
+                logger.warning("aVGain is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aIGain"].is<int32_t>()) {
+                logger.warning("aIGain is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bIGain"].is<int32_t>()) {
+                logger.warning("bIGain is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aIRmsOs"].is<int32_t>()) {
+                logger.warning("aIRmsOs is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bIRmsOs"].is<int32_t>()) {
+                logger.warning("bIRmsOs is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aWGain"].is<int32_t>()) {
+                logger.warning("aWGain is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bWGain"].is<int32_t>()) {
+                logger.warning("bWGain is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aWattOs"].is<int32_t>()) {
+                logger.warning("aWattOs is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bWattOs"].is<int32_t>()) {
+                logger.warning("bWattOs is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aVarGain"].is<int32_t>()) {
+                logger.warning("aVarGain is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bVarGain"].is<int32_t>()) {
+                logger.warning("bVarGain is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aVarOs"].is<int32_t>()) {
+                logger.warning("aVarOs is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bVarOs"].is<int32_t>()) {
+                logger.warning("bVarOs is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aVaGain"].is<int32_t>()) {
+                logger.warning("aVaGain is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bVaGain"].is<int32_t>()) {
+                logger.warning("bVaGain is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["aVaOs"].is<int32_t>()) {
+                logger.warning("aVaOs is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["bVaOs"].is<int32_t>()) {
+                logger.warning("bVaOs is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["phCalA"].is<int32_t>()) {
+                logger.warning("phCalA is not int32_t", TAG);
+                return false;
+            }
+            if (!jsonDocument["phCalB"].is<int32_t>()) {
+                logger.warning("phCalB is not int32_t", TAG);
+                return false;
+            }
+        }
 
         return true;
     }
@@ -804,7 +909,7 @@ namespace Ade7953
 
     bool isChannelActive(uint32_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
-            logger.error("Channel index out of bounds: %d", TAG, channelIndex);
+            logger.error("Channel index out of bounds: %lu", TAG, channelIndex);
             return false;
         }
 
@@ -813,7 +918,7 @@ namespace Ade7953
 
     void getChannelData(ChannelData &channelData, uint32_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
-            logger.error("Channel index out of bounds: %d", TAG, channelIndex);
+            logger.error("Channel index out of bounds: %lu", TAG, channelIndex);
             return;
         }
 
@@ -822,7 +927,7 @@ namespace Ade7953
 
     void getMeterValues(MeterValues &meterValues, uint32_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
-            logger.error("Channel index out of bounds: %d", TAG, channelIndex);
+            logger.error("Channel index out of bounds: %lu", TAG, channelIndex);
             return;
         }
 
@@ -930,7 +1035,7 @@ namespace Ade7953
 
             // Check if index is within bounds
             if (!isChannelValid(index)) {
-                logger.error("Index out of bounds: %d", TAG, index);
+                logger.error("Index out of bounds: %lu", TAG, index);
                 continue;
             }
 
@@ -997,14 +1102,14 @@ namespace Ade7953
         logger.debug("Saving channel data to Preferences...", TAG);
 
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false)) { // false = read-write
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false)) {
             logger.error("Failed to open Preferences for saving channel data", TAG);
             return false;
         }
 
         // Save data for each channel
         for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
-            char activeKey[32];
+            char activeKey[32]; // TODO: make constants the buffers
             char reverseKey[32];
             char labelKey[32];
             char phaseKey[32];
@@ -1038,7 +1143,7 @@ namespace Ade7953
         logger.debug("Saving channel %u data to Preferences...", TAG, channelIndex);
 
         Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false)) { // false = read-write
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false)) {
             logger.error("Failed to open Preferences for saving channel %u data", TAG, channelIndex);
             return false;
         }
@@ -1286,7 +1391,7 @@ namespace Ade7953
         // We cannot put an higher limit here because if the channel happened to be disabled, then
         // enabled again, this would result in an infinite error.
         if (_meterValues[channel].lastMillis != 0 && _deltaMillis == 0) {
-            logger.warning("%s (%d): delta millis (%llu) is invalid. Discarding reading", TAG, _channelData[channel].label, channel, _deltaMillis);
+            logger.warning("%s (%lu): delta millis (%llu) is invalid. Discarding reading", TAG, _channelData[channel].label, channel, _deltaMillis);
             // _recordFailure();
             return false;
         }
@@ -1632,11 +1737,14 @@ namespace Ade7953
     // Energy
     // --------------------
 
-    void _setEnergyFromPreferences() {
+    void _setEnergyFromPreferences() { // TODO: fix with standard structure, such that if it fails, the default values get written to preferences
         logger.debug("Reading energy from preferences", TAG);
         
         Preferences preferences;
-        preferences.begin(PREFERENCES_NAMESPACE_ENERGY, true);
+        if (!preferences.begin(PREFERENCES_NAMESPACE_ENERGY, true)) {
+            logger.error("Failed to open preferences for reading", TAG);
+            return;
+        }
 
         for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
             char key[PREFERENCES_KEY_BUFFER_SIZE];
@@ -1735,7 +1843,7 @@ namespace Ade7953
         logger.debug("Successfully saved energy to preferences", TAG);
     }
 
-    void _saveDailyEnergyToSpiffs() {
+    void _saveDailyEnergyToSpiffs() { // TODO: duplicate?
         logger.debug("Saving hourly energy to CSV...", TAG);
 
         // Ensure time is synchronized before saving
@@ -1751,14 +1859,18 @@ namespace Ade7953
         // Create filename for today's CSV file (UTC date)
         char filename[NAME_BUFFER_SIZE];
         CustomTime::getDateIso(filename, sizeof(filename));
+
+        // We must start the path with "/...."
+        char filepath[NAME_BUFFER_SIZE + 2];
+        snprintf(filepath, sizeof(filepath), "/%s", filename);
         
         // Check if file exists to determine if we need to write header
-        bool fileExists = SPIFFS.exists(filename);
+        bool fileExists = SPIFFS.exists(filepath);
         
         // Open file in append mode
-        File file = SPIFFS.open(filename, FILE_APPEND); // FIXME: does not seem to work, maybe first check existence? boh
+        File file = SPIFFS.open(filepath, FILE_APPEND);
         if (!file) {
-            logger.error("Failed to open CSV file %s for writing", TAG, filename);
+            logger.error("Failed to open CSV file %s for writing", TAG, filepath);
             return;
         }
         
@@ -2436,7 +2548,6 @@ namespace Ade7953
         }
     }
 
-    uint32_t getSampleTime() { return _sampleTime; }
     float getGridFrequency() { return _gridFrequency; }
 
 
