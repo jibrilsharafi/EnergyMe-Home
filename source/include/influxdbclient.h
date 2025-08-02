@@ -62,8 +62,8 @@
 struct InfluxDbConfiguration {
     bool enabled;
     char server[URL_BUFFER_SIZE];
-    int port;
-    int version;
+    int32_t port;
+    int32_t version;
     char database[DATABASE_NAME_BUFFER_SIZE];
     char username[USERNAME_BUFFER_SIZE];
     char password[PASSWORD_BUFFER_SIZE];
@@ -71,7 +71,7 @@ struct InfluxDbConfiguration {
     char bucket[BUCKET_NAME_BUFFER_SIZE];
     char token[TOKEN_BUFFER_SIZE];
     char measurement[MEASUREMENT_BUFFER_SIZE];
-    int frequencySeconds;
+    int32_t frequencySeconds;
     bool useSSL;
 
     InfluxDbConfiguration()

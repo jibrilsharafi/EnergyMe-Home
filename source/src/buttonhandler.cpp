@@ -5,29 +5,29 @@ static const char *TAG = "buttonhandler";
 namespace ButtonHandler
 {
     // Static state variables
-    static int _buttonPin = INVALID_PIN; // Default pin
+    static int32_t _buttonPin = INVALID_PIN; // Default pin
     static TaskHandle_t _buttonTaskHandle = NULL;
     static SemaphoreHandle_t _buttonSemaphore = NULL;
 
     // Button state
-    static volatile unsigned long long _buttonPressStartTime = ZERO_START_TIME;
+    static volatile uint64_t _buttonPressStartTime = ZERO_START_TIME;
     static volatile bool _buttonPressed = false;
     static ButtonPressType _currentPressType = ButtonPressType::NONE;
     static bool _operationInProgress = false;
     static char _operationName[STATUS_BUFFER_SIZE] = "";
-    static unsigned long long _operationTimestamp = ZERO_START_TIME;
+    static uint64_t _operationTimestamp = ZERO_START_TIME;
 
     // Getter public methods
     ButtonPressType getCurrentPressType() {return _currentPressType;};
     bool isOperationInProgress() {return _operationInProgress;};
     void getOperationName(char* buffer, size_t bufferSize) {snprintf(buffer, bufferSize, "%s", _operationName);};
-    unsigned long long getOperationTimestamp() {return _operationTimestamp;};
+    uint64_t getOperationTimestamp() {return _operationTimestamp;};
 
     // Private function declarations
     static void _buttonISR();
     static void _buttonTask(void *parameter);
-    static void _processButtonPress(unsigned long long pressDuration);
-    static void _updateVisualFeedback(unsigned long long pressDuration);
+    static void _processButtonPress(uint64_t pressDuration);
+    static void _updateVisualFeedback(uint64_t pressDuration);
 
     // Operation handlers
     static void _handleRestart();
@@ -35,7 +35,7 @@ namespace ButtonHandler
     static void _handleWifiReset();
     static void _handleFactoryReset();
 
-    void begin(int buttonPin)
+    void begin(int32_t buttonPin)
     {
         _buttonPin = buttonPin;
         logger.debug("Initializing interrupt-driven button handler on GPIO%d", TAG, _buttonPin);
@@ -131,7 +131,7 @@ namespace ButtonHandler
                 if (!_buttonPressed && _buttonPressStartTime > ZERO_START_TIME)
                 {
                     // Button was released - process the press
-                    unsigned long long pressDuration = millis64() - _buttonPressStartTime;
+                    uint64_t pressDuration = millis64() - _buttonPressStartTime;
                     logger.debug("Button released after %llu ms", TAG, pressDuration);
 
                     _processButtonPress(pressDuration);
@@ -145,13 +145,13 @@ namespace ButtonHandler
                     // Button was pressed - start visual feedback
                     logger.debug("Button pressed", TAG);
 
-                    Led::setBrightness(max(Led::getBrightness(), (unsigned int)1));
+                    Led::setBrightness(max(Led::getBrightness(), (uint32_t)1));
                     Led::setWhite(Led::PRIO_URGENT);
                 }
             // Here it means it is still being pressed
             } else if (_buttonPressed && _buttonPressStartTime > ZERO_START_TIME) {
                 // Timeout occurred while button is pressed - update visual feedback
-                unsigned long long pressDuration = millis64() - _buttonPressStartTime;
+                uint64_t pressDuration = millis64() - _buttonPressStartTime;
                 _updateVisualFeedback(pressDuration);
             }
         }
@@ -159,7 +159,7 @@ namespace ButtonHandler
         vTaskDelete(NULL);
     }
 
-    static void _processButtonPress(unsigned long long pressDuration)
+    static void _processButtonPress(uint64_t pressDuration)
     {
         // Determine press type based on duration
         if (pressDuration >= BUTTON_SHORT_PRESS_TIME && pressDuration < BUTTON_MEDIUM_PRESS_TIME)
@@ -189,7 +189,7 @@ namespace ButtonHandler
         }
     }
 
-    static void _updateVisualFeedback(unsigned long long pressDuration) // FIXME: the previous color does not get cleared since they are the same priority
+    static void _updateVisualFeedback(uint64_t pressDuration) // FIXME: the previous color does not get cleared since they are the same priority
     {
         // Provide immediate visual feedback based on current press duration
         if (pressDuration >= BUTTON_MAX_PRESS_TIME)

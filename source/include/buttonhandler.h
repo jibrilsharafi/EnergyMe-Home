@@ -15,7 +15,7 @@
 #define BUTTON_TASK_PRIORITY 2
 
 #define PREFERENCES_LAST_OPERATION_KEY "last_operation"
-#define PREFERENCES_LAST_OPERATION_TIMESTAMP_KEY "last_op_timestamp" // Cannot be too long
+#define PREFERENCES_LAST_OPERATION_TIMESTAMP_KEY "last_op_timestamp" // Cannot be too int32_t
 
 // Timing constants
 #define BUTTON_DEBOUNCE_TIME 50
@@ -37,12 +37,12 @@ enum class ButtonPressType
 };
 
 namespace ButtonHandler {
-    void begin(int buttonPin);
+    void begin(int32_t buttonPin);
     void stop();
 
     ButtonPressType getCurrentPressType();
     bool isOperationInProgress();
     void getOperationName(char* buffer, size_t bufferSize);
-    unsigned long long getOperationTimestamp();
+    uint64_t getOperationTimestamp();
     void clearCurrentOperationName();
 }

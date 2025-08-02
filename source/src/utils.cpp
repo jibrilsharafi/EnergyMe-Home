@@ -46,7 +46,7 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     // // Crash and reset monitoring
     info.crashCount = CrashMonitor::getCrashCount();
     info.resetCount = CrashMonitor::getResetCount();
-    info.lastResetReason = (unsigned long)esp_reset_reason();
+    info.lastResetReason = (uint32_t)esp_reset_reason();
     snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s", CrashMonitor::getResetReasonString(esp_reset_reason()));
     info.lastResetWasCrash = CrashMonitor::isLastResetDueToCrash();
     
@@ -80,7 +80,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.heapUsedPercentage = 100.0f - info.heapFreePercentage;
     
     // Memory - PSRAM
-    unsigned long psramTotal = ESP.getPsramSize();
+    uint32_t psramTotal = ESP.getPsramSize();
     if (psramTotal > 0) {
         info.psramFreeBytes = ESP.getFreePsram();
         info.psramUsedBytes = psramTotal - info.psramFreeBytes;
@@ -491,7 +491,7 @@ static void _maintenanceTask(void* parameter) {
         logger.debug("Maintenance checks completed", TAG);
 
         // Wait for stop notification with timeout (blocking)
-        unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MAINTENANCE_CHECK_INTERVAL));
+        uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MAINTENANCE_CHECK_INTERVAL));
         if (notificationValue > 0) {
             _maintenanceTaskShouldRun = false;
             break;
@@ -536,7 +536,7 @@ void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
     xTaskNotifyGive(*taskHandle);
     
     // Wait with timeout for clean shutdown
-    int timeout = TASK_STOPPING_TIMEOUT;
+    int32_t timeout = TASK_STOPPING_TIMEOUT;
     while (*taskHandle != NULL && timeout > 0) {
         delay(TASK_STOPPING_CHECK_INTERVAL);
         timeout -= TASK_STOPPING_CHECK_INTERVAL;
@@ -614,7 +614,7 @@ void setFactoryReset(const char* functionName, const char* reason) {
 }
 
 static void _restartSystem() {
-    Led::setBrightness(max(Led::getBrightness(), (unsigned int)1)); // Show a faint light even if it is off
+    Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
     Led::setOrange(Led::PRIO_CRITICAL);
 
     logger.info("Restarting system", TAG);
@@ -816,7 +816,7 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
 static void _factoryReset() { 
     logger.fatal("Factory reset requested", TAG);
 
-    Led::setBrightness(max(Led::getBrightness(), (unsigned int)1)); // Show a faint light even if it is off
+    Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
     Led::blinkRedFast(Led::PRIO_CRITICAL);
 
     clearAllPreferences();
@@ -916,12 +916,12 @@ bool isLatestFirmwareInstalled() {
         return true;
     }
 
-    int latestMajor, latestMinor, latestPatch;
+    int32_t latestMajor, latestMinor, latestPatch;
     sscanf(latestFirmwareVersion, "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
 
-    int currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
-    int currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
-    int currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
+    int32_t currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
+    int32_t currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
+    int32_t currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
 
     if (latestMajor < currentMajor) return true;
     if (latestMajor > currentMajor) return false;
@@ -947,7 +947,7 @@ void updateJsonFirmwareStatus(const char *status, const char *reason)
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {
-    unsigned char mac[6];
+    uint8_t mac[6];
     esp_efuse_mac_get_default(mac);
     
     // Use lowercase hex formatting without colons
@@ -955,7 +955,7 @@ void getDeviceId(char* deviceId, size_t maxLength) {
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-const char* getMqttStateReason(int state)
+const char* getMqttStateReason(int32_t state)
 {
 
     // Full description of the MQTT state codes
@@ -986,14 +986,14 @@ const char* getMqttStateReason(int state)
     }
 }
 
-unsigned long long calculateExponentialBackoff(unsigned long long attempt, unsigned long long initialInterval, unsigned long long maxInterval, unsigned long long multiplier) {
+uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier) {
     if (attempt == 0) {
         return 0;
     }
     
-    unsigned long long backoffDelay = initialInterval;
+    uint64_t backoffDelay = initialInterval;
     
-    for (unsigned long long i = 0; i < attempt - 1 && backoffDelay < maxInterval; ++i) {
+    for (uint64_t i = 0; i < attempt - 1 && backoffDelay < maxInterval; ++i) {
         backoffDelay *= multiplier;
     }
     

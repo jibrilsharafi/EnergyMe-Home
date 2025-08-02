@@ -5,26 +5,26 @@ static const char *TAG = "ade7953";
 namespace Ade7953
 {
     // Hardware pins
-    static unsigned int _ssPin;
-    static unsigned int _sckPin;
-    static unsigned int _misoPin;
-    static unsigned int _mosiPin;
-    static unsigned int _resetPin;
-    static unsigned int _interruptPin;
+    static uint32_t _ssPin;
+    static uint32_t _sckPin;
+    static uint32_t _misoPin;
+    static uint32_t _mosiPin;
+    static uint32_t _resetPin;
+    static uint32_t _interruptPin;
 
     // Timing and measurement variables
-    static unsigned int _sampleTime; // in milliseconds, time between linecycles readings
-    static unsigned int _currentChannel = 0;
+    static uint32_t _sampleTime; // in milliseconds, time between linecycles readings
+    static uint32_t _currentChannel = 0;
     static float _gridFrequency = 50.0f;
-    static volatile unsigned long long _lastInterruptTime = 0;
+    static volatile uint64_t _lastInterruptTime = 0;
 
     // Failure tracking
-    static unsigned int _failureCount = 0;
-    static unsigned long long _firstFailureTime = 0;
+    static uint32_t _failureCount = 0;
+    static uint64_t _firstFailureTime = 0;
 
     // Energy saving timestamps
-    static unsigned long long _lastMillisSaveEnergy = 0;
-    static unsigned long long _lastHourCsvSave = 0; // Track the last (integer) hour (from unix) when CSV was saved
+    static uint64_t _lastMillisSaveEnergy = 0;
+    static uint64_t _lastHourCsvSave = 0; // Track the last (integer) hour (from unix) when CSV was saved
 
     // Synchronization primitives
     static SemaphoreHandle_t _spiMutex = NULL; // To handle single SPI operations
@@ -47,12 +47,12 @@ namespace Ade7953
 
     // Hardware initialization and control
     static void _setHardwarePins(
-        unsigned int ssPin,
-        unsigned int sckPin,
-        unsigned int misoPin,
-        unsigned int mosiPin,
-        unsigned int resetPin,
-        unsigned int interruptPin
+        uint32_t ssPin,
+        uint32_t sckPin,
+        uint32_t misoPin,
+        uint32_t mosiPin,
+        uint32_t resetPin,
+        uint32_t interruptPin
     );
     static void _initializeSpiMutexes();
     static void _reset();
@@ -71,7 +71,7 @@ namespace Ade7953
     static void _detachInterruptHandler();
     static void _setupInterrupts();
     static void _checkInterruptTiming();
-    static void _processCycendInterrupt(unsigned long long linecycUnix);
+    static void _processCycendInterrupt(uint64_t linecycUnix);
     static void _handleCrcChangeInterrupt();
 
     // Task management
@@ -102,7 +102,7 @@ namespace Ade7953
     static void _setChannelDataFromPreferences();
     static void _updateChannelData();
     static bool _saveChannelDataToPreferences();
-    static bool _saveChannelToPreferences(unsigned int channelIndex);
+    static bool _saveChannelToPreferences(uint32_t channelIndex);
     static bool _validateChannelDataJson(JsonDocument &jsonDocument);
 
     // Energy data management
@@ -113,32 +113,32 @@ namespace Ade7953
     static void _saveEnergyComplete();
 
     // Meter reading and processing
-    static bool _readMeterValues(int channel, unsigned long long linecycUnixTime);
-    static bool _processChannelReading(int channel, unsigned long long linecycUnix);
-    static void _addMeterDataToPayload(int channel, unsigned long long linecycUnix);
-    static unsigned int _findNextActiveChannel(unsigned int currentChannel);
+    static bool _readMeterValues(int32_t channel, uint64_t linecycUnixTime);
+    static bool _processChannelReading(int32_t channel, uint64_t linecycUnix);
+    static void _addMeterDataToPayload(int32_t channel, uint64_t linecycUnix);
+    static uint32_t _findNextActiveChannel(uint32_t currentChannel);
 
     // ADE7953 register reading functions
-    static long _readApparentPowerInstantaneous(Ade7953Channel channel);
-    static long _readActivePowerInstantaneous(Ade7953Channel channel);
-    static long _readReactivePowerInstantaneous(Ade7953Channel channel);
-    static long _readCurrentInstantaneous(Ade7953Channel channel);
-    static long _readVoltageInstantaneous();
-    static long _readCurrentRms(Ade7953Channel channel);
-    static long _readVoltageRms();
-    static long _readActiveEnergy(Ade7953Channel channel);
-    static long _readReactiveEnergy(Ade7953Channel channel);
-    static long _readApparentEnergy(Ade7953Channel channel);
-    static long _readPowerFactor(Ade7953Channel channel);
-    static long _readAngle(Ade7953Channel channel);
-    static long _readPeriod();
+    static int32_t _readApparentPowerInstantaneous(Ade7953Channel channel);
+    static int32_t _readActivePowerInstantaneous(Ade7953Channel channel);
+    static int32_t _readReactivePowerInstantaneous(Ade7953Channel channel);
+    static int32_t _readCurrentInstantaneous(Ade7953Channel channel);
+    static int32_t _readVoltageInstantaneous();
+    static int32_t _readCurrentRms(Ade7953Channel channel);
+    static int32_t _readVoltageRms();
+    static int32_t _readActiveEnergy(Ade7953Channel channel);
+    static int32_t _readReactiveEnergy(Ade7953Channel channel);
+    static int32_t _readApparentEnergy(Ade7953Channel channel);
+    static int32_t _readPowerFactor(Ade7953Channel channel);
+    static int32_t _readAngle(Ade7953Channel channel);
+    static int32_t _readPeriod();
 
     // ADE7953 register writing functions
-    static void _setLinecyc(unsigned int linecyc);
-    static void _setPgaGain(long pgaGain, Ade7953Channel channel, MeasurementType measurementType);
-    static void _setPhaseCalibration(long phaseCalibration, Ade7953Channel channel);
-    static void _setGain(long gain, Ade7953Channel channel, MeasurementType measurementType);
-    static void _setOffset(long offset, Ade7953Channel channel, MeasurementType measurementType);
+    static void _setLinecyc(uint32_t linecyc);
+    static void _setPgaGain(int32_t pgaGain, Ade7953Channel channel, MeasurementType measurementType);
+    static void _setPhaseCalibration(int32_t phaseCalibration, Ade7953Channel channel);
+    static void _setGain(int32_t gain, Ade7953Channel channel, MeasurementType measurementType);
+    static void _setOffset(int32_t offset, Ade7953Channel channel, MeasurementType measurementType);
 
     // Validation functions
     static bool _validateValue(float newValue, float min, float max);
@@ -155,18 +155,18 @@ namespace Ade7953
     static Phase _getLaggingPhase(Phase phase);
     static Phase _getLeadingPhase(Phase phase);
     static void _updateSampleTime();
-    static bool _verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool signedData, bool wasWrite);
+    static bool _verifyLastCommunication(int32_t expectedAddress, int32_t expectedBits, int32_t expectedData, bool signedData, bool wasWrite);
     static void _recordFailure();
     static void _checkForTooManyFailures();
-    static void _irqstataBitName(int bit, char *buffer, size_t bufferSize);
+    static void _irqstataBitName(int32_t bit, char *buffer, size_t bufferSize);
 
     bool begin(
-        unsigned int ssPin,
-        unsigned int sckPin,
-        unsigned int misoPin,
-        unsigned int mosiPin,
-        unsigned int resetPin,
-        unsigned int interruptPin
+        uint32_t ssPin,
+        uint32_t sckPin,
+        uint32_t misoPin,
+        uint32_t mosiPin,
+        uint32_t resetPin,
+        uint32_t interruptPin
     ) {
         logger.debug("Initializing Ade7953", TAG);
 
@@ -265,12 +265,12 @@ namespace Ade7953
     }
 
     static void _setHardwarePins(
-        unsigned int ssPin,
-        unsigned int sckPin,
-        unsigned int misoPin,
-        unsigned int mosiPin,
-        unsigned int resetPin,
-        unsigned int interruptPin
+        uint32_t ssPin,
+        uint32_t sckPin,
+        uint32_t misoPin,
+        uint32_t mosiPin,
+        uint32_t resetPin,
+        uint32_t interruptPin
     ) {
         logger.debug("Setting hardware pins...", TAG);
 
@@ -366,11 +366,11 @@ namespace Ade7953
     bool _verifyCommunication() {
         logger.debug("Verifying communication with Ade7953...", TAG);
         
-        int attempt = 0;
+        int32_t attempt = 0;
         bool success = false;
-        unsigned long long lastMillisAttempt = 0;
+        uint64_t lastMillisAttempt = 0;
 
-        unsigned int loops = 0;
+        uint32_t loops = 0;
         while (attempt < ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS && !success && loops < MAX_LOOP_ITERATIONS) {
             loops++;
             if (millis64() - lastMillisAttempt < ADE7953_VERIFY_COMMUNICATION_INTERVAL) {
@@ -453,26 +453,26 @@ namespace Ade7953
         }
 
         // Parse JSON and update configuration struct
-        _configuration.sampleTime = jsonDocument["sampleTime"].as<unsigned long>();
-        _configuration.aVGain = jsonDocument["aVGain"].as<long>();
-        _configuration.aIGain = jsonDocument["aIGain"].as<long>();
-        _configuration.bIGain = jsonDocument["bIGain"].as<long>();
-        _configuration.aIRmsOs = jsonDocument["aIRmsOs"].as<long>();
-        _configuration.bIRmsOs = jsonDocument["bIRmsOs"].as<long>();
-        _configuration.aWGain = jsonDocument["aWGain"].as<long>();
-        _configuration.bWGain = jsonDocument["bWGain"].as<long>();
-        _configuration.aWattOs = jsonDocument["aWattOs"].as<long>();
-        _configuration.bWattOs = jsonDocument["bWattOs"].as<long>();
-        _configuration.aVarGain = jsonDocument["aVarGain"].as<long>();
-        _configuration.bVarGain = jsonDocument["bVarGain"].as<long>();
-        _configuration.aVarOs = jsonDocument["aVarOs"].as<long>();
-        _configuration.bVarOs = jsonDocument["bVarOs"].as<long>();
-        _configuration.aVaGain = jsonDocument["aVaGain"].as<long>();
-        _configuration.bVaGain = jsonDocument["bVaGain"].as<long>();
-        _configuration.aVaOs = jsonDocument["aVaOs"].as<long>();
-        _configuration.bVaOs = jsonDocument["bVaOs"].as<long>();
-        _configuration.phCalA = jsonDocument["phCalA"].as<long>();
-        _configuration.phCalB = jsonDocument["phCalB"].as<long>();
+        _configuration.sampleTime = jsonDocument["sampleTime"].as<uint32_t>();
+        _configuration.aVGain = jsonDocument["aVGain"].as<int32_t>();
+        _configuration.aIGain = jsonDocument["aIGain"].as<int32_t>();
+        _configuration.bIGain = jsonDocument["bIGain"].as<int32_t>();
+        _configuration.aIRmsOs = jsonDocument["aIRmsOs"].as<int32_t>();
+        _configuration.bIRmsOs = jsonDocument["bIRmsOs"].as<int32_t>();
+        _configuration.aWGain = jsonDocument["aWGain"].as<int32_t>();
+        _configuration.bWGain = jsonDocument["bWGain"].as<int32_t>();
+        _configuration.aWattOs = jsonDocument["aWattOs"].as<int32_t>();
+        _configuration.bWattOs = jsonDocument["bWattOs"].as<int32_t>();
+        _configuration.aVarGain = jsonDocument["aVarGain"].as<int32_t>();
+        _configuration.bVarGain = jsonDocument["bVarGain"].as<int32_t>();
+        _configuration.aVarOs = jsonDocument["aVarOs"].as<int32_t>();
+        _configuration.bVarOs = jsonDocument["bVarOs"].as<int32_t>();
+        _configuration.aVaGain = jsonDocument["aVaGain"].as<int32_t>();
+        _configuration.bVaGain = jsonDocument["bVaGain"].as<int32_t>();
+        _configuration.aVaOs = jsonDocument["aVaOs"].as<int32_t>();
+        _configuration.bVaOs = jsonDocument["bVaOs"].as<int32_t>();
+        _configuration.phCalA = jsonDocument["phCalA"].as<int32_t>();
+        _configuration.phCalB = jsonDocument["phCalB"].as<int32_t>();
 
         // Validate sample time
         if (_configuration.sampleTime < MINIMUM_SAMPLE_TIME) {
@@ -539,7 +539,7 @@ namespace Ade7953
         logger.debug("Successfully converted configuration to JSON", TAG);
     }
 
-    bool setSingleConfigurationValue(const char* key, long value) {
+    bool setSingleConfigurationValue(const char* key, int32_t value) {
         if (!key) {
             logger.error("Configuration key is null", TAG);
             return false;
@@ -553,7 +553,7 @@ namespace Ade7953
                 logger.warning("Sample time %ld is below minimum %d", TAG, value, MINIMUM_SAMPLE_TIME);
                 return false;
             }
-            _configuration.sampleTime = (unsigned long)value;
+            _configuration.sampleTime = (uint32_t)value;
         } else if (strcmp(key, "aVGain") == 0) {
             _configuration.aVGain = value;
         } else if (strcmp(key, "aIGain") == 0) {
@@ -688,32 +688,32 @@ namespace Ade7953
     bool _validateConfigurationJson(JsonDocument& jsonDocument) {
         if (!jsonDocument.is<JsonObject>()) {logger.warning("JSON is not an object", TAG); return false;}
 
-        if (!jsonDocument["sampleTime"].is<unsigned long>()) {logger.warning("sampleTime is not unsigned long", TAG); return false;}
+        if (!jsonDocument["sampleTime"].is<uint32_t>()) {logger.warning("sampleTime is not uint32_t", TAG); return false;}
         // Ensure sampleTime is not below MINIMUM_SAMPLE_TIME
-        if (jsonDocument["sampleTime"].as<unsigned long>() < MINIMUM_SAMPLE_TIME) {
+        if (jsonDocument["sampleTime"].as<uint32_t>() < MINIMUM_SAMPLE_TIME) {
             logger.warning("sampleTime %lu is below the minimum value of %lu", TAG, 
-                jsonDocument["sampleTime"].as<unsigned long>(), MINIMUM_SAMPLE_TIME);
+                jsonDocument["sampleTime"].as<uint32_t>(), MINIMUM_SAMPLE_TIME);
             return false;
         }
-        if (!jsonDocument["aVGain"].is<long>()) {logger.warning("aVGain is not long", TAG); return false;}
-        if (!jsonDocument["aIGain"].is<long>()) {logger.warning("aIGain is not long", TAG); return false;}
-        if (!jsonDocument["bIGain"].is<long>()) {logger.warning("bIGain is not long", TAG); return false;}
-        if (!jsonDocument["aIRmsOs"].is<long>()) {logger.warning("aIRmsOs is not long", TAG); return false;}
-        if (!jsonDocument["bIRmsOs"].is<long>()) {logger.warning("bIRmsOs is not long", TAG); return false;}
-        if (!jsonDocument["aWGain"].is<long>()) {logger.warning("aWGain is not long", TAG); return false;}
-        if (!jsonDocument["bWGain"].is<long>()) {logger.warning("bWGain is not long", TAG); return false;}
-        if (!jsonDocument["aWattOs"].is<long>()) {logger.warning("aWattOs is not long", TAG); return false;}
-        if (!jsonDocument["bWattOs"].is<long>()) {logger.warning("bWattOs is not long", TAG); return false;} 
-        if (!jsonDocument["aVarGain"].is<long>()) {logger.warning("aVarGain is not long", TAG); return false;}
-        if (!jsonDocument["bVarGain"].is<long>()) {logger.warning("bVarGain is not long", TAG); return false;}
-        if (!jsonDocument["aVarOs"].is<long>()) {logger.warning("aVarOs is not long", TAG); return false;}
-        if (!jsonDocument["bVarOs"].is<long>()) {logger.warning("bVarOs is not long", TAG); return false;}
-        if (!jsonDocument["aVaGain"].is<long>()) {logger.warning("aVaGain is not long", TAG); return false;}
-        if (!jsonDocument["bVaGain"].is<long>()) {logger.warning("bVaGain is not long", TAG); return false;}
-        if (!jsonDocument["aVaOs"].is<long>()) {logger.warning("aVaOs is not long", TAG); return false;}
-        if (!jsonDocument["bVaOs"].is<long>()) {logger.warning("bVaOs is not long", TAG); return false;}
-        if (!jsonDocument["phCalA"].is<long>()) {logger.warning("phCalA is not long", TAG); return false;}
-        if (!jsonDocument["phCalB"].is<long>()) {logger.warning("phCalB is not long", TAG); return false;}
+        if (!jsonDocument["aVGain"].is<int32_t>()) {logger.warning("aVGain is not int32_t", TAG); return false;}
+        if (!jsonDocument["aIGain"].is<int32_t>()) {logger.warning("aIGain is not int32_t", TAG); return false;}
+        if (!jsonDocument["bIGain"].is<int32_t>()) {logger.warning("bIGain is not int32_t", TAG); return false;}
+        if (!jsonDocument["aIRmsOs"].is<int32_t>()) {logger.warning("aIRmsOs is not int32_t", TAG); return false;}
+        if (!jsonDocument["bIRmsOs"].is<int32_t>()) {logger.warning("bIRmsOs is not int32_t", TAG); return false;}
+        if (!jsonDocument["aWGain"].is<int32_t>()) {logger.warning("aWGain is not int32_t", TAG); return false;}
+        if (!jsonDocument["bWGain"].is<int32_t>()) {logger.warning("bWGain is not int32_t", TAG); return false;}
+        if (!jsonDocument["aWattOs"].is<int32_t>()) {logger.warning("aWattOs is not int32_t", TAG); return false;}
+        if (!jsonDocument["bWattOs"].is<int32_t>()) {logger.warning("bWattOs is not int32_t", TAG); return false;} 
+        if (!jsonDocument["aVarGain"].is<int32_t>()) {logger.warning("aVarGain is not int32_t", TAG); return false;}
+        if (!jsonDocument["bVarGain"].is<int32_t>()) {logger.warning("bVarGain is not int32_t", TAG); return false;}
+        if (!jsonDocument["aVarOs"].is<int32_t>()) {logger.warning("aVarOs is not int32_t", TAG); return false;}
+        if (!jsonDocument["bVarOs"].is<int32_t>()) {logger.warning("bVarOs is not int32_t", TAG); return false;}
+        if (!jsonDocument["aVaGain"].is<int32_t>()) {logger.warning("aVaGain is not int32_t", TAG); return false;}
+        if (!jsonDocument["bVaGain"].is<int32_t>()) {logger.warning("bVaGain is not int32_t", TAG); return false;}
+        if (!jsonDocument["aVaOs"].is<int32_t>()) {logger.warning("aVaOs is not int32_t", TAG); return false;}
+        if (!jsonDocument["bVaOs"].is<int32_t>()) {logger.warning("bVaOs is not int32_t", TAG); return false;}
+        if (!jsonDocument["phCalA"].is<int32_t>()) {logger.warning("phCalA is not int32_t", TAG); return false;}
+        if (!jsonDocument["phCalB"].is<int32_t>()) {logger.warning("phCalB is not int32_t", TAG); return false;}
 
         return true;
     }
@@ -787,13 +787,13 @@ namespace Ade7953
 
             JsonObject calibrationObject = kv.value().as<JsonObject>();
 
-            if (!calibrationObject["aLsb"].is<float>() && !calibrationObject["aLsb"].is<int>()) {logger.warning("aLsb is not float or int", TAG); return false;}
-            if (!calibrationObject["wLsb"].is<float>() && !calibrationObject["wLsb"].is<int>()) {logger.warning("wLsb is not float or int", TAG); return false;}
-            if (!calibrationObject["varLsb"].is<float>() && !calibrationObject["varLsb"].is<int>()) {logger.warning("varLsb is not float or int", TAG); return false;}
-            if (!calibrationObject["vaLsb"].is<float>() && !calibrationObject["vaLsb"].is<int>()) {logger.warning("vaLsb is not float or int", TAG); return false;}
-            if (!calibrationObject["whLsb"].is<float>() && !calibrationObject["whLsb"].is<int>()) {logger.warning("whLsb is not float or int", TAG); return false;}
-            if (!calibrationObject["varhLsb"].is<float>() && !calibrationObject["varhLsb"].is<int>()) {logger.warning("varhLsb is not float or int", TAG); return false;}
-            if (!calibrationObject["vahLsb"].is<float>() && !calibrationObject["vahLsb"].is<int>()) {logger.warning("vahLsb is or not float or int", TAG); return false;}
+            if (!calibrationObject["aLsb"].is<float>() && !calibrationObject["aLsb"].is<int32_t>()) {logger.warning("aLsb is not float or int32_t", TAG); return false;}
+            if (!calibrationObject["wLsb"].is<float>() && !calibrationObject["wLsb"].is<int32_t>()) {logger.warning("wLsb is not float or int32_t", TAG); return false;}
+            if (!calibrationObject["varLsb"].is<float>() && !calibrationObject["varLsb"].is<int32_t>()) {logger.warning("varLsb is not float or int32_t", TAG); return false;}
+            if (!calibrationObject["vaLsb"].is<float>() && !calibrationObject["vaLsb"].is<int32_t>()) {logger.warning("vaLsb is not float or int32_t", TAG); return false;}
+            if (!calibrationObject["whLsb"].is<float>() && !calibrationObject["whLsb"].is<int32_t>()) {logger.warning("whLsb is not float or int32_t", TAG); return false;}
+            if (!calibrationObject["varhLsb"].is<float>() && !calibrationObject["varhLsb"].is<int32_t>()) {logger.warning("varhLsb is not float or int32_t", TAG); return false;}
+            if (!calibrationObject["vahLsb"].is<float>() && !calibrationObject["vahLsb"].is<int32_t>()) {logger.warning("vahLsb is or not float or int32_t", TAG); return false;}
         }
 
         return true;
@@ -802,7 +802,7 @@ namespace Ade7953
     // Data channel
     // --------------------
 
-    bool isChannelActive(unsigned int channelIndex) {
+    bool isChannelActive(uint32_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.error("Channel index out of bounds: %d", TAG, channelIndex);
             return false;
@@ -811,7 +811,7 @@ namespace Ade7953
         return _channelData[channelIndex].active;
     }
 
-    void getChannelData(ChannelData &channelData, unsigned int channelIndex) {
+    void getChannelData(ChannelData &channelData, uint32_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.error("Channel index out of bounds: %d", TAG, channelIndex);
             return;
@@ -820,7 +820,7 @@ namespace Ade7953
         channelData = _channelData[channelIndex];
     }
 
-    void getMeterValues(MeterValues &meterValues, unsigned int channelIndex) {
+    void getMeterValues(MeterValues &meterValues, uint32_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.error("Channel index out of bounds: %d", TAG, channelIndex);
             return;
@@ -840,7 +840,7 @@ namespace Ade7953
         }
 
         // Load data for each channel
-        for (unsigned int i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
             char activeKey[32]; // TODO: use constants for buffer size
             char reverseKey[32];
             char labelKey[32];
@@ -926,7 +926,7 @@ namespace Ade7953
                 kv.value()["calibrationLabel"].as<const char*>()
             );
 
-            int index = atoi(kv.key().c_str());
+            int32_t index = atoi(kv.key().c_str());
 
             // Check if index is within bounds
             if (!isChannelValid(index)) {
@@ -968,7 +968,7 @@ namespace Ade7953
         logger.debug("Setting default channel data...", TAG);
 
         // Initialize all channels with default values
-        for (unsigned int i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
             _channelData[i].index = i;
             _channelData[i].active = (i == 0) ? DEFAULT_CHANNEL_0_ACTIVE : DEFAULT_CHANNEL_ACTIVE;
             _channelData[i].reverse = DEFAULT_CHANNEL_REVERSE;
@@ -1003,7 +1003,7 @@ namespace Ade7953
         }
 
         // Save data for each channel
-        for (unsigned int i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
             char activeKey[32];
             char reverseKey[32];
             char labelKey[32];
@@ -1029,7 +1029,7 @@ namespace Ade7953
         return true;
     }
 
-    bool _saveChannelToPreferences(unsigned int channelIndex) {
+    bool _saveChannelToPreferences(uint32_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.error("Channel index out of bounds: %u", TAG, channelIndex);
             return false;
@@ -1070,7 +1070,7 @@ namespace Ade7953
     void channelDataToJson(JsonDocument &jsonDocument) {
         logger.debug("Converting channel data to JSON...", TAG);
 
-        for (int i = 0; i < CHANNEL_COUNT; i++) {
+        for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
             jsonDocument[i]["active"] = _channelData[i].active;
             jsonDocument[i]["reverse"] = _channelData[i].reverse;
             jsonDocument[i]["label"] = _channelData[i].label;
@@ -1081,7 +1081,7 @@ namespace Ade7953
         logger.debug("Successfully converted channel data to JSON", TAG);
     }
 
-    bool setSingleChannelData(unsigned int channelIndex, bool active, bool reverse, const char* label, Phase phase, const char* calibrationLabel) {
+    bool setSingleChannelData(uint32_t channelIndex, bool active, bool reverse, const char* label, Phase phase, const char* calibrationLabel) {
         if (!isChannelValid(channelIndex)) {
             logger.error("Channel index out of bounds: %u", TAG, channelIndex);
             return false;
@@ -1134,7 +1134,7 @@ namespace Ade7953
         for (JsonPair kv : jsonDocument.as<JsonObject>()) {
             if (!kv.value().is<JsonObject>()) {logger.warning("JSON pair value is not an object", TAG); return false;}
 
-            int index = atoi(kv.key().c_str());
+            int32_t index = atoi(kv.key().c_str());
             if (!isChannelValid(index)) {logger.warning("Index out of bounds: %d", TAG, index); return false;}
 
             JsonObject channelObject = kv.value().as<JsonObject>();
@@ -1142,8 +1142,8 @@ namespace Ade7953
             if (!channelObject["active"].is<bool>()) {logger.warning("active is not bool", TAG); return false;}
             if (!channelObject["reverse"].is<bool>()) {logger.warning("reverse is not bool", TAG); return false;}
             if (!channelObject["label"].is<const char*>()) {logger.warning("label is not string", TAG); return false;}
-            if (!channelObject["phase"].is<int>()) {logger.warning("phase is not int", TAG); return false;}
-            if (kv.value()["phase"].as<int>() != PHASE_1 && kv.value()["phase"].as<int>() != PHASE_2 && kv.value()["phase"].as<int>() != PHASE_3) {
+            if (!channelObject["phase"].is<int32_t>()) {logger.warning("phase is not int32_t", TAG); return false;}
+            if (kv.value()["phase"].as<int32_t>() != PHASE_1 && kv.value()["phase"].as<int32_t>() != PHASE_2 && kv.value()["phase"].as<int32_t>() != PHASE_3) {
                 logger.warning("phase is not between 1 and 3", TAG); return false;
             }
             if (!channelObject["calibrationLabel"].is<const char*>()) {logger.warning("calibrationLabel is not string", TAG); return false;}
@@ -1163,7 +1163,7 @@ namespace Ade7953
             return;
         }
         
-        for (int i = 0; i < CHANNEL_COUNT; i++) {        
+        for (int32_t i = 0; i < CHANNEL_COUNT; i++) {        
             if (jsonDocument[_channelData[i].calibrationValues.label]) {
                 // Extract the corresponding calibration values from the JSON
                 JsonObject _jsonCalibrationValues = jsonDocument[_channelData[i].calibrationValues.label].as<JsonObject>();
@@ -1186,20 +1186,20 @@ namespace Ade7953
     void _updateSampleTime() {
         logger.debug("Updating sample time", TAG);
 
-        unsigned int linecyc = _sampleTime * 50 * 2 / 1000; // 1 channel at 1000 ms: 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
+        uint32_t linecyc = _sampleTime * 50 * 2 / 1000; // 1 channel at 1000 ms: 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
         _setLinecyc(linecyc);
 
         logger.debug("Successfully updated sample time", TAG);
     }
 
     // This returns the next channel (except 0, which has to be always active) that is active
-    unsigned int _findNextActiveChannel(unsigned int currentChannel) {
-        for (unsigned int i = currentChannel + 1; i < CHANNEL_COUNT; i++) {
+    uint32_t _findNextActiveChannel(uint32_t currentChannel) {
+        for (uint32_t i = currentChannel + 1; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i) && i != 0) {
                 return i;
             }
         }
-        for (unsigned int i = 1; i < currentChannel; i++) {
+        for (uint32_t i = 1; i < currentChannel; i++) {
             if (isChannelActive(i) && i != 0) {
                 return i;
             }
@@ -1254,13 +1254,13 @@ namespace Ade7953
     @param channel The channel to read the values from. Returns
     false if the data reading is not ready yet or valid.
     */
-    bool _readMeterValues(int channel, unsigned long long linecycUnixTimeMillis) {
-        unsigned long long _millisRead = millis64();
-        unsigned long long _deltaMillis = _millisRead - _meterValues[channel].lastMillis;
+    bool _readMeterValues(int32_t channel, uint64_t linecycUnixTimeMillis) {
+        uint64_t _millisRead = millis64();
+        uint64_t _deltaMillis = _millisRead - _meterValues[channel].lastMillis;
 
         // // Ensure the reading is not being called too early if a previous valid reading exists
         // if (previousLastUnixTimeMilliseconds != 0) {
-        //     unsigned long long timeSinceLastRead = linecycUnixTimeMillis - previousLastUnixTimeMilliseconds;
+        //     uint64_t timeSinceLastRead = linecycUnixTimeMillis - previousLastUnixTimeMilliseconds;
             
         //     // Not useful anymore since the measurement timing (_sampleTime) is handled indipendently
         //     // by the linecyc of the ADE7953. The actual reading of the data may be not coordinated,
@@ -1596,7 +1596,7 @@ namespace Ade7953
         return _validateValue(newValue, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
     }
 
-    void singleMeterValuesToJson(JsonDocument &jsonDocument, unsigned int  channel) {
+    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint32_t  channel) {
         JsonObject _jsonValues = jsonDocument.to<JsonObject>();
 
         // TODO: make this names with defines to ensure consistency
@@ -1615,7 +1615,7 @@ namespace Ade7953
 
 
     void fullMeterValuesToJson(JsonDocument &jsonDocument) {
-        for (unsigned int i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 JsonObject _jsonChannel = jsonDocument.add<JsonObject>();
                 _jsonChannel["index"] = i;
@@ -1638,7 +1638,7 @@ namespace Ade7953
         Preferences preferences;
         preferences.begin(PREFERENCES_NAMESPACE_ENERGY, true);
 
-        for (int i = 0; i < CHANNEL_COUNT; i++) {
+        for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
             char key[PREFERENCES_KEY_BUFFER_SIZE];
             
             // Only place in which we read the energy from preferences, and set the _energyValues initially
@@ -1673,7 +1673,7 @@ namespace Ade7953
         
         // Update the last hour save tracking
         if (CustomTime::isTimeSynched()) {
-            unsigned long long currentUnixTime = CustomTime::getUnixTime();
+            uint64_t currentUnixTime = CustomTime::getUnixTime();
             _lastHourCsvSave = currentUnixTime / 3600; // Hour since epoch
         }
         
@@ -1694,7 +1694,7 @@ namespace Ade7953
         Preferences preferences;
         preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false);
 
-        for (int i = 0; i < CHANNEL_COUNT; i++) {
+        for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
             char key[PREFERENCES_KEY_BUFFER_SIZE];
 
             // Hereafter we optimize the flash writes by only saving if the value has changed significantly
@@ -1769,7 +1769,7 @@ namespace Ade7953
         }
         
         // Write data for each active channel
-        for (int i = 0; i < CHANNEL_COUNT; i++) {
+        for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 // Only save data if energy values are above threshold
                 if (_meterValues[i].activeEnergyImported > ENERGY_SAVE_THRESHOLD || 
@@ -1806,7 +1806,7 @@ namespace Ade7953
     void resetEnergyValues() {
         logger.warning("Resetting energy values to 0", TAG);
 
-        for (int i = 0; i < CHANNEL_COUNT; i++) {
+        for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
             _meterValues[i].activeEnergyImported = 0.0f;
             _meterValues[i].activeEnergyExported = 0.0f;
             _meterValues[i].reactiveEnergyImported = 0.0f;
@@ -1839,7 +1839,7 @@ namespace Ade7953
     }
 
     bool setEnergyValues(
-        unsigned int channel,
+        uint32_t channel,
         float activeEnergyImported,
         float activeEnergyExported,
         float reactiveEnergyImported,
@@ -1883,7 +1883,7 @@ namespace Ade7953
         bool clearDailyEnergy = false;
 
         for (JsonPair kv : jsonDocument.as<JsonObject>()) {
-            int channel = atoi(kv.key().c_str());
+            int32_t channel = atoi(kv.key().c_str());
 
             if (!isChannelValid(channel)) {
                 logger.warning("Invalid channel index %d", TAG, channel);
@@ -1953,7 +1953,7 @@ namespace Ade7953
     // Others
     // --------------------
 
-    void _setLinecyc(unsigned int linecyc) {
+    void _setLinecyc(uint32_t linecyc) {
         linecyc = min(max(linecyc, ADE7953_MIN_LINECYC), ADE7953_MAX_LINECYC);
 
         logger.debug(
@@ -1962,10 +1962,10 @@ namespace Ade7953
             linecyc
         );
 
-        writeRegister(LINECYC_16, 16, long(linecyc));
+        writeRegister(LINECYC_16, 16, int32_t(linecyc));
     }
 
-    void _setPhaseCalibration(long phaseCalibration, Ade7953Channel channel) {
+    void _setPhaseCalibration(int32_t phaseCalibration, Ade7953Channel channel) {
         logger.debug(
             "Setting phase calibration to %d on channel %d",
             TAG,
@@ -1980,7 +1980,7 @@ namespace Ade7953
         }
     }
 
-    void _setPgaGain(long pgaGain, Ade7953Channel channel, MeasurementType measurementType) {
+    void _setPgaGain(int32_t pgaGain, Ade7953Channel channel, MeasurementType measurementType) {
         logger.debug(
             "Setting PGA gain to %d on channel %d for measurement type %d",
             TAG,
@@ -2010,7 +2010,7 @@ namespace Ade7953
         }
     }
 
-    void _setGain(long gain, Ade7953Channel channel, MeasurementType measurementType) {
+    void _setGain(int32_t gain, Ade7953Channel channel, MeasurementType measurementType) {
         logger.debug(
             "Setting gain to %ld on channel %d for measurement type %d",
             TAG,
@@ -2058,7 +2058,7 @@ namespace Ade7953
         }
     }
 
-    void _setOffset(long offset, Ade7953Channel channel, MeasurementType measurementType) {
+    void _setOffset(int32_t offset, Ade7953Channel channel, MeasurementType measurementType) {
         logger.debug(
             "Setting offset to %ld on channel %d for measurement type %d",
             TAG,
@@ -2106,7 +2106,7 @@ namespace Ade7953
         }
     }
 
-    long _readApparentPowerInstantaneous(Ade7953Channel channel) {
+    int32_t _readApparentPowerInstantaneous(Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) {return readRegister(AVA_32, BIT_32, true);} 
         else {return readRegister(BVA_32, BIT_32, true);}
     }
@@ -2121,12 +2121,12 @@ namespace Ade7953
     @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
     @return The active power in LSB.
     */
-    long _readActivePowerInstantaneous(Ade7953Channel channel) {
+    int32_t _readActivePowerInstantaneous(Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) {return readRegister(AWATT_32, BIT_32, true);} 
         else {return readRegister(BWATT_32, BIT_32, true);}
     }
 
-    long _readReactivePowerInstantaneous(Ade7953Channel channel) {
+    int32_t _readReactivePowerInstantaneous(Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) {return readRegister(AVAR_32, BIT_32, true);} 
         else {return readRegister(BVAR_32, BIT_32, true);}
     }
@@ -2141,7 +2141,7 @@ namespace Ade7953
     @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
     @return The actual instantaneous current in LSB.
     */
-    long _readCurrentInstantaneous(Ade7953Channel channel) {
+    int32_t _readCurrentInstantaneous(Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) {return readRegister(IA_32, BIT_32, true);} 
         else {return readRegister(IB_32, BIT_32, true);}
     }
@@ -2156,7 +2156,7 @@ namespace Ade7953
 
     @return The actual instantaneous voltage in LSB.
     */
-    long _readVoltageInstantaneous() {
+    int32_t _readVoltageInstantaneous() {
         return readRegister(V_32, BIT_32, true);
     }
 
@@ -2169,7 +2169,7 @@ namespace Ade7953
     @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
     @return The current in RMS in LSB.
     */
-    long _readCurrentRms(Ade7953Channel channel) {
+    int32_t _readCurrentRms(Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) {return readRegister(IRMSA_32, BIT_32, false);} 
         else {return readRegister(IRMSB_32, BIT_32, false);}
     }
@@ -2182,36 +2182,36 @@ namespace Ade7953
 
     @return The voltage in RMS in LSB.
     */
-    long _readVoltageRms() {
+    int32_t _readVoltageRms() {
         return readRegister(VRMS_32, BIT_32, false);
     }
 
-    long _readActiveEnergy(Ade7953Channel channel) {
+    int32_t _readActiveEnergy(Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) {return readRegister(AENERGYA_32, BIT_32, true);} 
         else {return readRegister(AENERGYB_32, BIT_32, true);}
     }
 
-    long _readReactiveEnergy(Ade7953Channel channel) {
+    int32_t _readReactiveEnergy(Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) {return readRegister(RENERGYA_32, BIT_32, true);} 
         else {return readRegister(RENERGYB_32, BIT_32, true);}
     }
 
-    long _readApparentEnergy(Ade7953Channel channel) {
+    int32_t _readApparentEnergy(Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) {return readRegister(APENERGYA_32, BIT_32, true);} 
         else {return readRegister(APENERGYB_32, BIT_32, true);}
     }
 
-    long _readPowerFactor(Ade7953Channel channel) {
+    int32_t _readPowerFactor(Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) {return readRegister(PFA_16, BIT_16, true);} 
         else {return readRegister(PFB_16, BIT_16, true);}
     }
 
-    long _readAngle(Ade7953Channel channel) {
+    int32_t _readAngle(Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) {return readRegister(ANGLE_A_16, BIT_16, true);} 
         else {return readRegister(ANGLE_B_16, BIT_16, true);}
     }
 
-    long _readPeriod() {
+    int32_t _readPeriod() {
         return readRegister(PERIOD_16, BIT_16, false);
     }
 
@@ -2224,7 +2224,7 @@ namespace Ade7953
      * @param isVerificationRequired Flag indicating whether to verify the last communication.
      * @return The value read from the register.
      */
-    long readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired) {
+    int32_t readRegister(int32_t registerAddress, int32_t nBits, bool signedData, bool isVerificationRequired) {
 
         if (isVerificationRequired) {
             if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
@@ -2247,7 +2247,7 @@ namespace Ade7953
         SPI.transfer(READ_TRANSFER);
 
         byte _response[nBits / 8];
-        for (int i = 0; i < nBits / 8; i++) {
+        for (int32_t i = 0; i < nBits / 8; i++) {
             _response[i] = SPI.transfer(READ_TRANSFER);
         }
 
@@ -2255,8 +2255,8 @@ namespace Ade7953
 
         xSemaphoreGive(_spiMutex);
 
-        long _long_response = 0;
-        for (int i = 0; i < nBits / 8; i++) {
+        int32_t _long_response = 0;
+        for (int32_t i = 0; i < nBits / 8; i++) {
             _long_response = (_long_response << 8) | _response[i];
         }
         if (signedData) {
@@ -2292,7 +2292,7 @@ namespace Ade7953
      * @param data The data to write to the register. (nBits-bit value)
      * @param isVerificationRequired Flag indicating whether to verify the last communication.
      */
-    void writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired) {
+    void writeRegister(int32_t registerAddress, int32_t nBits, int32_t data, bool isVerificationRequired) {
         logger.debug(
             "Writing %ld (0x%04lX) to register %ld (0x%04lX) with %d bits",
             TAG,
@@ -2350,9 +2350,9 @@ namespace Ade7953
         }
     }
 
-    bool _verifyLastCommunication(long expectedAddress, int expectedBits, long expectedData, bool signedData, bool wasWrite) {    
+    bool _verifyLastCommunication(int32_t expectedAddress, int32_t expectedBits, int32_t expectedData, bool signedData, bool wasWrite) {    
         
-        long lastAddress = readRegister(LAST_ADD_16, 16, false, false);
+        int32_t lastAddress = readRegister(LAST_ADD_16, 16, false, false);
         if (lastAddress != expectedAddress) {
             logger.warning(
                 "Last address %ld (0x%04lX) (write: %d) does not match expected %ld (0x%04lX). Expected data %ld (0x%04lX)", 
@@ -2364,7 +2364,7 @@ namespace Ade7953
             return false;
         }
         
-        long lastOp = readRegister(LAST_OP_8, 8, false, false);
+        int32_t lastOp = readRegister(LAST_OP_8, 8, false, false);
         if (wasWrite && lastOp != LAST_OP_WRITE_VALUE) {
             logger.warning("Last operation was not a write (expected %d, got %ld)", TAG, LAST_OP_WRITE_VALUE, lastOp);
             return false;
@@ -2374,8 +2374,8 @@ namespace Ade7953
         }    
         
         // Select the appropriate LAST_RWDATA register based on the bit size
-        long dataRegister;
-        int dataRegisterBits;
+        int32_t dataRegister;
+        int32_t dataRegisterBits;
         
         if (expectedBits == 8) {
             dataRegister = LAST_RWDATA_8;
@@ -2391,7 +2391,7 @@ namespace Ade7953
             dataRegisterBits = 32;
         }
         
-        long lastData = readRegister(dataRegister, dataRegisterBits, signedData, false);
+        int32_t lastData = readRegister(dataRegister, dataRegisterBits, signedData, false);
         if (lastData != expectedData) {
             logger.warning("Last data %ld does not match expected %ld", TAG, lastData, expectedData);
             return false;
@@ -2436,7 +2436,7 @@ namespace Ade7953
         }
     }
 
-    unsigned int getSampleTime() { return _sampleTime; }
+    uint32_t getSampleTime() { return _sampleTime; }
     float getGridFrequency() { return _gridFrequency; }
 
 
@@ -2447,9 +2447,9 @@ namespace Ade7953
 
     float getAggregatedActivePower(bool includeChannel0) {
         float sum = 0.0f;
-        int activeChannelCount = 0;
+        int32_t activeChannelCount = 0;
 
-        for (int i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
+        for (int32_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 sum += _meterValues[i].activePower;
                 activeChannelCount++;
@@ -2460,9 +2460,9 @@ namespace Ade7953
 
     float getAggregatedReactivePower(bool includeChannel0) {
         float sum = 0.0f;
-        int activeChannelCount = 0;
+        int32_t activeChannelCount = 0;
 
-        for (int i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
+        for (int32_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 sum += _meterValues[i].reactivePower;
                 activeChannelCount++;
@@ -2473,9 +2473,9 @@ namespace Ade7953
 
     float getAggregatedApparentPower(bool includeChannel0) {
         float sum = 0.0f;
-        int activeChannelCount = 0;
+        int32_t activeChannelCount = 0;
 
-        for (int i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
+        for (int32_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 sum += _meterValues[i].apparentPower;
                 activeChannelCount++;
@@ -2508,7 +2508,7 @@ namespace Ade7953
     }
 
     // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
-    void _irqstataBitName(int bit, char *buffer, size_t bufferSize) {
+    void _irqstataBitName(int32_t bit, char *buffer, size_t bufferSize) {
         switch (bit) {
             case IRQSTATA_AEHFA_BIT:       snprintf(buffer, bufferSize, "AEHFA");
             case IRQSTATA_VAREHFA_BIT:     snprintf(buffer, bufferSize, "VAREHFA");
@@ -2538,7 +2538,7 @@ namespace Ade7953
 
     Ade7953InterruptType _handleInterrupt() {
         
-        long statusA = readRegister(RSTIRQSTATA_32, 32, false);
+        int32_t statusA = readRegister(RSTIRQSTATA_32, 32, false);
         // No need to read for channel B
 
         // Very important: if we detected a reset or a CRC change in the configurations, 
@@ -2559,7 +2559,7 @@ namespace Ade7953
             
             // Only for CYCEND interrupts, switch to next channel and set multiplexer
             _currentChannel = _findNextActiveChannel(_currentChannel);
-            Multiplexer::setChannel(max(_currentChannel - (unsigned int)1, (unsigned int)0));
+            Multiplexer::setChannel(max(_currentChannel - (uint32_t)1, (uint32_t)0));
 
             return Ade7953InterruptType::CYCEND;
         } else {
@@ -2719,7 +2719,7 @@ namespace Ade7953
         }
     }
 
-    bool _processChannelReading(int channel, unsigned long long linecycUnix) {
+    bool _processChannelReading(int32_t channel, uint64_t linecycUnix) {
         if (!_readMeterValues(channel, linecycUnix)) {
             return false;
         }
@@ -2729,7 +2729,7 @@ namespace Ade7953
         return true;
     }
 
-    void _addMeterDataToPayload(int channel, unsigned long long linecycUnix) {
+    void _addMeterDataToPayload(int32_t channel, uint64_t linecycUnix) {
         if (!CustomTime::isTimeSynched()) {
             return;
         }
@@ -2742,7 +2742,7 @@ namespace Ade7953
         ));
     }
 
-    void _processCycendInterrupt(unsigned long long linecycUnix) {
+    void _processCycendInterrupt(uint64_t linecycUnix) {
         // Process current channel (if active)
         if (_currentChannel != INVALID_CHANNEL) {
             _processChannelReading(_currentChannel, linecycUnix);
@@ -2777,7 +2777,7 @@ namespace Ade7953
             if (_ade7953InterruptSemaphore != NULL &&
                 xSemaphoreTake(_ade7953InterruptSemaphore, timeoutTicks) == pdTRUE)
             {
-                unsigned long long linecycUnix = CustomTime::getUnixTimeMilliseconds();
+                uint64_t linecycUnix = CustomTime::getUnixTimeMilliseconds();
                 
                 // Check if interrupt timing is within expected bounds
                 _checkInterruptTiming();
@@ -2818,7 +2818,7 @@ namespace Ade7953
             }
             
             // Check for stop notification (non-blocking) - this gives immediate shutdown response
-            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, 0);
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, 0);
             if (notificationValue > 0) {
                 _meterReadingTaskShouldRun = false;
                 break;
@@ -2838,7 +2838,7 @@ namespace Ade7953
             _saveEnergyToPreferences();
             
             // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_ENERGY_INTERVAL));
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_ENERGY_INTERVAL));
             if (notificationValue > 0) {
                 _energySaveTaskShouldRun = false;
                 break;
@@ -2856,13 +2856,13 @@ namespace Ade7953
         _hourlyCsvSaveTaskShouldRun = true;
         while (_hourlyCsvSaveTaskShouldRun) {
             // Calculate milliseconds until next hour using CustomTime
-            unsigned long long msUntilNextHour = CustomTime::getMillisecondsUntilNextHour();
+            uint64_t msUntilNextHour = CustomTime::getMillisecondsUntilNextHour();
             
-            // Convert to ticks for FreeRTOS (max value is portMAX_DELAY for very long waits)
+            // Convert to ticks for FreeRTOS (max value is portMAX_DELAY for very int32_t waits)
             TickType_t ticksToWait = (msUntilNextHour > portMAX_DELAY) ? portMAX_DELAY : pdMS_TO_TICKS(msUntilNextHour);
             
             // Wait for the calculated time or stop notification
-            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, ticksToWait);
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, ticksToWait);
             if (notificationValue > 0) {
                 _hourlyCsvSaveTaskShouldRun = false;
                 break;

@@ -98,17 +98,17 @@ namespace Mqtt
     static char _firmwareUpdatesVersion[VERSION_BUFFER_SIZE];
     
     // Timing variables
-    static unsigned long long _lastMillisMqttLoop = 0;
-    static unsigned long long _lastMillisMqttFailed = 0;
-    static unsigned long long _lastMillisMeterPublished = 0;
-    static unsigned long long _lastMillisStatusPublished = 0;
-    static unsigned long long _lastMillisStatisticsPublished = 0;
+    static uint64_t _lastMillisMqttLoop = 0;
+    static uint64_t _lastMillisMqttFailed = 0;
+    static uint64_t _lastMillisMeterPublished = 0;
+    static uint64_t _lastMillisStatusPublished = 0;
+    static uint64_t _lastMillisStatisticsPublished = 0;
     
     // Connection state
     static bool _isSetupDone = false;
     static bool _isClaimInProgress = false;
-    static unsigned long long _mqttConnectionAttempt = 0;
-    static unsigned long long _nextMqttConnectionAttemptMillis = 0;
+    static uint64_t _mqttConnectionAttempt = 0;
+    static uint64_t _nextMqttConnectionAttemptMillis = 0;
     
     // Certificates storage
     static char _awsIotCoreCert[CERTIFICATE_BUFFER_SIZE];
@@ -279,7 +279,7 @@ namespace Mqtt
     void requestStatisticsPublish() {_publishMqtt.statistics = true; }
 
     // Public methods for pushing data to queues
-    void pushLog(const char* timestamp, unsigned long long millisEsp, const char* level, unsigned int coreId, const char* function, const char* message)
+    void pushLog(const char* timestamp, uint64_t millisEsp, const char* level, uint32_t coreId, const char* function, const char* message)
     {
         // Initialize log queue on first use if not already done
         if (!_isLogQueueInitialized) {
@@ -319,7 +319,7 @@ namespace Mqtt
         }
     }
 
-    static void _subscribeCallback(const char* topic, byte *payload, unsigned int length)
+    static void _subscribeCallback(const char* topic, byte *payload, uint32_t length)
     {
         char message[MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE];
         if (length >= sizeof(message)) {
@@ -409,12 +409,12 @@ namespace Mqtt
 
             if (enable)
             {
-                int durationMinutes = MQTT_DEBUG_LOGGING_DEFAULT_DURATION / (60 * 1000);
-                if (jsonDocument["duration_minutes"].is<int>()) {
-                    durationMinutes = jsonDocument["duration_minutes"].as<int>();
+                int32_t durationMinutes = MQTT_DEBUG_LOGGING_DEFAULT_DURATION / (60 * 1000);
+                if (jsonDocument["duration_minutes"].is<int32_t>()) {
+                    durationMinutes = jsonDocument["duration_minutes"].as<int32_t>();
                 }
                 
-                int durationMs = durationMinutes * 60 * 1000;
+                int32_t durationMs = durationMinutes * 60 * 1000;
                 if (durationMs <= 0 || durationMs > MQTT_DEBUG_LOGGING_MAX_DURATION) {
                     durationMs = MQTT_DEBUG_LOGGING_DEFAULT_DURATION;
                 }
@@ -629,7 +629,7 @@ namespace Mqtt
         }
         else
         {
-            int currentState = _clientMqtt.state();
+            int32_t currentState = _clientMqtt.state();
             logger.warning(
                 "Failed to connect to MQTT (attempt %d). Reason: %s (%d). Retrying...",
                 TAG,
@@ -653,11 +653,11 @@ namespace Mqtt
             }
 
             // Calculate next attempt time using exponential backoff
-            unsigned long _backoffDelay = MQTT_INITIAL_RECONNECT_INTERVAL; // TODO: use function from utils
-            for (int i = 0; i < _mqttConnectionAttempt - 1 && _backoffDelay < MQTT_MAX_RECONNECT_INTERVAL; ++i) {
+            uint32_t _backoffDelay = MQTT_INITIAL_RECONNECT_INTERVAL; // TODO: use function from utils
+            for (int32_t i = 0; i < _mqttConnectionAttempt - 1 && _backoffDelay < MQTT_MAX_RECONNECT_INTERVAL; ++i) {
                 _backoffDelay *= MQTT_RECONNECT_MULTIPLIER;
             }
-            _backoffDelay = min(_backoffDelay, (unsigned long)MQTT_MAX_RECONNECT_INTERVAL);
+            _backoffDelay = min(_backoffDelay, (uint32_t)MQTT_MAX_RECONNECT_INTERVAL);
 
             _nextMqttConnectionAttemptMillis = millis64() + _backoffDelay;
 
@@ -712,8 +712,8 @@ namespace Mqtt
 
         logger.debug("MQTT setup for claiming certificates complete", TAG);
 
-        int connectionAttempt = 0;
-        unsigned int loops = 0;
+        int32_t connectionAttempt = 0;
+        uint32_t loops = 0;
         while (connectionAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT && loops < MAX_LOOP_ITERATIONS) {
             loops++;
             logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", TAG, connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
@@ -742,7 +742,7 @@ namespace Mqtt
 
         _subscribeProvisioningResponse();
         
-        int publishAttempt = 0;
+        int32_t publishAttempt = 0;
         loops = 0;
         while (publishAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT && loops < MAX_LOOP_ITERATIONS) {
             loops++;
@@ -831,7 +831,7 @@ namespace Mqtt
                 
         // Process all items from the queue
         PayloadMeter payloadMeter;
-        unsigned int loops = 0;
+        uint32_t loops = 0;
         while (uxQueueMessagesWaiting(payloadMeterQueue) > 0 && loops < MAX_LOOP_ITERATIONS && _isSendPowerDataEnabled()) {
             loops++;
             
@@ -852,7 +852,7 @@ namespace Mqtt
             jsonObject["powerFactor"] = payloadMeter.powerFactor;
         }
 
-        for (int i = 0; i < MULTIPLEXER_CHANNEL_COUNT; i++) {
+        for (int32_t i = 0; i < MULTIPLEXER_CHANNEL_COUNT; i++) {
             if (Ade7953::isChannelActive(i)) {
                 JsonObject jsonObject = jsonArray.add<JsonObject>();
 
@@ -1376,15 +1376,15 @@ namespace Mqtt
 
         mbedtls_aes_context aes;
         mbedtls_aes_init(&aes);
-        mbedtls_aes_setkey_dec(&aes, (const unsigned char *)key, ENCRYPTION_KEY_BUFFER_SIZE);
+        mbedtls_aes_setkey_dec(&aes, (const uint8_t *)key, ENCRYPTION_KEY_BUFFER_SIZE);
 
         // Use stack-allocated buffers instead of malloc
-        unsigned char decodedData[CERTIFICATE_BUFFER_SIZE];
-        unsigned char output[CERTIFICATE_BUFFER_SIZE];
+        uint8_t decodedData[CERTIFICATE_BUFFER_SIZE];
+        uint8_t output[CERTIFICATE_BUFFER_SIZE];
 
         size_t decodedLength = 0;
-        int ret = mbedtls_base64_decode(decodedData, sizeof(decodedData), &decodedLength,
-                                    (const unsigned char *)encryptedData, inputLength);
+        int32_t ret = mbedtls_base64_decode(decodedData, sizeof(decodedData), &decodedLength,
+                                    (const uint8_t *)encryptedData, inputLength);
         
         if (ret != 0 || decodedLength == 0) {
             decryptedData[0] = '\0';
@@ -1398,7 +1398,7 @@ namespace Mqtt
         }
         
         // Handle PKCS7 padding removal
-        unsigned char paddingLength = output[decodedLength - 1];
+        uint8_t paddingLength = output[decodedLength - 1];
         if (paddingLength > 0 && paddingLength <= 16 && paddingLength < decodedLength) {
             output[decodedLength - paddingLength] = '\0';
         } else {

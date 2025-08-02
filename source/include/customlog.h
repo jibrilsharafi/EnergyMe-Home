@@ -31,9 +31,9 @@
 
 struct LogJson {
     char timestamp[TIMESTAMP_BUFFER_SIZE];
-    unsigned long long millisEsp;
+    uint64_t millisEsp;
     char level[LOG_CALLBACK_LEVEL_SIZE];
-    unsigned int coreId;
+    uint32_t coreId;
     char function[LOG_CALLBACK_FUNCTION_SIZE];
     char message[LOG_CALLBACK_MESSAGE_SIZE];
 
@@ -45,7 +45,7 @@ struct LogJson {
         snprintf(message, sizeof(message), "%s", "");
     }
 
-    LogJson(const char* timestampIn, unsigned long long millisEspIn, const char* levelIn, unsigned int coreIdIn, const char* functionIn, const char* messageIn)
+    LogJson(const char* timestampIn, uint64_t millisEspIn, const char* levelIn, uint32_t coreIdIn, const char* functionIn, const char* messageIn)
         : millisEsp(millisEspIn), coreId(coreIdIn) {
         snprintf(timestamp, sizeof(timestamp), "%s", timestampIn ? timestampIn : "");
         snprintf(level, sizeof(level), "%s", levelIn ? levelIn : "");
@@ -61,9 +61,9 @@ namespace CustomLog
     
     void callbackMultiple(
         const char* timestamp,
-        unsigned long long millisEsp,
+        uint64_t millisEsp,
         const char* level,
-        unsigned int coreId,
+        uint32_t coreId,
         const char* function,
         const char* message
     );

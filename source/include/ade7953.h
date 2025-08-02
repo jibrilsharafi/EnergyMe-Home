@@ -174,8 +174,8 @@
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_POWER_FACTOR 0.05f // Measuring such low power factors is virtually impossible with such CTs
 #define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 100 // Threshold to transition to a legitimate zero state for channel 0
-#define ADE7953_MIN_LINECYC 10U // The minimum line cycle settable for the ADE7953. Must be unsigned
-#define ADE7953_MAX_LINECYC 1000U // The maximum line cycle settable for the ADE7953. Must be unsigned
+#define ADE7953_MIN_LINECYC 10UL // The minimum line cycle settable for the ADE7953. Must be unsigned
+#define ADE7953_MAX_LINECYC 1000UL // The maximum line cycle settable for the ADE7953. Must be unsigned
 
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
 
@@ -221,7 +221,7 @@ enum class Ade7953InterruptType {
 };
 
 
-enum Phase : unsigned int { // Not a class so that we can directly use it in JSON serialization
+enum Phase : uint32_t { // Not a class so that we can directly use it in JSON serialization
     PHASE_1 = 1,
     PHASE_2 = 2,
     PHASE_3 = 3,
@@ -272,8 +272,8 @@ struct MeterValues
   float reactiveEnergyImported;
   float reactiveEnergyExported;
   float apparentEnergy;
-  unsigned long long lastUnixTimeMilliseconds;
-  unsigned long long lastMillis;
+  uint64_t lastUnixTimeMilliseconds;
+  uint64_t lastMillis;
 
   MeterValues()
     : voltage(230.0), current(0.0f), activePower(0.0f), reactivePower(0.0f), apparentPower(0.0f), powerFactor(0.0f),
@@ -288,7 +288,7 @@ struct EnergyValues // Simpler structure for optimizing energy saved to storage
   float reactiveEnergyImported;
   float reactiveEnergyExported;
   float apparentEnergy;
-  unsigned long long lastUnixTimeMilliseconds; // Last time the values were updated in milliseconds since epoch
+  uint64_t lastUnixTimeMilliseconds; // Last time the values were updated in milliseconds since epoch
 
   EnergyValues()
     : activeEnergyImported(0.0f), activeEnergyExported(0.0f), reactiveEnergyImported(0.0f),
@@ -314,7 +314,7 @@ struct CalibrationValues
 
 struct ChannelData
 {
-  int index;
+  int32_t index;
   bool active;
   bool reverse;
   char label[NAME_BUFFER_SIZE];
@@ -330,26 +330,26 @@ struct ChannelData
 // ADE7953 Configuration structure
 struct Ade7953Configuration
 {
-  unsigned long sampleTime;
-  long aVGain;
-  long aIGain;
-  long bIGain;
-  long aIRmsOs;
-  long bIRmsOs;
-  long aWGain;
-  long bWGain;
-  long aWattOs;
-  long bWattOs;
-  long aVarGain;
-  long bVarGain;
-  long aVarOs;
-  long bVarOs;
-  long aVaGain;
-  long bVaGain;
-  long aVaOs;
-  long bVaOs;
-  long phCalA;
-  long phCalB;
+  uint32_t sampleTime;
+  int32_t aVGain;
+  int32_t aIGain;
+  int32_t bIGain;
+  int32_t aIRmsOs;
+  int32_t bIRmsOs;
+  int32_t aWGain;
+  int32_t bWGain;
+  int32_t aWattOs;
+  int32_t bWattOs;
+  int32_t aVarGain;
+  int32_t bVarGain;
+  int32_t aVarOs;
+  int32_t bVarOs;
+  int32_t aVaGain;
+  int32_t bVaGain;
+  int32_t aVaOs;
+  int32_t bVaOs;
+  int32_t phCalA;
+  int32_t phCalB;
 
   Ade7953Configuration()
     : sampleTime(DEFAULT_CONFIG_SAMPLE_TIME),
@@ -368,26 +368,26 @@ namespace Ade7953
 {
     // Core lifecycle management
     bool begin(
-        unsigned int ssPin,
-        unsigned int sckPin,
-        unsigned int misoPin,
-        unsigned int mosiPin,
-        unsigned int resetPin,
-        unsigned int interruptPin);
+        uint32_t ssPin,
+        uint32_t sckPin,
+        uint32_t misoPin,
+        uint32_t mosiPin,
+        uint32_t resetPin,
+        uint32_t interruptPin);
     void stop();
 
     // Hardware communication (exposed for advanced use)
-    long readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired = true);
-    void writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired = true);
+    int32_t readRegister(int32_t registerAddress, int32_t nBits, bool signedData, bool isVerificationRequired = true);
+    void writeRegister(int32_t registerAddress, int32_t nBits, int32_t data, bool isVerificationRequired = true);
 
     // Task control
     void pauseMeterReadingTask();
     void resumeMeterReadingTask();
 
     // Channel and meter data access
-    bool isChannelActive(unsigned int channelIndex);
-    void getChannelData(ChannelData &channelData, unsigned int channelIndex);
-    void getMeterValues(MeterValues &meterValues, unsigned int channelIndex);
+    bool isChannelActive(uint32_t channelIndex);
+    void getChannelData(ChannelData &channelData, uint32_t channelIndex);
+    void getMeterValues(MeterValues &meterValues, uint32_t channelIndex);
 
     // Aggregated power calculations
     float getAggregatedActivePower(bool includeChannel0 = true);
@@ -396,13 +396,13 @@ namespace Ade7953
     float getAggregatedPowerFactor(bool includeChannel0 = true);
 
     // System parameters
-    unsigned int getSampleTime();
+    uint32_t getSampleTime();
     float getGridFrequency();
 
     // Configuration management
     void setDefaultConfiguration();
     bool setConfiguration(JsonDocument &jsonDocument);
-    bool setSingleConfigurationValue(const char* key, long value);
+    bool setSingleConfigurationValue(const char* key, int32_t value);
     void getConfiguration(Ade7953Configuration &config);
     void configurationToJson(JsonDocument &jsonDocument);
 
@@ -413,7 +413,7 @@ namespace Ade7953
     // Channel data management
     void setDefaultChannelData();
     bool setChannelData(JsonDocument &jsonDocument);
-    bool setSingleChannelData(unsigned int channelIndex, bool active, bool reverse, const char* label, Phase phase, const char* calibrationLabel);
+    bool setSingleChannelData(uint32_t channelIndex, bool active, bool reverse, const char* label, Phase phase, const char* calibrationLabel);
     void channelDataToJson(JsonDocument &jsonDocument);
 
     // Energy data management
@@ -421,6 +421,6 @@ namespace Ade7953
     bool setEnergyValues(JsonDocument &jsonDocument);
 
     // Data output and visualization
-    void singleMeterValuesToJson(JsonDocument &jsonDocument, unsigned int channel);
+    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint32_t channel);
     void fullMeterValuesToJson(JsonDocument &jsonDocument);
 };

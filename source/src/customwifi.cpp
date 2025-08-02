@@ -7,14 +7,14 @@ namespace CustomWifi
   // Static variables - minimal state
   static WiFiManager _wifiManager;
   static TaskHandle_t _wifiTaskHandle = NULL;
-  static unsigned long long _lastReconnectAttempt = 0;
-  static int _reconnectAttempts = 0; // Increased every disconnection, reset on stable (few minutes) connection
+  static uint64_t _lastReconnectAttempt = 0;
+  static int32_t _reconnectAttempts = 0; // Increased every disconnection, reset on stable (few minutes) connection
 
   // WiFi event notification values for task communication
-  static const unsigned long WIFI_EVENT_CONNECTED = 1;
-  static const unsigned long WIFI_EVENT_GOT_IP = 2;
-  static const unsigned long WIFI_EVENT_DISCONNECTED = 3;
-  static const unsigned long WIFI_EVENT_SHUTDOWN = 4;
+  static const uint32_t WIFI_EVENT_CONNECTED = 1;
+  static const uint32_t WIFI_EVENT_GOT_IP = 2;
+  static const uint32_t WIFI_EVENT_DISCONNECTED = 3;
+  static const uint32_t WIFI_EVENT_SHUTDOWN = 4;
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -155,7 +155,7 @@ namespace CustomWifi
 
     default:
       // Forward unknown events to task for logging/debugging
-      xTaskNotify(_wifiTaskHandle, (unsigned long)event, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, (uint32_t)event, eSetValueWithOverwrite);
       break;
     }
   }
@@ -173,7 +173,7 @@ namespace CustomWifi
   static void _wifiConnectionTask(void *parameter)
   {
     logger.debug("WiFi task started", TAG);
-    unsigned long notificationValue;
+    uint32_t notificationValue;
     _taskShouldRun = true;
 
     // Initial connection attempt
@@ -184,8 +184,8 @@ namespace CustomWifi
     Led::blinkBlueSlow(Led::PRIO_MEDIUM);
     
     // Try initial connection with retries for handshake timeouts
-    int connectionAttempts = 0;
-    const int maxAttempts = 3;
+    int32_t connectionAttempts = 0;
+    const int32_t maxAttempts = 3;
     bool connected = false;
     
     while (!connected && connectionAttempts < maxAttempts) {
@@ -418,7 +418,7 @@ namespace CustomWifi
     xTaskNotify(_wifiTaskHandle, WIFI_EVENT_SHUTDOWN, eSetValueWithOverwrite);
 
     // Wait with timeout for clean shutdown using standard pattern
-    unsigned long long startTime = millis64();
+    uint64_t startTime = millis64();
     
     while (_wifiTaskHandle != NULL && (millis64() - startTime) < TASK_STOPPING_TIMEOUT)
     {

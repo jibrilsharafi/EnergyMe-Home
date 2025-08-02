@@ -58,10 +58,10 @@
 struct CustomMqttConfiguration {
     bool enabled;
     char server[URL_BUFFER_SIZE];
-    unsigned int port;
+    uint32_t port;
     char clientid[NAME_BUFFER_SIZE];
     char topic[MQTT_TOPIC_BUFFER_SIZE];
-    unsigned int frequency; // Publishing frequency in seconds
+    uint32_t frequency; // Publishing frequency in seconds
     bool useCredentials;
     char username[USERNAME_BUFFER_SIZE];
     char password[PASSWORD_BUFFER_SIZE];

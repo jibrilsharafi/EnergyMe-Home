@@ -1,12 +1,12 @@
 #include "multiplexer.h"
 
 namespace Multiplexer {
-    static int _s0Pin = -1;
-    static int _s1Pin = -1;
-    static int _s2Pin = -1;
-    static int _s3Pin = -1;
+    static int32_t _s0Pin = -1;
+    static int32_t _s1Pin = -1;
+    static int32_t _s2Pin = -1;
+    static int32_t _s3Pin = -1;
 
-    void begin(int s0Pin, int s1Pin, int s2Pin, int s3Pin) {
+    void begin(int32_t s0Pin, int32_t s1Pin, int32_t s2Pin, int32_t s3Pin) {
         _s0Pin = s0Pin;
         _s1Pin = s1Pin;
         _s2Pin = s2Pin;
@@ -22,7 +22,7 @@ namespace Multiplexer {
         setChannel(0);
     }
 
-    void setChannel(unsigned int channel) {
+    void setChannel(uint32_t channel) {
         if (channel < 0 || channel > MULTIPLEXER_CHANNEL_COUNT-1) {
             return;
         }

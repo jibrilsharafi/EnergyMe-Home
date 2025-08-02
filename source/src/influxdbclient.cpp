@@ -9,12 +9,12 @@ namespace InfluxDbClient
 
     // State variables
     static bool _isSetupDone = false;
-    static unsigned long _sendAttempt = 0;
-    static unsigned long long _nextSendAttemptMillis = 0;
+    static uint32_t _sendAttempt = 0;
+    static uint64_t _nextSendAttemptMillis = 0;
     
     // Runtime connection status - kept in memory only, not saved to preferences
     static char _status[STATUS_BUFFER_SIZE];
-    static unsigned long long _statusTimestampUnix;
+    static uint64_t _statusTimestampUnix;
 
     // Task variables
     static TaskHandle_t _influxDbTaskHandle = nullptr;
@@ -28,7 +28,7 @@ namespace InfluxDbClient
     static void _disable();
     
     static void _sendData();
-    static void _formatLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp, char *buffer, size_t bufferSize, bool isEnergyData);
+    static void _formatLineProtocol(const MeterValues &meterValues, int32_t channel, uint64_t timestamp, char *buffer, size_t bufferSize, bool isEnergyData);
     
     static bool _validateJsonConfiguration(JsonDocument &jsonDocument);
     static bool _validateJsonConfigurationPartial(JsonDocument &jsonDocument);
@@ -191,8 +191,8 @@ namespace InfluxDbClient
 
         if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
         if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
-        if (!jsonDocument["port"].is<int>()) { logger.warning("port field is not an integer", TAG); return false; }
-        if (!jsonDocument["version"].is<int>()) { logger.warning("version field is not an integer", TAG); return false; }
+        if (!jsonDocument["port"].is<int32_t>()) { logger.warning("port field is not an integer", TAG); return false; }
+        if (!jsonDocument["version"].is<int32_t>()) { logger.warning("version field is not an integer", TAG); return false; }
         if (!jsonDocument["database"].is<const char*>()) { logger.warning("database field is not a string", TAG); return false; }
         if (!jsonDocument["username"].is<const char*>()) { logger.warning("username field is not a string", TAG); return false; }
         if (!jsonDocument["password"].is<const char*>()) { logger.warning("password field is not a string", TAG); return false; }
@@ -200,10 +200,10 @@ namespace InfluxDbClient
         if (!jsonDocument["bucket"].is<const char*>()) { logger.warning("bucket field is not a string", TAG); return false; }
         if (!jsonDocument["token"].is<const char*>()) { logger.warning("token field is not a string", TAG); return false; }
         if (!jsonDocument["measurement"].is<const char*>()) { logger.warning("measurement field is not a string", TAG); return false; }
-        if (!jsonDocument["frequency"].is<int>()) { logger.warning("frequency field is not an integer", TAG); return false; }
+        if (!jsonDocument["frequency"].is<int32_t>()) { logger.warning("frequency field is not an integer", TAG); return false; }
         if (!jsonDocument["useSSL"].is<bool>()) { logger.warning("useSSL field is not a boolean", TAG); return false; }
 
-        if (jsonDocument["frequency"].as<int>() < 1 || jsonDocument["frequency"].as<int>() > 3600)
+        if (jsonDocument["frequency"].as<int32_t>() < 1 || jsonDocument["frequency"].as<int32_t>() > 3600)
         {
             logger.warning("frequency field must be between 1 and 3600 seconds", TAG);
             return false;
@@ -222,8 +222,8 @@ namespace InfluxDbClient
 
         if (jsonDocument["enabled"].is<bool>()) {return true;}        
         if (jsonDocument["server"].is<const char*>()) {return true;}        
-        if (jsonDocument["port"].is<int>()) {return true;}        
-        if (jsonDocument["version"].is<int>()) {return true;}        
+        if (jsonDocument["port"].is<int32_t>()) {return true;}        
+        if (jsonDocument["version"].is<int32_t>()) {return true;}        
         if (jsonDocument["database"].is<const char*>()) {return true;}        
         if (jsonDocument["username"].is<const char*>()) {return true;}        
         if (jsonDocument["password"].is<const char*>()) {return true;}        
@@ -231,7 +231,7 @@ namespace InfluxDbClient
         if (jsonDocument["bucket"].is<const char*>()) {return true;}        
         if (jsonDocument["token"].is<const char*>()) {return true;}        
         if (jsonDocument["measurement"].is<const char*>()) {return true;}        
-        if (jsonDocument["frequency"].is<int>()) {return true;}        
+        if (jsonDocument["frequency"].is<int32_t>()) {return true;}        
         if (jsonDocument["useSSL"].is<bool>()) {return true;}
 
         logger.warning("No valid fields found in JSON document", TAG);
@@ -304,7 +304,7 @@ namespace InfluxDbClient
             char credentials[sizeof(_influxDbConfiguration.username) + sizeof(_influxDbConfiguration.password) + 2];
             snprintf(credentials, sizeof(credentials), "%s:%s", _influxDbConfiguration.username, _influxDbConfiguration.password);
 
-            String encodedCredentials = base64::encode((const unsigned char*)credentials, strlen(credentials));
+            String encodedCredentials = base64::encode((const uint8_t*)credentials, strlen(credentials));
 
             char authHeader[AUTH_HEADER_BUFFER_SIZE];
             snprintf(authHeader, sizeof(authHeader), "Basic %s", encodedCredentials.c_str());
@@ -313,9 +313,9 @@ namespace InfluxDbClient
 
         char payload[PAYLOAD_BUFFER_SIZE] = "";
         size_t payloadLength = 0;
-        unsigned long long currentTimestamp = CustomTime::getUnixTimeMilliseconds();
+        uint64_t currentTimestamp = CustomTime::getUnixTimeMilliseconds();
 
-        for (int i = 0; i < CHANNEL_COUNT; i++)
+        for (int32_t i = 0; i < CHANNEL_COUNT; i++)
         {
             if (Ade7953::isChannelActive(i))
             {
@@ -368,7 +368,7 @@ namespace InfluxDbClient
             return;
         }
 
-        int httpCode = http.POST(payload);
+        int32_t httpCode = http.POST(payload);
 
         if (httpCode >= 200 && httpCode < 300)
         {
@@ -406,7 +406,7 @@ namespace InfluxDbClient
             }
             
             // Calculate next attempt time using exponential backoff
-            unsigned long long backoffDelay = calculateExponentialBackoff(_sendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
+            uint64_t backoffDelay = calculateExponentialBackoff(_sendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
             
             _nextSendAttemptMillis = millis64() + backoffDelay;
             
@@ -417,7 +417,7 @@ namespace InfluxDbClient
         http.end();
     }
 
-    static void _formatLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp, char *buffer, size_t bufferSize, bool isEnergyData)
+    static void _formatLineProtocol(const MeterValues &meterValues, int32_t channel, uint64_t timestamp, char *buffer, size_t bufferSize, bool isEnergyData)
     {
         ChannelData channelData;
         Ade7953::getChannelData(channelData, channel);
@@ -529,8 +529,8 @@ namespace InfluxDbClient
 
         config.enabled = jsonDocument["enabled"].as<bool>();
         snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-        config.port = jsonDocument["port"].as<int>();
-        config.version = jsonDocument["version"].as<int>();
+        config.port = jsonDocument["port"].as<int32_t>();
+        config.version = jsonDocument["version"].as<int32_t>();
         snprintf(config.database, sizeof(config.database), "%s", jsonDocument["database"].as<const char*>());
         snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
         snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
@@ -538,7 +538,7 @@ namespace InfluxDbClient
         snprintf(config.bucket, sizeof(config.bucket), "%s", jsonDocument["bucket"].as<const char*>());
         snprintf(config.token, sizeof(config.token), "%s", jsonDocument["token"].as<const char*>());
         snprintf(config.measurement, sizeof(config.measurement), "%s", jsonDocument["measurement"].as<const char*>());
-        config.frequencySeconds = jsonDocument["frequency"].as<int>();
+        config.frequencySeconds = jsonDocument["frequency"].as<int32_t>();
         config.useSSL = jsonDocument["useSSL"].as<bool>();
         
         snprintf(_status, sizeof(_status), "Configuration updated");
@@ -564,11 +564,11 @@ namespace InfluxDbClient
         if (jsonDocument["server"].is<const char*>()) {
             snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
         }
-        if (jsonDocument["port"].is<int>()) {
-            config.port = jsonDocument["port"].as<int>();
+        if (jsonDocument["port"].is<int32_t>()) {
+            config.port = jsonDocument["port"].as<int32_t>();
         }
-        if (jsonDocument["version"].is<int>()) {
-            config.version = jsonDocument["version"].as<int>();
+        if (jsonDocument["version"].is<int32_t>()) {
+            config.version = jsonDocument["version"].as<int32_t>();
         }
         if (jsonDocument["database"].is<const char*>()) {
             snprintf(config.database, sizeof(config.database), "%s", jsonDocument["database"].as<const char*>());
@@ -591,8 +591,8 @@ namespace InfluxDbClient
         if (jsonDocument["measurement"].is<const char*>()) {
             snprintf(config.measurement, sizeof(config.measurement), "%s", jsonDocument["measurement"].as<const char*>());
         }
-        if (jsonDocument["frequency"].is<int>()) {
-            config.frequencySeconds = jsonDocument["frequency"].as<int>();
+        if (jsonDocument["frequency"].is<int32_t>()) {
+            config.frequencySeconds = jsonDocument["frequency"].as<int32_t>();
         }
         if (jsonDocument["useSSL"].is<bool>()) {
             config.useSSL = jsonDocument["useSSL"].as<bool>();
@@ -610,12 +610,12 @@ namespace InfluxDbClient
         logger.debug("InfluxDB task started", TAG);
         
         _taskShouldRun = true;
-        unsigned long long lastSendTime = 0;
+        uint64_t lastSendTime = 0;
 
         while (_taskShouldRun) {
             if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) {
                 if (_influxDbConfiguration.enabled) {
-                    unsigned long long currentTime = millis64();
+                    uint64_t currentTime = millis64();
                     if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) {
                         // Check if we should wait due to previous failures
                         if (currentTime >= _nextSendAttemptMillis) {
@@ -629,7 +629,7 @@ namespace InfluxDbClient
             }
 
             // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));
             if (notificationValue > 0) {
                 _taskShouldRun = false;
                 break;

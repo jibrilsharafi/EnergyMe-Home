@@ -5,13 +5,13 @@ static const char *TAG = "customtime";
 namespace CustomTime {
     // Static variables to maintain state
     static bool _isTimeSynched = false;
-    static int _gmtOffsetSeconds = DEFAULT_GMT_OFFSET_SECONDS;
-    static int _dstOffsetSeconds = DEFAULT_DST_OFFSET_SECONDS;
-    static unsigned long long _lastSyncAttempt = 0;
+    static int32_t _gmtOffsetSeconds = DEFAULT_GMT_OFFSET_SECONDS;
+    static int32_t _dstOffsetSeconds = DEFAULT_DST_OFFSET_SECONDS;
+    static uint64_t _lastSyncAttempt = 0;
 
     // Private helper function
     static bool _getPublicLocation(PublicLocation* publicLocation);
-    static bool _getPublicTimezone(int* gmtOffsetSeconds, int* dstOffsetSeconds);
+    static bool _getPublicTimezone(int32_t* gmtOffsetSeconds, int32_t* dstOffsetSeconds);
 
     static bool _getTime();
     static void _checkAndSyncTime();
@@ -19,7 +19,7 @@ namespace CustomTime {
     static bool _loadConfiguration();
     static void _saveConfiguration();
 
-    static bool _isUnixTimeValid(unsigned long long unixTime, bool isMilliseconds = true);
+    static bool _isUnixTimeValid(uint64_t unixTime, bool isMilliseconds = true);
 
     bool begin() {
         _loadConfiguration();
@@ -30,7 +30,7 @@ namespace CustomTime {
 
         if (_isTimeSynched)
         {
-            int gmtOffset, dstOffset;
+            int32_t gmtOffset, dstOffset;
             if (_getPublicTimezone(&gmtOffset, &dstOffset)) { CustomTime::setOffset(gmtOffset, dstOffset); }
             else { logger.warning("Time synced, but the timezone could not be fetched. It will be shown as UTC", TAG); }
         }
@@ -44,7 +44,7 @@ namespace CustomTime {
         _saveConfiguration();
     }
 
-    void setOffset(int gmtOffset, int dstOffset) {
+    void setOffset(int32_t gmtOffset, int32_t dstOffset) {
         _gmtOffsetSeconds = gmtOffset;
         _dstOffsetSeconds = dstOffset;
 
@@ -99,13 +99,13 @@ namespace CustomTime {
         return _isUnixTimeValid(_now, false);
     }
 
-    unsigned long long getUnixTime() {
+    uint64_t getUnixTime() {
         struct timeval tv;
         gettimeofday(&tv, NULL);
-        return static_cast<unsigned long long>(tv.tv_sec);
+        return static_cast<uint64_t>(tv.tv_sec);
     }
 
-    unsigned long long getUnixTimeMilliseconds() {
+    uint64_t getUnixTimeMilliseconds() {
         struct timeval tv;
         gettimeofday(&tv, NULL);
         return tv.tv_sec * 1000LL + (tv.tv_usec / 1000LL);
@@ -126,7 +126,7 @@ namespace CustomTime {
         
         struct tm utc_tm;
         gmtime_r(&tv.tv_sec, &utc_tm);
-        int milliseconds = tv.tv_usec / 1000;
+        int32_t milliseconds = tv.tv_usec / 1000;
         
         snprintf(buffer, bufferSize, TIMESTAMP_ISO_FORMAT,
                 utc_tm.tm_year + 1900,
@@ -147,7 +147,7 @@ namespace CustomTime {
     void timestampIsoFromUnix(time_t unixSeconds, char* buffer, size_t bufferSize) {
         struct tm utc_tm;
         gmtime_r(&unixSeconds, &utc_tm);
-        int milliseconds = 0; // No milliseconds in time_t
+        int32_t milliseconds = 0; // No milliseconds in time_t
         
         snprintf(buffer, bufferSize, TIMESTAMP_ISO_FORMAT,
                 utc_tm.tm_year + 1900,
@@ -181,7 +181,7 @@ namespace CustomTime {
                 utc_tm.tm_mday);
     }
 
-    unsigned long long getMillisecondsUntilNextHour() {
+    uint64_t getMillisecondsUntilNextHour() {
         struct timeval tv;
         gettimeofday(&tv, NULL);
         
@@ -189,17 +189,17 @@ namespace CustomTime {
         localtime_r(&tv.tv_sec, &timeinfo);
         
         // Calculate the number of seconds until the next hour
-        int secondsUntilNextHour = 3600 - (timeinfo.tm_min * 60 + timeinfo.tm_sec);
+        int32_t secondsUntilNextHour = 3600 - (timeinfo.tm_min * 60 + timeinfo.tm_sec);
         
         // Convert to milliseconds
-        return static_cast<unsigned long long>(secondsUntilNextHour) * 1000;
+        return static_cast<uint64_t>(secondsUntilNextHour) * 1000;
     }
 
     static void _checkAndSyncTime() {
-        unsigned long long currentTime = millis64();
+        uint64_t currentTime = millis64();
         
         // Check if it's time to sync (every TIME_SYNC_INTERVAL_SECONDS seconds)
-        if (currentTime - _lastSyncAttempt >= (unsigned long long)TIME_SYNC_INTERVAL_SECONDS * 1000) {
+        if (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_INTERVAL_SECONDS * 1000) {
             _lastSyncAttempt = currentTime;
             
             // Re-configure time to trigger a new sync
@@ -221,7 +221,7 @@ namespace CustomTime {
 
         _http.begin(PUBLIC_LOCATION_ENDPOINT);
 
-        int httpCode = _http.GET();
+        int32_t httpCode = _http.GET();
         if (httpCode > 0) {
             if (httpCode == HTTP_CODE_OK) {
                 // Use stream directly - efficient and simple
@@ -268,7 +268,7 @@ namespace CustomTime {
         return true;
     }
 
-    static bool _getPublicTimezone(int* gmtOffsetSeconds, int* dstOffsetSeconds) {
+    static bool _getPublicTimezone(int32_t* gmtOffsetSeconds, int32_t* dstOffsetSeconds) {
         if (!gmtOffsetSeconds || !dstOffsetSeconds) {
             logger.error("Null pointer passed to getPublicTimezone", TAG);
             return false;
@@ -292,7 +292,7 @@ namespace CustomTime {
             PUBLIC_TIMEZONE_USERNAME);
 
         _http.begin(url);
-        int httpCode = _http.GET();
+        int32_t httpCode = _http.GET();
 
         if (httpCode > 0) {
             if (httpCode == HTTP_CODE_OK) {
@@ -306,14 +306,14 @@ namespace CustomTime {
                     return false;
                 }
 
-                *gmtOffsetSeconds = jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
-                *dstOffsetSeconds = jsonDocument["dstOffset"].as<int>() * 3600 - *gmtOffsetSeconds; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
+                *gmtOffsetSeconds = jsonDocument["rawOffset"].as<int32_t>() * 3600; // Convert hours to seconds
+                *dstOffsetSeconds = jsonDocument["dstOffset"].as<int32_t>() * 3600 - *gmtOffsetSeconds; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
 
                 logger.debug(
                     "GMT offset: %d | DST offset: %d",
                     TAG,
-                    jsonDocument["rawOffset"].as<int>(),
-                    jsonDocument["dstOffset"].as<int>()
+                    jsonDocument["rawOffset"].as<int32_t>(),
+                    jsonDocument["dstOffset"].as<int32_t>()
                 );
             } else {
                 logger.warning("HTTP request failed with code: %d", TAG, httpCode);
@@ -328,7 +328,7 @@ namespace CustomTime {
         return true;
     }
 
-    static bool _isUnixTimeValid(unsigned long long unixTime, bool isMilliseconds) {
+    static bool _isUnixTimeValid(uint64_t unixTime, bool isMilliseconds) {
         if (isMilliseconds) { return (unixTime >= MINIMUM_UNIX_TIME_MILLISECONDS && unixTime <= MAXIMUM_UNIX_TIME_MILLISECONDS); }
         else { return (unixTime >= MINIMUM_UNIX_TIME_SECONDS && unixTime <= MAXIMUM_UNIX_TIME_SECONDS); }
     }

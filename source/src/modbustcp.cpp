@@ -12,9 +12,9 @@ namespace ModbusTcp
     #define UPPER_LIMIT_CHANNEL_REGISTERS (LOWER_LIMIT_CHANNEL_REGISTERS + (CHANNEL_COUNT) * STEP_CHANNEL_REGISTERS)
 
     // Private function declarations
-    static unsigned int _getRegisterValue(unsigned int address);
-    static unsigned int _getFloatBits(float value, bool high);
-    static bool _isValidRegister(unsigned int address);
+    static uint16_t _getRegisterValue(uint32_t address);
+    static uint16_t _getFloatBits(float value, bool high);
+    static bool _isValidRegister(uint32_t address);
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request);
 
     void begin()
@@ -61,7 +61,7 @@ namespace ModbusTcp
         }
         
         // Check if the entire range is valid before processing
-        for (unsigned int i = 0; i < registerCount; i++)
+        for (uint32_t i = 0; i < registerCount; i++)
         {
             if (!_isValidRegister(startAddress + i))
             {
@@ -73,7 +73,7 @@ namespace ModbusTcp
         }
         
         // Calculate the byte count (2 bytes per register)
-        unsigned char byteCount = registerCount * 2;
+        uint8_t byteCount = registerCount * 2;
         
         // Create the response
         ModbusMessage response;
@@ -82,11 +82,9 @@ namespace ModbusTcp
         response.add(byteCount);
 
         // Add register values to response
-        for (unsigned int i = 0; i < registerCount; i++)
+        for (uint32_t i = 0; i < registerCount; i++)
         {
-            unsigned int value = _getRegisterValue(startAddress + i);
-            // Ensure we only add 16-bit values (cast to uint16_t)
-            response.add((uint16_t)(value & 0xFFFF));
+            response.add(_getRegisterValue(startAddress + i));
         }
         
         statistics.modbusRequests++;
@@ -94,9 +92,9 @@ namespace ModbusTcp
     }
 
     // Helper function to split float into high or low 16 bits
-    static unsigned int _getFloatBits(float value, bool high)
+    static uint16_t _getFloatBits(float value, bool high)
     {
-        unsigned long intValue = *reinterpret_cast<unsigned long*>(&value);
+        uint32_t intValue = *reinterpret_cast<uint32_t*>(&value);
         if (high)
         {
             return intValue >> 16;
@@ -107,7 +105,7 @@ namespace ModbusTcp
         }
     }
 
-    static unsigned int _getRegisterValue(unsigned int address)
+    static uint16_t _getRegisterValue(uint32_t address)
     {
         // The address is calculated as 1000 + 100 * channel + offset
         // All the registers here are float 32 bits, so we need to split them into two
@@ -129,7 +127,7 @@ namespace ModbusTcp
                 case 7: return millis64() & 0xFFFF;          // Bits 15-0 
 
                 // Default case to handle unexpected addresses
-                default: return (unsigned int)0;
+                default: return 0;
             }
         } else if (address >= START_REGISTERS_METER_VALUES && address < LOWER_LIMIT_CHANNEL_REGISTERS) {
             // Handle special registers for voltage and grid frequency
@@ -169,14 +167,14 @@ namespace ModbusTcp
                 case 217: return _getFloatBits(Ade7953::getAggregatedPowerFactor(false), false);
 
                 // Default case to handle unexpected addresses
-                default: return (unsigned int)0;
+                default: return 0;
             }
         } else if (address >= LOWER_LIMIT_CHANNEL_REGISTERS && address < UPPER_LIMIT_CHANNEL_REGISTERS) {
             // Handle channel-specific registers, and thus we need to calculate the channel and offset
             // to avoid manual mapping of all registers
-            int realAddress = address - LOWER_LIMIT_CHANNEL_REGISTERS;
-            int channel = realAddress / STEP_CHANNEL_REGISTERS;
-            int offset = realAddress % STEP_CHANNEL_REGISTERS;
+            int32_t realAddress = address - LOWER_LIMIT_CHANNEL_REGISTERS;
+            int32_t channel = realAddress / STEP_CHANNEL_REGISTERS;
+            int32_t offset = realAddress % STEP_CHANNEL_REGISTERS;
 
             MeterValues meterValues;
             Ade7953::getMeterValues(meterValues, channel);
@@ -205,14 +203,14 @@ namespace ModbusTcp
                 case 19: return _getFloatBits(meterValues.apparentEnergy, false);
 
                 // Default case to handle unexpected addresses
-                default: return (unsigned int)0;
+                default: return 0;
             }
         }
 
-        return (unsigned int)0; // If the address is out of range or invalid
+        return 0; // If the address is out of range or invalid
     }
 
-    static bool _isValidRegister(unsigned int address) // Currently unused
+    static bool _isValidRegister(uint32_t address) // Currently unused
     {
         // Define valid ranges
         return (

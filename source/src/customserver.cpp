@@ -11,7 +11,7 @@ namespace CustomServer
     // Health check task variables
     static TaskHandle_t _healthCheckTaskHandle = NULL;
     static bool _healthCheckTaskShouldRun = false;
-    static unsigned int _consecutiveFailures = 0;
+    static uint32_t _consecutiveFailures = 0;
 
     // API request synchronization
     static SemaphoreHandle_t _apiMutex = NULL;
@@ -30,9 +30,9 @@ namespace CustomServer
     static bool _validatePasswordStrength(const char *password);
 
     // Helper functions for common response patterns
-    static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int statusCode = HTTP_CODE_OK);
+    static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int32_t statusCode = HTTP_CODE_OK);
     static void _sendSuccessResponse(AsyncWebServerRequest *request, const char *message);
-    static void _sendErrorResponse(AsyncWebServerRequest *request, int statusCode, const char *message);
+    static void _sendErrorResponse(AsyncWebServerRequest *request, int32_t statusCode, const char *message);
 
     // API request synchronization helpers
     static bool _acquireApiMutex(AsyncWebServerRequest *request);
@@ -61,12 +61,12 @@ namespace CustomServer
     static void _serveOtaRollbackEndpoint();
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request);
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
-                                   size_t index, unsigned char *data, size_t len, bool final);
+                                   size_t index, uint8_t *data, size_t len, bool final);
     
     // OTA helper functions
     static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename);
     static void _setupOtaMd5Verification(AsyncWebServerRequest *request);
-    static bool _writeOtaChunk(AsyncWebServerRequest *request, unsigned char *data, size_t len, size_t index);
+    static bool _writeOtaChunk(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index);
     static void _finalizeOtaUpload(AsyncWebServerRequest *request);
     
     // Logging helper functions
@@ -233,7 +233,7 @@ namespace CustomServer
     }
 
     // Helper functions for common response patterns
-    static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int statusCode)
+    static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int32_t statusCode)
     {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         response->setCode(statusCode);
@@ -252,7 +252,7 @@ namespace CustomServer
         _releaseApiMutex(); // Release mutex on error to avoid deadlocks
     }
 
-    static void _sendErrorResponse(AsyncWebServerRequest *request, int statusCode, const char *message)
+    static void _sendErrorResponse(AsyncWebServerRequest *request, int32_t statusCode, const char *message)
     {
         JsonDocument doc;
         doc["success"] = false;
@@ -437,7 +437,7 @@ namespace CustomServer
     }
 
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
-                                   size_t index, unsigned char *data, size_t len, bool final)
+                                   size_t index, uint8_t *data, size_t len, bool final)
     {
         static bool otaInitialized = false;
         
@@ -546,7 +546,7 @@ namespace CustomServer
         }
     }
 
-    static bool _writeOtaChunk(AsyncWebServerRequest *request, unsigned char *data, size_t len, size_t index)
+    static bool _writeOtaChunk(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index)
     {
         size_t written = Update.write(data, len);
         if (written != len) {
@@ -923,7 +923,7 @@ namespace CustomServer
             }
 
             // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS));
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS));
             if (notificationValue > 0)
             {
                 _healthCheckTaskShouldRun = false;
@@ -961,7 +961,7 @@ namespace CustomServer
         client.print("Connection: close\r\n\r\n");
 
         // Wait for response with timeout
-        unsigned long long startTime = millis64();
+        uint64_t startTime = millis64();
         while (client.connected() && (millis64() - startTime) < HEALTH_CHECK_TIMEOUT_MS)
         {
             if (client.available())
@@ -974,7 +974,7 @@ namespace CustomServer
                 {
                     // Extract status code from characters 9-11
                     char statusStr[4] = {line[9], line[10], line[11], '\0'};
-                    int statusCode = atoi(statusStr);
+                    int32_t statusCode = atoi(statusStr);
                     client.stop();
 
                     if (statusCode == 200)
@@ -1068,7 +1068,7 @@ namespace CustomServer
         // Check maximum length
         if (length > MAX_PASSWORD_LENGTH)
         {
-            logger.warning("Password too long", TAG);
+            logger.warning("Password too int32_t", TAG);
             return false;
         }
         
@@ -1271,12 +1271,12 @@ namespace CustomServer
                 doc.set(json);
 
                 // Check if brightness field is provided and is a number
-                if (!doc["brightness"].is<unsigned int>()) {
+                if (!doc["brightness"].is<uint32_t>()) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid brightness parameter");
                     return;
                 }
 
-                unsigned int brightness = doc["brightness"].as<unsigned int>();
+                uint32_t brightness = doc["brightness"].as<uint32_t>();
 
                 // Validate brightness range
                 if (brightness > DEFAULT_LED_BRIGHTNESS_PERCENT) {
@@ -1300,7 +1300,7 @@ namespace CustomServer
 
 //     _server.on("/rest/meter-single", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         if (request->hasParam("index")) {
-//             int indexInt = request->getParam("index")->value().toInt();
+//             int32_t indexInt = request->getParam("index")->value().toInt();
 
 //             if (indexInt >= 0 && indexInt < CHANNEL_COUNT) {
 //                 ChannelNumber channel = static_cast<ChannelNumber>(indexInt);
@@ -1323,7 +1323,7 @@ namespace CustomServer
 
 //     _server.on("/rest/active-power", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         if (request->hasParam("index")) {
-//             int indexInt = request->getParam("index")->value().toInt();
+//             int32_t indexInt = request->getParam("index")->value().toInt();
 
 //             if (indexInt >= 0 && indexInt <= MULTIPLEXER_CHANNEL_COUNT) {
 //                 if (_ade7953.channelData[indexInt].active) {
@@ -1352,7 +1352,7 @@ namespace CustomServer
 //     _server.on("/rest/get-energy", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
 //         JsonDocument doc;
-//         for (int i = 0; i < CHANNEL_COUNT; i++) {
+//         for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
 //             if (_ade7953.channelData[i].active) {
 //                 doc[i]["activeEnergyImported"] = _ade7953.meterValues[i].activeEnergyImported;
 //                 doc[i]["activeEnergyExported"] = _ade7953.meterValues[i].activeEnergyExported;
@@ -1409,7 +1409,7 @@ namespace CustomServer
 
 //     _server.on("/rest/get-button-operation", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         const char* operationName = _buttonHandler.getCurrentOperationName();
-//         unsigned long operationTimestamp = _buttonHandler.getCurrentOperationTimestamp();
+//         uint32_t operationTimestamp = _buttonHandler.getCurrentOperationTimestamp();
 
 //         static char response[JSON_RESPONSE_BUFFER_SIZE];
 
@@ -1431,7 +1431,7 @@ namespace CustomServer
 //     // Refactored: Use dedicated JSON handlers for each POST endpoint
 //     _setChannelHandler = new AsyncCallbackJsonWebHandler("/rest/set-channel", [this](AsyncWebServerRequest* request, JsonVariant& json) {
 //         // Rate limiting
-//         unsigned long currentTime = millis64();
+//         uint32_t currentTime = millis64();
 //         if (currentTime - _lastChannelUpdateTime < API_UPDATE_THROTTLE_MS) {
 //             request->send(429, "application/json", "{\"error\":\"Rate limited\"}");
 //             return;
@@ -1446,7 +1446,7 @@ namespace CustomServer
 //         JsonDocument doc;
 //         doc.set(json);
 //         for (JsonPair kv : doc.as<JsonObject>()) {
-//             int channelIndex = atoi(kv.key().c_str());
+//             int32_t channelIndex = atoi(kv.key().c_str());
 //             if (channelIndex == 0 && !kv.value()["active"].as<bool>()) {
 //                 _releaseMutex(_channelMutex, "channel");
 //                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"Channel 0 cannot be disabled\"}");
@@ -1465,7 +1465,7 @@ namespace CustomServer
 
 //     _setGeneralConfigHandler = new AsyncCallbackJsonWebHandler("/rest/set-general-configuration", [this](AsyncWebServerRequest* request, JsonVariant& json) {
 //         // Rate limiting
-//         unsigned long currentTime = millis64();
+//         uint32_t currentTime = millis64();
 //         if (currentTime - _lastConfigUpdateTime < API_UPDATE_THROTTLE_MS) {
 //             request->send(429, "application/json", "{\"error\":\"Rate limited\"}");
 //             return;
@@ -1579,7 +1579,7 @@ namespace CustomServer
 
 //     _server.on("/rest/set-log-level", HTTP_POST, [this](AsyncWebServerRequest *request) {
 //         if (request->hasParam("level") && request->hasParam("type")) {
-//             int level = request->getParam("level")->value().toInt();
+//             int32_t level = request->getParam("level")->value().toInt();
 //             const char* type = request->getParam("type")->value().c_str();
 //             if (strcmp(type, "print") == 0) {
 //                 _logger.setPrintLevel(LogLevel(level));
@@ -1598,12 +1598,12 @@ namespace CustomServer
 //     // ADE7953 register access endpoints
 //     _server.on("/rest/ade7953-read-register", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         if (request->hasParam("address") && request->hasParam("nBits") && request->hasParam("signed")) {
-//             int address = request->getParam("address")->value().toInt();
-//             int nBits = request->getParam("nBits")->value().toInt();
+//             int32_t address = request->getParam("address")->value().toInt();
+//             int32_t nBits = request->getParam("nBits")->value().toInt();
 //             bool signedVal = request->getParam("signed")->value().equalsIgnoreCase("true");
 
 //             if ((nBits == 8 || nBits == 16 || nBits == 24 || nBits == 32) && address >= 0 && address <= 0x3FF) {
-//                 long registerValue = _ade7953.readRegister(address, nBits, signedVal);
+//                 int32_t registerValue = _ade7953.readRegister(address, nBits, signedVal);
 //                 static char response[JSON_RESPONSE_BUFFER_SIZE];
 //                 snprintf(response, sizeof(response), "{\"value\":%ld}", registerValue);
 //                 request->send(200, "application/json", response);
@@ -1617,9 +1617,9 @@ namespace CustomServer
 
 //     _server.on("/rest/ade7953-write-register", HTTP_POST, [this](AsyncWebServerRequest *request) {
 //         if (request->hasParam("address") && request->hasParam("nBits") && request->hasParam("data")) {
-//             int address = request->getParam("address")->value().toInt();
-//             int nBits = request->getParam("nBits")->value().toInt();
-//             int data = request->getParam("data")->value().toInt();
+//             int32_t address = request->getParam("address")->value().toInt();
+//             int32_t nBits = request->getParam("nBits")->value().toInt();
+//             int32_t data = request->getParam("data")->value().toInt();
 
 //             if ((nBits == 8 || nBits == 16 || nBits == 24 || nBits == 32) && address >= 0 && address <= 0x3FF) {
 //                 _ade7953.writeRegister(address, nBits, data);
@@ -1639,7 +1639,7 @@ namespace CustomServer
 
 //         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
 //         JsonDocument doc;
-//         unsigned int loops = 0;
+//         uint32_t loops = 0;
 //         while (file && loops < MAX_LOOP_ITERATIONS) {
 //             loops++;
 //             const char* filename = file.path();

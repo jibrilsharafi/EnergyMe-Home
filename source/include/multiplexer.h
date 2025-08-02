@@ -6,12 +6,12 @@
 
 namespace Multiplexer {
     void begin(
-        int s0Pin,
-        int s1Pin,
-        int s2Pin,
-        int s3Pin
+        int32_t s0Pin,
+        int32_t s1Pin,
+        int32_t s2Pin,
+        int32_t s3Pin
     );
     // No need to stop anything here since once it executes at the beginning, there is no other use for this
     
-    void setChannel(unsigned int channel);
+    void setChannel(uint32_t channel);
 }

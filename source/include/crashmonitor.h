@@ -31,8 +31,8 @@ namespace CrashMonitor {
     // No need to stop anything here since once it executes at the beginning, there is no other use for this
 
     bool isLastResetDueToCrash();
-    unsigned long getCrashCount();
-    unsigned long getResetCount();
+    uint32_t getCrashCount();
+    uint32_t getResetCount();
     const char* getResetReasonString(esp_reset_reason_t reason);
 
     void clearConsecutiveCrashCount(); // Useful for avoiding crash loops (e.g. during factory reset)

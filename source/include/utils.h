@@ -56,21 +56,21 @@
 // Come one, on this ESP32S3 and in 2025 can we still use 32bits millis
 // that will overflow in just 49 days?
 // esp_timer_get_time() returns microseconds since boot in 64-bit format,
-inline unsigned long long millis64() {
+inline uint64_t millis64() {
     return esp_timer_get_time() / 1000ULL;
 }
 
-inline unsigned long long micros64() {
+inline uint64_t micros64() {
     return esp_timer_get_time();
 }
 
 // Validation utilities
-inline bool isChannelValid(unsigned int channel) {
+inline bool isChannelValid(uint32_t channel) {
     return channel >= 0 && channel < CHANNEL_COUNT;
 }
 
 // Mathematical utilities
-unsigned long long calculateExponentialBackoff(unsigned long long attempt, unsigned long long initialInterval, unsigned long long maxInterval, unsigned long long multiplier);
+uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier);
 
 // Device identification
 void getDeviceId(char* deviceId, size_t maxLength);
@@ -121,4 +121,4 @@ bool isLatestFirmwareInstalled();
 void updateJsonFirmwareStatus(const char *status, const char *reason);
 
 // Network utilities
-const char* getMqttStateReason(int state);
+const char* getMqttStateReason(int32_t state);

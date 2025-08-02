@@ -5,35 +5,35 @@
 #include "constants.h"
 
 struct Statistics {
-  unsigned long ade7953TotalInterrupts;
-  unsigned long ade7953TotalHandledInterrupts;
-  unsigned long ade7953ReadingCount;
-  unsigned long ade7953ReadingCountFailure;
+  uint32_t ade7953TotalInterrupts;
+  uint32_t ade7953TotalHandledInterrupts;
+  uint32_t ade7953ReadingCount;
+  uint32_t ade7953ReadingCountFailure;
 
-  unsigned long mqttMessagesPublished;
-  unsigned long mqttMessagesPublishedError;
+  uint32_t mqttMessagesPublished;
+  uint32_t mqttMessagesPublishedError;
   
-  unsigned long customMqttMessagesPublished;
-  unsigned long customMqttMessagesPublishedError;
+  uint32_t customMqttMessagesPublished;
+  uint32_t customMqttMessagesPublishedError;
   
-  unsigned long modbusRequests;
-  unsigned long modbusRequestsError;
+  uint32_t modbusRequests;
+  uint32_t modbusRequestsError;
   
-  unsigned long influxdbUploadCount;
-  unsigned long influxdbUploadCountError;
+  uint32_t influxdbUploadCount;
+  uint32_t influxdbUploadCountError;
 
-  unsigned long wifiConnection;
-  unsigned long wifiConnectionError;
+  uint32_t wifiConnection;
+  uint32_t wifiConnectionError;
 
-  unsigned long webServerRequests;
-  unsigned long webServerRequestsError;
+  uint32_t webServerRequests;
+  uint32_t webServerRequestsError;
 
-  unsigned long logVerbose;
-  unsigned long logDebug;
-  unsigned long logInfo;
-  unsigned long logWarning;
-  unsigned long logError;
-  unsigned long logFatal;
+  uint32_t logVerbose;
+  uint32_t logDebug;
+  uint32_t logInfo;
+  uint32_t logWarning;
+  uint32_t logError;
+  uint32_t logFatal;
 
   Statistics() 
     : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0), 
@@ -62,22 +62,22 @@ struct SystemStaticInfo {
     
     // Hardware & Chip (mostly static)
     char chipModel[NAME_BUFFER_SIZE];        // ESP32, ESP32-S3, etc.
-    unsigned char chipRevision;      // Hardware revision
-    unsigned char chipCores;         // Number of CPU cores
-    unsigned long long chipId;           // Unique chip ID
-    unsigned long flashChipSizeBytes;
-    unsigned long flashChipSpeedHz;
-    unsigned long psramSizeBytes;   // Total PSRAM (if available)
-    unsigned long cpuFrequencyMHz;  // CPU frequency
+    uint8_t chipRevision;      // Hardware revision
+    uint8_t chipCores;         // Number of CPU cores
+    uint64_t chipId;           // Unique chip ID
+    uint32_t flashChipSizeBytes;
+    uint32_t flashChipSpeedHz;
+    uint32_t psramSizeBytes;   // Total PSRAM (if available)
+    uint32_t cpuFrequencyMHz;  // CPU frequency
     
     // SDK versions
     char sdkVersion[NAME_BUFFER_SIZE];
     char coreVersion[NAME_BUFFER_SIZE];
     
     // Crash and reset monitoring
-    unsigned long crashCount;                    // Total crashes since last manual reset
-    unsigned long resetCount;                    // Total resets since first boot
-    unsigned long lastResetReason;               // ESP reset reason code
+    uint32_t crashCount;                    // Total crashes since last manual reset
+    uint32_t resetCount;                    // Total resets since first boot
+    uint32_t lastResetReason;               // ESP reset reason code
     char lastResetReasonString[STATUS_BUFFER_SIZE];         // Human readable reset reason
     bool lastResetWasCrash;                 // True if last reset was due to crash
     
@@ -110,32 +110,32 @@ struct SystemStaticInfo {
 // Dynamic system information (changes frequently)
 struct SystemDynamicInfo {
     // Time & Uptime
-    unsigned long long uptimeMilliseconds;
-    unsigned long long uptimeSeconds;
+    uint64_t uptimeMilliseconds;
+    uint64_t uptimeSeconds;
     char currentTimestamp[TIMESTAMP_BUFFER_SIZE];
     char currentTimestampIso[TIMESTAMP_ISO_BUFFER_SIZE];
     
     // Memory - Heap (DRAM)
-    unsigned long heapTotalBytes;
-    unsigned long heapFreeBytes;
-    unsigned long heapUsedBytes;
-    unsigned long heapMinFreeBytes;
-    unsigned long heapMaxAllocBytes;
+    uint32_t heapTotalBytes;
+    uint32_t heapFreeBytes;
+    uint32_t heapUsedBytes;
+    uint32_t heapMinFreeBytes;
+    uint32_t heapMaxAllocBytes;
     float heapFreePercentage;
     float heapUsedPercentage;
     
     // Memory - PSRAM
-    unsigned long psramFreeBytes;
-    unsigned long psramUsedBytes;
-    unsigned long psramMinFreeBytes;
-    unsigned long psramMaxAllocBytes;
+    uint32_t psramFreeBytes;
+    uint32_t psramUsedBytes;
+    uint32_t psramMinFreeBytes;
+    uint32_t psramMaxAllocBytes;
     float psramFreePercentage;
     float psramUsedPercentage;
     
     // Storage - SPIFFS
-    unsigned long spiffsTotalBytes;
-    unsigned long spiffsUsedBytes;
-    unsigned long spiffsFreeBytes;
+    uint32_t spiffsTotalBytes;
+    uint32_t spiffsUsedBytes;
+    uint32_t spiffsFreeBytes;
     float spiffsFreePercentage;
     float spiffsUsedPercentage;
     
@@ -143,7 +143,7 @@ struct SystemDynamicInfo {
     float temperatureCelsius;
     
     // Network status
-    long wifiRssi;
+    int32_t wifiRssi;
     bool wifiConnected;
     char wifiSsid[NAME_BUFFER_SIZE];
     char wifiMacAddress[MAC_ADDRESS_BUFFER_SIZE];
@@ -169,13 +169,13 @@ struct SystemDynamicInfo {
 
 struct PayloadMeter
 {
-  unsigned int channel;
-  unsigned long long unixTimeMs;
+  uint32_t channel;
+  uint64_t unixTimeMs;
   float activePower;
   float powerFactor;
 
   PayloadMeter() : channel(0), unixTimeMs(0), activePower(0.0f), powerFactor(0.0f) {}
 
-  PayloadMeter(unsigned int channel, unsigned long long unixTimeMs, float activePower, float powerFactor)
+  PayloadMeter(uint32_t channel, uint64_t unixTimeMs, float activePower, float powerFactor)
       : channel(channel), unixTimeMs(unixTimeMs), activePower(activePower), powerFactor(powerFactor) {}
 };

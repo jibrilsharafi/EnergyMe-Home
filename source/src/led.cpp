@@ -3,10 +3,10 @@
 namespace Led
 {
     // Hardware pins
-    static int _redPin = INVALID_PIN;
-    static int _greenPin = INVALID_PIN;
-    static int _bluePin = INVALID_PIN;
-    static unsigned int _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
+    static int32_t _redPin = INVALID_PIN;
+    static int32_t _greenPin = INVALID_PIN;
+    static int32_t _bluePin = INVALID_PIN;
+    static uint32_t _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
 
     // Task handles and queue
     static TaskHandle_t _ledTaskHandle = nullptr;
@@ -19,8 +19,8 @@ namespace Led
         LedPattern pattern;
         Color color;
         LedPriority priority;
-        unsigned long long durationMs; // 0 = indefinite
-        unsigned long long timestamp;  // When command was issued
+        uint64_t durationMs; // 0 = indefinite
+        uint64_t timestamp;  // When command was issued
     };
 
     // Current active state
@@ -29,9 +29,9 @@ namespace Led
         LedPattern currentPattern = LedPattern::OFF;
         Color currentColor = Colors::OFF;
         LedPriority currentPriority = 1; // PRIO_NORMAL
-        unsigned long long patternStartTime = 0;
-        unsigned long long patternDuration = 0;
-        unsigned long long cycleStartTime = 0;
+        uint64_t patternStartTime = 0;
+        uint64_t patternDuration = 0;
+        uint64_t cycleStartTime = 0;
         bool isActive = false;
     };
 
@@ -41,11 +41,11 @@ namespace Led
     static void _setHardwareColor(const Color &color);
     static void _ledTask(void *parameter);
     static void _processPattern();
-    static unsigned char _calculateBrightness(unsigned char value, float factor = 1.0f);
+    static uint8_t _calculateBrightness(uint8_t value, float factor = 1.0f);
     static bool _loadConfiguration();
     static void _saveConfiguration();
 
-    void begin(int redPin, int greenPin, int bluePin)
+    void begin(int32_t redPin, int32_t greenPin, int32_t bluePin)
     {
         if (_ledTaskHandle != nullptr) { return; }
 
@@ -105,7 +105,7 @@ namespace Led
     static void _ledTask(void *parameter)
     {
         LedCommand command;
-        unsigned long long currentTime;
+        uint64_t currentTime;
 
         _ledTaskShouldRun = true;
         while (_ledTaskShouldRun)
@@ -153,7 +153,7 @@ namespace Led
             _processPattern();
 
             // Wait for stop notification with timeout (blocking) - ensures proper yielding
-            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(LED_TASK_DELAY_MS));
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(LED_TASK_DELAY_MS));
             if (notificationValue > 0)
             {
                 _ledTaskShouldRun = false;
@@ -185,7 +185,7 @@ namespace Led
         preferences.end();
 
         // Validate loaded value is within acceptable range
-        _brightness = min(max(_brightness, (unsigned int)0), (unsigned int)LED_MAX_BRIGHTNESS_PERCENT);
+        _brightness = min(max(_brightness, (uint32_t)0), (uint32_t)LED_MAX_BRIGHTNESS_PERCENT);
         return true;
     }
 
@@ -197,15 +197,15 @@ namespace Led
         preferences.end();
     }
 
-    void setBrightness(unsigned int brightness)
+    void setBrightness(uint32_t brightness)
     {
-        _brightness = min(max(brightness, (unsigned int)0), (unsigned int)LED_MAX_BRIGHTNESS_PERCENT);
+        _brightness = min(max(brightness, (uint32_t)0), (uint32_t)LED_MAX_BRIGHTNESS_PERCENT);
         _saveConfiguration();
     }
 
-    unsigned int getBrightness() { return _brightness; }
+    uint32_t getBrightness() { return _brightness; }
 
-    void setPattern(LedPattern pattern, Color color, LedPriority priority, unsigned long long durationMs)
+    void setPattern(LedPattern pattern, Color color, LedPriority priority, uint64_t durationMs)
     {
         if (_ledQueue == nullptr) { return; }
 
@@ -257,15 +257,15 @@ namespace Led
         ledcWrite(_bluePin, _calculateBrightness(color.blue));
     }
 
-    static unsigned char _calculateBrightness(unsigned char value, float factor)
+    static uint8_t _calculateBrightness(uint8_t value, float factor)
     {
-        return (unsigned char)(value * _brightness * factor / LED_MAX_BRIGHTNESS_PERCENT);
+        return (uint8_t)(value * _brightness * factor / LED_MAX_BRIGHTNESS_PERCENT);
     }
 
     static void _processPattern()
     {
-        unsigned long long currentTime = millis64();
-        unsigned long long elapsed = currentTime - _state.cycleStartTime;
+        uint64_t currentTime = millis64();
+        uint64_t elapsed = currentTime - _state.cycleStartTime;
         Color outputColor = _state.currentColor;
         bool shouldOutput = true;
 
@@ -296,7 +296,7 @@ namespace Led
         case LedPattern::PULSE:
         {
             // Smooth fade in/out over 2 seconds
-            unsigned long long cycle = elapsed % 2000; // 2 second cycle
+            uint64_t cycle = elapsed % 2000; // 2 second cycle
             float factor;
             if (cycle < 1000)
             {
@@ -317,7 +317,7 @@ namespace Led
         case LedPattern::DOUBLE_BLINK:
         {
             // Two quick blinks (100ms on, 100ms off, 100ms on, 100ms off), then 800ms pause
-            unsigned long long cycle = elapsed % 1200; // 1.2 second cycle
+            uint64_t cycle = elapsed % 1200; // 1.2 second cycle
             if (cycle < 100 || (cycle >= 200 && cycle < 300))
             {
                 // On periods

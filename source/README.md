@@ -156,7 +156,7 @@ The device acts as a Modbus TCP server for integration with SCADA systems and in
 
 ### InfluxDB Interface
 
-The InfluxDB client provides seamless integration with InfluxDB time-series databases for long-term data storage and analysis.
+The InfluxDB client provides seamless integration with InfluxDB time-series databases for int32_t-term data storage and analysis.
 
 - **API Endpoints**:
   - `GET /rest/get-influxdb-configuration` - Retrieve current InfluxDB configuration
@@ -229,7 +229,7 @@ Calibration parameters include:
 
 ## Crash Reporting
 
-To aid in debugging and improve long-term stability, the system features a crash reporting mechanism.
+To aid in debugging and improve int32_t-term stability, the system features a crash reporting mechanism.
 If the ESP32 encounters a critical error and reboots, details about the crash (such as the call stack and error type) are stored in the RTC (Real-Time Clock) memory. This memory persists across reboots (but not power cycles).
 The crash information can then be retrieved and viewed, typically through the web interface or via serial monitor, allowing developers to diagnose the cause of unexpected resets.
 This system is invaluable for identifying and fixing bugs in the firmware.

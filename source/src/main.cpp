@@ -179,7 +179,7 @@ void setup()
 
 void loop()
 {
-  // Oh yes, it took a long time but finally we have a loop in which "nothing" happens
+  // Oh yes, it took a int32_t time but finally we have a loop in which "nothing" happens
   // This is because all of the tasks are running in their own FreeRTOS tasks
   // Much better than the old way of having everything in the main loop blocking
 }

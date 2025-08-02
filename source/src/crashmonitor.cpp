@@ -15,20 +15,20 @@ namespace CrashMonitor
     static void _checkAndPrintCoreDump();
     static void _logCompleteCrashData();
 
-    RTC_NOINIT_ATTR unsigned int _magicWord = MAGIC_WORD_RTC; // Magic word to check RTC data validity
-    RTC_NOINIT_ATTR unsigned int _resetCount = 0; // Reset counter in RTC memory
-    RTC_NOINIT_ATTR unsigned int _crashCount = 0; // Crash counter in RTC memory
-    RTC_NOINIT_ATTR unsigned int _consecutiveCrashCount = 0; // Consecutive crash counter in RTC memory
-    RTC_NOINIT_ATTR unsigned int _consecutiveResetCount = 0; // Consecutive reset counter in RTC memory
+    RTC_NOINIT_ATTR uint32_t _magicWord = MAGIC_WORD_RTC; // Magic word to check RTC data validity
+    RTC_NOINIT_ATTR uint32_t _resetCount = 0; // Reset counter in RTC memory
+    RTC_NOINIT_ATTR uint32_t _crashCount = 0; // Crash counter in RTC memory
+    RTC_NOINIT_ATTR uint32_t _consecutiveCrashCount = 0; // Consecutive crash counter in RTC memory
+    RTC_NOINIT_ATTR uint32_t _consecutiveResetCount = 0; // Consecutive reset counter in RTC memory
 
     bool isLastResetDueToCrash() {
         // Only case in which it is not crash is when the reset reason is not
         // due to software reset (ESP.restart()), power on, or deep sleep (unused here)
         esp_reset_reason_t _hwResetReason = esp_reset_reason();
 
-        return (unsigned long)_hwResetReason != ESP_RST_SW && 
-                (unsigned long)_hwResetReason != ESP_RST_POWERON && 
-                (unsigned long)_hwResetReason != ESP_RST_DEEPSLEEP;
+        return (uint32_t)_hwResetReason != ESP_RST_SW && 
+                (uint32_t)_hwResetReason != ESP_RST_POWERON && 
+                (uint32_t)_hwResetReason != ESP_RST_DEEPSLEEP;
     }
 
     void clearConsecutiveCrashCount() {
@@ -85,11 +85,11 @@ namespace CrashMonitor
         vTaskDelete(NULL);
     }
 
-    unsigned long getCrashCount() {
+    uint32_t getCrashCount() {
         return _crashCount;
     }
 
-    unsigned long getResetCount() {
+    uint32_t getResetCount() {
         return _resetCount;
     }
 
@@ -278,7 +278,7 @@ namespace CrashMonitor
         // Get reset reason and counters
         esp_reset_reason_t resetReason = esp_reset_reason();
         logger.warning("Reset reason: %s (%d) | crashes: %lu, consecutive: %lu", TAG,
-                    getResetReasonString(resetReason), (int)resetReason, 
+                    getResetReasonString(resetReason), (int32_t)resetReason, 
                     _crashCount, _consecutiveCrashCount);
         
         // Get core dump summary
@@ -288,8 +288,8 @@ namespace CrashMonitor
             if (err == ESP_OK) {                
                 // Essential crash info
                 logger.warning("Task: %s | PC: 0x%08x | TCB: 0x%08x | SHA256 (partial): %s", TAG,
-                            summary->exc_task, (unsigned int)summary->exc_pc, 
-                            (unsigned int)summary->exc_tcb, summary->app_elf_sha256);
+                            summary->exc_task, (uint32_t)summary->exc_pc, 
+                            (uint32_t)summary->exc_tcb, summary->app_elf_sha256);
                 
                 // Backtrace info
                 logger.warning("Backtrace depth: %d | Corrupted: %s", TAG, 
@@ -299,9 +299,9 @@ namespace CrashMonitor
                 if (summary->exc_bt_info.depth > 0 && summary->exc_bt_info.bt != NULL) {
                     // Log all addresses in one line for easy copy-paste
                     char btAddresses[512] = "";
-                    for (int i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                    for (int32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
                         char addr[12];
-                        snprintf(addr, sizeof(addr), "0x%08x ", (unsigned int)summary->exc_bt_info.bt[i]);
+                        snprintf(addr, sizeof(addr), "0x%08x ", (uint32_t)summary->exc_bt_info.bt[i]);
                         strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
                     }
                     logger.warning("Backtrace addresses: %s", TAG, btAddresses);
@@ -317,7 +317,7 @@ namespace CrashMonitor
                 size_t dumpAddress = 0;
                 if (esp_core_dump_image_get(&dumpAddress, &dumpSize) == ESP_OK) {
                     logger.warning("Core dump available: %zu bytes at 0x%08x", TAG,
-                                dumpSize, (unsigned int)dumpAddress);
+                                dumpSize, (uint32_t)dumpAddress);
                 }
             } else {
                 logger.warning("Crash summary error: %d", TAG, err);
@@ -334,7 +334,7 @@ namespace CrashMonitor
         // Basic crash information
         esp_reset_reason_t resetReason = esp_reset_reason();
         doc["resetReason"] = getResetReasonString(resetReason);
-        doc["resetReasonCode"] = (int)resetReason;
+        doc["resetReasonCode"] = (int32_t)resetReason;
         doc["crashCount"] = _crashCount;
         doc["consecutiveCrashCount"] = _consecutiveCrashCount;
         doc["resetCount"] = _resetCount;
@@ -358,8 +358,8 @@ namespace CrashMonitor
                 esp_err_t err = esp_core_dump_get_summary(summary);
                 if (err == ESP_OK) {
                     doc["taskName"] = summary->exc_task;
-                    doc["programCounter"] = (unsigned int)summary->exc_pc;
-                    doc["taskControlBlock"] = (unsigned int)summary->exc_tcb;
+                    doc["programCounter"] = (uint32_t)summary->exc_pc;
+                    doc["taskControlBlock"] = (uint32_t)summary->exc_tcb;
                     doc["appElfSha256"] = summary->app_elf_sha256;
                     
                     // Backtrace information
@@ -370,15 +370,15 @@ namespace CrashMonitor
                     // Backtrace addresses array
                     if (summary->exc_bt_info.depth > 0 && summary->exc_bt_info.bt != NULL) {
                         JsonArray addresses = backtrace["addresses"].to<JsonArray>();
-                        for (int i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
-                            addresses.add((unsigned int)summary->exc_bt_info.bt[i]);
+                        for (int32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                            addresses.add((uint32_t)summary->exc_bt_info.bt[i]);
                         }
                         
                         // Command for debugging
                         char btAddresses[512] = "";
-                        for (int i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                        for (int32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
                             char addr[12];
-                            snprintf(addr, sizeof(addr), "0x%08x ", (unsigned int)summary->exc_bt_info.bt[i]);
+                            snprintf(addr, sizeof(addr), "0x%08x ", (uint32_t)summary->exc_bt_info.bt[i]);
                             strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
                         }
                         
@@ -459,12 +459,12 @@ namespace CrashMonitor
                 size_t base64Length = 0;
                 
                 // First call to get required buffer size
-                int ret = mbedtls_base64_encode(NULL, 0, &base64Length, buffer, bytesRead);
+                int32_t ret = mbedtls_base64_encode(NULL, 0, &base64Length, buffer, bytesRead);
                 if (ret == MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) {
                     char* base64Buffer = (char*)malloc(base64Length + 1); // +1 for null terminator
                     if (base64Buffer) {
                         size_t actualLength = 0;
-                        ret = mbedtls_base64_encode((unsigned char*)base64Buffer, base64Length, 
+                        ret = mbedtls_base64_encode((uint8_t*)base64Buffer, base64Length, 
                                                  &actualLength, buffer, bytesRead);
                         if (ret == 0) {
                             base64Buffer[actualLength] = '\0'; // Null terminate

@@ -11,12 +11,12 @@ namespace CustomMqtt
 
     // State variables
     static bool _isSetupDone = false;
-    static unsigned long long _mqttConnectionAttempt = 0;
-    static unsigned long long _nextMqttConnectionAttemptMillis = 0;
+    static uint64_t _mqttConnectionAttempt = 0;
+    static uint64_t _nextMqttConnectionAttemptMillis = 0;
     
     // Runtime connection status - kept in memory only, not saved to preferences
     static char _status[STATUS_BUFFER_SIZE];
-    static unsigned long long _statusTimestampUnix;
+    static uint64_t _statusTimestampUnix;
 
     // Task variables
     static TaskHandle_t _customMqttTaskHandle = nullptr;
@@ -195,10 +195,10 @@ namespace CustomMqtt
 
         if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
         if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
-        if (!jsonDocument["port"].is<unsigned int>()) { logger.warning("port field is not an integer", TAG); return false; }
+        if (!jsonDocument["port"].is<uint32_t>()) { logger.warning("port field is not an integer", TAG); return false; }
         if (!jsonDocument["clientid"].is<const char*>()) { logger.warning("clientid field is not a string", TAG); return false; }
         if (!jsonDocument["topic"].is<const char*>()) { logger.warning("topic field is not a string", TAG); return false; }
-        if (!jsonDocument["frequency"].is<unsigned int>()) { logger.warning("frequency field is not an integer", TAG); return false; }
+        if (!jsonDocument["frequency"].is<uint32_t>()) { logger.warning("frequency field is not an integer", TAG); return false; }
         if (!jsonDocument["useCredentials"].is<bool>()) { logger.warning("useCredentials field is not a boolean", TAG); return false; }
         if (!jsonDocument["username"].is<const char*>()) { logger.warning("username field is not a string", TAG); return false; }
         if (!jsonDocument["password"].is<const char*>()) { logger.warning("password field is not a string", TAG); return false; }
@@ -217,10 +217,10 @@ namespace CustomMqtt
         // If even only one field is present, we return true
         if (jsonDocument["enabled"].is<bool>()) {return true;}        
         if (jsonDocument["server"].is<const char*>()) {return true;}        
-        if (jsonDocument["port"].is<unsigned int>()) {return true;}        
+        if (jsonDocument["port"].is<uint32_t>()) {return true;}        
         if (jsonDocument["clientid"].is<const char*>()) {return true;}        
         if (jsonDocument["topic"].is<const char*>()) {return true;}        
-        if (jsonDocument["frequency"].is<unsigned int>()) {return true;}        
+        if (jsonDocument["frequency"].is<uint32_t>()) {return true;}        
         if (jsonDocument["useCredentials"].is<bool>()) {return true;}        
         if (jsonDocument["username"].is<const char*>()) {return true;}        
         if (jsonDocument["password"].is<const char*>()) {return true;}
@@ -291,7 +291,7 @@ namespace CustomMqtt
 
             return true;
         } else {
-            int currentState = _customClientMqtt.state();
+            int32_t currentState = _customClientMqtt.state();
             const char* _reason = getMqttStateReason(currentState);
 
             logger.warning(
@@ -319,7 +319,7 @@ namespace CustomMqtt
             }
 
             // Calculate next attempt time using exponential backoff
-            unsigned long long _backoffDelay = calculateExponentialBackoff(_mqttConnectionAttempt, MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL, MQTT_CUSTOM_MAX_RECONNECT_INTERVAL, MQTT_CUSTOM_RECONNECT_MULTIPLIER);
+            uint64_t _backoffDelay = calculateExponentialBackoff(_mqttConnectionAttempt, MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL, MQTT_CUSTOM_MAX_RECONNECT_INTERVAL, MQTT_CUSTOM_RECONNECT_MULTIPLIER);
 
             _nextMqttConnectionAttemptMillis = millis64() + _backoffDelay;
 
@@ -446,10 +446,10 @@ namespace CustomMqtt
 
         config.enabled = jsonDocument["enabled"].as<bool>();
         snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-        config.port = jsonDocument["port"].as<unsigned int>();
+        config.port = jsonDocument["port"].as<uint32_t>();
         snprintf(config.clientid, sizeof(config.clientid), "%s", jsonDocument["clientid"].as<const char*>());
         snprintf(config.topic, sizeof(config.topic), "%s", jsonDocument["topic"].as<const char*>());
-        config.frequency = jsonDocument["frequency"].as<unsigned int>();
+        config.frequency = jsonDocument["frequency"].as<uint32_t>();
         config.useCredentials = jsonDocument["useCredentials"].as<bool>();
         snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
         snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
@@ -478,8 +478,8 @@ namespace CustomMqtt
         if (jsonDocument["server"].is<const char*>()) {
             snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
         }
-        if (jsonDocument["port"].is<unsigned int>()) {
-            config.port = jsonDocument["port"].as<unsigned int>();
+        if (jsonDocument["port"].is<uint32_t>()) {
+            config.port = jsonDocument["port"].as<uint32_t>();
         }
         if (jsonDocument["clientid"].is<const char*>()) {
             snprintf(config.clientid, sizeof(config.clientid), "%s", jsonDocument["clientid"].as<const char*>());
@@ -487,8 +487,8 @@ namespace CustomMqtt
         if (jsonDocument["topic"].is<const char*>()) {
             snprintf(config.topic, sizeof(config.topic), "%s", jsonDocument["topic"].as<const char*>());
         }
-        if (jsonDocument["frequency"].is<unsigned int>()) {
-            config.frequency = jsonDocument["frequency"].as<unsigned int>();
+        if (jsonDocument["frequency"].is<uint32_t>()) {
+            config.frequency = jsonDocument["frequency"].as<uint32_t>();
         }
         if (jsonDocument["useCredentials"].is<bool>()) {
             config.useCredentials = jsonDocument["useCredentials"].as<bool>();
@@ -512,7 +512,7 @@ namespace CustomMqtt
         logger.debug("Custom MQTT task started", TAG);
         
         _taskShouldRun = true;
-        unsigned long long lastPublishTime = 0;
+        uint64_t lastPublishTime = 0;
 
         while (_taskShouldRun) {
             if (CustomWifi::isFullyConnected()) { // We are connected
@@ -525,7 +525,7 @@ namespace CustomMqtt
 
                         _customClientMqtt.loop();
 
-                        unsigned long long currentTime = millis64();
+                        uint64_t currentTime = millis64();
                         if ((currentTime - lastPublishTime) >= (_customMqttConfiguration.frequency * 1000)) {
                             _publishMeter();
                             lastPublishTime = currentTime;
@@ -540,7 +540,7 @@ namespace CustomMqtt
             }
 
             // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-            unsigned long notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL));
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL));
             if (notificationValue > 0) {
                 _taskShouldRun = false;
                 break;

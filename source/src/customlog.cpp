@@ -98,9 +98,9 @@ namespace CustomLog
 
     static void _callbackMqtt(
         const char* timestamp,
-        unsigned long long millisEsp,
+        uint64_t millisEsp,
         const char* level,
-        unsigned int coreId,
+        uint32_t coreId,
         const char* function,
         const char* message
     )
@@ -111,9 +111,9 @@ namespace CustomLog
 
     static void _callbackUdp(
         const char* timestamp,
-        unsigned long long millisEsp,
+        uint64_t millisEsp,
         const char* level,
-        unsigned int coreId,
+        uint32_t coreId,
         const char* function,
         const char* message
     )
@@ -141,7 +141,7 @@ namespace CustomLog
         if (!_isUdpInitialized) return;
         if (!CustomWifi::isFullyConnected()) return;
 
-        unsigned int loops = 0;
+        uint32_t loops = 0;
         LogJson log;
         
         while (uxQueueMessagesWaiting(_udpLogQueue) > 0 && loops < MAX_LOOP_ITERATIONS) {
@@ -170,7 +170,7 @@ namespace CustomLog
                 break;
             }
             
-            size_t bytesWritten = _udpClient.write((const unsigned char*)_udpBuffer, strlen(_udpBuffer));
+            size_t bytesWritten = _udpClient.write((const uint8_t*)_udpBuffer, strlen(_udpBuffer));
             if (bytesWritten == 0) {
                 xQueueSendToFront(_udpLogQueue, &log, 0);
                 _udpClient.endPacket(); // Clean up the packet
@@ -191,9 +191,9 @@ namespace CustomLog
 
     void callbackMultiple(
         const char* timestamp,
-        unsigned long long millisEsp,
+        uint64_t millisEsp,
         const char* level,
-        unsigned int coreId,
+        uint32_t coreId,
         const char* function,
         const char* message
     )
