@@ -15,6 +15,8 @@
 
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
 #define TIMESTAMP_ISO_FORMAT "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ" // ISO 8601 format with milliseconds
+#define DATE_FORMAT "%Y-%m-%d"
+#define DATE_ISO_FORMAT "%04d-%02d-%02d"
 
 #define PREFERENCES_GMT_OFFSET_KEY "gmt_offset"
 #define PREFERENCES_DST_OFFSET_KEY "dst_offset"
@@ -53,6 +55,11 @@ namespace CustomTime {
     unsigned long long getUnixTimeMilliseconds();
     void getTimestamp(char* buffer, size_t bufferSize);
     void getTimestampIso(char* buffer, size_t bufferSize);
+    void getDate(char* buffer, size_t bufferSize);
+    void getDateIso(char* buffer, size_t bufferSize);
+
+    unsigned long long getMillisecondsUntilNextHour();
+
     void timestampFromUnix(time_t unix, char* buffer, size_t bufferSize);
     void timestampIsoFromUnix(time_t unix, char* buffer, size_t bufferSize);
 }

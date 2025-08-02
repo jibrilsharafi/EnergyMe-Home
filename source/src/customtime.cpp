@@ -120,12 +120,6 @@ namespace CustomTime {
         strftime(buffer, bufferSize, TIMESTAMP_FORMAT, &timeinfo);
     }
 
-    void timestampFromUnix(time_t unixSeconds, char* buffer, size_t bufferSize) {
-        struct tm timeinfo;
-        localtime_r(&unixSeconds, &timeinfo);
-        strftime(buffer, bufferSize, TIMESTAMP_FORMAT, &timeinfo);
-    }
-
     void getTimestampIso(char* buffer, size_t bufferSize) {
         struct timeval tv;
         gettimeofday(&tv, NULL);
@@ -144,6 +138,12 @@ namespace CustomTime {
                 milliseconds);
     }
 
+    void timestampFromUnix(time_t unixSeconds, char* buffer, size_t bufferSize) {
+        struct tm timeinfo;
+        localtime_r(&unixSeconds, &timeinfo);
+        strftime(buffer, bufferSize, TIMESTAMP_FORMAT, &timeinfo);
+    }
+
     void timestampIsoFromUnix(time_t unixSeconds, char* buffer, size_t bufferSize) {
         struct tm utc_tm;
         gmtime_r(&unixSeconds, &utc_tm);
@@ -157,6 +157,42 @@ namespace CustomTime {
                 utc_tm.tm_min,
                 utc_tm.tm_sec,
                 milliseconds);
+    }
+
+    void getDate(char* buffer, size_t bufferSize) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        
+        struct tm timeinfo;
+        localtime_r(&tv.tv_sec, &timeinfo);
+        strftime(buffer, bufferSize, DATE_FORMAT, &timeinfo);
+    }
+
+    void getDateIso(char* buffer, size_t bufferSize) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        
+        struct tm utc_tm;
+        gmtime_r(&tv.tv_sec, &utc_tm);
+        
+        snprintf(buffer, bufferSize, DATE_ISO_FORMAT,
+                utc_tm.tm_year + 1900,
+                utc_tm.tm_mon + 1,
+                utc_tm.tm_mday);
+    }
+
+    unsigned long long getMillisecondsUntilNextHour() {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        
+        struct tm timeinfo;
+        localtime_r(&tv.tv_sec, &timeinfo);
+        
+        // Calculate the number of seconds until the next hour
+        int secondsUntilNextHour = 3600 - (timeinfo.tm_min * 60 + timeinfo.tm_sec);
+        
+        // Convert to milliseconds
+        return static_cast<unsigned long long>(secondsUntilNextHour) * 1000;
     }
 
     static void _checkAndSyncTime() {

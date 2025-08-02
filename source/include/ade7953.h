@@ -19,16 +19,23 @@
 #include "structs.h"
 #include "utils.h"
 
-// Saving date
-#define SAVE_ENERGY_INTERVAL (6 * 60 * 1000) // Time between each energy save to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
-
 #define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz
 #define ADE7953_SPI_MUTEX_TIMEOUT_MS 100 // Timeout for acquiring SPI mutex to prevent deadlocks
 
 // Task
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task" // The name of the ADE7953 task
-#define ADE7953_METER_READING_TASK_STACK_SIZE (8 * 1024) // The stack size for the ADE7953 task
+#define ADE7953_METER_READING_TASK_STACK_SIZE (16 * 1024) // The stack size for the ADE7953 task
 #define ADE7953_METER_READING_TASK_PRIORITY 2 // The priority for the ADE7953 task
+
+#define ADE7953_ENERGY_SAVE_TASK_NAME "energy_save_task" // The name of the energy save task
+#define ADE7953_ENERGY_SAVE_TASK_STACK_SIZE (4 * 1024) // The stack size for the energy save task
+#define ADE7953_ENERGY_SAVE_TASK_PRIORITY 1 // The priority for the energy save task
+
+#define ADE7953_HOURLY_CSV_SAVE_TASK_NAME "hourly_csv_task" // The name of the hourly CSV save task
+#define ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE (4 * 1024) // The stack size for the hourly CSV save task
+#define ADE7953_HOURLY_CSV_SAVE_TASK_PRIORITY 1 // The priority for the hourly CSV save task
+
+#define ENERGY_SAVE_THRESHOLD 1000.0f // Threshold for saving energy data (in Wh) and in any case not more frequent than every 5 minutes
 
 // Interrupt handling
 #define ADE7953_INTERRUPT_TIMEOUT_MS 1000 // Timeout for waiting on interrupt semaphore (in ms)
@@ -53,6 +60,16 @@
 #define DEFAULT_PHCAL 10 // 0.02°/LSB, indicating a phase calibration of 0.2° which is minimum needed for CTs
 #define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) for line cycle end detection
 #define MINIMUM_SAMPLE_TIME 200
+
+// Constant hardware-fixed values
+// This is a hardcoded value since the voltage divider implemented (in v5 is 990 kOhm to 1 kOhm) yields this volts per LSB constant
+// The computation is as follows:
+// The maximum value of register VRMS is 9032007 (24-bit unsigned) with full scale inputs (0.5V absolute, 0.3536V rms).
+// The voltage divider ratio is 1000/(990000+1000) =0.001009
+// The maximum RMS voltage in input is 0.3536 / 0.001009 = 350.4 V
+// The LSB per volt is therefore 9032007 / 350.4 = 25779
+// For embedded systems, multiplications are better than divisions, so we use a float constant which is VOLT_PER_LSB = 1 / LSB_PER_VOLT
+#define VOLT_PER_LSB 0.0000387922
 
 // Configuration Preferences Keys
 #define CONFIG_SAMPLE_TIME_KEY "sample_time"
@@ -82,6 +99,12 @@
 #define ENERGY_REACTIVE_IMP_KEY "ch%d_reactImp" // Format: ch17_reactImp (13 chars)
 #define ENERGY_REACTIVE_EXP_KEY "ch%d_reactExp" // Format: ch17_reactExp (13 chars)
 #define ENERGY_APPARENT_KEY "ch%d_apparent"   // Format: ch17_apparent (13 chars)
+
+// Saving date
+#define SAVE_ENERGY_INTERVAL (5 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory 
+#define HOURLY_CSV_SAVE_TOLERANCE_MS (2 * 60 * 1000) // Tolerance window around the hour mark for CSV saves (2 minutes) 
+#define DAILY_ENERGY_CSV_HEADER "timestamp,channel,label,phase,active_imported,active_exported,reactive_imported,reactive_exported,apparent"
+#define DAILY_ENERGY_CSV_DIGITS 1 // Since the energy is in Wh, it is useless to go below 0.1 Wh
 
 // Default configuration values
 #define DEFAULT_CONFIG_SAMPLE_TIME 1000
@@ -135,19 +158,19 @@
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
 
 // Validate values
-#define VALIDATE_VOLTAGE_MIN 50.0f // Any voltage below this value is discarded
-#define VALIDATE_VOLTAGE_MAX 300.0f  // Any voltage above this value is discarded
-#define VALIDATE_CURRENT_MIN -300.0f // Any current below this value is discarded
-#define VALIDATE_CURRENT_MAX 300.0f // Any current above this value is discarded
-#define VALIDATE_POWER_MIN -100000.0f // Any power below this value is discarded
-#define VALIDATE_POWER_MAX 100000.0f // Any power above this value is discarded
-#define VALIDATE_POWER_FACTOR_MIN -1.0f // Any power factor below this value is discarded
-#define VALIDATE_POWER_FACTOR_MAX 1.0f // Any power factor above this value is discarded
-#define VALIDATE_GRID_FREQUENCY_MIN 45.0f // Minimum grid frequency in Hz
-#define VALIDATE_GRID_FREQUENCY_MAX 65.0f // Maximum grid frequency in Hz
+#define VALIDATE_VOLTAGE_MIN 50.0f
+#define VALIDATE_VOLTAGE_MAX 300.0f
+#define VALIDATE_CURRENT_MIN -300.0f
+#define VALIDATE_CURRENT_MAX 300.0f
+#define VALIDATE_POWER_MIN -100000.0f
+#define VALIDATE_POWER_MAX 100000.0f
+#define VALIDATE_POWER_FACTOR_MIN -1.0f
+#define VALIDATE_POWER_FACTOR_MAX 1.0f
+#define VALIDATE_GRID_FREQUENCY_MIN 45.0f
+#define VALIDATE_GRID_FREQUENCY_MAX 65.0f
 
 // Guardrails and thresholds
-#define MAXIMUM_POWER_FACTOR_CLAMP 1.05f // Values above 1 but below this are still accepted
+#define MAXIMUM_POWER_FACTOR_CLAMP 1.05f // Values above 1 but below this are still accepted (rounding errors and similar)
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_POWER_FACTOR 0.05f // Measuring such low power factors is virtually impossible with such CTs
 #define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 100 // Threshold to transition to a legitimate zero state for channel 0
@@ -258,10 +281,23 @@ struct MeterValues
       reactiveEnergyExported(0.0f), apparentEnergy(0.0f), lastUnixTimeMilliseconds(0), lastMillis(0) {}
 };
 
+struct EnergyValues // Simpler structure for optimizing energy saved to storage
+{
+  float activeEnergyImported;
+  float activeEnergyExported;
+  float reactiveEnergyImported;
+  float reactiveEnergyExported;
+  float apparentEnergy;
+  unsigned long long lastUnixTimeMilliseconds; // Last time the values were updated in milliseconds since epoch
+
+  EnergyValues()
+    : activeEnergyImported(0.0f), activeEnergyExported(0.0f), reactiveEnergyImported(0.0f),
+      reactiveEnergyExported(0.0f), apparentEnergy(0.0f), lastUnixTimeMilliseconds(0) {}
+};
+
 struct CalibrationValues
 {
   char label[NAME_BUFFER_SIZE];
-  float vLsb;
   float aLsb;
   float wLsb;
   float varLsb;
@@ -271,11 +307,10 @@ struct CalibrationValues
   float vahLsb;
 
   CalibrationValues()
-    : vLsb(1.0), aLsb(1.0), wLsb(1.0), varLsb(1.0), vaLsb(1.0), whLsb(1.0), varhLsb(1.0), vahLsb(1.0) {
+    : aLsb(1.0), wLsb(1.0), varLsb(1.0), vaLsb(1.0), whLsb(1.0), varhLsb(1.0), vahLsb(1.0) {
       snprintf(label, sizeof(label), "Calibration");
     }
 };
-
 
 struct ChannelData
 {
@@ -290,11 +325,6 @@ struct ChannelData
     : index(0), active(false), reverse(false), phase(PHASE_1), calibrationValues(CalibrationValues()) {
       snprintf(label, sizeof(label), "Channel");
     }
-};
-
-// Used to track consecutive zero energy readings for channel 0
-struct ChannelState { // TODO: what the heck was i thinking with this?
-    unsigned long consecutiveZeroCount = 0;
 };
 
 // ADE7953 Configuration structure
@@ -336,57 +366,61 @@ struct Ade7953Configuration
 
 namespace Ade7953
 {
+    // Core lifecycle management
     bool begin(
         unsigned int ssPin,
         unsigned int sckPin,
         unsigned int misoPin,
         unsigned int mosiPin,
         unsigned int resetPin,
-        unsigned int interruptPin
-    );
+        unsigned int interruptPin);
     void stop();
-    void cleanup();
-    void loop();
 
-    bool isChannelActive(unsigned int channelIndex);
-
-    void getChannelData(ChannelData &channelData, unsigned int channelIndex);
-    void getMeterValues(MeterValues &meterValues, unsigned int channelIndex);
-    
+    // Hardware communication (exposed for advanced use)
     long readRegister(long registerAddress, int nBits, bool signedData, bool isVerificationRequired = true);
     void writeRegister(long registerAddress, int nBits, long data, bool isVerificationRequired = true);
-    
+
+    // Task control
+    void pauseMeterReadingTask();
+    void resumeMeterReadingTask();
+
+    // Channel and meter data access
+    bool isChannelActive(unsigned int channelIndex);
+    void getChannelData(ChannelData &channelData, unsigned int channelIndex);
+    void getMeterValues(MeterValues &meterValues, unsigned int channelIndex);
+
+    // Aggregated power calculations
     float getAggregatedActivePower(bool includeChannel0 = true);
     float getAggregatedReactivePower(bool includeChannel0 = true);
     float getAggregatedApparentPower(bool includeChannel0 = true);
     float getAggregatedPowerFactor(bool includeChannel0 = true);
-    
+
+    // System parameters
     unsigned int getSampleTime();
     float getGridFrequency();
-    
-    void resetEnergyValues();
-    bool setEnergyValues(JsonDocument &jsonDocument);
-    void saveEnergy();
 
+    // Configuration management
     void setDefaultConfiguration();
     bool setConfiguration(JsonDocument &jsonDocument);
     bool setSingleConfigurationValue(const char* key, long value);
     void getConfiguration(Ade7953Configuration &config);
     void configurationToJson(JsonDocument &jsonDocument);
 
+    // Calibration management
     void setDefaultCalibrationValues();
     bool setCalibrationValues(JsonDocument &jsonDocument);
 
+    // Channel data management
     void setDefaultChannelData();
     bool setChannelData(JsonDocument &jsonDocument);
     bool setSingleChannelData(unsigned int channelIndex, bool active, bool reverse, const char* label, Phase phase, const char* calibrationLabel);
     void channelDataToJson(JsonDocument &jsonDocument);
-    
+
+    // Energy data management
+    void resetEnergyValues();
+    bool setEnergyValues(JsonDocument &jsonDocument);
+
+    // Data output and visualization
     void singleMeterValuesToJson(JsonDocument &jsonDocument, unsigned int channel);
     void fullMeterValuesToJson(JsonDocument &jsonDocument);
-
-    void printMeterValues(MeterValues* meterValues, ChannelData* channelData);
-    
-    void pauseMeterReadingTask();
-    void resumeMeterReadingTask();
 };

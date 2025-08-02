@@ -52,6 +52,7 @@
 #define REASON_BUFFER_SIZE 128
 #define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
 
+// Time utilities (high precision 64-bit alternatives)
 // Come one, on this ESP32S3 and in 2025 can we still use 32bits millis
 // that will overflow in just 49 days?
 // esp_timer_get_time() returns microseconds since boot in 64-bit format,
@@ -63,50 +64,61 @@ inline unsigned long long micros64() {
     return esp_timer_get_time();
 }
 
-// New system info functions
+// Validation utilities
+inline bool isChannelValid(unsigned int channel) {
+    return channel >= 0 && channel < CHANNEL_COUNT;
+}
+
+// Mathematical utilities
+unsigned long long calculateExponentialBackoff(unsigned long long attempt, unsigned long long initialInterval, unsigned long long maxInterval, unsigned long long multiplier);
+
+// Device identification
+void getDeviceId(char* deviceId, size_t maxLength);
+
+// System information and monitoring
 void populateSystemStaticInfo(SystemStaticInfo& info);
 void populateSystemDynamicInfo(SystemDynamicInfo& info);
 void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc);
 void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc);
+void getJsonDeviceStaticInfo(JsonDocument& doc);
+void getJsonDeviceDynamicInfo(JsonDocument& doc);
 
-void printDeviceStatusStatic();
-void printDeviceStatusDynamic();
-
+// Statistics management
 void updateStatistics();
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
 void printStatistics();
 
-// Convenience functions for JSON API endpoints
-void getJsonDeviceStaticInfo(JsonDocument& doc);
-void getJsonDeviceDynamicInfo(JsonDocument& doc);
+// System status printing
+void printDeviceStatusStatic();
+void printDeviceStatusDynamic();
 
+// FreeRTOS task management
+void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
+void startMaintenanceTask();
+void stopMaintenanceTask();
+
+// System restart and maintenance
 void setRestartSystem(const char* functionName, const char* reason, bool factoryReset = false);
 
-// General task management
-void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
+// JSON utilities
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
 
-// Legacy SPIFFS functions for backward compatibility during transition
+// File system management (SPIFFS legacy support)
 bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
 bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
 void createEmptyJsonFile(const char* path);
-
 std::vector<const char*> checkMissingFiles();
 void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles);
 bool checkAllFiles();
 void createDefaultCalibrationFile();
 void createDefaultDailyEnergyFile();
 
+// Preferences management
 void clearAllPreferences();
 
-void startMaintenanceTask();
-void stopMaintenanceTask();
-
+// Firmware management
 bool isLatestFirmwareInstalled();
 void updateJsonFirmwareStatus(const char *status, const char *reason);
 
-void getDeviceId(char* deviceId, size_t maxLength);
-
+// Network utilities
 const char* getMqttStateReason(int state);
-
-unsigned long long calculateExponentialBackoff(unsigned long long attempt, unsigned long long initialInterval, unsigned long long maxInterval, unsigned long long multiplier);

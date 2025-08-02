@@ -5,7 +5,7 @@ from typing import Any, Dict
 from pymodbus.client import ModbusTcpClient
 
 # Modbus server details
-SERVER_HOST = "192.168.1.123"  # Replace with your server's IP address
+SERVER_HOST = "192.168.1.245"  # Replace with your server's IP address
 SERVER_PORT = 502  # Replace with your server's port if different
 
 # Mapping from old string types to ModbusTcpClient.DATATYPE enum values
@@ -31,49 +31,54 @@ def load_registers_from_json(json_file_path: str) -> Dict[str, Dict[str, Any]]:
         print(f"Warning: JSON file {json_file_path} not found")
         return {}
     
-    try:
-        with open(json_file_path, 'r') as f:
-            # Read the file content and remove comments (basic approach)
-            content = f.read()
-            lines = content.split('\n')
-            cleaned_lines = []
-            for line in lines:
-                # Remove lines that start with // (basic comment removal)
-                if not line.strip().startswith('//'):
-                    cleaned_lines.append(line)
-            cleaned_content = '\n'.join(cleaned_lines)
-            
-            json_registers : Dict[str, Dict[str, Any]] = {}
-            json_registers = json.loads(cleaned_content)
+    # try:
+    with open(json_file_path, 'r') as f:
+        # Read the file content and remove comments (basic approach)
+        content = f.read()
+        lines = content.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            # Remove lines that start with // (basic comment removal)
+            if not line.strip().startswith('//'):
+                cleaned_lines.append(line)
+        cleaned_content = '\n'.join(cleaned_lines)
         
-        converted_registers = {}
-        for reg_addr, reg_info in json_registers.items():
-            # Convert Modbus address (e.g., "40001") to zero-based address
-            # Modbus 4xxxx registers start at address 0 in the holding register space
-            modbus_addr = int(reg_addr) - 40001
-            
-            # Calculate size based on data type
-            size = 2 if reg_info["data_type"] in ["uint32", "float32", "float"] else 1
-            
-            # Create a readable name with unit
-            display_name = reg_info["name"]
-            if reg_info.get("unit"):
-                display_name += f" ({reg_info['unit']})"
-            
-            converted_registers[display_name] = {
-                "address": modbus_addr,
-                "size": size,
-                "type": reg_info["data_type"],
-                "description": reg_info.get("description", ""),
-                "unit": reg_info.get("unit", "")
-            }
+        json_registers : Dict[str, Dict[str, Any]] = {}
+        json_registers = json.loads(cleaned_content)
+    
+    converted_registers = {}
+    for reg_addr, reg_info in json_registers.items():
+        # Convert Modbus address (e.g., "40001") to zero-based address
+        # Modbus 4xxxx registers start at address 0 in the holding register space
+        modbus_addr = int(reg_addr) - 40001
         
-        print(f"Loaded {len(converted_registers)} registers from {json_file_path}")
-        return converted_registers
+        # Calculate size based on data type
+        if reg_info["data_type"] in ["uint32", "float32", "float"]:
+            size = 2
+        elif reg_info["data_type"] in ["uint64", "float64", "int64"]:
+            size = 4
+        else:
+            size = 1
         
-    except Exception as e:
-        print(f"Error loading JSON file {json_file_path}: {e}")
-        return {}
+        # Create a readable name with unit
+        display_name = reg_info["name"]
+        if reg_info.get("unit"):
+            display_name += f" ({reg_info['unit']})"
+        
+        converted_registers[display_name] = {
+            "address": modbus_addr,
+            "size": size,
+            "type": reg_info["data_type"],
+            "description": reg_info.get("description", ""),
+            "unit": reg_info.get("unit", "")
+        }
+    
+    print(f"Loaded {len(converted_registers)} registers from {json_file_path}")
+    return converted_registers
+    
+    # except Exception as e:
+    #     print(f"Error loading JSON file {json_file_path}: {e}")
+    #     return {}
 
 
 def read_register(client: ModbusTcpClient, address: int, size: int, reg_type: str) -> Any:
@@ -314,82 +319,82 @@ def main():
         print("❌ Failed to connect to the Modbus server")
         return
 
-    try:
-        print("=" * 90)
-        print("🔌 MODBUS REGISTER TESTING SUITE - JSON CONFIGURATION")
-        print("=" * 90)
-        print(f"🌐 Server: {SERVER_HOST}:{SERVER_PORT}")
+    # try:
+    print("=" * 90)
+    print("🔌 MODBUS REGISTER TESTING SUITE - JSON CONFIGURATION")
+    print("=" * 90)
+    print(f"🌐 Server: {SERVER_HOST}:{SERVER_PORT}")
+    
+    # Load JSON registers
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    json_file_path = os.path.join(script_dir, "registers.json")
+    registers = load_registers_from_json(json_file_path)
+    
+    if not registers:
+        print("❌ No registers loaded from JSON file. Exiting.")
+        return
+    
+    print(f"📊 Loaded {len(registers)} registers from configuration")
+    
+    # Track overall statistics
+    overall_start_time = time.time()
+    test_results = {}
+    
+    # Test 1: Register source comparison
+    print(f"\n🧪 TEST 1: Individual Register Validation")
+    test_register_source_comparison(client, registers)
+    
+    # Test 2: Channel 0 polling speed
+    print(f"\n🧪 TEST 2: High-Speed Polling Performance")
+    test_channel0_polling_speed(client, registers)
+    
+    # Test 3: Channel 0 vs aggregated power comparison
+    print(f"\n🧪 TEST 3: Power Measurement Accuracy")
+    test_channel0_active_power(client, registers)
+    
+    # Calculate overall statistics
+    total_test_time = time.time() - overall_start_time
+    
+    # Final comprehensive report
+    print("\n" + "="*90)
+    print("📈 COMPREHENSIVE TEST SUITE RESULTS")
+    print("="*90)
+    print(f"🏁 Test Suite Duration: {total_test_time:.2f} seconds")
+    print(f"📊 Total Registers Tested: {len(registers)}")
+    print(f"🌐 Modbus Server: {SERVER_HOST}:{SERVER_PORT}")
+    print(f"📋 Configuration Source: {json_file_path}")
+    
+    # Analyze register types
+    type_counts = {}
+    address_ranges = {"min": float('inf'), "max": 0}
+    
+    for name, reg_info in registers.items():
+        reg_type = reg_info["type"]
+        type_counts[reg_type] = type_counts.get(reg_type, 0) + 1
         
-        # Load JSON registers
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        json_file_path = os.path.join(script_dir, "registers.json")
-        registers = load_registers_from_json(json_file_path)
-        
-        if not registers:
-            print("❌ No registers loaded from JSON file. Exiting.")
-            return
-        
-        print(f"📊 Loaded {len(registers)} registers from configuration")
-        
-        # Track overall statistics
-        overall_start_time = time.time()
-        test_results = {}
-        
-        # Test 1: Register source comparison
-        print(f"\n🧪 TEST 1: Individual Register Validation")
-        test_register_source_comparison(client, registers)
-        
-        # Test 2: Channel 0 polling speed
-        print(f"\n🧪 TEST 2: High-Speed Polling Performance")
-        test_channel0_polling_speed(client, registers)
-        
-        # Test 3: Channel 0 vs aggregated power comparison
-        print(f"\n🧪 TEST 3: Power Measurement Accuracy")
-        test_channel0_active_power(client, registers)
-        
-        # Calculate overall statistics
-        total_test_time = time.time() - overall_start_time
-        
-        # Final comprehensive report
-        print("\n" + "="*90)
-        print("📈 COMPREHENSIVE TEST SUITE RESULTS")
-        print("="*90)
-        print(f"🏁 Test Suite Duration: {total_test_time:.2f} seconds")
-        print(f"📊 Total Registers Tested: {len(registers)}")
-        print(f"🌐 Modbus Server: {SERVER_HOST}:{SERVER_PORT}")
-        print(f"📋 Configuration Source: {json_file_path}")
-        
-        # Analyze register types
-        type_counts = {}
-        address_ranges = {"min": float('inf'), "max": 0}
-        
-        for name, reg_info in registers.items():
-            reg_type = reg_info["type"]
-            type_counts[reg_type] = type_counts.get(reg_type, 0) + 1
-            
-            addr = reg_info["address"]
-            if addr < address_ranges["min"]:
-                address_ranges["min"] = addr
-            if addr > address_ranges["max"]:
-                address_ranges["max"] = addr
-        
-        print(f"\n📋 REGISTER ANALYSIS:")
-        print(f"   📍 Address Range: {address_ranges['min']} - {address_ranges['max']}")
-        print(f"   🏷️  Data Types:")
-        for dtype, count in sorted(type_counts.items()):
-            percentage = (count / len(registers)) * 100
-            print(f"      • {dtype:12}: {count:3} registers ({percentage:5.1f}%)")
-        
-        print(f"\n✅ Test suite completed successfully!")
-        print("="*90)
-        
-    except KeyboardInterrupt:
-        print("\n⚠️  Test suite interrupted by user")
-    except Exception as e:
-        print(f"\n❌ Test suite failed with error: {e}")
-    finally:
-        client.close()
-        print("🔌 Modbus connection closed")
+        addr = reg_info["address"]
+        if addr < address_ranges["min"]:
+            address_ranges["min"] = addr
+        if addr > address_ranges["max"]:
+            address_ranges["max"] = addr
+    
+    print(f"\n📋 REGISTER ANALYSIS:")
+    print(f"   📍 Address Range: {address_ranges['min']} - {address_ranges['max']}")
+    print(f"   🏷️  Data Types:")
+    for dtype, count in sorted(type_counts.items()):
+        percentage = (count / len(registers)) * 100
+        print(f"      • {dtype:12}: {count:3} registers ({percentage:5.1f}%)")
+    
+    print(f"\n✅ Test suite completed successfully!")
+    print("="*90)
+    
+    # except KeyboardInterrupt:
+    #     print("\n⚠️  Test suite interrupted by user")
+    # except Exception as e:
+    #     print(f"\n❌ Test suite failed with error: {e}")
+    # finally:
+    #     client.close()
+    #     print("🔌 Modbus connection closed")
 
 if __name__ == "__main__":
     main()

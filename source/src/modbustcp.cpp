@@ -6,9 +6,10 @@ namespace ModbusTcp
 {
     // Static state variables
     static ModbusServerTCPasync _mbServer;
-    static int _lowerLimitChannelRegisters = 1000;
-    static int _stepChannelRegisters = 100;
-    static int _upperLimitChannelRegisters = _lowerLimitChannelRegisters + (CHANNEL_COUNT) * _stepChannelRegisters;
+    #define START_REGISTERS_METER_VALUES 100 // Before this, data that is not related to energy values (like time)
+    #define LOWER_LIMIT_CHANNEL_REGISTERS 1000
+    #define STEP_CHANNEL_REGISTERS 100
+    #define UPPER_LIMIT_CHANNEL_REGISTERS (LOWER_LIMIT_CHANNEL_REGISTERS + (CHANNEL_COUNT) * STEP_CHANNEL_REGISTERS)
 
     // Private function declarations
     static unsigned int _getRegisterValue(unsigned int address);
@@ -39,15 +40,37 @@ namespace ModbusTcp
         {
             logger.debug("Invalid function code: %d", TAG, request.getFunctionCode());
             statistics.modbusRequestsError++;
-            return ModbusMessage(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
+            ModbusMessage errorResponse;
+            errorResponse.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
+            return errorResponse;
         }
 
-        // No check on the valid address is performed as it seems that the response is not correctly handled by the client
+        // Get 16-bit values from request (big-endian format)
+        uint16_t startAddress, registerCount;
+        request.get(2, startAddress);   // Start address (2 bytes)
+        request.get(4, registerCount);    // Register count (2 bytes)
+
+        // Validate register count (Modbus standard allows max 125 registers)
+        if (registerCount == 0 || registerCount > 125)
+        {
+            logger.debug("Invalid register count: %u - returning ILLEGAL_DATA_VALUE", TAG, registerCount);
+            statistics.modbusRequestsError++;
+            ModbusMessage errorResponse;
+            errorResponse.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
+            return errorResponse;
+        }
         
-        unsigned int startAddress;
-        unsigned int registerCount;
-        request.get(2, startAddress);
-        request.get(4, registerCount);
+        // Check if the entire range is valid before processing
+        for (unsigned int i = 0; i < registerCount; i++)
+        {
+            if (!_isValidRegister(startAddress + i))
+            {
+                statistics.modbusRequestsError++;
+                ModbusMessage errorResponse;
+                errorResponse.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_ADDRESS);
+                return errorResponse;
+            }
+        }
         
         // Calculate the byte count (2 bytes per register)
         unsigned char byteCount = registerCount * 2;
@@ -62,7 +85,8 @@ namespace ModbusTcp
         for (unsigned int i = 0; i < registerCount; i++)
         {
             unsigned int value = _getRegisterValue(startAddress + i);
-            response.add(value);
+            // Ensure we only add 16-bit values (cast to uint16_t)
+            response.add((uint16_t)(value & 0xFFFF));
         }
         
         statistics.modbusRequests++;
@@ -88,11 +112,71 @@ namespace ModbusTcp
         // The address is calculated as 1000 + 100 * channel + offset
         // All the registers here are float 32 bits, so we need to split them into two
 
-        if (address >= _lowerLimitChannelRegisters && address < _upperLimitChannelRegisters)
-        {
-            int realAddress = address - _lowerLimitChannelRegisters;
-            int channel = realAddress / _stepChannelRegisters;
-            int offset = realAddress % _stepChannelRegisters;
+        if (address < START_REGISTERS_METER_VALUES) {
+            switch (address)
+            {
+                // General registers - 64-bit values split into 4x16-bit registers each
+                // Unix timestamp (seconds)
+                case 0: return (CustomTime::getUnixTime() >> 48) & 0xFFFF;  // Bits 63-48
+                case 1: return (CustomTime::getUnixTime() >> 32) & 0xFFFF;  // Bits 47-32
+                case 2: return (CustomTime::getUnixTime() >> 16) & 0xFFFF;  // Bits 31-16
+                case 3: return CustomTime::getUnixTime() & 0xFFFF;          // Bits 15-0
+                
+                // System uptime (milliseconds)
+                case 4: return (millis64() >> 48) & 0xFFFF;  // Bits 63-48
+                case 5: return (millis64() >> 32) & 0xFFFF;  // Bits 47-32
+                case 6: return (millis64() >> 16) & 0xFFFF;  // Bits 31-16
+                case 7: return millis64() & 0xFFFF;          // Bits 15-0 
+
+                // Default case to handle unexpected addresses
+                default: return (unsigned int)0;
+            }
+        } else if (address >= START_REGISTERS_METER_VALUES && address < LOWER_LIMIT_CHANNEL_REGISTERS) {
+            // Handle special registers for voltage and grid frequency
+            // These are not channel-specific, so we handle them separately
+            MeterValues meterValuesZeroChannel;
+            Ade7953::getMeterValues(meterValuesZeroChannel, 0);
+
+            switch (address)
+            {   
+                // Voltage
+                case 100: return _getFloatBits(meterValuesZeroChannel.voltage, true);
+                case 101: return _getFloatBits(meterValuesZeroChannel.voltage, false);
+
+                // Grid frequency
+                case 102: return _getFloatBits(Ade7953::getGridFrequency(), true);
+                case 103: return _getFloatBits(Ade7953::getGridFrequency(), false);
+
+                // Aggregated values
+                // With channel 0
+                case 200: return _getFloatBits(Ade7953::getAggregatedActivePower(), true);
+                case 201: return _getFloatBits(Ade7953::getAggregatedActivePower(), false);
+                case 202: return _getFloatBits(Ade7953::getAggregatedReactivePower(), true);
+                case 203: return _getFloatBits(Ade7953::getAggregatedReactivePower(), false);
+                case 204: return _getFloatBits(Ade7953::getAggregatedApparentPower(), true);
+                case 205: return _getFloatBits(Ade7953::getAggregatedApparentPower(), false);
+                case 206: return _getFloatBits(Ade7953::getAggregatedPowerFactor(), true);
+                case 207: return _getFloatBits(Ade7953::getAggregatedPowerFactor(), false);
+
+                // Without channel 0
+                case 210: return _getFloatBits(Ade7953::getAggregatedActivePower(false), true);
+                case 211: return _getFloatBits(Ade7953::getAggregatedActivePower(false), false);
+                case 212: return _getFloatBits(Ade7953::getAggregatedReactivePower(false), true);
+                case 213: return _getFloatBits(Ade7953::getAggregatedReactivePower(false), false);
+                case 214: return _getFloatBits(Ade7953::getAggregatedApparentPower(false), true);
+                case 215: return _getFloatBits(Ade7953::getAggregatedApparentPower(false), false);
+                case 216: return _getFloatBits(Ade7953::getAggregatedPowerFactor(false), true);
+                case 217: return _getFloatBits(Ade7953::getAggregatedPowerFactor(false), false);
+
+                // Default case to handle unexpected addresses
+                default: return (unsigned int)0;
+            }
+        } else if (address >= LOWER_LIMIT_CHANNEL_REGISTERS && address < UPPER_LIMIT_CHANNEL_REGISTERS) {
+            // Handle channel-specific registers, and thus we need to calculate the channel and offset
+            // to avoid manual mapping of all registers
+            int realAddress = address - LOWER_LIMIT_CHANNEL_REGISTERS;
+            int channel = realAddress / STEP_CHANNEL_REGISTERS;
+            int offset = realAddress % STEP_CHANNEL_REGISTERS;
 
             MeterValues meterValues;
             Ade7953::getMeterValues(meterValues, channel);
@@ -119,74 +203,24 @@ namespace ModbusTcp
                 case 17: return _getFloatBits(meterValues.reactiveEnergyExported, false);
                 case 18: return _getFloatBits(meterValues.apparentEnergy, true);
                 case 19: return _getFloatBits(meterValues.apparentEnergy, false);
+
+                // Default case to handle unexpected addresses
+                default: return (unsigned int)0;
             }
         }
 
-
-        MeterValues meterValuesZeroChannel;
-        Ade7953::getMeterValues(meterValuesZeroChannel, 0);
-
-        switch (address)
-        {
-            // General registers - 64-bit values split into 4x16-bit registers each
-            // Unix timestamp (seconds)
-            case 0: return (CustomTime::getUnixTime() >> 48) & 0xFFFF;  // Bits 63-48
-            case 1: return (CustomTime::getUnixTime() >> 32) & 0xFFFF;  // Bits 47-32
-            case 2: return (CustomTime::getUnixTime() >> 16) & 0xFFFF;  // Bits 31-16
-            case 3: return CustomTime::getUnixTime() & 0xFFFF;          // Bits 15-0
-            
-            // System uptime (milliseconds)
-            case 4: return (millis64() >> 48) & 0xFFFF;  // Bits 63-48
-            case 5: return (millis64() >> 32) & 0xFFFF;  // Bits 47-32
-            case 6: return (millis64() >> 16) & 0xFFFF;  // Bits 31-16
-            case 7: return millis64() & 0xFFFF;          // Bits 15-0  
-            
-            // Voltage
-            case 100: return _getFloatBits(meterValuesZeroChannel.voltage, true);
-            case 101: return _getFloatBits(meterValuesZeroChannel.voltage, false);
-
-            // Grid frequency
-            case 102: return _getFloatBits(Ade7953::getGridFrequency(), true);
-            case 103: return _getFloatBits(Ade7953::getGridFrequency(), false);
-
-            // Aggregated values
-            // With channel 0
-            case 200: return _getFloatBits(Ade7953::getAggregatedActivePower(), true);
-            case 201: return _getFloatBits(Ade7953::getAggregatedActivePower(), false);
-            case 202: return _getFloatBits(Ade7953::getAggregatedReactivePower(), true);
-            case 203: return _getFloatBits(Ade7953::getAggregatedReactivePower(), false);
-            case 204: return _getFloatBits(Ade7953::getAggregatedApparentPower(), true);
-            case 205: return _getFloatBits(Ade7953::getAggregatedApparentPower(), false);
-            case 206: return _getFloatBits(Ade7953::getAggregatedPowerFactor(), true);
-            case 207: return _getFloatBits(Ade7953::getAggregatedPowerFactor(), false);
-
-            // Without channel 0
-            case 210: return _getFloatBits(Ade7953::getAggregatedActivePower(false), true);
-            case 211: return _getFloatBits(Ade7953::getAggregatedActivePower(false), false);
-            case 212: return _getFloatBits(Ade7953::getAggregatedReactivePower(false), true);
-            case 213: return _getFloatBits(Ade7953::getAggregatedReactivePower(false), false);
-            case 214: return _getFloatBits(Ade7953::getAggregatedApparentPower(false), true);
-            case 215: return _getFloatBits(Ade7953::getAggregatedApparentPower(false), false);
-            case 216: return _getFloatBits(Ade7953::getAggregatedPowerFactor(false), true);
-            case 217: return _getFloatBits(Ade7953::getAggregatedPowerFactor(false), false);
-
-            // Default case to handle unexpected addresses
-            default: return (unsigned int)0;
-        }
+        return (unsigned int)0; // If the address is out of range or invalid
     }
 
     static bool _isValidRegister(unsigned int address) // Currently unused
     {
         // Define valid ranges
-        bool isValid = (
+        return (
             (address >= 0 && address <= 7) ||  // General registers (64-bit values)
             (address >= 100 && address <= 103) ||  // Voltage and grid frequency
             (address >= 200 && address <= 207) ||  // Aggregated values with channel 0
             (address >= 210 && address <= 217) ||  // Aggregated values without channel 0
-            (address >= _lowerLimitChannelRegisters && address < _upperLimitChannelRegisters)  // Channel registers
+            (address >= LOWER_LIMIT_CHANNEL_REGISTERS && address < UPPER_LIMIT_CHANNEL_REGISTERS)  // Channel registers
         );
-
-        return isValid;
     }
-
 } // namespace ModbusTcp

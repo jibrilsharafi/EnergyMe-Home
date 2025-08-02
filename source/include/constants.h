@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "11"
-#define FIRMWARE_BUILD_VERSION_PATCH "05"
+#define FIRMWARE_BUILD_VERSION_PATCH "06"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -81,4 +81,4 @@
 #define WEBSERVER_PORT 80
 
 // Useful constants
-#define MAGIC_WORD_RTC 0xDEADBEEF // This is crucial to ensure that the RTC data has sensible values or it is just some garbage after reboot
+#define MAGIC_WORD_RTC 0xDEADBEEF // This is crucial to ensure that the RTC variables used have sensible values or it is just some garbage after reboot

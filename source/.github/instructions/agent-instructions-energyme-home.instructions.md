@@ -146,6 +146,6 @@ Provide project context and coding guidelines that AI should follow when generat
 11. **Coding style**:
     - For simple ifs with a single statement, use the one-line format:
       ```cpp
-      if (!someBoolean) { return; }
+      if (!someBoolean) return;
       ```
     - Use `delay(X)` instead of `vTaskDelay(pdMS_TO_TICKS(X))` since they map to the same underlying FreeRTOS function and `delay()` is more readable in this context.
