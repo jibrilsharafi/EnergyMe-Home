@@ -5,7 +5,6 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <SPI.h>
-#include <Ticker.h>
 #include <vector>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"

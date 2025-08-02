@@ -4,7 +4,6 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
 #include <PubSubClient.h>
-#include <Ticker.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>

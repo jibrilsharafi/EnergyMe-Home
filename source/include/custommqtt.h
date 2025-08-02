@@ -4,7 +4,6 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
 #include <PubSubClient.h>
-#include <Ticker.h>
 #include <Preferences.h>
 #include <WiFiClient.h>
 
@@ -23,7 +22,7 @@
 #define MQTT_CUSTOM_PORT_DEFAULT 1883
 #define MQTT_CUSTOM_CLIENTID_DEFAULT "energyme-home"
 #define MQTT_CUSTOM_TOPIC_DEFAULT "topic"
-#define MQTT_CUSTOM_FREQUENCY_DEFAULT 15
+#define MQTT_CUSTOM_FREQUENCY_SECONDS_DEFAULT 15
 #define MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT false
 #define MQTT_CUSTOM_USERNAME_DEFAULT "username"
 #define MQTT_CUSTOM_PASSWORD_DEFAULT "password"
@@ -32,15 +31,15 @@
 #define CUSTOM_MQTT_TASK_NAME "custom_mqtt_task"
 #define CUSTOM_MQTT_TASK_STACK_SIZE (16 * 1024)
 #define CUSTOM_MQTT_TASK_PRIORITY 1
-#define CUSTOM_MQTT_TASK_CHECK_INTERVAL (1 * 100) // Cannot send mqtt messages faster than this
+#define CUSTOM_MQTT_TASK_CHECK_INTERVAL 500 // Cannot send mqtt messages faster than this
 
 // Reconnection strategy constants
 #define MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL (5 * 1000)
 #define MQTT_CUSTOM_MAX_RECONNECT_INTERVAL (5 * 60 * 1000)
 #define MQTT_CUSTOM_RECONNECT_MULTIPLIER 2
-#define MQTT_CUSTOM_LOOP_INTERVAL 100
-#define MQTT_CUSTOM_MIN_CONNECTION_INTERVAL (10 * 1000)
-#define MQTT_CUSTOM_PAYLOAD_LIMIT (2 * 1024)
+#define MQTT_CUSTOM_MAX_RECONNECT_ATTEMPTS 10
+#define MQTT_CUSTOM_PAYLOAD_LIMIT (6 * 1024) // Experimentally, a full payload of 17 channels reaches about 5.5 kB
+#define MQTT_CUSTOM_MAX_FAILED_MESSAGE_PUBLISH_ATTEMPTS 10
 
 // Preferences keys for persistent storage
 #define CUSTOM_MQTT_ENABLED_KEY "enabled"
@@ -61,7 +60,7 @@ struct CustomMqttConfiguration {
     uint32_t port;
     char clientid[NAME_BUFFER_SIZE];
     char topic[MQTT_TOPIC_BUFFER_SIZE];
-    uint32_t frequency; // Publishing frequency in seconds
+    uint32_t frequencySeconds;
     bool useCredentials;
     char username[USERNAME_BUFFER_SIZE];
     char password[PASSWORD_BUFFER_SIZE];
@@ -70,7 +69,7 @@ struct CustomMqttConfiguration {
     CustomMqttConfiguration() 
         : enabled(DEFAULT_IS_CUSTOM_MQTT_ENABLED), 
           port(MQTT_CUSTOM_PORT_DEFAULT),
-          frequency(MQTT_CUSTOM_FREQUENCY_DEFAULT),
+          frequencySeconds(MQTT_CUSTOM_FREQUENCY_SECONDS_DEFAULT),
           useCredentials(MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT) {
       snprintf(server, sizeof(server), "%s", MQTT_CUSTOM_SERVER_DEFAULT);
       snprintf(clientid, sizeof(clientid), "%s", MQTT_CUSTOM_CLIENTID_DEFAULT);
@@ -86,11 +85,17 @@ namespace CustomMqtt
     void begin();
     void stop();
 
-    // Configuration management
+    // Configuration management - direct struct operations
     void getConfiguration(CustomMqttConfiguration &config);
     bool setConfiguration(CustomMqttConfiguration &config);
-    bool configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument);
-    bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config, bool partial = false);
+    void resetConfiguration();
     
+    // Configuration management - JSON operations
+    void getConfigurationAsJson(JsonDocument &jsonDocument);
+    bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial = false);
+    void configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument);
+    bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config, bool partial = false);
+
+    // Runtime status
     void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
 }

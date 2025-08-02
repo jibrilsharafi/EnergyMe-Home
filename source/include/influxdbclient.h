@@ -31,7 +31,7 @@
 #define INFLUXDB_TASK_NAME "influxdb_task"
 #define INFLUXDB_TASK_STACK_SIZE (8 * 1024)
 #define INFLUXDB_TASK_PRIORITY 1
-#define INFLUXDB_TASK_CHECK_INTERVAL 1000
+#define INFLUXDB_TASK_CHECK_INTERVAL 500 // Cannot send InfluxDB messages faster than this
 
 // Helper constants
 #define INFLUXDB_MINIMUM_FREQUENCY 1

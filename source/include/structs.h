@@ -13,7 +13,7 @@ struct Statistics {
   uint32_t mqttMessagesPublished;
   uint32_t mqttMessagesPublishedError;
   
-  uint32_t customMqttMessagesPublished;
+  uint32_t customMqttMessagesPublished; // TODO: add also connection error and not
   uint32_t customMqttMessagesPublishedError;
   
   uint32_t modbusRequests;

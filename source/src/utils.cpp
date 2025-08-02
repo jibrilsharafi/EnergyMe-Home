@@ -467,8 +467,6 @@ static void _maintenanceTask(void* parameter) {
     
     _maintenanceTaskShouldRun = true;
     while (_maintenanceTaskShouldRun) {
-        logger.debug("Running maintenance checks...", TAG);
-        
         // Update and print statistics
         updateStatistics();
         printStatistics();
@@ -991,9 +989,7 @@ const char* getMqttStateReason(int32_t state)
 }
 
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier) {
-    if (attempt == 0) {
-        return 0;
-    }
+    if (attempt == 0) return 0;
     
     uint64_t backoffDelay = initialInterval;
     

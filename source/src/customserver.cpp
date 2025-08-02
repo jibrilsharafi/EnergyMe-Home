@@ -441,6 +441,8 @@ namespace CustomServer
                                    size_t index, uint8_t *data, size_t len, bool final)
     {
         static bool otaInitialized = false;
+
+        // TODO: we should stop tasks here probably, and resume then only later. But how can we do it safely?
         
         if (!index) {
             // First chunk - initialize OTA
@@ -1079,19 +1081,16 @@ namespace CustomServer
     // === CUSTOM MQTT ENDPOINTS ===
     static void _serveCustomMqttEndpoints()
     {
-        server.on("/api/v1/mqtt/config", HTTP_GET, [](AsyncWebServerRequest *request)
-                  {
-            CustomMqttConfiguration config;
-            CustomMqtt::getConfiguration(config);
-            
+        server.on("/api/v1/custom-mqtt/config", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {            
             JsonDocument doc;
-            CustomMqtt::configurationToJson(config, doc);
+            CustomMqtt::getConfigurationAsJson(doc);
             
             _sendJsonResponse(request, doc);
         });
 
         static AsyncCallbackJsonWebHandler *setCustomMqttHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/mqtt/config",
+            "/api/v1/custom-mqtt/config",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT)) return;
@@ -1099,26 +1098,28 @@ namespace CustomServer
                 JsonDocument doc;
                 doc.set(json);
 
-                CustomMqttConfiguration config;
-                if (!CustomMqtt::configurationFromJson(doc, config, true))
-                {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid custom MQTT configuration");
-                    return;
-                }
-
-                if (CustomMqtt::setConfiguration(config))
+                if (CustomMqtt::setConfigurationFromJson(doc, true))
                 {
                     logger.info("Custom MQTT configuration updated via API", TAG);
                     _sendSuccessResponse(request, "Custom MQTT configuration updated successfully");
                 }
                 else
                 {
-                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to set custom MQTT configuration");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid Custom MQTT configuration");
                 }
             });
         server.addHandler(setCustomMqttHandler);
 
-        server.on("/api/v1/mqtt/status", HTTP_GET, [](AsyncWebServerRequest *request)
+        // Reset configuration
+        server.on("/api/v1/custom-mqtt/config/reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            CustomMqtt::resetConfiguration();
+            _sendSuccessResponse(request, "Custom MQTT configuration reset successfully");
+        });
+
+        server.on("/api/v1/custom-mqtt/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             
             JsonDocument doc;

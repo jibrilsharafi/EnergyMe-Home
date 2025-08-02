@@ -50,7 +50,7 @@ namespace InfluxDbClient
     static void _influxDbTask(void* parameter);
     static void _startTask();
     static void _stopTask();
-    static void _disable();
+    static void _disable(); // Needed for halting the functionality if we have too many failures
 
     // Public API functions
     // =========================================================
@@ -113,7 +113,7 @@ namespace InfluxDbClient
         snprintf(_status, sizeof(_status), "Configuration updated");
         _statusTimestampUnix = CustomTime::getUnixTime();
 
-        _nextSendAttemptMillis = millis64(); // Immediately attempt to send data
+        _nextSendAttemptMillis = 0; // Immediately attempt to send data
         _currentSendAttempt = 0;
 
         _saveConfigurationToPreferences();
@@ -151,6 +151,7 @@ namespace InfluxDbClient
         if (!_isSetupDone) begin();
 
         InfluxDbConfiguration config;
+        config = _influxDbConfiguration; // Start with current configuration (yeah I know it's cumbersome)
         if (!configurationFromJson(jsonDocument, config, partial)) {
             logger.error("Failed to set configuration from JSON", TAG);
             return false;
@@ -273,12 +274,11 @@ namespace InfluxDbClient
         uint64_t lastSendTime = 0;
 
         while (_taskShouldRun) {
-            if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) {
-                if (_influxDbConfiguration.enabled) {
+            if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) { // We are connected and time is synched (needed as InfluxDB requires timestamps)
+                if (_influxDbConfiguration.enabled) { // We have the InfluxDB enabled
                     uint64_t currentTime = millis64();
-                    if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) {
-                        // Check if we should wait due to previous failures
-                        if (currentTime >= _nextSendAttemptMillis) {
+                    if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) { // Enough time has passed since last send
+                        if (currentTime >= _nextSendAttemptMillis) { // Enough time has passed since last attempt (in case of failures)
                             _sendData();
                             lastSendTime = currentTime;
                         } else {
@@ -420,21 +420,8 @@ namespace InfluxDbClient
     static void _disable() {
         logger.debug("Disabling InfluxDB due to persistent failures...", TAG);
 
-        _stopTask();
-
-        Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false)) {
-            logger.error("Failed to open Preferences namespace for InfluxDB", TAG);
-            return;
-        }
-
-        preferences.putBool(INFLUXDB_ENABLED_KEY, false);
-        preferences.end();
-
         _influxDbConfiguration.enabled = false;
-        
-        _currentSendAttempt = 0;
-        _nextSendAttemptMillis = 0;
+        setConfiguration(_influxDbConfiguration); // This will handling the task stop and saving the configuration
 
         snprintf(_status, sizeof(_status), "Disabled due to persistent failures");
         _statusTimestampUnix = CustomTime::getUnixTime();
@@ -566,18 +553,13 @@ namespace InfluxDbClient
         }
         else
         {
-            logger.warning("Failed to send data to InfluxDB (HTTP %d)", TAG, httpCode);
             statistics.influxdbUploadCountError++;
-            
             _currentSendAttempt++;
-            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %d) - Attempt %lu", httpCode, _currentSendAttempt);
-            
+
             // Check for specific errors that warrant disabling InfluxDB
-            if (httpCode == 401 || httpCode == 403) {
+            if (httpCode == HTTP_CODE_UNAUTHORIZED || httpCode == HTTP_CODE_FORBIDDEN) {
                 logger.error("InfluxDB send failed due to authorization error (%d). Disabling InfluxDB.", TAG, httpCode);
                 _disable();
-                _nextSendAttemptMillis = UINT32_MAX;
-                _statusTimestampUnix = CustomTime::getUnixTime();
                 http.end();
                 return;
             }
@@ -586,18 +568,18 @@ namespace InfluxDbClient
             if (_currentSendAttempt >= INFLUXDB_MAX_CONSECUTIVE_FAILURES) {
                 logger.error("InfluxDB send failed %lu consecutive times. Disabling InfluxDB.", TAG, _currentSendAttempt);
                 _disable();
-                _nextSendAttemptMillis = UINT32_MAX;
-                _statusTimestampUnix = CustomTime::getUnixTime();
                 http.end();
                 return;
             }
             
             // Calculate next attempt time using exponential backoff
             uint64_t backoffDelay = calculateExponentialBackoff(_currentSendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
-            
             _nextSendAttemptMillis = millis64() + backoffDelay;
             
-            logger.info("Next InfluxDB send attempt in %llu ms", TAG, backoffDelay);
+            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %d) - Attempt %lu", httpCode, _currentSendAttempt);
+            _statusTimestampUnix = CustomTime::getUnixTime();
+            
+            logger.warning("Failed to send data to InfluxDB (HTTP %d). Next attempt in %llu ms", TAG, httpCode, _nextSendAttemptMillis - millis64());
         }
         
         _statusTimestampUnix = CustomTime::getUnixTime();
