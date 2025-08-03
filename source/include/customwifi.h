@@ -27,7 +27,7 @@
 #define WIFI_PERIODIC_CHECK_INTERVAL (30 * 1000)    // Interval to check WiFi connection status (does not need to be too frequent since we have an event-based system)
 
 #define MDNS_HOSTNAME "energyme"
-#define MDNS_QUERY_TIMEOUT 5000
+#define MDNS_QUERY_TIMEOUT (5 * 1000)
 
 #define OCTET_BUFFER_SIZE 16       // For IPv4-like strings (xxx.xxx.xxx.xxx + null terminator)
 #define MAC_ADDRESS_BUFFER_SIZE 18 // For MAC addresses (xx:xx:xx:xx:xx:xx + null terminator)

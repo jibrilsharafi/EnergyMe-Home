@@ -62,7 +62,7 @@
 #define TOKEN_BUFFER_SIZE 64
 #define AUTH_HEADER_BUFFER_SIZE 256
 #define LINE_PROTOCOL_BUFFER_SIZE 256
-#define PAYLOAD_BUFFER_SIZE 512
+#define PAYLOAD_BUFFER_SIZE (4 * 1024)
 
 struct InfluxDbConfiguration {
     bool enabled;
@@ -103,7 +103,7 @@ namespace InfluxDbClient
 
     // Manage configuration directly
     void getConfiguration(InfluxDbConfiguration &config);
-    bool setConfiguration(InfluxDbConfiguration &config);
+    bool setConfiguration(const InfluxDbConfiguration &config);
     void resetConfiguration();
     
     // Manage configuration from JSON

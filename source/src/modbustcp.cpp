@@ -169,7 +169,7 @@ namespace ModbusTcp
             // Handle channel-specific registers, and thus we need to calculate the channel and offset
             // to avoid manual mapping of all registers
             int32_t realAddress = address - LOWER_LIMIT_CHANNEL_REGISTERS;
-            int32_t channel = realAddress / STEP_CHANNEL_REGISTERS;
+            int32_t channel = STEP_CHANNEL_REGISTERS ? realAddress / STEP_CHANNEL_REGISTERS : 0;
             int32_t offset = realAddress % STEP_CHANNEL_REGISTERS;
 
             MeterValues meterValues;

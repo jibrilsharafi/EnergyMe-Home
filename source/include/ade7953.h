@@ -24,7 +24,7 @@
 // Task
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task" // The name of the ADE7953 task
 #define ADE7953_METER_READING_TASK_STACK_SIZE (16 * 1024) // The stack size for the ADE7953 task
-#define ADE7953_METER_READING_TASK_PRIORITY 2 // The priority for the ADE7953 task
+#define ADE7953_METER_READING_TASK_PRIORITY 5 // The priority for the ADE7953 task
 
 #define ADE7953_ENERGY_SAVE_TASK_NAME "energy_save_task" // The name of the energy save task
 #define ADE7953_ENERGY_SAVE_TASK_STACK_SIZE (4 * 1024) // The stack size for the energy save task
@@ -34,6 +34,10 @@
 #define ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE (4 * 1024) // The stack size for the hourly CSV save task
 #define ADE7953_HOURLY_CSV_SAVE_TASK_PRIORITY 1 // The priority for the hourly CSV save task
 
+// ENERGY_SAVING
+#define SAVE_ENERGY_INTERVAL (5 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory 
+#define DAILY_ENERGY_CSV_HEADER "timestamp,channel,label,phase,active_imported,active_exported,reactive_imported,reactive_exported,apparent"
+#define DAILY_ENERGY_CSV_DIGITS 1 // Since the energy is in Wh, it is useless to go below 0.1 Wh
 #define ENERGY_SAVE_THRESHOLD 1000.0f // Threshold for saving energy data (in Wh) and in any case not more frequent than every 5 minutes
 
 // Interrupt handling
@@ -99,29 +103,23 @@
 #define ENERGY_REACTIVE_EXP_KEY "ch%d_reactExp" // Format: ch17_reactExp (13 chars)
 #define ENERGY_APPARENT_KEY "ch%d_apparent"   // Format: ch17_apparent (13 chars)
 
-// Saving date
-#define SAVE_ENERGY_INTERVAL (5 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory 
-#define HOURLY_CSV_SAVE_TOLERANCE_MS (2 * 60 * 1000) // Tolerance window around the hour mark for CSV saves (2 minutes) 
-#define DAILY_ENERGY_CSV_HEADER "timestamp,channel,label,phase,active_imported,active_exported,reactive_imported,reactive_exported,apparent"
-#define DAILY_ENERGY_CSV_DIGITS 1 // Since the energy is in Wh, it is useless to go below 0.1 Wh
-
 // Default configuration values
-#define DEFAULT_CONFIG_SAMPLE_TIME 1000
-#define DEFAULT_CONFIG_AV_GAIN 0
-#define DEFAULT_CONFIG_AI_GAIN 0
-#define DEFAULT_CONFIG_BI_GAIN 0
+#define DEFAULT_SAMPLE_TIME 200 // Will be converted to integer line cycles (so at 50Hz, 200ms = 10 cycles)
+#define DEFAULT_CONFIG_AV_GAIN 0x400000
+#define DEFAULT_CONFIG_AI_GAIN 0x400000
+#define DEFAULT_CONFIG_BI_GAIN 0x400000
 #define DEFAULT_CONFIG_AIRMS_OS 0
 #define DEFAULT_CONFIG_BIRMS_OS 0
-#define DEFAULT_CONFIG_AW_GAIN 0
-#define DEFAULT_CONFIG_BW_GAIN 0
+#define DEFAULT_CONFIG_AW_GAIN 0x400000
+#define DEFAULT_CONFIG_BW_GAIN 0x400000
 #define DEFAULT_CONFIG_AWATT_OS 0
 #define DEFAULT_CONFIG_BWATT_OS 0
-#define DEFAULT_CONFIG_AVAR_GAIN 0
-#define DEFAULT_CONFIG_BVAR_GAIN 0
+#define DEFAULT_CONFIG_AVAR_GAIN 0x400000
+#define DEFAULT_CONFIG_BVAR_GAIN 0x400000
 #define DEFAULT_CONFIG_AVAR_OS 0
 #define DEFAULT_CONFIG_BVAR_OS 0
-#define DEFAULT_CONFIG_AVA_GAIN 0
-#define DEFAULT_CONFIG_BVA_GAIN 0
+#define DEFAULT_CONFIG_AVA_GAIN 0x400000
+#define DEFAULT_CONFIG_BVA_GAIN 0x400000
 #define DEFAULT_CONFIG_AVA_OS 0
 #define DEFAULT_CONFIG_BVA_OS 0
 #define DEFAULT_CONFIG_PHCAL_A 0
@@ -152,8 +150,9 @@
 #define IRQSTATA_CRC_BIT           21 // Checksum has changed
 
 // Fixed conversion values
-#define POWER_FACTOR_CONVERSION_FACTOR 1.0f / 32768.0f // PF/LSB
-#define ANGLE_CONVERSION_FACTOR 360.0f * 50.0f / 223000.0f // 0.0807 °/LSB
+#define CYCLES_PER_SECOND 50 // 50Hz mains frequency
+#define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet)
+#define ANGLE_CONVERSION_FACTOR 0.0807 // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f 
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
 
 // Validate values
@@ -175,7 +174,6 @@
 #define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 100 // Threshold to transition to a legitimate zero state for channel 0
 #define ADE7953_MIN_LINECYC 10UL // Below this the readings are unstable (200 ms)
 #define ADE7953_MAX_LINECYC 1000UL // Above this too much time passes (20 seconds)
-
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
 
 // ADE7953 Smart Failure Detection
@@ -187,21 +185,27 @@
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20f // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 
 // Channel Preferences Keys
-#define CHANNEL_ACTIVE_KEY "active_%u"
-#define CHANNEL_REVERSE_KEY "reverse_%u"
-#define CHANNEL_LABEL_KEY "label_%u"
-#define CHANNEL_PHASE_KEY "phase_%u"
-#define CHANNEL_CALIBRATION_LABEL_KEY "cal_label_%u"
+#define CHANNEL_ACTIVE_KEY "active_%u" // Format: active_0 (9 chars)
+#define CHANNEL_REVERSE_KEY "reverse_%u" // Format: reverse_0 (10 chars)
+#define CHANNEL_LABEL_KEY "label_%u" // Format: label_0 (8 chars)
+#define CHANNEL_PHASE_KEY "phase_%u" // Format: phase_0 (9 chars)
+
+// CT Specification keys
+#define CHANNEL_CT_CURRENT_RATING_KEY "ct_current_%u" // Format: ct_current_0 (12 chars)
+#define CHANNEL_CT_VOLTAGE_OUTPUT_KEY "ct_voltage_%u" // Format: ct_voltage_0 (12 chars)
+#define CHANNEL_CT_SCALING_FRACTION_KEY "ct_scaling_%u" // Format: ct_scaling_0 (12 chars)
 
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
 #define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
 #define DEFAULT_CHANNEL_REVERSE false
 #define DEFAULT_CHANNEL_PHASE PHASE_1
-#define DEFAULT_CHANNEL_0_LABEL "Channel 0"
 #define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
-#define DEFAULT_CHANNEL_0_CALIBRATION_LABEL "SCT-013-50A-333mV"
-#define DEFAULT_CHANNEL_CALIBRATION_LABEL "SCT-013-30A-333mV"
+
+// CT Specification defaults
+#define DEFAULT_CT_CURRENT_RATING 30.0f   // 30A
+#define DEFAULT_CT_VOLTAGE_OUTPUT 0.333f  // 333mV
+#define DEFAULT_CT_SCALING_FRACTION 0.0f  // No scaling by default
 
 #define BIT_8 8
 #define BIT_16 16
@@ -212,7 +216,6 @@
 
 // Enumeration for different types of ADE7953 interrupts
 enum class Ade7953InterruptType {
-  NONE,           // No interrupt or unknown
   CYCEND,         // Line cycle end - normal meter reading
   RESET,          // Device reset detected
   CRC_CHANGE,     // CRC register change detected
@@ -272,7 +275,7 @@ struct MeterValues
   float reactiveEnergyExported;
   float apparentEnergy;
   uint64_t lastUnixTimeMilliseconds;
-  uint64_t lastMillis;
+  uint64_t lastMillis; // TODO: do we need both of them?
 
   MeterValues()
     : voltage(230.0), current(0.0f), activePower(0.0f), reactivePower(0.0f), apparentPower(0.0f), powerFactor(0.0f),
@@ -294,9 +297,13 @@ struct EnergyValues // Simpler structure for optimizing energy saved to storage
       reactiveEnergyExported(0.0f), apparentEnergy(0.0f), lastUnixTimeMilliseconds(0) {}
 };
 
-struct CalibrationValues
+struct CtSpecification
 {
-  char label[NAME_BUFFER_SIZE];
+  float currentRating;                    // e.g., 30.0 for 30A CT
+  float voltageOutput;                    // e.g., 0.333 for 333mV or 1.0 for 1V  
+  float scalingFraction;                  // -0.5 to +0.5 for ±50% adjustment
+  
+  // Computed at runtime - no need to store these in Preferences
   float aLsb;
   float wLsb;
   float varLsb;
@@ -305,10 +312,12 @@ struct CalibrationValues
   float varhLsb;
   float vahLsb;
 
-  CalibrationValues()
-    : aLsb(1.0), wLsb(1.0), varLsb(1.0), vaLsb(1.0), whLsb(1.0), varhLsb(1.0), vahLsb(1.0) {
-      snprintf(label, sizeof(label), "Calibration");
-    }
+  CtSpecification()
+    : currentRating(DEFAULT_CT_CURRENT_RATING),
+      voltageOutput(DEFAULT_CT_VOLTAGE_OUTPUT),
+      scalingFraction(DEFAULT_CT_SCALING_FRACTION),
+      aLsb(1.0f), wLsb(1.0f), varLsb(1.0f), vaLsb(1.0f),
+      whLsb(1.0f), varhLsb(1.0f), vahLsb(1.0f) {}
 };
 
 struct ChannelData
@@ -318,10 +327,14 @@ struct ChannelData
   bool reverse;
   char label[NAME_BUFFER_SIZE];
   Phase phase;
-  CalibrationValues calibrationValues;
+  CtSpecification ctSpecification;
 
   ChannelData()
-    : index(0), active(false), reverse(false), phase(PHASE_1), calibrationValues(CalibrationValues()) {
+    : index(0), 
+      active(false), 
+      reverse(false), 
+      phase(PHASE_1), 
+      ctSpecification(CtSpecification()) {
       snprintf(label, sizeof(label), "Channel");
     }
 };
@@ -370,55 +383,87 @@ namespace Ade7953
         uint32_t misoPin,
         uint32_t mosiPin,
         uint32_t resetPin,
-        uint32_t interruptPin);
+        uint32_t interruptPin
+    );
     void stop();
 
-    // Hardware communication (exposed for advanced use)
+
+    // Register operations
+    /**
+     * Reads the value from a register in the ADE7953 energy meter.
+     * 
+     * @param registerAddress The address of the register to read from. Expected range: 0 to 65535
+     * @param numBits The number of bits to read from the register. Expected values: 8, 16, 24 or 32.
+     * @param isSignedData Flag indicating whether the data is signed (true) or unsigned (false).
+     * @param isVerificationRequired Flag indicating whether to verify the last communication.
+     * @return The value read from the register.
+     */
     int32_t readRegister(int32_t registerAddress, int32_t nBits, bool signedData, bool isVerificationRequired = true);
+    /**
+     * Writes data to a register in the ADE7953 energy meter.
+     * 
+     * @param registerAddress The address of the register to write to. (16-bit value)
+     * @param nBits The number of bits in the register. (8, 16, 24, or 32)
+     * @param data The data to write to the register. (nBits-bit value)
+     * @param isVerificationRequired Flag indicating whether to verify the last communication.
+     */
     void writeRegister(int32_t registerAddress, int32_t nBits, int32_t data, bool isVerificationRequired = true);
 
     // Task control
-    void pauseMeterReadingTask();
-    void resumeMeterReadingTask();
+    void pauseTasks();
+    void resumeTasks();
 
-    // Channel and meter data access
+    // Configuration management
+    void getConfiguration(Ade7953Configuration &config);
+    bool setConfiguration(const Ade7953Configuration &config);
+    void resetConfiguration();
+
+    // Configuration management - JSON operations
+    void getConfigurationAsJson(JsonDocument &jsonDocument);
+    bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial = false);
+    void configurationToJson(Ade7953Configuration &config, JsonDocument &jsonDocument);
+    bool configurationFromJson(JsonDocument &jsonDocument, Ade7953Configuration &config, bool partial = false);
+
+    // Sample time management
+    uint32_t getSampleTime();
+    bool setSampleTime(uint32_t sampleTime);
+
+    // Channel data management
     bool isChannelActive(uint32_t channelIndex);
+    bool hasChannelValidMeasurements(uint32_t channelIndex);
+    void getChannelLabel(uint32_t channelIndex, char* buffer, size_t bufferSize);
     void getChannelData(ChannelData &channelData, uint32_t channelIndex);
+    void setChannelData(const ChannelData &channelData, uint32_t channelIndex);
+    void resetChannelData(uint32_t channelIndex);
+
+    // Channel data management - JSON operations
+    void getChannelDataAsJson(JsonDocument &jsonDocument, uint32_t channelIndex);
+    bool setChannelDataFromJson(JsonDocument &jsonDocument, bool partial = false);
+    void channelDataToJson(ChannelData &channelData, JsonDocument &jsonDocument);
+    bool channelDataFromJson(JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);
+
+    // Energy data management
+    void resetEnergyValues();
+    bool setEnergyValues(
+        uint32_t channel,
+        float activeEnergyImported,
+        float activeEnergyExported,
+        float reactiveEnergyImported,
+        float reactiveEnergyExported,
+        float apparentEnergy
+    );
+
+    // Data output
+    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint32_t channel);
+    void fullMeterValuesToJson(JsonDocument &jsonDocument);
     void getMeterValues(MeterValues &meterValues, uint32_t channelIndex);
 
-    // Aggregated power calculations
+    // Aggregated power calculations 
     float getAggregatedActivePower(bool includeChannel0 = true);
     float getAggregatedReactivePower(bool includeChannel0 = true);
     float getAggregatedApparentPower(bool includeChannel0 = true);
     float getAggregatedPowerFactor(bool includeChannel0 = true);
 
-    // System parameters
-    uint32_t getSampleTime();
-    bool setSampleTime(uint32_t sampleTime);
-    
+    // Grid frequency
     float getGridFrequency();
-
-    // Configuration management
-    void getConfiguration(Ade7953Configuration &config);
-    bool setConfiguration(const Ade7953Configuration &config);
-    bool configurationToJson(const Ade7953Configuration &config, JsonDocument &jsonDocument);
-    bool configurationFromJson(JsonDocument &jsonDocument, Ade7953Configuration &config, bool partial = false);
-
-    // Calibration management
-    void setDefaultCalibrationValues();
-    bool setCalibrationValues(JsonDocument &jsonDocument);
-
-    // Channel data management
-    void setDefaultChannelData();
-    bool setChannelData(JsonDocument &jsonDocument);
-    bool setSingleChannelData(uint32_t channelIndex, bool active, bool reverse, const char* label, Phase phase, const char* calibrationLabel);
-    void channelDataToJson(JsonDocument &jsonDocument);
-
-    // Energy data management
-    void resetEnergyValues();
-    bool setEnergyValues(JsonDocument &jsonDocument);
-
-    // Data output and visualization
-    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint32_t channel);
-    void fullMeterValuesToJson(JsonDocument &jsonDocument);
 };

@@ -60,6 +60,20 @@ namespace CustomTime {
         return _isTimeSynched;
     }
 
+    bool isNowCloseToHour(uint64_t toleranceMillis) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        
+        struct tm timeinfo;
+        localtime_r(&tv.tv_sec, &timeinfo);
+        
+        // Calculate the number of milliseconds until the next hour
+        int32_t secondsUntilNextHour = 3600 - (timeinfo.tm_min * 60 + timeinfo.tm_sec);
+        uint64_t millisUntilNextHour = static_cast<uint64_t>(secondsUntilNextHour) * 1000;
+
+        return millisUntilNextHour <= toleranceMillis;
+    }
+
     bool _loadConfiguration() {
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_TIME, true)) {
@@ -136,6 +150,31 @@ namespace CustomTime {
                 utc_tm.tm_min,
                 utc_tm.tm_sec,
                 milliseconds);
+    }
+
+    void getTimestampIsoRoundedToHour(char* buffer, size_t bufferSize) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        
+        struct tm utc_tm;
+        gmtime_r(&tv.tv_sec, &utc_tm);
+        
+        // Round to the nearest hour
+        int32_t seconds = (utc_tm.tm_min * 60 + utc_tm.tm_sec);
+        if (seconds >= 1800) {
+            utc_tm.tm_hour += 1; // Round up
+        }
+        utc_tm.tm_min = 0;
+        utc_tm.tm_sec = 0;
+
+        snprintf(buffer, bufferSize, TIMESTAMP_ISO_FORMAT,
+                utc_tm.tm_year + 1900,
+                utc_tm.tm_mon + 1,
+                utc_tm.tm_mday,
+                utc_tm.tm_hour,
+                utc_tm.tm_min,
+                utc_tm.tm_sec,
+                0); // No milliseconds in rounded timestamp
     }
 
     void timestampFromUnix(time_t unixSeconds, char* buffer, size_t bufferSize) {

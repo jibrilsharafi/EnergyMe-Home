@@ -88,7 +88,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
         info.psramUsedBytes = psramTotal - info.psramFreeBytes;
         info.psramMinFreeBytes = ESP.getMinFreePsram();
         info.psramMaxAllocBytes = ESP.getMaxAllocPsram();
-        info.psramFreePercentage = ((float)info.psramFreeBytes / psramTotal) * 100.0f;
+        info.psramFreePercentage = psramTotal > 0 ? ((float)info.psramFreeBytes / psramTotal) * 100.0f : 0.0f;
         info.psramUsedPercentage = 100.0f - info.psramFreePercentage;
     } else {
         info.psramFreeBytes = 0;
@@ -269,196 +269,8 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
     }
 
     serializeJson(jsonDocument, buffer, bufferSize);
-    logger.debug("JSON serialized successfully (bytes: %zu): %s", TAG, size, buffer);
+    logger.verbose("JSON serialized successfully (bytes: %zu): %s", TAG, size, buffer);
     return true;
-}
-
-// Legacy SPIFFS functions for backward compatibility during transition
-bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
-    logger.debug("Deserializing JSON from SPIFFS", TAG);
-
-    File file = SPIFFS.open(path, FILE_READ);
-    if (!file){
-        logger.error("Failed to open file %s", TAG, path);
-        return false;
-    }
-
-    DeserializationError error = deserializeJson(jsonDocument, file);
-    file.close();
-    if (error){
-        logger.error("Failed to deserialize file %s. Error: %s", TAG, path, error.c_str());
-        return false;
-    }
-
-    if (jsonDocument.isNull() || jsonDocument.size() == 0){
-        logger.debug("JSON being deserialized is {}", TAG);
-    }
-    
-    // For debugging purposes, serialize to a string and log it
-    char jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
-    safeSerializeJson(jsonDocument, jsonString, sizeof(jsonString), true);
-    logger.debug("JSON deserialized from SPIFFS correctly: %s", TAG, jsonString);
-    return true;
-}
-
-bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
-    logger.debug("Serializing JSON to SPIFFS...", TAG);
-
-    File file = SPIFFS.open(path, FILE_WRITE);
-    if (!file){
-        logger.error("Failed to open file %s", TAG, path);
-        return false;
-    }
-
-    serializeJson(jsonDocument, file);
-    file.close();
-
-    if (jsonDocument.isNull() || jsonDocument.size() == 0){
-        logger.debug("JSON being serialized is {}", TAG);
-    }
-
-    // For debugging purposes, serialize to a string and log it
-    char jsonString[JSON_STRING_PRINT_BUFFER_SIZE];
-    safeSerializeJson(jsonDocument, jsonString, sizeof(jsonString), true);
-    logger.debug("JSON serialized to SPIFFS correctly: %s", TAG, jsonString);
-
-    return true;
-}
-
-void createEmptyJsonFile(const char* path) {
-    logger.debug("Creating empty JSON file %s...", TAG, path);
-
-    File file = SPIFFS.open(path, FILE_WRITE);
-    if (!file) {
-        logger.error("Failed to open file %s", TAG, path);
-        return;
-    }
-
-    file.print("{}");
-    file.close();
-
-    logger.debug("Empty JSON file %s created", TAG, path);
-}
-
-void createDefaultDailyEnergyFile() {
-    logger.debug("Creating default %s...", TAG, DAILY_ENERGY_JSON_PATH);
-
-    createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
-
-    logger.debug("Default %s created", TAG, DAILY_ENERGY_JSON_PATH);
-}
-
-void createDefaultAde7953ConfigurationFile() {
-    logger.debug("Creating default ADE7953 configuration...", TAG);
-
-    JsonDocument jsonDocument;
-
-    jsonDocument["sampleTime"] = MINIMUM_SAMPLE_TIME;
-    jsonDocument["aVGain"] = DEFAULT_GAIN;
-    jsonDocument["aIGain"] = DEFAULT_GAIN;
-    jsonDocument["bIGain"] = DEFAULT_GAIN;
-    jsonDocument["aIRmsOs"] = DEFAULT_OFFSET;
-    jsonDocument["bIRmsOs"] = DEFAULT_OFFSET;
-    jsonDocument["aWGain"] = DEFAULT_GAIN;
-    jsonDocument["bWGain"] = DEFAULT_GAIN;
-    jsonDocument["aWattOs"] = DEFAULT_OFFSET;
-    jsonDocument["bWattOs"] = DEFAULT_OFFSET;
-    jsonDocument["aVarGain"] = DEFAULT_GAIN;
-    jsonDocument["bVarGain"] = DEFAULT_GAIN;
-    jsonDocument["aVarOs"] = DEFAULT_OFFSET;
-    jsonDocument["bVarOs"] = DEFAULT_OFFSET;
-    jsonDocument["aVaGain"] = DEFAULT_GAIN;
-    jsonDocument["bVaGain"] = DEFAULT_GAIN;
-    jsonDocument["aVaOs"] = DEFAULT_OFFSET;
-    jsonDocument["bVaOs"] = DEFAULT_OFFSET;
-    jsonDocument["phCalA"] = DEFAULT_PHCAL;
-    jsonDocument["phCalB"] = DEFAULT_PHCAL;
-
-    logger.warning("Actually save this!!!!", TAG);
-
-    logger.debug("Default ADE7953 configuration created", TAG);
-}
-
-void createDefaultCalibrationFile() {
-    logger.debug("Creating default calibration...", TAG);
-
-    JsonDocument jsonDocument;
-    deserializeJson(jsonDocument, default_config_calibration_json);
-
-    // Note: Calibration data is configuration, not historical data
-    // This will be handled by the ADE7953 module's own Preferences
-    // For now, keep SPIFFS for backward compatibility
-    serializeJsonToSpiffs(CALIBRATION_JSON_PATH, jsonDocument);
-
-    logger.debug("Default calibration created", TAG);
-}
-
-void createDefaultCustomMqttConfigurationFile() {
-    logger.debug("Creating default custom MQTT configuration...", TAG);
-
-    JsonDocument jsonDocument;
-
-    // FIXME: deprecate and move this
-
-    logger.warning("Actually save this!!!!", TAG);
-
-    logger.debug("Default custom MQTT configuration created", TAG);
-}
-
-std::vector<const char*> checkMissingFiles() {
-    logger.debug("Checking missing files...", TAG);
-
-    std::vector<const char*> missingFiles;
-    
-    const char* CONFIG_FILE_PATHS[] = {
-        CALIBRATION_JSON_PATH,
-        DAILY_ENERGY_JSON_PATH,
-    };
-
-    const size_t CONFIG_FILE_COUNT = sizeof(CONFIG_FILE_PATHS) / sizeof(CONFIG_FILE_PATHS[0]);
-
-    
-    for (size_t i = 0; i < CONFIG_FILE_COUNT; ++i) {
-        const char* path = CONFIG_FILE_PATHS[i];
-        if (!SPIFFS.exists(path)) {
-            missingFiles.push_back(path);
-        }
-    }
-
-    logger.debug("Missing files checked", TAG);
-    return missingFiles;
-}
-
-void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles) {
-    logger.debug("Creating default files for missing files...", TAG);
-
-    
-    for (const char* path : missingFiles) {
-        if (strcmp(path, CALIBRATION_JSON_PATH) == 0) {
-            createDefaultCalibrationFile();
-        } else if (strcmp(path, DAILY_ENERGY_JSON_PATH) == 0) {
-            createDefaultDailyEnergyFile();
-        } else {
-            // Handle other files if needed
-            logger.warning("No default creation function for path: %s", TAG, path);
-        }
-    }
-
-    logger.debug("Default files created for missing files", TAG);
-}
-
-bool checkAllFiles() {
-    logger.debug("Checking all files...", TAG);
-
-    
-    std::vector<const char*> missingFiles = checkMissingFiles();
-    if (!missingFiles.empty()) {
-        createDefaultFilesForMissingFiles(missingFiles);
-        return true;
-    }
-
-    logger.debug("All files checked", TAG);
-    return false;
 }
 
 // Task function that handles periodic maintenance checks
@@ -539,7 +351,9 @@ void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
     
     // Wait with timeout for clean shutdown
     int32_t timeout = TASK_STOPPING_TIMEOUT;
-    while (*taskHandle != NULL && timeout > 0) {
+    uint32_t loops = 0;
+    while (*taskHandle != NULL && timeout > 0 && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
         delay(TASK_STOPPING_CHECK_INTERVAL);
         timeout -= TASK_STOPPING_CHECK_INTERVAL;
     }
@@ -816,14 +630,14 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
 // -----------------------------
 
 static void _factoryReset() { 
-    logger.fatal("Factory reset requested", TAG);
+    logger.warning("Factory reset requested", TAG);
 
     Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
     Led::blinkRedFast(Led::PRIO_CRITICAL);
 
     clearAllPreferences();
 
-    logger.fatal("Formatting SPIFFS. This will take some time.", TAG);
+    logger.warning("Formatting SPIFFS. This will take some time.", TAG);
     SPIFFS.format();
 
     CrashMonitor::clearConsecutiveCrashCount(); // Reset crash monitor to clear crash count and last reset reason
@@ -832,120 +646,22 @@ static void _factoryReset() {
 }
 
 void clearAllPreferences() {
-    logger.fatal("Clear all preferences requested", TAG);
+    logger.warning("Clear all preferences requested", TAG);
 
     Preferences preferences;
-    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false);
-    preferences.clear();
-    preferences.end();
-    
-    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_MQTT, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false);
-    preferences.clear();
-    preferences.end();
-    
-    preferences.begin(PREFERENCES_NAMESPACE_TIME, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false);
-    preferences.clear();
-    preferences.end();
-
-    preferences.begin(PREFERENCES_NAMESPACE_LED, false);
-    preferences.clear();
-    preferences.end();
-}
-
-bool isLatestFirmwareInstalled() {
-    JsonDocument jsonDocument;
-    // deserializeJsonFromSpiffs(FW_UPDATE_INFO_JSON_PATH, jsonDocument);
-    // TODO: switch to Preferences
-    logger.warning("IMPLEMENT THIS: deserializeJsonFromSpiffs for FW_UPDATE_INFO_JSON_PATH", TAG);
-    return true; // For now, return true as we don't have the implementation yet
-    
-    if (jsonDocument.isNull() || jsonDocument.size() == 0) {
-        logger.debug("Firmware update info file is empty", TAG);
-        return true;
-    }
-
-    char latestFirmwareVersion[VERSION_BUFFER_SIZE];
-    char currentFirmwareVersion[VERSION_BUFFER_SIZE];
-
-    snprintf(latestFirmwareVersion, sizeof(latestFirmwareVersion), "%s", jsonDocument["buildVersion"].as<const char*>());
-    snprintf(currentFirmwareVersion, sizeof(currentFirmwareVersion), "%s", FIRMWARE_BUILD_VERSION);
-
-    logger.debug(
-        "Latest firmware version: %s | Current firmware version: %s",
-        TAG,
-        latestFirmwareVersion,
-        currentFirmwareVersion
-    );
-
-    if (strlen(latestFirmwareVersion) == 0 || strchr(latestFirmwareVersion, '.') == NULL) {
-        logger.warning("Latest firmware version is empty or in the wrong format", TAG);
-        return true;
-    }
-
-    int32_t latestMajor, latestMinor, latestPatch;
-    sscanf(latestFirmwareVersion, "%ld.%ld.%ld", &latestMajor, &latestMinor, &latestPatch);
-
-    int32_t currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
-    int32_t currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
-    int32_t currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
-
-    if (latestMajor < currentMajor) return true;
-    if (latestMajor > currentMajor) return false;
-    if (latestMinor < currentMinor) return true;
-    if (latestMinor > currentMinor) return false;
-    return latestPatch <= currentPatch;
-}
-
-void updateJsonFirmwareStatus(const char *status, const char *reason)
-{
-    JsonDocument jsonDocument;
-
-    jsonDocument["status"] = status;
-    jsonDocument["reason"] = reason;
-    char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-    CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer)); // TODO: maybe everything should be returned in unix so it is UTC, and then converted on the other side? or standard iso utc timestamp?
-    jsonDocument["timestamp"] = timestampBuffer;
-
-    // Note: Firmware status is temporary data, keep in SPIFFS for now
-    // This will be updated when we migrate to LittleFS for temporary data
-    // serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, jsonDocument);
-    logger.warning("IMPLEMENT THIS: updateJsonFirmwareStatus", TAG); // TODO: switch to Preferences
+    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_MQTT, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_TIME, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.clear(); preferences.end();
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {

@@ -1,19 +1,20 @@
+# Hidden files
 .pio
 .vscode
-
-secrets
-temp/
 .env
-
 .mypy*
 
-releases/
+# Secrets
+secrets
 
+# Development files
+releases/
 logs/
+temp/
+coredump/
+
+# MacOS
 .DS_Store
 
 # Python
 __pycache__/
-
-# Core dump data
-coredump/

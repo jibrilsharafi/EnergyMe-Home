@@ -41,7 +41,14 @@ namespace InfluxDbClient
 
     // Data sending
     static void _sendData();
-    static void _formatLineProtocol(const MeterValues &meterValues, int32_t channel, uint64_t timestamp, char *buffer, size_t bufferSize, bool isEnergyData);
+    static void _formatLineProtocol(
+        int32_t channel, 
+        const char *label,
+        const MeterValues &meterValues, 
+        char *lineProtocolBuffer, 
+        size_t lineProtocolBufferSize, 
+        bool isEnergyData
+    );
     
     // JSON validation
     static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial = false);
@@ -94,7 +101,7 @@ namespace InfluxDbClient
         config = _influxDbConfiguration;
     }
 
-    bool setConfiguration(InfluxDbConfiguration &config)
+    bool setConfiguration(const InfluxDbConfiguration &config)
     {
         logger.debug("Setting InfluxDB configuration...", TAG);
         
@@ -187,7 +194,7 @@ namespace InfluxDbClient
 
         if (!_validateJsonConfiguration(jsonDocument, partial))
         {
-            logger.error("Invalid JSON configuration", TAG);
+            logger.warning("Invalid JSON configuration", TAG);
             return false;
         }
 
@@ -486,56 +493,50 @@ namespace InfluxDbClient
         http.addHeader("Content-Type", "text/plain");
 
         char payload[PAYLOAD_BUFFER_SIZE] = "";
-        size_t payloadLength = 0;
-        uint64_t currentTimestamp = CustomTime::getUnixTimeMilliseconds();
+        char *ptr = payload;
+        size_t remaining = PAYLOAD_BUFFER_SIZE;
+        bool bufferFull = false;
 
-        for (int32_t i = 0; i < CHANNEL_COUNT; i++)
+        for (int32_t i = 0; i < CHANNEL_COUNT && !bufferFull; i++)
         {
-            if (Ade7953::isChannelActive(i))
+            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i))
             {
                 MeterValues meterValues;
                 Ade7953::getMeterValues(meterValues, i);
-                if (meterValues.lastUnixTimeMilliseconds == 0)
-                {
-                    logger.debug("Channel %d does not have real measurements yet, skipping", TAG, i);
-                    continue;
+                
+                char label[NAME_BUFFER_SIZE];
+                Ade7953::getChannelLabel(i, label, sizeof(label));
+
+                // Add separator if not first entry
+                if (ptr != payload) {
+                    int written = snprintf(ptr, remaining, "\n");
+                    if (written >= remaining) { bufferFull = true; break; }
+                    ptr += written;
+                    remaining -= written;
                 }
                 
+                // Add realtime line protocol
                 char realtimeLineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
-                _formatLineProtocol(meterValues, i, meterValues.lastUnixTimeMilliseconds, realtimeLineProtocol, sizeof(realtimeLineProtocol), false);
-
-                if (payloadLength > 0 && payloadLength + 1 < PAYLOAD_BUFFER_SIZE)
-                {
-                    payload[payloadLength] = '\n';
-                    payloadLength++;
-                    payload[payloadLength] = '\0';
-                }
-
-                if (payloadLength + strlen(realtimeLineProtocol) < PAYLOAD_BUFFER_SIZE)
-                {
-                    snprintf(payload + payloadLength, PAYLOAD_BUFFER_SIZE - payloadLength, "%s", realtimeLineProtocol);
-                    payloadLength += strlen(realtimeLineProtocol);
-                }
-
+                _formatLineProtocol(i, label, meterValues, realtimeLineProtocol, sizeof(realtimeLineProtocol), false);
+                int written = snprintf(ptr, remaining, "%s", realtimeLineProtocol);
+                if (written >= remaining) { bufferFull = true; break; }
+                ptr += written;
+                remaining -= written;
+                
+                // Add energy line protocol
                 char energyLineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
-                _formatLineProtocol(meterValues, i, currentTimestamp, energyLineProtocol, sizeof(energyLineProtocol), true);
+                _formatLineProtocol(i, label, meterValues, energyLineProtocol, sizeof(energyLineProtocol), true);
+                written = snprintf(ptr, remaining, "\n%s", energyLineProtocol);
 
-                if (payloadLength + 1 < PAYLOAD_BUFFER_SIZE)
-                {
-                    payload[payloadLength] = '\n';
-                    payloadLength++;
-                    payload[payloadLength] = '\0';
-                }
-
-                if (payloadLength + strlen(energyLineProtocol) < PAYLOAD_BUFFER_SIZE)
-                {
-                    snprintf(payload + payloadLength, PAYLOAD_BUFFER_SIZE - payloadLength, "%s", energyLineProtocol);
-                    payloadLength += strlen(energyLineProtocol);
-                }
+                if (written >= remaining) { bufferFull = true; break; }
+                ptr += written;
+                remaining -= written;
             }
         }
 
-        if (payloadLength == 0)
+        if (bufferFull) logger.warning("Payload buffer filled completely, some data may be truncated", TAG);
+
+        if (ptr == payload)
         {
             logger.debug("No data to send to InfluxDB", TAG);
             http.end();
@@ -544,7 +545,7 @@ namespace InfluxDbClient
 
         int32_t httpCode = http.POST(payload);
 
-        if (httpCode >= 200 && httpCode < 300)
+        if (httpCode >= HTTP_CODE_OK && httpCode < HTTP_CODE_MULTIPLE_CHOICES)
         {
             logger.debug("Successfully sent data to InfluxDB (HTTP %d)", TAG, httpCode);
             statistics.influxdbUploadCount++;
@@ -586,32 +587,30 @@ namespace InfluxDbClient
         http.end();
     }
 
-    static void _formatLineProtocol(const MeterValues &meterValues, int32_t channel, uint64_t timestamp, char *buffer, size_t bufferSize, bool isEnergyData)
-    {
-        ChannelData channelData;
-        Ade7953::getChannelData(channelData, channel);
-        char sanitizedLabel[sizeof(channelData.label) + 20];
-        const char *originalLabel = channelData.label;
+    static void _formatLineProtocol(
+        int32_t channel, 
+        const char *label,
+        const MeterValues &meterValues, 
+        char *lineProtocolBuffer, 
+        size_t lineProtocolBufferSize, 
+        bool isEnergyData
+    ) {
+        char sanitizedLabel[sizeof(label) + 20]; // Give some extra space for sanitization
 
-        size_t labelLen = strlen(originalLabel);
+        size_t labelLen = strlen(label);
         size_t writePos = 0;
         for (size_t i = 0; i < labelLen && writePos < sizeof(sanitizedLabel) - 1; i++)
         {
-            char c = originalLabel[i];
-            if (c == ' ' || c == ',' || c == '=' || c == ':')
-            {
-                sanitizedLabel[writePos++] = '_';
-            }
-            else
-            {
-                sanitizedLabel[writePos++] = c;
-            }
+            char c = label[i];
+            // Remove spaces, commas, equal signs, and colons and replace with underscores
+            if (c == ' ' || c == ',' || c == '=' || c == ':') sanitizedLabel[writePos++] = '_';
+            else sanitizedLabel[writePos++] = c;
         }
         sanitizedLabel[writePos] = '\0';
 
         if (isEnergyData)
         {
-            snprintf(buffer, bufferSize,
+            snprintf(lineProtocolBuffer, lineProtocolBufferSize,
                      "%s,channel=%d,label=%s,device_id=%s active_energy_imported=%.3f,active_energy_exported=%.3f,reactive_energy_imported=%.3f,reactive_energy_exported=%.3f,apparent_energy=%.3f %llu000000",
                      _influxDbConfiguration.measurement,
                      channel,
@@ -622,11 +621,11 @@ namespace InfluxDbClient
                      meterValues.reactiveEnergyImported,
                      meterValues.reactiveEnergyExported,
                      meterValues.apparentEnergy,
-                     timestamp);
+                     meterValues.lastUnixTimeMilliseconds);
         }
         else
         {
-            snprintf(buffer, bufferSize,
+            snprintf(lineProtocolBuffer, lineProtocolBufferSize,
                      "%s,channel=%d,label=%s,device_id=%s voltage=%.2f,current=%.3f,active_power=%.2f,reactive_power=%.2f,apparent_power=%.2f,power_factor=%.3f %llu000000",
                      _influxDbConfiguration.measurement,
                      channel,
@@ -638,7 +637,7 @@ namespace InfluxDbClient
                      meterValues.reactivePower,
                      meterValues.apparentPower,
                      meterValues.powerFactor,
-                     timestamp);
+                     meterValues.lastUnixTimeMilliseconds);
         }
     }
 } // namespace InfluxDbClient

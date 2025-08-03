@@ -189,7 +189,7 @@ namespace ButtonHandler
         }
     }
 
-    static void _updateVisualFeedback(uint64_t pressDuration) // FIXME: the previous color does not get cleared since they are the same priority
+    static void _updateVisualFeedback(uint64_t pressDuration)
     {
         // Provide immediate visual feedback based on current press duration
         if (pressDuration >= BUTTON_MAX_PRESS_TIME)

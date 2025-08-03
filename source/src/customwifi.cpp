@@ -187,8 +187,8 @@ namespace CustomWifi
     int32_t connectionAttempts = 0;
     const int32_t maxAttempts = 3;
     bool connected = false;
-    
-    while (!connected && connectionAttempts < maxAttempts) {
+    uint32_t loops = 0;
+    while (!connected && connectionAttempts < maxAttempts && loops < MAX_LOOP_ITERATIONS) {
       connectionAttempts++;
       logger.debug("WiFi connection attempt %d/%d", TAG, connectionAttempts, maxAttempts);
       
@@ -274,7 +274,7 @@ namespace CustomWifi
               // readings in the meanwhile (and infinite loop of portal - reboots)
               if (!_wifiManager.startConfigPortal(hostname))
               {
-                logger.fatal("Portal failed - restarting device", TAG);
+                logger.error("Portal failed - restarting device", TAG);
                 Led::blinkRedFast(Led::PRIO_URGENT);
                 setRestartSystem(TAG, "Restart after portal failure");
               }
@@ -420,7 +420,7 @@ namespace CustomWifi
     // Wait with timeout for clean shutdown using standard pattern
     uint64_t startTime = millis64();
     
-    while (_wifiTaskHandle != NULL && (millis64() - startTime) < TASK_STOPPING_TIMEOUT)
+    while (_wifiTaskHandle != NULL && (millis64() - startTime) < TASK_STOPPING_TIMEOUT) // TODO: use graceful here from utils?
     {
       delay(TASK_STOPPING_CHECK_INTERVAL);
     }

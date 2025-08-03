@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "11"
-#define FIRMWARE_BUILD_VERSION_PATCH "08"
+#define FIRMWARE_BUILD_VERSION_PATCH "0"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -25,10 +25,6 @@
 
 // While loops
 #define MAX_LOOP_ITERATIONS 10000 // The maximum number of iterations for any while loop to avoid infinite loops
-
-// File path
-#define CALIBRATION_JSON_PATH "/config/calibration.json"
-#define DAILY_ENERGY_JSON_PATH "/daily-energy.json"
 
 // Preferences namespaces are here to enable a full wipe from utils when factory resetting
 #define PREFERENCES_NAMESPACE_ADE7953 "ade7953_ns"

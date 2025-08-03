@@ -26,64 +26,6 @@ namespace Mqtt
     // Helper functions for lazy queue initialization
     static bool _initializeLogQueue();
     static bool _initializeMeterQueue();
-
-    bool _initializeLogQueue() // Cannot use logger here to avoid circular dependency
-    {
-        if (_isLogQueueInitialized) {
-            return true;
-        }
-
-        // Allocate queue storage in PSRAM
-        size_t queueStorageSize = MQTT_LOG_QUEUE_SIZE * sizeof(LogJson);
-        _logQueueStorage = (uint8_t*)heap_caps_malloc(queueStorageSize, MALLOC_CAP_SPIRAM);
-        
-        if (_logQueueStorage == nullptr) {
-            Serial.printf("[ERROR] Failed to allocate PSRAM for MQTT log queue (%d bytes)\n", queueStorageSize);
-            return false;
-        }
-
-        // Create FreeRTOS static queue using PSRAM buffer
-        _logQueue = xQueueCreateStatic(MQTT_LOG_QUEUE_SIZE, sizeof(LogJson), _logQueueStorage, &_logQueueStruct);
-        if (_logQueue == nullptr) {
-            Serial.printf("[ERROR] Failed to create MQTT log queue\n");
-            heap_caps_free(_logQueueStorage);
-            _logQueueStorage = nullptr;
-            return false;
-        }
-
-        _isLogQueueInitialized = true;
-        Serial.printf("[DEBUG] MQTT log queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", queueStorageSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-        return true;
-    }
-
-    bool _initializeMeterQueue() // Cannot use logger here to avoid circular dependency
-    {
-        if (_isMeterQueueInitialized) {
-            return true;
-        }
-
-        // Allocate queue storage in PSRAM
-        size_t queueStorageSize = MQTT_METER_QUEUE_SIZE * sizeof(PayloadMeter);
-        _meterQueueStorage = (uint8_t*)heap_caps_malloc(queueStorageSize, MALLOC_CAP_SPIRAM);
-        
-        if (_meterQueueStorage == nullptr) {
-            Serial.printf("[ERROR] Failed to allocate PSRAM for MQTT meter queue (%d bytes)\n", queueStorageSize);
-            return false;
-        }
-
-        // Create FreeRTOS static queue using PSRAM buffer
-        _meterQueue = xQueueCreateStatic(MQTT_METER_QUEUE_SIZE, sizeof(PayloadMeter), _meterQueueStorage, &_meterQueueStruct);
-        if (_meterQueue == nullptr) {
-            Serial.printf("[ERROR] Failed to create MQTT meter queue\n");
-            heap_caps_free(_meterQueueStorage);
-            _meterQueueStorage = nullptr;
-            return false;
-        }
-
-        _isMeterQueueInitialized = true;
-        Serial.printf("[DEBUG] MQTT meter queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", queueStorageSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-        return true;
-    }
     
     // Task handle
     static TaskHandle_t _taskHandle = NULL;
@@ -434,6 +376,64 @@ namespace Mqtt
         }
     }
 
+    bool _initializeLogQueue() // Cannot use logger here to avoid circular dependency
+    {
+        if (_isLogQueueInitialized) {
+            return true;
+        }
+
+        // Allocate queue storage in PSRAM
+        size_t queueStorageSize = MQTT_LOG_QUEUE_SIZE * sizeof(LogJson);
+        _logQueueStorage = (uint8_t*)heap_caps_malloc(queueStorageSize, MALLOC_CAP_SPIRAM);
+        
+        if (_logQueueStorage == nullptr) {
+            Serial.printf("[ERROR] Failed to allocate PSRAM for MQTT log queue (%d bytes)\n", queueStorageSize);
+            return false;
+        }
+
+        // Create FreeRTOS static queue using PSRAM buffer
+        _logQueue = xQueueCreateStatic(MQTT_LOG_QUEUE_SIZE, sizeof(LogJson), _logQueueStorage, &_logQueueStruct);
+        if (_logQueue == nullptr) {
+            Serial.printf("[ERROR] Failed to create MQTT log queue\n");
+            heap_caps_free(_logQueueStorage);
+            _logQueueStorage = nullptr;
+            return false;
+        }
+
+        _isLogQueueInitialized = true;
+        Serial.printf("[DEBUG] MQTT log queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", queueStorageSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        return true;
+    }
+
+    bool _initializeMeterQueue() // Cannot use logger here to avoid circular dependency
+    {
+        if (_isMeterQueueInitialized) {
+            return true;
+        }
+
+        // Allocate queue storage in PSRAM
+        size_t queueStorageSize = MQTT_METER_QUEUE_SIZE * sizeof(PayloadMeter);
+        _meterQueueStorage = (uint8_t*)heap_caps_malloc(queueStorageSize, MALLOC_CAP_SPIRAM);
+        
+        if (_meterQueueStorage == nullptr) {
+            Serial.printf("[ERROR] Failed to allocate PSRAM for MQTT meter queue (%d bytes)\n", queueStorageSize);
+            return false;
+        }
+
+        // Create FreeRTOS static queue using PSRAM buffer
+        _meterQueue = xQueueCreateStatic(MQTT_METER_QUEUE_SIZE, sizeof(PayloadMeter), _meterQueueStorage, &_meterQueueStruct);
+        if (_meterQueue == nullptr) {
+            Serial.printf("[ERROR] Failed to create MQTT meter queue\n");
+            heap_caps_free(_meterQueueStorage);
+            _meterQueueStorage = nullptr;
+            return false;
+        }
+
+        _isMeterQueueInitialized = true;
+        Serial.printf("[DEBUG] MQTT meter queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", queueStorageSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        return true;
+    }
+
     static void _mqttTask(void *parameter)
     {
         logger.debug("MQTT task started", TAG);
@@ -445,10 +445,7 @@ namespace Mqtt
         {
             vTaskDelayUntil(&xLastWakeTime, xFrequency); // TODO: is this the correct approach? Maybe more event driven?
 
-            if (!CustomWifi::isFullyConnected())
-            {
-                continue;
-            }
+            if (!CustomWifi::isFullyConnected()) continue;
 
             // Check if the debug logs have expired in duration
             if (_debugFlagsRtc.enableMqttDebugLogging && millis64() > _debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
@@ -836,9 +833,7 @@ namespace Mqtt
             loops++;
             
             // Receive from queue (non-blocking)
-            if (xQueueReceive(payloadMeterQueue, &payloadMeter, 0) != pdTRUE) {
-                break; // No more items in queue
-            }
+            if (xQueueReceive(payloadMeterQueue, &payloadMeter, 0) != pdTRUE) break; // No more items in queue
 
             if (payloadMeter.unixTimeMs == 0) {
                 logger.debug("Payload meter has zero unixTime, skipping...", TAG);
@@ -852,8 +847,8 @@ namespace Mqtt
             jsonObject["powerFactor"] = payloadMeter.powerFactor;
         }
 
-        for (int32_t i = 0; i < MULTIPLEXER_CHANNEL_COUNT; i++) {
-            if (Ade7953::isChannelActive(i)) {
+        for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
+            if (Ade7953::isChannelActive(i)  && Ade7953::hasChannelValidMeasurements(i)) {
                 JsonObject jsonObject = jsonArray.add<JsonObject>();
 
                 MeterValues meterValues;
@@ -958,13 +953,14 @@ namespace Mqtt
 
     static void _publishChannel() {
         logger.debug("Publishing channel data to MQTT", TAG);
-
-        JsonDocument _jsonChannelData;
-        Ade7953::channelDataToJson(_jsonChannelData);
         
         JsonDocument jsonDocument;
         jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        jsonDocument["data"] = _jsonChannelData;
+        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+            JsonDocument _jsonChannelData;
+            Ade7953::getChannelDataAsJson(_jsonChannelData, i);
+            jsonDocument["data"][i] = _jsonChannelData;
+        }
 
         char channelMessage[JSON_MQTT_BUFFER_SIZE];
         safeSerializeJson(jsonDocument, channelMessage, sizeof(channelMessage));
@@ -1487,5 +1483,28 @@ namespace Mqtt
         preferences.end();
 
         logger.info("Certificates for cloud services cleared", TAG);
+    }
+
+    bool isLatestFirmwareInstalled() {
+        if (strlen(_firmwareUpdatesVersion) == 0 || strchr(_firmwareUpdatesVersion, '.') == NULL) {
+            logger.debug("Latest firmware version is empty or in the wrong format", TAG);
+            return true;
+        }
+
+        int32_t latestMajor, latestMinor, latestPatch;
+        sscanf(_firmwareUpdatesVersion, "%ld.%ld.%ld", &latestMajor, &latestMinor, &latestPatch);
+
+        int32_t currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
+        int32_t currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
+        int32_t currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
+
+        if (latestMajor < currentMajor) return true; // Current major is higher (thus no need to check minor/patch)
+        if (latestMajor > currentMajor) return false; // Current major is lower (thus latest is newer)
+        if (latestMinor < currentMinor) return true; // Current minor is higher (thus no need to check patch)
+        if (latestMinor > currentMinor) return false; // Current minor is lower (thus latest is newer)
+        if (latestPatch < currentPatch) return true; // Current patch is higher
+        if (latestPatch > currentPatch) return false; // Current patch is lower (thus latest is newer)
+
+        return true; // Versions are equal
     }
 }

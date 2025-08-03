@@ -29,6 +29,7 @@ extern const char favicon_svg[] asm("_binary_resources_favicon_svg_start");
 // --------------------------------------------------
 extern const char default_config_calibration_json[] asm("_binary_config_calibration_json_start");
 
+
 // AWS IoT Core secrets
 // --------------------------------------------------
 #if HAS_SECRETS

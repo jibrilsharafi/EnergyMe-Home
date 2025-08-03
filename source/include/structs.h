@@ -178,6 +178,13 @@ struct PayloadMeter
 
   PayloadMeter() : channel(0), unixTimeMs(0), activePower(0.0f), powerFactor(0.0f) {}
 
-  PayloadMeter(uint32_t channel, uint64_t unixTimeMs, float activePower, float powerFactor)
-      : channel(channel), unixTimeMs(unixTimeMs), activePower(activePower), powerFactor(powerFactor) {}
+  PayloadMeter(
+    uint32_t channel, 
+    uint64_t unixTimeMs, 
+    float activePower, 
+    float powerFactor
+  ) : channel(channel), 
+      unixTimeMs(unixTimeMs), 
+      activePower(activePower), 
+      powerFactor(powerFactor) {}
 };

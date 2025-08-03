@@ -170,52 +170,52 @@ namespace CustomServer
 
         // CSS files
         server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/css", styles_css); });
+                  { request->send(HTTP_CODE_OK, "text/css", styles_css); });
 
         server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/css", button_css); });
+                  { request->send(HTTP_CODE_OK, "text/css", button_css); });
 
         server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/css", section_css); });
+                  { request->send(HTTP_CODE_OK, "text/css", section_css); });
 
         server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/css", typography_css); });
+                  { request->send(HTTP_CODE_OK, "text/css", typography_css); });
 
         // Resources
         server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "image/svg+xml", favicon_svg); });
+                  { request->send(HTTP_CODE_OK, "image/svg+xml", favicon_svg); });
 
         // === AUTHENTICATED PAGES ===
 
         // Main dashboard
         server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/html", index_html); });
+                  { request->send(HTTP_CODE_OK, "text/html", index_html); });
 
         // Configuration pages
         server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/html", configuration_html); });
+                  { request->send(HTTP_CODE_OK, "text/html", configuration_html); });
 
         server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/html", calibration_html); });
+                  { request->send(HTTP_CODE_OK, "text/html", calibration_html); });
 
         server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/html", channel_html); });
+                  { request->send(HTTP_CODE_OK, "text/html", channel_html); });
 
         server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/html", info_html); });
+                  { request->send(HTTP_CODE_OK, "text/html", info_html); });
 
         server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/html", log_html); });
+                  { request->send(HTTP_CODE_OK, "text/html", log_html); });
 
         server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/html", update_html); });
+                  { request->send(HTTP_CODE_OK, "text/html", update_html); });
 
         // Swagger UI
         server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/html", swagger_ui_html); });
+                  { request->send(HTTP_CODE_OK, "text/html", swagger_ui_html); });
 
         server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(200, "text/yaml", swagger_yaml); });
+                  { request->send(HTTP_CODE_OK, "text/yaml", swagger_yaml); });
     }
 
     void updateAuthPassword()
@@ -562,7 +562,7 @@ namespace CustomServer
         // Log progress periodically
         static size_t lastProgressIndex = 0;
         if (index >= lastProgressIndex + SIZE_REPORT_UPDATE_OTA || index == 0) {
-            float progress = (float)Update.progress() / Update.size() * 100.0;
+            float progress = Update.size() > 0 ? (float)Update.progress() / Update.size() * 100.0 : 0.0;
             logger.debug("OTA progress: %.1f%% (%zu / %zu bytes)", TAG, progress, Update.progress(), Update.size());
             lastProgressIndex = index;
         }
@@ -965,7 +965,8 @@ namespace CustomServer
 
         // Wait for response with timeout
         uint64_t startTime = millis64();
-        while (client.connected() && (millis64() - startTime) < HEALTH_CHECK_TIMEOUT_MS)
+        uint32_t loops = 0;
+        while (client.connected() && (millis64() - startTime) < HEALTH_CHECK_TIMEOUT_MS && loops < MAX_LOOP_ITERATIONS)
         {
             if (client.available())
             {
@@ -980,7 +981,7 @@ namespace CustomServer
                     int32_t statusCode = atoi(statusStr);
                     client.stop();
 
-                    if (statusCode == 200)
+                    if (statusCode == HTTP_CODE_OK)
                     {
                         return true;
                     }
@@ -1309,7 +1310,7 @@ namespace CustomServer
 //         JsonDocument doc;
 //         _ade7953.fullMeterValuesToJson(doc);
 //         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
+//         request->send(HTTP_CODE_OK, "application/json", buffer);
 //     });
 
 //     _server.on("/rest/meter-single", HTTP_GET, [this](AsyncWebServerRequest *request) {

@@ -111,11 +111,11 @@ namespace CrashMonitor
 
     void _handleCounters() {
         if (_consecutiveCrashCount >= MAX_CRASH_COUNT || _consecutiveResetCount >= MAX_RESET_COUNT) {
-            logger.fatal("The consecutive crash count limit (%d) or the reset count limit (%d) has been reached", TAG, MAX_CRASH_COUNT, MAX_RESET_COUNT);
+            logger.error("The consecutive crash count limit (%d) or the reset count limit (%d) has been reached", TAG, MAX_CRASH_COUNT, MAX_RESET_COUNT);
 
             // If we can rollback, but most importantly, if we have not tried it yet (to avoid infinite rollback loops - IT CAN HAPPEN!)
             if (Update.canRollBack() && !_rollbackTried) {
-                logger.fatal("Rolling back to previous firmware version", TAG);
+                logger.warning("Rolling back to previous firmware version", TAG);
                 if (Update.rollBack()) {
                     // Reset both counters before restart since we're trying a different firmware
                     _consecutiveCrashCount = 0;
@@ -140,7 +140,7 @@ namespace CrashMonitor
         // Check if a core dump image exists
         esp_err_t image_check = esp_core_dump_image_check();
         if (image_check != ESP_OK) {
-            logger.debug("No core dump found (error: %d)", TAG, image_check);
+            logger.debug("No core dump found (esp_err: %s)", TAG, esp_err_to_name(image_check));
             return;
         }
 

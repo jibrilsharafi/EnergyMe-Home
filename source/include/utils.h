@@ -60,10 +60,6 @@ inline uint64_t millis64() {
     return esp_timer_get_time() / 1000ULL;
 }
 
-inline uint64_t micros64() {
-    return esp_timer_get_time();
-}
-
 // Validation utilities
 inline bool isChannelValid(uint32_t channel) {
     return channel >= 0 && channel < CHANNEL_COUNT;
@@ -102,16 +98,6 @@ void setRestartSystem(const char* functionName, const char* reason, bool factory
 
 // JSON utilities
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
-
-// File system management (SPIFFS legacy support)
-bool deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument);
-bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument);
-void createEmptyJsonFile(const char* path);
-std::vector<const char*> checkMissingFiles();
-void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles);
-bool checkAllFiles();
-void createDefaultCalibrationFile();
-void createDefaultDailyEnergyFile();
 
 // Preferences management
 void clearAllPreferences();

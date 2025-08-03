@@ -81,21 +81,6 @@ void setup()
   CrashMonitor::begin();
   logger.info("Crash monitor setup done", TAG);
 
-  logger.debug("Checking for missing files...", TAG); // TODO: deprecate this
-  auto missingFiles = checkMissingFiles();
-  if (missingFiles.empty())
-  {
-    logger.info("No missing files detected", TAG);
-  }
-  else
-  {
-    Led::setOrange(Led::PRIO_MEDIUM);
-    logger.info("Missing files detected (first setup? Welcome to EnergyMe - Home!!!). Creating default files for missing files...", TAG);
-    createDefaultFilesForMissingFiles(missingFiles);
-
-    logger.info("Default files created for missing files", TAG);
-  }
-
   Led::setPurple(Led::PRIO_NORMAL);
   logger.debug("Setting up multiplexer...", TAG);
   Multiplexer::begin(
@@ -117,8 +102,11 @@ void setup()
       ADE7953_MOSI_PIN,
       ADE7953_RESET_PIN,
       ADE7953_INTERRUPT_PIN)
-    ) { logger.info("ADE7953 setup done", TAG); }
-  else { logger.fatal("ADE7953 initialization failed! This is a big issue mate..", TAG); }
+    ) {
+      logger.info("ADE7953 setup done", TAG);
+  } else {
+      logger.error("ADE7953 initialization failed! This is a big issue mate..", TAG);
+  }
 
   Led::setBlue(Led::PRIO_NORMAL);
   logger.debug("Setting up WiFi...", TAG);

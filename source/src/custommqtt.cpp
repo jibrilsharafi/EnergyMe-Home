@@ -95,10 +95,8 @@ namespace CustomMqtt
         config = _customMqttConfiguration;
     }
 
-    bool setConfiguration(CustomMqttConfiguration &config)
+    bool setConfiguration(const CustomMqttConfiguration &config)
     {
-        logger.debug("Setting Custom MQTT configuration...", TAG);
-        
         if (!_isSetupDone) begin();
 
         // Acquire mutex with timeout
@@ -185,7 +183,7 @@ namespace CustomMqtt
 
         if (!_validateJsonConfiguration(jsonDocument, partial))
         {
-            logger.error("Invalid JSON configuration", TAG);
+            logger.warning("Invalid JSON configuration", TAG);
             return false;
         }
 
@@ -486,8 +484,6 @@ namespace CustomMqtt
 
     static void _publishMeter()
     {
-        logger.debug("Publishing meter data to Custom MQTT...", TAG);
-
         JsonDocument jsonDocument;
         Ade7953::fullMeterValuesToJson(jsonDocument);
 

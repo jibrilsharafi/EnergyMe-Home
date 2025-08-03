@@ -49,12 +49,14 @@ namespace CustomTime {
     void resetToDefaults();
     // This function is called frequently from other functions, ensuring that we check and sync time if needed
     bool isTimeSynched();
+    bool isNowCloseToHour(uint64_t toleranceMillis = 60000);
     void setOffset(int32_t gmtOffset, int32_t dstOffset);
 
     uint64_t getUnixTime();
     uint64_t getUnixTimeMilliseconds();
     void getTimestamp(char* buffer, size_t bufferSize);
     void getTimestampIso(char* buffer, size_t bufferSize);
+    void getTimestampIsoRoundedToHour(char* buffer, size_t bufferSize);
     void getDate(char* buffer, size_t bufferSize);
     void getDateIso(char* buffer, size_t bufferSize);
 
