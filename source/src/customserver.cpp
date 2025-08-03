@@ -57,6 +57,7 @@ namespace CustomServer
     static void _serveHealthEndpoints();
     static void _serveAuthEndpoints();
     static void _serveOtaEndpoints();
+    static void _serveAde7953Endpoints();
     static void _serveCustomMqttEndpoints();
     static void _serveInfluxDbEndpoints();
     static void _serveCrashEndpoints();
@@ -533,6 +534,7 @@ namespace CustomServer
         _serveHealthEndpoints();
         _serveAuthEndpoints();
         _serveOtaEndpoints();
+        _serveAde7953Endpoints();
         _serveCustomMqttEndpoints();
         _serveInfluxDbEndpoints();
         _serveCrashEndpoints();
@@ -1088,6 +1090,294 @@ namespace CustomServer
             logger.info("Logs cleared via API", TAG);
         });
     }
+
+    // === ADE7953 ENDPOINTS ===
+    static void _serveAde7953Endpoints() {
+        // === CONFIGURATION ENDPOINTS ===
+        
+        // Get ADE7953 configuration
+        server.on("/api/v1/ade7953/config", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            Ade7953::getConfigurationAsJson(doc);
+            
+            _sendJsonResponse(request, doc);
+        });
+
+        // Set ADE7953 configuration (PUT/PATCH)
+        static AsyncCallbackJsonWebHandler *setAde7953ConfigHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ade7953/config",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                bool isPartialUpdate = _isPartialUpdate(request);
+                if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_CONFIG)) return;
+
+                JsonDocument doc;
+                doc.set(json);
+
+                if (Ade7953::setConfigurationFromJson(doc, isPartialUpdate))
+                {
+                    logger.info("ADE7953 configuration %s via API", TAG, isPartialUpdate ? "partially updated" : "updated");
+                    _sendSuccessResponse(request, "ADE7953 configuration updated successfully");
+                }
+                else
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid ADE7953 configuration");
+                }
+            });
+        server.addHandler(setAde7953ConfigHandler);
+
+        // Reset ADE7953 configuration
+        server.on("/api/v1/ade7953/config/reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            Ade7953::resetConfiguration();
+            _sendSuccessResponse(request, "ADE7953 configuration reset successfully");
+        });
+
+        // === SAMPLE TIME ENDPOINTS ===
+        
+        // Get sample time
+        server.on("/api/v1/ade7953/sample-time", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            doc["sampleTime"] = Ade7953::getSampleTime();
+            
+            _sendJsonResponse(request, doc);
+        });
+
+        // Set sample time
+        static AsyncCallbackJsonWebHandler *setSampleTimeHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ade7953/sample-time",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_SAMPLE_TIME)) return;
+
+                JsonDocument doc;
+                doc.set(json);
+
+                if (!doc["sampleTime"].is<uint32_t>()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "sampleTime field must be a positive integer");
+                    return;
+                }
+
+                uint32_t sampleTime = doc["sampleTime"].as<uint32_t>();
+
+                if (Ade7953::setSampleTime(sampleTime))
+                {
+                    logger.info("ADE7953 sample time updated to %lu ms via API", TAG, sampleTime);
+                    _sendSuccessResponse(request, "ADE7953 sample time updated successfully");
+                }
+                else
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid sample time value");
+                }
+            });
+        server.addHandler(setSampleTimeHandler);
+
+        // === CHANNEL DATA ENDPOINTS ===
+        
+        // Get single channel data
+        server.on("/api/v1/ade7953/channel", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!request->hasParam("index")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing channel index parameter");
+                return;
+            }
+
+            uint32_t channelIndex = request->getParam("index")->value().toInt();
+            
+            JsonDocument doc;
+            Ade7953::getChannelDataAsJson(doc, channelIndex);
+            
+            _sendJsonResponse(request, doc);
+        });
+
+        // Set single channel data (PUT/PATCH)
+        static AsyncCallbackJsonWebHandler *setChannelDataHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ade7953/channel",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                bool isPartialUpdate = _isPartialUpdate(request);
+                if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA)) return;
+
+                JsonDocument doc;
+                doc.set(json);
+
+                if (Ade7953::setChannelDataFromJson(doc, isPartialUpdate))
+                {
+                    uint32_t channelIndex = doc["index"].as<uint32_t>();
+                    logger.info("ADE7953 channel %lu data %s via API", TAG, channelIndex, isPartialUpdate ? "partially updated" : "updated");
+                    _sendSuccessResponse(request, "ADE7953 channel data updated successfully");
+                }
+                else
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid ADE7953 channel data");
+                }
+            });
+        server.addHandler(setChannelDataHandler);
+
+        // Reset single channel data
+        server.on("/api/v1/ade7953/channel/reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+            
+            if (!request->hasParam("index")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing channel index parameter");
+                return;
+            }
+
+            uint32_t channelIndex = request->getParam("index")->value().toInt();
+            Ade7953::resetChannelData(channelIndex);
+            
+            logger.info("ADE7953 channel %lu data reset via API", TAG, channelIndex);
+            _sendSuccessResponse(request, "ADE7953 channel data reset successfully");
+        });
+
+        // === REGISTER ENDPOINTS ===
+        
+        // Read single register
+        server.on("/api/v1/ade7953/register", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!request->hasParam("address")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing register address parameter");
+                return;
+            }
+            
+            if (!request->hasParam("bits")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing register bits parameter");
+                return;
+            }
+
+            int32_t address = request->getParam("address")->value().toInt();
+            int32_t bits = request->getParam("bits")->value().toInt();
+            bool signedData = request->hasParam("signed") ? request->getParam("signed")->value().equals("true") : false;
+
+            int32_t value = Ade7953::readRegister(address, bits, signedData);
+            
+            JsonDocument doc;
+            doc["address"] = address;
+            doc["bits"] = bits;
+            doc["signed"] = signedData;
+            doc["value"] = value;
+            
+            _sendJsonResponse(request, doc);
+        });
+
+        // Write single register
+        static AsyncCallbackJsonWebHandler *writeRegisterHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ade7953/register",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_REGISTER)) return;
+
+                JsonDocument doc;
+                doc.set(json);
+
+                if (!doc["address"].is<int32_t>() || !doc["bits"].is<int32_t>() || !doc["value"].is<int32_t>()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "address, bits, and value fields must be integers");
+                    return;
+                }
+
+                int32_t address = doc["address"].as<int32_t>();
+                int32_t bits = doc["bits"].as<int32_t>();
+                int32_t value = doc["value"].as<int32_t>();
+
+                Ade7953::writeRegister(address, bits, value);
+                
+                logger.info("ADE7953 register 0x%X (%d bits) written with value 0x%X via API", TAG, address, bits, value);
+                _sendSuccessResponse(request, "ADE7953 register written successfully");
+            });
+        server.addHandler(writeRegisterHandler);
+
+        // === METER VALUES ENDPOINTS ===
+        
+        // Get all meter values
+        server.on("/api/v1/ade7953/meter-values", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            Ade7953::fullMeterValuesToJson(doc);
+            
+            if (!doc.isNull()) _sendJsonResponse(request, doc);
+            else _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No meter values available");
+        });
+
+        // Get single channel meter values
+        server.on("/api/v1/ade7953/meter-values/channel", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!request->hasParam("index")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing channel index parameter");
+                return;
+            }
+
+            uint32_t channelIndex = request->getParam("index")->value().toInt();
+            
+            JsonDocument doc;
+            Ade7953::singleMeterValuesToJson(doc, channelIndex);
+
+            if (!doc.isNull()) _sendJsonResponse(request, doc);
+            else _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No meter values available");
+        });
+
+        // === GRID FREQUENCY ENDPOINT ===
+        
+        // Get grid frequency
+        server.on("/api/v1/ade7953/grid-frequency", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            doc["gridFrequency"] = Ade7953::getGridFrequency();
+            
+            _sendJsonResponse(request, doc);
+        });
+
+        // === ENERGY VALUES ENDPOINTS ===
+        
+        // Reset all energy values
+        server.on("/api/v1/ade7953/energy/reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            Ade7953::resetEnergyValues();
+            logger.info("ADE7953 energy values reset via API", TAG);
+            _sendSuccessResponse(request, "ADE7953 energy values reset successfully");
+        });
+
+        // Set energy values for a specific channel
+        static AsyncCallbackJsonWebHandler *setEnergyValuesHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ade7953/energy",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_ENERGY)) return;
+
+                JsonDocument doc;
+                doc.set(json);
+
+                if (!doc["channel"].is<uint32_t>()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "channel field must be a positive integer");
+                    return;
+                }
+
+                uint32_t channel = doc["channel"].as<uint32_t>();
+                float activeEnergyImported = doc["activeEnergyImported"].as<float>();
+                float activeEnergyExported = doc["activeEnergyExported"].as<float>();
+                float reactiveEnergyImported = doc["reactiveEnergyImported"].as<float>();
+                float reactiveEnergyExported = doc["reactiveEnergyExported"].as<float>();
+                float apparentEnergy = doc["apparentEnergy"].as<float>();
+
+                if (Ade7953::setEnergyValues(channel, activeEnergyImported, activeEnergyExported, 
+                                           reactiveEnergyImported, reactiveEnergyExported, apparentEnergy))
+                {
+                    logger.info("ADE7953 energy values set for channel %lu via API", TAG, channel);
+                    _sendSuccessResponse(request, "ADE7953 energy values updated successfully");
+                }
+                else
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid energy values or channel");
+                }
+            });
+        server.addHandler(setEnergyValuesHandler);
+    }
     
     // === CUSTOM MQTT ENDPOINTS ===
     static void _serveCustomMqttEndpoints()
@@ -1318,346 +1608,7 @@ namespace CustomServer
         server.addHandler(setLedBrightnessHandler);
     }
 }
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         _ade7953.fullMeterValuesToJson(doc);
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(HTTP_CODE_OK, "application/json", buffer);
-//     });
 
-//     _server.on("/rest/meter-single", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         if (request->hasParam("index")) {
-//             int32_t indexInt = request->getParam("index")->value().toInt();
-
-//             if (indexInt >= 0 && indexInt < CHANNEL_COUNT) {
-//                 ChannelNumber channel = static_cast<ChannelNumber>(indexInt);
-//                 if (_ade7953.channelData[channel].active) {
-//                     static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//                     JsonDocument doc;
-//                     _ade7953.singleMeterValuesToJson(doc, channel);
-//                     safeSerializeJson(doc, buffer, sizeof(buffer));
-//                     request->send(200, "application/json", buffer);
-//                 } else {
-//                     request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Channel not active\"}");
-//                 }
-//             } else {
-//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Channel index out of range\"}");
-//             }
-//         } else {
-//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing index parameter\"}");
-//         }
-//     });
-
-//     _server.on("/rest/active-power", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         if (request->hasParam("index")) {
-//             int32_t indexInt = request->getParam("index")->value().toInt();
-
-//             if (indexInt >= 0 && indexInt <= MULTIPLEXER_CHANNEL_COUNT) {
-//                 if (_ade7953.channelData[indexInt].active) {
-//                     static char response[JSON_RESPONSE_BUFFER_SIZE];
-//                     snprintf(response, sizeof(response), "{\"value\":%.6f}", _ade7953.meterValues[indexInt].activePower);
-//                     request->send(200, "application/json", response);
-//                 } else {
-//                     request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Channel not active\"}");
-//                 }
-//             } else {
-//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Channel index out of range\"}");
-//             }
-//         } else {
-//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing index parameter\"}");
-//         }
-//     });
-
-//     _server.on("/rest/get-channel", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         _ade7953.channelDataToJson(doc);
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     _server.on("/rest/get-energy", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
-//             if (_ade7953.channelData[i].active) {
-//                 doc[i]["activeEnergyImported"] = _ade7953.meterValues[i].activeEnergyImported;
-//                 doc[i]["activeEnergyExported"] = _ade7953.meterValues[i].activeEnergyExported;
-//                 doc[i]["reactiveEnergyImported"] = _ade7953.meterValues[i].reactiveEnergyImported;
-//                 doc[i]["reactiveEnergyExported"] = _ade7953.meterValues[i].reactiveEnergyExported;
-//                 doc[i]["apparentEnergy"] = _ade7953.meterValues[i].apparentEnergy;
-//             }
-//         }
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     // Serve JSON configuration files
-//     _server.on("/rest/get-ade7953-configuration", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         request->send(SPIFFS, CONFIGURATION_ADE7953_JSON_PATH, "application/json");
-//     });
-
-//     _server.on("/rest/get-calibration", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         request->send(SPIFFS, CALIBRATION_JSON_PATH, "application/json");
-//     });
-
-//     _server.on("/rest/get-general-configuration", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         generalConfigurationToJson(generalConfiguration, doc);
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     _server.on("/rest/get-has-secrets", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         doc["has_secrets"] = HAS_SECRETS ? true : false;
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     _server.on("/rest/get-log-level", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         doc["print"] = _logger.logLevelToString(_logger.getPrintLevel());
-//         doc["save"] = _logger.logLevelToString(_logger.getSaveLevel());
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     _server.on("/rest/get-statistics", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         statisticsToJson(statistics, doc);
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     _server.on("/rest/get-button-operation", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         const char* operationName = _buttonHandler.getCurrentOperationName();
-//         uint32_t operationTimestamp = _buttonHandler.getCurrentOperationTimestamp();
-
-//         static char response[JSON_RESPONSE_BUFFER_SIZE];
-
-//         if (operationTimestamp > 0) {
-//             char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-//             CustomTime::timestampFromUnix(operationTimestamp, timestampBuffer);
-//             snprintf(response, sizeof(response), "{\"operationName\":\"%s\",\"operationTimestamp\":%lu,\"operationTimestampFormatted\":\"%s\"}",
-//                 operationName, operationTimestamp, timestampBuffer);
-//         } else {
-//             snprintf(response, sizeof(response), "{\"operationName\":\"%s\",\"operationTimestamp\":%lu}",
-//                 operationName, operationTimestamp);
-//         }
-
-//         request->send(200, "application/json", response);
-//     });
-// }
-
-// void CustomServer::_setupPostApi() {
-//     // Refactored: Use dedicated JSON handlers for each POST endpoint
-//     _setChannelHandler = new AsyncCallbackJsonWebHandler("/rest/set-channel", [this](AsyncWebServerRequest* request, JsonVariant& json) {
-//         // Rate limiting
-//         uint32_t currentTime = millis64();
-//         if (currentTime - _lastChannelUpdateTime < API_UPDATE_THROTTLE_MS) {
-//             request->send(429, "application/json", "{\"error\":\"Rate limited\"}");
-//             return;
-//         }
-
-//         if (!_acquireMutex(_channelMutex, "channel", pdMS_TO_TICKS(2000))) {
-//             request->send(409, "application/json", "{\"error\":\"Resource locked\"}");
-//             return;
-//         }
-
-//         // Validate that channel 0 is not being disabled
-//         JsonDocument doc;
-//         doc.set(json);
-//         for (JsonPair kv : doc.as<JsonObject>()) {
-//             int32_t channelIndex = atoi(kv.key().c_str());
-//             if (channelIndex == 0 && !kv.value()["active"].as<bool>()) {
-//                 _releaseMutex(_channelMutex, "channel");
-//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"error\":\"Channel 0 cannot be disabled\"}");
-//                 return;
-//             }
-//         }
-
-//         _lastChannelUpdateTime = currentTime;
-//         bool success = _ade7953.setChannelData(doc);
-//         _releaseMutex(_channelMutex, "channel");
-//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
-//     });
-//     _setChannelHandler->setMethod(HTTP_POST);
-//     _setChannelHandler->addMiddleware(&_apiRateLimitMiddleware);
-//     _server.addHandler(_setChannelHandler);
-
-//     _setGeneralConfigHandler = new AsyncCallbackJsonWebHandler("/rest/set-general-configuration", [this](AsyncWebServerRequest* request, JsonVariant& json) {
-//         // Rate limiting
-//         uint32_t currentTime = millis64();
-//         if (currentTime - _lastConfigUpdateTime < API_UPDATE_THROTTLE_MS) {
-//             request->send(429, "application/json", "{\"error\":\"Rate limited\"}");
-//             return;
-//         }
-
-//         if (!_acquireMutex(_configurationMutex, "configuration", pdMS_TO_TICKS(2000))) {
-//             request->send(409, "application/json", "{\"error\":\"Resource locked\"}");
-//             return;
-//         }
-
-//         JsonDocument doc;
-//         doc.set(json);
-//         // Force sendPowerData to existing value (not settable by API)
-//         if (doc["sendPowerData"].is<bool>()) doc["sendPowerData"] = generalConfiguration.sendPowerData;
-
-//         _lastConfigUpdateTime = currentTime;
-//         bool success = setGeneralConfiguration(doc);
-//         _releaseMutex(_configurationMutex, "configuration");
-//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
-//     });
-//     _setGeneralConfigHandler->setMethod(HTTP_POST);
-//     _setGeneralConfigHandler->addMiddleware(&_apiRateLimitMiddleware);
-//     _server.addHandler(_setGeneralConfigHandler);
-
-//     // Add other POST handlers
-//     _setCalibrationHandler = new AsyncCallbackJsonWebHandler("/rest/set-calibration", [this](AsyncWebServerRequest* request, JsonVariant& json) {
-//         JsonDocument doc;
-//         doc.set(json);
-//         bool success = _ade7953.setCalibrationValues(doc);
-//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
-//     });
-//     _setCalibrationHandler->setMethod(HTTP_POST);
-//     _server.addHandler(_setCalibrationHandler);
-
-//     _setAdeConfigHandler = new AsyncCallbackJsonWebHandler("/rest/set-ade7953-configuration", [this](AsyncWebServerRequest* request, JsonVariant& json) {
-//         JsonDocument doc;
-//         doc.set(json);
-//         bool success = _ade7953.setConfiguration(doc);
-//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
-//     });
-//     _setAdeConfigHandler->setMethod(HTTP_POST);
-//     _server.addHandler(_setAdeConfigHandler);
-
-//     _setEnergyHandler = new AsyncCallbackJsonWebHandler("/rest/set-energy", [this](AsyncWebServerRequest* request, JsonVariant& json) {
-//         JsonDocument doc;
-//         doc.set(json);
-//         bool success = _ade7953.setEnergyValues(doc);
-//         request->send(success ? 200 : HTTP_CODE_BAD_REQUEST, "application/json", success ? "{\"message\":\"OK\"}" : "{\"error\":\"Invalid data\"}");
-//     });
-//     _setEnergyHandler->setMethod(HTTP_POST);
-//     _server.addHandler(_setEnergyHandler);
-
-//     _uploadFileHandler = new AsyncCallbackJsonWebHandler("/rest/upload-file", [this](AsyncWebServerRequest* request, JsonVariant& json) {
-//         JsonDocument doc;
-//         doc.set(json);
-//         if (doc["filename"] && doc["data"]) {
-//             const char* filename = doc["filename"];
-//             const char* data = doc["data"];
-
-//             File file = SPIFFS.open(filename, FILE_WRITE);
-//             if (file) {
-//                 file.print(data);
-//                 file.close();
-//                 request->send(200, "application/json", "{\"message\":\"File uploaded\"}");
-//             } else {
-//                 request->send(500, "application/json", "{\"message\":\"Failed to open file\"}");
-//             }
-//         } else {
-//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing filename or data\"}");
-//         }
-//     });
-//     _uploadFileHandler->setMethod(HTTP_POST);
-//     _server.addHandler(_uploadFileHandler);
-
-//     // Non-JSON POST endpoints
-//     _server.on("/rest/restart", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         request->send(200, "application/json", "{\"message\":\"Restarting...\"}");
-//         setRestartEsp32(TAG, "Restart requested from API");
-//     });
-
-//     _server.on("/rest/reset-wifi", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         request->send(200, "application/json", "{\"message\":\"Erasing WiFi credentials and restarting...\"}");
-//         _customWifi.resetWifi();
-//     });
-
-//     _server.on("/rest/factory-reset", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         request->send(200, "application/json", "{\"message\":\"Factory reset in progress.\"}");
-//         factoryReset();
-//     });
-
-//     _server.on("/rest/clear-log", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         _logger.clearLog();
-//         request->send(200, "application/json", "{\"message\":\"Log cleared\"}");
-//     });
-
-//     _server.on("/rest/calibration-reset", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         _ade7953.setDefaultCalibrationValues();
-//         _ade7953.setDefaultChannelData();
-//         request->send(200, "application/json", "{\"message\":\"Calibration values reset\"}");
-//     });
-
-//     _server.on("/rest/reset-energy", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         _ade7953.resetEnergyValues();
-//         request->send(200, "application/json", "{\"message\":\"Energy counters reset\"}");
-//     });
-
-//     _server.on("/rest/clear-button-operation", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         _buttonHandler.clearCurrentOperationName();
-//         request->send(200, "application/json", "{\"message\":\"Button operation history cleared\"}");
-//     });
-
-//     _server.on("/rest/set-log-level", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         if (request->hasParam("level") && request->hasParam("type")) {
-//             int32_t level = request->getParam("level")->value().toInt();
-//             const char* type = request->getParam("type")->value().c_str();
-//             if (strcmp(type, "print") == 0) {
-//                 _logger.setPrintLevel(LogLevel(level));
-//             } else if (strcmp(type, "save") == 0) {
-//                 _logger.setSaveLevel(LogLevel(level));
-//             } else {
-//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Invalid type parameter\"}");
-//                 return;
-//             }
-//             request->send(200, "application/json", "{\"message\":\"Success\"}");
-//         } else {
-//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing parameter\"}");
-//         }
-//     });
-
-//     // ADE7953 register access endpoints
-//     _server.on("/rest/ade7953-read-register", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         if (request->hasParam("address") && request->hasParam("nBits") && request->hasParam("signed")) {
-//             int32_t address = request->getParam("address")->value().toInt();
-//             int32_t nBits = request->getParam("nBits")->value().toInt();
-//             bool signedVal = request->getParam("signed")->value().equalsIgnoreCase("true");
-
-//             if ((nBits == 8 || nBits == 16 || nBits == 24 || nBits == 32) && address >= 0 && address <= 0x3FF) {
-//                 int32_t registerValue = _ade7953.readRegister(address, nBits, signedVal);
-//                 static char response[JSON_RESPONSE_BUFFER_SIZE];
-//                 snprintf(response, sizeof(response), "{\"value\":%ld}", registerValue);
-//                 request->send(200, "application/json", response);
-//             } else {
-//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Invalid parameters\"}");
-//             }
-//         } else {
-//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing parameters\"}");
-//         }
-//     });
-
-//     _server.on("/rest/ade7953-write-register", HTTP_POST, [this](AsyncWebServerRequest *request) {
-//         if (request->hasParam("address") && request->hasParam("nBits") && request->hasParam("data")) {
-//             int32_t address = request->getParam("address")->value().toInt();
-//             int32_t nBits = request->getParam("nBits")->value().toInt();
-//             int32_t data = request->getParam("data")->value().toInt();
-
-//             if ((nBits == 8 || nBits == 16 || nBits == 24 || nBits == 32) && address >= 0 && address <= 0x3FF) {
-//                 _ade7953.writeRegister(address, nBits, data);
-//                 request->send(200, "application/json", "{\"message\":\"Success\"}");
-//             } else {
-//                 request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Invalid parameters\"}");
-//             }
-//         } else {
-//             request->send(HTTP_CODE_BAD_REQUEST, "application/json", "{\"message\":\"Missing parameters\"}");
-//         }
-//     });
 
 //     // File operations
 //     _server.on("/rest/list-files", HTTP_GET, [this](AsyncWebServerRequest *request) {
@@ -1703,10 +1654,6 @@ namespace CustomServer
 //         request->send(SPIFFS, FW_UPDATE_INFO_JSON_PATH, "application/json");
 //     });
 
-//     _server.on("/rest/firmware-update-status", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         request->send(SPIFFS, FW_UPDATE_STATUS_JSON_PATH, "application/json");
-//     });
-
 //     _server.on("/rest/is-latest-firmware-installed", HTTP_GET, [this](AsyncWebServerRequest *request) {
 //         if (isLatestFirmwareInstalled()) {
 //             request->send(200, "application/json", "{\"latest\":true}");
@@ -1714,43 +1661,3 @@ namespace CustomServer
 //             request->send(200, "application/json", "{\"latest\":false}");
 //         }
 //     });
-
-//     _server.on("/rest/get-current-monitor-data", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         if (!CrashMonitor::getJsonReport(doc, crashData)) {
-//             request->send(500, "application/json", "{\"message\":\"Error getting monitoring data\"}");
-//             return;
-//         }
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     _server.on("/rest/get-crash-data", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         if (!CrashMonitor::checkIfCrashDataExists()) {
-//             request->send(404, "application/json", "{\"message\":\"No crash data available\"}");
-//             return;
-//         }
-
-//         CrashData crashData;
-//         if (!CrashMonitor::getSavedCrashData(crashData)) {
-//             request->send(500, "application/json", "{\"message\":\"Could not get crash data\"}");
-//             return;
-//         }
-
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         if (!CrashMonitor::getJsonReport(doc, crashData)) {
-//             request->send(500, "application/json", "{\"message\":\"Could not create JSON report\"}");
-//             return;
-//         }
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     // Static file serving
-//     _server.serveStatic("/api-docs", SPIFFS, "/swagger-ui.html");
-//     _server.serveStatic("/swagger.yaml", SPIFFS, "/swagger.yaml");
-//     _server.serveStatic("/log-raw", SPIFFS, LOG_PATH);
-//     _server.serveStatic("/daily-energy", SPIFFS, DAILY_ENERGY_JSON_PATH);
-// }

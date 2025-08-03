@@ -234,6 +234,14 @@ enum class Ade7953Channel{
     B,
 };
 
+inline const char* ADE7953_CHANNEL_TO_STRING(Ade7953Channel channel) {
+    switch (channel) {
+        case Ade7953Channel::A: return "A";
+        case Ade7953Channel::B: return "B";
+        default: return "Unknown";
+    }
+}
+
 // We don't have an enum for 17 channels since having them as unsigned int is more flexible
 
 enum class MeasurementType{
@@ -244,6 +252,18 @@ enum class MeasurementType{
     APPARENT_POWER,
     POWER_FACTOR,
 };
+
+inline const char* MEASUREMENT_TYPE_TO_STRING(MeasurementType type) {
+    switch (type) {
+        case MeasurementType::VOLTAGE: return "Voltage";
+        case MeasurementType::CURRENT: return "Current";
+        case MeasurementType::ACTIVE_POWER: return "Active Power";
+        case MeasurementType::REACTIVE_POWER: return "Reactive Power";
+        case MeasurementType::APPARENT_POWER: return "Apparent Power";
+        case MeasurementType::POWER_FACTOR: return "Power Factor";
+        default: return "Unknown";
+    }
+}
 
 /*
  * Struct to hold the real-time meter values for a specific channel
@@ -420,9 +440,9 @@ namespace Ade7953
 
     // Configuration management - JSON operations
     void getConfigurationAsJson(JsonDocument &jsonDocument);
-    bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial = false);
-    void configurationToJson(Ade7953Configuration &config, JsonDocument &jsonDocument);
-    bool configurationFromJson(JsonDocument &jsonDocument, Ade7953Configuration &config, bool partial = false);
+    bool setConfigurationFromJson(const JsonDocument &jsonDocument, bool partial = false);
+    void configurationToJson(const Ade7953Configuration &config, JsonDocument &jsonDocument);
+    bool configurationFromJson(const JsonDocument &jsonDocument, Ade7953Configuration &config, bool partial = false);
 
     // Sample time management
     uint32_t getSampleTime();
@@ -438,9 +458,9 @@ namespace Ade7953
 
     // Channel data management - JSON operations
     void getChannelDataAsJson(JsonDocument &jsonDocument, uint32_t channelIndex);
-    bool setChannelDataFromJson(JsonDocument &jsonDocument, bool partial = false);
-    void channelDataToJson(ChannelData &channelData, JsonDocument &jsonDocument);
-    bool channelDataFromJson(JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);
+    bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial = false);
+    void channelDataToJson(const ChannelData &channelData, JsonDocument &jsonDocument);
+    bool channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);
 
     // Energy data management
     void resetEnergyValues();

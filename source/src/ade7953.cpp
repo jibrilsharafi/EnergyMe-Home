@@ -99,13 +99,13 @@ namespace Ade7953
     static void _setConfigurationFromPreferences();
     static void _saveConfigurationToPreferences();
     static void _applyConfiguration(const Ade7953Configuration &config); // Apply all the single register values from the configuration
-    static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial = false);
+    static bool _validateJsonConfiguration(const JsonDocument &jsonDocument, bool partial = false);
 
     // Channel data management
     static void _setChannelDataFromPreferences(uint32_t channelIndex);
     static bool _saveChannelDataToPreferences(uint32_t channelIndex);
     static void _updateChannelData(uint32_t channelIndex);
-    static bool _validateChannelDataJson(JsonDocument &jsonDocument, bool partial = false);
+    static bool _validateChannelDataJson(const JsonDocument &jsonDocument, bool partial = false);
     static void _calculateLsbValues(CtSpecification &ctSpec);
 
     // Energy data management
@@ -121,10 +121,10 @@ namespace Ade7953
 
     // ADE7953 register writing functions
     static void _setLinecyc(uint32_t linecyc);
-    static void _setPgaGain(int32_t pgaGain, Ade7953Channel channel, MeasurementType measurementType);
-    static void _setPhaseCalibration(int32_t phaseCalibration, Ade7953Channel channel);
-    static void _setGain(int32_t gain, Ade7953Channel channel, MeasurementType measurementType);
-    static void _setOffset(int32_t offset, Ade7953Channel channel, MeasurementType measurementType);
+    static void _setPgaGain(int32_t pgaGain, Ade7953Channel ade7953Channel, MeasurementType measurementType);
+    static void _setPhaseCalibration(int32_t phaseCalibration, Ade7953Channel ade7953Channel);
+    static void _setGain(int32_t gain, Ade7953Channel ade7953Channel, MeasurementType measurementType);
+    static void _setOffset(int32_t offset, Ade7953Channel ade7953Channel, MeasurementType measurementType);
 
     // Sample time management
     static void _updateSampleTime();
@@ -133,7 +133,7 @@ namespace Ade7953
 
     // ADE7953 register reading functions
 
-    static int32_t _readApparentPowerInstantaneous(Ade7953Channel channel);
+    static int32_t _readApparentPowerInstantaneous(Ade7953Channel ade7953Channel);
     /*
     Reads the "instantaneous" active power.
 
@@ -144,8 +144,8 @@ namespace Ade7953
     @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
     @return The active power in LSB.
     */
-    static int32_t _readActivePowerInstantaneous(Ade7953Channel channel);
-    static int32_t _readReactivePowerInstantaneous(Ade7953Channel channel);
+    static int32_t _readActivePowerInstantaneous(Ade7953Channel ade7953Channel);
+    static int32_t _readReactivePowerInstantaneous(Ade7953Channel ade7953Channel);
     /*
     Reads the actual instantaneous current. 
 
@@ -155,7 +155,7 @@ namespace Ade7953
     @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
     @return The actual instantaneous current in LSB.
     */
-    static int32_t _readCurrentInstantaneous(Ade7953Channel channel);
+    static int32_t _readCurrentInstantaneous(Ade7953Channel ade7953Channel);
     /*
     Reads the actual instantaneous voltage. 
 
@@ -176,7 +176,7 @@ namespace Ade7953
     @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
     @return The current in RMS in LSB.
     */
-    static int32_t _readCurrentRms(Ade7953Channel channel);
+    static int32_t _readCurrentRms(Ade7953Channel ade7953Channel);
     /*
     Reads the voltage in RMS.
 
@@ -186,11 +186,11 @@ namespace Ade7953
     @return The voltage in RMS in LSB.
     */
     static int32_t _readVoltageRms();
-    static int32_t _readActiveEnergy(Ade7953Channel channel);
-    static int32_t _readReactiveEnergy(Ade7953Channel channel);
-    static int32_t _readApparentEnergy(Ade7953Channel channel);
-    static int32_t _readPowerFactor(Ade7953Channel channel);
-    static int32_t _readAngle(Ade7953Channel channel);
+    static int32_t _readActiveEnergy(Ade7953Channel ade7953Channel);
+    static int32_t _readReactiveEnergy(Ade7953Channel ade7953Channel);
+    static int32_t _readApparentEnergy(Ade7953Channel ade7953Channel);
+    static int32_t _readPowerFactor(Ade7953Channel ade7953Channel);
+    static int32_t _readAngle(Ade7953Channel ade7953Channel);
     static int32_t _readPeriod();
 
     // Verification and validation functions
@@ -210,7 +210,7 @@ namespace Ade7953
     static Phase _getLeadingPhase(Phase phase);
     // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
     static void _irqstataBitName(int32_t bit, char *buffer, size_t bufferSize);
-    void _printMeterValues(MeterValues* meterValues, ChannelData* channelData);
+    void _printMeterValues(uint32_t channelIndex);
 
 
     // Public API functions
@@ -469,7 +469,7 @@ namespace Ade7953
         configurationToJson(_configuration, jsonDocument);
     }
 
-    bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial)
+    bool setConfigurationFromJson(const JsonDocument &jsonDocument, bool partial)
     {
         Ade7953Configuration config;
         config = _configuration; // Start with current configuration
@@ -481,7 +481,7 @@ namespace Ade7953
         return setConfiguration(config);
     }
 
-    void configurationToJson(Ade7953Configuration &config, JsonDocument &jsonDocument)
+    void configurationToJson(const Ade7953Configuration &config, JsonDocument &jsonDocument)
     {
         jsonDocument["aVGain"] = config.aVGain;
         jsonDocument["aIGain"] = config.aIGain;
@@ -506,7 +506,7 @@ namespace Ade7953
         logger.debug("Successfully converted configuration to JSON", TAG);
     }
 
-    bool configurationFromJson(JsonDocument &jsonDocument, Ade7953Configuration &config, bool partial)
+    bool configurationFromJson(const JsonDocument &jsonDocument, Ade7953Configuration &config, bool partial)
     {
         if (!_validateJsonConfiguration(jsonDocument, partial))
         {
@@ -668,7 +668,7 @@ namespace Ade7953
         channelDataToJson(_channelData[channelIndex], jsonDocument);
     }
 
-    bool setChannelDataFromJson(JsonDocument &jsonDocument, bool partial) {
+    bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial) {
         if (!_validateChannelDataJson(jsonDocument, partial)) {
             logger.error("Invalid channel data JSON", TAG);
             return false;
@@ -694,7 +694,7 @@ namespace Ade7953
         return true;
     }
 
-    void channelDataToJson(ChannelData &channelData, JsonDocument &jsonDocument) {
+    void channelDataToJson(const ChannelData &channelData, JsonDocument &jsonDocument) {
         jsonDocument["index"] = channelData.index;
         jsonDocument["active"] = channelData.active;
         jsonDocument["reverse"] = channelData.reverse;
@@ -708,7 +708,7 @@ namespace Ade7953
         logger.debug("Successfully converted channel data to JSON for channel %lu", TAG, channelData.index);
     }
 
-    bool channelDataFromJson(JsonDocument &jsonDocument, ChannelData &channelData, bool partial) {
+    bool channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial) {
         if (partial) {
             // Update only fields that are present in JSON
             if (jsonDocument["index"].is<uint32_t>()) channelData.index = jsonDocument["index"].as<uint32_t>();
@@ -750,8 +750,6 @@ namespace Ade7953
     // ======================
 
     void resetEnergyValues() {
-        logger.warning("Resetting energy values to 0", TAG);
-
         for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
             _meterValues[i].activeEnergyImported = 0.0f;
             _meterValues[i].activeEnergyExported = 0.0f;
@@ -792,8 +790,6 @@ namespace Ade7953
         float reactiveEnergyExported,
         float apparentEnergy
     ) {
-        logger.warning("Setting energy values for channel %d", TAG, channelIndex);
-
         if (channelIndex < 0 || channelIndex >= CHANNEL_COUNT) {
             logger.error("Invalid channel index %d", TAG, channelIndex);
             return false;
@@ -1532,14 +1528,37 @@ namespace Ade7953
         logger.debug("Successfully applied configuration", TAG);
     }
 
-    bool _validateJsonConfiguration(JsonDocument& jsonDocument, bool partial) {
-        if (!jsonDocument.is<JsonObject>()) {
+    bool _validateJsonConfiguration(const JsonDocument& jsonDocument, bool partial) {
+        if (!jsonDocument.is<JsonObjectConst>()) {
             logger.warning("JSON is not an object", TAG);
             return false;
         }
 
         // For partial updates, we don't require all fields to be present
-        if (!partial) {
+        if (partial) {
+            // Partial validation - only validate fields that are present
+            if (jsonDocument["aVGain"].is<int32_t>()) return true;
+            if (jsonDocument["aIGain"].is<int32_t>()) return true;
+            if (jsonDocument["bIGain"].is<int32_t>()) return true;
+            if (jsonDocument["aIRmsOs"].is<int32_t>()) return true;
+            if (jsonDocument["bIRmsOs"].is<int32_t>()) return true;
+            if (jsonDocument["aWGain"].is<int32_t>()) return true;
+            if (jsonDocument["bWGain"].is<int32_t>()) return true;
+            if (jsonDocument["aWattOs"].is<int32_t>()) return true;
+            if (jsonDocument["bWattOs"].is<int32_t>()) return true;
+            if (jsonDocument["aVarGain"].is<int32_t>()) return true;
+            if (jsonDocument["bVarGain"].is<int32_t>()) return true;
+            if (jsonDocument["aVarOs"].is<int32_t>()) return true;
+            if (jsonDocument["bVarOs"].is<int32_t>()) return true;
+            if (jsonDocument["aVaGain"].is<int32_t>()) return true;
+            if (jsonDocument["bVaGain"].is<int32_t>()) return true;
+            if (jsonDocument["aVaOs"].is<int32_t>()) return true;
+            if (jsonDocument["bVaOs"].is<int32_t>()) return true;
+            if (jsonDocument["phCalA"].is<int32_t>()) return true;
+            if (jsonDocument["phCalB"].is<int32_t>()) return true;
+
+            return false;
+        } else {
             // Full validation - all fields must be present and valid
             if (!jsonDocument["aVGain"].is<int32_t>()) { logger.warning("aVGain is missing or not int32_t", TAG); return false; }
             if (!jsonDocument["aIGain"].is<int32_t>()) { logger.warning("aIGain is missing or not int32_t", TAG); return false; }
@@ -1560,30 +1579,9 @@ namespace Ade7953
             if (!jsonDocument["bVaOs"].is<int32_t>()) { logger.warning("bVaOs is missing or not int32_t", TAG); return false; }
             if (!jsonDocument["phCalA"].is<int32_t>()) { logger.warning("phCalA is missing or not int32_t", TAG); return false; }
             if (!jsonDocument["phCalB"].is<int32_t>()) { logger.warning("phCalB is missing or not int32_t", TAG); return false; }
-        } else {
-            // Partial validation - only validate fields that are present
-            if (!jsonDocument["aVGain"].is<int32_t>()) { logger.warning("aVGain is not int32_t", TAG); return false; }
-            if (!jsonDocument["aIGain"].is<int32_t>()) { logger.warning("aIGain is not int32_t", TAG); return false; }
-            if (!jsonDocument["bIGain"].is<int32_t>()) { logger.warning("bIGain is not int32_t", TAG); return false; }
-            if (!jsonDocument["aIRmsOs"].is<int32_t>()) { logger.warning("aIRmsOs is not int32_t", TAG); return false; }
-            if (!jsonDocument["bIRmsOs"].is<int32_t>()) { logger.warning("bIRmsOs is not int32_t", TAG); return false; }
-            if (!jsonDocument["aWGain"].is<int32_t>()) { logger.warning("aWGain is not int32_t", TAG); return false; }
-            if (!jsonDocument["bWGain"].is<int32_t>()) { logger.warning("bWGain is not int32_t", TAG); return false; }
-            if (!jsonDocument["aWattOs"].is<int32_t>()) { logger.warning("aWattOs is not int32_t", TAG); return false; }
-            if (!jsonDocument["bWattOs"].is<int32_t>()) { logger.warning("bWattOs is not int32_t", TAG); return false; }
-            if (!jsonDocument["aVarGain"].is<int32_t>()) { logger.warning("aVarGain is not int32_t", TAG); return false; }
-            if (!jsonDocument["bVarGain"].is<int32_t>()) { logger.warning("bVarGain is not int32_t", TAG); return false; }
-            if (!jsonDocument["aVarOs"].is<int32_t>()) { logger.warning("aVarOs is not int32_t", TAG); return false; }
-            if (!jsonDocument["bVarOs"].is<int32_t>()) { logger.warning("bVarOs is not int32_t", TAG); return false; }
-            if (!jsonDocument["aVaGain"].is<int32_t>()) { logger.warning("aVaGain is not int32_t", TAG); return false; }
-            if (!jsonDocument["bVaGain"].is<int32_t>()) { logger.warning("bVaGain is not int32_t", TAG); return false; }
-            if (!jsonDocument["aVaOs"].is<int32_t>()) { logger.warning("aVaOs is not int32_t", TAG); return false; }
-            if (!jsonDocument["bVaOs"].is<int32_t>()) { logger.warning("bVaOs is not int32_t", TAG); return false; }
-            if (!jsonDocument["phCalA"].is<int32_t>()) { logger.warning("phCalA is not int32_t", TAG); return false; }
-            if (!jsonDocument["phCalB"].is<int32_t>()) { logger.warning("phCalB is not int32_t", TAG); return false; }
-        }
 
-        return true;
+            return true;
+        }
     }
 
     // Channel data management functions
@@ -1688,8 +1686,8 @@ namespace Ade7953
         return true;
     }
 
-    bool _validateChannelDataJson(JsonDocument &jsonDocument, bool partial) {
-        if (!jsonDocument.is<JsonObject>()) {
+    bool _validateChannelDataJson(const JsonDocument &jsonDocument, bool partial) {
+        if (!jsonDocument.is<JsonObjectConst>()) {
             logger.warning("JSON is not an object", TAG);
             return false;
         }
@@ -1712,7 +1710,7 @@ namespace Ade7953
             if (jsonDocument["phase"].is<uint8_t>()) return true;
 
             // CT Specification validation for partial updates
-            if (!jsonDocument["ctSpecification"].is<JsonObject>()) {
+            if (jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
                 if (jsonDocument["ctSpecification"]["currentRating"].is<uint32_t>()) return true;
                 if (jsonDocument["ctSpecification"]["voltageOutput"].is<uint32_t>()) return true;
                 if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) return true;   
@@ -1728,7 +1726,7 @@ namespace Ade7953
             if (!jsonDocument["phase"].is<uint8_t>()) { logger.warning("phase is missing or not uint8_t", TAG); return false; }
 
             // CT Specification validation
-            if (!jsonDocument["ctSpecification"].is<JsonObject>()) { logger.warning("ctSpecification is missing or not object", TAG); return false; }
+            if (!jsonDocument["ctSpecification"].is<JsonObjectConst>()) { logger.warning("ctSpecification is missing or not object", TAG); return false; }
             if (!jsonDocument["ctSpecification"]["currentRating"].is<uint32_t>()) { logger.warning("ctSpecification.currentRating is missing or not uint32_t", TAG); return false; }
             if (!jsonDocument["ctSpecification"]["voltageOutput"].is<uint32_t>()) { logger.warning("ctSpecification.voltageOutput is missing or not uint32_t", TAG); return false; }
             if (!jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) { logger.warning("ctSpecification.scalingFraction is missing or not float", TAG); return false; }
@@ -2271,7 +2269,7 @@ namespace Ade7953
         if (!_readMeterValues(channel, linecycUnix)) return false;
 
         _addMeterDataToPayload(channel);
-        _printMeterValues(&_meterValues[channel], &_channelData[channel]);
+        _printMeterValues(channel);
         return true;
     }
 
@@ -2301,10 +2299,10 @@ namespace Ade7953
         logger.debug("Linecyc set to %d", TAG, constrainedLinecyc);
     }
 
-    void _setPgaGain(int32_t pgaGain, Ade7953Channel channel, MeasurementType measurementType) {
-        logger.debug("Setting PGA gain to %d on channel %d for measurement type %d", TAG, pgaGain, channel, measurementType);
+    void _setPgaGain(int32_t pgaGain, Ade7953Channel ade7953Channel, MeasurementType measurementType) {
+        logger.debug("Setting PGA gain to %d on channel %d for measurement type %s", TAG, pgaGain, ADE7953_CHANNEL_TO_STRING(ade7953Channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
 
-        if (channel == Ade7953Channel::A) {
+        if (ade7953Channel == Ade7953Channel::A) {
             switch (measurementType) {
                 case MeasurementType::VOLTAGE:
                     writeRegister(PGA_V_8, BIT_8, pgaGain);
@@ -2328,11 +2326,11 @@ namespace Ade7953
     void _setPhaseCalibration(int32_t phaseCalibration, Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) writeRegister(PHCALA_16, BIT_16, phaseCalibration);
         else writeRegister(PHCALB_16, BIT_16, phaseCalibration);
-        logger.debug("Phase calibration set to %d on channel %d", TAG, phaseCalibration, channel);
+        logger.debug("Phase calibration set to %d on channel %d", TAG, phaseCalibration, ADE7953_CHANNEL_TO_STRING(channel));
     }
 
     void _setGain(int32_t gain, Ade7953Channel channel, MeasurementType measurementType) {
-        logger.debug("Setting gain to %ld on channel %d for measurement type %d", TAG, gain, channel, measurementType);
+        logger.debug("Setting gain to %ld on channel %s for measurement type %s", TAG, gain, ADE7953_CHANNEL_TO_STRING(channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
 
         if (channel == Ade7953Channel::A) {
             switch (measurementType) {
@@ -2373,10 +2371,10 @@ namespace Ade7953
         }
     }
 
-    void _setOffset(int32_t offset, Ade7953Channel channel, MeasurementType measurementType) {
-        logger.debug("Setting offset to %ld on channel %d for measurement type %d", TAG, offset, channel, measurementType);
+    void _setOffset(int32_t offset, Ade7953Channel ade7953Channel, MeasurementType measurementType) {
+        logger.debug("Setting offset to %ld on channel %d for measurement type %s", TAG, offset, ADE7953_CHANNEL_TO_STRING(ade7953Channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
 
-        if (channel == Ade7953Channel::A) {
+        if (ade7953Channel == Ade7953Channel::A) {
             switch (measurementType) {
                 case MeasurementType::VOLTAGE:
                     writeRegister(VRMSOS_32, BIT_32, offset);
@@ -2455,23 +2453,23 @@ namespace Ade7953
     // ADE7953 register reading functions
     // ==================================
 
-    int32_t _readApparentPowerInstantaneous(Ade7953Channel channel) {
-        if (channel == Ade7953Channel::A) return readRegister(AVA_32, BIT_32, true);
+    int32_t _readApparentPowerInstantaneous(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(AVA_32, BIT_32, true);
         else return readRegister(BVA_32, BIT_32, true);
     }
 
-    int32_t _readActivePowerInstantaneous(Ade7953Channel channel) {
-        if (channel == Ade7953Channel::A) return readRegister(AWATT_32, BIT_32, true);
+    int32_t _readActivePowerInstantaneous(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(AWATT_32, BIT_32, true);
         else return readRegister(BWATT_32, BIT_32, true);
     }
 
-    int32_t _readReactivePowerInstantaneous(Ade7953Channel channel) {
-        if (channel == Ade7953Channel::A) return readRegister(AVAR_32, BIT_32, true);
+    int32_t _readReactivePowerInstantaneous(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(AVAR_32, BIT_32, true);
         else return readRegister(BVAR_32, BIT_32, true);
     }
 
-    int32_t _readCurrentInstantaneous(Ade7953Channel channel) {
-        if (channel == Ade7953Channel::A) return readRegister(IA_32, BIT_32, true);
+    int32_t _readCurrentInstantaneous(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(IA_32, BIT_32, true);
         else return readRegister(IB_32, BIT_32, true);
     }
 
@@ -2479,8 +2477,8 @@ namespace Ade7953
         return readRegister(V_32, BIT_32, true);
     }
 
-    int32_t _readCurrentRms(Ade7953Channel channel) {
-        if (channel == Ade7953Channel::A) return readRegister(IRMSA_32, BIT_32, false);
+    int32_t _readCurrentRms(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(IRMSA_32, BIT_32, false);
         else return readRegister(IRMSB_32, BIT_32, false);
     }
 
@@ -2488,28 +2486,28 @@ namespace Ade7953
         return readRegister(VRMS_32, BIT_32, false);
     }
 
-    int32_t _readActiveEnergy(Ade7953Channel channel) {
-        if (channel == Ade7953Channel::A) return readRegister(AENERGYA_32, BIT_32, true);
+    int32_t _readActiveEnergy(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(AENERGYA_32, BIT_32, true);
         else return readRegister(AENERGYB_32, BIT_32, true);
     }
 
-    int32_t _readReactiveEnergy(Ade7953Channel channel) {
-        if (channel == Ade7953Channel::A) return readRegister(RENERGYA_32, BIT_32, true);
+    int32_t _readReactiveEnergy(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(RENERGYA_32, BIT_32, true);
         else return readRegister(RENERGYB_32, BIT_32, true);
     }
 
-    int32_t _readApparentEnergy(Ade7953Channel channel) {
-        if (channel == Ade7953Channel::A) return readRegister(APENERGYA_32, BIT_32, true);
+    int32_t _readApparentEnergy(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(APENERGYA_32, BIT_32, true);
         else return readRegister(APENERGYB_32, BIT_32, true);
     }
 
-    int32_t _readPowerFactor(Ade7953Channel channel) {
-        if (channel == Ade7953Channel::A) return readRegister(PFA_16, BIT_16, true);
+    int32_t _readPowerFactor(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(PFA_16, BIT_16, true);
         else return readRegister(PFB_16, BIT_16, true);
     }
 
-    int32_t _readAngle(Ade7953Channel channel) {
-        if (channel == Ade7953Channel::A) return readRegister(ANGLE_A_16, BIT_16, true);
+    int32_t _readAngle(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(ANGLE_A_16, BIT_16, true);
         else return readRegister(ANGLE_B_16, BIT_16, true);
     }
 
@@ -2582,18 +2580,18 @@ namespace Ade7953
         int32_t dataRegister;
         int32_t dataRegisterBits;
         
-        if (expectedBits == 8) {
+        if (expectedBits == BIT_8) {
             dataRegister = LAST_RWDATA_8;
-            dataRegisterBits = 8;
-        } else if (expectedBits == 16) {
+            dataRegisterBits = BIT_8;
+        } else if (expectedBits == BIT_16) {
             dataRegister = LAST_RWDATA_16;
-            dataRegisterBits = 16;
-        } else if (expectedBits == 24) {
+            dataRegisterBits = BIT_16;
+        } else if (expectedBits == BIT_24) {
             dataRegister = LAST_RWDATA_24;
-            dataRegisterBits = 24;
+            dataRegisterBits = BIT_24;
         } else { // 32 bits or any other value defaults to 32-bit register
             dataRegister = LAST_RWDATA_32;
-            dataRegisterBits = 32;
+            dataRegisterBits = BIT_32;
         }
         
         int32_t lastData = readRegister(dataRegister, dataRegisterBits, signedData, false);
@@ -2709,23 +2707,23 @@ namespace Ade7953
         }
     }
 
-    void _printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
+    void _printMeterValues(uint32_t channelIndex) {
         logger.debug(
-            "%s (%D): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
+            "%s (%lu): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
             TAG, 
-            channelData->label,
-            channelData->index,
-            meterValues->voltage, 
-            meterValues->current, 
-            meterValues->activePower, 
-            meterValues->reactivePower, 
-            meterValues->apparentPower, 
-            meterValues->powerFactor, 
-            meterValues->activeEnergyImported,
-            meterValues->activeEnergyExported,
-            meterValues->reactiveEnergyImported, 
-            meterValues->reactiveEnergyExported, 
-            meterValues->apparentEnergy
+            _channelData[channelIndex].label,
+            _channelData[channelIndex].index,
+            _meterValues[channelIndex].voltage, 
+            _meterValues[channelIndex].current, 
+            _meterValues[channelIndex].activePower, 
+            _meterValues[channelIndex].reactivePower, 
+            _meterValues[channelIndex].apparentPower, 
+            _meterValues[channelIndex].powerFactor, 
+            _meterValues[channelIndex].activeEnergyImported,
+            _meterValues[channelIndex].activeEnergyExported,
+            _meterValues[channelIndex].reactiveEnergyImported, 
+            _meterValues[channelIndex].reactiveEnergyExported, 
+            _meterValues[channelIndex].apparentEnergy
         );
     }
 }

@@ -5,7 +5,7 @@ from typing import Any, Dict
 from pymodbus.client import ModbusTcpClient
 
 # Modbus server details
-SERVER_HOST = "192.168.1.245"  # Replace with your server's IP address
+SERVER_HOST = "192.168.1.123"  # Replace with your server's IP address
 SERVER_PORT = 502  # Replace with your server's port if different
 
 # Mapping from old string types to ModbusTcpClient.DATATYPE enum values

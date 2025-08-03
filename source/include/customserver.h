@@ -14,6 +14,7 @@
 #include "crashmonitor.h"
 #include "custommqtt.h"
 #include "influxdbclient.h"
+#include "ade7953.h"
 #include "globals.h"
 #include "binaries.h"
 #include "utils.h"
@@ -56,6 +57,11 @@
 #define HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT 512
 #define HTTP_MAX_CONTENT_LENGTH_INFLUXDB 1024
 #define HTTP_MAX_CONTENT_LENGTH_LED_BRIGHTNESS 64
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_CONFIG 1024
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_SAMPLE_TIME 64
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA 256
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_REGISTER 128
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_ENERGY 256
 
 // Crash dump chunk sizes
 #define CRASH_DUMP_DEFAULT_CHUNK_SIZE (1 * 1024)

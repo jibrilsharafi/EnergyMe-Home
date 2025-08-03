@@ -349,10 +349,10 @@ namespace CustomTime {
                 *dstOffsetSeconds = jsonDocument["dstOffset"].as<int32_t>() * 3600 - *gmtOffsetSeconds; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
 
                 logger.debug(
-                    "GMT offset: %d | DST offset: %d",
+                    "GMT offset: %d hours | DST offset: %d hours",
                     TAG,
-                    jsonDocument["rawOffset"].as<int32_t>(),
-                    jsonDocument["dstOffset"].as<int32_t>()
+                    *gmtOffsetSeconds / 3600,
+                    *dstOffsetSeconds / 3600
                 );
             } else {
                 logger.warning("HTTP request failed with code: %d", TAG, httpCode);

@@ -379,11 +379,12 @@ void restartTask(void* parameter) {
     logger.debug("Restart task started, waiting %d ms before restart (factory reset: %s)", TAG, SYSTEM_RESTART_DELAY, factoryReset ? "true" : "false");
 
     // Wait for the specified delay
+    // In theory we could restart immediately since the task stopping was done earlier.. but let's be careful
+    // and give time for other possible tasks or things to clean up properly
     delay(SYSTEM_RESTART_DELAY);
     
     // Execute the operation
-    if (factoryReset) { _factoryReset(); }
-    
+    if (factoryReset) _factoryReset();
     _restartSystem();
     
     // Task should never reach here, but clean up just in case
