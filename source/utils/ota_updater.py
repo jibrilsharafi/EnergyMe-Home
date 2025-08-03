@@ -95,7 +95,7 @@ class OTAUpdater:
             if not status:
                 time.sleep(poll_interval)
                 continue
-                
+            
             progress = status.get('progressPercent', 0)
             ota_status = status.get('status', 'idle')
             size = status.get('size', 0)
@@ -125,7 +125,18 @@ class OTAUpdater:
                     else:
                         speed_text = f"{speed_kbps:.1f}KB/s"
                 else:
+                    speed_bps = 0
                     speed_text = "0KB/s"
+                
+                # Estimate time to end
+                if speed_bps > 0 and remaining > 0:
+                    eta_sec = remaining / speed_bps
+                    if eta_sec > 60:
+                        eta_text = f"{int(eta_sec // 60)}m {int(eta_sec % 60)}s"
+                    else:
+                        eta_text = f"{int(eta_sec)}s"
+                else:
+                    eta_text = "--"
                 
                 # Create progress bar
                 bar_length = 25  # Slightly shorter to make room for speed
@@ -136,8 +147,8 @@ class OTAUpdater:
                 size_mb = size / 1024 / 1024 if size > 0 else 0
                 remaining_mb = remaining / 1024 / 1024 if remaining > 0 else 0
                 
-                print(f"\r🔄 [{bar}] {int(progress):3d}% | {size_mb:.1f}MB | {remaining_mb:.1f}MB left | {speed_text}", 
-                      end='', flush=True)
+                print(f"\r🔄 [{bar}] {int(progress):3d}% | {size_mb:.1f}MB | {remaining_mb:.1f}MB left | {speed_text} | ETA: {eta_text}", 
+                    end='', flush=True)
                 
                 last_progress = progress
                 last_size = current_uploaded

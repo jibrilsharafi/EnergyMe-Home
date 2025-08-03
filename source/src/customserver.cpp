@@ -4,6 +4,10 @@ static const char *TAG = "customserver";
 
 namespace CustomServer
 {
+    // Private variables
+    // ==============================
+    // ==============================
+
     static AsyncWebServer server(WEBSERVER_PORT);
     static AsyncAuthenticationMiddleware digestAuth;
     static AsyncRateLimitMiddleware rateLimit;
@@ -17,15 +21,22 @@ namespace CustomServer
     // API request synchronization
     static SemaphoreHandle_t _apiMutex = NULL;
 
+    // Private functions declarations
+    // ==============================
+    // ==============================
+
+    // Handlers and middlewares
     static void _setupMiddleware();
     static void _serveStaticContent();
     static void _serveApi();
 
+    // Tasks
     static void _startHealthCheckTask();
     static void _stopHealthCheckTask();
     static void _healthCheckTask(void *parameter);
     static bool _performHealthCheck();
 
+    // Authentication management
     static bool _setWebPassword(const char *password);
     static bool _getWebPassword(char *buffer, size_t bufferSize);
     static bool _validatePasswordStrength(const char *password);
@@ -75,7 +86,12 @@ namespace CustomServer
     
     // HTTP method validation helper
     static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength = 0);
-    
+    static bool _isPartialUpdate(AsyncWebServerRequest *request);
+
+    // Public functions
+    // ================
+    // ================
+
     void begin()
     {
         logger.debug("Setting up web server...", TAG);
@@ -119,6 +135,31 @@ namespace CustomServer
         
         logger.info("Web server stopped", TAG);
     }
+
+    void updateAuthPassword()
+    {
+        char webPassword[PASSWORD_BUFFER_SIZE];
+        if (_getWebPassword(webPassword, sizeof(webPassword)))
+        {
+            digestAuth.setPassword(webPassword);
+            digestAuth.generateHash(); // regenerate hash with new password
+            logger.info("Authentication password updated", TAG);
+        }
+        else
+        {
+            logger.error("Failed to load new password for authentication", TAG);
+        }
+    }
+
+    bool resetWebPassword()
+    {
+        logger.info("Resetting web password to default", TAG);
+        return _setWebPassword(WEBSERVER_DEFAULT_PASSWORD);
+    }
+
+    // Private functions
+    // =================
+    // =================
 
     static void _setupMiddleware()
     {
@@ -164,75 +205,6 @@ namespace CustomServer
         logger.debug("Logging middleware configured", TAG);
     }
 
-    static void _serveStaticContent()
-    {
-        // === STATIC CONTENT (no auth required) ===
-
-        // CSS files
-        server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/css", styles_css); });
-
-        server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/css", button_css); });
-
-        server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/css", section_css); });
-
-        server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/css", typography_css); });
-
-        // Resources
-        server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "image/svg+xml", favicon_svg); });
-
-        // === AUTHENTICATED PAGES ===
-
-        // Main dashboard
-        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/html", index_html); });
-
-        // Configuration pages
-        server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/html", configuration_html); });
-
-        server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/html", calibration_html); });
-
-        server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/html", channel_html); });
-
-        server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/html", info_html); });
-
-        server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/html", log_html); });
-
-        server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/html", update_html); });
-
-        // Swagger UI
-        server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/html", swagger_ui_html); });
-
-        server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request)
-                  { request->send(HTTP_CODE_OK, "text/yaml", swagger_yaml); });
-    }
-
-    void updateAuthPassword()
-    {
-        char webPassword[PASSWORD_BUFFER_SIZE];
-        if (_getWebPassword(webPassword, sizeof(webPassword)))
-        {
-            digestAuth.setPassword(webPassword);
-            digestAuth.generateHash(); // regenerate hash with new password
-            logger.info("Authentication password updated", TAG);
-        }
-        else
-        {
-            logger.error("Failed to load new password for authentication", TAG);
-        }
-    }
-
     // Helper functions for common response patterns
     static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int32_t statusCode)
     {
@@ -264,6 +236,294 @@ namespace CustomServer
         _releaseApiMutex(); // Release mutex on error to avoid deadlocks
     }
 
+    static bool _acquireApiMutex(AsyncWebServerRequest *request)
+    {
+        if (_apiMutex == NULL) {
+            logger.error("API mutex not initialized", TAG);
+            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Server synchronization error");
+            return false;
+        }
+
+        BaseType_t result = xSemaphoreTake(_apiMutex, pdMS_TO_TICKS(API_MUTEX_TIMEOUT_MS));
+        if (result != pdTRUE) {
+            logger.warning("Failed to acquire API mutex within timeout", TAG);
+            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Server busy, please try again");
+            return false;
+        }
+
+        logger.debug("API mutex acquired for request: %s", TAG, request->url().c_str());
+        return true;
+    }
+
+    static void _releaseApiMutex()
+    {
+        if (_apiMutex != NULL) {
+            xSemaphoreGive(_apiMutex);
+            logger.debug("API mutex released", TAG);
+        }
+    }
+
+    // Helper function to parse log level strings
+    static bool _parseLogLevel(const char *levelStr, LogLevel &level)
+    {
+        if (!levelStr) return false;
+        
+        if (strcmp(levelStr, "VERBOSE") == 0)
+            level = LogLevel::VERBOSE;
+        else if (strcmp(levelStr, "DEBUG") == 0)
+            level = LogLevel::DEBUG;
+        else if (strcmp(levelStr, "INFO") == 0)
+            level = LogLevel::INFO;
+        else if (strcmp(levelStr, "WARNING") == 0)
+            level = LogLevel::WARNING;
+        else if (strcmp(levelStr, "ERROR") == 0)
+            level = LogLevel::ERROR;
+        else if (strcmp(levelStr, "FATAL") == 0)
+            level = LogLevel::FATAL;
+        else
+            return false;
+            
+        return true;
+    }
+
+    // Helper function to validate HTTP method
+    // We cannot do setMethod since it makes all PUT requests fail (404) for some weird reason
+    // It is not too bad anyway since like this we have full control over the response
+    static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength)
+    {
+        if (maxContentLength > 0 && request->contentLength() > maxContentLength)
+        {
+            char errorMsg[STATUS_BUFFER_SIZE];
+            snprintf(errorMsg, sizeof(errorMsg), "Payload Too Large. Max: %zu", maxContentLength);
+            _sendErrorResponse(request, HTTP_CODE_PAYLOAD_TOO_LARGE, errorMsg);
+            return false;
+        }
+
+        if (strcmp(request->methodToString(), expectedMethod) != 0)
+        {
+            char errorMsg[STATUS_BUFFER_SIZE];
+            snprintf(errorMsg, sizeof(errorMsg), "Method Not Allowed. Use %s.", expectedMethod);
+            _sendErrorResponse(request, HTTP_CODE_METHOD_NOT_ALLOWED, errorMsg);
+            return false;
+        }
+
+        return _acquireApiMutex(request);
+    }
+
+    static bool _isPartialUpdate(AsyncWebServerRequest *request)
+    {
+        // Check if the request method is PATCH (partial update) or PUT (full update)
+        if (!request) return false; // Safety check
+
+        const char* method = request->methodToString();
+        bool isPartialUpdate = (strcmp(method, "PATCH") == 0);
+        const char* expectedMethod = isPartialUpdate ? "PATCH" : "PUT";
+
+        return isPartialUpdate;
+    }
+
+    static void _startHealthCheckTask()
+    {
+        if (_healthCheckTaskHandle != NULL)
+        {
+            logger.debug("Health check task is already running", TAG);
+            return;
+        }
+
+        logger.debug("Starting health check task", TAG);
+        _consecutiveFailures = 0;
+
+        BaseType_t result = xTaskCreate(
+            _healthCheckTask,
+            HEALTH_CHECK_TASK_NAME,
+            HEALTH_CHECK_TASK_STACK_SIZE,
+            NULL,
+            HEALTH_CHECK_TASK_PRIORITY,
+            &_healthCheckTaskHandle);
+
+        if (result != pdPASS) { logger.error("Failed to create health check task", TAG); }
+    }
+
+    static void _stopHealthCheckTask() { stopTaskGracefully(&_healthCheckTaskHandle, "Health check task"); }
+
+    static void _healthCheckTask(void *parameter)
+    {
+        logger.debug("Health check task started", TAG);
+
+        _healthCheckTaskShouldRun = true;
+        while (_healthCheckTaskShouldRun)
+        {
+            // Perform health check
+            if (_performHealthCheck())
+            {
+                // Reset failure counter on success
+                if (_consecutiveFailures > 0)
+                {
+                    logger.info("Health check recovered after %d failures", TAG, _consecutiveFailures);
+                    _consecutiveFailures = 0;
+                }
+                logger.debug("Health check passed", TAG);
+            }
+            else
+            {
+                _consecutiveFailures++;
+                logger.warning("Health check failed (attempt %d/%d)", TAG, _consecutiveFailures, HEALTH_CHECK_MAX_FAILURES);
+
+                if (_consecutiveFailures >= HEALTH_CHECK_MAX_FAILURES)
+                {
+                    logger.error("Health check failed %d consecutive times, requesting system restart", TAG, HEALTH_CHECK_MAX_FAILURES);
+                    setRestartSystem(TAG, "Server health check failures exceeded maximum threshold");
+                    break; // Exit the task as we're restarting
+                }
+            }
+
+            // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS));
+            if (notificationValue > 0)
+            {
+                _healthCheckTaskShouldRun = false;
+                break;
+            }
+        }
+
+        logger.debug("Health check task stopping", TAG);
+        _healthCheckTaskHandle = NULL;
+        vTaskDelete(NULL);
+    }
+
+    static bool _performHealthCheck()
+    {
+        // Check if WiFi is connected
+        if (!CustomWifi::isFullyConnected())
+        {
+            logger.warning("Health check: WiFi not connected", TAG);
+            return false;
+        }
+
+        // Perform a simple HTTP self-request to verify server responsiveness
+        WiFiClient client;
+        client.setTimeout(HEALTH_CHECK_TIMEOUT_MS);
+
+        if (!client.connect("127.0.0.1", WEBSERVER_PORT))
+        {
+            logger.warning("Health check: Cannot connect to local web server", TAG);
+            return false;
+        }
+
+        // Send a simple GET request to the health endpoint
+        client.print("GET /api/v1/health HTTP/1.1\r\n");
+        client.print("Host: 127.0.0.1\r\n");
+        client.print("Connection: close\r\n\r\n");
+
+        // Wait for response with timeout
+        uint64_t startTime = millis64();
+        uint32_t loops = 0;
+        while (client.connected() && (millis64() - startTime) < HEALTH_CHECK_TIMEOUT_MS && loops < MAX_LOOP_ITERATIONS)
+        {
+            if (client.available())
+            {
+                char line[HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE];
+                size_t bytesRead = client.readBytesUntil('\n', line, sizeof(line) - 1);
+                line[bytesRead] = '\0';
+                
+                if (strncmp(line, "HTTP/1.1 ", 9) == 0 && bytesRead >= 12)
+                {
+                    // Extract status code from characters 9-11
+                    char statusStr[4] = {line[9], line[10], line[11], '\0'};
+                    int32_t statusCode = atoi(statusStr);
+                    client.stop();
+
+                    if (statusCode == HTTP_CODE_OK)
+                    {
+                        return true;
+                    }
+                    else
+                    {
+                        logger.warning("Health check: HTTP status code %d", TAG, statusCode);
+                        return false;
+                    }
+                }
+            }
+            delay(10); // Small delay to prevent busy waiting
+        }
+
+        client.stop();
+        logger.warning("Health check: HTTP request timeout", TAG);
+        return false;
+    }
+
+    // Password management functions
+    // ------------------------------
+    static bool _setWebPassword(const char *password)
+    {
+        if (!_validatePasswordStrength(password))
+        {
+            logger.error("Password does not meet strength requirements", TAG);
+            return false;
+        }
+
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_AUTH, false))
+        {
+            logger.error("Failed to open auth preferences for writing", TAG);
+            return false;
+        }
+
+        bool success = prefs.putString(PREFERENCES_KEY_PASSWORD, password) > 0;
+        prefs.end();
+
+        if (success) { logger.info("Web password updated successfully", TAG); }
+        else { logger.error("Failed to save web password", TAG); }
+
+        return success;
+    }
+
+    static bool _getWebPassword(char *buffer, size_t bufferSize)
+    {
+        logger.debug("Getting web password", TAG);
+
+        if (buffer == nullptr || bufferSize == 0)
+        {
+            logger.error("Invalid buffer for getWebPassword", TAG);
+            return false;
+        }
+
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_AUTH, true))
+        {
+            logger.error("Failed to open auth preferences for reading", TAG);
+            return false;
+        }
+
+        prefs.getString(PREFERENCES_KEY_PASSWORD, buffer, bufferSize);
+        prefs.end();
+
+        return true;
+    }
+    // Only check length - there is no need to be picky here
+    static bool _validatePasswordStrength(const char *password)
+    {
+        if (password == nullptr) { return false; }
+
+        size_t length = strlen(password);
+
+        // Check minimum length
+        if (length < MIN_PASSWORD_LENGTH)
+        {
+            logger.warning("Password too short", TAG);
+            return false;
+        }
+
+        // Check maximum length
+        if (length > MAX_PASSWORD_LENGTH)
+        {
+            logger.warning("Password too int32_t", TAG);
+            return false;
+        }
+        
+        return true;
+    }
+
     static void _serveApi()
     {
         // Group endpoints by functionality
@@ -277,6 +537,35 @@ namespace CustomServer
         _serveInfluxDbEndpoints();
         _serveCrashEndpoints();
         _serveLedEndpoints();
+    }
+
+    static void _serveStaticContent()
+    {
+        // === STATIC CONTENT (no auth required) ===
+
+        // CSS files
+        server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", styles_css); });
+        server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", button_css); });
+        server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", section_css); });
+        server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", typography_css); });
+
+        // Resources
+        server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "image/svg+xml", favicon_svg); });
+
+        // Main dashboard
+        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", index_html); });
+
+        // Configuration pages
+        server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", configuration_html); });
+        server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", calibration_html); });
+        server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", channel_html); });
+        server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", info_html); });
+        server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", log_html); });
+        server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", update_html); });
+
+        // Swagger UI
+        server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", swagger_ui_html); });
+        server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/yaml", swagger_yaml); });
     }
 
     // === HEALTH ENDPOINTS ===
@@ -709,34 +998,6 @@ namespace CustomServer
             CustomWifi::resetWifi(); });
     }
 
-    // === API SYNCHRONIZATION HELPERS ===
-    static bool _acquireApiMutex(AsyncWebServerRequest *request)
-    {
-        if (_apiMutex == NULL) {
-            logger.error("API mutex not initialized", TAG);
-            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Server synchronization error");
-            return false;
-        }
-
-        BaseType_t result = xSemaphoreTake(_apiMutex, pdMS_TO_TICKS(API_MUTEX_TIMEOUT_MS));
-        if (result != pdTRUE) {
-            logger.warning("Failed to acquire API mutex within timeout", TAG);
-            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Server busy, please try again");
-            return false;
-        }
-
-        logger.debug("API mutex acquired for request: %s", TAG, request->url().c_str());
-        return true;
-    }
-
-    static void _releaseApiMutex()
-    {
-        if (_apiMutex != NULL) {
-            xSemaphoreGive(_apiMutex);
-            logger.debug("API mutex released", TAG);
-        }
-    }
-
     // === LOGGING ENDPOINTS ===
     static void _serveLoggingEndpoints()
     {
@@ -746,14 +1007,16 @@ namespace CustomServer
             JsonDocument doc;
             doc["print"] = logger.logLevelToString(logger.getPrintLevel());
             doc["save"] = logger.logLevelToString(logger.getSaveLevel());
-            _sendJsonResponse(request, doc); });
+            _sendJsonResponse(request, doc);
+        });
 
         // Set log levels (using AsyncCallbackJsonWebHandler for JSON body)
-        static AsyncCallbackJsonWebHandler *_setLogLevelHandler = new AsyncCallbackJsonWebHandler("/api/v1/logs/level");
-        _setLogLevelHandler->setMaxContentLength(HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL);
-        _setLogLevelHandler->onRequest([](AsyncWebServerRequest *request, JsonVariant &json) {
-                // Validate HTTP method
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL)) return;
+        static AsyncCallbackJsonWebHandler *setLogLevelHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/logs/level",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                bool isPartialUpdate = _isPartialUpdate(request);
+                if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL)) return;
 
                 JsonDocument doc;
                 doc.set(json);
@@ -768,7 +1031,7 @@ namespace CustomServer
                 }
 
                 char resultMsg[STATUS_BUFFER_SIZE];
-                snprintf(resultMsg, sizeof(resultMsg), "Log levels updated:");
+                snprintf(resultMsg, sizeof(resultMsg), "Log levels %s:", isPartialUpdate ? "partially updated" : "updated");
                 bool success = true;
 
                 // Set print level if provided
@@ -806,277 +1069,24 @@ namespace CustomServer
                 if (success)
                 {
                     _sendSuccessResponse(request, resultMsg);
-                    logger.info("Log levels updated via API", TAG);
+                    logger.info("Log levels %s via API", TAG, isPartialUpdate ? "partially updated" : "updated");
                 }
                 else
                 {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid log level specified. Valid levels: VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL");
                 }
             });
-        server.addHandler(_setLogLevelHandler);
+        server.addHandler(setLogLevelHandler);
 
         // Clear logs
         server.on("/api/v1/logs/clear", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
+            if (!_validateRequest(request, "POST")) return;
+
             logger.clearLog();
             _sendSuccessResponse(request, "Logs cleared successfully");
-            logger.info("Logs cleared via API", TAG); });
-    }
-
-    // Helper function to parse log level strings
-    static bool _parseLogLevel(const char *levelStr, LogLevel &level)
-    {
-        if (!levelStr) return false;
-        
-        if (strcmp(levelStr, "VERBOSE") == 0)
-            level = LogLevel::VERBOSE;
-        else if (strcmp(levelStr, "DEBUG") == 0)
-            level = LogLevel::DEBUG;
-        else if (strcmp(levelStr, "INFO") == 0)
-            level = LogLevel::INFO;
-        else if (strcmp(levelStr, "WARNING") == 0)
-            level = LogLevel::WARNING;
-        else if (strcmp(levelStr, "ERROR") == 0)
-            level = LogLevel::ERROR;
-        else if (strcmp(levelStr, "FATAL") == 0)
-            level = LogLevel::FATAL;
-        else
-            return false;
-            
-        return true;
-    }
-
-    // Helper function to validate HTTP method
-    // We cannot do setMethod since it makes all PUT requests fail (404) for some weird reason
-    // It is not too bad anyway since like this we have full control over the response
-    static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength)
-    {
-        if (maxContentLength > 0 && request->contentLength() > maxContentLength)
-        {
-            char errorMsg[STATUS_BUFFER_SIZE];
-            snprintf(errorMsg, sizeof(errorMsg), "Payload Too Large. Max: %zu", maxContentLength);
-            _sendErrorResponse(request, HTTP_CODE_PAYLOAD_TOO_LARGE, errorMsg);
-            return false;
-        }
-
-        if (strcmp(request->methodToString(), expectedMethod) != 0)
-        {
-            char errorMsg[STATUS_BUFFER_SIZE];
-            snprintf(errorMsg, sizeof(errorMsg), "Method Not Allowed. Use %s.", expectedMethod);
-            _sendErrorResponse(request, HTTP_CODE_METHOD_NOT_ALLOWED, errorMsg);
-            return false;
-        }
-
-        return _acquireApiMutex(request);
-    }
-
-    static void _startHealthCheckTask()
-    {
-        if (_healthCheckTaskHandle != NULL)
-        {
-            logger.debug("Health check task is already running", TAG);
-            return;
-        }
-
-        logger.debug("Starting health check task", TAG);
-        _consecutiveFailures = 0;
-
-        BaseType_t result = xTaskCreate(
-            _healthCheckTask,
-            HEALTH_CHECK_TASK_NAME,
-            HEALTH_CHECK_TASK_STACK_SIZE,
-            NULL,
-            HEALTH_CHECK_TASK_PRIORITY,
-            &_healthCheckTaskHandle);
-
-        if (result != pdPASS) { logger.error("Failed to create health check task", TAG); }
-    }
-
-    static void _stopHealthCheckTask() { stopTaskGracefully(&_healthCheckTaskHandle, "Health check task"); }
-
-    static void _healthCheckTask(void *parameter)
-    {
-        logger.debug("Health check task started", TAG);
-
-        _healthCheckTaskShouldRun = true;
-        while (_healthCheckTaskShouldRun)
-        {
-            // Perform health check
-            if (_performHealthCheck())
-            {
-                // Reset failure counter on success
-                if (_consecutiveFailures > 0)
-                {
-                    logger.info("Health check recovered after %d failures", TAG, _consecutiveFailures);
-                    _consecutiveFailures = 0;
-                }
-                logger.debug("Health check passed", TAG);
-            }
-            else
-            {
-                _consecutiveFailures++;
-                logger.warning("Health check failed (attempt %d/%d)", TAG, _consecutiveFailures, HEALTH_CHECK_MAX_FAILURES);
-
-                if (_consecutiveFailures >= HEALTH_CHECK_MAX_FAILURES)
-                {
-                    logger.error("Health check failed %d consecutive times, requesting system restart", TAG, HEALTH_CHECK_MAX_FAILURES);
-                    setRestartSystem(TAG, "Server health check failures exceeded maximum threshold");
-                    break; // Exit the task as we're restarting
-                }
-            }
-
-            // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS));
-            if (notificationValue > 0)
-            {
-                _healthCheckTaskShouldRun = false;
-                break;
-            }
-        }
-
-        logger.debug("Health check task stopping", TAG);
-        _healthCheckTaskHandle = NULL;
-        vTaskDelete(NULL);
-    }
-
-    static bool _performHealthCheck()
-    {
-        // Check if WiFi is connected
-        if (!CustomWifi::isFullyConnected())
-        {
-            logger.warning("Health check: WiFi not connected", TAG);
-            return false;
-        }
-
-        // Perform a simple HTTP self-request to verify server responsiveness
-        WiFiClient client;
-        client.setTimeout(HEALTH_CHECK_TIMEOUT_MS);
-
-        if (!client.connect("127.0.0.1", WEBSERVER_PORT))
-        {
-            logger.warning("Health check: Cannot connect to local web server", TAG);
-            return false;
-        }
-
-        // Send a simple GET request to the health endpoint
-        client.print("GET /api/v1/health HTTP/1.1\r\n");
-        client.print("Host: 127.0.0.1\r\n");
-        client.print("Connection: close\r\n\r\n");
-
-        // Wait for response with timeout
-        uint64_t startTime = millis64();
-        uint32_t loops = 0;
-        while (client.connected() && (millis64() - startTime) < HEALTH_CHECK_TIMEOUT_MS && loops < MAX_LOOP_ITERATIONS)
-        {
-            if (client.available())
-            {
-                char line[HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE];
-                size_t bytesRead = client.readBytesUntil('\n', line, sizeof(line) - 1);
-                line[bytesRead] = '\0';
-                
-                if (strncmp(line, "HTTP/1.1 ", 9) == 0 && bytesRead >= 12)
-                {
-                    // Extract status code from characters 9-11
-                    char statusStr[4] = {line[9], line[10], line[11], '\0'};
-                    int32_t statusCode = atoi(statusStr);
-                    client.stop();
-
-                    if (statusCode == HTTP_CODE_OK)
-                    {
-                        return true;
-                    }
-                    else
-                    {
-                        logger.warning("Health check: HTTP status code %d", TAG, statusCode);
-                        return false;
-                    }
-                }
-            }
-            delay(10); // Small delay to prevent busy waiting
-        }
-
-        client.stop();
-        logger.warning("Health check: HTTP request timeout", TAG);
-        return false;
-    }
-
-    // Password management functions
-    // ------------------------------
-    static bool _setWebPassword(const char *password)
-    {
-        if (!_validatePasswordStrength(password))
-        {
-            logger.error("Password does not meet strength requirements", TAG);
-            return false;
-        }
-
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_AUTH, false))
-        {
-            logger.error("Failed to open auth preferences for writing", TAG);
-            return false;
-        }
-
-        bool success = prefs.putString(PREFERENCES_KEY_PASSWORD, password) > 0;
-        prefs.end();
-
-        if (success) { logger.info("Web password updated successfully", TAG); }
-        else { logger.error("Failed to save web password", TAG); }
-
-        return success;
-    }
-
-    static bool _getWebPassword(char *buffer, size_t bufferSize)
-    {
-        logger.debug("Getting web password", TAG);
-
-        if (buffer == nullptr || bufferSize == 0)
-        {
-            logger.error("Invalid buffer for getWebPassword", TAG);
-            return false;
-        }
-
-        Preferences prefs;
-        if (!prefs.begin(PREFERENCES_NAMESPACE_AUTH, true))
-        {
-            logger.error("Failed to open auth preferences for reading", TAG);
-            return false;
-        }
-
-        prefs.getString(PREFERENCES_KEY_PASSWORD, buffer, bufferSize);
-        prefs.end();
-
-        return true;
-    }
-
-    bool resetWebPassword()
-    { // Has to be accessible from buttonHandler to physically reset the password
-        logger.info("Resetting web password to default", TAG);
-        return _setWebPassword(WEBSERVER_DEFAULT_PASSWORD);
-    }
-
-    // Only check length - there is no need to be picky here
-    static bool _validatePasswordStrength(const char *password)
-    {
-        if (password == nullptr) { return false; }
-
-        size_t length = strlen(password);
-
-        // Check minimum length
-        if (length < MIN_PASSWORD_LENGTH)
-        {
-            logger.warning("Password too short", TAG);
-            return false;
-        }
-
-        // Check maximum length
-        if (length > MAX_PASSWORD_LENGTH)
-        {
-            logger.warning("Password too int32_t", TAG);
-            return false;
-        }
-        
-        return true;
+            logger.info("Logs cleared via API", TAG);
+        });
     }
     
     // === CUSTOM MQTT ENDPOINTS ===
@@ -1093,15 +1103,16 @@ namespace CustomServer
         static AsyncCallbackJsonWebHandler *setCustomMqttHandler = new AsyncCallbackJsonWebHandler(
             "/api/v1/custom-mqtt/config",
             [](AsyncWebServerRequest *request, JsonVariant &json)
-            {
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT)) return;
+            {                
+                bool isPartialUpdate = _isPartialUpdate(request);
+                if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT)) return;
 
                 JsonDocument doc;
                 doc.set(json);
 
-                if (CustomMqtt::setConfigurationFromJson(doc, true))
+                if (CustomMqtt::setConfigurationFromJson(doc, isPartialUpdate))
                 {
-                    logger.info("Custom MQTT configuration updated via API", TAG);
+                    logger.info("Custom MQTT configuration %s via API", TAG, isPartialUpdate ? "partially updated" : "updated");
                     _sendSuccessResponse(request, "Custom MQTT configuration updated successfully");
                 }
                 else
@@ -1153,12 +1164,13 @@ namespace CustomServer
             "/api/v1/influxdb/config",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_INFLUXDB)) return;
+                bool isPartialUpdate = _isPartialUpdate(request);
+                if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_INFLUXDB)) return;
 
                 JsonDocument doc;
                 doc.set(json);
 
-                if (InfluxDbClient::setConfigurationFromJson(doc, true))
+                if (InfluxDbClient::setConfigurationFromJson(doc, isPartialUpdate))
                 {
                     logger.info("InfluxDB configuration updated via API", TAG);
                     _sendSuccessResponse(request, "InfluxDB configuration updated successfully");
@@ -1294,7 +1306,7 @@ namespace CustomServer
                 uint32_t brightness = doc["brightness"].as<uint32_t>();
 
                 // Validate brightness range
-                if (brightness > DEFAULT_LED_BRIGHTNESS_PERCENT) {
+                if (!Led::isBrightnessValid(brightness)) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Brightness value out of range");
                     return;
                 }

@@ -571,8 +571,37 @@ paths:
                     enum: [VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL]
                     example: "WARNING"
     put:
-      summary: Set log levels
-      description: Update the print and/or save log levels
+      summary: Set log levels (full update)
+      description: Update both print and save log levels. Both fields are required for a full update.
+      tags:
+        - Logging
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - print
+                - save
+              properties:
+                print:
+                  $ref: '#/components/schemas/LogLevel'
+                  description: Set the print log level
+                save:
+                  $ref: '#/components/schemas/LogLevel'
+                  description: Set the save log level
+            example:
+              print: "DEBUG"
+              save: "ERROR"
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      summary: Update log levels (partial update)
+      description: Update one or both log levels. At least one field must be provided.
       tags:
         - Logging
       requestBody:
@@ -588,9 +617,21 @@ paths:
                 save:
                   $ref: '#/components/schemas/LogLevel'
                   description: Set the save log level (optional)
-            example:
-              print: "DEBUG"
-              save: "ERROR"
+              minProperties: 1
+            examples:
+              print_only:
+                summary: Update print level only
+                value:
+                  print: "DEBUG"
+              save_only:
+                summary: Update save level only
+                value:
+                  save: "ERROR"
+              both:
+                summary: Update both levels
+                value:
+                  print: "DEBUG"
+                  save: "ERROR"
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -622,8 +663,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/CustomMqttConfiguration'
     put:
-      summary: Update custom MQTT configuration
-      description: Update the custom MQTT configuration settings
+      summary: Update custom MQTT configuration (full update)
+      description: Update the complete custom MQTT configuration. All required fields must be provided.
       tags:
         - Custom MQTT
       requestBody:
@@ -632,6 +673,84 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CustomMqttConfiguration'
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid configuration data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update custom MQTT configuration (partial update)
+      description: Update specific fields in the custom MQTT configuration. Only provided fields will be updated.
+      tags:
+        - Custom MQTT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  description: Whether custom MQTT is enabled
+                server:
+                  type: string
+                  description: MQTT broker server address or hostname
+                  maxLength: 64
+                port:
+                  type: integer
+                  description: MQTT broker port number
+                  minimum: 1
+                  maximum: 65535
+                clientid:
+                  type: string
+                  description: Unique MQTT client identifier
+                  maxLength: 32
+                topic:
+                  type: string
+                  description: MQTT topic for publishing meter data
+                  maxLength: 64
+                frequency:
+                  type: integer
+                  description: Publishing frequency in seconds
+                  minimum: 1
+                  maximum: 3600
+                useCredentials:
+                  type: boolean
+                  description: Whether to use username/password authentication
+                username:
+                  type: string
+                  description: MQTT username
+                  maxLength: 32
+                password:
+                  type: string
+                  description: MQTT password
+                  maxLength: 64
+              minProperties: 1
+            examples:
+              enable_only:
+                summary: Enable MQTT only
+                value:
+                  enabled: true
+              server_config:
+                summary: Update server settings
+                value:
+                  server: "new-mqtt-broker.com"
+                  port: 1883
+              credentials:
+                summary: Update credentials
+                value:
+                  useCredentials: true
+                  username: "new_user"
+                  password: "new_password"
       responses:
         '200':
           description: Configuration updated successfully
@@ -701,8 +820,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/InfluxDbConfiguration'
     put:
-      summary: Update InfluxDB configuration
-      description: Update the InfluxDB configuration settings
+      summary: Update InfluxDB configuration (full update)
+      description: Update the complete InfluxDB configuration. All required fields must be provided.
       tags:
         - InfluxDB
       requestBody:
@@ -711,6 +830,101 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/InfluxDbConfiguration'
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid configuration data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update InfluxDB configuration (partial update)
+      description: Update specific fields in the InfluxDB configuration. Only provided fields will be updated.
+      tags:
+        - InfluxDB
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  description: Whether InfluxDB integration is enabled
+                server:
+                  type: string
+                  description: InfluxDB server address or hostname
+                  maxLength: 64
+                port:
+                  type: integer
+                  description: InfluxDB server port number
+                  minimum: 1
+                  maximum: 65535
+                version:
+                  type: integer
+                  description: InfluxDB version (1 or 2)
+                  enum: [1, 2]
+                database:
+                  type: string
+                  description: Database name (InfluxDB v1)
+                  maxLength: 64
+                username:
+                  type: string
+                  description: Username for authentication (InfluxDB v1)
+                  maxLength: 32
+                password:
+                  type: string
+                  description: Password for authentication (InfluxDB v1)
+                  maxLength: 64
+                organization:
+                  type: string
+                  description: Organization name (InfluxDB v2)
+                  maxLength: 64
+                bucket:
+                  type: string
+                  description: Bucket name (InfluxDB v2)
+                  maxLength: 64
+                token:
+                  type: string
+                  description: Authentication token (InfluxDB v2)
+                  maxLength: 64
+                measurement:
+                  type: string
+                  description: Measurement name for data points
+                  maxLength: 64
+                frequency:
+                  type: integer
+                  description: Data sending frequency in seconds
+                  minimum: 1
+                  maximum: 3600
+                useSSL:
+                  type: boolean
+                  description: Whether to use HTTPS for connections
+              minProperties: 1
+            examples:
+              enable_only:
+                summary: Enable InfluxDB only
+                value:
+                  enabled: true
+              server_config:
+                summary: Update server settings
+                value:
+                  server: "new-influxdb-server.com"
+                  port: 8086
+              v2_config:
+                summary: Update InfluxDB v2 settings
+                value:
+                  version: 2
+                  organization: "my-new-org"
+                  bucket: "energy-data"
+                  token: "new-auth-token"
       responses:
         '200':
           description: Configuration updated successfully

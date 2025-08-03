@@ -98,15 +98,14 @@ namespace Ade7953
     // Configuration management
     static void _setConfigurationFromPreferences();
     static void _saveConfigurationToPreferences();
-    // Apply all the single register values from the configuration
-    static void _applyConfiguration(const Ade7953Configuration &config);
+    static void _applyConfiguration(const Ade7953Configuration &config); // Apply all the single register values from the configuration
     static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial = false);
 
     // Channel data management
     static void _setChannelDataFromPreferences(uint32_t channelIndex);
     static bool _saveChannelDataToPreferences(uint32_t channelIndex);
     static void _updateChannelData(uint32_t channelIndex);
-    static bool _validateChannelDataJson(JsonDocument &jsonDocument);
+    static bool _validateChannelDataJson(JsonDocument &jsonDocument, bool partial = false);
     static void _calculateLsbValues(CtSpecification &ctSpec);
 
     // Energy data management
@@ -670,8 +669,27 @@ namespace Ade7953
     }
 
     bool setChannelDataFromJson(JsonDocument &jsonDocument, bool partial) {
-        // TODO: implement this
-        logger.warning("setChannelDataFromJson is not implemented yet", TAG);
+        if (!_validateChannelDataJson(jsonDocument, partial)) {
+            logger.error("Invalid channel data JSON", TAG);
+            return false;
+        }
+
+        uint32_t channelIndex = jsonDocument["index"].as<uint32_t>();
+        
+        if (!isChannelValid(channelIndex)) {
+            logger.error("Invalid channel index: %lu", TAG, channelIndex);
+            return false;
+        }
+
+        ChannelData channelData;
+        channelData = _channelData[channelIndex];
+        
+        if (!channelDataFromJson(jsonDocument, channelData, partial)) {
+            logger.error("Failed to convert JSON to channel data", TAG);
+            return false;
+        }
+        
+        setChannelData(channelData, channelIndex);
 
         return true;
     }
@@ -691,9 +709,40 @@ namespace Ade7953
     }
 
     bool channelDataFromJson(JsonDocument &jsonDocument, ChannelData &channelData, bool partial) {
-        // TODO: implement this
-        logger.warning("channelDataFromJson is not implemented yet", TAG);
+        if (partial) {
+            // Update only fields that are present in JSON
+            if (jsonDocument["index"].is<uint32_t>()) channelData.index = jsonDocument["index"].as<uint32_t>();
+            if (jsonDocument["active"].is<bool>()) channelData.active = jsonDocument["active"].as<bool>();
+            if (jsonDocument["reverse"].is<bool>()) channelData.reverse = jsonDocument["reverse"].as<bool>();
+            if (jsonDocument["label"].is<const char*>()) {
+                snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
+            }
+            if (jsonDocument["phase"].is<uint8_t>()) channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
+            
+            // CT Specification fields
+            if (jsonDocument["ctSpecification"]["currentRating"].is<uint32_t>()) {
+                channelData.ctSpecification.currentRating = jsonDocument["ctSpecification"]["currentRating"].as<uint32_t>();
+            }
+            if (jsonDocument["ctSpecification"]["voltageOutput"].is<uint32_t>()) {
+                channelData.ctSpecification.voltageOutput = jsonDocument["ctSpecification"]["voltageOutput"].as<uint32_t>();
+            }
+            if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) {
+                channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
+            }
+        } else {
+            // Full update - set all fields
+            channelData.index = jsonDocument["index"].as<uint32_t>();
+            channelData.active = jsonDocument["active"].as<bool>();
+            channelData.reverse = jsonDocument["reverse"].as<bool>();
+            snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
+            channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
+            
+            channelData.ctSpecification.currentRating = jsonDocument["ctSpecification"]["currentRating"].as<uint32_t>();
+            channelData.ctSpecification.voltageOutput = jsonDocument["ctSpecification"]["voltageOutput"].as<uint32_t>();
+            channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
+        }
 
+        logger.debug("Successfully converted JSON to channel data for channel %lu%s", TAG, channelData.index, partial ? " (partial)" : "");
         return true;
     }
 
@@ -1541,28 +1590,157 @@ namespace Ade7953
     // =================================
 
     void _setChannelDataFromPreferences(uint32_t channelIndex) {
-        // TODO: Implement this
-        logger.warning("Setting channel data from preferences is not yet implemented", TAG);
+        if (!isChannelValid(channelIndex)) {
+            logger.warning("Invalid channel index: %lu", TAG, channelIndex);
+            return;
+        }
+
+        logger.debug("Setting channel data from preferences for channel %lu", TAG, channelIndex);
+
+        ChannelData channelData;
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, true)) { // true = read-only
+            logger.error("Failed to open Preferences for channel data", TAG);
+            // Set default channel data
+            setChannelData(channelData, channelIndex);
+            return;
+        }
+
+        char key[PREFERENCES_KEY_BUFFER_SIZE];
+        
+        // Load channel data (use defaults if not found)
+        channelData.index = channelIndex;
+
+        snprintf(key, sizeof(key), CHANNEL_ACTIVE_KEY, channelIndex);
+        channelData.active = preferences.getBool(key, channelIndex == 0); // Channel 0 active by default
+
+        snprintf(key, sizeof(key), CHANNEL_REVERSE_KEY, channelIndex);
+        channelData.reverse = preferences.getBool(key, DEFAULT_CHANNEL_REVERSE);
+
+        snprintf(key, sizeof(key), CHANNEL_LABEL_KEY, channelIndex);
+        char defaultLabel[NAME_BUFFER_SIZE];
+        snprintf(defaultLabel, sizeof(defaultLabel), DEFAULT_CHANNEL_LABEL_FORMAT, channelIndex);
+        preferences.getString(key, channelData.label, sizeof(channelData.label));
+        if (strlen(channelData.label) == 0) {
+            snprintf(channelData.label, sizeof(channelData.label), "%s", defaultLabel);
+        }
+
+        snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
+        channelData.phase = static_cast<Phase>(preferences.getUChar(key, static_cast<uint8_t>(DEFAULT_CHANNEL_PHASE)));
+
+        // CT Specification
+        snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
+        channelData.ctSpecification.currentRating = preferences.getFloat(key, DEFAULT_CT_CURRENT_RATING);
+
+        snprintf(key, sizeof(key), CHANNEL_CT_VOLTAGE_OUTPUT_KEY, channelIndex);
+        channelData.ctSpecification.voltageOutput = preferences.getFloat(key, DEFAULT_CT_VOLTAGE_OUTPUT);
+
+        snprintf(key, sizeof(key), CHANNEL_CT_SCALING_FRACTION_KEY, channelIndex);
+        channelData.ctSpecification.scalingFraction = preferences.getFloat(key, DEFAULT_CT_SCALING_FRACTION);
+
+        preferences.end();
+
+        setChannelData(channelData, channelIndex);
+
+        logger.debug("Successfully set channel data from Preferences for channel %lu", TAG, channelIndex);
     }
 
     bool _saveChannelDataToPreferences(uint32_t channelIndex) {
-        // TODO: implement this
+        if (!isChannelValid(channelIndex)) {
+            logger.warning("Invalid channel index: %lu", TAG, channelIndex);
+            return false;
+        }
 
-        logger.warning("Saving channel data to preferences is not yet implemented", TAG);
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false)) { // false = read-write
+            logger.error("Failed to open Preferences for saving channel data", TAG);
+            return false;
+        }
+
+        char key[PREFERENCES_KEY_BUFFER_SIZE];
+
+        // Save channel data
+        snprintf(key, sizeof(key), CHANNEL_ACTIVE_KEY, channelIndex);
+        preferences.putBool(key, _channelData[channelIndex].active);
+
+        snprintf(key, sizeof(key), CHANNEL_REVERSE_KEY, channelIndex);
+        preferences.putBool(key, _channelData[channelIndex].reverse);
+
+        snprintf(key, sizeof(key), CHANNEL_LABEL_KEY, channelIndex);
+        preferences.putString(key, _channelData[channelIndex].label);
+
+        snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
+        preferences.putUChar(key, static_cast<uint8_t>(_channelData[channelIndex].phase));
+
+        // CT Specification
+        snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
+        preferences.putFloat(key, _channelData[channelIndex].ctSpecification.currentRating);
+
+        snprintf(key, sizeof(key), CHANNEL_CT_VOLTAGE_OUTPUT_KEY, channelIndex);
+        preferences.putFloat(key, _channelData[channelIndex].ctSpecification.voltageOutput);
+
+        snprintf(key, sizeof(key), CHANNEL_CT_SCALING_FRACTION_KEY, channelIndex);
+        preferences.putFloat(key, _channelData[channelIndex].ctSpecification.scalingFraction);
+
+        preferences.end();
+
+        logger.debug("Successfully saved channel data to Preferences for channel %lu", TAG, channelIndex);
         return true;
+    }
+
+    bool _validateChannelDataJson(JsonDocument &jsonDocument, bool partial) {
+        if (!jsonDocument.is<JsonObject>()) {
+            logger.warning("JSON is not an object", TAG);
+            return false;
+        }
+
+        // Index is always required for channel operations
+        if (!jsonDocument["index"].is<uint32_t>()) {
+            logger.warning("index is missing or not uint32_t", TAG);
+            return false;
+        }
+
+        if (!isChannelValid(jsonDocument["index"].as<uint32_t>())) {
+            logger.warning("Invalid channel index: %lu", TAG, jsonDocument["index"].as<uint32_t>());
+            return false;
+        }
+
+        if (partial) {
+            if (jsonDocument["active"].is<bool>()) return true;
+            if (jsonDocument["reverse"].is<bool>()) return true;
+            if (jsonDocument["label"].is<const char*>()) return true;
+            if (jsonDocument["phase"].is<uint8_t>()) return true;
+
+            // CT Specification validation for partial updates
+            if (!jsonDocument["ctSpecification"].is<JsonObject>()) {
+                if (jsonDocument["ctSpecification"]["currentRating"].is<uint32_t>()) return true;
+                if (jsonDocument["ctSpecification"]["voltageOutput"].is<uint32_t>()) return true;
+                if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) return true;   
+            }
+
+            logger.warning("No valid fields found for partial update", TAG);
+            return false; // No valid fields found for partial update
+        } else {
+            // Full validation - all fields must be present and valid
+            if (!jsonDocument["active"].is<bool>()) { logger.warning("active is missing or not bool", TAG); return false; }
+            if (!jsonDocument["reverse"].is<bool>()) { logger.warning("reverse is missing or not bool", TAG); return false; }
+            if (!jsonDocument["label"].is<const char*>()) { logger.warning("label is missing or not string", TAG); return false; }
+            if (!jsonDocument["phase"].is<uint8_t>()) { logger.warning("phase is missing or not uint8_t", TAG); return false; }
+
+            // CT Specification validation
+            if (!jsonDocument["ctSpecification"].is<JsonObject>()) { logger.warning("ctSpecification is missing or not object", TAG); return false; }
+            if (!jsonDocument["ctSpecification"]["currentRating"].is<uint32_t>()) { logger.warning("ctSpecification.currentRating is missing or not uint32_t", TAG); return false; }
+            if (!jsonDocument["ctSpecification"]["voltageOutput"].is<uint32_t>()) { logger.warning("ctSpecification.voltageOutput is missing or not uint32_t", TAG); return false; }
+            if (!jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) { logger.warning("ctSpecification.scalingFraction is missing or not float", TAG); return false; }
+
+            return true; // All fields validated successfully
+        }
     }
 
     void _updateChannelData(uint32_t channelIndex) {
         _calculateLsbValues(_channelData[channelIndex].ctSpecification);
 
-        logger.debug("Successfully updated channel data", TAG);
-    }
-
-    bool _validateChannelDataJson(JsonDocument &jsonDocument) {
-        // TODO: implement this
-
-        logger.warning("Validating channel data JSON is not yet implemented", TAG); 
-        return true;
+        logger.debug("Successfully updated channel data for channel %lu", TAG, channelIndex);
     }
 
     void _calculateLsbValues(CtSpecification &ctSpec) {
@@ -1572,8 +1750,6 @@ namespace Ade7953
         // - ctSpec.scalingFraction (e.g., 0.05 for +5% adjustment)
         // - ADE7953 maximum values and voltage divider ratios
         
-        logger.warning("Calculating LSB values is not yet implemented", TAG);
-
         // For now, set default values to prevent compilation errors
         ctSpec.aLsb = 1.0f;
         ctSpec.wLsb = 1.0f;
@@ -1584,7 +1760,7 @@ namespace Ade7953
         ctSpec.vahLsb = 1.0f;
 
         logger.debug(
-            "LSB values calculated for CT with current rating %f, voltage output %f and scaling fraction %f: %s", 
+            "LSB values calculated for CT with current rating %.1f, voltage output %.3f and scaling fraction %.3f", 
             TAG, 
             ctSpec.currentRating, 
             ctSpec.voltageOutput, 
@@ -1596,8 +1772,6 @@ namespace Ade7953
     // ======
 
     void _setEnergyFromPreferences(uint32_t channelIndex) {
-        logger.debug("Reading energy from preferences", TAG);
-        
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_ENERGY, true)) {
             logger.error("Failed to open preferences for reading", TAG);
@@ -1629,7 +1803,7 @@ namespace Ade7953
         _energyValues[channelIndex].apparentEnergy = _meterValues[channelIndex].apparentEnergy;
 
         preferences.end();
-        logger.debug("Successfully read energy from preferences", TAG);
+        logger.debug("Successfully read energy from preferences for channel %lu", TAG, channelIndex);
     }
 
     void _saveEnergyToPreferences(uint32_t channelIndex) {

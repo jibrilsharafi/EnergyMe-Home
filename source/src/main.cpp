@@ -161,6 +161,7 @@ void setup()
   logger.info("Maintenance task started", TAG);
 
   Led::setGreen(Led::PRIO_NORMAL);
+  printStatistics();
   printDeviceStatusDynamic();
   logger.info("Setup done! Let's get this energetic party started!", TAG);
 }

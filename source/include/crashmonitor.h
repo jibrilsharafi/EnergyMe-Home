@@ -16,7 +16,7 @@
 
 #define MAX_CRASH_COUNT 3 // Maximum amount of consecutive crashes before triggering a rollback (or factory reset)
 #define MAX_RESET_COUNT 10 // Maximum amount of consecutive resets before triggering a rollback (or factory reset)
-#define CRASH_COUNTER_TIMEOUT (180 * 1000) // Timeout for the consecutive crash counter to reset
+#define COUNTERS_RESET_TIMEOUT (180 * 1000) // Timeout for the consecutive crash counter to reset
 
 #define CRASH_RESET_TASK_NAME "crash_reset_task"
 #define CRASH_RESET_TASK_STACK_SIZE (4 * 1024) // PLEASE: never put below this as even a single log will exceed 1024 kB easily.. We don't need to optimize so much :)

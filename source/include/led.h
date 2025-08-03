@@ -77,6 +77,7 @@ namespace Led {
 
     void setBrightness(uint32_t brightness);
     uint32_t getBrightness();
+    inline bool isBrightnessValid(uint32_t brightness) { return brightness <= LED_MAX_BRIGHTNESS_PERCENT; }
 
     // Pattern control functions
     void setPattern(LedPattern pattern, Color color, LedPriority priority = 1, uint64_t durationMs = 0);

@@ -76,7 +76,7 @@ namespace CrashMonitor
     {
         logger.debug("Starting crash reset task...", TAG);
 
-        delay(CRASH_COUNTER_TIMEOUT);
+        delay(COUNTERS_RESET_TIMEOUT);
         
         if (_consecutiveCrashCount > 0 || _consecutiveResetCount > 0){
             logger.debug("Consecutive crash and reset counters reset to 0", TAG);

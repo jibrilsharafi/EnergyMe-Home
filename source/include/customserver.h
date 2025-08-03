@@ -62,9 +62,11 @@
 #define CRASH_DUMP_MAX_CHUNK_SIZE (4 * 1024) // Maximum chunk size for core dump retrieval. Can be set high thanks to chunked transfer, but above 4-8 kB it will crash the wdt
 
 namespace CustomServer {
+    // Web server management
     void begin();
     void stop();
 
+    // Authentication management
     void updateAuthPassword();
-    bool resetWebPassword();
+    bool resetWebPassword(); // This has to be accessible from buttonHandler to physically reset the password 
 }
