@@ -102,9 +102,7 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
 // Preferences management
 void clearAllPreferences();
 
-// Firmware management
-bool isLatestFirmwareInstalled();
-void updateJsonFirmwareStatus(const char *status, const char *reason);
-
-// Network utilities
-const char* getMqttStateReason(int32_t state);
+// SPIFFS file operations
+bool listSpiffsFiles(JsonDocument& doc);
+bool getSpiffsFileContent(const char* filepath, String& content);
+const char* getContentTypeFromFilename(const char* filename);

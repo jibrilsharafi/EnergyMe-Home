@@ -124,6 +124,8 @@ namespace Mqtt
     static void _writeEncryptedPreferences(const char* preference_key, const char* value);
     static void _clearCertificates();
 
+    const char* _getMqttStateReason(int32_t state);
+
     void begin()
     {
         logger.debug("Setting up MQTT client...", TAG);
@@ -631,7 +633,7 @@ namespace Mqtt
                 "Failed to connect to MQTT (attempt %d). Reason: %s (%d). Retrying...",
                 TAG,
                 _mqttConnectionAttempt + 1,
-                getMqttStateReason(currentState),
+                _getMqttStateReason(currentState),
                 currentState
             );
 
@@ -725,7 +727,7 @@ namespace Mqtt
                 TAG,
                 connectionAttempt + 1,
                 MQTT_CLAIM_MAX_CONNECTION_ATTEMPT,
-                getMqttStateReason(_clientMqtt.state())
+                _getMqttStateReason(_clientMqtt.state())
             );
 
             connectionAttempt++;
@@ -1019,7 +1021,7 @@ namespace Mqtt
         }
 
         if (!_clientMqtt.connected()) {
-            logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", TAG, getMqttStateReason(_clientMqtt.state()), topic);
+            logger.warning("MQTT client not connected. State: %s. Skipping publishing on %s", TAG, _getMqttStateReason(_clientMqtt.state()), topic);
             statistics.mqttMessagesPublishedError++;
             return false;
         }    
@@ -1032,7 +1034,7 @@ namespace Mqtt
         }
 
         if (!_clientMqtt.publish(topic, message, retain)) {
-            logger.error("Failed to publish message on %s. MQTT client state: %s", TAG, topic, getMqttStateReason(_clientMqtt.state()));
+            logger.error("Failed to publish message on %s. MQTT client state: %s", TAG, topic, _getMqttStateReason(_clientMqtt.state()));
             statistics.mqttMessagesPublishedError++;
             return false;
         }
@@ -1506,5 +1508,36 @@ namespace Mqtt
         if (latestPatch > currentPatch) return false; // Current patch is lower (thus latest is newer)
 
         return true; // Versions are equal
+    }
+
+    const char* _getMqttStateReason(int32_t state)
+    {
+
+        // Full description of the MQTT state codes
+        // -4 : MQTT_CONNECTION_TIMEOUT - the server didn't respond within the keepalive time
+        // -3 : MQTT_CONNECTION_LOST - the network connection was broken
+        // -2 : MQTT_CONNECT_FAILED - the network connection failed
+        // -1 : MQTT_DISCONNECTED - the client is disconnected cleanly
+        // 0 : MQTT_CONNECTED - the client is connected
+        // 1 : MQTT_CONNECT_BAD_PROTOCOL - the server doesn't support the requested version of MQTT
+        // 2 : MQTT_CONNECT_BAD_CLIENT_ID - the server rejected the client identifier
+        // 3 : MQTT_CONNECT_UNAVAILABLE - the server was unable to accept the connection
+        // 4 : MQTT_CONNECT_BAD_CREDENTIALS - the username/password were rejected
+        // 5 : MQTT_CONNECT_UNAUTHORIZED - the client was not authorized to connect
+
+        switch (state)
+        {
+            case -4: return "MQTT_CONNECTION_TIMEOUT";
+            case -3: return "MQTT_CONNECTION_LOST";
+            case -2: return "MQTT_CONNECT_FAILED";
+            case -1: return "MQTT_DISCONNECTED";
+            case 0: return "MQTT_CONNECTED";
+            case 1: return "MQTT_CONNECT_BAD_PROTOCOL";
+            case 2: return "MQTT_CONNECT_BAD_CLIENT_ID";
+            case 3: return "MQTT_CONNECT_UNAVAILABLE";
+            case 4: return "MQTT_CONNECT_BAD_CREDENTIALS";
+            case 5: return "MQTT_CONNECT_UNAUTHORIZED";
+            default: return "Unknown MQTT state";
+        }
     }
 }

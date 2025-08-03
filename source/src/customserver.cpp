@@ -62,6 +62,7 @@ namespace CustomServer
     static void _serveInfluxDbEndpoints();
     static void _serveCrashEndpoints();
     static void _serveLedEndpoints();
+    static void _serveFileEndpoints();
     
     // Authentication endpoints
     static void _serveAuthStatusEndpoint();
@@ -72,6 +73,7 @@ namespace CustomServer
     static void _serveOtaUploadEndpoint();
     static void _serveOtaStatusEndpoint();
     static void _serveOtaRollbackEndpoint();
+    static void _serveFirmwareStatusEndpoint();
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request);
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
                                    size_t index, uint8_t *data, size_t len, bool final);
@@ -539,6 +541,7 @@ namespace CustomServer
         _serveInfluxDbEndpoints();
         _serveCrashEndpoints();
         _serveLedEndpoints();
+        _serveFileEndpoints();
     }
 
     static void _serveStaticContent()
@@ -689,6 +692,7 @@ namespace CustomServer
         _serveOtaUploadEndpoint();
         _serveOtaStatusEndpoint();
         _serveOtaRollbackEndpoint();
+        _serveFirmwareStatusEndpoint();
     }
 
     static void _serveOtaUploadEndpoint()
@@ -935,6 +939,40 @@ namespace CustomServer
                 logger.error("Rollback not possible: %s", TAG, Update.errorString());
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Rollback not possible");
             }
+        });
+    }
+
+    static void _serveFirmwareStatusEndpoint()
+    {
+
+        // Get firmware update information
+        server.on("/api/v1/firmware/update-info", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            
+            // Get current firmware info
+            doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
+            doc["buildDate"] = FIRMWARE_BUILD_DATE;
+            doc["buildTime"] = FIRMWARE_BUILD_TIME;
+            
+            // Get available update info from MQTT configuration
+            char availableVersion[VERSION_BUFFER_SIZE];
+            char updateUrl[URL_BUFFER_SIZE];
+            
+            Mqtt::getFirmwareUpdatesVersion(availableVersion, sizeof(availableVersion));
+            Mqtt::getFirmwareUpdatesUrl(updateUrl, sizeof(updateUrl));
+            
+            if (strlen(availableVersion) > 0) {
+                doc["availableVersion"] = availableVersion;
+            }
+            
+            if (strlen(updateUrl) > 0) {
+                doc["updateUrl"] = updateUrl;
+            }
+            
+            doc["isLatest"] = Mqtt::isLatestFirmwareInstalled();
+            
+            _sendJsonResponse(request, doc);
         });
     }
 
@@ -1607,57 +1645,54 @@ namespace CustomServer
             });
         server.addHandler(setLedBrightnessHandler);
     }
+
+    // === FILE OPERATION ENDPOINTS ===
+    static void _serveFileEndpoints()
+    {
+        // List files in SPIFFS. The endpoint cannot be only "files" as it conflicts with the file serving endpoint (defined below)
+        server.on("/api/v1/list-files", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            
+            if (listSpiffsFiles(doc)) {
+                _sendJsonResponse(request, doc);
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to list SPIFFS files");
+            }
+        });
+
+        // Get specific file content
+        // Note: Using "/api/v1/files/*" pattern works with ESPAsyncWebServer wildcard matching
+        server.on("/api/v1/files/*", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            String url = request->url();
+            String filename = url.substring(url.indexOf("/api/v1/files/") + 14); // Remove "/api/v1/files/" prefix
+            
+            if (filename.length() == 0) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File path cannot be empty");
+                return;
+            }
+            
+            // URL decode the filename to handle encoded slashes properly
+            filename.replace("%2F", "/");
+            filename.replace("%2f", "/");
+            
+            // Ensure filename starts with "/"
+            if (!filename.startsWith("/")) {
+                filename = "/" + filename;
+            }
+
+            // Check if file exists
+            if (!SPIFFS.exists(filename)) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "File not found");
+                return;
+            }
+
+            // Determine content type based on file extension
+            const char* contentType = getContentTypeFromFilename(filename.c_str());
+
+            // Serve the file directly from SPIFFS with proper content type
+            request->send(SPIFFS, filename, contentType);
+        });
+    }
 }
-
-
-//     // File operations
-//     _server.on("/rest/list-files", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         File root = SPIFFS.open("/");
-//         File file = root.openNextFile();
-
-//         static char buffer[JSON_RESPONSE_BUFFER_SIZE];
-//         JsonDocument doc;
-//         uint32_t loops = 0;
-//         while (file && loops < MAX_LOOP_ITERATIONS) {
-//             loops++;
-//             const char* filename = file.path();
-//             if (strstr(filename, "secret") == nullptr) {
-//                 doc[filename] = file.size();
-//             }
-//             file = root.openNextFile();
-//         }
-
-//         safeSerializeJson(doc, buffer, sizeof(buffer));
-//         request->send(200, "application/json", buffer);
-//     });
-
-//     _server.on("/rest/file/*", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         char filename[FILENAME_BUFFER_SIZE];
-//         const char* url = request->url().c_str();
-//         if (strlen(url) > 10) {
-//             snprintf(filename, sizeof(filename), "%s", url + 10);
-//         } else {
-//             filename[0] = '\0';
-//         }
-
-//         if (strstr(filename, "secret") != nullptr) {
-//             request->send(HTTP_CODE_UNAUTHORIZED, "application/json", "{\"message\":\"Unauthorized\"}");
-//             return;
-//         }
-
-//         // Use the simpler SPIFFS file serving approach
-//         request->send(SPIFFS, filename);
-//     });
-
-//     // Additional GET endpoints for monitoring and status
-//     _server.on("/rest/firmware-update-info", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         request->send(SPIFFS, FW_UPDATE_INFO_JSON_PATH, "application/json");
-//     });
-
-//     _server.on("/rest/is-latest-firmware-installed", HTTP_GET, [this](AsyncWebServerRequest *request) {
-//         if (isLatestFirmwareInstalled()) {
-//             request->send(200, "application/json", "{\"latest\":true}");
-//         } else {
-//             request->send(200, "application/json", "{\"latest\":false}");
-//         }
-//     });

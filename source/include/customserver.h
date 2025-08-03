@@ -13,6 +13,7 @@
 #include "constants.h"
 #include "crashmonitor.h"
 #include "custommqtt.h"
+#include "mqtt.h"
 #include "influxdbclient.h"
 #include "ade7953.h"
 #include "globals.h"

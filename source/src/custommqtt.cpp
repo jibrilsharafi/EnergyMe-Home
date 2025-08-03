@@ -52,6 +52,9 @@ namespace CustomMqtt
     static void _stopTask();
     static void _disable(); // Needed for halting the functionality if we have too many failure
 
+    // Utils
+    const char* _getMqttStateReason(int32_t state);
+
     // Public API functions
     // =========================================================
 
@@ -448,7 +451,7 @@ namespace CustomMqtt
         } else {
             _currentMqttConnectionAttempt++;
             int32_t currentState = _customClientMqtt.state();
-            const char* _reason = getMqttStateReason(currentState);
+            const char* _reason = _getMqttStateReason(currentState);
 
             // Check for specific errors that warrant disabling Custom MQTT
             if (currentState == MQTT_CONNECT_BAD_CREDENTIALS || currentState == MQTT_CONNECT_UNAUTHORIZED) {
@@ -529,7 +532,7 @@ namespace CustomMqtt
 
         if (!_customClientMqtt.connected())
         {
-            logger.warning("Custom MQTT client not connected. State: %s. Skipping publishing on %s", TAG, getMqttStateReason(_customClientMqtt.state()), topic);
+            logger.warning("Custom MQTT client not connected. State: %s. Skipping publishing on %s", TAG, _getMqttStateReason(_customClientMqtt.state()), topic);
             return false;
         }
 
@@ -541,7 +544,7 @@ namespace CustomMqtt
 
         if (!_customClientMqtt.publish(topic, message))
         {
-            logger.warning("Failed to publish message. Custom MQTT client state: %s", TAG, getMqttStateReason(_customClientMqtt.state()));
+            logger.warning("Failed to publish message. Custom MQTT client state: %s", TAG, _getMqttStateReason(_customClientMqtt.state()));
             return false;
         }
         
@@ -550,5 +553,36 @@ namespace CustomMqtt
         statistics.customMqttMessagesPublished++;
         logger.debug("Message published to %s (%d bytes)", TAG, topic, strlen(message));
         return true;
+    }
+
+    const char* _getMqttStateReason(int32_t state)
+    {
+
+        // Full description of the MQTT state codes
+        // -4 : MQTT_CONNECTION_TIMEOUT - the server didn't respond within the keepalive time
+        // -3 : MQTT_CONNECTION_LOST - the network connection was broken
+        // -2 : MQTT_CONNECT_FAILED - the network connection failed
+        // -1 : MQTT_DISCONNECTED - the client is disconnected cleanly
+        // 0 : MQTT_CONNECTED - the client is connected
+        // 1 : MQTT_CONNECT_BAD_PROTOCOL - the server doesn't support the requested version of MQTT
+        // 2 : MQTT_CONNECT_BAD_CLIENT_ID - the server rejected the client identifier
+        // 3 : MQTT_CONNECT_UNAVAILABLE - the server was unable to accept the connection
+        // 4 : MQTT_CONNECT_BAD_CREDENTIALS - the username/password were rejected
+        // 5 : MQTT_CONNECT_UNAUTHORIZED - the client was not authorized to connect
+
+        switch (state)
+        {
+            case -4: return "MQTT_CONNECTION_TIMEOUT";
+            case -3: return "MQTT_CONNECTION_LOST";
+            case -2: return "MQTT_CONNECT_FAILED";
+            case -1: return "MQTT_DISCONNECTED";
+            case 0: return "MQTT_CONNECTED";
+            case 1: return "MQTT_CONNECT_BAD_PROTOCOL";
+            case 2: return "MQTT_CONNECT_BAD_CLIENT_ID";
+            case 3: return "MQTT_CONNECT_UNAVAILABLE";
+            case 4: return "MQTT_CONNECT_BAD_CREDENTIALS";
+            case 5: return "MQTT_CONNECT_UNAUTHORIZED";
+            default: return "Unknown MQTT state";
+        }
     }
 }

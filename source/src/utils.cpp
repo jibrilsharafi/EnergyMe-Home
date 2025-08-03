@@ -674,37 +674,6 @@ void getDeviceId(char* deviceId, size_t maxLength) {
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-const char* getMqttStateReason(int32_t state)
-{
-
-    // Full description of the MQTT state codes
-    // -4 : MQTT_CONNECTION_TIMEOUT - the server didn't respond within the keepalive time
-    // -3 : MQTT_CONNECTION_LOST - the network connection was broken
-    // -2 : MQTT_CONNECT_FAILED - the network connection failed
-    // -1 : MQTT_DISCONNECTED - the client is disconnected cleanly
-    // 0 : MQTT_CONNECTED - the client is connected
-    // 1 : MQTT_CONNECT_BAD_PROTOCOL - the server doesn't support the requested version of MQTT
-    // 2 : MQTT_CONNECT_BAD_CLIENT_ID - the server rejected the client identifier
-    // 3 : MQTT_CONNECT_UNAVAILABLE - the server was unable to accept the connection
-    // 4 : MQTT_CONNECT_BAD_CREDENTIALS - the username/password were rejected
-    // 5 : MQTT_CONNECT_UNAUTHORIZED - the client was not authorized to connect
-
-    switch (state)
-    {
-        case -4: return "MQTT_CONNECTION_TIMEOUT";
-        case -3: return "MQTT_CONNECTION_LOST";
-        case -2: return "MQTT_CONNECT_FAILED";
-        case -1: return "MQTT_DISCONNECTED";
-        case 0: return "MQTT_CONNECTED";
-        case 1: return "MQTT_CONNECT_BAD_PROTOCOL";
-        case 2: return "MQTT_CONNECT_BAD_CLIENT_ID";
-        case 3: return "MQTT_CONNECT_UNAVAILABLE";
-        case 4: return "MQTT_CONNECT_BAD_CREDENTIALS";
-        case 5: return "MQTT_CONNECT_UNAUTHORIZED";
-        default: return "Unknown MQTT state";
-    }
-}
-
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier) {
     if (attempt == 0) return 0;
     
@@ -715,4 +684,87 @@ uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval,
     }
     
     return min(backoffDelay, maxInterval);
+}
+
+// === SPIFFS FILE OPERATIONS ===
+
+bool listSpiffsFiles(JsonDocument& doc) {
+    File root = SPIFFS.open("/");
+    if (!root) {
+        logger.error("Failed to open SPIFFS root directory", TAG);
+        return false;
+    }
+
+    File file = root.openNextFile();
+    uint32_t loops = 0;
+    
+    while (file && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
+        const char* filename = file.path();
+        
+        // Add file with its size to the JSON document
+        doc[filename] = file.size();
+        
+        file = root.openNextFile();
+    }
+
+    root.close();
+    return true;
+}
+
+bool getSpiffsFileContent(const char* filepath, char* buffer, size_t bufferSize) {
+    if (!filepath || !buffer || bufferSize == 0) {
+        logger.error("Invalid arguments provided", TAG);
+        return false;
+    }
+    
+    // Check if file exists
+    if (!SPIFFS.exists(filepath)) {
+        logger.debug("File not found: %s", TAG, filepath);
+        return false;
+    }
+    
+    File file = SPIFFS.open(filepath, "r");
+    if (!file) {
+        logger.error("Failed to open file: %s", TAG, filepath);
+        return false;
+    }
+
+    size_t bytesRead = file.readBytes(buffer, bufferSize - 1);
+    buffer[bytesRead] = '\0';  // Null-terminate the string
+    file.close();
+
+    logger.debug("Successfully read file: %s (%d bytes)", TAG, filepath, bytesRead);
+    return true;
+}
+
+const char* getContentTypeFromFilename(const char* filename) {
+    if (!filename) return "application/octet-stream";
+    
+    // Find the file extension
+    const char* ext = strrchr(filename, '.');
+    if (!ext) return "application/octet-stream";
+    
+    // Convert to lowercase for comparison
+    char extension[16];
+    size_t extLen = strlen(ext);
+    if (extLen >= sizeof(extension)) return "application/octet-stream";
+    
+    for (size_t i = 0; i < extLen; i++) {
+        extension[i] = tolower(ext[i]);
+    }
+    extension[extLen] = '\0';
+    
+    // Common file types used in the project
+    if (strcmp(extension, ".json") == 0) return "application/json";
+    if (strcmp(extension, ".txt") == 0) return "text/plain";
+    if (strcmp(extension, ".log") == 0) return "text/plain";
+    if (strcmp(extension, ".csv") == 0) return "text/csv";
+    if (strcmp(extension, ".xml") == 0) return "application/xml";
+    if (strcmp(extension, ".html") == 0) return "text/html";
+    if (strcmp(extension, ".css") == 0) return "text/css";
+    if (strcmp(extension, ".js") == 0) return "application/javascript";
+    if (strcmp(extension, ".bin") == 0) return "application/octet-stream";
+    
+    return "application/octet-stream";
 }

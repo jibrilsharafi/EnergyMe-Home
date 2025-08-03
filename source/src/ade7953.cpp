@@ -1865,8 +1865,8 @@ namespace Ade7953
         CustomTime::getDateIso(filename, sizeof(filename));
 
         // We must start the path with "/...."
-        char filepath[NAME_BUFFER_SIZE + 2];
-        snprintf(filepath, sizeof(filepath), "/%s", filename);
+        char filepath[NAME_BUFFER_SIZE + 5]; // Added space for "/.csv" suffix
+        snprintf(filepath, sizeof(filepath), "/%s.csv", filename);
         
         // Check if file exists to determine if we need to write header
         bool fileExists = SPIFFS.exists(filepath);

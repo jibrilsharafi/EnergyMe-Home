@@ -320,6 +320,108 @@ paths:
                   hasSecrets:
                     type: boolean
 
+  /api/v1/firmware/update-info:
+    get:
+      summary: Get firmware update information
+      description: Get information about current firmware version, build details, and available updates
+      tags:
+        - System
+      responses:
+        '200':
+          description: Firmware update information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currentVersion:
+                    type: string
+                    description: Current firmware version
+                    example: "00.11.09"
+                  buildDate:
+                    type: string
+                    description: Firmware build date
+                    example: "Aug  3 2025"
+                  buildTime:
+                    type: string
+                    description: Firmware build time
+                    example: "14:30:25"
+                  availableVersion:
+                    type: string
+                    description: Available firmware version for update (if available)
+                    example: "00.11.10"
+                  updateUrl:
+                    type: string
+                    description: URL for firmware update download (if available)
+                    example: "https://github.com/jibrilsharafi/EnergyMe-Home/releases/download/v00.11.10/firmware.bin"
+                  isLatest:
+                    type: boolean
+                    description: Whether the latest firmware version is installed
+                    example: false
+
+  # File Operations endpoints
+  /api/v1/list-files:
+    get:
+      summary: List SPIFFS files
+      description: Get a list of all files stored in SPIFFS with their sizes
+      tags:
+        - Files
+      responses:
+        '200':
+          description: List of files with their sizes
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: integer
+                  description: File size in bytes
+              example:
+                "/logger/log.txt": 2048
+                "/logger/config.txt": 256
+                "/energy/channel_0.json": 512
+                "/calibration/config.json": 128
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/files/{filepath}:
+    get:
+      summary: Get file content
+      description: Download or view the content of a specific file from SPIFFS
+      tags:
+        - Files
+      parameters:
+        - name: filepath
+          in: path
+          required: true
+          description: Path to the file in SPIFFS (without leading slash)
+          schema:
+            type: string
+          example: "logger/log.txt"
+      responses:
+        '200':
+          description: File content returned successfully
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
+              examples:
+                text_file:
+                  summary: Text file content
+                  value: "2025-08-03 12:34:56 [INFO] System started"
+                json_file:
+                  summary: JSON configuration file
+                  value: |
+                    {
+                      "enabled": true,
+                      "sampleTime": 1000
+                    }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # Network Management endpoints
   /api/v1/network/wifi/reset:
     post:
@@ -1473,6 +1575,8 @@ tags:
     description: InfluxDB time-series database configuration and status endpoints
   - name: LED
     description: LED brightness control and status endpoints
+  - name: Files
+    description: SPIFFS file system operations and management endpoints
 
 components:
   # Common response patterns

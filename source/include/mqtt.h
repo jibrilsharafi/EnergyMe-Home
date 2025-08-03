@@ -138,6 +138,7 @@ namespace Mqtt
     bool isCloudServicesEnabled();
     void getFirmwareUpdatesVersion(char* buffer, size_t bufferSize);
     void getFirmwareUpdatesUrl(char* buffer, size_t bufferSize);
+    bool isLatestFirmwareInstalled();
     
     // Public methods for requesting MQTT publications
     void requestConnectivityPublish();
