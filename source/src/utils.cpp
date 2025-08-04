@@ -145,8 +145,6 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
 }
 
 void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
-    logger.debug("Converting static system info to JSON...", TAG);
-
     // Product
     doc["product"]["companyName"] = info.companyName;
     doc["product"]["productName"] = info.productName;
@@ -194,8 +192,6 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
 }
 
 void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
-    logger.debug("Converting dynamic system info to JSON...", TAG);
-
     // Time
     doc["time"]["uptimeMilliseconds"] = (uint64_t)info.uptimeMilliseconds;
     doc["time"]["uptimeSeconds"] = info.uptimeSeconds;
@@ -616,8 +612,6 @@ void printStatistics() {
 }
 
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
-    logger.debug("Converting statistics to JSON...", TAG);
-
     // ADE7953 statistics
     jsonDocument["ade7953"]["totalInterrupts"] = statistics.ade7953TotalInterrupts;
     jsonDocument["ade7953"]["totalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;

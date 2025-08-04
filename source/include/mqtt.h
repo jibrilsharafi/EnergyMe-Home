@@ -20,7 +20,7 @@
 #include "utils.h"
 
 #define MQTT_TASK_NAME "mqtt_task"
-#define MQTT_TASK_STACK_SIZE (32 * 1024)
+#define MQTT_TASK_STACK_SIZE (16 * 1024)
 #define MQTT_TASK_PRIORITY 3
 
 #define MQTT_LOG_QUEUE_SIZE 1000 // Generous log size thanks to PSRAM
@@ -28,8 +28,7 @@
 #define MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD 0.90 // Threshold for publishing
 
 #define JSON_MQTT_BUFFER_SIZE (4 * 1024)     // For MQTT JSON payloads
-#define JSON_MQTT_LARGE_BUFFER_SIZE (16 * 1024) // For larger MQTT JSON payloads
-#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (8 * 1024) // For MQTT subscribe messages (reduced from 1KB)
+#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (6 * 1024) // For MQTT subscribe messages (reduced from 1KB)
 #define CERTIFICATE_BUFFER_SIZE (4 * 1024) // TODO: can this be reduced?
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
@@ -39,7 +38,7 @@
 #define DEFAULT_DEBUG_LOGS_ENABLED false // Do not send debug logs by default
 
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
-#define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (15 * 1000) // The maximum interval between two system dynamic payloads
+#define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (15 * 60 * 1000) // The maximum interval between two system dynamic payloads
 #define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (15 * 60 * 1000) // The interval between two statistics publish
 
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
