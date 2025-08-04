@@ -16,6 +16,10 @@
 #include <ESPmDNS.h>
 #include <WiFi.h>
 #include <Preferences.h>
+#include <nvs.h> // For low-level NVS statistics
+#if ENV_DEV
+#include <nvs_flash.h> // For erasing ALL the NVS
+#endif
 #include <esp_ota_ops.h>
 
 #include "binaries.h"
@@ -51,6 +55,9 @@
 #define FUNCTION_NAME_BUFFER_SIZE 32
 #define REASON_BUFFER_SIZE 128
 #define JSON_STRING_PRINT_BUFFER_SIZE 512 // For JSON strings (print only, needed usually for debugging - Avoid being too large to prevent stack overflow)
+
+// First boot
+#define IS_FIRST_BOOT_DONE_KEY "first_boot"
 
 // Time utilities (high precision 64-bit alternatives)
 // Come one, on this ESP32S3 and in 2025 can we still use 32bits millis
@@ -100,6 +107,9 @@ void setRestartSystem(const char* functionName, const char* reason, bool factory
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
 
 // Preferences management
+bool isFirstBootDone();
+void setFirstBootDone();
+void createAllNamespaces();
 void clearAllPreferences();
 
 // SPIFFS file operations

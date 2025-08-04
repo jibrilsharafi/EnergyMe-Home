@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "11"
-#define FIRMWARE_BUILD_VERSION_PATCH "09"
+#define FIRMWARE_BUILD_VERSION_PATCH "10"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -24,9 +24,10 @@
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32
 
 // While loops
-#define MAX_LOOP_ITERATIONS 10000 // The maximum number of iterations for any while loop to avoid infinite loops
+#define MAX_LOOP_ITERATIONS 1000 // The maximum number of iterations for any while loop to avoid infinite loops
 
 // Preferences namespaces are here to enable a full wipe from utils when factory resetting
+#define PREFERENCES_NAMESPACE_GENERAL "general_ns"
 #define PREFERENCES_NAMESPACE_ADE7953 "ade7953_ns"
 #define PREFERENCES_NAMESPACE_ENERGY "energy_ns"
 #define PREFERENCES_NAMESPACE_CALIBRATION "calibration_ns"
@@ -40,6 +41,7 @@
 #define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor_ns"
 #define PREFERENCES_NAMESPACE_CERTIFICATES "certificates_ns"
 #define PREFERENCES_NAMESPACE_LED "led_ns"
+#define PREFERENCES_NAMESPACE_AUTH "auth_ns" 
 
 // Logger
 #define LOG_PATH "/logger/log.txt"
@@ -67,11 +69,11 @@
 // Timeouts and intervals
 #define TASK_STOPPING_TIMEOUT (3 * 1000)
 #define TASK_STOPPING_CHECK_INTERVAL 100
-#define CONFIG_MUTEX_TIMEOUT_MS 5000
+#define CONFIG_MUTEX_TIMEOUT_MS (5 * 1000) // Generic timeout for configuration mutexes
 
 // Channel configuration
 #define MULTIPLEXER_CHANNEL_COUNT 16
-#define CHANNEL_COUNT MULTIPLEXER_CHANNEL_COUNT + 1 // All the 16 of the multiplexer + 1 directly going to channel A of ADE7953 
+#define CHANNEL_COUNT (MULTIPLEXER_CHANNEL_COUNT + 1) // All the 16 of the multiplexer + 1 directly going to channel A of ADE7953 
 
 // Server used ports (here to ensure no conflicts)
 #define MODBUS_TCP_PORT 502

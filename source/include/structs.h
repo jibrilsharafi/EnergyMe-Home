@@ -127,6 +127,7 @@ struct SystemDynamicInfo {
     float heapUsedPercentage;
     
     // Memory - PSRAM
+    uint32_t psramTotalBytes;
     uint32_t psramFreeBytes;
     uint32_t psramUsedBytes;
     uint32_t psramMinFreeBytes;
@@ -140,7 +141,15 @@ struct SystemDynamicInfo {
     uint32_t spiffsFreeBytes;
     float spiffsFreePercentage;
     float spiffsUsedPercentage;
-    
+
+    // Storage - NVS
+    uint32_t totalUsableEntries;
+    uint32_t usedEntries;
+    uint32_t availableEntries;
+    float usedEntriesPercentage;
+    float availableEntriesPercentage;
+    uint32_t namespaceCount;
+
     // Performance
     float temperatureCelsius;
     

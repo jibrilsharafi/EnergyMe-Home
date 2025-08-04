@@ -628,6 +628,8 @@ namespace CustomServer
             "/api/v1/auth/change-password",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_PASSWORD)) return;
+
                 JsonDocument doc;
                 doc.set(json);
 
@@ -667,8 +669,6 @@ namespace CustomServer
                 // Update authentication middleware with new password
                 updateAuthPassword();
             });
-
-        changePasswordHandler->setMethod(HTTP_POST);
         server.addHandler(changePasswordHandler);
     }
 
@@ -827,9 +827,8 @@ namespace CustomServer
         
         if (headerLength == MD5_BUFFER_SIZE - 1) {
             char md5Header[MD5_BUFFER_SIZE];
-            strncpy(md5Header, md5HeaderCStr, sizeof(md5Header) - 1);
-            md5Header[sizeof(md5Header) - 1] = '\0';
-            
+            snprintf(md5Header, sizeof(md5Header), "%s", md5HeaderCStr);
+
             // Convert to lowercase
             for (size_t i = 0; md5Header[i]; i++) {
                 md5Header[i] = tolower(md5Header[i]);
@@ -959,19 +958,20 @@ namespace CustomServer
             char availableVersion[VERSION_BUFFER_SIZE];
             char updateUrl[URL_BUFFER_SIZE];
             
-            Mqtt::getFirmwareUpdatesVersion(availableVersion, sizeof(availableVersion));
-            Mqtt::getFirmwareUpdatesUrl(updateUrl, sizeof(updateUrl));
+            #if HAS_SECRETS
+            Mqtt::getFirmwareUpdateVersion(availableVersion, sizeof(availableVersion));
+            if (strlen(availableVersion) > 0) doc["availableVersion"] = availableVersion;
+
+            Mqtt::getFirmwareUpdateUrl(updateUrl, sizeof(updateUrl));
+            if (strlen(updateUrl) > 0) doc["updateUrl"] = updateUrl;
+            #endif
             
-            if (strlen(availableVersion) > 0) {
-                doc["availableVersion"] = availableVersion;
-            }
-            
-            if (strlen(updateUrl) > 0) {
-                doc["updateUrl"] = updateUrl;
-            }
-            
+            #if HAS_SECRETS
             doc["isLatest"] = Mqtt::isLatestFirmwareInstalled();
-            
+            #else
+            doc["isLatest"] = true; // No updates available without secrets
+            #endif
+
             _sendJsonResponse(request, doc);
         });
     }
@@ -1117,6 +1117,12 @@ namespace CustomServer
                 }
             });
         server.addHandler(setLogLevelHandler);
+
+        // Get all logs
+        server.on("/api/v1/logs", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            request->send(SPIFFS, LOG_PATH, "text/plain");
+        });
 
         // Clear logs
         server.on("/api/v1/logs/clear", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -1473,6 +1479,40 @@ namespace CustomServer
             
             _sendJsonResponse(request, doc);
         });
+
+        // Get cloud services status
+        server.on("/api/v1/mqtt/cloud-services", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            JsonDocument doc;
+            doc["enabled"] = Mqtt::isCloudServicesEnabled();
+            
+            _sendJsonResponse(request, doc);
+        });
+
+        // Set cloud services status
+        static AsyncCallbackJsonWebHandler *setCloudServicesHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/mqtt/cloud-services",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_MQTT_CLOUD_SERVICES)) return;
+                
+                JsonDocument doc;
+                doc.set(json);
+                
+                // Validate JSON structure
+                if (!doc.is<JsonObject>() || !doc["enabled"].is<bool>())
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"enabled\": true/false}");
+                    return;
+                }
+                
+                bool enabled = doc["enabled"];
+                Mqtt::setCloudServicesEnabled(enabled);
+                
+                logger.info("Cloud services %s via API", TAG, enabled ? "enabled" : "disabled");
+                _sendSuccessResponse(request, enabled ? "Cloud services enabled successfully" : "Cloud services disabled successfully");
+            });
+        server.addHandler(setCloudServicesHandler);
     }
 
     // === INFLUXDB ENDPOINTS ===

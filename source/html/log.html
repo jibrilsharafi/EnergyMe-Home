@@ -189,7 +189,7 @@
             lastFetchTime = now;
 
             try {
-                const response = await fetch('/log-raw');
+                const response = await fetch('/api/v1/logs');
                 const data = await response.text();
 
                 // If data is empty, return early

@@ -215,13 +215,9 @@ paths:
               schema:
                 type: object
                 properties:
-                  firmware:
+                  static:
                     type: object
-                  hardware:
-                    type: object
-                  build:
-                    type: object
-                  uptime:
+                  dynamic:
                     type: object
 
   /api/v1/system/statistics:
@@ -677,6 +673,21 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/v1/logs:
+    get:
+      summary: Get all logs
+      description: Retrieve all stored log entries
+      tags:
+        - Logging
+      responses:
+        '200':
+          description: A list of all log entries
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Log entries in plain text format
+
   /api/v1/logs/clear:
     post:
       summary: Clear logs
@@ -831,6 +842,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/mqtt/cloud-services:
+    get:
+      summary: Get cloud services status
+      description: Get the current status of cloud services (enabled/disabled)
+      tags:
+        - MQTT
+      responses:
+        '200':
+          description: Current cloud services status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - enabled
+                properties:
+                  enabled:
+                    type: boolean
+                    description: Whether cloud services are enabled
+                    example: true
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      summary: Set cloud services status
+      description: Enable or disable cloud services
+      tags:
+        - MQTT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enabled
+              properties:
+                enabled:
+                  type: boolean
+                  description: Whether to enable or disable cloud services
+                  example: true
+      responses:
+        '200':
+          description: Cloud services status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '500':
           $ref: '#/components/responses/InternalServerError'
 

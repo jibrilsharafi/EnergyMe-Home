@@ -18,6 +18,7 @@
 #define DATE_FORMAT "%Y-%m-%d"
 #define DATE_ISO_FORMAT "%04d-%02d-%02d"
 
+// TODO: remove the offset: it is useless, and keepeing everything as UTC is better
 #define PREFERENCES_GMT_OFFSET_KEY "gmt_offset"
 #define PREFERENCES_DST_OFFSET_KEY "dst_offset"
 

@@ -82,13 +82,13 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.heapUsedPercentage = 100.0f - info.heapFreePercentage;
     
     // Memory - PSRAM
-    uint32_t psramTotal = ESP.getPsramSize();
-    if (psramTotal > 0) {
+    info.psramTotalBytes = ESP.getPsramSize();
+    if (info.psramTotalBytes > 0) {
         info.psramFreeBytes = ESP.getFreePsram();
-        info.psramUsedBytes = psramTotal - info.psramFreeBytes;
+        info.psramUsedBytes = info.psramTotalBytes - info.psramFreeBytes;
         info.psramMinFreeBytes = ESP.getMinFreePsram();
         info.psramMaxAllocBytes = ESP.getMaxAllocPsram();
-        info.psramFreePercentage = psramTotal > 0 ? ((float)info.psramFreeBytes / psramTotal) * 100.0f : 0.0f;
+        info.psramFreePercentage = info.psramTotalBytes > 0 ? ((float)info.psramFreeBytes / info.psramTotalBytes) * 100.0f : 0.0f;
         info.psramUsedPercentage = 100.0f - info.psramFreePercentage;
     } else {
         info.psramFreeBytes = 0;
@@ -99,13 +99,23 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
         info.psramUsedPercentage = 0.0f;
     }
     
-    // Storage
+    // Storage - SPIFFS
     info.spiffsTotalBytes = SPIFFS.totalBytes();
     info.spiffsUsedBytes = SPIFFS.usedBytes();
     info.spiffsFreeBytes = info.spiffsTotalBytes - info.spiffsUsedBytes;
     info.spiffsFreePercentage = info.spiffsTotalBytes > 0 ? ((float)info.spiffsFreeBytes / info.spiffsTotalBytes) * 100.0f : 0.0f;
     info.spiffsUsedPercentage = 100.0f - info.spiffsFreePercentage;
-    
+
+    // Storage - NVS
+    nvs_stats_t nvs_stats;
+    esp_err_t err = nvs_get_stats(NULL, &nvs_stats);
+    info.usedEntries = nvs_stats.used_entries;
+    info.availableEntries = nvs_stats.available_entries;
+    info.totalUsableEntries = info.usedEntries + info.availableEntries; // Some are reserved
+    info.usedEntriesPercentage = info.totalUsableEntries > 0 ? ((float)info.usedEntries / info.totalUsableEntries) * 100.0f : 0.0f;
+    info.availableEntriesPercentage = info.totalUsableEntries > 0 ? ((float)info.availableEntries / info.totalUsableEntries) * 100.0f : 0.0f;
+    info.namespaceCount = nvs_stats.namespace_count;
+
     // Performance
     info.temperatureCelsius = temperatureRead();
     
@@ -202,6 +212,7 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["memory"]["heap"]["usedPercentage"] = info.heapUsedPercentage;
     
     // Memory - PSRAM
+    doc["memory"]["psram"]["totalBytes"] = info.psramTotalBytes;
     doc["memory"]["psram"]["freeBytes"] = info.psramFreeBytes;
     doc["memory"]["psram"]["usedBytes"] = info.psramUsedBytes;
     doc["memory"]["psram"]["minFreeBytes"] = info.psramMinFreeBytes;
@@ -215,7 +226,15 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["storage"]["spiffs"]["freeBytes"] = info.spiffsFreeBytes;
     doc["storage"]["spiffs"]["freePercentage"] = info.spiffsFreePercentage;
     doc["storage"]["spiffs"]["usedPercentage"] = info.spiffsUsedPercentage;
-    
+
+    // Storage - NVS
+    doc["storage"]["nvs"]["totalUsableEntries"] = info.totalUsableEntries;
+    doc["storage"]["nvs"]["usedEntries"] = info.usedEntries;
+    doc["storage"]["nvs"]["availableEntries"] = info.availableEntries;
+    doc["storage"]["nvs"]["usedEntriesPercentage"] = info.usedEntriesPercentage;
+    doc["storage"]["nvs"]["availableEntriesPercentage"] = info.availableEntriesPercentage;
+    doc["storage"]["nvs"]["namespaceCount"] = info.namespaceCount;
+
     // Performance
     doc["performance"]["temperatureCelsius"] = info.temperatureCelsius;
     
@@ -376,7 +395,22 @@ void stopMaintenanceTask() {
 void restartTask(void* parameter) {
     bool factoryReset = (bool)(uintptr_t)parameter;
 
-    logger.debug("Restart task started, waiting %d ms before restart (factory reset: %s)", TAG, SYSTEM_RESTART_DELAY, factoryReset ? "true" : "false");
+    logger.debug(
+        "Restart task started, stopping all services and waiting %d ms before restart (factory reset: %s)",
+        TAG,
+        SYSTEM_RESTART_DELAY,
+        factoryReset ? "true" : "false"
+    );
+
+    stopMaintenanceTask();
+    Ade7953::stop();
+    #if HAS_SECRETS
+    Mqtt::stop();
+    #endif
+    CustomMqtt::stop();
+    InfluxDbClient::stop();
+    ModbusTcp::stop();
+    CustomServer::stop();
 
     // Wait for the specified delay
     // In theory we could restart immediately since the task stopping was done earlier.. but let's be careful
@@ -395,17 +429,9 @@ void setRestartSystem(const char* functionName, const char* reason, bool factory
     logger.info("Restart required from function %s. Reason: %s. Factory reset: %s", TAG, functionName, reason, factoryReset ? "true" : "false");
     
     if (_restartTaskHandle != NULL) {
-        logger.warning("A restart is already scheduled. Keeping the existing configuration.", TAG);
+        logger.info("A restart is already scheduled. Keeping the existing configuration.", TAG);
         return; // Prevent overwriting an existing restart request
     }
-
-    stopMaintenanceTask();
-    Ade7953::stop();
-    Mqtt::stop();
-    CustomMqtt::stop();
-    InfluxDbClient::stop();
-    ModbusTcp::stop();
-    CustomServer::stop();
 
     // Create a task that will handle the delayed restart/factory reset
     BaseType_t result = xTaskCreate(
@@ -487,8 +513,9 @@ void printDeviceStatusDynamic()
         info.heapMinFreeBytes, info.heapMaxAllocBytes
     );
     if (info.psramFreeBytes > 0 || info.psramUsedBytes > 0) {
-        logger.debug("PSRAM: %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
+        logger.debug("PSRAM: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
             TAG, 
+            info.psramTotalBytes,
             info.psramFreeBytes, info.psramFreePercentage, 
             info.psramUsedBytes, info.psramUsedPercentage, 
             info.psramMinFreeBytes, info.psramMaxAllocBytes
@@ -501,8 +528,13 @@ void printDeviceStatusDynamic()
         info.spiffsUsedBytes, info.spiffsUsedPercentage
     );
     logger.debug("Temperature: %.2f C", TAG, info.temperatureCelsius);
-    
-    // WiFi information
+
+    logger.debug("NVS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %u namespaces", 
+        TAG, 
+        info.totalUsableEntries, info.availableEntries, info.availableEntriesPercentage, 
+        info.usedEntries, info.usedEntriesPercentage, info.namespaceCount
+    );
+
     if (info.wifiConnected) {
         logger.debug("WiFi: Connected to '%s' (BSSID: %s) | RSSI %ld dBm | MAC %s", TAG, info.wifiSsid, info.wifiBssid, info.wifiRssi, info.wifiMacAddress);
         logger.debug("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", TAG, info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp, info.wifiSubnetMask);
@@ -646,10 +678,54 @@ static void _factoryReset() {
     // Removed ESP.restart() call since the factory reset can only be called from the restart task
 }
 
-void clearAllPreferences() {
-    logger.warning("Clear all preferences requested", TAG);
-
+bool isFirstBootDone() {
     Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_GENERAL, true)) {
+        logger.debug("Could not open preferences namespace: %s. Assuming first boot", TAG, PREFERENCES_NAMESPACE_GENERAL);
+        return false;
+    }
+    bool firstBoot = preferences.getBool(IS_FIRST_BOOT_DONE_KEY, false);
+    preferences.end();
+
+    return firstBoot;
+}
+
+void setFirstBootDone() { // No arguments because the only way to set first boot done to false it through a complete wipe - thus automatically setting it to "false"
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
+        logger.error("Failed to open preferences namespace: %s", TAG, PREFERENCES_NAMESPACE_GENERAL);
+        return;
+    }
+    preferences.putBool(IS_FIRST_BOOT_DONE_KEY, true);
+    preferences.end();
+}
+
+void createAllNamespaces() {
+    Preferences preferences;
+
+    preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_MQTT, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_TIME, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.end();
+
+    logger.debug("All namespaces created", TAG);
+}
+
+void clearAllPreferences() {
+    Preferences preferences;
+
+    preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false); preferences.clear(); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); preferences.clear(); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); preferences.clear(); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); preferences.clear(); preferences.end();
@@ -663,6 +739,13 @@ void clearAllPreferences() {
     preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.clear(); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); preferences.clear(); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.clear(); preferences.end();
+
+    #if ENV_DEV
+    nvs_flash_erase(); // Nuclear solution. In development, the NVS can get overcrowded with test data, so we clear it completely.
+    #endif
+
+    logger.warning("Cleared all preferences", TAG);
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {
@@ -685,7 +768,7 @@ uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval,
     
     return min(backoffDelay, maxInterval);
 }
-
+    
 // === SPIFFS FILE OPERATIONS ===
 
 bool listSpiffsFiles(JsonDocument& doc) {
@@ -701,6 +784,10 @@ bool listSpiffsFiles(JsonDocument& doc) {
     while (file && loops < MAX_LOOP_ITERATIONS) {
         loops++;
         const char* filename = file.path();
+
+        // Remove first char which is always a slash 
+        // (useful to remove so later in the get content we can directly use the filename)
+        if (filename[0] == '/') filename++; // Skip the leading slash
         
         // Add file with its size to the JSON document
         doc[filename] = file.size();

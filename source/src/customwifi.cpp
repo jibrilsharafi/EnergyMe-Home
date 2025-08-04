@@ -357,7 +357,7 @@ namespace CustomWifi
       MDNS.addServiceTxt("modbus", "tcp", "version", FIRMWARE_BUILD_VERSION);
       MDNS.addServiceTxt("modbus", "tcp", "channels", "17");
 
-      logger.info("mDNS setup done: %s.local (device: %s)", TAG, MDNS_HOSTNAME, DEVICE_ID);
+      logger.info("mDNS setup done: %s.local", TAG, MDNS_HOSTNAME);
       return true;
     }
     else

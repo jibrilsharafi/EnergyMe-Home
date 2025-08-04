@@ -3,7 +3,8 @@
 EnergyMe-Home Crash Dump Analyzer
 
 This script fetches crash information and core dump data from the EnergyMe-Home device,
-then decodes and analyzes the crash dump for debugging purposes.
+then decodes and analyzes the crash dump for debugging purposes. It automatically
+searches for the correct ELF file in the releases/ folder based on SHA256 matching.
 
 Usage:
     python crash_dump_analyzer.py <device_ip> [username] [password]
@@ -301,6 +302,70 @@ class CrashDumpAnalyzer:
             print(f"❌ Error calculating firmware SHA256: {e}")
             return None
 
+    def find_matching_elf_in_releases(self, device_sha256: str) -> Optional[str]:
+        """Find the matching ELF file in releases folder based on SHA256."""
+        releases_dir = "releases"
+        
+        if not os.path.exists(releases_dir):
+            print(f"📁 Releases directory not found: {releases_dir}")
+            return None
+        
+        print(f"🔍 Searching for ELF file matching SHA256: {device_sha256}...")
+        
+        # Get all release folders
+        try:
+            release_folders = [f for f in os.listdir(releases_dir) 
+                             if os.path.isdir(os.path.join(releases_dir, f))]
+            release_folders.sort(reverse=True)  # Most recent first
+            
+            print(f"📁 Found {len(release_folders)} release folders")
+            
+            for folder in release_folders:
+                folder_path = os.path.join(releases_dir, folder)
+                metadata_path = os.path.join(folder_path, "metadata.json")
+                
+                if not os.path.exists(metadata_path):
+                    continue
+                
+                try:
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                    
+                    # Get SHA256 from metadata
+                    debug_info = metadata.get('files', {}).get('debug', {})
+                    metadata_sha256 = debug_info.get('sha256', '')
+                    elf_filename = debug_info.get('filename', '')
+                    
+                    if not metadata_sha256 or not elf_filename:
+                        continue
+                    
+                    # Check if device SHA256 matches (partial match)
+                    if metadata_sha256.lower().startswith(device_sha256.lower()):
+                        elf_path = os.path.join(folder_path, elf_filename)
+                        
+                        if os.path.exists(elf_path):
+                            print(f"✅ Found matching ELF file!")
+                            print(f"   Release: {folder}")
+                            print(f"   Version: {metadata.get('version', 'unknown')}")
+                            print(f"   ELF file: {elf_filename}")
+                            print(f"   SHA256: {metadata_sha256}")
+                            print(f"   Path: {elf_path}")
+                            return elf_path
+                        else:
+                            print(f"⚠️  Metadata found but ELF file missing: {elf_path}")
+                    
+                except json.JSONDecodeError as e:
+                    print(f"⚠️  Invalid JSON in {metadata_path}: {e}")
+                except Exception as e:
+                    print(f"⚠️  Error reading {metadata_path}: {e}")
+            
+            print(f"❌ No matching ELF file found for SHA256: {device_sha256}")
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error scanning releases directory: {e}")
+            return None
+
     def verify_firmware_sha256(self, crash_info: Dict[str, Any], firmware_path: str) -> bool:
         """Verify firmware SHA256 against device using crash info."""
         device_sha256 = crash_info.get('appElfSha256', '')
@@ -369,12 +434,23 @@ class CrashDumpAnalyzer:
             
             print(f"\n🔧 Running ESP-IDF core dump analysis...")
             
-            # Check if firmware.elf exists
-            firmware_path = ".pio/build/esp32dev/firmware.elf"
-            if not os.path.exists(firmware_path):
-                print(f"❌ Firmware file not found: {firmware_path}")
-                print(f"   Make sure you've built the project first with: pio run")
-                return False
+            # First, try to find matching ELF in releases folder
+            device_sha256 = crash_info.get('appElfSha256', '')
+            firmware_path = None
+            
+            if device_sha256:
+                firmware_path = self.find_matching_elf_in_releases(device_sha256)
+            
+            # Fallback to current build if no match found in releases
+            if not firmware_path:
+                firmware_path = ".pio/build/esp32dev/firmware.elf"
+                if not os.path.exists(firmware_path):
+                    print(f"❌ Firmware file not found: {firmware_path}")
+                    print(f"   Make sure you've built the project first with: pio run")
+                    print(f"   Or ensure releases folder contains the correct ELF file")
+                    return False
+                
+                print(f"⚠️  Using current build ELF (no match found in releases): {firmware_path}")
             
             # Verify firmware SHA256 using crash info
             print("🔍 Verifying firmware SHA256 against device...")
@@ -464,7 +540,7 @@ class CrashDumpAnalyzer:
         # Step 6: Save comprehensive crash dump to text file
         self.save_crash_dump_text(crash_info, debug_output, core_dump_data)
         
-        # Step 7: Automatically run ESP-IDF analysis
+        # Step 7: Automatically run ESP-IDF analysis with smart ELF detection
         self.analyze_with_esp_idf(filename, crash_info)
         
         return filename

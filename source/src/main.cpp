@@ -59,6 +59,14 @@ void setup()
   Serial.println("LED setup done");
 
   Led::setWhite(Led::PRIO_NORMAL);
+
+  if (!isFirstBootDone())
+  {
+    setFirstBootDone();
+    createAllNamespaces();
+    logger.info("First boot setup complete. Welcome aboard!", TAG);
+  }
+
   // Disable watchdog during SPIFFS begin because if the formatting is required, it can take a while
   // And we don't want to continuously print an error to Serial
   // TODO: actually do this (code 705)
@@ -144,9 +152,11 @@ void setup()
   ModbusTcp::begin();
   logger.info("Modbus TCP setup done", TAG);
 
+  #if HAS_SECRETS
   logger.debug("Setting up MQTT client...", TAG);
   Mqtt::begin();
   logger.info("MQTT client setup done", TAG);
+  #endif
 
   logger.debug("Setting up Custom MQTT client...", TAG);
   CustomMqtt::begin();

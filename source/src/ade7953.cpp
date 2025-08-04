@@ -110,7 +110,7 @@ namespace Ade7953
 
     // Energy data management
     static void _setEnergyFromPreferences(uint32_t channelIndex);
-    static void _saveEnergyToPreferences(uint32_t channelIndex);
+    static void _saveEnergyToPreferences(uint32_t channelIndex, bool forceSave = false); // Needed for saving data anyway on first setup (energy is 0 and not saved otherwise)
     static void _saveHourlyEnergyToCsv(); // Not per channel so that we open the file only once
     static void _saveEnergyComplete();
 
@@ -637,7 +637,9 @@ namespace Ade7953
 
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
+        #if HAS_SECRETS
         Mqtt::requestChannelPublish();
+        #endif
 
         logger.debug("Successfully set channel data for channel %lu", TAG, channelIndex);
     }
@@ -846,9 +848,9 @@ namespace Ade7953
                 _jsonChannel["label"] = _channelData[i].label;
                 _jsonChannel["phase"] = _channelData[i].phase;
 
-                JsonDocument _jsonData;
-                singleMeterValuesToJson(_jsonData, i);
-                _jsonChannel["data"] = _jsonData.as<JsonObject>();
+                JsonDocument jsonData;
+                singleMeterValuesToJson(jsonData, i);
+                _jsonChannel["data"] = jsonData.as<JsonObject>();
             }
         }
     }
@@ -1593,8 +1595,6 @@ namespace Ade7953
             return;
         }
 
-        logger.debug("Setting channel data from preferences for channel %lu", TAG, channelIndex);
-
         ChannelData channelData;
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, true)) { // true = read-only
@@ -1801,10 +1801,13 @@ namespace Ade7953
         _energyValues[channelIndex].apparentEnergy = _meterValues[channelIndex].apparentEnergy;
 
         preferences.end();
+
+        _saveEnergyToPreferences(channelIndex, true); // Ensure we have the initial values saved always
+
         logger.debug("Successfully read energy from preferences for channel %lu", TAG, channelIndex);
     }
 
-    void _saveEnergyToPreferences(uint32_t channelIndex) {
+    void _saveEnergyToPreferences(uint32_t channelIndex, bool forceSave) {
         Preferences preferences;
         preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false);
 
@@ -1812,31 +1815,31 @@ namespace Ade7953
 
         // Hereafter we optimize the flash writes by only saving if the value has changed significantly
         // Meter values are the real-time values, while energy values are the last saved values
-        if (_meterValues[channelIndex].activeEnergyImported - _energyValues[channelIndex].activeEnergyImported > ENERGY_SAVE_THRESHOLD) {
+        if ((_meterValues[channelIndex].activeEnergyImported - _energyValues[channelIndex].activeEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
             preferences.putFloat(key, _meterValues[channelIndex].activeEnergyImported);
             _energyValues[channelIndex].activeEnergyImported = _meterValues[channelIndex].activeEnergyImported;
         }
 
-        if (_meterValues[channelIndex].activeEnergyExported - _energyValues[channelIndex].activeEnergyExported > ENERGY_SAVE_THRESHOLD) {
+        if ((_meterValues[channelIndex].activeEnergyExported - _energyValues[channelIndex].activeEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, channelIndex);
             preferences.putFloat(key, _meterValues[channelIndex].activeEnergyExported);
             _energyValues[channelIndex].activeEnergyExported = _meterValues[channelIndex].activeEnergyExported;
         }
-        
-        if (_meterValues[channelIndex].reactiveEnergyImported - _energyValues[channelIndex].reactiveEnergyImported > ENERGY_SAVE_THRESHOLD) {
+
+        if ((_meterValues[channelIndex].reactiveEnergyImported - _energyValues[channelIndex].reactiveEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, channelIndex);
             preferences.putFloat(key, _meterValues[channelIndex].reactiveEnergyImported);
             _energyValues[channelIndex].reactiveEnergyImported = _meterValues[channelIndex].reactiveEnergyImported;
         }
 
-        if (_meterValues[channelIndex].reactiveEnergyExported - _energyValues[channelIndex].reactiveEnergyExported > ENERGY_SAVE_THRESHOLD) {
+        if ((_meterValues[channelIndex].reactiveEnergyExported - _energyValues[channelIndex].reactiveEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, channelIndex);
             preferences.putFloat(key, _meterValues[channelIndex].reactiveEnergyExported);
             _energyValues[channelIndex].reactiveEnergyExported = _meterValues[channelIndex].reactiveEnergyExported;
         }
 
-        if (_meterValues[channelIndex].apparentEnergy - _energyValues[channelIndex].apparentEnergy > ENERGY_SAVE_THRESHOLD) {
+        if ((_meterValues[channelIndex].apparentEnergy - _energyValues[channelIndex].apparentEnergy > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, channelIndex);
             preferences.putFloat(key, _meterValues[channelIndex].apparentEnergy);
             _energyValues[channelIndex].apparentEnergy = _meterValues[channelIndex].apparentEnergy;
@@ -2268,7 +2271,10 @@ namespace Ade7953
     bool _processChannelReading(int32_t channel, uint64_t linecycUnix) {
         if (!_readMeterValues(channel, linecycUnix)) return false;
 
+        #if HAS_SECRETS
         _addMeterDataToPayload(channel);
+        #endif
+        
         _printMeterValues(channel);
         return true;
     }
@@ -2300,8 +2306,6 @@ namespace Ade7953
     }
 
     void _setPgaGain(int32_t pgaGain, Ade7953Channel ade7953Channel, MeasurementType measurementType) {
-        logger.debug("Setting PGA gain to %d on channel %d for measurement type %s", TAG, pgaGain, ADE7953_CHANNEL_TO_STRING(ade7953Channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
-
         if (ade7953Channel == Ade7953Channel::A) {
             switch (measurementType) {
                 case MeasurementType::VOLTAGE:
@@ -2321,17 +2325,17 @@ namespace Ade7953
                     break;
             }
         }
+
+        logger.debug("Setting PGA gain to %ld on channel %s for measurement type %s", TAG, pgaGain, ADE7953_CHANNEL_TO_STRING(ade7953Channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
     }
 
     void _setPhaseCalibration(int32_t phaseCalibration, Ade7953Channel channel) {
         if (channel == Ade7953Channel::A) writeRegister(PHCALA_16, BIT_16, phaseCalibration);
         else writeRegister(PHCALB_16, BIT_16, phaseCalibration);
-        logger.debug("Phase calibration set to %d on channel %d", TAG, phaseCalibration, ADE7953_CHANNEL_TO_STRING(channel));
+        logger.debug("Phase calibration set to %ld on channel %s", TAG, phaseCalibration, ADE7953_CHANNEL_TO_STRING(channel));
     }
 
     void _setGain(int32_t gain, Ade7953Channel channel, MeasurementType measurementType) {
-        logger.debug("Setting gain to %ld on channel %s for measurement type %s", TAG, gain, ADE7953_CHANNEL_TO_STRING(channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
-
         if (channel == Ade7953Channel::A) {
             switch (measurementType) {
                 case MeasurementType::VOLTAGE:
@@ -2369,11 +2373,11 @@ namespace Ade7953
                     break;
             }
         }
+
+        logger.debug("Setting gain to %ld on channel %s for measurement type %s", TAG, gain, ADE7953_CHANNEL_TO_STRING(channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
     }
 
     void _setOffset(int32_t offset, Ade7953Channel ade7953Channel, MeasurementType measurementType) {
-        logger.debug("Setting offset to %ld on channel %d for measurement type %s", TAG, offset, ADE7953_CHANNEL_TO_STRING(ade7953Channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
-
         if (ade7953Channel == Ade7953Channel::A) {
             switch (measurementType) {
                 case MeasurementType::VOLTAGE:
@@ -2411,6 +2415,8 @@ namespace Ade7953
                     break;
             }
         }
+
+        logger.debug("Setting offset to %ld on channel %s for measurement type %s", TAG, offset, ADE7953_CHANNEL_TO_STRING(ade7953Channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
     }
 
     // Sample time management

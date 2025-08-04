@@ -49,24 +49,36 @@ namespace CrashMonitor
             _rollbackTried = false;
         }
 
+        esp_core_dump_init();        
+
         // If it was a crash, increment counter
         if (isLastResetDueToCrash()) {
             _crashCount++;
             _consecutiveCrashCount++;
+            _checkAndPrintCoreDump();
+            Mqtt::requestCrashPublish();
         }
 
         // Increment reset count (always)
         _resetCount++;
         _consecutiveResetCount++;
 
-        esp_core_dump_init();        
-        _checkAndPrintCoreDump();
-
-        logger.debug("Crash count: %d (consecutive: %d), Reset count: %d (consecutive: %d)", TAG, _crashCount, _consecutiveCrashCount, _resetCount, _consecutiveResetCount);
+        logger.debug(
+            "Crash count: %d (consecutive: %d), Reset count: %d (consecutive: %d)", 
+            TAG, 
+            _crashCount, _consecutiveCrashCount, _resetCount, _consecutiveResetCount
+        );
         _handleCounters();
 
         // Create task to handle the crash reset
-        xTaskCreate(_crashResetTask, CRASH_RESET_TASK_NAME, CRASH_RESET_TASK_STACK_SIZE, NULL, CRASH_RESET_TASK_PRIORITY, &_crashResetTaskHandle);
+        xTaskCreate(
+            _crashResetTask, 
+            CRASH_RESET_TASK_NAME, 
+            CRASH_RESET_TASK_STACK_SIZE, 
+            NULL, 
+            CRASH_RESET_TASK_PRIORITY, 
+            &_crashResetTaskHandle
+        );
 
         logger.debug("Crash monitor setup done", TAG);
     }

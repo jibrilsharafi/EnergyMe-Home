@@ -105,8 +105,9 @@ namespace CustomLog
         const char* message
     )
     {
-        // Use the new queue-based approach
+        #if HAS_SECRETS
         Mqtt::pushLog(timestamp, millisEsp, level, coreId, function, message);
+        #endif
     }
 
     static void _callbackUdp(
