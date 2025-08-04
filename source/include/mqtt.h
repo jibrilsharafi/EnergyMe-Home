@@ -27,7 +27,7 @@
 #define MQTT_METER_QUEUE_SIZE 50000 // Very big since we have plenty of PSRAM
 #define MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD 0.90 // Threshold for publishing
 
-#define JSON_MQTT_BUFFER_SIZE (2 * 1024)     // For MQTT JSON payloads
+#define JSON_MQTT_BUFFER_SIZE (4 * 1024)     // For MQTT JSON payloads
 #define JSON_MQTT_LARGE_BUFFER_SIZE (16 * 1024) // For larger MQTT JSON payloads
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (8 * 1024) // For MQTT subscribe messages (reduced from 1KB)
 #define CERTIFICATE_BUFFER_SIZE (4 * 1024) // TODO: can this be reduced?
