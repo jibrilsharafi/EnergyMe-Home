@@ -67,11 +67,23 @@ namespace CustomTime {
         struct tm timeinfo;
         localtime_r(&tv.tv_sec, &timeinfo);
         
-        // Calculate the number of milliseconds until the next hour
-        int32_t secondsUntilNextHour = 3600 - (timeinfo.tm_min * 60 + timeinfo.tm_sec);
-        uint64_t millisUntilNextHour = static_cast<uint64_t>(secondsUntilNextHour) * 1000;
+        // Calculate milliseconds since the current hour started
+        uint64_t millisSinceCurrentHour = static_cast<uint64_t>(timeinfo.tm_min * 60 + timeinfo.tm_sec) * 1000;
+        
+        // Calculate milliseconds until the next hour
+        uint64_t millisUntilNextHour = 3600000 - millisSinceCurrentHour;
 
-        return millisUntilNextHour <= toleranceMillis;
+        // Check if we're close to either the current hour (just passed) or the next hour (approaching)
+        if (millisSinceCurrentHour <= toleranceMillis) {
+            logger.debug("Current time is close to the current hour (within %llu ms since hour start)", TAG, toleranceMillis);
+            return true;
+        } else if (millisUntilNextHour <= toleranceMillis) {
+            logger.debug("Current time is close to the next hour (within %llu ms)", TAG, toleranceMillis);
+            return true;
+        } else {
+            logger.debug("Current time is not close to any hour (since hour: %llu ms, until next: %llu ms)", TAG, millisSinceCurrentHour, millisUntilNextHour);
+            return false;
+        }
     }
 
     bool _loadConfiguration() {

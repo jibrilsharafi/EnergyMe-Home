@@ -28,6 +28,10 @@ namespace Ade7953
     // Energy saving timestamps
     static uint64_t _lastMillisSaveEnergy = 0;
 
+    // Operational flags
+    static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
+    static bool _hasToSkipReading = true; // Flag to skip every other reading on Channel B so we purge the ADE7953 data when switching multiplexer channel
+
     // Synchronization primitives
     static SemaphoreHandle_t _spiMutex = NULL; // To handle single SPI operations
     static SemaphoreHandle_t _spiOperationMutex = NULL; // To handle full SPI operations (like read with verification, which is 2 SPI operations)
@@ -116,6 +120,7 @@ namespace Ade7953
 
     // Meter reading and processing
     static bool _readMeterValues(uint32_t channel, uint64_t linecycUnixTime);
+    static void _purgeEnergyRegisters(Ade7953Channel ade7953Channel);
     static bool _processChannelReading(uint32_t channel, uint64_t linecycUnix);
     static void _addMeterDataToPayload(uint32_t channel);
 
@@ -404,6 +409,7 @@ namespace Ade7953
             }
             xSemaphoreGive(_spiOperationMutex);
         }
+        _hasConfigurationChanged = true; // Put here since when writing a register, we inherently change the configuration and thus trigger a CRC change interrupt
     }
 
     // Task control
@@ -682,14 +688,14 @@ namespace Ade7953
 
     bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial) {
         if (!_validateChannelDataJson(jsonDocument, partial)) {
-            logger.error("Invalid channel data JSON", TAG);
+            logger.warning("Invalid channel data JSON. Skipping setting data", TAG);
             return false;
         }
 
         uint32_t channelIndex = jsonDocument["index"].as<uint32_t>();
         
         if (!isChannelValid(channelIndex)) {
-            logger.error("Invalid channel index: %lu", TAG, channelIndex);
+            logger.warning("Invalid channel index: %lu. Skipping setting data", TAG, channelIndex);
             return false;
         }
 
@@ -1172,31 +1178,43 @@ namespace Ade7953
         logger.verbose("Line cycle end detected on Channel A", TAG);
         statistics.ade7953TotalHandledInterrupts++;
         
-        // Only for CYCEND interrupts, switch to next channel and set multiplexer
-        // This is because thanks to the linecyc approach, the data in the ADE7953 is "frozen"
-        // until the next linecyc interrupt is received, which is plenty of time to read the data
-        uint32_t previousChannel = _currentChannel; // Save the current channel before switching (but switch ASAP to ensure the ADE7953 reads the correct data)
-        _currentChannel = _findNextActiveChannel(_currentChannel);
+        if (_hasToSkipReading) {
+            logger.verbose("Purging energy registers for Channel B (channel %lu)", TAG, _currentChannel);
+            _purgeEnergyRegisters(Ade7953Channel::B);
+            _hasToSkipReading = false;
+        } else {
+            // Next linecyc we skip since we changed channel
+            _hasToSkipReading = true;
 
-        // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
-        // 1 (since channel 0 does not pass through the multiplexer)
-        Multiplexer::setChannel(max(_currentChannel - 1UL, 0UL));
-        
-        // Process current channel (if active)
-        // TODO: throw first reading to increase the quality, or change switching order to check properly which is the issue
-        if (previousChannel != INVALID_CHANNEL) _processChannelReading(previousChannel, linecycUnix);
+            // Only for CYCEND interrupts, switch to next channel and set multiplexer
+            // This is because thanks to the linecyc approach, the data in the ADE7953 is "frozen"
+            // until the next linecyc interrupt is received, which is plenty of time to read the data
+            uint32_t previousChannel = _currentChannel; // Save the current channel before switching (but switch ASAP to ensure the ADE7953 reads the correct data)
+            _currentChannel = _findNextActiveChannel(_currentChannel);
+
+            // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
+            // 1 (since channel 0 does not pass through the multiplexer)
+            Multiplexer::setChannel(max(_currentChannel - 1UL, 0UL));
+            
+            // Process current channel (if active)
+            if (previousChannel != INVALID_CHANNEL) _processChannelReading(previousChannel, linecycUnix);
+        }
         
         // Always process channel 0 as it is on a separate ADE7953 channel
         _processChannelReading(0, linecycUnix);
     }
 
     void _handleCrcChangeInterrupt() {
-        // This indicates the configuration changed. We should probably re-initialize the device
-        logger.warning("TO BE IMPLEMENTED: CRC change detected - this may indicate configuration changes", TAG);
+        if (_hasConfigurationChanged) { // We were expecting this change, thus no need to log a warning
+            _hasConfigurationChanged = false; // Reset the flag
+            logger.debug("Expected configuration change detected", TAG);
+        } else {
+            logger.warning("Unexpected configuration change detected - this may indicate a device issue", TAG);
+        }
     }
 
     void _handleResetInterrupt() {
-        // This also indicates 
+        // This should never happen unless a powerful power drop occurs (which would likely reset also the ESP32) 
         logger.warning("TO BE IMPLEMENTED: ADE7953 reset interrupt detected - reinitializing device", TAG);
     }
 
@@ -1394,24 +1412,29 @@ namespace Ade7953
         while (_hourlyCsvSaveTaskShouldRun) {
             // Calculate milliseconds until next hour using CustomTime
             uint64_t msUntilNextHour = CustomTime::getMillisecondsUntilNextHour();
-            
-            // Convert to ticks for FreeRTOS (max value is portMAX_DELAY for very int32_t waits)
-            TickType_t ticksToWait = (msUntilNextHour > portMAX_DELAY) ? portMAX_DELAY : pdMS_TO_TICKS(msUntilNextHour);
-            
+            logger.debug("Waiting for %llu ms until next hour to save the hourly energy", TAG, msUntilNextHour);
+
             // Wait for the calculated time or stop notification
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, ticksToWait);
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(msUntilNextHour));
             if (notificationValue > 0) {
                 _hourlyCsvSaveTaskShouldRun = false;
                 break;
             }
             
             // Only save if we're still running and within tolerance of hourly save time
-            if (_hourlyCsvSaveTaskShouldRun){
-                if (
-                    CustomTime::isTimeSynched() &&
-                    CustomTime::isNowCloseToHour() // Only save on the hour for clean data
-                ) {
-                    _saveHourlyEnergyToCsv();
+            if (_hourlyCsvSaveTaskShouldRun)
+            {
+                if (CustomTime::isTimeSynched())
+                {
+                    if (CustomTime::isNowCloseToHour())
+                    {
+                        logger.debug("Time is close to the hour, saving hourly energy data", TAG);
+                        _saveHourlyEnergyToCsv();
+                    }
+                    else
+                    {
+                        logger.debug("Not close to the hour, skipping hourly energy save", TAG);
+                    }
                 }
             }
         }
@@ -1889,8 +1912,7 @@ namespace Ade7953
         }
 
         preferences.end();
-        // Verbose because it is called for each channel
-        logger.verbose("Successfully saved energy to preferences for channel %lu", TAG, channelIndex);
+        logger.debug("Successfully saved energy to preferences for channel %lu", TAG, channelIndex);
     }
 
     void _saveHourlyEnergyToCsv() {
@@ -1959,6 +1981,8 @@ namespace Ade7953
                     file.print(_meterValues[i].reactiveEnergyExported, DAILY_ENERGY_CSV_DIGITS);
                     file.print(",");
                     file.println(_meterValues[i].apparentEnergy, DAILY_ENERGY_CSV_DIGITS);
+                } else {
+                    logger.debug("Skipping saving hourly energy data for channel %d: %s (values below threshold)", TAG, i, _channelData[i].label);
                 }
             }
         }
@@ -2026,36 +2050,15 @@ namespace Ade7953
         uint64_t millisRead = millis64();
         uint64_t deltaMillis = millisRead - _meterValues[channel].lastMillis;
 
-        // // Ensure the reading is not being called too early if a previous valid reading exists
-        // if (previousLastUnixTimeMilliseconds != 0) {
-        //     uint64_t timeSinceLastRead = linecycUnixTimeMillis - previousLastUnixTimeMilliseconds;
-            
-        //     // Not useful anymore since the measurement timing (_sampleTime) is handled indipendently
-        //     // by the linecyc of the ADE7953. The actual reading of the data may be not coordinated,
-        //     // and that is ok
-        //     // // Ensure the reading is not being called too early (should not happen anyway)
-        //     // // This was introduced as in channel 0 it was noticed that sometimes two meter values
-        //     // // were sent with 1 ms difference, where the second one had 0 active power (since most
-        //     // // probably the next line cycle was not yet finished)
-        //     // // We use the time multiplied by 0.8 to keep some headroom
-        //     // if (timeSinceLastRead < _sampleTime * 0.8) {
-        //     //     logger.warning("Reading too early for channel %d: %llu ms since last read, expected at least %0.0f ms", TAG, channel, timeSinceLastRead, _sampleTime * 0.8);
-        //     //     _recordFailure();
-        //     //     return false;
-        //     // }
-        //     _deltaMillis = timeSinceLastRead;
-        // } else {
-        //     // This is the first attempt to get a valid reading for this channel,
-        //     // or previous attempts failed before setting the timestamp.
-        //     // For energy accumulation of the first valid point, the period is _sampleTime.
-        //     _deltaMillis = _sampleTime; 
-        // }
-
         // We cannot put an higher limit here because if the channel happened to be disabled, then
         // enabled again, this would result in an infinite error.
         if (_meterValues[channel].lastMillis != 0 && deltaMillis == 0) {
-            logger.warning("%s (%lu): delta millis (%llu) is invalid. Discarding reading", TAG, _channelData[channel].label, channel, deltaMillis);
-            // _recordFailure();
+            logger.warning(
+                "%s (%lu): delta millis (%llu) is invalid. Discarding reading", 
+                TAG, 
+                _channelData[channel].label, channel, deltaMillis
+            );
+            _recordFailure();
             return false;
         }
 
@@ -2189,26 +2192,6 @@ namespace Ade7953
             reactivePower = 0.0f; // Small approximation leaving out distorted power
         }    
         
-        
-        // For channel 0, discard readings where active or apparent energy is exactly 0,
-        // unless there have been at least 100 consecutive zero readings
-        // TODO: understand if this method was actually required or not to filter invalid readings
-        // if (channel == 0 && (activeEnergy == 0.0f || apparentEnergy == 0.0f)) {
-        //     consecutiveZeroCount++;
-            
-        //     if (consecutiveZeroCount < MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE) {
-                
-        //         logger.debug("%s (%d): Zero energy reading on channel 0 discarded (count: %lu/%d)", 
-        //             TAG, _channelData[channel].label,channel, consecutiveZeroCount, MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE);
-        //         _recordFailure();
-        //         return false;
-        //     }
-        // } else {
-        //     // Reset counter for non-zero readings
-        //     consecutiveZeroCount = 0;
-        // }
-
-        
         if (
             !_validateVoltage(voltage) || 
             !_validateCurrent(current) || 
@@ -2223,30 +2206,6 @@ namespace Ade7953
             _recordFailure();
             return false;
         }
-
-        // This part makes no sense to use anymore as the current is computed from the apparent power and voltage
-        // // Ensure the current * voltage is not too different from the apparent power (both in absolute and relative terms)
-        // // Skip this check if apparent power is below 1 to avoid issues with low power readings
-        // // Channel 0 does not have this problem since it has a dedicated ADC on the ADE7953, while the other channels
-        // // use a multiplexer and some weird behavior can happen sometimes
-        // 
-        // if (_apparentPower >= 1.0 && _apparentEnergy != 0 && channel != 0 &&
-        //     (abs(_current * _voltage - _apparentPower) > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE || 
-        //      abs(_current * _voltage - _apparentPower) / _apparentPower > MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE)) 
-        // {
-        //     logger.warning(
-        //         "%s (%D): Current (%.3f * Voltage %.1f = %.1f) is too different from measured Apparent Power (%.1f). Discarding data point", 
-        //         TAG,
-        //         channelData[channel].label,
-        //         channel, 
-        //         _current, 
-        //         _voltage,
-        //         _current * _voltage, 
-        //         _apparentPower
-        //     );
-        //     _recordFailure();
-        //     return false;
-        // }
         
         // Enough checks, now we can set the values
         _meterValues[channel].voltage = voltage;
@@ -2320,14 +2279,26 @@ namespace Ade7953
         return true;
     }
 
+    static void _purgeEnergyRegisters(Ade7953Channel ade7953Channel) {
+        // Purge the energy registers to ensure the next linecyc reading is clean
+        // To do so, we just need to read the energy registers (which are read with reset)
+        logger.verbose("Purging energy registers for channel %s", TAG, ADE7953_CHANNEL_TO_STRING(ade7953Channel));
+        if (ade7953Channel == Ade7953Channel::A) {
+            _readActiveEnergy(Ade7953Channel::A);
+            _readReactiveEnergy(Ade7953Channel::A);
+            _readApparentEnergy(Ade7953Channel::A);
+        } else {
+            _readActiveEnergy(Ade7953Channel::B);
+            _readReactiveEnergy(Ade7953Channel::B);
+            _readApparentEnergy(Ade7953Channel::B);
+        }
+    }
+
     bool _processChannelReading(uint32_t channel, uint64_t linecycUnix) {
         if (!_readMeterValues(channel, linecycUnix)) return false;
-
-        #if HAS_SECRETS
         _addMeterDataToPayload(channel);
-        #endif
-        
         _printMeterValues(channel);
+
         return true;
     }
 
@@ -2340,6 +2311,7 @@ namespace Ade7953
             return;
         }
 
+        #if HAS_SECRETS
         Mqtt::pushMeter(
             PayloadMeter(
                 channel,
@@ -2348,6 +2320,7 @@ namespace Ade7953
                 _meterValues[channel].powerFactor
             )
         );
+        #endif
     }
 
     // ADE7953 register writing functions
@@ -2698,9 +2671,7 @@ namespace Ade7953
     uint32_t _findNextActiveChannel(uint32_t currentChannel) {
         // Since the current channel is initialized with the invalid one (which has a very high value),
         // we need to convert it to a valid channel index (0 is always active) and move on
-        uint32_t realCurrentChannel;
-        if (currentChannel == INVALID_CHANNEL) realCurrentChannel = 0;
-        else realCurrentChannel = currentChannel;
+        uint32_t realCurrentChannel = currentChannel == INVALID_CHANNEL ? 0 : currentChannel;
 
         // This returns the next channel (except 0, which has to be always active) that is active
         // For i that starts from currentChannel + 1, it will return the first active channel found
