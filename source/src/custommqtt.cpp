@@ -194,7 +194,7 @@ namespace CustomMqtt
             // Update only fields that are present in JSON
             if (jsonDocument["enabled"].is<bool>())             config.enabled = jsonDocument["enabled"].as<bool>();
             if (jsonDocument["server"].is<const char*>())       snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-            if (jsonDocument["port"].is<uint32_t>())            config.port = jsonDocument["port"].as<uint32_t>();
+            if (jsonDocument["port"].is<uint16_t>())            config.port = jsonDocument["port"].as<uint16_t>();
             if (jsonDocument["clientid"].is<const char*>())     snprintf(config.clientid, sizeof(config.clientid), "%s", jsonDocument["clientid"].as<const char*>());
             if (jsonDocument["topic"].is<const char*>())        snprintf(config.topic, sizeof(config.topic), "%s", jsonDocument["topic"].as<const char*>());
             if (jsonDocument["frequency"].is<uint32_t>())       config.frequencySeconds = jsonDocument["frequency"].as<uint32_t>();
@@ -205,7 +205,7 @@ namespace CustomMqtt
             // Full update - set all fields
             config.enabled = jsonDocument["enabled"].as<bool>();
             snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-            config.port = jsonDocument["port"].as<uint32_t>();
+            config.port = jsonDocument["port"].as<uint16_t>();
             snprintf(config.clientid, sizeof(config.clientid), "%s", jsonDocument["clientid"].as<const char*>());
             snprintf(config.topic, sizeof(config.topic), "%s", jsonDocument["topic"].as<const char*>());
             config.frequencySeconds = jsonDocument["frequency"].as<uint32_t>();
@@ -319,7 +319,7 @@ namespace CustomMqtt
         if (preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, true)) {
             config.enabled = preferences.getBool(CUSTOM_MQTT_ENABLED_KEY, DEFAULT_IS_CUSTOM_MQTT_ENABLED);
             snprintf(config.server, sizeof(config.server), "%s", preferences.getString(CUSTOM_MQTT_SERVER_KEY, MQTT_CUSTOM_SERVER_DEFAULT).c_str());
-            config.port = preferences.getUInt(CUSTOM_MQTT_PORT_KEY, MQTT_CUSTOM_PORT_DEFAULT);
+            config.port = preferences.getUShort(CUSTOM_MQTT_PORT_KEY, MQTT_CUSTOM_PORT_DEFAULT);
             snprintf(config.clientid, sizeof(config.clientid), "%s", preferences.getString(CUSTOM_MQTT_CLIENT_ID_KEY, MQTT_CUSTOM_CLIENTID_DEFAULT).c_str());
             snprintf(config.topic, sizeof(config.topic), "%s", preferences.getString(CUSTOM_MQTT_TOPIC_KEY, MQTT_CUSTOM_TOPIC_DEFAULT).c_str());
             config.frequencySeconds = preferences.getUInt(CUSTOM_MQTT_FREQUENCY_KEY, MQTT_CUSTOM_FREQUENCY_SECONDS_DEFAULT);
@@ -350,7 +350,7 @@ namespace CustomMqtt
 
         preferences.putBool(CUSTOM_MQTT_ENABLED_KEY, _customMqttConfiguration.enabled);
         preferences.putString(CUSTOM_MQTT_SERVER_KEY, _customMqttConfiguration.server);
-        preferences.putUInt(CUSTOM_MQTT_PORT_KEY, _customMqttConfiguration.port);
+        preferences.putUShort(CUSTOM_MQTT_PORT_KEY, _customMqttConfiguration.port);
         preferences.putString(CUSTOM_MQTT_CLIENT_ID_KEY, _customMqttConfiguration.clientid);
         preferences.putString(CUSTOM_MQTT_TOPIC_KEY, _customMqttConfiguration.topic);
         preferences.putUInt(CUSTOM_MQTT_FREQUENCY_KEY, _customMqttConfiguration.frequencySeconds);
@@ -375,7 +375,7 @@ namespace CustomMqtt
             // Partial validation - at least one valid field must be present
             if (jsonDocument["enabled"].is<bool>()) return true;        
             if (jsonDocument["server"].is<const char*>()) return true;        
-            if (jsonDocument["port"].is<uint32_t>()) return true;        
+            if (jsonDocument["port"].is<uint16_t>()) return true;        
             if (jsonDocument["clientid"].is<const char*>()) return true;        
             if (jsonDocument["topic"].is<const char*>()) return true;        
             if (jsonDocument["frequency"].is<uint32_t>()) return true;        
@@ -389,7 +389,7 @@ namespace CustomMqtt
             // Full validation - all fields must be present and valid
             if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
             if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
-            if (!jsonDocument["port"].is<uint32_t>()) { logger.warning("port field is not an integer", TAG); return false; }
+            if (!jsonDocument["port"].is<uint16_t>()) { logger.warning("port field is not an integer", TAG); return false; }
             if (!jsonDocument["clientid"].is<const char*>()) { logger.warning("clientid field is not a string", TAG); return false; }
             if (!jsonDocument["topic"].is<const char*>()) { logger.warning("topic field is not a string", TAG); return false; }
             if (!jsonDocument["frequency"].is<uint32_t>()) { logger.warning("frequency field is not an integer", TAG); return false; }
@@ -437,7 +437,7 @@ namespace CustomMqtt
         }
 
         if (res) {
-            logger.info("Connected to Custom MQTT | Server: %s, Port: %lu, Client ID: %s, Topic: %s", TAG,
+            logger.info("Connected to Custom MQTT | Server: %s, Port: %u, Client ID: %s, Topic: %s", TAG,
                         _customMqttConfiguration.server,
                         _customMqttConfiguration.port,
                         clientId,

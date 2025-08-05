@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "11"
-#define FIRMWARE_BUILD_VERSION_PATCH "11"
+#define FIRMWARE_BUILD_VERSION_PATCH "12"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -58,12 +58,14 @@
 #define MAC_ADDRESS_BUFFER_SIZE 18      // For MAC addresses (e.g., "00:1A:2B:3C:4D:5E")
 #define TIMESTAMP_BUFFER_SIZE 20        // For timestamps (formatted as "YYYY-MM-DD HH:MM:SS")
 #define TIMESTAMP_ISO_BUFFER_SIZE 25    // For ISO UTC timestamps (formatted as "YYYY-MM-DDTHH:MM:SS.sssZ")
+#define SHORT_NAME_BUFFER_SIZE 32       // For short names (e.g., channel names, labels)
 #define MD5_BUFFER_SIZE 33              // 32 characters + null terminator
 #define USERNAME_BUFFER_SIZE 64         // For usernames (e.g., WiFi SSID, MQTT username)
 #define PASSWORD_BUFFER_SIZE 64         // For passwords (e.g., WiFi password, MQTT password)
 #define NAME_BUFFER_SIZE 64             // For generic names (device, user, etc.)
 #define MQTT_TOPIC_BUFFER_SIZE 64       // For MQTT topics
 #define URL_BUFFER_SIZE 128             // For URLs
+#define FULL_URL_BUFFER_SIZE 256        // For URLs with query parameters and similars
 #define STATUS_BUFFER_SIZE 128          // Generic status messages (e.g., connection status, error messages)
 
 // Timeouts and intervals

@@ -68,9 +68,7 @@ inline uint64_t millis64() {
 }
 
 // Validation utilities
-inline bool isChannelValid(uint32_t channel) {
-    return channel >= 0 && channel < CHANNEL_COUNT;
-}
+inline bool isChannelValid(uint8_t channel) {return channel < CHANNEL_COUNT;}
 
 // Mathematical utilities
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier);

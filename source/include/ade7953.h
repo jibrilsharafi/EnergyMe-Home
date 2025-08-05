@@ -106,11 +106,11 @@
 #define CONFIG_PHCAL_B_KEY "phcal_b"
 
 // Energy Preferences Keys (max 15 chars)
-#define ENERGY_ACTIVE_IMP_KEY "ch%lu_actImp"    // Format: ch17_actImp (11 chars)
-#define ENERGY_ACTIVE_EXP_KEY "ch%lu_actExp"    // Format: ch17_actExp (11 chars)
-#define ENERGY_REACTIVE_IMP_KEY "ch%lu_reactImp" // Format: ch17_reactImp (13 chars)
-#define ENERGY_REACTIVE_EXP_KEY "ch%lu_reactExp" // Format: ch17_reactExp (13 chars)
-#define ENERGY_APPARENT_KEY "ch%lu_apparent"   // Format: ch17_apparent (13 chars)
+#define ENERGY_ACTIVE_IMP_KEY "ch%u_actImp"    // Format: ch17_actImp (11 chars)
+#define ENERGY_ACTIVE_EXP_KEY "ch%u_actExp"    // Format: ch17_actExp (11 chars)
+#define ENERGY_REACTIVE_IMP_KEY "ch%u_reactImp" // Format: ch17_reactImp (13 chars)
+#define ENERGY_REACTIVE_EXP_KEY "ch%u_reactExp" // Format: ch17_reactExp (13 chars)
+#define ENERGY_APPARENT_KEY "ch%u_apparent"   // Format: ch17_apparent (13 chars)
 
 // Default configuration values
 #define DEFAULT_SAMPLE_TIME 200ULL // Will be converted to integer line cycles (so at 50Hz, 200ms = 10 cycles)
@@ -189,22 +189,22 @@
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20f // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 
 // Channel Preferences Keys
-#define CHANNEL_ACTIVE_KEY "active_%lu" // Format: active_0 (9 chars)
-#define CHANNEL_REVERSE_KEY "reverse_%lu" // Format: reverse_0 (10 chars)
-#define CHANNEL_LABEL_KEY "label_%lu" // Format: label_0 (8 chars)
-#define CHANNEL_PHASE_KEY "phase_%lu" // Format: phase_0 (9 chars)
+#define CHANNEL_ACTIVE_KEY "active_%u" // Format: active_0 (9 chars)
+#define CHANNEL_REVERSE_KEY "reverse_%u" // Format: reverse_0 (10 chars)
+#define CHANNEL_LABEL_KEY "label_%u" // Format: label_0 (8 chars)
+#define CHANNEL_PHASE_KEY "phase_%u" // Format: phase_0 (9 chars)
 
 // CT Specification keys
-#define CHANNEL_CT_CURRENT_RATING_KEY "ct_current_%lu" // Format: ct_current_0 (12 chars)
-#define CHANNEL_CT_VOLTAGE_OUTPUT_KEY "ct_voltage_%lu" // Format: ct_voltage_0 (12 chars)
-#define CHANNEL_CT_SCALING_FRACTION_KEY "ct_scaling_%lu" // Format: ct_scaling_0 (12 chars)
+#define CHANNEL_CT_CURRENT_RATING_KEY "ct_current_%u" // Format: ct_current_0 (12 chars)
+#define CHANNEL_CT_VOLTAGE_OUTPUT_KEY "ct_voltage_%u" // Format: ct_voltage_0 (12 chars)
+#define CHANNEL_CT_SCALING_FRACTION_KEY "ct_scaling_%u" // Format: ct_scaling_0 (12 chars)
 
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
 #define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
 #define DEFAULT_CHANNEL_REVERSE false
 #define DEFAULT_CHANNEL_PHASE PHASE_1
-#define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %lu"
+#define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
 
 // CT Specification defaults
 #define DEFAULT_CT_CURRENT_RATING_CHANNEL_0 50.0f   // 50A for channel 0 only as it is "standard" in EnergyMe Home
@@ -455,15 +455,15 @@ namespace Ade7953
     bool setSampleTime(uint64_t sampleTime);
 
     // Channel data management
-    bool isChannelActive(uint32_t channelIndex);
-    bool hasChannelValidMeasurements(uint32_t channelIndex);
-    void getChannelLabel(uint32_t channelIndex, char* buffer, size_t bufferSize);
-    void getChannelData(ChannelData &channelData, uint32_t channelIndex);
-    void setChannelData(const ChannelData &channelData, uint32_t channelIndex);
-    void resetChannelData(uint32_t channelIndex);
+    bool isChannelActive(uint8_t channelIndex);
+    bool hasChannelValidMeasurements(uint8_t channelIndex);
+    void getChannelLabel(uint8_t channelIndex, char* buffer, size_t bufferSize);
+    void getChannelData(ChannelData &channelData, uint8_t channelIndex);
+    void setChannelData(const ChannelData &channelData, uint8_t channelIndex);
+    void resetChannelData(uint8_t channelIndex);
 
     // Channel data management - JSON operations
-    void getChannelDataAsJson(JsonDocument &jsonDocument, uint32_t channelIndex);
+    void getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex);
     void getAllChannelDataAsJson(JsonDocument &jsonDocument);
     bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial = false);
     void channelDataToJson(const ChannelData &channelData, JsonDocument &jsonDocument);
@@ -472,7 +472,7 @@ namespace Ade7953
     // Energy data management
     void resetEnergyValues();
     bool setEnergyValues(
-        uint32_t channel,
+        uint8_t channelIndex,
         float activeEnergyImported,
         float activeEnergyExported,
         float reactiveEnergyImported,
@@ -481,9 +481,9 @@ namespace Ade7953
     );
 
     // Data output
-    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint32_t channel);
+    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint8_t channelIndex);
     void fullMeterValuesToJson(JsonDocument &jsonDocument);
-    void getMeterValues(MeterValues &meterValues, uint32_t channelIndex);
+    void getMeterValues(MeterValues &meterValues, uint8_t channelIndex);
 
     // Aggregated power calculations 
     float getAggregatedActivePower(bool includeChannel0 = true);

@@ -78,7 +78,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.heapUsedBytes = info.heapTotalBytes - info.heapFreeBytes;
     info.heapMinFreeBytes = ESP.getMinFreeHeap();
     info.heapMaxAllocBytes = ESP.getMaxAllocHeap();
-    info.heapFreePercentage = info.heapTotalBytes > 0 ? ((float)info.heapFreeBytes / info.heapTotalBytes) * 100.0f : 0.0f;
+    info.heapFreePercentage = info.heapTotalBytes > 0 ? ((float)info.heapFreeBytes / (float)info.heapTotalBytes) * 100.0f : 0.0f;
     info.heapUsedPercentage = 100.0f - info.heapFreePercentage;
     
     // Memory - PSRAM
@@ -88,7 +88,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
         info.psramUsedBytes = info.psramTotalBytes - info.psramFreeBytes;
         info.psramMinFreeBytes = ESP.getMinFreePsram();
         info.psramMaxAllocBytes = ESP.getMaxAllocPsram();
-        info.psramFreePercentage = info.psramTotalBytes > 0 ? ((float)info.psramFreeBytes / info.psramTotalBytes) * 100.0f : 0.0f;
+        info.psramFreePercentage = info.psramTotalBytes > 0 ? ((float)info.psramFreeBytes / (float)info.psramTotalBytes) * 100.0f : 0.0f;
         info.psramUsedPercentage = 100.0f - info.psramFreePercentage;
     } else {
         info.psramFreeBytes = 0;
@@ -103,18 +103,28 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.spiffsTotalBytes = SPIFFS.totalBytes();
     info.spiffsUsedBytes = SPIFFS.usedBytes();
     info.spiffsFreeBytes = info.spiffsTotalBytes - info.spiffsUsedBytes;
-    info.spiffsFreePercentage = info.spiffsTotalBytes > 0 ? ((float)info.spiffsFreeBytes / info.spiffsTotalBytes) * 100.0f : 0.0f;
+    info.spiffsFreePercentage = info.spiffsTotalBytes > 0 ? ((float)info.spiffsFreeBytes / (float)info.spiffsTotalBytes) * 100.0f : 0.0f;
     info.spiffsUsedPercentage = 100.0f - info.spiffsFreePercentage;
 
     // Storage - NVS
     nvs_stats_t nvs_stats;
     esp_err_t err = nvs_get_stats(NULL, &nvs_stats);
-    info.usedEntries = nvs_stats.used_entries;
-    info.availableEntries = nvs_stats.available_entries;
-    info.totalUsableEntries = info.usedEntries + info.availableEntries; // Some are reserved
-    info.usedEntriesPercentage = info.totalUsableEntries > 0 ? ((float)info.usedEntries / info.totalUsableEntries) * 100.0f : 0.0f;
-    info.availableEntriesPercentage = info.totalUsableEntries > 0 ? ((float)info.availableEntries / info.totalUsableEntries) * 100.0f : 0.0f;
-    info.namespaceCount = nvs_stats.namespace_count;
+    if (err != ESP_OK) {
+        logger.error("Failed to get NVS stats: %s", TAG, esp_err_to_name(err));
+        info.usedEntries = 0;
+        info.availableEntries = 0;
+        info.totalUsableEntries = 0;
+        info.usedEntriesPercentage = 0.0f;
+        info.availableEntriesPercentage = 0.0f;
+        info.namespaceCount = 0;
+    } else {
+        info.usedEntries = nvs_stats.used_entries;
+        info.availableEntries = nvs_stats.available_entries;
+        info.totalUsableEntries = info.usedEntries + info.availableEntries; // Some are reserved
+        info.usedEntriesPercentage = info.totalUsableEntries > 0 ? ((float)info.usedEntries / (float)info.totalUsableEntries) * 100.0f : 0.0f;
+        info.availableEntriesPercentage = info.totalUsableEntries > 0 ? ((float)info.availableEntries / (float)info.totalUsableEntries) * 100.0f : 0.0f;
+        info.namespaceCount = nvs_stats.namespace_count;
+    }
 
     // Performance
     info.temperatureCelsius = temperatureRead();
@@ -278,7 +288,7 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
             logger.debug("Truncating JSON to fit buffer size (%zu bytes vs %zu bytes)", TAG, bufferSize, size);
         } else {
             logger.warning("JSON size (%zu bytes) exceeds buffer size (%zu bytes)", TAG, size, bufferSize);
-            snprintf(buffer, bufferSize, ""); // Clear buffer on failure
+            snprintf(buffer, bufferSize, "%s", ""); // Clear buffer on failure
         }
         return false;
     }
@@ -837,7 +847,7 @@ const char* getContentTypeFromFilename(const char* filename) {
     if (extLen >= sizeof(extension)) return "application/octet-stream";
     
     for (size_t i = 0; i < extLen; i++) {
-        extension[i] = tolower(ext[i]);
+        extension[i] = (char)tolower(ext[i]);
     }
     extension[extLen] = '\0';
     

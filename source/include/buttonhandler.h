@@ -37,7 +37,7 @@ enum class ButtonPressType
 };
 
 namespace ButtonHandler {
-    void begin(int32_t buttonPin);
+    void begin(uint8_t buttonPin);
     void stop();
 
     ButtonPressType getCurrentPressType();

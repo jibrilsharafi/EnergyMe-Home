@@ -15,7 +15,7 @@
 
 #define PREFERENCES_BRIGHTNESS_KEY "brightness"
 
-#define INVALID_PIN -1 // Used for initialization of pins
+#define INVALID_PIN 255 // Used for initialization of pins
 #define DEFAULT_LED_BRIGHTNESS_PERCENT 75 // Default brightness percentage
 #define LED_RESOLUTION 8 // Resolution for PWM, 8 bits (0-255)
 #define LED_MAX_BRIGHTNESS_PERCENT 100 // Maximum brightness percentage
@@ -70,7 +70,7 @@ namespace Led {
         const Color OFF(0, 0, 0);
     }
 
-    void begin(int32_t redPin, int32_t greenPin, int32_t bluePin);
+    void begin(uint8_t redPin, uint8_t greenPin, uint8_t bluePin);
     void stop();
 
     void resetToDefaults();

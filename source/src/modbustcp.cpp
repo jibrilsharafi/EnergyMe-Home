@@ -73,7 +73,7 @@ namespace ModbusTcp
         }
         
         // Calculate the byte count (2 bytes per register)
-        uint8_t byteCount = registerCount * 2;
+        uint8_t byteCount = static_cast<uint8_t>(registerCount * 2);
         
         // Create the response
         ModbusMessage response;
@@ -96,9 +96,10 @@ namespace ModbusTcp
     // Helper function to split float into high or low 16 bits
     static uint16_t _getFloatBits(float value, bool high)
     {
-        uint32_t intValue = *reinterpret_cast<uint32_t*>(&value);
-        if (high) return intValue >> 16;
-        return intValue & 0xFFFF;
+        uint32_t intValue = 0;
+        memcpy(&intValue, &value, sizeof(uint32_t));
+        if (high) return static_cast<uint16_t>(intValue >> 16);
+        return static_cast<uint16_t>(intValue & 0xFFFF);
     }
 
     static uint16_t _getRegisterValue(uint32_t address)
@@ -169,7 +170,7 @@ namespace ModbusTcp
             // Handle channel-specific registers, and thus we need to calculate the channel and offset
             // to avoid manual mapping of all registers
             int32_t realAddress = address - LOWER_LIMIT_CHANNEL_REGISTERS;
-            int32_t channel = STEP_CHANNEL_REGISTERS ? realAddress / STEP_CHANNEL_REGISTERS : 0;
+            uint8_t channel = STEP_CHANNEL_REGISTERS ? static_cast<uint8_t>(realAddress / STEP_CHANNEL_REGISTERS) : 0;
             int32_t offset = realAddress % STEP_CHANNEL_REGISTERS;
 
             MeterValues meterValues;
@@ -210,7 +211,7 @@ namespace ModbusTcp
     {
         // Define valid ranges
         return (
-            (address >= 0 && address <= 7) ||  // General registers (64-bit values)
+            (address <= 7) ||  // General registers (64-bit values)
             (address >= 100 && address <= 103) ||  // Voltage and grid frequency
             (address >= 200 && address <= 207) ||  // Aggregated values with channel 0
             (address >= 210 && address <= 217) ||  // Aggregated values without channel 0

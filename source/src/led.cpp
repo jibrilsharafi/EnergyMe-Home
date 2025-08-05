@@ -3,9 +3,9 @@
 namespace Led
 {
     // Hardware pins
-    static int32_t _redPin = INVALID_PIN;
-    static int32_t _greenPin = INVALID_PIN;
-    static int32_t _bluePin = INVALID_PIN;
+    static uint8_t _redPin = INVALID_PIN;
+    static uint8_t _greenPin = INVALID_PIN;
+    static uint8_t _bluePin = INVALID_PIN;
     static uint32_t _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
 
     // Task handles and queue
@@ -45,7 +45,7 @@ namespace Led
     static bool _loadConfiguration();
     static void _saveConfiguration();
 
-    void begin(int32_t redPin, int32_t greenPin, int32_t bluePin)
+    void begin(uint8_t redPin, uint8_t greenPin, uint8_t bluePin)
     {
         if (_ledTaskHandle != nullptr) { return; }
 
@@ -259,7 +259,7 @@ namespace Led
 
     static uint8_t _calculateBrightness(uint8_t value, float factor)
     {
-        return (uint8_t)(value * _brightness * factor / LED_MAX_BRIGHTNESS_PERCENT);
+        return (uint8_t)(value * (float)_brightness * factor / (float)LED_MAX_BRIGHTNESS_PERCENT);
     }
 
     static void _processPattern()

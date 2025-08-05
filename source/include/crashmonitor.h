@@ -24,7 +24,7 @@
 
 #define ELF_LOCATION ".pio/build/esp32dev/firmware.elf" // Location of the ELF file for backtrace decoding (standard for PlatformIO)
 #define BACKTRACE_DECODE_CMD "xtensa-esp32-elf-addr2line -pfC -e " ELF_LOCATION " %s" // Command to decode backtrace addresses, where the %s will be replaced with the addresses
-#define BACKTRACE_DECODE_CMD_SIZE 512 // Size of the command buffer, should be enough for most backtraces
+#define BACKTRACE_DECODE_CMD_SIZE 1024 // Size of the command buffer, should be enough for most backtraces
 
 namespace CrashMonitor {
     void begin();

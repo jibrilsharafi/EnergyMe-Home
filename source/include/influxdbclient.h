@@ -61,19 +61,19 @@
 // Buffer sizes for various fields
 #define TOKEN_BUFFER_SIZE 64
 #define AUTH_HEADER_BUFFER_SIZE 256
-#define LINE_PROTOCOL_BUFFER_SIZE 256
+#define LINE_PROTOCOL_BUFFER_SIZE 512
 #define PAYLOAD_BUFFER_SIZE (4 * 1024)
 
 struct InfluxDbConfiguration {
     bool enabled;
     char server[URL_BUFFER_SIZE];
-    int32_t port;
-    int32_t version;
+    uint16_t port;
+    uint8_t version;
     char database[NAME_BUFFER_SIZE];
     char username[USERNAME_BUFFER_SIZE];
     char password[PASSWORD_BUFFER_SIZE];
-    char organization[NAME_BUFFER_SIZE];
-    char bucket[NAME_BUFFER_SIZE];
+    char organization[SHORT_NAME_BUFFER_SIZE];
+    char bucket[SHORT_NAME_BUFFER_SIZE];
     char token[TOKEN_BUFFER_SIZE];
     char measurement[NAME_BUFFER_SIZE];
     int32_t frequencySeconds;

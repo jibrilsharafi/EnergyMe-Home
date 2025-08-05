@@ -9,12 +9,12 @@ namespace InfluxDbClient
     
     // State variables
     static bool _isSetupDone = false;
-    static uint32_t _currentSendAttempt = 0;
+    static uint8_t _currentSendAttempt = 0;
     static uint64_t _nextSendAttemptMillis = 0;
     static InfluxDbConfiguration _influxDbConfiguration;
 
     // InfluxDB helper variables
-    static char _fullUrl[URL_BUFFER_SIZE];
+    static char _fullUrl[FULL_URL_BUFFER_SIZE];
     static char _authHeader[AUTH_HEADER_BUFFER_SIZE];
     
     // Runtime connection status - kept in memory only, not saved to preferences
@@ -42,7 +42,7 @@ namespace InfluxDbClient
     // Data sending
     static void _sendData();
     static void _formatLineProtocol(
-        int32_t channel, 
+        uint8_t channel, 
         const char *label,
         const MeterValues &meterValues, 
         char *lineProtocolBuffer, 
@@ -202,8 +202,8 @@ namespace InfluxDbClient
             // Update only fields that are present in JSON
             if (jsonDocument["enabled"].is<bool>())             config.enabled = jsonDocument["enabled"].as<bool>();
             if (jsonDocument["server"].is<const char*>())       snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-            if (jsonDocument["port"].is<int32_t>())             config.port = jsonDocument["port"].as<int32_t>();
-            if (jsonDocument["version"].is<int32_t>())          config.version = jsonDocument["version"].as<int32_t>();
+            if (jsonDocument["port"].is<uint16_t>())            config.port = jsonDocument["port"].as<uint16_t>();
+            if (jsonDocument["version"].is<uint8_t>())          config.version = jsonDocument["version"].as<uint8_t>();
             if (jsonDocument["database"].is<const char*>())     snprintf(config.database, sizeof(config.database), "%s", jsonDocument["database"].as<const char*>());
             if (jsonDocument["username"].is<const char*>())     snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
             if (jsonDocument["password"].is<const char*>())     snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
@@ -217,8 +217,8 @@ namespace InfluxDbClient
             // Full update - set all fields
             config.enabled = jsonDocument["enabled"].as<bool>();
             snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
-            config.port = jsonDocument["port"].as<int32_t>();
-            config.version = jsonDocument["version"].as<int32_t>();
+            config.port = jsonDocument["port"].as<uint16_t>();
+            config.version = jsonDocument["version"].as<uint8_t>();
             snprintf(config.database, sizeof(config.database), "%s", jsonDocument["database"].as<const char*>());
             snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
             snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
@@ -318,8 +318,8 @@ namespace InfluxDbClient
         if (preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, true)) {
             config.enabled = preferences.getBool(INFLUXDB_ENABLED_KEY, INFLUXDB_ENABLED_DEFAULT);
             snprintf(config.server, sizeof(config.server), "%s", preferences.getString(INFLUXDB_SERVER_KEY, INFLUXDB_SERVER_DEFAULT).c_str());
-            config.port = preferences.getInt(INFLUXDB_PORT_KEY, INFLUXDB_PORT_DEFAULT);
-            config.version = preferences.getInt(INFLUXDB_VERSION_KEY, INFLUXDB_VERSION_DEFAULT);
+            config.port = preferences.getUShort(INFLUXDB_PORT_KEY, INFLUXDB_PORT_DEFAULT);
+            config.version = preferences.getUChar(INFLUXDB_VERSION_KEY, INFLUXDB_VERSION_DEFAULT);
             snprintf(config.database, sizeof(config.database), "%s", preferences.getString(INFLUXDB_DATABASE_KEY, INFLUXDB_DATABASE_DEFAULT).c_str());
             snprintf(config.username, sizeof(config.username), "%s", preferences.getString(INFLUXDB_USERNAME_KEY, INFLUXDB_USERNAME_DEFAULT).c_str());
             snprintf(config.password, sizeof(config.password), "%s", preferences.getString(INFLUXDB_PASSWORD_KEY, INFLUXDB_PASSWORD_DEFAULT).c_str());
@@ -355,8 +355,8 @@ namespace InfluxDbClient
 
         preferences.putBool(INFLUXDB_ENABLED_KEY, _influxDbConfiguration.enabled);
         preferences.putString(INFLUXDB_SERVER_KEY, _influxDbConfiguration.server);
-        preferences.putInt(INFLUXDB_PORT_KEY, _influxDbConfiguration.port);
-        preferences.putInt(INFLUXDB_VERSION_KEY, _influxDbConfiguration.version);
+        preferences.putUShort(INFLUXDB_PORT_KEY, _influxDbConfiguration.port);
+        preferences.putUChar(INFLUXDB_VERSION_KEY, _influxDbConfiguration.version);
         preferences.putString(INFLUXDB_DATABASE_KEY, _influxDbConfiguration.database);
         preferences.putString(INFLUXDB_USERNAME_KEY, _influxDbConfiguration.username);
         preferences.putString(INFLUXDB_PASSWORD_KEY, _influxDbConfiguration.password);
@@ -384,8 +384,8 @@ namespace InfluxDbClient
             // Partial validation - at least one valid field must be present
             if (jsonDocument["enabled"].is<bool>()) return true;        
             if (jsonDocument["server"].is<const char*>()) return true;        
-            if (jsonDocument["port"].is<int32_t>()) return true;        
-            if (jsonDocument["version"].is<int32_t>()) return true;        
+            if (jsonDocument["port"].is<int16_t>()) return true;        
+            if (jsonDocument["version"].is<uint8_t>()) return true;        
             if (jsonDocument["database"].is<const char*>()) return true;        
             if (jsonDocument["username"].is<const char*>()) return true;        
             if (jsonDocument["password"].is<const char*>()) return true;        
@@ -402,8 +402,8 @@ namespace InfluxDbClient
             // Full validation - all fields must be present and valid
             if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
             if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
-            if (!jsonDocument["port"].is<int32_t>()) { logger.warning("port field is not an integer", TAG); return false; }
-            if (!jsonDocument["version"].is<int32_t>()) { logger.warning("version field is not an integer", TAG); return false; }
+            if (!jsonDocument["port"].is<uint16_t>()) { logger.warning("port field is not an integer", TAG); return false; }
+            if (!jsonDocument["version"].is<uint8_t>()) { logger.warning("version field is not an integer", TAG); return false; }
             if (!jsonDocument["database"].is<const char*>()) { logger.warning("database field is not a string", TAG); return false; }
             if (!jsonDocument["username"].is<const char*>()) { logger.warning("username field is not a string", TAG); return false; }
             if (!jsonDocument["password"].is<const char*>()) { logger.warning("password field is not a string", TAG); return false; }
@@ -437,9 +437,9 @@ namespace InfluxDbClient
     }
 
     static void _setInfluxFullUrl() {
-        char baseUrl[URL_BUFFER_SIZE];
+        char baseUrl[URL_BUFFER_SIZE + 15]; // Extra space for "http(s)://", server, and port
 
-        snprintf(baseUrl, sizeof(baseUrl), "http%s://%s:%d", 
+        snprintf(baseUrl, sizeof(baseUrl), "http%s://%s:%u", 
                 _influxDbConfiguration.useSSL ? "s" : "", 
                 _influxDbConfiguration.server, 
                 _influxDbConfiguration.port);
@@ -457,7 +457,7 @@ namespace InfluxDbClient
                      baseUrl,
                      _influxDbConfiguration.database);
         } else {
-            logger.error("Unsupported InfluxDB version: %d", TAG, _influxDbConfiguration.version);
+            logger.error("Unsupported InfluxDB version: %u", TAG, _influxDbConfiguration.version);
             return;
         }
 
@@ -478,7 +478,7 @@ namespace InfluxDbClient
 
             snprintf(_authHeader, sizeof(_authHeader), "Basic %s", encodedCredentials.c_str());
         } else {
-            logger.error("Unsupported InfluxDB version for authorization header: %d", TAG, _influxDbConfiguration.version);
+            logger.error("Unsupported InfluxDB version for authorization header: %u", TAG, _influxDbConfiguration.version);
             return;
         }
 
@@ -497,7 +497,7 @@ namespace InfluxDbClient
         size_t remaining = PAYLOAD_BUFFER_SIZE;
         bool bufferFull = false;
 
-        for (uint32_t i = 0; i < CHANNEL_COUNT && !bufferFull; i++)
+        for (uint8_t i = 0; i < CHANNEL_COUNT && !bufferFull; i++)
         {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i))
             {
@@ -567,7 +567,7 @@ namespace InfluxDbClient
             
             // Check if we've exceeded the maximum number of failures
             if (_currentSendAttempt >= INFLUXDB_MAX_CONSECUTIVE_FAILURES) {
-                logger.error("InfluxDB send failed %lu consecutive times. Disabling InfluxDB.", TAG, _currentSendAttempt);
+                logger.error("InfluxDB send failed %u consecutive times. Disabling InfluxDB.", TAG, _currentSendAttempt);
                 _disable();
                 http.end();
                 return;
@@ -576,8 +576,8 @@ namespace InfluxDbClient
             // Calculate next attempt time using exponential backoff
             uint64_t backoffDelay = calculateExponentialBackoff(_currentSendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
             _nextSendAttemptMillis = millis64() + backoffDelay;
-            
-            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %d) - Attempt %lu", httpCode, _currentSendAttempt);
+
+            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %ld) - Attempt %u", httpCode, _currentSendAttempt);
             _statusTimestampUnix = CustomTime::getUnixTime();
             
             logger.warning("Failed to send data to InfluxDB (HTTP %d). Next attempt in %llu ms", TAG, httpCode, _nextSendAttemptMillis - millis64());
@@ -588,7 +588,7 @@ namespace InfluxDbClient
     }
 
     static void _formatLineProtocol(
-        int32_t channel, 
+        uint8_t channel, 
         const char *label,
         const MeterValues &meterValues, 
         char *lineProtocolBuffer, 
@@ -611,7 +611,7 @@ namespace InfluxDbClient
         if (isEnergyData)
         {
             snprintf(lineProtocolBuffer, lineProtocolBufferSize,
-                     "%s,channel=%d,label=%s,device_id=%s active_energy_imported=%.3f,active_energy_exported=%.3f,reactive_energy_imported=%.3f,reactive_energy_exported=%.3f,apparent_energy=%.3f %llu000000",
+                     "%s,channel=%u,label=%s,device_id=%s active_energy_imported=%.3f,active_energy_exported=%.3f,reactive_energy_imported=%.3f,reactive_energy_exported=%.3f,apparent_energy=%.3f %llu000000",
                      _influxDbConfiguration.measurement,
                      channel,
                      sanitizedLabel,
@@ -626,7 +626,7 @@ namespace InfluxDbClient
         else
         {
             snprintf(lineProtocolBuffer, lineProtocolBufferSize,
-                     "%s,channel=%d,label=%s,device_id=%s voltage=%.2f,current=%.3f,active_power=%.2f,reactive_power=%.2f,apparent_power=%.2f,power_factor=%.3f %llu000000",
+                     "%s,channel=%u,label=%s,device_id=%s voltage=%.2f,current=%.3f,active_power=%.2f,reactive_power=%.2f,apparent_power=%.2f,power_factor=%.3f %llu000000",
                      _influxDbConfiguration.measurement,
                      channel,
                      sanitizedLabel,

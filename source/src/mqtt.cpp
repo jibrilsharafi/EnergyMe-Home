@@ -928,7 +928,7 @@ namespace Mqtt
                 uint64_t delayRemaining = backoffDelay;
                 while (delayRemaining > 0 && _taskShouldRun) {
                     uint64_t currentDelay = min(delayRemaining, 1000ULL);
-                    delay(currentDelay);
+                    delay((uint32_t)currentDelay);
                     delayRemaining -= currentDelay;
                 }
                 if (!_taskShouldRun) {
@@ -1074,7 +1074,7 @@ namespace Mqtt
         bool hasChannelData = false;
         
         // Check if any channels have valid data
-        for (uint32_t i = 0; i < CHANNEL_COUNT && !hasChannelData; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT && !hasChannelData; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 hasChannelData = true;
             }
@@ -1135,7 +1135,7 @@ namespace Mqtt
         JsonDocument jsonDocument;
         jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
         
-        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             JsonDocument jsonChannelData;
             Ade7953::getChannelDataAsJson(jsonChannelData, i);
             jsonDocument["data"][i] = jsonChannelData;
@@ -1784,7 +1784,7 @@ namespace Mqtt
         }
         
         // Add size for channel energy data
-        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 // Each channel: {"unixTime":123,"channel":1,"activeEnergyImported":123.45,...}
                 estimatedSize += 200; // Conservative estimate for all energy fields
@@ -1867,7 +1867,7 @@ namespace Mqtt
         }
 
         // Stream energy data for active channels (prepared for MessagePack)
-        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 MeterValues meterValues;
                 Ade7953::getMeterValues(meterValues, i);

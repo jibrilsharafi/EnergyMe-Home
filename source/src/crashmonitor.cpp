@@ -303,19 +303,19 @@ namespace CrashMonitor
                             summary->exc_bt_info.depth, summary->exc_bt_info.corrupted ? "yes" : "no");
                 
                 // The key data for debugging - backtrace addresses
-                if (summary->exc_bt_info.depth > 0 && summary->exc_bt_info.bt != NULL) {
+                if (summary->exc_bt_info.depth > 0) {
                     // Log all addresses in one line for easy copy-paste
                     char btAddresses[512] = "";
                     for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
                         char addr[12];
-                        snprintf(addr, sizeof(addr), "0x%08x ", (uint32_t)summary->exc_bt_info.bt[i]);
+                        snprintf(addr, sizeof(addr), "0x%08lx ", (uint32_t)summary->exc_bt_info.bt[i]);
                         strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
                     }
                     logger.warning("Backtrace addresses: %s", TAG, btAddresses);
 
                     // Ready-to-use command for debugging
                     char debugCommand[BACKTRACE_DECODE_CMD_SIZE];
-                    snprintf(debugCommand, sizeof(debugCommand), BACKTRACE_DECODE_CMD);
+                    snprintf(debugCommand, sizeof(debugCommand), BACKTRACE_DECODE_CMD, btAddresses);
                     logger.warning("Command: %s", TAG, debugCommand);
                 }
                 
@@ -375,7 +375,7 @@ namespace CrashMonitor
                     backtrace["corrupted"] = summary->exc_bt_info.corrupted;
                     
                     // Backtrace addresses array
-                    if (summary->exc_bt_info.depth > 0 && summary->exc_bt_info.bt != NULL) {
+                    if (summary->exc_bt_info.depth > 0) {
                         JsonArray addresses = backtrace["addresses"].to<JsonArray>();
                         for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
                             addresses.add((uint32_t)summary->exc_bt_info.bt[i]);
@@ -385,7 +385,7 @@ namespace CrashMonitor
                         char btAddresses[512] = "";
                         for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
                             char addr[12];
-                            snprintf(addr, sizeof(addr), "0x%08x ", (uint32_t)summary->exc_bt_info.bt[i]);
+                            snprintf(addr, sizeof(addr), "0x%08lx ", (uint32_t)summary->exc_bt_info.bt[i]);
                             strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
                         }
                         
@@ -426,14 +426,9 @@ namespace CrashMonitor
         size_t bytesRead = 0;
         bool success = getCoreDumpChunk(buffer, offset, chunkSize, &bytesRead);
         
-        if (success) {
-            // Calculate the actual total size by getting ELF offset (this is a bit of a hack but works)
-            // We need to determine the real ELF size, not the raw partition size
-            size_t actualTotalSize = rawTotalSize;
-            
+        if (success) {            
             // If this is the first chunk and we successfully read data, 
             // we can calculate the actual ELF size by checking how the chunk function processed it
-            static size_t calculatedElfSize = 0;
             static bool elfSizeCalculated = false;
             
             if (!elfSizeCalculated && offset == 0 && bytesRead > 0) {

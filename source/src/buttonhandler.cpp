@@ -5,7 +5,7 @@ static const char *TAG = "buttonhandler";
 namespace ButtonHandler
 {
     // Static state variables
-    static int32_t _buttonPin = INVALID_PIN; // Default pin
+    static uint8_t _buttonPin = INVALID_PIN; // Default pin
     static TaskHandle_t _buttonTaskHandle = NULL;
     static SemaphoreHandle_t _buttonSemaphore = NULL;
 
@@ -35,7 +35,7 @@ namespace ButtonHandler
     static void _handleWifiReset();
     static void _handleFactoryReset();
 
-    void begin(int32_t buttonPin)
+    void begin(uint8_t buttonPin)
     {
         _buttonPin = buttonPin;
         logger.debug("Initializing interrupt-driven button handler on GPIO%d", TAG, _buttonPin);
@@ -118,7 +118,6 @@ namespace ButtonHandler
     static void _buttonTask(void *parameter)
     {
         TickType_t feedbackUpdateInterval = pdMS_TO_TICKS(100); // Update visual feedback every 100ms
-        TickType_t lastFeedbackUpdate = ZERO_START_TIME;
 
         // This task should "never" be stopped, and to avoid over-complicating due to the semaphore, we don't stick to the standard approach
         while (true)
@@ -290,7 +289,7 @@ namespace ButtonHandler
 
     void clearCurrentOperationName()
     {
-        snprintf(_operationName, sizeof(_operationName), "");
+        snprintf(_operationName, sizeof(_operationName), "%s", "");
         _operationTimestamp = ZERO_START_TIME;
     }
 }

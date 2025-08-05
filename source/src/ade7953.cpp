@@ -106,23 +106,23 @@ namespace Ade7953
     static bool _validateJsonConfiguration(const JsonDocument &jsonDocument, bool partial = false);
 
     // Channel data management
-    static void _setChannelDataFromPreferences(uint32_t channelIndex);
-    static bool _saveChannelDataToPreferences(uint32_t channelIndex);
-    static void _updateChannelData(uint32_t channelIndex);
+    static void _setChannelDataFromPreferences(uint8_t channelIndex);
+    static bool _saveChannelDataToPreferences(uint8_t channelIndex);
+    static void _updateChannelData(uint8_t channelIndex);
     static bool _validateChannelDataJson(const JsonDocument &jsonDocument, bool partial = false);
     static void _calculateLsbValues(CtSpecification &ctSpec);
 
     // Energy data management
-    static void _setEnergyFromPreferences(uint32_t channelIndex);
-    static void _saveEnergyToPreferences(uint32_t channelIndex, bool forceSave = false); // Needed for saving data anyway on first setup (energy is 0 and not saved otherwise)
+    static void _setEnergyFromPreferences(uint8_t channelIndex);
+    static void _saveEnergyToPreferences(uint8_t channelIndex, bool forceSave = false); // Needed for saving data anyway on first setup (energy is 0 and not saved otherwise)
     static void _saveHourlyEnergyToCsv(); // Not per channel so that we open the file only once
     static void _saveEnergyComplete();
 
     // Meter reading and processing
-    static bool _readMeterValues(uint32_t channel, uint64_t linecycUnixTime);
+    static bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTime);
     static void _purgeEnergyRegisters(Ade7953Channel ade7953Channel);
-    static bool _processChannelReading(uint32_t channel, uint64_t linecycUnix);
-    static void _addMeterDataToPayload(uint32_t channel);
+    static bool _processChannelReading(uint8_t channelIndex, uint64_t linecycUnix);
+    static void _addMeterDataToPayload(uint8_t channelIndex);
 
     // ADE7953 register writing functions
     static void _setLinecyc(uint32_t linecyc);
@@ -215,7 +215,7 @@ namespace Ade7953
     static Phase _getLeadingPhase(Phase phase);
     // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
     static const char *_irqstataBitName(uint32_t bit);
-    void _printMeterValues(uint32_t channelIndex);
+    void _printMeterValues(uint8_t channelIndex);
 
 
     // Public API functions
@@ -256,12 +256,12 @@ namespace Ade7953
         _setConfigurationFromPreferences();
         logger.debug("Done setting configuration from Preferences", TAG);
 
-        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             _setChannelDataFromPreferences(i);
         }
         logger.debug("Done setting channel data from Preferences", TAG);
 
-        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             _setEnergyFromPreferences(i);
         }
         logger.debug("Done setting energy from Preferences", TAG);
@@ -591,7 +591,7 @@ namespace Ade7953
     // Channel data management
     // =======================
 
-    bool isChannelActive(uint32_t channelIndex) {
+    bool isChannelActive(uint8_t channelIndex) {
         if (channelIndex == INVALID_CHANNEL) return false; // Invalid (and expected to be) channel, thus no logs
 
         if (!isChannelValid(channelIndex)) {
@@ -602,7 +602,7 @@ namespace Ade7953
         return _channelData[channelIndex].active;
     }
 
-    bool hasChannelValidMeasurements(uint32_t channelIndex) {
+    bool hasChannelValidMeasurements(uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.warning("Channel index out of bounds: %lu", TAG, channelIndex);
             return false;
@@ -611,7 +611,7 @@ namespace Ade7953
         return _meterValues[channelIndex].lastUnixTimeMilliseconds != 0; // If it is 0, we did not add any data point yet
     }
 
-    void getChannelLabel(uint32_t channelIndex, char* buffer, size_t bufferSize) {
+    void getChannelLabel(uint8_t channelIndex, char* buffer, size_t bufferSize) {
         if (!isChannelValid(channelIndex)) {
             logger.warning("Channel index out of bounds: %lu", TAG, channelIndex);
             return;
@@ -620,7 +620,7 @@ namespace Ade7953
         snprintf(buffer, bufferSize, "%s", _channelData[channelIndex].label);
     }
 
-    void getChannelData(ChannelData &channelData, uint32_t channelIndex) {
+    void getChannelData(ChannelData &channelData, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.warning("Channel index out of bounds: %lu", TAG, channelIndex);
             return;
@@ -629,7 +629,7 @@ namespace Ade7953
         channelData = _channelData[channelIndex];
     }
 
-    void setChannelData(const ChannelData &channelData, uint32_t channelIndex) {
+    void setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.warning("Channel index out of bounds: %lu", TAG, channelIndex);
             return;
@@ -652,7 +652,7 @@ namespace Ade7953
         logger.debug("Successfully set channel data for channel %lu", TAG, channelIndex);
     }
 
-    void resetChannelData(uint32_t channelIndex) {
+    void resetChannelData(uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.warning("Channel index out of bounds: %lu", TAG, channelIndex);
             return;
@@ -669,7 +669,7 @@ namespace Ade7953
     // Channel data management - JSON operations
     // =========================================
 
-    void getChannelDataAsJson(JsonDocument &jsonDocument, uint32_t channelIndex) {
+    void getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.warning("Channel index out of bounds: %lu", TAG, channelIndex);
             return;
@@ -679,7 +679,7 @@ namespace Ade7953
     }
 
     void getAllChannelDataAsJson(JsonDocument &jsonDocument) {
-        for (uint32_t channelIndex = 0; channelIndex < CHANNEL_COUNT; channelIndex++) {
+        for (uint8_t channelIndex = 0; channelIndex < CHANNEL_COUNT; channelIndex++) {
             JsonDocument channelDoc;
             channelDataToJson(_channelData[channelIndex], channelDoc);
             jsonDocument[channelIndex] = channelDoc;
@@ -692,7 +692,7 @@ namespace Ade7953
             return false;
         }
 
-        uint32_t channelIndex = jsonDocument["index"].as<uint32_t>();
+        uint8_t channelIndex = jsonDocument["index"].as<uint32_t>();
         
         if (!isChannelValid(channelIndex)) {
             logger.warning("Invalid channel index: %lu. Skipping setting data", TAG, channelIndex);
@@ -768,7 +768,7 @@ namespace Ade7953
     // ======================
 
     void resetEnergyValues() {
-        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             _meterValues[i].activeEnergyImported = 0.0f;
             _meterValues[i].activeEnergyExported = 0.0f;
             _meterValues[i].reactiveEnergyImported = 0.0f;
@@ -795,13 +795,13 @@ namespace Ade7953
         }
         root.close();
 
-        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) _saveEnergyToPreferences(i);
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) _saveEnergyToPreferences(i);
 
         logger.info("Successfully reset energy values to 0", TAG);
     }
 
     bool setEnergyValues(
-        uint32_t channelIndex,
+        uint8_t channelIndex,
         float activeEnergyImported,
         float activeEnergyExported,
         float reactiveEnergyImported,
@@ -835,28 +835,28 @@ namespace Ade7953
     // Data output
     // ===========
 
-    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint32_t channel) {
-        if (!isChannelValid(channel)) {
-            logger.warning("Channel index out of bounds: %lu", TAG, channel);
+    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) {
+            logger.warning("Channel index out of bounds: %u", TAG, channelIndex);
             return;
         }
 
-        jsonDocument["voltage"] = _meterValues[channel].voltage;
-        jsonDocument["current"] = _meterValues[channel].current;
-        jsonDocument["activePower"] = _meterValues[channel].activePower;
-        jsonDocument["apparentPower"] = _meterValues[channel].apparentPower;
-        jsonDocument["reactivePower"] = _meterValues[channel].reactivePower;
-        jsonDocument["powerFactor"] = _meterValues[channel].powerFactor;
-        jsonDocument["activeEnergyImported"] = _meterValues[channel].activeEnergyImported;
-        jsonDocument["activeEnergyExported"] = _meterValues[channel].activeEnergyExported;
-        jsonDocument["reactiveEnergyImported"] = _meterValues[channel].reactiveEnergyImported;
-        jsonDocument["reactiveEnergyExported"] = _meterValues[channel].reactiveEnergyExported;
-        jsonDocument["apparentEnergy"] = _meterValues[channel].apparentEnergy;
+        jsonDocument["voltage"] = _meterValues[channelIndex].voltage;
+        jsonDocument["current"] = _meterValues[channelIndex].current;
+        jsonDocument["activePower"] = _meterValues[channelIndex].activePower;
+        jsonDocument["apparentPower"] = _meterValues[channelIndex].apparentPower;
+        jsonDocument["reactivePower"] = _meterValues[channelIndex].reactivePower;
+        jsonDocument["powerFactor"] = _meterValues[channelIndex].powerFactor;
+        jsonDocument["activeEnergyImported"] = _meterValues[channelIndex].activeEnergyImported;
+        jsonDocument["activeEnergyExported"] = _meterValues[channelIndex].activeEnergyExported;
+        jsonDocument["reactiveEnergyImported"] = _meterValues[channelIndex].reactiveEnergyImported;
+        jsonDocument["reactiveEnergyExported"] = _meterValues[channelIndex].reactiveEnergyExported;
+        jsonDocument["apparentEnergy"] = _meterValues[channelIndex].apparentEnergy;
     }
 
 
     void fullMeterValuesToJson(JsonDocument &jsonDocument) {
-        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             // Here we also ensure the channel has valid measurements since we have the "duty" to pass all the correct data
             if (isChannelActive(i) && hasChannelValidMeasurements(i)) {
                 JsonObject _jsonChannel = jsonDocument.add<JsonObject>();
@@ -871,7 +871,7 @@ namespace Ade7953
         }
     }
 
-    void getMeterValues(MeterValues &meterValues, uint32_t channelIndex) {
+    void getMeterValues(MeterValues &meterValues, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.warning("Channel index out of bounds: %lu", TAG, channelIndex);
             return;
@@ -1363,7 +1363,7 @@ namespace Ade7953
 
         _energySaveTaskShouldRun = true;
         while (_energySaveTaskShouldRun) {
-            for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
                 if (isChannelActive(i)) _saveEnergyToPreferences(i);
             }
 
@@ -1624,7 +1624,7 @@ namespace Ade7953
     // Channel data management functions
     // =================================
 
-    void _setChannelDataFromPreferences(uint32_t channelIndex) {
+    void _setChannelDataFromPreferences(uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.warning("Invalid channel index: %lu", TAG, channelIndex);
             return;
@@ -1678,7 +1678,7 @@ namespace Ade7953
         logger.debug("Successfully set channel data from Preferences for channel %lu", TAG, channelIndex);
     }
 
-    bool _saveChannelDataToPreferences(uint32_t channelIndex) {
+    bool _saveChannelDataToPreferences(uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             logger.warning("Invalid channel index: %lu", TAG, channelIndex);
             return false;
@@ -1770,7 +1770,7 @@ namespace Ade7953
         }
     }
 
-    void _updateChannelData(uint32_t channelIndex) {
+    void _updateChannelData(uint8_t channelIndex) {
         _calculateLsbValues(_channelData[channelIndex].ctSpecification);
 
         logger.debug("Successfully updated channel data for channel %lu", TAG, channelIndex);
@@ -1835,7 +1835,7 @@ namespace Ade7953
     // Energy
     // ======
 
-    void _setEnergyFromPreferences(uint32_t channelIndex) {
+    void _setEnergyFromPreferences(uint8_t channelIndex) {
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_ENERGY, true)) {
             logger.error("Failed to open preferences for reading", TAG);
@@ -1873,7 +1873,7 @@ namespace Ade7953
         logger.debug("Successfully read energy from preferences for channel %lu", TAG, channelIndex);
     }
 
-    void _saveEnergyToPreferences(uint32_t channelIndex, bool forceSave) {
+    void _saveEnergyToPreferences(uint8_t channelIndex, bool forceSave) {
         Preferences preferences;
         preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false);
 
@@ -1953,7 +1953,7 @@ namespace Ade7953
         }
         
         // Write data for each active channel
-        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 logger.verbose("Saving hourly energy data for channel %d: %s", TAG, i, _channelData[i].label);
 
@@ -1992,7 +1992,7 @@ namespace Ade7953
     }
 
     void _saveEnergyComplete() {
-        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) _saveEnergyToPreferences(i, true); // Force save to ensure all values are saved
         }
         _saveHourlyEnergyToCsv();
@@ -2046,23 +2046,23 @@ namespace Ade7953
     @param channel The channel to read the values from. Returns
     false if the data reading is not ready yet or valid.
     */
-    bool _readMeterValues(uint32_t channel, uint64_t linecycUnixTimeMillis) { // TODO: add waveform data
+    bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTimeMillis) { // TODO: add waveform data
         uint64_t millisRead = millis64();
-        uint64_t deltaMillis = millisRead - _meterValues[channel].lastMillis;
+        uint64_t deltaMillis = millisRead - _meterValues[channelIndex].lastMillis;
 
         // We cannot put an higher limit here because if the channel happened to be disabled, then
         // enabled again, this would result in an infinite error.
-        if (_meterValues[channel].lastMillis != 0 && deltaMillis == 0) {
+        if (_meterValues[channelIndex].lastMillis != 0 && deltaMillis == 0) {
             logger.warning(
                 "%s (%lu): delta millis (%llu) is invalid. Discarding reading", 
                 TAG, 
-                _channelData[channel].label, channel, deltaMillis
+                _channelData[channelIndex].label, channelIndex, deltaMillis
             );
             _recordFailure();
             return false;
         }
 
-        Ade7953Channel ade7953Channel = (channel == 0) ? Ade7953Channel::A : Ade7953Channel::B;
+        Ade7953Channel ade7953Channel = (channelIndex == 0) ? Ade7953Channel::A : Ade7953Channel::B;
 
         float voltage = 0.0f;
         float current = 0.0f;
@@ -2076,17 +2076,17 @@ namespace Ade7953
 
         Phase basePhase = _channelData[0].phase;
 
-        if (_channelData[channel].phase == basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
+        if (_channelData[channelIndex].phase == basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
             
             // These are the three most important values to read
             // Use multiplication instead of division as it is faster in embedded systems
-            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * _channelData[channel].ctSpecification.whLsb * (_channelData[channel].reverse ? -1 : 1);
-            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * _channelData[channel].ctSpecification.varhLsb * (_channelData[channel].reverse ? -1 : 1);
-            apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * _channelData[channel].ctSpecification.vahLsb;
-            
+            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.whLsb * (_channelData[channelIndex].reverse ? -1 : 1);
+            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.varhLsb * (_channelData[channelIndex].reverse ? -1 : 1);
+            apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.vahLsb;
+
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
             // as channel 0 (sampled just before)
-            if (channel == 0) {
+            if (channelIndex == 0) {
                 voltage = float(_readVoltageRms()) * VOLT_PER_LSB;
 
                 // Update grid frequency during channel 0 reading
@@ -2135,19 +2135,19 @@ namespace Ade7953
             // reading instead of the one of the whole line cycle. As such, the power factor is the only reliable reading and it cannot 
             // provide information about the direction of the power.
 
-            if (_channelData[channel].phase == _getLaggingPhase(basePhase)) {
+            if (_channelData[channelIndex].phase == _getLaggingPhase(basePhase)) {
                 powerFactor = cos(acos(_powerFactorPhaseOne) - (2.0f * PI / 3.0f));
-            } else if (_channelData[channel].phase == _getLeadingPhase(basePhase)) {
+            } else if (_channelData[channelIndex].phase == _getLeadingPhase(basePhase)) {
                 // I cannot prove why, but I am SURE the minus is needed if the phase is leading
                 powerFactor = - cos(acos(_powerFactorPhaseOne) + (2.0f * PI / 3.0f));
             } else {
-                logger.error("Invalid phase %d for channel %d", TAG, _channelData[channel].phase, channel);
+                logger.error("Invalid phase %d for channel %d", TAG, _channelData[channelIndex].phase, channelIndex);
                 _recordFailure();
                 return false;
             }
 
             // Read the current (RMS is absolute so no reverse is needed)
-            current = float(_readCurrentRms(ade7953Channel)) * _channelData[channel].ctSpecification.aLsb;
+            current = float(_readCurrentRms(ade7953Channel)) * _channelData[channelIndex].ctSpecification.aLsb;
 
             // Compute power values
             activePower = current * voltage * abs(powerFactor);
@@ -2162,8 +2162,8 @@ namespace Ade7953
             logger.verbose(
                 "%s (%d): Power factor %.3f is below %.3f, setting all values to 0", 
                 TAG,
-                _channelData[channel].label, 
-                channel, 
+                _channelData[channelIndex].label, 
+                channelIndex, 
                 powerFactor,
                 MINIMUM_POWER_FACTOR
             );
@@ -2182,8 +2182,8 @@ namespace Ade7953
             logger.debug(
                 "%s (%d): Power factor %.3f is above %.3f, clamping it", 
                 TAG,
-                _channelData[channel].label, 
-                channel, 
+                _channelData[channelIndex].label, 
+                channelIndex, 
                 powerFactor,
                 MAXIMUM_POWER_FACTOR_CLAMP
             );
@@ -2202,22 +2202,22 @@ namespace Ade7953
         ) {
             
             logger.warning("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", 
-                TAG, _channelData[channel].label, channel, activePower, current, reactivePower, apparentPower, powerFactor);
+                TAG, _channelData[channelIndex].label, channelIndex, activePower, current, reactivePower, apparentPower, powerFactor);
             _recordFailure();
             return false;
         }
         
         // Enough checks, now we can set the values
-        _meterValues[channel].voltage = voltage;
-        _meterValues[channel].current = current;
-        _meterValues[channel].activePower = activePower;
-        _meterValues[channel].reactivePower = reactivePower;
-        _meterValues[channel].apparentPower = apparentPower;
-        _meterValues[channel].powerFactor = powerFactor;
+        _meterValues[channelIndex].voltage = voltage;
+        _meterValues[channelIndex].current = current;
+        _meterValues[channelIndex].activePower = activePower;
+        _meterValues[channelIndex].reactivePower = reactivePower;
+        _meterValues[channelIndex].apparentPower = apparentPower;
+        _meterValues[channelIndex].powerFactor = powerFactor;
 
         // If the phase is not the phase of the main channel, set the energy not to 0 if the current
         // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation
-        if (_channelData[channel].phase != basePhase && current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
+        if (_channelData[channelIndex].phase != basePhase && current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
             activeEnergy = 1;
             reactiveEnergy = 1;
             apparentEnergy = 1;
@@ -2229,53 +2229,53 @@ namespace Ade7953
         // a certain threshold (set during setup), the read value is 0
         float deltaHoursFromLastEnergyIncrement = float(deltaMillis) / 1000.0f / 3600.0f; // Convert milliseconds to hours
         if (activeEnergy > 0) {
-            _meterValues[channel].activeEnergyImported += abs(_meterValues[channel].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
+            _meterValues[channelIndex].activeEnergyImported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
         } else if (activeEnergy < 0) {
-            _meterValues[channel].activeEnergyExported += abs(_meterValues[channel].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
+            _meterValues[channelIndex].activeEnergyExported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
         } else {
             logger.debug(
                 "%s (%d): No load active energy reading. Setting active power and power factor to 0", 
                 TAG,
-                _channelData[channel].label,
-                channel
+                _channelData[channelIndex].label,
+                channelIndex
             );
-            _meterValues[channel].activePower = 0.0f;
-            _meterValues[channel].powerFactor = 0.0f;
+            _meterValues[channelIndex].activePower = 0.0f;
+            _meterValues[channelIndex].powerFactor = 0.0f;
         }
 
         if (reactiveEnergy > 0) {
-            _meterValues[channel].reactiveEnergyImported += abs(_meterValues[channel].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
+            _meterValues[channelIndex].reactiveEnergyImported += abs(_meterValues[channelIndex].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
         } else if (reactiveEnergy < 0) {
-            _meterValues[channel].reactiveEnergyExported += abs(_meterValues[channel].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
+            _meterValues[channelIndex].reactiveEnergyExported += abs(_meterValues[channelIndex].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
         } else {
             logger.debug(
                 "%s (%d): No load reactive energy reading. Setting reactive power to 0", 
                 TAG,
-                _channelData[channel].label,
-                channel
+                _channelData[channelIndex].label,
+                channelIndex
             );
-            _meterValues[channel].reactivePower = 0.0f;
+            _meterValues[channelIndex].reactivePower = 0.0f;
         }
 
         if (apparentEnergy != 0) {
-            _meterValues[channel].apparentEnergy += _meterValues[channel].apparentPower * deltaHoursFromLastEnergyIncrement; // VA * h = VAh
+            _meterValues[channelIndex].apparentEnergy += _meterValues[channelIndex].apparentPower * deltaHoursFromLastEnergyIncrement; // VA * h = VAh
         } else {
             logger.debug(
                 "%s (%d): No load apparent energy reading. Setting apparent power and current to 0", 
                 TAG,
-                _channelData[channel].label,
-                channel
+                _channelData[channelIndex].label,
+                channelIndex
             );
-            _meterValues[channel].current = 0.0f;
-            _meterValues[channel].apparentPower = 0.0f;
+            _meterValues[channelIndex].current = 0.0f;
+            _meterValues[channelIndex].apparentPower = 0.0f;
         }
 
         // We actually set the timestamp of the channel (used for the energy calculations)
         // only if we actually reached the end. Otherwise it would mean the point had to be
         // discarded
         statistics.ade7953ReadingCount++;
-        _meterValues[channel].lastMillis = millisRead;
-        _meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
+        _meterValues[channelIndex].lastMillis = millisRead;
+        _meterValues[channelIndex].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
         return true;
     }
 
@@ -2294,30 +2294,30 @@ namespace Ade7953
         }
     }
 
-    bool _processChannelReading(uint32_t channel, uint64_t linecycUnix) {
-        if (!_readMeterValues(channel, linecycUnix)) return false;
-        _addMeterDataToPayload(channel);
-        _printMeterValues(channel);
+    bool _processChannelReading(uint8_t channelIndex, uint64_t linecycUnix) {
+        if (!_readMeterValues(channelIndex, linecycUnix)) return false;
+        _addMeterDataToPayload(channelIndex);
+        _printMeterValues(channelIndex);
 
         return true;
     }
 
-    void _addMeterDataToPayload(uint32_t channel) {
+    void _addMeterDataToPayload(uint8_t channelIndex) {
         if (!CustomTime::isTimeSynched()) return;
 
-        logger.verbose("Adding meter data to payload for channel %lu", TAG, channel);
-        if (!isChannelActive(channel) || !hasChannelValidMeasurements(channel)) {
-            logger.warning("Channel %d is not active or has no valid measurements", TAG, channel);
+        logger.verbose("Adding meter data to payload for channel %u", TAG, channelIndex);
+        if (!isChannelActive(channelIndex) || !hasChannelValidMeasurements(channelIndex)) {
+            logger.warning("Channel %d is not active or has no valid measurements", TAG, channelIndex);
             return;
         }
 
         #if HAS_SECRETS
         Mqtt::pushMeter(
             PayloadMeter(
-                channel,
-                _meterValues[channel].lastUnixTimeMilliseconds,
-                _meterValues[channel].activePower,
-                _meterValues[channel].powerFactor
+                channelIndex,
+                _meterValues[channelIndex].lastUnixTimeMilliseconds,
+                _meterValues[channelIndex].activePower,
+                _meterValues[channelIndex].powerFactor
             )
         );
         #endif
@@ -2749,7 +2749,7 @@ namespace Ade7953
         }
     }
 
-    void _printMeterValues(uint32_t channelIndex) {
+    void _printMeterValues(uint8_t channelIndex) {
         logger.debug(
             "%s (%lu): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.1f%% || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
             TAG, 

@@ -57,7 +57,7 @@
 struct CustomMqttConfiguration {
     bool enabled;
     char server[URL_BUFFER_SIZE];
-    uint32_t port;
+    uint16_t port;
     char clientid[NAME_BUFFER_SIZE];
     char topic[MQTT_TOPIC_BUFFER_SIZE];
     uint32_t frequencySeconds;

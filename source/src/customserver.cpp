@@ -320,7 +320,6 @@ namespace CustomServer
 
         const char* method = request->methodToString();
         bool isPartialUpdate = (strcmp(method, "PATCH") == 0);
-        const char* expectedMethod = isPartialUpdate ? "PATCH" : "PUT";
 
         return isPartialUpdate;
     }
@@ -832,7 +831,7 @@ namespace CustomServer
 
             // Convert to lowercase
             for (size_t i = 0; md5Header[i]; i++) {
-                md5Header[i] = tolower(md5Header[i]);
+                md5Header[i] = (char)tolower((unsigned char)md5Header[i]);
             }
             
             Update.setMD5(md5Header);
@@ -857,7 +856,7 @@ namespace CustomServer
         // Log progress periodically
         static size_t lastProgressIndex = 0;
         if (index >= lastProgressIndex + SIZE_REPORT_UPDATE_OTA || index == 0) {
-            float progress = Update.size() > 0 ? (float)Update.progress() / Update.size() * 100.0 : 0.0;
+            float progress = Update.size() > 0UL ? (float)Update.progress() / (float)Update.size() * 100.0f : 0.0f;
             logger.debug("OTA progress: %.1f%% (%zu / %zu bytes)", TAG, progress, Update.progress(), Update.size());
             lastProgressIndex = index;
         }
@@ -910,7 +909,7 @@ namespace CustomServer
             doc["size"] = Update.size();
             doc["progress"] = Update.progress();
             doc["remaining"] = Update.remaining();
-            doc["progressPercent"] = Update.size() > 0 ? (float)Update.progress() / Update.size() * 100.0 : 0.0;
+            doc["progressPercent"] = Update.size() > 0 ? (float)Update.progress() / (float)Update.size() * 100.0 : 0.0;
             
             // Add current firmware info
             doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
@@ -1230,8 +1229,13 @@ namespace CustomServer
             
             if (request->hasParam("index")) {
                 // Get single channel data
-                uint32_t channelIndex = request->getParam("index")->value().toInt();
-                Ade7953::getChannelDataAsJson(doc, channelIndex);
+                long indexValue = request->getParam("index")->value().toInt();
+                if (indexValue < 0 || indexValue > UINT8_MAX) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
+                } else {
+                    uint8_t channelIndex = static_cast<uint8_t>(indexValue);
+                    Ade7953::getChannelDataAsJson(doc, channelIndex);
+                }
             } else {
                 // Get all channels data
                 Ade7953::getAllChannelDataAsJson(doc);
@@ -1274,10 +1278,15 @@ namespace CustomServer
                 return;
             }
 
-            uint32_t channelIndex = request->getParam("index")->value().toInt();
+            long indexValue = request->getParam("index")->value().toInt();
+            if (indexValue < 0 || indexValue > UINT8_MAX) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
+                return;
+            }
+            uint8_t channelIndex = static_cast<uint8_t>(indexValue);
             Ade7953::resetChannelData(channelIndex);
-            
-            logger.info("ADE7953 channel %lu data reset via API", TAG, channelIndex);
+
+            logger.info("ADE7953 channel %u data reset via API", TAG, channelIndex);
             _sendSuccessResponse(request, "ADE7953 channel data reset successfully");
         });
 
@@ -1346,8 +1355,13 @@ namespace CustomServer
             
             if (request->hasParam("index")) {
                 // Get single channel meter values
-                uint32_t channelIndex = request->getParam("index")->value().toInt();
-                Ade7953::singleMeterValuesToJson(doc, channelIndex);
+                long indexValue = request->getParam("index")->value().toInt();
+                if (indexValue < 0 || indexValue > UINT8_MAX) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
+                } else {
+                    uint8_t channelIndex = static_cast<uint8_t>(indexValue);
+                    Ade7953::singleMeterValuesToJson(doc, channelIndex);
+                }
             } else {
                 // Get all meter values
                 Ade7953::fullMeterValuesToJson(doc);
@@ -1390,12 +1404,12 @@ namespace CustomServer
                 JsonDocument doc;
                 doc.set(json);
 
-                if (!doc["channel"].is<uint32_t>()) {
+                if (!doc["channel"].is<uint8_t>()) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "channel field must be a positive integer");
                     return;
                 }
 
-                uint32_t channel = doc["channel"].as<uint32_t>();
+                uint8_t channel = doc["channel"].as<uint8_t>();
                 float activeEnergyImported = doc["activeEnergyImported"].as<float>();
                 float activeEnergyExported = doc["activeEnergyExported"].as<float>();
                 float reactiveEnergyImported = doc["reactiveEnergyImported"].as<float>();
