@@ -20,13 +20,13 @@
 
 #define UDP_LOG_SERVERITY_FACILITY 16 // Standard syslog facility for local0.info
 #define UDP_LOG_PORT 514 // Standard syslog port
-#define UDP_LOG_BUFFER_SIZE 256 // Smaller buffer for UDP packets (not critical, but should be enough for most messages)
+#define UDP_LOG_BUFFER_SIZE 512 // Smaller buffer for UDP packets (not critical, but should be enough for most messages)
 #define DEFAULT_UDP_LOG_DESTINATION_IP "239.255.255.250" // Multicast IP for UDP logging
 
 #define LOG_BUFFER_SIZE 500 // Callback queue size - (can be set high thanks to PSRAM)
 #define LOG_CALLBACK_LEVEL_SIZE 8 // Size for log level (e.g., "info", "error")
 #define LOG_CALLBACK_FUNCTION_SIZE 16 // Size for function name
-#define LOG_CALLBACK_MESSAGE_SIZE 128 // Size for log message (not critical, so even if the message is truncated, it will not cause issues)
+#define LOG_CALLBACK_MESSAGE_SIZE 256 // Size for log message (not critical, so even if the message is truncated, it will not cause issues)
 
 #define DELAY_SEND_UDP 1 // Millisecond delay between UDP sends to avoid flooding the network
 

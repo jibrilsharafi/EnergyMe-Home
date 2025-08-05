@@ -502,8 +502,11 @@ void printDeviceStatusDynamic()
     populateSystemDynamicInfo(info);
 
     logger.debug("--- Dynamic System Info ---", TAG);
-    logger.debug("Uptime: %llu s (%llu ms) | Timestamp: %s", TAG, info.uptimeSeconds, info.uptimeMilliseconds, info.currentTimestamp);
-    logger.debug("Temperature: %.2f C", TAG, info.temperatureCelsius);
+    logger.debug(
+        "Uptime: %llu s (%llu ms) | Timestamp: %s | Temperature: %.2f C", 
+        TAG,
+        info.uptimeSeconds, info.uptimeMilliseconds, info.currentTimestamp, info.temperatureCelsius
+    );
 
     logger.debug("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
         TAG, 

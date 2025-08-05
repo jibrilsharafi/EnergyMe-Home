@@ -16,8 +16,22 @@ namespace CustomLog
     static bool _isUdpInitialized = false;
     static bool _isQueueInitialized = false;
 
-    static void _callbackMqtt();
-    static void _callbackUdp();
+    static void _callbackMqtt(
+        const char* timestamp,
+        uint64_t millisEsp,
+        const char* level,
+        uint32_t coreId,
+        const char* function,
+        const char* message
+    );
+    static void _callbackUdp(
+        const char* timestamp,
+        uint64_t millisEsp,
+        const char* level,
+        uint32_t coreId,
+        const char* function,
+        const char* message
+    );
     static bool _initializeQueue();
 
     static bool _initializeQueue() // Cannot use logger here to avoid circular dependency
@@ -96,6 +110,19 @@ namespace CustomLog
         }
     }
 
+    void callbackMultiple(
+        const char* timestamp,
+        uint64_t millisEsp,
+        const char* level,
+        uint32_t coreId,
+        const char* function,
+        const char* message
+    )
+    {
+        _callbackUdp(timestamp, millisEsp, level, coreId, function, message);
+        _callbackMqtt(timestamp, millisEsp, level, coreId, function, message);
+    }
+
     static void _callbackMqtt(
         const char* timestamp,
         uint64_t millisEsp,
@@ -155,7 +182,7 @@ namespace CustomLog
 
             // Format as simplified syslog message
             snprintf(_udpBuffer, sizeof(_udpBuffer),
-                "<%d>%s %s[%llu]: [%s][Core%u] %s: %s",
+                "<%d>%s %s[%llu]: [%s][Core%lu] %s: %s",
                 UDP_LOG_SERVERITY_FACILITY, // Facility.Severity (local0.info)
                 log.timestamp,
                 DEVICE_ID,
@@ -189,18 +216,4 @@ namespace CustomLog
             }
         }
     }
-
-    void callbackMultiple(
-        const char* timestamp,
-        uint64_t millisEsp,
-        const char* level,
-        uint32_t coreId,
-        const char* function,
-        const char* message
-    )
-    {
-        _callbackUdp(timestamp, millisEsp, level, coreId, function, message);
-        _callbackMqtt(timestamp, millisEsp, level, coreId, function, message);
-    }
-
 }

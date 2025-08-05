@@ -42,7 +42,7 @@
 #define TASK_MAINTENANCE_NAME "maintenance_task"
 #define TASK_MAINTENANCE_STACK_SIZE (4 * 1024)
 #define TASK_MAINTENANCE_PRIORITY 3
-#define MAINTENANCE_CHECK_INTERVAL (10 * 1000) // Interval to check main parameters, to avoid overloading the loop
+#define MAINTENANCE_CHECK_INTERVAL (60 * 1000) // Interval to check main parameters, to avoid overloading the loop
 
 // System restart thresholds
 #define MINIMUM_FREE_HEAP_SIZE (1 * 1024) // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support

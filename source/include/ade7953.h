@@ -40,7 +40,7 @@
 #define SAVE_ENERGY_INTERVAL (5 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory 
 #define DAILY_ENERGY_CSV_HEADER "timestamp,channel,label,phase,active_imported,active_exported,reactive_imported,reactive_exported,apparent"
 #define DAILY_ENERGY_CSV_DIGITS 1 // Since the energy is in Wh, it is useless to go below 0.1 Wh
-#define ENERGY_SAVE_THRESHOLD 1000.0f // Threshold for saving energy data (in Wh) and in any case not more frequent than every 5 minutes
+#define ENERGY_SAVE_THRESHOLD 100.0f // Threshold for saving energy data (in Wh) and in any case not more frequent than SAVE_ENERGY_INTERVAL
 
 // Interrupt handling
 #define ADE7953_INTERRUPT_TIMEOUT_MS 1000ULL // Timeout for waiting on interrupt semaphore (in ms)
@@ -106,11 +106,11 @@
 #define CONFIG_PHCAL_B_KEY "phcal_b"
 
 // Energy Preferences Keys (max 15 chars)
-#define ENERGY_ACTIVE_IMP_KEY "ch%d_actImp"    // Format: ch17_actImp (11 chars)
-#define ENERGY_ACTIVE_EXP_KEY "ch%d_actExp"    // Format: ch17_actExp (11 chars)
-#define ENERGY_REACTIVE_IMP_KEY "ch%d_reactImp" // Format: ch17_reactImp (13 chars)
-#define ENERGY_REACTIVE_EXP_KEY "ch%d_reactExp" // Format: ch17_reactExp (13 chars)
-#define ENERGY_APPARENT_KEY "ch%d_apparent"   // Format: ch17_apparent (13 chars)
+#define ENERGY_ACTIVE_IMP_KEY "ch%lu_actImp"    // Format: ch17_actImp (11 chars)
+#define ENERGY_ACTIVE_EXP_KEY "ch%lu_actExp"    // Format: ch17_actExp (11 chars)
+#define ENERGY_REACTIVE_IMP_KEY "ch%lu_reactImp" // Format: ch17_reactImp (13 chars)
+#define ENERGY_REACTIVE_EXP_KEY "ch%lu_reactExp" // Format: ch17_reactExp (13 chars)
+#define ENERGY_APPARENT_KEY "ch%lu_apparent"   // Format: ch17_apparent (13 chars)
 
 // Default configuration values
 #define DEFAULT_SAMPLE_TIME 200ULL // Will be converted to integer line cycles (so at 50Hz, 200ms = 10 cycles)
@@ -189,24 +189,25 @@
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20f // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 
 // Channel Preferences Keys
-#define CHANNEL_ACTIVE_KEY "active_%u" // Format: active_0 (9 chars)
-#define CHANNEL_REVERSE_KEY "reverse_%u" // Format: reverse_0 (10 chars)
-#define CHANNEL_LABEL_KEY "label_%u" // Format: label_0 (8 chars)
-#define CHANNEL_PHASE_KEY "phase_%u" // Format: phase_0 (9 chars)
+#define CHANNEL_ACTIVE_KEY "active_%lu" // Format: active_0 (9 chars)
+#define CHANNEL_REVERSE_KEY "reverse_%lu" // Format: reverse_0 (10 chars)
+#define CHANNEL_LABEL_KEY "label_%lu" // Format: label_0 (8 chars)
+#define CHANNEL_PHASE_KEY "phase_%lu" // Format: phase_0 (9 chars)
 
 // CT Specification keys
-#define CHANNEL_CT_CURRENT_RATING_KEY "ct_current_%u" // Format: ct_current_0 (12 chars)
-#define CHANNEL_CT_VOLTAGE_OUTPUT_KEY "ct_voltage_%u" // Format: ct_voltage_0 (12 chars)
-#define CHANNEL_CT_SCALING_FRACTION_KEY "ct_scaling_%u" // Format: ct_scaling_0 (12 chars)
+#define CHANNEL_CT_CURRENT_RATING_KEY "ct_current_%lu" // Format: ct_current_0 (12 chars)
+#define CHANNEL_CT_VOLTAGE_OUTPUT_KEY "ct_voltage_%lu" // Format: ct_voltage_0 (12 chars)
+#define CHANNEL_CT_SCALING_FRACTION_KEY "ct_scaling_%lu" // Format: ct_scaling_0 (12 chars)
 
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
 #define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
 #define DEFAULT_CHANNEL_REVERSE false
 #define DEFAULT_CHANNEL_PHASE PHASE_1
-#define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
+#define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %lu"
 
 // CT Specification defaults
+#define DEFAULT_CT_CURRENT_RATING_CHANNEL_0 50.0f   // 50A for channel 0 only as it is "standard" in EnergyMe Home
 #define DEFAULT_CT_CURRENT_RATING 30.0f   // 30A
 #define DEFAULT_CT_VOLTAGE_OUTPUT 0.333f  // 333mV
 #define DEFAULT_CT_SCALING_FRACTION 0.0f  // No scaling by default
@@ -403,12 +404,12 @@ namespace Ade7953
 {
     // Core lifecycle management
     bool begin(
-        uint32_t ssPin,
-        uint32_t sckPin,
-        uint32_t misoPin,
-        uint32_t mosiPin,
-        uint32_t resetPin,
-        uint32_t interruptPin
+        uint8_t ssPin,
+        uint8_t sckPin,
+        uint8_t misoPin,
+        uint8_t mosiPin,
+        uint8_t resetPin,
+        uint8_t interruptPin
     );
     void stop();
 

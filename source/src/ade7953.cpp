@@ -9,12 +9,12 @@ namespace Ade7953
     // =========================================================
     
     // Hardware pins
-    static uint32_t _ssPin;
-    static uint32_t _sckPin;
-    static uint32_t _misoPin;
-    static uint32_t _mosiPin;
-    static uint32_t _resetPin;
-    static uint32_t _interruptPin;
+    static uint8_t _ssPin;
+    static uint8_t _sckPin;
+    static uint8_t _misoPin;
+    static uint8_t _mosiPin;
+    static uint8_t _resetPin;
+    static uint8_t _interruptPin;
 
     // Timing and measurement variables
     static uint64_t _sampleTime; // in milliseconds, time between linecycles readings
@@ -54,12 +54,12 @@ namespace Ade7953
 
     // Hardware initialization and control
     static void _setHardwarePins(
-        uint32_t ssPin,
-        uint32_t sckPin,
-        uint32_t misoPin,
-        uint32_t mosiPin,
-        uint32_t resetPin,
-        uint32_t interruptPin
+        uint8_t ssPin,
+        uint8_t sckPin,
+        uint8_t misoPin,
+        uint8_t mosiPin,
+        uint8_t resetPin,
+        uint8_t interruptPin
     );
     static void _reset();
     // According to the datasheet, setting these registers is mandatory for optimal operation
@@ -209,7 +209,7 @@ namespace Ade7953
     static Phase _getLaggingPhase(Phase phase);
     static Phase _getLeadingPhase(Phase phase);
     // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
-    static void _irqstataBitName(int32_t bit, char *buffer, size_t bufferSize);
+    static const char *_irqstataBitName(uint32_t bit);
     void _printMeterValues(uint32_t channelIndex);
 
 
@@ -221,12 +221,12 @@ namespace Ade7953
     // =========================
 
     bool begin(
-        uint32_t ssPin,
-        uint32_t sckPin,
-        uint32_t misoPin,
-        uint32_t mosiPin,
-        uint32_t resetPin,
-        uint32_t interruptPin
+        uint8_t ssPin,
+        uint8_t sckPin,
+        uint8_t misoPin,
+        uint8_t mosiPin,
+        uint8_t resetPin,
+        uint8_t interruptPin
     ) {
         logger.debug("Initializing Ade7953", TAG);
 
@@ -938,12 +938,12 @@ namespace Ade7953
     // ===================================
 
     static void _setHardwarePins(
-        uint32_t ssPin,
-        uint32_t sckPin,
-        uint32_t misoPin,
-        uint32_t mosiPin,
-        uint32_t resetPin,
-        uint32_t interruptPin
+        uint8_t ssPin,
+        uint8_t sckPin,
+        uint8_t misoPin,
+        uint8_t mosiPin,
+        uint8_t resetPin,
+        uint8_t interruptPin
     ) {
         logger.debug("Setting hardware pins...", TAG);
 
@@ -1130,7 +1130,7 @@ namespace Ade7953
 
     Ade7953InterruptType _handleInterrupt() 
     {    
-        int32_t statusA = readRegister(RSTIRQSTATA_32, 32, false);
+        uint32_t statusA = readRegister(RSTIRQSTATA_32, 32, false);
         // No need to read for channel B (only channel A has the relevant information for use)
 
         if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
@@ -1141,7 +1141,7 @@ namespace Ade7953
             return Ade7953InterruptType::CYCEND;
         } else {
             // Just log the unhandled status
-            logger.warning("Unhandled ADE7953 interrupt status: 0x%08lX", TAG, statusA);
+            logger.warning("Unhandled ADE7953 interrupt status: 0x%08lX | %s", TAG, statusA, _irqstataBitName(statusA));
             return Ade7953InterruptType::OTHER;
         }
     }
@@ -1183,6 +1183,7 @@ namespace Ade7953
         Multiplexer::setChannel(max(_currentChannel - 1UL, 0UL));
         
         // Process current channel (if active)
+        // TODO: throw first reading to increase the quality, or change switching order to check properly which is the issue
         if (previousChannel != INVALID_CHANNEL) _processChannelReading(previousChannel, linecycUnix);
         
         // Always process channel 0 as it is on a separate ADE7953 channel
@@ -1639,7 +1640,7 @@ namespace Ade7953
 
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
-        channelData.ctSpecification.currentRating = preferences.getFloat(key, DEFAULT_CT_CURRENT_RATING);
+        channelData.ctSpecification.currentRating = preferences.getFloat(key, channelIndex == 0 ? DEFAULT_CT_CURRENT_RATING_CHANNEL_0 : DEFAULT_CT_CURRENT_RATING);
 
         snprintf(key, sizeof(key), CHANNEL_CT_VOLTAGE_OUTPUT_KEY, channelIndex);
         channelData.ctSpecification.voltageOutput = preferences.getFloat(key, DEFAULT_CT_VOLTAGE_OUTPUT);
@@ -1782,21 +1783,15 @@ namespace Ade7953
         // This is more tricky since we need to consider the full scale current and voltage ratings
         // First, we compute the full scale current RMS, which is simply the CT current rating.
         float fullScaleCurrentRms = ctSpec.currentRating;
-        logger.debug("Full scale current RMS: %.3f A", TAG, fullScaleCurrentRms); // FIXME: temp
         // Then we compute the full scale voltage RMS, which is the maximum ADC input RMS scaled by the voltage divider ratio.
         float voltageDivideRatio = 1 / (VOLTAGE_DIVIDER_R2 / (VOLTAGE_DIVIDER_R1 + VOLTAGE_DIVIDER_R2));
-        logger.debug("Voltage divide ratio: %.3f", TAG, voltageDivideRatio); // FIXME: temp
         float fullScaleVoltageRms = maximumAdcChannelInputRms * voltageDivideRatio;
-        logger.debug("Full scale voltage RMS: %.3f V", TAG, fullScaleVoltageRms); // FIXME: temp
         // The full scale power is simply the product of the full scale current and voltage RMS values (assuming cos phi = 1 for simplicity).
         float fullScalePower = fullScaleCurrentRms * fullScaleVoltageRms;
-        logger.debug("Full scale power: %.3f W", TAG, fullScalePower); // FIXME: temp
         // The amount of time it passes in one tick is needed to compute the (miniscule) energy that is accumulated in one tick.
         float deltaHoursOneTick = (1.0f / ENERGY_ACCUMULATION_FREQUENCY) / 3600.0f;
-        logger.debug("Delta hours per tick: %.10f", TAG, deltaHoursOneTick); // FIXME: temp
         // Finally, we can compute the LSB for energy in watt-hours by multiplying the full scale power (in W) by the time delta (in hours)
         float wattHourPerLsb = fullScalePower * deltaHoursOneTick;
-        logger.debug("Watt-hour per LSB: %.10f", TAG, wattHourPerLsb); // FIXME: temp
 
         // The scaling is the same for all channels, remembering to add the scaling fraction.
         ctSpec.whLsb = wattHourPerLsb * (1 + ctSpec.scalingFraction);
@@ -1974,7 +1969,7 @@ namespace Ade7953
 
     void _saveEnergyComplete() {
         for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
-            if (isChannelActive(i)) _saveEnergyToPreferences(i);
+            if (isChannelActive(i)) _saveEnergyToPreferences(i, true); // Force save to ensure all values are saved
         }
         _saveHourlyEnergyToCsv();
 
@@ -2028,8 +2023,8 @@ namespace Ade7953
     false if the data reading is not ready yet or valid.
     */
     bool _readMeterValues(uint32_t channel, uint64_t linecycUnixTimeMillis) { // TODO: add waveform data
-        uint64_t _millisRead = millis64();
-        uint64_t _deltaMillis = _millisRead - _meterValues[channel].lastMillis;
+        uint64_t millisRead = millis64();
+        uint64_t deltaMillis = millisRead - _meterValues[channel].lastMillis;
 
         // // Ensure the reading is not being called too early if a previous valid reading exists
         // if (previousLastUnixTimeMilliseconds != 0) {
@@ -2058,8 +2053,8 @@ namespace Ade7953
 
         // We cannot put an higher limit here because if the channel happened to be disabled, then
         // enabled again, this would result in an infinite error.
-        if (_meterValues[channel].lastMillis != 0 && _deltaMillis == 0) {
-            logger.warning("%s (%lu): delta millis (%llu) is invalid. Discarding reading", TAG, _channelData[channel].label, channel, _deltaMillis);
+        if (_meterValues[channel].lastMillis != 0 && deltaMillis == 0) {
+            logger.warning("%s (%lu): delta millis (%llu) is invalid. Discarding reading", TAG, _channelData[channel].label, channel, deltaMillis);
             // _recordFailure();
             return false;
         }
@@ -2082,25 +2077,15 @@ namespace Ade7953
             
             // These are the three most important values to read
             // Use multiplication instead of division as it is faster in embedded systems
-            activeEnergy = _readActiveEnergy(ade7953Channel) * _channelData[channel].ctSpecification.whLsb * (_channelData[channel].reverse ? -1 : 1);
-            reactiveEnergy = _readReactiveEnergy(ade7953Channel) * _channelData[channel].ctSpecification.varhLsb * (_channelData[channel].reverse ? -1 : 1);
-            apparentEnergy = _readApparentEnergy(ade7953Channel) * _channelData[channel].ctSpecification.vahLsb;
-
-            logger.debug(
-                "%s (%ld): Read active energy %.3f Wh, reactive energy %.3f VARh, apparent energy %.3f VAh",
-                TAG,
-                _channelData[channel].label,
-                channel,
-                activeEnergy,
-                reactiveEnergy,
-                apparentEnergy
-            ); // FIXME: remove me
+            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * _channelData[channel].ctSpecification.whLsb * (_channelData[channel].reverse ? -1 : 1);
+            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * _channelData[channel].ctSpecification.varhLsb * (_channelData[channel].reverse ? -1 : 1);
+            apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * _channelData[channel].ctSpecification.vahLsb;
             
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
             // as channel 0 (sampled just before)
             if (channel == 0) {
-                voltage = _readVoltageRms() * VOLT_PER_LSB;
-                
+                voltage = float(_readVoltageRms()) * VOLT_PER_LSB;
+
                 // Update grid frequency during channel 0 reading
                 int32_t period = _readPeriod();
                 float newGridFrequency = period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / period : 0.0f;
@@ -2112,35 +2097,16 @@ namespace Ade7953
             // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
             // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
             // Use multiplication instead of division as it is faster in embedded systems
-            float hoursSampleTime = float(_sampleTime) / 1000.0f / 3600.0f; // Convert milliseconds to hours | ENSURE THEY ARE FLOAT: YOU LOST A LOT OF TIME DEBUGGING THIS!!!
-            activePower = hoursSampleTime > 0 ? activeEnergy / hoursSampleTime : 0.0f; // W
-            reactivePower = hoursSampleTime > 0 ? reactiveEnergy / hoursSampleTime : 0.0f; // VAR
-            apparentPower = hoursSampleTime > 0 ? apparentEnergy / hoursSampleTime : 0.0f; // VA
-            
-            logger.debug(
-                "%s (%ld): Computed active power %.3f W, reactive power %.3f VAR, apparent power %.3f VA",
-                TAG,
-                _channelData[channel].label,
-                channel,
-                activePower,
-                reactivePower,
-                apparentPower
-            ); // FIXME: remove me
+            float deltaHoursSampleTime = float(_sampleTime) / 1000.0f / 3600.0f; // Convert milliseconds to hours | ENSURE THEY ARE FLOAT: YOU LOST A LOT OF TIME DEBUGGING THIS!!!
+            activePower = deltaHoursSampleTime > 0 ? activeEnergy / deltaHoursSampleTime : 0.0f; // W
+            reactivePower = deltaHoursSampleTime > 0 ? reactiveEnergy / deltaHoursSampleTime : 0.0f; // VAR
+            apparentPower = deltaHoursSampleTime > 0 ? apparentEnergy / deltaHoursSampleTime : 0.0f; // VA
 
             // It is faster and more consistent to compute the values rather than reading them from the ADE7953
             if (apparentPower == 0) powerFactor = 0.0f; // Avoid division by zero
             else powerFactor = activePower / apparentPower * (reactivePower >= 0 ? 1 : -1); // Apply sign as by datasheet (page 38)
 
             current = voltage > 0 ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
-
-            logger.debug(
-                "%s (%ld): Computed current %.3f A, power factor %.3f",
-                TAG,
-                _channelData[channel].label,
-                channel,
-                current,
-                powerFactor
-            ); // FIXME: remove me
         } else {
             // TODO: understand if this can be improved using the energy registers
             // Assume everything is the same as channel 0 except the current
@@ -2152,7 +2118,7 @@ namespace Ade7953
             voltage = _meterValues[0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
             
             // Read wrong power factor due to the phase shift
-            float _powerFactorPhaseOne = _readPowerFactor(ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR;
+            float _powerFactorPhaseOne = float(_readPowerFactor(ade7953Channel)) * POWER_FACTOR_CONVERSION_FACTOR;
 
             // Compute the correct power factor assuming 120 degrees phase shift in voltage (weak assumption as this is normally true)
             // The idea is to:
@@ -2167,10 +2133,10 @@ namespace Ade7953
             // provide information about the direction of the power.
 
             if (_channelData[channel].phase == _getLaggingPhase(basePhase)) {
-                powerFactor = cos(acos(_powerFactorPhaseOne) - (2 * PI / 3));
+                powerFactor = cos(acos(_powerFactorPhaseOne) - (2.0f * PI / 3.0f));
             } else if (_channelData[channel].phase == _getLeadingPhase(basePhase)) {
                 // I cannot prove why, but I am SURE the minus is needed if the phase is leading
-                powerFactor = - cos(acos(_powerFactorPhaseOne) + (2 * PI / 3));
+                powerFactor = - cos(acos(_powerFactorPhaseOne) + (2.0f * PI / 3.0f));
             } else {
                 logger.error("Invalid phase %d for channel %d", TAG, _channelData[channel].phase, channel);
                 _recordFailure();
@@ -2178,26 +2144,26 @@ namespace Ade7953
             }
 
             // Read the current (RMS is absolute so no reverse is needed)
-            current = _readCurrentRms(ade7953Channel) * _channelData[channel].ctSpecification.aLsb;
+            current = float(_readCurrentRms(ade7953Channel)) * _channelData[channel].ctSpecification.aLsb;
 
             // Compute power values
             activePower = current * voltage * abs(powerFactor);
             apparentPower = current * voltage;
-            reactivePower = sqrt(pow(apparentPower, 2) - pow(activePower, 2)); // Small approximation leaving out distorted power
+            reactivePower = float(sqrt(pow(apparentPower, 2) - pow(activePower, 2))); // Small approximation leaving out distorted power
         }
 
         apparentPower = abs(apparentPower); // Apparent power must be positive
 
         // If the power factor is below a certain threshold, assume everything is 0 to avoid weird readings
         if (abs(powerFactor) < MINIMUM_POWER_FACTOR) {
-            logger.debug(
+            logger.verbose(
                 "%s (%d): Power factor %.3f is below %.3f, setting all values to 0", 
                 TAG,
                 _channelData[channel].label, 
                 channel, 
                 powerFactor,
                 MINIMUM_POWER_FACTOR
-            ); // FIXME: make verbose
+            );
             current = 0.0f;
             activePower = 0.0f;
             reactivePower = 0.0f;
@@ -2302,11 +2268,11 @@ namespace Ade7953
         // Leverage the no-load feature of the ADE7953 to discard the noise
         // As such, when the energy read by the ADE7953 in the given linecycle is below
         // a certain threshold (set during setup), the read value is 0
-        uint64_t deltaHours = _deltaMillis / 1000ULL / 3600ULL; // Convert milliseconds to hours
+        float deltaHoursFromLastEnergyIncrement = float(deltaMillis) / 1000.0f / 3600.0f; // Convert milliseconds to hours
         if (activeEnergy > 0) {
-            _meterValues[channel].activeEnergyImported += abs(_meterValues[channel].activePower * deltaHours); // W * h = Wh
+            _meterValues[channel].activeEnergyImported += abs(_meterValues[channel].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
         } else if (activeEnergy < 0) {
-            _meterValues[channel].activeEnergyExported += abs(_meterValues[channel].activePower * deltaHours); // W * h = Wh
+            _meterValues[channel].activeEnergyExported += abs(_meterValues[channel].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
         } else {
             logger.debug(
                 "%s (%d): No load active energy reading. Setting active power and power factor to 0", 
@@ -2319,9 +2285,9 @@ namespace Ade7953
         }
 
         if (reactiveEnergy > 0) {
-            _meterValues[channel].reactiveEnergyImported += abs(_meterValues[channel].reactivePower * deltaHours); // var * h = VArh
+            _meterValues[channel].reactiveEnergyImported += abs(_meterValues[channel].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
         } else if (reactiveEnergy < 0) {
-            _meterValues[channel].reactiveEnergyExported += abs(_meterValues[channel].reactivePower * deltaHours); // var * h = VArh
+            _meterValues[channel].reactiveEnergyExported += abs(_meterValues[channel].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
         } else {
             logger.debug(
                 "%s (%d): No load reactive energy reading. Setting reactive power to 0", 
@@ -2333,7 +2299,7 @@ namespace Ade7953
         }
 
         if (apparentEnergy != 0) {
-            _meterValues[channel].apparentEnergy += _meterValues[channel].apparentPower * deltaHours; // VA * h = VAh
+            _meterValues[channel].apparentEnergy += _meterValues[channel].apparentPower * deltaHoursFromLastEnergyIncrement; // VA * h = VAh
         } else {
             logger.debug(
                 "%s (%d): No load apparent energy reading. Setting apparent power and current to 0", 
@@ -2349,7 +2315,7 @@ namespace Ade7953
         // only if we actually reached the end. Otherwise it would mean the point had to be
         // discarded
         statistics.ade7953ReadingCount++;
-        _meterValues[channel].lastMillis = _millisRead;
+        _meterValues[channel].lastMillis = millisRead;
         _meterValues[channel].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
         return true;
     }
@@ -2367,7 +2333,8 @@ namespace Ade7953
 
     void _addMeterDataToPayload(uint32_t channel) {
         if (!CustomTime::isTimeSynched()) return;
-        logger.debug("Adding meter data to payload for channel %lu", TAG, channel); // FIXME: remove me
+
+        logger.verbose("Adding meter data to payload for channel %lu", TAG, channel);
         if (!isChannelActive(channel) || !hasChannelValidMeasurements(channel)) {
             logger.warning("Channel %d is not active or has no valid measurements", TAG, channel);
             return;
@@ -2535,7 +2502,7 @@ namespace Ade7953
         logger.debug("Saved sample time %llu ms to preferences", TAG, _sampleTime);
     }
 
-    void _updateSampleTime() {
+    void _updateSampleTime() { //TODO: We could get rid of this and instead directly use the linecycles as input, and reading the period, making the code agnostic to 50 or 60 Hz
         // Example: sample time at 1000 ms -> 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
         uint64_t linecyc = _sampleTime * CYCLES_PER_SECOND * 2 / 1000;
         _setLinecyc(linecyc);
@@ -2621,7 +2588,7 @@ namespace Ade7953
 
         _failureCount++;
         statistics.ade7953ReadingCountFailure++;
-        // _checkForTooManyFailures(); // FIXME: reactivate me
+        _checkForTooManyFailures();
     }
 
     void _checkForTooManyFailures() {
@@ -2783,50 +2750,50 @@ namespace Ade7953
         }
     }
 
-    void _irqstataBitName(int32_t bit, char *buffer, size_t bufferSize) { // TODO: make return a const char* instead of using a buffer
+    const char* _irqstataBitName(uint32_t bit) {
         switch (bit) {
-            case IRQSTATA_AEHFA_BIT:       snprintf(buffer, bufferSize, "AEHFA");
-            case IRQSTATA_VAREHFA_BIT:     snprintf(buffer, bufferSize, "VAREHFA");
-            case IRQSTATA_VAEHFA_BIT:      snprintf(buffer, bufferSize, "VAEHFA");
-            case IRQSTATA_AEOFA_BIT:       snprintf(buffer, bufferSize, "AEOFA");
-            case IRQSTATA_VAREOFA_BIT:     snprintf(buffer, bufferSize, "VAREOFA");
-            case IRQSTATA_VAEOFA_BIT:      snprintf(buffer, bufferSize, "VAEOFA");
-            case IRQSTATA_AP_NOLOADA_BIT:  snprintf(buffer, bufferSize, "AP_NOLOADA");
-            case IRQSTATA_VAR_NOLOADA_BIT: snprintf(buffer, bufferSize, "VAR_NOLOADA");
-            case IRQSTATA_VA_NOLOADA_BIT:  snprintf(buffer, bufferSize, "VA_NOLOADA");
-            case IRQSTATA_APSIGN_A_BIT:    snprintf(buffer, bufferSize, "APSIGN_A");
-            case IRQSTATA_VARSIGN_A_BIT:   snprintf(buffer, bufferSize, "VARSIGN_A");
-            case IRQSTATA_ZXTO_IA_BIT:     snprintf(buffer, bufferSize, "ZXTO_IA");
-            case IRQSTATA_ZXIA_BIT:        snprintf(buffer, bufferSize, "ZXIA");
-            case IRQSTATA_OIA_BIT:         snprintf(buffer, bufferSize, "OIA");
-            case IRQSTATA_ZXTO_BIT:        snprintf(buffer, bufferSize, "ZXTO");
-            case IRQSTATA_ZXV_BIT:         snprintf(buffer, bufferSize, "ZXV");
-            case IRQSTATA_OV_BIT:          snprintf(buffer, bufferSize, "OV");
-            case IRQSTATA_WSMP_BIT:        snprintf(buffer, bufferSize, "WSMP");
-            case IRQSTATA_CYCEND_BIT:      snprintf(buffer, bufferSize, "CYCEND");
-            case IRQSTATA_SAG_BIT:         snprintf(buffer, bufferSize, "SAG");
-            case IRQSTATA_RESET_BIT:       snprintf(buffer, bufferSize, "RESET");
-            case IRQSTATA_CRC_BIT:         snprintf(buffer, bufferSize, "CRC");
-            default:                       snprintf(buffer, bufferSize, "UNKNOWN");
+            case IRQSTATA_AEHFA_BIT:       return "AEHFA";
+            case IRQSTATA_VAREHFA_BIT:     return "VAREHFA";
+            case IRQSTATA_VAEHFA_BIT:      return "VAEHFA";
+            case IRQSTATA_AEOFA_BIT:       return "AEOFA";
+            case IRQSTATA_VAREOFA_BIT:     return "VAREOFA";
+            case IRQSTATA_VAEOFA_BIT:      return "VAEOFA";
+            case IRQSTATA_AP_NOLOADA_BIT:  return "AP_NOLOADA";
+            case IRQSTATA_VAR_NOLOADA_BIT: return "VAR_NOLOADA";
+            case IRQSTATA_VA_NOLOADA_BIT:  return "VA_NOLOADA";
+            case IRQSTATA_APSIGN_A_BIT:    return "APSIGN_A";
+            case IRQSTATA_VARSIGN_A_BIT:   return "VARSIGN_A";
+            case IRQSTATA_ZXTO_IA_BIT:     return "ZXTO_IA";
+            case IRQSTATA_ZXIA_BIT:        return "ZXIA";
+            case IRQSTATA_OIA_BIT:         return "OIA";
+            case IRQSTATA_ZXTO_BIT:        return "ZXTO";
+            case IRQSTATA_ZXV_BIT:         return "ZXV";
+            case IRQSTATA_OV_BIT:          return "OV";
+            case IRQSTATA_WSMP_BIT:        return "WSMP";
+            case IRQSTATA_CYCEND_BIT:      return "CYCEND";
+            case IRQSTATA_SAG_BIT:         return "SAG";
+            case IRQSTATA_RESET_BIT:       return "RESET";
+            case IRQSTATA_CRC_BIT:         return "CRC";
+            default:                       return "UNKNOWN";
         }
     }
 
     void _printMeterValues(uint32_t channelIndex) {
         logger.debug(
-            "%s (%lu): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
+            "%s (%lu): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.1f%% || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
             TAG, 
             _channelData[channelIndex].label,
             _channelData[channelIndex].index,
-            _meterValues[channelIndex].voltage, 
-            _meterValues[channelIndex].current, 
-            _meterValues[channelIndex].activePower, 
-            _meterValues[channelIndex].reactivePower, 
-            _meterValues[channelIndex].apparentPower, 
-            _meterValues[channelIndex].powerFactor, 
+            _meterValues[channelIndex].voltage,
+            _meterValues[channelIndex].current,
+            _meterValues[channelIndex].activePower,
+            _meterValues[channelIndex].reactivePower,
+            _meterValues[channelIndex].apparentPower,
+            _meterValues[channelIndex].powerFactor * 100.0f,
             _meterValues[channelIndex].activeEnergyImported,
             _meterValues[channelIndex].activeEnergyExported,
-            _meterValues[channelIndex].reactiveEnergyImported, 
-            _meterValues[channelIndex].reactiveEnergyExported, 
+            _meterValues[channelIndex].reactiveEnergyImported,
+            _meterValues[channelIndex].reactiveEnergyExported,
             _meterValues[channelIndex].apparentEnergy
         );
     }

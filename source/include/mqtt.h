@@ -33,9 +33,8 @@
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
 
-#define DEFAULT_CLOUD_SERVICES_ENABLED true // If we compile with secrets, we might as well just directly connect
+#define DEFAULT_CLOUD_SERVICES_ENABLED false // If we compile with secrets, we might as well just directly connect // FIXME: enable
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
-#define DEFAULT_DEBUG_LOGS_ENABLED false // Do not send debug logs by default
 
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
 #define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (15 * 60 * 1000) // The maximum interval between two system dynamic payloads
@@ -47,6 +46,7 @@
 #define MQTT_CLAIM_INITIAL_RETRY_INTERVAL (5 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_CLAIM_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds
 #define MQTT_CLAIM_RETRY_MULTIPLIER 2 // Multiplier for exponential backoff
+#define MQTT_CLAIM_TIMEOUT (30 * 1000) // Timeout for claiming certificates (in milliseconds)
 
 #define MQTT_INITIAL_RECONNECT_INTERVAL (5 * 1000) // Initial interval for MQTT reconnection attempts
 #define MQTT_MAX_RECONNECT_INTERVAL (5 * 60 * 1000) // Maximum interval for MQTT reconnection attempts
