@@ -90,13 +90,13 @@ class SyslogParser:
     # Regex pattern to match the syslog format from ESP32
     # Format: <16>2024-12-13 10:30:45 energyme-abc123[12345]: [info][Core0] main: Setup done!
     SYSLOG_PATTERN = re.compile(
-        r'<(\d+)>'                    # Priority
-        r'([^>]+?)\s+'                # Timestamp
-        r'([^\[]+)\[(\d+)\]:\s+'      # Device[millis]:
-        r'\[([^\]]+)\]'               # [level]
-        r'\[Core(\d+)\]\s+'           # [CoreX]
-        r'([^:]+):\s+'                # function:
-        r'(.+)'                       # message
+        r'<(\d+)>'                          # Priority
+        r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+'  # Timestamp (YYYY-MM-DD HH:MM:SS)
+        r'([^\[]+)\[(\d+)\]:\s+'            # Device[millis]:
+        r'\[([^\]]+)\]'                     # [level]
+        r'\[Core(\d+)\]\s+'                 # [CoreX]
+        r'([^:]+):\s+'                      # function:
+        r'(.+)'                             # message
     )
     
     @classmethod
@@ -139,6 +139,7 @@ class UDPLogListener:
         self.device_files: Dict[str, TextIO] = {}  # Track separate files per device (using session keys)
         self.device_last_millis: Dict[str, int] = {}  # Track last seen millis per device (using actual device IDs)
         self.device_session_ids: Dict[str, str] = {}  # Track current session ID per device
+        self.device_last_display_millis: Dict[str, int] = {}  # Track last displayed millis per device for delta calculation
         self.stats = {
             'total_messages': 0,
             'parsed_messages': 0,
@@ -257,6 +258,10 @@ class UDPLogListener:
         
         # Update last seen millis
         self.device_last_millis[actual_device_id] = current_millis
+        
+        # Reset delta tracking on reboot to avoid large negative deltas
+        if is_reboot:
+            self.device_last_display_millis.pop(actual_device_id, None)
         
         # Generate session key for file tracking
         if is_reboot or actual_device_id not in self.device_session_ids:
@@ -384,11 +389,39 @@ class UDPLogListener:
         """Display a parsed log message with formatting"""
         level_color = getattr(Colors, parsed['level'].upper(), Colors.RESET)
         
+        # Extract actual device ID for delta tracking
+        actual_device_id = self._extract_device_id(parsed['device'])
+        current_millis = parsed['millis']
+        
+        # Check for reboot indicators
+        is_reboot = False
+        if "Guess who's back" in parsed['message']:
+            is_reboot = True
+        elif actual_device_id in self.device_last_display_millis:
+            last_millis = self.device_last_display_millis[actual_device_id]
+            # More conservative: only if current millis is less than 10 minutes AND 
+            # last millis was more than 30 minutes (to avoid false positives from short uptimes)
+            if (current_millis < 600000 and  # Current millis < 10 minutes
+                last_millis > 1800000 and   # Last millis was > 30 minutes  
+                current_millis < last_millis):  # And it's actually lower
+                is_reboot = True
+        
+        # Calculate delta from last message
+        delta_str = ""
+        if actual_device_id in self.device_last_display_millis and not is_reboot:
+            last_millis = self.device_last_display_millis[actual_device_id]
+            delta = current_millis - last_millis
+            if delta >= 0:  # Only show positive deltas (avoid negative on reboot)
+                delta_str = f" (+{delta:03d}ms)"
+        
+        # Update last display millis (reset on reboot)
+        self.device_last_display_millis[actual_device_id] = current_millis
+        
         # Format timestamp
         timestamp = f"{Colors.TIMESTAMP}{parsed['timestamp']}{Colors.RESET}"
         
-        # Format device info
-        device_info = f"{Colors.DEVICE}{parsed['device']}{Colors.RESET} [{parsed['millis']}ms]"
+        # Format millis with delta (no device ID)
+        millis_info = f"[{parsed['millis']}ms{delta_str}]"
         
         # Format level with color
         level_str = f"{level_color}{parsed['level'].upper():<7}{Colors.RESET}"
@@ -400,7 +433,7 @@ class UDPLogListener:
         function = f"{Colors.FUNCTION}{parsed['function']}{Colors.RESET}"
         
         # Print formatted message
-        print(f"{timestamp} {device_info} {level_str} [{core_info}] {function}: {parsed['message']}")
+        print(f"{timestamp} {millis_info} {level_str} [{core_info}] {function}: {parsed['message']}")
     
     def _display_raw_message(self, message: str, addr: tuple):
         """Display raw message when parsing fails"""
