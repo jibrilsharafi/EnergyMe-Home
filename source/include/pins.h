@@ -23,3 +23,7 @@
 #define ADE7953_MOSI_PIN 45
 #define ADE7953_RESET_PIN 21
 #define ADE7953_INTERRUPT_PIN 37
+
+// Voltage divider resistors to directly feed the scaled down mains voltage to the ADE7953
+#define VOLTAGE_DIVIDER_R1 990000.0f // Actually 3x330 kOhm resistors in series
+#define VOLTAGE_DIVIDER_R2 1000.0f // 1 kOhm resistor

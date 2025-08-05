@@ -398,16 +398,6 @@ void restartTask(void* parameter) {
         factoryReset ? "true" : "false"
     );
 
-    stopMaintenanceTask();
-    Ade7953::stop();
-    #if HAS_SECRETS
-    Mqtt::stop();
-    #endif
-    CustomMqtt::stop();
-    InfluxDbClient::stop();
-    ModbusTcp::stop();
-    CustomServer::stop();
-
     // Wait for the specified delay
     // In theory we could restart immediately since the task stopping was done earlier.. but let's be careful
     // and give time for other possible tasks or things to clean up properly
@@ -425,7 +415,7 @@ void setRestartSystem(const char* functionName, const char* reason, bool factory
     logger.info("Restart required from function %s. Reason: %s. Factory reset: %s", TAG, functionName, reason, factoryReset ? "true" : "false");
     
     if (_restartTaskHandle != NULL) {
-        logger.info("A restart is already scheduled. Keeping the existing configuration.", TAG);
+        logger.info("A restart is already scheduled. Keeping the existing one.", TAG);
         return; // Prevent overwriting an existing restart request
     }
 
@@ -438,6 +428,18 @@ void setRestartSystem(const char* functionName, const char* reason, bool factory
         TASK_RESTART_PRIORITY,
         &_restartTaskHandle
     );
+
+    // We need to stop all services here instead of in the restart task
+    // so to ensure that even if something is blocking, the restart will happen no matter what
+    stopMaintenanceTask();
+    Ade7953::stop();
+    #if HAS_SECRETS
+    Mqtt::stop();
+    #endif
+    CustomMqtt::stop();
+    InfluxDbClient::stop();
+    ModbusTcp::stop();
+    CustomServer::stop();
     
     if (result != pdPASS) {
         logger.error("Failed to create restart task, performing immediate operation", TAG);
@@ -501,6 +503,8 @@ void printDeviceStatusDynamic()
 
     logger.debug("--- Dynamic System Info ---", TAG);
     logger.debug("Uptime: %llu s (%llu ms) | Timestamp: %s", TAG, info.uptimeSeconds, info.uptimeMilliseconds, info.currentTimestamp);
+    logger.debug("Temperature: %.2f C", TAG, info.temperatureCelsius);
+
     logger.debug("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
         TAG, 
         info.heapTotalBytes, 
@@ -523,8 +527,6 @@ void printDeviceStatusDynamic()
         info.spiffsFreeBytes, info.spiffsFreePercentage, 
         info.spiffsUsedBytes, info.spiffsUsedPercentage
     );
-    logger.debug("Temperature: %.2f C", TAG, info.temperatureCelsius);
-
     logger.debug("NVS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %u namespaces", 
         TAG, 
         info.totalUsableEntries, info.availableEntries, info.availableEntriesPercentage, 

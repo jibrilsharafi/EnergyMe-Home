@@ -460,7 +460,9 @@ let burstMode = {
   maxReadings: 100,
   startTime: null,
   totalReads: 0,
-  errors: 0
+  errors: 0,
+  abortController: null,
+  pendingRequests: 0
 };
 
 // DOM elements
@@ -661,6 +663,8 @@ function startBurstMode() {
   burstMode.totalReads = 0;
   burstMode.errors = 0;
   burstMode.readings = [];
+  burstMode.pendingRequests = 0;
+  burstMode.abortController = new AbortController();
   
   // Update UI
   burstBtn.textContent = '⏹️ Stop Burst';
@@ -675,13 +679,23 @@ function startBurstMode() {
   
   // Start reading
   const interval = parseInt(burstIntervalSelect.value);
-  burstMode.intervalId = setInterval(performBurstRead, interval);
+  burstMode.intervalId = setInterval(() => {
+    if (burstMode.active) {
+      performBurstRead();
+    }
+  }, interval);
   
   showStatus(`Burst mode started (${interval}ms interval)`, 'success');
 }
 
 function stopBurstMode() {
   burstMode.active = false;
+  
+  // Cancel all pending requests
+  if (burstMode.abortController) {
+    burstMode.abortController.abort();
+    burstMode.abortController = null;
+  }
   
   if (burstMode.intervalId) {
     clearInterval(burstMode.intervalId);
@@ -696,11 +710,19 @@ function stopBurstMode() {
   burstIntervalSelect.disabled = false;
   
   const duration = Math.round((Date.now() - burstMode.startTime) / 1000);
-  showStatus(`Burst mode stopped. ${burstMode.totalReads} reads in ${duration}s`, 'info');
+  const pendingMsg = burstMode.pendingRequests > 0 ? ` (${burstMode.pendingRequests} requests cancelled)` : '';
+  showStatus(`Burst mode stopped. ${burstMode.totalReads} reads in ${duration}s${pendingMsg}`, 'info');
+  
+  // Reset pending counter
+  burstMode.pendingRequests = 0;
 }
 
 async function performBurstRead() {
+  // Double check if burst mode is still active
   if (!currentRegister || !burstMode.active) return;
+  
+  // Increment pending requests counter
+  burstMode.pendingRequests++;
   
   try {
     const startTime = performance.now();
@@ -720,14 +742,28 @@ async function performBurstRead() {
         'X-Device-IP': deviceConfig.ip,
         'X-Username': deviceConfig.username,
         'X-Password': deviceConfig.password
-      }
+      },
+      signal: burstMode.abortController?.signal
     });
+    
+    // Check again if burst mode is still active after the request
+    if (!burstMode.active) {
+      burstMode.pendingRequests--;
+      return;
+    }
     
     const endTime = performance.now();
     const duration = Math.round(endTime - startTime);
     
     if (response.ok) {
       const data = await response.json();
+      
+      // Final check before processing the response
+      if (!burstMode.active) {
+        burstMode.pendingRequests--;
+        return;
+      }
+      
       burstMode.totalReads++;
       
       // Add to readings history
@@ -749,14 +785,24 @@ async function performBurstRead() {
       addToHistory(reading);
       
     } else {
-      burstMode.errors++;
-      updateBurstStats();
+      if (burstMode.active) {
+        burstMode.errors++;
+        updateBurstStats();
+      }
       console.error('Burst read failed:', await response.text());
     }
   } catch (error) {
-    burstMode.errors++;
-    updateBurstStats();
-    console.error('Burst read error:', error);
+    if (error.name === 'AbortError') {
+      // Request was cancelled, this is expected when stopping burst mode
+      console.log('Burst read cancelled');
+    } else if (burstMode.active) {
+      burstMode.errors++;
+      updateBurstStats();
+      console.error('Burst read error:', error);
+    }
+  } finally {
+    // Always decrement pending requests counter
+    burstMode.pendingRequests--;
   }
 }
 

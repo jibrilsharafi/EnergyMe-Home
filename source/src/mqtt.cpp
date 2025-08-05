@@ -1045,8 +1045,8 @@ namespace Mqtt
             jsonObject["powerFactor"] = payloadMeter.powerFactor;
         }
 
-        for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
-            if (Ade7953::isChannelActive(i)  && Ade7953::hasChannelValidMeasurements(i)) {
+        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
+            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 JsonObject jsonObject = jsonArray.add<JsonObject>();
 
                 MeterValues meterValues;
@@ -1081,7 +1081,7 @@ namespace Mqtt
         bool hasChannelData = false;
         
         // Check if any channels have valid data
-        for (int32_t i = 0; i < CHANNEL_COUNT && !hasChannelData; i++) {
+        for (uint32_t i = 0; i < CHANNEL_COUNT && !hasChannelData; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 hasChannelData = true;
             }
@@ -1790,7 +1790,7 @@ namespace Mqtt
         }
         
         // Add size for channel energy data
-        for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 // Each channel: {"unixTime":123,"channel":1,"activeEnergyImported":123.45,...}
                 estimatedSize += 200; // Conservative estimate for all energy fields
@@ -1872,7 +1872,7 @@ namespace Mqtt
         }
 
         // Stream energy data for active channels (prepared for MessagePack)
-        for (int32_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint32_t i = 0; i < CHANNEL_COUNT; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 MeterValues meterValues;
                 Ade7953::getMeterValues(meterValues, i);

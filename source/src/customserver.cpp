@@ -38,7 +38,7 @@ namespace CustomServer
 
     // Authentication management
     static bool _setWebPassword(const char *password);
-    static bool _getWebPassword(char *buffer, size_t bufferSize);
+    static bool _getWebPasswordFromPreferences(char *buffer, size_t bufferSize);
     static bool _validatePasswordStrength(const char *password);
 
     // Helper functions for common response patterns
@@ -139,10 +139,10 @@ namespace CustomServer
         logger.info("Web server stopped", TAG);
     }
 
-    void updateAuthPassword()
+    void updateAuthPasswordWithOneFromPreferences()
     {
         char webPassword[PASSWORD_BUFFER_SIZE];
-        if (_getWebPassword(webPassword, sizeof(webPassword)))
+        if (_getWebPasswordFromPreferences(webPassword, sizeof(webPassword)))
         {
             digestAuth.setPassword(webPassword);
             digestAuth.generateHash(); // regenerate hash with new password
@@ -172,7 +172,7 @@ namespace CustomServer
 
         // Load password from Preferences or use default
         char webPassword[PASSWORD_BUFFER_SIZE];
-        if (_getWebPassword(webPassword, sizeof(webPassword)))
+        if (_getWebPasswordFromPreferences(webPassword, sizeof(webPassword)))
         {
             digestAuth.setPassword(webPassword);
             logger.debug("Web password loaded from Preferences", TAG);
@@ -481,7 +481,7 @@ namespace CustomServer
         return success;
     }
 
-    static bool _getWebPassword(char *buffer, size_t bufferSize)
+    static bool _getWebPasswordFromPreferences(char *buffer, size_t bufferSize) // TODO: this can be improved as it is cumbersome the password management
     {
         logger.debug("Getting web password", TAG);
 
@@ -498,10 +498,10 @@ namespace CustomServer
             return false;
         }
 
-        prefs.getString(PREFERENCES_KEY_PASSWORD, buffer, bufferSize);
+        size_t res = prefs.getString(PREFERENCES_KEY_PASSWORD, buffer, bufferSize);
         prefs.end();
 
-        return true;
+        return res > 0 && res < bufferSize; // Ensure we don't return true if the password is actually null or too long
     }
     // Only check length - there is no need to be picky here
     static bool _validatePasswordStrength(const char *password)
@@ -610,7 +610,7 @@ namespace CustomServer
             // Check if using default password
             char currentPassword[PASSWORD_BUFFER_SIZE];
             bool isDefault = true;
-            if (_getWebPassword(currentPassword, sizeof(currentPassword))) {
+            if (_getWebPasswordFromPreferences(currentPassword, sizeof(currentPassword))) {
                 isDefault = (strcmp(currentPassword, WEBSERVER_DEFAULT_PASSWORD) == 0);
             }
             
@@ -644,7 +644,7 @@ namespace CustomServer
 
                 // Validate current password
                 char storedPassword[PASSWORD_BUFFER_SIZE];
-                if (!_getWebPassword(storedPassword, sizeof(storedPassword)))
+                if (!_getWebPasswordFromPreferences(storedPassword, sizeof(storedPassword)))
                 {
                     _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve current password");
                     return;
@@ -667,7 +667,7 @@ namespace CustomServer
                 _sendSuccessResponse(request, "Password changed successfully");
                 
                 // Update authentication middleware with new password
-                updateAuthPassword();
+                updateAuthPasswordWithOneFromPreferences();
             });
         server.addHandler(changePasswordHandler);
     }
@@ -677,7 +677,7 @@ namespace CustomServer
         server.on("/api/v1/auth/reset-password", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
             if (resetWebPassword()) {
-                updateAuthPassword();
+                updateAuthPasswordWithOneFromPreferences();
                 logger.warning("Password reset to default via API", TAG);
                 _sendSuccessResponse(request, "Password reset to default");
             } else {
@@ -737,7 +737,7 @@ namespace CustomServer
     {
         static bool otaInitialized = false;
 
-        // TODO: we should stop tasks here probably, and resume then only later. But how can we do it safely?
+        // TODO: we should pause tasks here probably, and resume then only later. But how can we do it safely?
         
         if (!index) {
             // First chunk - initialize OTA
@@ -1201,12 +1201,12 @@ namespace CustomServer
                 JsonDocument doc;
                 doc.set(json);
 
-                if (!doc["sampleTime"].is<uint32_t>()) {
+                if (!doc["sampleTime"].is<uint64_t>()) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "sampleTime field must be a positive integer");
                     return;
                 }
 
-                uint32_t sampleTime = doc["sampleTime"].as<uint32_t>();
+                uint64_t sampleTime = doc["sampleTime"].as<uint64_t>();
 
                 if (Ade7953::setSampleTime(sampleTime))
                 {
@@ -1225,15 +1225,16 @@ namespace CustomServer
         // Get single channel data
         server.on("/api/v1/ade7953/channel", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            if (!request->hasParam("index")) {
-                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing channel index parameter");
-                return;
-            }
-
-            uint32_t channelIndex = request->getParam("index")->value().toInt();
-            
             JsonDocument doc;
-            Ade7953::getChannelDataAsJson(doc, channelIndex);
+            
+            if (request->hasParam("index")) {
+                // Get single channel data
+                uint32_t channelIndex = request->getParam("index")->value().toInt();
+                Ade7953::getChannelDataAsJson(doc, channelIndex);
+            } else {
+                // Get all channels data
+                Ade7953::getAllChannelDataAsJson(doc);
+            }
             
             _sendJsonResponse(request, doc);
         });
@@ -1337,29 +1338,20 @@ namespace CustomServer
 
         // === METER VALUES ENDPOINTS ===
         
-        // Get all meter values
+        // Get meter values (all channels or single channel with optional index parameter)
         server.on("/api/v1/ade7953/meter-values", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             JsonDocument doc;
-            Ade7953::fullMeterValuesToJson(doc);
             
-            if (!doc.isNull()) _sendJsonResponse(request, doc);
-            else _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No meter values available");
-        });
-
-        // Get single channel meter values
-        server.on("/api/v1/ade7953/meter-values/channel", HTTP_GET, [](AsyncWebServerRequest *request)
-                  {
-            if (!request->hasParam("index")) {
-                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing channel index parameter");
-                return;
+            if (request->hasParam("index")) {
+                // Get single channel meter values
+                uint32_t channelIndex = request->getParam("index")->value().toInt();
+                Ade7953::singleMeterValuesToJson(doc, channelIndex);
+            } else {
+                // Get all meter values
+                Ade7953::fullMeterValuesToJson(doc);
             }
-
-            uint32_t channelIndex = request->getParam("index")->value().toInt();
             
-            JsonDocument doc;
-            Ade7953::singleMeterValuesToJson(doc, channelIndex);
-
             if (!doc.isNull()) _sendJsonResponse(request, doc);
             else _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No meter values available");
         });

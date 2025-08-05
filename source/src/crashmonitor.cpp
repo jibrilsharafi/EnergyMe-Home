@@ -306,7 +306,7 @@ namespace CrashMonitor
                 if (summary->exc_bt_info.depth > 0 && summary->exc_bt_info.bt != NULL) {
                     // Log all addresses in one line for easy copy-paste
                     char btAddresses[512] = "";
-                    for (int32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                    for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
                         char addr[12];
                         snprintf(addr, sizeof(addr), "0x%08x ", (uint32_t)summary->exc_bt_info.bt[i]);
                         strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
@@ -377,13 +377,13 @@ namespace CrashMonitor
                     // Backtrace addresses array
                     if (summary->exc_bt_info.depth > 0 && summary->exc_bt_info.bt != NULL) {
                         JsonArray addresses = backtrace["addresses"].to<JsonArray>();
-                        for (int32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                        for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
                             addresses.add((uint32_t)summary->exc_bt_info.bt[i]);
                         }
                         
                         // Command for debugging
                         char btAddresses[512] = "";
-                        for (int32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                        for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
                             char addr[12];
                             snprintf(addr, sizeof(addr), "0x%08x ", (uint32_t)summary->exc_bt_info.bt[i]);
                             strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);

@@ -497,7 +497,7 @@ namespace InfluxDbClient
         size_t remaining = PAYLOAD_BUFFER_SIZE;
         bool bufferFull = false;
 
-        for (int32_t i = 0; i < CHANNEL_COUNT && !bufferFull; i++)
+        for (uint32_t i = 0; i < CHANNEL_COUNT && !bufferFull; i++)
         {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i))
             {

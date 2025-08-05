@@ -245,7 +245,7 @@ namespace ButtonHandler
         if (CustomServer::resetWebPassword()) // Implement actual password reset logic
         {
             // Update authentication middleware with new password
-            CustomServer::updateAuthPassword();
+            CustomServer::updateAuthPasswordWithOneFromPreferences();
             
             logger.info("Password reset to default successfully", TAG);
             Led::blinkGreenSlow(Led::PRIO_URGENT, 2000ULL);

@@ -1262,14 +1262,14 @@ paths:
   /api/v1/ade7953/channel:
     get:
       summary: Get channel configuration
-      description: Get the configuration for a specific channel
+      description: Get the configuration for a specific channel or all channels. If index parameter is provided, returns single channel data. If omitted, returns all channels data.
       tags:
         - ADE7953
       parameters:
         - name: index
           in: query
-          required: true
-          description: Channel index (0-16)
+          required: false
+          description: Channel index (0-16). If omitted, returns all channels.
           schema:
             type: integer
             minimum: 0
@@ -1277,11 +1277,52 @@ paths:
           example: 0
       responses:
         '200':
-          description: Channel configuration
+          description: Channel configuration(s)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChannelData'
+                oneOf:
+                  - $ref: '#/components/schemas/ChannelData'
+                    description: Single channel response (when index provided)
+                  - type: object
+                    description: All channels response (when index omitted)
+                    properties:
+                      channels:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ChannelData'
+              examples:
+                single_channel:
+                  summary: Single channel response
+                  value:
+                    index: 0
+                    active: true
+                    reverse: false
+                    label: "Main Circuit"
+                    phase: "A"
+                    ctSpecification:
+                      currentRating: 100.0
+                      voltageOutput: 1.0
+                all_channels:
+                  summary: All channels response
+                  value:
+                    channels:
+                      - index: 0
+                        active: true
+                        reverse: false
+                        label: "Main Circuit"
+                        phase: "A"
+                        ctSpecification:
+                          currentRating: 100.0
+                          voltageOutput: 1.0
+                      - index: 1
+                        active: false
+                        reverse: false
+                        label: "Kitchen"
+                        phase: "A"
+                        ctSpecification:
+                          currentRating: 50.0
+                          voltageOutput: 1.0
         '400':
           $ref: '#/components/responses/BadRequest'
     put:
@@ -1481,36 +1522,15 @@ paths:
 
   /api/v1/ade7953/meter-values:
     get:
-      summary: Get all meter values
-      description: Get real-time meter values for all active channels
-      tags:
-        - ADE7953
-      responses:
-        '200':
-          description: Meter values for all channels
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  channels:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/MeterValues'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/v1/ade7953/meter-values/channel:
-    get:
-      summary: Get single channel meter values
-      description: Get real-time meter values for a specific channel
+      summary: Get meter values
+      description: Get real-time meter values for all active channels or a specific channel
       tags:
         - ADE7953
       parameters:
         - name: index
           in: query
-          required: true
-          description: Channel index (0-16)
+          required: false
+          description: Channel index (0-16). If omitted, returns all channels.
           schema:
             type: integer
             minimum: 0
@@ -1518,13 +1538,50 @@ paths:
           example: 0
       responses:
         '200':
-          description: Meter values for the specified channel
+          description: Meter values for all channels or the specified channel
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MeterValues'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+                oneOf:
+                  - type: object
+                    description: All channels response
+                    properties:
+                      channels:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/MeterValues'
+                  - $ref: '#/components/schemas/MeterValues'
+                    description: Single channel response
+              examples:
+                all_channels:
+                  summary: All channels response
+                  value:
+                    channels:
+                      - voltage: 230.2
+                        current: 5.45
+                        activePower: 1254.6
+                        reactivePower: 45.2
+                        apparentPower: 1256.4
+                        powerFactor: 0.998
+                        activeEnergyImported: 12345.6
+                        activeEnergyExported: 0.0
+                        reactiveEnergyImported: 234.5
+                        reactiveEnergyExported: 0.0
+                        apparentEnergy: 12346.8
+                single_channel:
+                  summary: Single channel response
+                  value:
+                    voltage: 230.2
+                    current: 5.45
+                    activePower: 1254.6
+                    reactivePower: 45.2
+                    apparentPower: 1256.4
+                    powerFactor: 0.998
+                    activeEnergyImported: 12345.6
+                    activeEnergyExported: 0.0
+                    reactiveEnergyImported: 234.5
+                    reactiveEnergyExported: 0.0
+                    apparentEnergy: 12346.8
         '404':
           $ref: '#/components/responses/NotFound'
 

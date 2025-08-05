@@ -17,11 +17,13 @@
 #include "constants.h"
 #include "structs.h"
 #include "utils.h"
+#include "pins.h" // For the voltage divider
 
+// SPI
 #define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz
 #define ADE7953_SPI_MUTEX_TIMEOUT_MS 100 // Timeout for acquiring SPI mutex to prevent deadlocks
 
-// Task
+// Tasks
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task" // The name of the ADE7953 task
 #define ADE7953_METER_READING_TASK_STACK_SIZE (16 * 1024) // The stack size for the ADE7953 task
 #define ADE7953_METER_READING_TASK_PRIORITY 5 // The priority for the ADE7953 task
@@ -41,7 +43,7 @@
 #define ENERGY_SAVE_THRESHOLD 1000.0f // Threshold for saving energy data (in Wh) and in any case not more frequent than every 5 minutes
 
 // Interrupt handling
-#define ADE7953_INTERRUPT_TIMEOUT_MS 1000 // Timeout for waiting on interrupt semaphore (in ms)
+#define ADE7953_INTERRUPT_TIMEOUT_MS 1000ULL // Timeout for waiting on interrupt semaphore (in ms)
 
 // Setup
 #define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low
@@ -58,21 +60,28 @@
 #define DEFAULT_LCYCMODE_REGISTER 0b01111111 // 0xFF 0b01111111 (enable accumulation mode for all channels, disable read with reset)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1000000100001100 // Enable bit 2, bit 3 (line accumulation for PF), 8 (CRC is enabled), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
-#define DEFAULT_GAIN 4194304 // 0x400000 (default gain for the ADE7953)
-#define DEFAULT_OFFSET 0 // 0x000000 (default offset for the ADE7953)
-#define DEFAULT_PHCAL 10 // 0.02°/LSB, indicating a phase calibration of 0.2° which is minimum needed for CTs
 #define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) for line cycle end detection
-#define MINIMUM_SAMPLE_TIME 200
+#define MINIMUM_SAMPLE_TIME 200ULL
 
 // Constant hardware-fixed values
+// Leaving 
+#define FULL_SCALE_LSB_FOR_RMS_VALUES 9032007 // Maximum value of RMS registers (24-bit unsigned) - current (channel A and B) and voltage
+#define MAXIMUM_ADC_CHANNEL_INPUT 0.5f // Maximum voltage in volts (absolute) for all ADC channels in ADE7953 (both current and voltage)
+#define ENERGY_ACCUMULATION_FREQUENCY 206900 // At full input scale, an LSB is added every this frequency to the energy register
+
 // This is a hardcoded value since the voltage divider implemented (in v5 is 990 kOhm to 1 kOhm) yields this volts per LSB constant
 // The computation is as follows:
 // The maximum value of register VRMS is 9032007 (24-bit unsigned) with full scale inputs (0.5V absolute, 0.3536V rms).
 // The voltage divider ratio is 1000/(990000+1000) =0.001009
 // The maximum RMS voltage in input is 0.3536 / 0.001009 = 350.4 V
 // The LSB per volt is therefore 9032007 / 350.4 = 25779
-// For embedded systems, multiplications are better than divisions, so we use a float constant which is VOLT_PER_LSB = 1 / LSB_PER_VOLT
-#define VOLT_PER_LSB 0.0000387922
+// For embedded systems, multiplications are better than divisions, so we use a float constant which is VOLT_PER_LSB = 1 / 25779
+#define VOLT_PER_LSB 0.0000387922f
+#define CYCLES_PER_SECOND 50 // 50Hz mains frequency
+#define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet)
+#define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f 
+#define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
+
 
 // Configuration Preferences Keys
 #define CONFIG_SAMPLE_TIME_KEY "sample_time"
@@ -104,7 +113,7 @@
 #define ENERGY_APPARENT_KEY "ch%d_apparent"   // Format: ch17_apparent (13 chars)
 
 // Default configuration values
-#define DEFAULT_SAMPLE_TIME 200 // Will be converted to integer line cycles (so at 50Hz, 200ms = 10 cycles)
+#define DEFAULT_SAMPLE_TIME 200ULL // Will be converted to integer line cycles (so at 50Hz, 200ms = 10 cycles)
 #define DEFAULT_CONFIG_AV_GAIN 0x400000
 #define DEFAULT_CONFIG_AI_GAIN 0x400000
 #define DEFAULT_CONFIG_BI_GAIN 0x400000
@@ -150,11 +159,6 @@
 #define IRQSTATA_CRC_BIT           21 // Checksum has changed
 
 // Fixed conversion values
-#define CYCLES_PER_SECOND 50 // 50Hz mains frequency
-#define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet)
-#define ANGLE_CONVERSION_FACTOR 0.0807 // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f 
-#define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
-
 // Validate values
 #define VALIDATE_VOLTAGE_MIN 50.0f
 #define VALIDATE_VOLTAGE_MAX 300.0f
@@ -171,7 +175,7 @@
 #define MAXIMUM_POWER_FACTOR_CLAMP 1.05f // Values above 1 but below this are still accepted (rounding errors and similar)
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_POWER_FACTOR 0.05f // Measuring such low power factors is virtually impossible with such CTs
-#define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 100 // Threshold to transition to a legitimate zero state for channel 0
+// #define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 100 // Threshold to transition to a legitimate zero state for channel 0 - IS IT REALLY A GOOD METHOD?
 #define ADE7953_MIN_LINECYC 10UL // Below this the readings are unstable (200 ms)
 #define ADE7953_MAX_LINECYC 1000UL // Above this too much time passes (20 seconds)
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
@@ -212,7 +216,7 @@
 #define BIT_24 24
 #define BIT_32 32
 
-#define INVALID_CHANNEL -1 // Invalid channel identifier, used to indicate no active channel
+#define INVALID_CHANNEL 999 // Invalid channel identifier, used to indicate no active channel
 
 // Enumeration for different types of ADE7953 interrupts
 enum class Ade7953InterruptType {
@@ -325,9 +329,9 @@ struct CtSpecification
   
   // Computed at runtime - no need to store these in Preferences
   float aLsb;
-  float wLsb;
-  float varLsb;
-  float vaLsb;
+  // float wLsb;
+  // float varLsb;
+  // float vaLsb;
   float whLsb;
   float varhLsb;
   float vahLsb;
@@ -336,7 +340,8 @@ struct CtSpecification
     : currentRating(DEFAULT_CT_CURRENT_RATING),
       voltageOutput(DEFAULT_CT_VOLTAGE_OUTPUT),
       scalingFraction(DEFAULT_CT_SCALING_FRACTION),
-      aLsb(1.0f), wLsb(1.0f), varLsb(1.0f), vaLsb(1.0f),
+      aLsb(1.0f), 
+      // wLsb(1.0f), varLsb(1.0f), vaLsb(1.0f),
       whLsb(1.0f), varhLsb(1.0f), vahLsb(1.0f) {}
 };
 
@@ -445,8 +450,8 @@ namespace Ade7953
     bool configurationFromJson(const JsonDocument &jsonDocument, Ade7953Configuration &config, bool partial = false);
 
     // Sample time management
-    uint32_t getSampleTime();
-    bool setSampleTime(uint32_t sampleTime);
+    uint64_t getSampleTime();
+    bool setSampleTime(uint64_t sampleTime);
 
     // Channel data management
     bool isChannelActive(uint32_t channelIndex);
@@ -458,6 +463,7 @@ namespace Ade7953
 
     // Channel data management - JSON operations
     void getChannelDataAsJson(JsonDocument &jsonDocument, uint32_t channelIndex);
+    void getAllChannelDataAsJson(JsonDocument &jsonDocument);
     bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial = false);
     void channelDataToJson(const ChannelData &channelData, JsonDocument &jsonDocument);
     bool channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);

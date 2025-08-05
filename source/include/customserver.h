@@ -22,8 +22,8 @@
 #include "led.h"
 
 // Rate limiting
-#define WEBSERVER_MAX_REQUESTS 180
-#define WEBSERVER_WINDOW_SIZE_SECONDS 60
+#define WEBSERVER_MAX_REQUESTS 6000
+#define WEBSERVER_WINDOW_SIZE_SECONDS 600
 
 #define MINIMUM_FREE_HEAP_OTA (20 * 1024) // Minimum free heap required for OTA updates
 #define SIZE_REPORT_UPDATE_OTA (128 * 1024) // Print progress every X bytes during OTA update
@@ -75,6 +75,6 @@ namespace CustomServer {
     void stop();
 
     // Authentication management
-    void updateAuthPassword();
+    void updateAuthPasswordWithOneFromPreferences();
     bool resetWebPassword(); // This has to be accessible from buttonHandler to physically reset the password 
 }
