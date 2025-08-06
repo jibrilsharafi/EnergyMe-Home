@@ -11,7 +11,6 @@
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <script src="/html/auth.js"></script>
 
     <title>Configuration</title>
     <style>
@@ -57,6 +56,7 @@
         <a class="buttonNavigation" type="home" href="/">🏠 Home</a>
         <a class="buttonNavigation" type="inner" href="/calibration">⚖️ Calibration</a>
         <a class="buttonNavigation" type="inner" href="/channel">📺 Channel</a>
+        <a class="buttonNavigation" type="inner" href="/ade7953-tester">🔬 Register Tester</a>
     </div>
 
     <div class="section-box">
@@ -70,7 +70,7 @@
                 <label for="cloudServices">Enable cloud services</label>
             </div>
             <div>
-                <h3>LED brightness</h3>
+                <h3>LED brightness TODO: not anymore via general configuration</h3>
                 <p><i>LED brightness is used to adjust the brightness of the status LED on the device. Keeping a small
                         amount of brightness is recommended.</i></p>
                 <input type="range" id="ledBrightness" class="config-input slider" min="0" max="255"
@@ -262,27 +262,6 @@
             Reset
             All to Zero</button>
     </div>
-    <div class="section-box">
-        <h2>Password Management</h2>
-        <p><i>Change your authentication password for accessing the device.</i></p>
-        <form id="passwordChangeForm">
-            <label for="currentPassword">Current Password:</label>
-            <input type="password" id="currentPassword" class="config-input" required
-                placeholder="Enter current password">
-            <br>
-            <label for="newPassword">New Password:</label>
-            <input type="password" id="newPassword" class="config-input" required minlength="8"
-                placeholder="Enter new password (min 8 characters)">
-            <br>
-            <label for="confirmPassword">Confirm New Password:</label>
-            <input type="password" id="confirmPassword" class="config-input" required
-                placeholder="Confirm new password">
-            <br>
-            <div id="passwordError" style="color: red; margin: 10px 0; display: none;"></div>
-            <div id="passwordSuccess" style="color: green; margin: 10px 0; display: none;"></div>
-            <button type="submit" class="buttonForm" id="changePasswordButton">🔐 Change Password</button>
-        </form>
-    </div>
 
     <div class="section-box">
         <h2>Disconnect from WiFi</h2>
@@ -333,67 +312,6 @@
                 saveLogLevel.appendChild(opt.cloneNode(true));
             }
         }
-
-        // Password change form handler
-        document.addEventListener('DOMContentLoaded', function () {
-            const passwordForm = document.getElementById('passwordChangeForm');
-            if (passwordForm) {
-                passwordForm.addEventListener('submit', async function (e) {
-                    e.preventDefault();
-
-                    const currentPassword = document.getElementById('currentPassword').value;
-                    const newPassword = document.getElementById('newPassword').value;
-                    const confirmPassword = document.getElementById('confirmPassword').value;
-                    const errorDiv = document.getElementById('passwordError');
-                    const successDiv = document.getElementById('passwordSuccess');
-                    const button = document.getElementById('changePasswordButton');
-
-                    // Clear previous messages
-                    errorDiv.style.display = 'none';
-                    successDiv.style.display = 'none';
-
-                    // Validate passwords match
-                    if (newPassword !== confirmPassword) {
-                        errorDiv.textContent = 'New passwords do not match';
-                        errorDiv.style.display = 'block';
-                        return;
-                    }
-
-                    // Validate password length
-                    if (newPassword.length < 8) {
-                        errorDiv.textContent = 'Password must be at least 8 characters long';
-                        errorDiv.style.display = 'block';
-                        return;
-                    }
-
-                    // Disable button during request
-                    button.disabled = true;
-                    button.textContent = 'Changing Password...';
-
-                    try {
-                        await authAPI.post('/rest/auth/change-password', {
-                            currentPassword: currentPassword,
-                            newPassword: newPassword
-                        });
-
-                        // Show success message
-                        successDiv.textContent = 'Password changed successfully!';
-                        successDiv.style.display = 'block';
-
-                        // Clear form
-                        passwordForm.reset();
-
-                    } catch (error) {
-                        errorDiv.textContent = 'Failed to change password. Please check your current password.';
-                        errorDiv.style.display = 'block';
-                    } finally {
-                        // Re-enable button
-                        button.disabled = false;
-                        button.textContent = 'Change Password';
-                    }
-                });
-            }
-        });
 
         function restart() {
             var restartButton = document.getElementById("restart");

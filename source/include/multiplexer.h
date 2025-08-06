@@ -4,17 +4,16 @@
 
 #include "structs.h"
 
-class Multiplexer
-{
-public:
-    Multiplexer(int s0, int s1, int s2, int s3);
-    void begin();
+#define INVALID_PIN 255
 
-    void setChannel(ChannelNumber channel);
-
-private:
-    int _s0;
-    int _s1;
-    int _s2;
-    int _s3;
-};
+namespace Multiplexer {
+    void begin(
+        uint8_t s0Pin,
+        uint8_t s1Pin,
+        uint8_t s2Pin,
+        uint8_t s3Pin
+    );
+    // No need to stop anything here since once it executes at the beginning, there is no other use for this
+    
+    void setChannel(uint8_t channel);
+}

@@ -1,358 +1,295 @@
 #include "buttonhandler.h"
-#include <stdexcept>
-#include <cstdarg>
 
 static const char *TAG = "buttonhandler";
 
-ButtonHandler::ButtonHandler(
-    int buttonPin,
-    AdvancedLogger &logger,
-    Led &led,
-    CustomWifi &customWifi) : _buttonPin(buttonPin),
-                              _logger(logger),
-                              _led(led),
-                              _customWifi(customWifi),
-                              _buttonPressed(false),
-                              _lastButtonState(false),
-                              _buttonPressStartTime(0),
-                              _lastDebounceTime(0),
-                              _currentPressType(ButtonPressType::NONE),
-                              _operationName(""),
-                              _operationInProgress(false),
-                              _operationTimestamp(0)
+namespace ButtonHandler
 {
-}
+    // Static state variables
+    static uint8_t _buttonPin = INVALID_PIN; // Default pin
+    static TaskHandle_t _buttonTaskHandle = NULL;
+    static SemaphoreHandle_t _buttonSemaphore = NULL;
 
-void ButtonHandler::begin()
-{
-    pinMode(_buttonPin, INPUT_PULLUP);
+    // Button state
+    static volatile uint64_t _buttonPressStartTime = ZERO_START_TIME;
+    static volatile bool _buttonPressed = false;
+    static ButtonPressType _currentPressType = ButtonPressType::NONE;
+    static bool _operationInProgress = false;
+    static char _operationName[STATUS_BUFFER_SIZE] = "";
+    static uint64_t _operationTimestamp = ZERO_START_TIME;
 
-    // Initialize NVS and load last operation if any
-    _preferences.begin("buttonhandler", false);
-    _loadLastOperationFromNVS();
-    _loadOperationTimestampFromNVS();
+    // Getter public methods
+    ButtonPressType getCurrentPressType() {return _currentPressType;};
+    bool isOperationInProgress() {return _operationInProgress;};
+    void getOperationName(char* buffer, size_t bufferSize) {snprintf(buffer, bufferSize, "%s", _operationName);};
+    uint64_t getOperationTimestamp() {return _operationTimestamp;};
 
-    _logger.debug("Button handler initialized on GPIO%d", TAG, _buttonPin);
-}
+    // Private function declarations
+    static void _buttonISR();
+    static void _buttonTask(void *parameter);
+    static void _processButtonPress(uint64_t pressDuration);
+    static void _updateVisualFeedback(uint64_t pressDuration);
 
-void ButtonHandler::loop()
-{
-    _updateButtonState();
-    _updatePressVisualFeedback();
+    // Operation handlers
+    static void _handleRestart();
+    static void _handlePasswordReset();
+    static void _handleWifiReset();
+    static void _handleFactoryReset();
 
-    // Handle ongoing operations
-    if (_operationInProgress)
+    void begin(uint8_t buttonPin)
     {
-        _processButtonPressType();
-    }
-}
+        _buttonPin = buttonPin;
+        logger.debug("Initializing interrupt-driven button handler on GPIO%d", TAG, _buttonPin);
 
-void ButtonHandler::_updateButtonState()
-{
-    bool currentButtonState = !_readButton(); // Inverted because of pull-up
-    unsigned long currentTime = millis();
+        // Setup GPIO with pull-up
+        pinMode(_buttonPin, INPUT_PULLUP);
 
-    // Debounce logic
-    if (currentButtonState != _lastButtonState)
-    {
-        _lastDebounceTime = currentTime;
-    }
-
-    if ((currentTime - _lastDebounceTime) > BUTTON_DEBOUNCE_TIME)
-    {
-        if (currentButtonState != _buttonPressed)
+        // Create binary semaphore for ISR communication
+        _buttonSemaphore = xSemaphoreCreateBinary();
+        if (_buttonSemaphore == NULL)
         {
-            _buttonPressed = currentButtonState;
+            logger.error("Failed to create button semaphore", TAG);
+            return;
+        }
 
-            if (_buttonPressed)
-            {
-                _handleButtonPress();
+        // Create button handling task with higher stack size for safety
+        if (xTaskCreate(_buttonTask, BUTTON_TASK_NAME, BUTTON_TASK_STACK_SIZE, NULL, BUTTON_TASK_PRIORITY, &_buttonTaskHandle) != pdPASS)
+        {
+            logger.error("Failed to create button task", TAG);
+            return;
+        }
+
+        // Setup interrupt on both edges (press and release)
+        attachInterrupt(digitalPinToInterrupt(_buttonPin), _buttonISR, CHANGE);
+
+        logger.debug("Button handler ready - interrupt-driven with task processing", TAG);
+    }
+
+    void stop() 
+    {
+        logger.debug("Stopping button handler", TAG);
+
+        // Detach interrupt
+        detachInterrupt(_buttonPin);
+
+        // Stop task gracefully
+        stopTaskGracefully(&_buttonTaskHandle, "Button task");
+
+        // Delete semaphore
+        if (_buttonSemaphore != NULL)
+        {
+            vSemaphoreDelete(_buttonSemaphore);
+            _buttonSemaphore = NULL;
+        }
+
+        _buttonPin = INVALID_PIN; // Reset pin
+    }
+
+    static void IRAM_ATTR _buttonISR()
+    {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+        // Read current button state (inverted due to pull-up)
+        // Need to read because the ISR is triggered on both edges
+        // to handle both press and release events
+        bool buttonState = !digitalRead(_buttonPin);
+
+        if (buttonState && !_buttonPressed)
+        {
+            // Button press detected
+            _buttonPressed = true;
+            _buttonPressStartTime = millis64();
+
+            // Notify task of button press
+            xSemaphoreGiveFromISR(_buttonSemaphore, &xHigherPriorityTaskWoken);
+        }
+        else if (!buttonState && _buttonPressed)
+        {
+            // Button release detected
+            _buttonPressed = false;
+
+            // Notify task of button release
+            xSemaphoreGiveFromISR(_buttonSemaphore, &xHigherPriorityTaskWoken);
+        }
+
+        // Wake higher priority task if needed
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+
+    static void _buttonTask(void *parameter)
+    {
+        TickType_t feedbackUpdateInterval = pdMS_TO_TICKS(100); // Update visual feedback every 100ms
+
+        // This task should "never" be stopped, and to avoid over-complicating due to the semaphore, we don't stick to the standard approach
+        while (true)
+        {
+            // Wait for button event or timeout for visual feedback updates
+            if (xSemaphoreTake(_buttonSemaphore, feedbackUpdateInterval)) {
+                // Button event occurred
+                delay(BUTTON_DEBOUNCE_TIME); // Simple debounce
+
+                if (!_buttonPressed && _buttonPressStartTime > ZERO_START_TIME)
+                {
+                    // Button was released - process the press
+                    uint64_t pressDuration = millis64() - _buttonPressStartTime;
+                    logger.debug("Button released after %llu ms", TAG, pressDuration);
+
+                    _processButtonPress(pressDuration);
+                    _buttonPressStartTime = ZERO_START_TIME;
+
+                    // Clear visual feedback
+                    Led::clearPattern(Led::PRIO_URGENT);
+                }
+                else if (_buttonPressed)
+                {
+                    // Button was pressed - start visual feedback
+                    logger.debug("Button pressed", TAG);
+
+                    Led::setBrightness(max(Led::getBrightness(), (uint32_t)1));
+                    Led::setWhite(Led::PRIO_URGENT);
+                }
+            // Here it means it is still being pressed
+            } else if (_buttonPressed && _buttonPressStartTime > ZERO_START_TIME) {
+                // Timeout occurred while button is pressed - update visual feedback
+                uint64_t pressDuration = millis64() - _buttonPressStartTime;
+                _updateVisualFeedback(pressDuration);
             }
-            else
-            {
-                _handleButtonRelease();
-            }
+        }
+
+        vTaskDelete(NULL);
+    }
+
+    static void _processButtonPress(uint64_t pressDuration)
+    {
+        // Determine press type based on duration
+        if (pressDuration >= BUTTON_SHORT_PRESS_TIME && pressDuration < BUTTON_MEDIUM_PRESS_TIME)
+        {
+            _currentPressType = ButtonPressType::SINGLE_SHORT;
+            _handleRestart();
+        }
+        else if (pressDuration >= BUTTON_MEDIUM_PRESS_TIME && pressDuration < BUTTON_LONG_PRESS_TIME)
+        {
+            _currentPressType = ButtonPressType::SINGLE_MEDIUM;
+            _handlePasswordReset();
+        }
+        else if (pressDuration >= BUTTON_LONG_PRESS_TIME && pressDuration < BUTTON_VERY_LONG_PRESS_TIME)
+        {
+            _currentPressType = ButtonPressType::SINGLE_LONG;
+            _handleWifiReset();
+        }
+        else if (pressDuration >= BUTTON_VERY_LONG_PRESS_TIME && pressDuration < BUTTON_MAX_PRESS_TIME)
+        {
+            _currentPressType = ButtonPressType::SINGLE_VERY_LONG;
+            _handleFactoryReset();
+        }
+        else
+        {
+            _currentPressType = ButtonPressType::NONE;
+            logger.debug("Button press duration %llu ms - no action", TAG, pressDuration);
         }
     }
 
-    _lastButtonState = currentButtonState;
-}
-
-void ButtonHandler::_handleButtonPress()
-{
-    _buttonPressStartTime = millis();
-    _logger.debug("Button pressed", TAG);
-
-    // Start immediate visual feedback
-    _led.block();
-    _led.setBrightness(max(_led.getBrightness(), 1)); // Show a faint light even if it is off
-    _led.setWhite(true);                              // Initial press indication
-}
-
-void ButtonHandler::_handleButtonRelease()
-{
-    unsigned long pressDuration = millis() - _buttonPressStartTime;
-
-    _logger.debug("Button released after %lu ms", TAG, pressDuration);
-
-    // Determine press type based on duration
-    if (pressDuration >= BUTTON_SHORT_PRESS_TIME && pressDuration < BUTTON_MEDIUM_PRESS_TIME)
+    static void _updateVisualFeedback(uint64_t pressDuration)
     {
-        _currentPressType = ButtonPressType::SINGLE_SHORT;
-        _operationInProgress = true;
-    }
-    else if (pressDuration >= BUTTON_MEDIUM_PRESS_TIME && pressDuration < BUTTON_LONG_PRESS_TIME)
-    {
-        _currentPressType = ButtonPressType::SINGLE_MEDIUM;
-        _operationInProgress = true;
-    }
-    else if (pressDuration >= BUTTON_LONG_PRESS_TIME && pressDuration < BUTTON_VERY_LONG_PRESS_TIME)
-    {
-        _currentPressType = ButtonPressType::SINGLE_LONG;
-        _operationInProgress = true;
-    }
-    else if (pressDuration >= BUTTON_VERY_LONG_PRESS_TIME && pressDuration < BUTTON_MAX_PRESS_TIME)
-    {
-        _currentPressType = ButtonPressType::SINGLE_VERY_LONG;
-        _operationInProgress = true;
-    }
-    else
-    {
-        _currentPressType = ButtonPressType::NONE;
-        _operationInProgress = false;
+        // Provide immediate visual feedback based on current press duration
+        if (pressDuration >= BUTTON_MAX_PRESS_TIME)
+        {
+            Led::setWhite(Led::PRIO_URGENT); // Maximum press time exceeded
+        }
+        else if (pressDuration >= BUTTON_VERY_LONG_PRESS_TIME)
+        {
+            Led::setRed(Led::PRIO_URGENT); // Factory reset - most dangerous
+        }
+        else if (pressDuration >= BUTTON_LONG_PRESS_TIME)
+        {
+            Led::setOrange(Led::PRIO_URGENT); // WiFi reset
+        }
+        else if (pressDuration >= BUTTON_MEDIUM_PRESS_TIME)
+        {
+            Led::setYellow(Led::PRIO_URGENT); // Password reset
+        }
+        else if (pressDuration >= BUTTON_SHORT_PRESS_TIME)
+        {
+            Led::setCyan(Led::PRIO_URGENT); // Restart
+        }
+        else
+        {
+            Led::setWhite(Led::PRIO_URGENT); // Initial press
+        }
     }
 
-    _led.unblock(); // Unblock LED for other operations
-}
-
-void ButtonHandler::_processButtonPressType()
-{
-    switch (_currentPressType)
+    static void _handleRestart()
     {
-    case ButtonPressType::SINGLE_SHORT:
+        logger.info("Restart initiated via button", TAG);
         snprintf(_operationName, sizeof(_operationName), "Restart");
-        _handleRestart();
-        break;
-    case ButtonPressType::SINGLE_MEDIUM:
+        _operationTimestamp = CustomTime::getUnixTime();
+        _operationInProgress = true;
+
+        Led::setCyan(Led::PRIO_URGENT);
+
+        setRestartSystem(TAG, "Restart via button");
+
+        _operationInProgress = false;
+        _currentPressType = ButtonPressType::NONE;
+    }
+
+    static void _handlePasswordReset()
+    {
+        logger.info("Password reset to default initiated via button", TAG);
         snprintf(_operationName, sizeof(_operationName), "Password Reset");
-        _handlePasswordReset();
-        break;
-    case ButtonPressType::SINGLE_LONG:
+        _operationTimestamp = CustomTime::getUnixTime();
+        _operationInProgress = true;
+
+        Led::setYellow(Led::PRIO_URGENT);
+
+        if (CustomServer::resetWebPassword()) // Implement actual password reset logic
+        {
+            // Update authentication middleware with new password
+            CustomServer::updateAuthPasswordWithOneFromPreferences();
+            
+            logger.info("Password reset to default successfully", TAG);
+            Led::blinkGreenSlow(Led::PRIO_URGENT, 2000ULL);
+        }
+        else
+        {
+            logger.error("Failed to reset password to default", TAG);
+            Led::blinkRedFast(Led::PRIO_CRITICAL, 2000ULL);
+        }
+
+        _operationInProgress = false;
+        _currentPressType = ButtonPressType::NONE;
+    }
+
+    static void _handleWifiReset()
+    {
+        logger.info("WiFi reset initiated via button", TAG);
         snprintf(_operationName, sizeof(_operationName), "WiFi Reset");
-        _handleWifiReset();
-        break;
-    case ButtonPressType::SINGLE_VERY_LONG:
+        _operationTimestamp = CustomTime::getUnixTime();
+        _operationInProgress = true;
+
+        Led::setOrange(Led::PRIO_URGENT);
+
+        CustomWifi::resetWifi(); // This will restart the device
+
+        _operationInProgress = false;
+        _currentPressType = ButtonPressType::NONE;
+    }
+
+    static void _handleFactoryReset()
+    {
+        logger.info("Factory reset initiated via button", TAG);
         snprintf(_operationName, sizeof(_operationName), "Factory Reset");
-        _handleFactoryReset();
-        break;
-    default:
-        break;
-    }
-}
+        _operationTimestamp = CustomTime::getUnixTime();
+        _operationInProgress = true;
 
-void ButtonHandler::_handleRestart()
-{
-    _logger.info("Restart initiated", TAG);
-    snprintf(_operationName, sizeof(_operationName), "Restart");
-    _operationTimestamp = CustomTime::getUnixTime();
-    _saveLastOperationToNVS();
-    _saveOperationTimestampToNVS();
+        setRestartSystem(TAG, "Factory reset via button", true);
 
-    // Block LED from other operations and set feedback color
-    _led.block();
-    _led.setCyan(true);
-
-    setRestartEsp32(TAG, "Restart via button");
-
-    // Anything below here is useless like a chocolate teapot
-    // -----------------------------------------------------
-    _led.unblock();
-
-    _operationInProgress = false;
-    _currentPressType = ButtonPressType::NONE;
-}
-
-void ButtonHandler::_handlePasswordReset()
-{
-    _logger.debug("Password reset to default initiated", TAG);
-    snprintf(_operationName, sizeof(_operationName), "Password Reset");
-    _operationTimestamp = CustomTime::getUnixTime();
-    _saveLastOperationToNVS();
-    _saveOperationTimestampToNVS();
-
-    // Block LED from other operations
-    _led.block();
-    _led.setYellow(true);
-
-    // Reset password to default
-    if (setAuthPassword(DEFAULT_WEB_PASSWORD))
-    {
-        _logger.warning("Password reset to default successfully", TAG);
-
-        // Success - Green - 3 slow blinks green
-        for (int i = 0; i < 3; ++i)
-        {
-            _led.setGreen(true);
-            delay(500); // Brief success indication
-            _led.setOff(true);
-            delay(500);
-        }
-    }
-    else
-    {
-        _logger.error("Failed to reset password to default", TAG);
-
-        // Failure - Red - 3 slow blinks red
-        for (int i = 0; i < 3; ++i)
-        {
-            _led.setRed(true); // Indicate failure
-            delay(500);
-            _led.setOff(true);
-            delay(500);
-        }
+        _operationInProgress = false;
+        _currentPressType = ButtonPressType::NONE;
     }
 
-    // Unblock LED
-    _led.setOff(true);
-    _led.unblock();
-    delay(1000); // Ensure proper feedback to the user
-
-    _operationInProgress = false;
-    _currentPressType = ButtonPressType::NONE;
-}
-
-void ButtonHandler::_handleWifiReset()
-{
-    _logger.info("WiFi reset initiated", TAG);
-    snprintf(_operationName, sizeof(_operationName), "WiFi Reset");
-    _operationTimestamp = CustomTime::getUnixTime();
-    _saveLastOperationToNVS();
-    _saveOperationTimestampToNVS();
-
-    // Block LED from other operations
-    _led.block();
-    _led.setOrange(true);
-
-    _customWifi.resetWifi(); // Erase WiFi credentials and restart
-
-    // Anything below here is useless like being an adult in a candy store
-    // -----------------------------------------------------
-    _logger.info("WiFi reset completed successfully", TAG);
-
-    // Unblock LED
-    _led.unblock();
-
-    _operationInProgress = false;
-    _currentPressType = ButtonPressType::NONE;
-}
-
-void ButtonHandler::_handleFactoryReset()
-{
-    _logger.info("Factory reset initiated", TAG);
-    snprintf(_operationName, sizeof(_operationName), "Factory Reset");
-    _operationTimestamp = CustomTime::getUnixTime();
-    _saveLastOperationToNVS();
-    _saveOperationTimestampToNVS();
-
-    // Block LED from other operations
-    _led.block();
-    _led.setRed(true);
-
-    factoryReset(); // Format and restart
-
-    // Anything below here is useless like the R in Marlboro
-    // -----------------------------------------------------
-    _logger.info("Factory reset initiated - device will restart", TAG);
-
-    // Unblock LED (won't matter due to restart)
-    _led.unblock();
-
-    _operationInProgress = false;
-    _currentPressType = ButtonPressType::NONE;
-}
-
-void ButtonHandler::_updatePressVisualFeedback()
-{
-    if (!_buttonPressed || _operationInProgress)
+    void clearCurrentOperationName()
     {
-        return;
-    }
-
-    unsigned long pressDuration = millis() - _buttonPressStartTime;
-
-    // Provide immediate visual feedback based on current press duration
-    if (pressDuration >= BUTTON_MAX_PRESS_TIME)
-    {
-        _led.setWhite(true); // Indicate maximum press time exceeded
-        return;
-    }
-    if (pressDuration >= BUTTON_VERY_LONG_PRESS_TIME)
-    {
-        _led.setRed(true); // Factory reset - most dangerous (red)
-    }
-    else if (pressDuration >= BUTTON_LONG_PRESS_TIME)
-    {
-        _led.setOrange(true); // WiFi reset - moderately dangerous (orange)
-    }
-    else if (pressDuration >= BUTTON_MEDIUM_PRESS_TIME)
-    {
-        _led.setYellow(true); // Password reset - caution (yellow)
-    }
-    else if (pressDuration >= BUTTON_SHORT_PRESS_TIME)
-    {
-        _led.setCyan(true); // Restart - safest operation (green)
-    }
-    else
-    {
-        _led.setWhite(true); // Initial press indication
-    }
-}
-
-bool ButtonHandler::_readButton()
-{
-    return digitalRead(_buttonPin);
-}
-
-void ButtonHandler::clearCurrentOperationName()
-{
-    sniprintf(_operationName, sizeof(_operationName), "None");
-    _operationTimestamp = 0;
-    _saveLastOperationToNVS();
-    _saveOperationTimestampToNVS();
-}
-
-void ButtonHandler::_saveLastOperationToNVS()
-{
-    _preferences.putString("lastOperation", _operationName);
-    _logger.debug("Saved last operation to NVS: %s", TAG, _operationName);
-}
-
-void ButtonHandler::_loadLastOperationFromNVS()
-{
-    _preferences.getString("lastOperation", _operationName, sizeof(_operationName));
-    if (strlen(_operationName) > 0) 
-    {
-        _logger.info("Loaded last button operation from NVS: %s", TAG, _operationName);
-    }
-    else
-    {
-        _logger.info("No previous button operation found in NVS", TAG);
-    }
-}
-
-void ButtonHandler::_saveOperationTimestampToNVS()
-{
-    _preferences.putULong("lastOpTimestamp", _operationTimestamp);
-    _logger.debug("Saved operation timestamp to NVS: %lu", TAG, _operationTimestamp);
-}
-
-void ButtonHandler::_loadOperationTimestampFromNVS()
-{
-    _operationTimestamp = _preferences.getULong("lastOpTimestamp", 0);
-    if (_operationTimestamp > 0)
-    {
-        char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-        CustomTime::timestampFromUnix(_operationTimestamp, timestampBuffer);
-        _logger.info("Loaded operation timestamp from NVS: %s", TAG, timestampBuffer);
+        snprintf(_operationName, sizeof(_operationName), "%s", "");
+        _operationTimestamp = ZERO_START_TIME;
     }
 }
