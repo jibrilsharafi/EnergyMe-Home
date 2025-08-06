@@ -2,580 +2,45 @@ openapi: 3.0.0
 info:
   title: EnergyMe - Home | API
   description: API documentation for EnergyMe - Home
-  version: 1.0.0
+  version: 1.1.0
 
 servers:
-  - url: http://energyme.local
-    description: Local server (using mDNS)
-  - url: http://{customHost}
-    description: Custom server
-    variables:
-      customHost:
-        default: 192.168.1.100
-        description: Custom hostname or IP address
-        
-tags:
-  - name: Authentication
-    description: Authentication endpoints
-  - name: System
-    description: System-related endpoints
-  - name: Meter
-    description: Meter reading endpoints
-  - name: Configuration
-    description: Configuration-related endpoints
-  - name: Files
-    description: File management endpoints
-
-components:
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-    CookieAuth:
-      type: apiKey
-      in: cookie
-      name: auth_token
-  schemas:
-    CalibrationValues:
-      type: object
-      properties:
-        SCT-013-30A-1V:
-          type: object
-          properties:
-            vLsb:
-              type: number
-            aLsb:
-              type: number
-            wLsb:
-              type: number
-            varLsb:
-              type: number
-            vaLsb:
-              type: number
-            whLsb:
-              type: number
-            varhLsb:
-              type: number
-            vahLsb:
-              type: number
-        SCT-013-50A-1V:
-          type: object
-          properties:
-            vLsb:
-              type: number
-            aLsb:
-              type: number
-            wLsb:
-              type: number
-            varLsb:
-              type: number
-            vaLsb:
-              type: number
-            whLsb:
-              type: number
-            varhLsb:
-              type: number
-            vahLsb:
-              type: number
-    Ade7953Configuration:
-      type: object
-      properties:
-        sampleTime:
-          type: integer
-        aVGain:
-          type: integer
-        aIGain:
-          type: integer
-        bIGain:
-          type: integer
-        aIRmsOs:
-          type: integer
-        bIRmsOs:
-          type: integer
-        aWGain:
-          type: integer
-        bWGain:
-          type: integer
-        aWattOs:
-          type: integer
-        bWattOs:
-          type: integer
-        aVarGain:
-          type: integer
-        bVarGain:
-          type: integer
-        aVarOs:
-          type: integer
-        bVarOs:
-          type: integer
-        aVaGain:
-          type: integer
-        bVaGain:
-          type: integer
-        aVaOs:
-          type: integer
-        bVaOs:
-          type: integer
-        phCalA:
-          type: integer
-        phCalB:
-          type: integer
-    ChannelData:
-      type: object
-      properties:
-        "0":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "1":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "2":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "3":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "4":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "5":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "6":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "7":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "8":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "9":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "10":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "11":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "12":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "13":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "14":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "15":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-        "16":
-          type: object
-          properties:
-            active:
-              type: boolean
-            reverse:
-              type: boolean
-            label:
-              type: string
-            phase:
-              type: integer
-            calibrationLabel:
-              type: string
-    CustomMqtt:
-      type: object
-      properties:
-        enabled:
-          type: boolean
-        server:
-          type: string
-        port:
-          type: integer
-        clientid:
-          type: string
-        topic:
-          type: string
-        frequency:
-          type: integer
-        useCredentials:
-          type: boolean
-        username:
-          type: string
-        password:
-          type: string
-    InfluxDb:
-      type: object
-      properties:
-        enabled:
-          type: boolean
-        server:
-          type: string
-        port:
-          type: integer
-        version:
-          type: integer
-        database:
-          type: string
-        username:
-          type: string
-        password:
-          type: string
-        organization:
-          type: string
-        bucket:
-          type: string
-        token:
-          type: string
-        measurement:
-          type: string
-        frequency:
-          type: integer
-        useSSL:
-          type: boolean
-        lastConnectionStatus:
-          type: string
-        lastConnectionAttemptTimestamp:
-          type: string
-    GeneralConfiguration:
-      type: object
-      properties:
-        "isCloudServicesEnabled":
-          type: boolean
-        "gmtOffset":
-          type: integer
-        "dstOffset":
-          type: integer
-        "ledBrightness":
-          type: integer
-        "sendPowerData":
-          type: boolean
-    Statistics:
-      type: object
-      properties:
-        ade7953TotalInterrupts:
-          type: integer
-          description: Total number of ADE7953 interrupts
-        ade7953TotalHandledInterrupts:
-          type: integer
-          description: Total number of handled ADE7953 interrupts
-        ade7953ReadingCount:
-          type: integer
-          description: Total number of ADE7953 readings
-        ade7953ReadingCountFailure:
-          type: integer
-          description: Total number of failed ADE7953 readings
-        mqttMessagesPublished:
-          type: integer
-          description: Total number of MQTT messages published
-        mqttMessagesPublishedError:
-          type: integer
-          description: Total number of MQTT message publish errors
-        customMqttMessagesPublished:
-          type: integer
-          description: Total number of custom MQTT messages published
-        customMqttMessagesPublishedError:
-          type: integer
-          description: Total number of custom MQTT message publish errors
-        modbusRequests:
-          type: integer
-          description: Total number of Modbus requests
-        modbusRequestsError:
-          type: integer
-          description: Total number of Modbus request errors
-        influxdbUploadCount:
-          type: integer
-          description: Total number of InfluxDB uploads
-        influxdbUploadCountError:
-          type: integer
-          description: Total number of InfluxDB upload errors
-        wifiConnection:
-          type: integer
-          description: Total number of WiFi connections
-        wifiConnectionError:
-          type: integer
-          description: Total number of WiFi connection errors
-    MonitorData:
-      type: object
-      properties:
-        crashCount:
-          type: integer
-        lastResetReason:
-          type: string
-        lastUnixTime:
-          type: integer
-        resetCount:
-          type: integer
-        breadcrumbs:
-          type: array
-          items:
-            type: object
-            properties:
-              file:
-                type: string
-              function:
-                type: string
-              line:
-                type: integer
-              micros:
-                type: integer
-              heap:
-                type: integer
-              core:
-                type: integer
+  - url: /
+    description: Current server (auto-detected from browser)
 
 paths:
-  /rest/auth/login:
-    post:
-      summary: Authenticate user and get access token
+  # Health check endpoint
+  /api/v1/health:
+    get:
+      summary: Health check
+      description: Check if the API is running and responsive
       tags:
-        - Authentication
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                password:
-                  type: string
-                  description: The password for authentication
-              required:
-                - password
+        - System
       responses:
         '200':
-          description: Login successful
-          headers:
-            Set-Cookie:
-              schema:
-                type: string
-                example: auth_token=jwt_token_here; HttpOnly; Path=/; Max-Age=86400
+          description: Service is healthy
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  success:
-                    type: boolean
-                    example: true
-                  token:
+                  status:
                     type: string
-                    description: JWT token for authentication
-                  message:
+                    example: "ok"
+                  uptime:
+                    type: integer
+                    format: seconds
+                  timestamp:
                     type: string
-                    example: "Login successful"
-        '401':
-          description: Invalid credentials
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Invalid password"
+                    format: date-time
 
-  /rest/auth/logout:
-    post:
-      summary: Logout user and invalidate token
-      tags:
-        - Authentication
-      security:
-        - BearerAuth: []
-        - CookieAuth: []
-      responses:
-        '200':
-          description: Logout successful
-          headers:
-            Set-Cookie:
-              schema:
-                type: string
-                example: auth_token=; HttpOnly; Path=/; Max-Age=0
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "Logout successful"
-
-  /rest/auth/status:
+  # Authentication endpoints  
+  /api/v1/auth/status:
     get:
       summary: Get authentication status
+      description: Check if the current session is authenticated
       tags:
         - Authentication
-      security:
-        - BearerAuth: []
-        - CookieAuth: []
       responses:
         '200':
           description: Authentication status
@@ -584,333 +49,106 @@ paths:
               schema:
                 type: object
                 properties:
-                  authenticated:
+                  usingDefaultPassword:
                     type: boolean
-                    example: true
                   username:
                     type: string
-                    example: "admin"
-        '401':
-          description: Not authenticated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  authenticated:
-                    type: boolean
-                    example: false
 
-  /rest/auth/change-password:
+  /api/v1/auth/change-password:
     post:
-      summary: Change user password
+      summary: Change password
+      description: Change the authentication password (requires current password for security)
       tags:
         - Authentication
-      security:
-        - BearerAuth: []
-        - CookieAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              properties:
-                currentPassword:
-                  type: string
-                  description: Current password
-                newPassword:
-                  type: string
-                  description: New password
               required:
                 - currentPassword
                 - newPassword
+              properties:
+                currentPassword:
+                  type: string
+                  description: Current password for verification
+                newPassword:
+                  type: string
+                  description: New password to set
+            example:
+              currentPassword: "oldpassword123"
+              newPassword: "newpassword456"
       responses:
         '200':
-          description: Password changed successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "Password changed successfully"
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Invalid current password
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: false
-                  message:
-                    type: string
-                    example: "Invalid current password"
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
-  /rest/is-alive:
-    get:
-      summary: Check if the ESP32 is alive
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "True"
-
-  /rest/project-info:
-    get:
-      summary: Get project information
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  companyName:
-                    type: string
-                  fullProductName:
-                    type: string
-                  productName:
-                    type: string
-                  productDescription:
-                    type: string
-                  githubUrl:
-                    type: string
-
-  /rest/device-info:
-    get:
-      summary: Get device information
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  system:
-                    type: object
-                    properties:
-                      uptime:
-                        type: integer
-                      systemTime:
-                        type: string
-                  firmware:
-                    type: object
-                    properties:
-                      buildVersion:
-                        type: string
-                      buildDate:
-                        type: string
-                  memory:
-                    type: object
-                    properties:
-                      heap:
-                        type: object
-                        properties:
-                          free:
-                            type: integer
-                          total:
-                            type: integer
-                      spiffs:
-                        type: object
-                        properties:
-                          free:
-                            type: integer
-                          total:
-                            type: integer
-                  chip:
-                    type: object
-                    properties:
-                      model:
-                        type: string
-                      revision:
-                        type: integer
-                      cpuFrequency:
-                        type: integer
-                      sdkVersion:
-                        type: string
-                      id:
-                        type: integer
-                  device:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-
-  /rest/wifi-info:
-    get:
-      summary: Get WiFi status information
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  macAddress:
-                    type: string
-                  localIp:
-                    type: string
-                  subnetMask:
-                    type: string
-                  gatewayIp:
-                    type: string
-                  dnsIp:
-                    type: string
-                  status:
-                    type: string
-                  ssid:
-                    type: string
-                  bssid:
-                    type: string
-                  rssi:
-                    type: integer
-
-  /rest/firmware-update-info:
-    get:
-      summary: Get firmware update information
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  buildVersion:
-                    type: string
-                  buildDate:
-                    type: string
-                  url:
-                    type: string
-                  changelog:
-                    type: string
-                  md5:
-                    type: string
-
-  /rest/firmware-update-status:
-    get:
-      summary: Get firmware update status
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  reason:
-                    type: string
-                  timestamp:
-                    type: string
-
-  /rest/is-latest-firmware-installed:
-    get:
-      summary: Check if the latest firmware is installed
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  latest:
-                    type: boolean
-
-  /rest/get-current-monitor-data:
-    get:
-      summary: Get current monitor data
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MonitorData'
-
-  /rest/get-crash-data:
-    get:
-      summary: Get crash data from file
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MonitorData'
-                
-  /do-update:
+  /api/v1/auth/reset-password:
     post:
-      summary: Perform an update
+      summary: Reset password to default
+      description: Reset the authentication password to the default value
       tags:
-        - System
+        - Authentication
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # OTA (Over-The-Air) Update endpoints
+  /api/v1/ota/upload:
+    post:
+      summary: Upload firmware for OTA update
+      description: |
+        Upload a new firmware binary for over-the-air update.
+        
+        **Requirements:**
+        - File must be in .bin format
+        - Minimum file size: 100KB
+        - File must contain valid ESP32 firmware
+        - Optional: Include X-MD5 header for verification
+      tags:
+        - OTA Updates
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                firmware:
+                  type: string
+                  format: binary
+                  description: Firmware binary file (.bin format, minimum 100KB)
       parameters:
-        - name: md5
-          in: query
+        - in: header
+          name: X-MD5
           required: false
           schema:
             type: string
-          description: Optional MD5 checksum for the update
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
+            pattern: '^[a-f0-9]{32}$'
+          description: Optional MD5 hash of the firmware file for verification
       responses:
         '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  md5:
-                    type: string
+          $ref: '#/components/responses/Success'
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/ota/status:
+    get:
+      summary: Get OTA update status
+      description: Get information about the current firmware and update status
+      tags:
+        - OTA Updates
+      responses:
+        '200':
+          description: OTA status information
           content:
             application/json:
               schema:
@@ -918,586 +156,981 @@ paths:
                 properties:
                   status:
                     type: string
-                  reason:
+                    example: "idle"
+                  canRollback:
+                    type: boolean
+                    example: true
+                  currentPartition:
                     type: string
-
-  /set-md5:
-    get:
-      summary: Set MD5 checksum for the update
-      tags:
-        - System
-      parameters:
-        - in: query
-          name: md5
-          required: true
-          schema:
-            type: string
-          description: MD5 checksum for the update
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
+                    example: "app0"
+                  hasError:
+                    type: boolean
+                    example: false
+                  lastError:
                     type: string
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rest/update-status:
-    get:
-      summary: Get update status
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
+                    example: "No Error"
                   size:
                     type: integer
+                    example: 0
                   progress:
                     type: integer
+                    example: 0
                   remaining:
                     type: integer
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
+                    example: 0
+                  progressPercent:
+                    type: integer
+                    example: 0
+                  currentVersion:
                     type: string
+                    example: "00.11.04"
+                  currentMD5:
+                    type: string
+                    example: "ad1783afd0b38f856d5010921712e2ed"
 
-  /rest/update-rollback:
+  /api/v1/ota/rollback:
     post:
       summary: Rollback firmware
+      description: Rollback to the previous firmware version
       tags:
-        - System
+        - OTA Updates
       responses:
         '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-  /rest/factory-reset:
-    post:
-      summary: Perform a factory reset
-      tags:
-        - System
-      security:
-        - BearerAuth: []
-        - CookieAuth: []
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '401':
-          description: Unauthorized
-
-  /rest/clear-log:
-    post:
-      summary: Clear the log
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-  /rest/restart:
-    post:
-      summary: Restart the ESP32
-      tags:
-        - System
-      security:
-        - BearerAuth: []
-        - CookieAuth: []
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '401':
-          description: Unauthorized
-  /rest/reset-wifi:
-    post:
-      summary: Reset WiFi credentials
-      tags:
-        - System
-      security:
-        - BearerAuth: []
-        - CookieAuth: []
-      responses:
-        '200':
-
-  /rest/get-button-operation:
-    get:
-      summary: Get the last button operation information
-      description: Returns the name and timestamp of the last button operation performed
-      tags:
-        - System
-      responses:
-        '200':
-          description: Last button operation information
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  operationName:
-                    type: string
-                    description: Name of the last operation (e.g., "Restart", "WiFi Reset")
-                  operationTimestamp:
-                    type: integer
-                    description: Unix timestamp when the operation was performed
-                  operationTimestampFormatted:
-                    type: string
-                    description: Human-readable timestamp (only present if timestamp > 0)
-
-  /rest/clear-button-operation:
-    post:
-      summary: Clear the last button operation history
-      tags:
-        - System
-      security:
-        - BearerAuth: []
-        - CookieAuth: []
-      responses:
-        '200':
-          description: Operation history cleared successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /wifisave:
-    post:
-      summary: Save WiFi credentials. Available only in AP mode and while connected to the ESP32 at the WiFi "EnergyMe" and IP http://192.168.4.1.
-      tags:
-        - System
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                s:
-                  type: string
-                  description: SSID of the WiFi network
-                p:
-                  type: string
-                  description: Password of the WiFi network
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
+          $ref: '#/components/responses/Success'
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
+
+  # System Management endpoints
+  /api/v1/system/info:
+    get:
+      summary: Get system information
+      description: Get detailed system information including firmware, hardware, and build details
+      tags:
+        - System
+      responses:
+        '200':
+          description: System information
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  message:
-                    type: string
-
-  /rest/meter:
-    get:
-      summary: Get all meter values
-      tags:
-        - Meter
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    index:
-                      type: integer
-                    label:
-                      type: string
-                    data:
-                      type: object
-                      properties:
-                        voltage:
-                          type: number
-                        current:
-                          type: number
-                        activePower:
-                          type: number
-                        reactivePower:
-                          type: number
-                        apparentPower:
-                          type: number
-                        powerFactor:
-                          type: number
-                        activeEnergyImported:
-                          type: number
-                        activeEnergyExported:
-                          type: number
-                        reactiveEnergyImported:
-                          type: number
-                        reactiveEnergyExported:
-                          type: number
-                        apparentEnergy:
-                          type: number
-
-  /rest/meter-single:
-    get:
-      summary: Get meter values for a single channel
-      tags:
-        - Meter
-      parameters:
-        - in: query
-          name: index
-          required: true
-          schema:
-            type: integer
-          description: Channel index
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  index:
-                    type: integer
-                  label:
-                    type: string
-                  data:
+                  static:
                     type: object
-                    properties:
-                      voltage:
-                        type: number
-                      current:
-                        type: number
-                      activePower:
-                        type: number
-                      reactivePower:
-                        type: number
-                      apparentPower:
-                        type: number
-                      powerFactor:
-                        type: number
-                      activeEnergyImported:
-                        type: number
-                      activeEnergyExported:
-                        type: number
-                      reactiveEnergyImported:
-                        type: number
-                      reactiveEnergyExported:
-                        type: number
-                      apparentEnergy:
-                        type: number
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
+                  dynamic:
+                    type: object
 
-  /rest/active-power:
+  /api/v1/system/statistics:
     get:
-      summary: Get active power for a single channel
+      summary: Get system statistics
+      description: Get runtime statistics and performance metrics
       tags:
-        - Meter
-      parameters:
-        - in: query
-          name: index
-          required: true
-          schema:
-            type: integer
-          description: Channel index
+        - System
       responses:
         '200':
-          description: Successful response
+          description: System statistics
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  value:
-                    type: number
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rest/ade7953-read-register:
-    get:
-      summary: Read ADE7953 register
-      tags:
-        - Meter
-      parameters:
-        - in: query
-          name: address
-          required: true
-          schema:
-            type: integer
-          description: Register address
-        - in: query
-          name: nBits
-          required: true
-          schema:
-            type: integer
-            enum: [8, 16, 24, 32]
-          description: Number of bits to read
-        - in: query
-          name: signed
-          required: true
-          schema:
-            type: boolean
-          description: Whether the value is signed
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  value:
+                  ade7953TotalInterrupts:
                     type: integer
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
+                  ade7953TotalHandledInterrupts:
+                    type: integer
+                  ade7953ReadingCount:
+                    type: integer
+                  ade7953ReadingCountFailure:
+                    type: integer
+                  mqttMessagesPublished:
+                    type: integer
+                  mqttMessagesPublishedError:
+                    type: integer
+                  customMqttMessagesPublished:
+                    type: integer
+                  customMqttMessagesPublishedError:
+                    type: integer
+                  modbusRequests:
+                    type: integer
+                  modbusRequestsError:
+                    type: integer
+                  influxdbUploadCount:
+                    type: integer
+                  influxdbUploadCountError:
+                    type: integer
+                  wifiConnection:
+                    type: integer
+                  wifiConnectionError:
+                    type: integer
+                  webServerRequests:
+                    type: integer
+                  webServerRequestsError:
+                    type: integer
+                  logVerbose:
+                    type: integer
+                  logDebug:
+                    type: integer
+                  logInfo:
+                    type: integer
+                  logWarning:
+                    type: integer
+                  logError:
+                    type: integer
+                  logFatal:
+                    type: integer
 
-  /rest/ade7953-write-register:
+  /api/v1/system/restart:
     post:
-      summary: Write to ADE7953 register
+      summary: Restart the system
+      description: Initiate a system restart
       tags:
-        - Meter
-      parameters:
-        - in: query
-          name: address
-          required: true
-          schema:
-            type: integer
-          description: Register address
-        - in: query
-          name: nBits
-          required: true
-          schema:
-            type: integer
-            enum: [8, 16, 24, 32]
-          description: Number of bits to write
-        - in: query
-          name: data
-          required: true
-          schema:
-            type: integer
-          description: Data to write
+        - System
       responses:
         '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
+          $ref: '#/components/responses/Success'
 
-  /rest/reset-energy:
+  /api/v1/system/factory-reset:
     post:
-      summary: Reset energy counters
+      summary: Factory reset
+      description: Reset the system to factory defaults (clears all configuration)
       tags:
-        - Meter
+        - System
       responses:
         '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
+          $ref: '#/components/responses/Success'
 
-  /rest/get-energy:
+  /api/v1/system/secrets:
     get:
-      summary: Get current energy values for all active channels
+      summary: Check secrets availability
+      description: Check if the system has secrets/certificates available
       tags:
-        - Meter
+        - System
       responses:
         '200':
-          description: Successful response
+          description: Secrets status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hasSecrets:
+                    type: boolean
+
+  /api/v1/firmware/update-info:
+    get:
+      summary: Get firmware update information
+      description: Get information about current firmware version, build details, and available updates
+      tags:
+        - System
+      responses:
+        '200':
+          description: Firmware update information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currentVersion:
+                    type: string
+                    description: Current firmware version
+                    example: "00.11.09"
+                  buildDate:
+                    type: string
+                    description: Firmware build date
+                    example: "Aug  3 2025"
+                  buildTime:
+                    type: string
+                    description: Firmware build time
+                    example: "14:30:25"
+                  availableVersion:
+                    type: string
+                    description: Available firmware version for update (if available)
+                    example: "00.11.10"
+                  updateUrl:
+                    type: string
+                    description: URL for firmware update download (if available)
+                    example: "https://github.com/jibrilsharafi/EnergyMe-Home/releases/download/v00.11.10/firmware.bin"
+                  isLatest:
+                    type: boolean
+                    description: Whether the latest firmware version is installed
+                    example: false
+
+  # File Operations endpoints
+  /api/v1/list-files:
+    get:
+      summary: List SPIFFS files
+      description: Get a list of all files stored in SPIFFS with their sizes
+      tags:
+        - Files
+      responses:
+        '200':
+          description: List of files with their sizes
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties:
-                  type: object
-                  properties:
-                    activeEnergyImported:
-                      type: number
-                    activeEnergyExported:
-                      type: number
-                    reactiveEnergyImported:
-                      type: number
-                    reactiveEnergyExported:
-                      type: number
-                    apparentEnergy:
-                      type: number
+                  type: integer
+                  description: File size in bytes
+              example:
+                "/logger/log.txt": 2048
+                "/logger/config.txt": 256
+                "/energy/channel_0.json": 512
+                "/calibration/config.json": 128
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
-  /rest/set-energy:
-    post:
-      summary: Set selective energy values for specific channels
-      description: "Sets energy values for specified channels. This will clear all historical daily energy data. Only provided values will be updated."
+  /api/v1/files/{filepath}:
+    get:
+      summary: Get file content
+      description: Download or view the content of a specific file from SPIFFS
       tags:
-        - Meter
+        - Files
+      parameters:
+        - name: filepath
+          in: path
+          required: true
+          description: Path to the file in SPIFFS (without leading slash)
+          schema:
+            type: string
+          example: "logger/log.txt"
+      responses:
+        '200':
+          description: File content returned successfully
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
+              examples:
+                text_file:
+                  summary: Text file content
+                  value: "2025-08-03 12:34:56 [INFO] System started"
+                json_file:
+                  summary: JSON configuration file
+                  value: |
+                    {
+                      "enabled": true,
+                      "sampleTime": 1000
+                    }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Network Management endpoints
+  /api/v1/network/wifi/reset:
+    post:
+      summary: Reset WiFi configuration
+      description: Reset WiFi settings and restart the WiFi connection
+      tags:
+        - Network
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+
+  # Crash Monitor endpoints
+  /api/v1/crash/info:
+    get:
+      summary: Get crash analysis information
+      description: Retrieve comprehensive crash information including reset reason, backtrace, and core dump availability
+      tags:
+        - Crash Monitor
+      responses:
+        '200':
+          description: Crash information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resetReason:
+                    type: string
+                    example: "Task watchdog"
+                  resetReasonCode:
+                    type: integer
+                    example: 6
+                  crashCount:
+                    type: integer
+                    example: 3
+                  consecutiveCrashCount:
+                    type: integer
+                    example: 0
+                  resetCount:
+                    type: integer
+                    example: 15
+                  consecutiveResetCount:
+                    type: integer
+                    example: 0
+                  hasCoreDump:
+                    type: boolean
+                    example: true
+                  coreDumpSize:
+                    type: integer
+                    example: 40356
+                  coreDumpAddress:
+                    type: integer
+                    example: 16711680
+                  taskName:
+                    type: string
+                    example: "loopTask"
+                  programCounter:
+                    type: integer
+                    example: 1107625244
+                  taskControlBlock:
+                    type: integer
+                    example: 1070273268
+                  appElfSha256:
+                    type: string
+                    example: "820c1a865"
+                  backtrace:
+                    type: object
+                    properties:
+                      depth:
+                        type: integer
+                        example: 2
+                      corrupted:
+                        type: boolean
+                        example: false
+                      addresses:
+                        type: array
+                        items:
+                          type: integer
+                        example: [1107625244, 1077407178]
+                      debugCommand:
+                        type: string
+                        example: "xtensa-esp32-elf-addr2line -pfC -e .pio/build/esp32dev/firmware.elf 0x4205051c 0x4037edca "
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/crash/dump:
+    get:
+      summary: Get core dump data
+      description: Retrieve core dump binary data as base64-encoded chunks with pagination support
+      tags:
+        - Crash Monitor
+      parameters:
+        - name: offset
+          in: query
+          description: Starting byte offset in the core dump
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: size
+          in: query
+          description: Chunk size in bytes
+          required: false
+          schema:
+            type: integer
+            default: 2048
+            minimum: 1
+            maximum: 8192
+      responses:
+        '200':
+          description: Core dump chunk retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalSize:
+                    type: integer
+                    description: Total size of the core dump
+                    example: 4096
+                  offset:
+                    type: integer
+                    description: Starting offset of this chunk
+                    example: 0
+                  requestedChunkSize:
+                    type: integer
+                    description: Requested chunk size
+                    example: 1024
+                  actualChunkSize:
+                    type: integer
+                    description: Actual chunk size returned
+                    example: 1024
+                  hasMore:
+                    type: boolean
+                    description: Whether more data is available
+                    example: true
+                  encoding:
+                    type: string
+                    description: Data encoding format
+                    example: "base64"
+                  data:
+                    type: string
+                    description: Base64-encoded core dump data
+                    example: "SGVsbG8gV29ybGQ="
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/crash/clear:
+    post:
+      summary: Clear core dump from flash
+      description: Remove the stored core dump from flash memory
+      tags:
+        - Crash Monitor
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  # Logging endpoints
+  /api/v1/logs/level:
+    get:
+      summary: Get current log levels
+      description: Get the current print and save log levels
+      tags:
+        - Logging
+      responses:
+        '200':
+          description: Current log levels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  print:
+                    type: string
+                    enum: [VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL]
+                    example: "INFO"
+                  save:
+                    type: string
+                    enum: [VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL]
+                    example: "WARNING"
+    put:
+      summary: Set log levels (full update)
+      description: Update both print and save log levels. Both fields are required for a full update.
+      tags:
+        - Logging
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              additionalProperties:
-                type: object
-                properties:
-                  activeEnergyImported:
-                    type: number
-                    description: Active energy imported in kWh
-                  activeEnergyExported:
-                    type: number
-                    description: Active energy exported in kWh
-                  reactiveEnergyImported:
-                    type: number
-                    description: Reactive energy imported in kVArh
-                  reactiveEnergyExported:
-                    type: number
-                    description: Reactive energy exported in kVArh
-                  apparentEnergy:
-                    type: number
-                    description: Apparent energy in kVAh
+              required:
+                - print
+                - save
+              properties:
+                print:
+                  $ref: '#/components/schemas/LogLevel'
+                  description: Set the print log level
+                save:
+                  $ref: '#/components/schemas/LogLevel'
+                  description: Set the save log level
             example:
-              "0":
-                activeEnergyImported: 123.456
-                activeEnergyExported: 78.910
-              "1":
-                activeEnergyImported: 234.567
+              print: "DEBUG"
+              save: "ERROR"
       responses:
         '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
+          $ref: '#/components/responses/Success'
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      summary: Update log levels (partial update)
+      description: Update one or both log levels. At least one field must be provided.
+      tags:
+        - Logging
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                print:
+                  $ref: '#/components/schemas/LogLevel'
+                  description: Set the print log level (optional)
+                save:
+                  $ref: '#/components/schemas/LogLevel'
+                  description: Set the save log level (optional)
+              minProperties: 1
+            examples:
+              print_only:
+                summary: Update print level only
+                value:
+                  print: "DEBUG"
+              save_only:
+                summary: Update save level only
+                value:
+                  save: "ERROR"
+              both:
+                summary: Update both levels
+                value:
+                  print: "DEBUG"
+                  save: "ERROR"
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/logs:
+    get:
+      summary: Get all logs
+      description: Retrieve all stored log entries
+      tags:
+        - Logging
+      responses:
+        '200':
+          description: A list of all log entries
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Log entries in plain text format
+
+  /api/v1/logs/clear:
+    post:
+      summary: Clear logs
+      description: Clear all stored log entries
+      tags:
+        - Logging
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+
+  # Custom MQTT endpoints
+  /api/v1/custom-mqtt/config:
+    get:
+      summary: Get custom MQTT configuration
+      description: Retrieve the current custom MQTT configuration settings
+      tags:
+        - Custom MQTT
+      responses:
+        '200':
+          description: Current custom MQTT configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomMqttConfiguration'
+    put:
+      summary: Update custom MQTT configuration (full update)
+      description: Update the complete custom MQTT configuration. All required fields must be provided.
+      tags:
+        - Custom MQTT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomMqttConfiguration'
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid configuration data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update custom MQTT configuration (partial update)
+      description: Update specific fields in the custom MQTT configuration. Only provided fields will be updated.
+      tags:
+        - Custom MQTT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  description: Whether custom MQTT is enabled
+                server:
+                  type: string
+                  description: MQTT broker server address or hostname
+                  maxLength: 64
+                port:
+                  type: integer
+                  description: MQTT broker port number
+                  minimum: 1
+                  maximum: 65535
+                clientid:
+                  type: string
+                  description: Unique MQTT client identifier
+                  maxLength: 32
+                topic:
+                  type: string
+                  description: MQTT topic for publishing meter data
+                  maxLength: 64
+                frequency:
+                  type: integer
+                  description: Publishing frequency in seconds
+                  minimum: 1
+                  maximum: 3600
+                useCredentials:
+                  type: boolean
+                  description: Whether to use username/password authentication
+                username:
+                  type: string
+                  description: MQTT username
+                  maxLength: 32
+                password:
+                  type: string
+                  description: MQTT password
+                  maxLength: 64
+              minProperties: 1
+            examples:
+              enable_only:
+                summary: Enable MQTT only
+                value:
+                  enabled: true
+              server_config:
+                summary: Update server settings
+                value:
+                  server: "new-mqtt-broker.com"
+                  port: 1883
+              credentials:
+                summary: Update credentials
+                value:
+                  useCredentials: true
+                  username: "new_user"
+                  password: "new_password"
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid configuration data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/custom-mqtt/status:
+    get:
+      summary: Get custom MQTT status
+      description: Get the current status and runtime information for custom MQTT
+      tags:
+        - Custom MQTT
+      responses:
+        '200':
+          description: Custom MQTT status and runtime information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericStatus'
+
+  /api/v1/custom-mqtt/config/reset:
+    post:
+      summary: Reset custom MQTT configuration
+      description: Reset the custom MQTT configuration to default values
+      tags:
+        - Custom MQTT
+      responses:
+        '200':
+          description: Custom MQTT configuration reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/mqtt/cloud-services:
+    get:
+      summary: Get cloud services status
+      description: Get the current status of cloud services (enabled/disabled)
+      tags:
+        - MQTT
+      responses:
+        '200':
+          description: Current cloud services status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - enabled
+                properties:
+                  enabled:
+                    type: boolean
+                    description: Whether cloud services are enabled
+                    example: true
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      summary: Set cloud services status
+      description: Enable or disable cloud services
+      tags:
+        - MQTT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enabled
+              properties:
+                enabled:
+                  type: boolean
+                  description: Whether to enable or disable cloud services
+                  example: true
+      responses:
+        '200':
+          description: Cloud services status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # InfluxDB endpoints
+  /api/v1/influxdb/config:
+    get:
+      summary: Get InfluxDB configuration
+      description: Retrieve the current InfluxDB configuration settings
+      tags:
+        - InfluxDB
+      responses:
+        '200':
+          description: Current InfluxDB configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfluxDbConfiguration'
+    put:
+      summary: Update InfluxDB configuration (full update)
+      description: Update the complete InfluxDB configuration. All required fields must be provided.
+      tags:
+        - InfluxDB
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InfluxDbConfiguration'
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid configuration data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update InfluxDB configuration (partial update)
+      description: Update specific fields in the InfluxDB configuration. Only provided fields will be updated.
+      tags:
+        - InfluxDB
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  description: Whether InfluxDB integration is enabled
+                server:
+                  type: string
+                  description: InfluxDB server address or hostname
+                  maxLength: 64
+                port:
+                  type: integer
+                  description: InfluxDB server port number
+                  minimum: 1
+                  maximum: 65535
+                version:
+                  type: integer
+                  description: InfluxDB version (1 or 2)
+                  enum: [1, 2]
+                database:
+                  type: string
+                  description: Database name (InfluxDB v1)
+                  maxLength: 64
+                username:
+                  type: string
+                  description: Username for authentication (InfluxDB v1)
+                  maxLength: 32
+                password:
+                  type: string
+                  description: Password for authentication (InfluxDB v1)
+                  maxLength: 64
+                organization:
+                  type: string
+                  description: Organization name (InfluxDB v2)
+                  maxLength: 64
+                bucket:
+                  type: string
+                  description: Bucket name (InfluxDB v2)
+                  maxLength: 64
+                token:
+                  type: string
+                  description: Authentication token (InfluxDB v2)
+                  maxLength: 64
+                measurement:
+                  type: string
+                  description: Measurement name for data points
+                  maxLength: 64
+                frequency:
+                  type: integer
+                  description: Data sending frequency in seconds
+                  minimum: 1
+                  maximum: 3600
+                useSSL:
+                  type: boolean
+                  description: Whether to use HTTPS for connections
+              minProperties: 1
+            examples:
+              enable_only:
+                summary: Enable InfluxDB only
+                value:
+                  enabled: true
+              server_config:
+                summary: Update server settings
+                value:
+                  server: "new-influxdb-server.com"
+                  port: 8086
+              v2_config:
+                summary: Update InfluxDB v2 settings
+                value:
+                  version: 2
+                  organization: "my-new-org"
+                  bucket: "energy-data"
+                  token: "new-auth-token"
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid configuration data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/influxdb/status:
+    get:
+      summary: Get InfluxDB status
+      description: Get the current status and runtime information for InfluxDB
+      tags:
+        - InfluxDB
+      responses:
+        '200':
+          description: InfluxDB status and runtime information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericStatus'
+
+  /api/v1/influxdb/config/reset:
+    post:
+      summary: Reset InfluxDB configuration
+      description: Reset the InfluxDB configuration to default values
+      tags:
+        - InfluxDB
+      responses:
+        '200':
+          description: InfluxDB configuration reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # LED Management endpoints
+  /api/v1/led/brightness:
+    get:
+      summary: Get LED brightness
+      description: Get the current LED brightness level
+      tags:
+        - LED
+      responses:
+        '200':
+          description: Current LED brightness level
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  message:
-                    type: string
+                  brightness:
+                    type: integer
+                    description: Current brightness level (0-100)
+                    minimum: 0
+                    maximum: 100
+                    example: 75
+                  max_brightness:
+                    type: integer
+                    description: Maximum possible brightness value
+                    example: 100
+    put:
+      summary: Set LED brightness
+      description: Update the LED brightness level
+      tags:
+        - LED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - brightness
+              properties:
+                brightness:
+                  type: integer
+                  description: Brightness level to set (0-100)
+                  minimum: 0
+                  maximum: 100
+                  example: 75
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
-  /rest/get-ade7953-configuration:
+  # ADE7953 Energy Meter endpoints
+  /api/v1/ade7953/config:
     get:
       summary: Get ADE7953 configuration
+      description: Retrieve the current ADE7953 energy meter configuration settings
       tags:
-        - Configuration
+        - ADE7953
       responses:
         '200':
-          description: Successful response
+          description: Current ADE7953 configuration
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Ade7953Configuration'
-
-  /rest/set-ade7953-configuration:
-    post:
-      summary: Set ADE7953 configuration
+    put:
+      summary: Update ADE7953 configuration (full update)
+      description: Update the complete ADE7953 configuration. All required fields must be provided.
       tags:
-        - Configuration
+        - ADE7953
       requestBody:
         required: true
         content:
@@ -1506,403 +1139,22 @@ paths:
               $ref: '#/components/schemas/Ade7953Configuration'
       responses:
         '200':
-          description: Successful response
+          description: Configuration updated successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
+                $ref: '#/components/schemas/SuccessResponse'
         '400':
-          description: Bad request
+          description: Invalid configuration data
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rest/get-channel:
-    get:
-      summary: Get channel data
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update ADE7953 configuration (partial update)
+      description: Update specific fields in the ADE7953 configuration. Only provided fields will be updated.
       tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChannelData'
-
-  /rest/set-channel:
-    post:
-      summary: Set channel data
-      tags:
-        - Configuration
-      requestBody:
-        required: true
-        content:
-          application/json:
-              schema:
-                $ref: '#/components/schemas/ChannelData'
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rest/get-calibration:
-    get:
-      summary: Get calibration data
-      tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CalibrationValues'
-
-  /rest/set-calibration:
-    post:
-      summary: Set calibration values
-      tags:
-        - Configuration
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CalibrationValues'
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rest/calibration-reset:
-    post:
-      summary: Reset calibration values
-      tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-  
-  /rest/get-custom-mqtt-configuration:
-    get:
-      summary: Get custom MQTT configuration
-      tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomMqtt'
-
-  /rest/set-custom-mqtt-configuration:
-    post:
-      summary: Set custom MQTT configuration
-      tags:
-        - Configuration
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CustomMqtt'
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rest/get-influxdb-configuration:
-    get:
-      summary: Get InfluxDB configuration
-      tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InfluxDb'
-
-  /rest/set-influxdb-configuration:
-    post:
-      summary: Set InfluxDB configuration
-      tags:
-        - Configuration
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/InfluxDb'
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rest/get-log-level:
-    get:
-      summary: Get current log levels
-      tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  print:
-                    type: string
-                  save:
-                    type: string
-
-  /rest/set-log-level:
-    post:
-      summary: Set log level
-      tags:
-        - Configuration
-      parameters:
-        - in: query
-          name: level
-          required: true
-          schema:
-            type: integer
-          description: Log level
-        - in: query
-          name: type
-          required: true
-          schema:
-            type: string
-            enum: [print, save]
-          description: Type of log level to set
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rest/get-general-configuration:
-    get:
-      summary: Get general configuration
-      tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GeneralConfiguration'
-
-  /rest/get-statistics:
-    get:
-      summary: Get system statistics
-      description: Returns comprehensive statistics about the device's operation including MQTT, ADE7953, Modbus, InfluxDB, and WiFi metrics
-      tags:
-        - System
-      responses:
-        '200':
-          description: Successful response with system statistics
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Statistics'
-
-  /rest/get-has-secrets:
-    get:
-      summary: Check if secrets are available
-      tags:
-        - Configuration
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  has_secrets:
-                    type: boolean  
-
-  /rest/set-general-configuration:
-    post:
-      summary: Set general configuration
-      description: "Sets general configuration. The 'sendPowerData' field is ignored if provided in the request body, as it is exclusively controlled via MQTT."
-      tags:
-        - Configuration
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GeneralConfiguration'
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rest/list-files:
-    get:
-      summary: List files in SPIFFS
-      tags:
-        - Files
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-
-  /rest/file/{filename}:
-    get:
-      summary: Get file content
-      tags:
-        - Files
-      parameters:
-        - in: path
-          name: filename
-          required: true
-          schema:
-            type: string
-          description: Name of the file to retrieve
-      responses:
-        '200':
-          description: Successful response
-          content:
-            text/plain: {}
-            application/json: {}
-            text/html: {}
-            text/css: {}
-            image/png: {}
-        '400':
-          description: File not found
-          content:
-            text/plain:
-              schema:
-                type: string
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rest/upload-file:
-    post:
-      summary: Upload a file to SPIFFS
-      tags:
-        - Files
+        - ADE7953
       requestBody:
         required: true
         content:
@@ -1910,53 +1162,1037 @@ paths:
             schema:
               type: object
               properties:
-                filename:
-                  type: string
-                data:
-                  type: string
+                aVGain:
+                  type: integer
+                  description: Voltage gain calibration
+                aIGain:
+                  type: integer
+                  description: Current gain calibration for channel A
+                bIGain:
+                  type: integer
+                  description: Current gain calibration for channel B
+              minProperties: 1
+            examples:
+              gain_only:
+                summary: Update gain settings only
+                value:
+                  aVGain: 4194304
+                  aIGain: 4194304
+              calibration:
+                summary: Update calibration values
+                value:
+                  phCalA: 10
+                  phCalB: 10
       responses:
         '200':
-          description: Successful response
+          description: Configuration updated successfully
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
+                $ref: '#/components/schemas/SuccessResponse'
         '400':
-          description: Bad request
+          description: Invalid configuration data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/ade7953/config/reset:
+    post:
+      summary: Reset ADE7953 configuration
+      description: Reset the ADE7953 configuration to default values
+      tags:
+        - ADE7953
+      responses:
+        '200':
+          description: ADE7953 configuration reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/v1/ade7953/sample-time:
+    get:
+      summary: Get ADE7953 sample time
+      description: Get the current sampling time interval in milliseconds
+      tags:
+        - ADE7953
+      responses:
+        '200':
+          description: Current sample time
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  message:
-                    type: string
-
-
-  /log-raw:
-    get:
-      summary: Get raw log file
+                  sampleTime:
+                    type: integer
+                    description: Sample time in milliseconds
+                    example: 200
+    put:
+      summary: Set ADE7953 sample time
+      description: Update the sampling time interval in milliseconds
       tags:
-        - Files
+        - ADE7953
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sampleTime
+              properties:
+                sampleTime:
+                  type: integer
+                  description: Sample time in milliseconds
+                  minimum: 200
+                  maximum: 20000
+                  example: 1000
       responses:
         '200':
-          description: Successful response
+          description: Sample time updated successfully
           content:
-            text/plain:
+            application/json:
               schema:
-                type: string
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
-  /daily-energy:
+  /api/v1/ade7953/channel:
     get:
-      summary: Get daily energy data
+      summary: Get channel configuration
+      description: Get the configuration for a specific channel or all channels. If index parameter is provided, returns single channel data. If omitted, returns all channels data.
       tags:
-        - Files
+        - ADE7953
+      parameters:
+        - name: index
+          in: query
+          required: false
+          description: Channel index (0-16). If omitted, returns all channels.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 16
+          example: 0
       responses:
         '200':
-          description: Successful response
+          description: Channel configuration(s)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ChannelData'
+                    description: Single channel response (when index provided)
+                  - type: object
+                    description: All channels response (when index omitted)
+                    properties:
+                      channels:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ChannelData'
+              examples:
+                single_channel:
+                  summary: Single channel response
+                  value:
+                    index: 0
+                    active: true
+                    reverse: false
+                    label: "Main Circuit"
+                    phase: "A"
+                    ctSpecification:
+                      currentRating: 100.0
+                      voltageOutput: 1.0
+                all_channels:
+                  summary: All channels response
+                  value:
+                    channels:
+                      - index: 0
+                        active: true
+                        reverse: false
+                        label: "Main Circuit"
+                        phase: "A"
+                        ctSpecification:
+                          currentRating: 100.0
+                          voltageOutput: 1.0
+                      - index: 1
+                        active: false
+                        reverse: false
+                        label: "Kitchen"
+                        phase: "A"
+                        ctSpecification:
+                          currentRating: 50.0
+                          voltageOutput: 1.0
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      summary: Update channel configuration (full update)
+      description: Update the complete configuration for a specific channel. All fields must be provided including the channel index.
+      tags:
+        - ADE7953
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelData'
+      responses:
+        '200':
+          description: Channel configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      summary: Update channel configuration (partial update)
+      description: Update specific fields in a channel configuration. Channel index must be provided.
+      tags:
+        - ADE7953
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - index
+              properties:
+                index:
+                  type: integer
+                  minimum: 0
+                  maximum: 16
+                  description: Channel index
+                active:
+                  type: boolean
+                  description: Whether the channel is active
+                reverse:
+                  type: boolean
+                  description: Whether to reverse the current direction
+                label:
+                  type: string
+                  maxLength: 32
+                  description: Human-readable channel label
+                phase:
+                  $ref: '#/components/schemas/Phase'
+                ctSpecification:
+                  $ref: '#/components/schemas/CtSpecification'
+              minProperties: 2
+            examples:
+              enable_channel:
+                summary: Enable channel
+                value:
+                  index: 1
+                  active: true
+                  label: "Kitchen Circuit"
+              ct_config:
+                summary: Update CT specifications
+                value:
+                  index: 2
+                  ctSpecification:
+                    currentRating: 50.0
+                    voltageOutput: 1.0
+      responses:
+        '200':
+          description: Channel configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/ade7953/channel/reset:
+    post:
+      summary: Reset channel configuration
+      description: Reset a specific channel configuration to default values
+      tags:
+        - ADE7953
+      parameters:
+        - name: index
+          in: query
+          required: true
+          description: Channel index (0-16)
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 16
+          example: 1
+      responses:
+        '200':
+          description: Channel configuration reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/ade7953/register:
+    get:
+      summary: Read ADE7953 register
+      description: Read a value from a specific ADE7953 register
+      tags:
+        - ADE7953
+      parameters:
+        - name: address
+          in: query
+          required: true
+          description: Register address (hexadecimal or decimal)
+          schema:
+            type: integer
+          example: 0x031E
+        - name: bits
+          in: query
+          required: true
+          description: Number of bits to read (8, 16, 24, or 32)
+          schema:
+            type: integer
+            enum: [8, 16, 24, 32]
+          example: 32
+        - name: signed
+          in: query
+          required: false
+          description: Whether the data is signed
+          schema:
+            type: boolean
+            default: false
+          example: false
+      responses:
+        '200':
+          description: Register value read successfully
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  address:
+                    type: integer
+                    description: Register address
+                  bits:
+                    type: integer
+                    description: Number of bits
+                  signed:
+                    type: boolean
+                    description: Whether the data is signed
+                  value:
+                    type: integer
+                    description: Register value
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    put:
+      summary: Write ADE7953 register
+      description: Write a value to a specific ADE7953 register
+      tags:
+        - ADE7953
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - address
+                - bits
+                - value
+              properties:
+                address:
+                  type: integer
+                  description: Register address (hexadecimal or decimal)
+                  example: 0x031E
+                bits:
+                  type: integer
+                  enum: [8, 16, 24, 32]
+                  description: Number of bits to write
+                  example: 32
+                value:
+                  type: integer
+                  description: Value to write to the register
+                  example: 4194304
+      responses:
+        '200':
+          description: Register written successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/ade7953/meter-values:
+    get:
+      summary: Get meter values
+      description: Get real-time meter values for all active channels or a specific channel
+      tags:
+        - ADE7953
+      parameters:
+        - name: index
+          in: query
+          required: false
+          description: Channel index (0-16). If omitted, returns all channels.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 16
+          example: 0
+      responses:
+        '200':
+          description: Meter values for all channels or the specified channel
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    description: All channels response
+                    properties:
+                      channels:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/MeterValues'
+                  - $ref: '#/components/schemas/MeterValues'
+                    description: Single channel response
+              examples:
+                all_channels:
+                  summary: All channels response
+                  value:
+                    channels:
+                      - voltage: 230.2
+                        current: 5.45
+                        activePower: 1254.6
+                        reactivePower: 45.2
+                        apparentPower: 1256.4
+                        powerFactor: 0.998
+                        activeEnergyImported: 12345.6
+                        activeEnergyExported: 0.0
+                        reactiveEnergyImported: 234.5
+                        reactiveEnergyExported: 0.0
+                        apparentEnergy: 12346.8
+                single_channel:
+                  summary: Single channel response
+                  value:
+                    voltage: 230.2
+                    current: 5.45
+                    activePower: 1254.6
+                    reactivePower: 45.2
+                    apparentPower: 1256.4
+                    powerFactor: 0.998
+                    activeEnergyImported: 12345.6
+                    activeEnergyExported: 0.0
+                    reactiveEnergyImported: 234.5
+                    reactiveEnergyExported: 0.0
+                    apparentEnergy: 12346.8
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/ade7953/grid-frequency:
+    get:
+      summary: Get grid frequency
+      description: Get the current AC grid frequency in Hz
+      tags:
+        - ADE7953
+      responses:
+        '200':
+          description: Current grid frequency
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gridFrequency:
+                    type: number
+                    format: float
+                    description: Grid frequency in Hz
+                    example: 50.02
+
+  /api/v1/ade7953/energy/reset:
+    post:
+      summary: Reset all energy values
+      description: Reset accumulated energy values for all channels to zero
+      tags:
+        - ADE7953
+      responses:
+        '200':
+          description: Energy values reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/v1/ade7953/energy:
+    put:
+      summary: Set energy values
+      description: Set accumulated energy values for a specific channel
+      tags:
+        - ADE7953
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - channel
+              properties:
+                channel:
+                  type: integer
+                  minimum: 0
+                  maximum: 16
+                  description: Channel index
+                  example: 0
+                activeEnergyImported:
+                  type: number
+                  format: float
+                  description: Active energy imported in Wh
+                  example: 1250.5
+                activeEnergyExported:
+                  type: number
+                  format: float
+                  description: Active energy exported in Wh
+                  example: 0.0
+                reactiveEnergyImported:
+                  type: number
+                  format: float
+                  description: Reactive energy imported in VARh
+                  example: 45.2
+                reactiveEnergyExported:
+                  type: number
+                  format: float
+                  description: Reactive energy exported in VARh
+                  example: 0.0
+                apparentEnergy:
+                  type: number
+                  format: float
+                  description: Apparent energy in VAh
+                  example: 1251.3
+      responses:
+        '200':
+          description: Energy values updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+tags:
+  - name: System
+    description: System management and information endpoints
+  - name: Authentication
+    description: Authentication and security endpoints
+  - name: OTA Updates
+    description: Over-the-air firmware update endpoints
+  - name: Crash Monitor
+    description: Crash analysis and core dump management endpoints
+  - name: Network
+    description: Network and WiFi management endpoints
+  - name: Logging
+    description: Log management and configuration endpoints
+  - name: ADE7953
+    description: ADE7953 energy meter configuration, measurement, and control endpoints
+  - name: Custom MQTT
+    description: Custom MQTT broker configuration and status endpoints
+  - name: InfluxDB
+    description: InfluxDB time-series database configuration and status endpoints
+  - name: LED
+    description: LED brightness control and status endpoints
+  - name: Files
+    description: SPIFFS file system operations and management endpoints
+
+components:
+  # Common response patterns
+  responses:
+    Success:
+      description: Operation completed successfully
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SuccessResponse'
+    
+    BadRequest:
+      description: Bad request - invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_params:
+              summary: Invalid parameters
+              value:
+                success: false
+                error: "Invalid input parameters"
+            validation_failed:
+              summary: Validation failed
+              value:
+                success: false
+                error: "Request validation failed"
+    
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Authentication required"
+    
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Resource not found"
+    
+    MethodNotAllowed:
+      description: HTTP method not allowed for this endpoint
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Method not allowed"
+    
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Internal server error occurred"
+
+  schemas:
+    SuccessResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Operation completed successfully"
+    
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "Error message describing what went wrong"
+    
+    LogLevel:
+      type: string
+      enum: [VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL]
+      description: Log level enumeration
+    
+    CustomMqttConfiguration:
+      type: object
+      required:
+        - enabled
+        - server
+        - port
+        - clientid
+        - topic
+        - frequency
+        - useCredentials
+      properties:
+        enabled:
+          type: boolean
+          description: Whether custom MQTT is enabled
+          example: false
+        server:
+          type: string
+          description: MQTT broker server address or hostname
+          example: "mqtt.test.mosquitto.org"
+          maxLength: 64
+        port:
+          type: integer
+          description: MQTT broker port number
+          example: 1883
+          minimum: 1
+          maximum: 65535
+        clientid:
+          type: string
+          description: Unique MQTT client identifier
+          example: "energyme-home"
+          maxLength: 32
+        topic:
+          type: string
+          description: MQTT topic for publishing meter data
+          example: "energy/meter"
+          maxLength: 64
+        frequency:
+          type: integer
+          description: Publishing frequency in seconds
+          example: 10
+          minimum: 1
+          maximum: 3600
+        useCredentials:
+          type: boolean
+          description: Whether to use username/password authentication
+          example: false
+        username:
+          type: string
+          description: MQTT username (required if useCredentials is true)
+          example: "mqtt_user"
+          maxLength: 32
+        password:
+          type: string
+          description: MQTT password (required if useCredentials is true)
+          example: "mqtt_password"
+          maxLength: 64
+    
+    InfluxDbConfiguration:
+      type: object
+      required:
+        - enabled
+        - server
+        - port
+        - version
+        - database
+        - username
+        - password
+        - organization
+        - bucket
+        - token
+        - measurement
+        - frequency
+        - useSSL
+      properties:
+        enabled:
+          type: boolean
+          description: Whether InfluxDB integration is enabled
+          example: false
+        server:
+          type: string
+          description: InfluxDB server address or hostname
+          example: "localhost"
+          maxLength: 64
+        port:
+          type: integer
+          description: InfluxDB server port number
+          example: 8086
+          minimum: 1
+          maximum: 65535
+        version:
+          type: integer
+          description: InfluxDB version (1 or 2)
+          example: 2
+          enum: [1, 2]
+        database:
+          type: string
+          description: Database name (InfluxDB v1)
+          example: "energyme-home"
+          maxLength: 64
+        username:
+          type: string
+          description: Username for authentication (InfluxDB v1)
+          example: "user"
+          maxLength: 32
+        password:
+          type: string
+          description: Password for authentication (InfluxDB v1)
+          example: "password"
+          maxLength: 64
+        organization:
+          type: string
+          description: Organization name (InfluxDB v2)
+          example: "my-org"
+          maxLength: 64
+        bucket:
+          type: string
+          description: Bucket name (InfluxDB v2)
+          example: "energyme-home"
+          maxLength: 64
+        token:
+          type: string
+          description: Authentication token (InfluxDB v2)
+          example: "my-token"
+          maxLength: 64
+        measurement:
+          type: string
+          description: Measurement name for data points
+          example: "meter"
+          maxLength: 64
+        frequency:
+          type: integer
+          description: Data sending frequency in seconds
+          example: 15
+          minimum: 1
+          maximum: 3600
+        useSSL:
+          type: boolean
+          description: Whether to use HTTPS for connections
+          example: false
+
+    GenericStatus:
+      type: object
+      required:
+        - status
+        - statusTimestamp
+      properties:
+        status:
+          type: string
+          description: Status of the last operation
+          example: "Data sent successfully"
+        statusTimestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the last operation
+          example: "2025-07-31T12:34:56Z"
+
+    # ADE7953-specific schemas
+    Ade7953Configuration:
+      type: object
+      required:
+        - aVGain
+        - aIGain
+        - bIGain
+        - aIRmsOs
+        - bIRmsOs
+        - aWGain
+        - bWGain
+        - aWattOs
+        - bWattOs
+        - aVarGain
+        - bVarGain
+        - aVarOs
+        - bVarOs
+        - aVaGain
+        - bVaGain
+        - aVaOs
+        - bVaOs
+        - phCalA
+        - phCalB
+      properties:
+        aVGain:
+          type: integer
+          description: Voltage gain calibration for channel A
+          example: 4194304
+        aIGain:
+          type: integer
+          description: Current gain calibration for channel A
+          example: 4194304
+        bIGain:
+          type: integer
+          description: Current gain calibration for channel B
+          example: 4194304
+        aIRmsOs:
+          type: integer
+          description: RMS current offset for channel A
+          example: 0
+        bIRmsOs:
+          type: integer
+          description: RMS current offset for channel B
+          example: 0
+        aWGain:
+          type: integer
+          description: Active power gain for channel A
+          example: 4194304
+        bWGain:
+          type: integer
+          description: Active power gain for channel B
+          example: 4194304
+        aWattOs:
+          type: integer
+          description: Active power offset for channel A
+          example: 0
+        bWattOs:
+          type: integer
+          description: Active power offset for channel B
+          example: 0
+        aVarGain:
+          type: integer
+          description: Reactive power gain for channel A
+          example: 4194304
+        bVarGain:
+          type: integer
+          description: Reactive power gain for channel B
+          example: 4194304
+        aVarOs:
+          type: integer
+          description: Reactive power offset for channel A
+          example: 0
+        bVarOs:
+          type: integer
+          description: Reactive power offset for channel B
+          example: 0
+        aVaGain:
+          type: integer
+          description: Apparent power gain for channel A
+          example: 4194304
+        bVaGain:
+          type: integer
+          description: Apparent power gain for channel B
+          example: 4194304
+        aVaOs:
+          type: integer
+          description: Apparent power offset for channel A
+          example: 0
+        bVaOs:
+          type: integer
+          description: Apparent power offset for channel B
+          example: 0
+        phCalA:
+          type: integer
+          description: Phase calibration for channel A
+          example: 0
+        phCalB:
+          type: integer
+          description: Phase calibration for channel B
+          example: 0
+
+    Phase:
+      type: integer
+      enum: [1, 2, 3]
+      description: Electrical phase assignment
+      example: 1
+
+    CtSpecification:
+      type: object
+      required:
+        - currentRating
+        - voltageOutput
+        - scalingFraction
+      properties:
+        currentRating:
+          type: number
+          format: float
+          description: CT current rating in Amperes
+          example: 30.0
+          minimum: 1.0
+          maximum: 300.0
+        voltageOutput:
+          type: number
+          format: float
+          description: CT voltage output in Volts
+          example: 0.333
+          minimum: 0.100
+          maximum: 1.0
+        scalingFraction:
+          type: number
+          format: float
+          description: Scaling adjustment fraction (-0.5 to +0.5 for ±50% adjustment)
+          example: 0.0
+          minimum: -0.5
+          maximum: 0.5
+
+    ChannelData:
+      type: object
+      required:
+        - index
+        - active
+        - reverse
+        - label
+        - phase
+        - ctSpecification
+      properties:
+        index:
+          type: integer
+          minimum: 0
+          maximum: 16
+          description: Channel index (0-16)
+          example: 1
+        active:
+          type: boolean
+          description: Whether the channel is active and monitoring
+          example: true
+        reverse:
+          type: boolean
+          description: Whether to reverse the current direction measurement
+          example: false
+        label:
+          type: string
+          maxLength: 64
+          description: Human-readable channel label
+          example: "Kitchen Circuit"
+        phase:
+          $ref: '#/components/schemas/Phase'
+        ctSpecification:
+          $ref: '#/components/schemas/CtSpecification'
+
+    MeterValues:
+      type: object
+      required:
+        - voltage
+        - current
+        - activePower
+        - reactivePower
+        - apparentPower
+        - powerFactor
+        - activeEnergyImported
+        - activeEnergyExported
+        - reactiveEnergyImported
+        - reactiveEnergyExported
+        - apparentEnergy
+      properties:
+        voltage:
+          type: number
+          format: float
+          description: RMS voltage in Volts
+          example: 230.2
+        current:
+          type: number
+          format: float
+          description: RMS current in Amperes
+          example: 5.45
+        activePower:
+          type: number
+          format: float
+          description: Active power in Watts
+          example: 1254.6
+        reactivePower:
+          type: number
+          format: float
+          description: Reactive power in VAR
+          example: 45.2
+        apparentPower:
+          type: number
+          format: float
+          description: Apparent power in VA
+          example: 1255.4
+        powerFactor:
+          type: number
+          format: float
+          description: Power factor (-1 to 1)
+          example: 0.998
+          minimum: -1.0
+          maximum: 1.0
+        activeEnergyImported:
+          type: number
+          format: float
+          description: Accumulated active energy imported in Wh
+          example: 12345.6
+        activeEnergyExported:
+          type: number
+          format: float
+          description: Accumulated active energy exported in Wh
+          example: 0.0
+        reactiveEnergyImported:
+          type: number
+          format: float
+          description: Accumulated reactive energy imported in VARh
+          example: 456.7
+        reactiveEnergyExported:
+          type: number
+          format: float
+          description: Accumulated reactive energy exported in VARh
+          example: 0.0
+        apparentEnergy:
+          type: number
+          format: float
+          description: Accumulated apparent energy in VAh
+          example: 12356.8

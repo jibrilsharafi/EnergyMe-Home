@@ -1,618 +1,643 @@
 #include "influxdbclient.h"
-#include <base64.h>
 
 static const char *TAG = "influxdbclient";
 
-InfluxDbClient::InfluxDbClient(
-    Ade7953 &ade7953,
-    AdvancedLogger &logger,
-    InfluxDbConfiguration &influxDbConfiguration,
-    CustomTime &customTime) : _ade7953(ade7953),
-                              _logger(logger),
-                              _influxDbConfiguration(influxDbConfiguration),
-                              _customTime(customTime) {
-                                _deviceId = getDeviceId();
-                              }
-
-void InfluxDbClient::begin()
+namespace InfluxDbClient
 {
-    _logger.debug("Setting up InfluxDB client...", TAG);
-
-    _setConfigurationFromSpiffs();
-
-    _baseUrl = String("http") + (_influxDbConfiguration.useSSL ? "s" : "") + "://" + _influxDbConfiguration.server + ":" + String(_influxDbConfiguration.port);
-    _logger.debug("Base URL set to: %s", TAG, _baseUrl.c_str());
+    // Static variables
+    // ==========================================================
     
-    _isConnected = false;
-    _bufferMeterValues.clear();
-    _isSetupDone = true;
-}
+    // State variables
+    static bool _isSetupDone = false;
+    static uint8_t _currentSendAttempt = 0;
+    static uint64_t _nextSendAttemptMillis = 0;
+    static InfluxDbConfiguration _influxDbConfiguration;
 
-void InfluxDbClient::loop()
-{
-    if ((millis() - _lastMillisInfluxDbLoop) < INFLUXDB_LOOP_INTERVAL) return;
-    _lastMillisInfluxDbLoop = millis();
-
-    if (!WiFi.isConnected()) return;
-    if (!_isSetupDone) begin();
-    if (!_influxDbConfiguration.enabled) return;
-
-    if (!_isConnected)
-    {
-        // Use exponential backoff timing
-        if (millis() >= _nextInfluxDbConnectionAttemptMillis) {
-            _connectInfluxDb(); // _connectInfluxDb handles setting the next attempt time
-        }
-    } else {
-        // If connected, reset connection attempts counter for backoff calculation
-        if (_influxDbConnectionAttempt > 0) {
-            _logger.debug("InfluxDB reconnected successfully after %d attempts.", TAG, _influxDbConnectionAttempt);
-            _influxDbConnectionAttempt = 0;
-        }
-    }
-
-    // Only buffer and upload if connected
-    if (_isConnected) {
-        // Buffer meter data at the specified frequency
-        if ((millis() - _lastMillisMeterBuffer) > _influxDbConfiguration.frequency * 1000)
-        {
-            _lastMillisMeterBuffer = millis();
-            _bufferMeterData();
-        }
-
-        // Upload data if buffer is full or enough time has passed since last upload
-        bool bufferEmpty = _bufferMeterValues.isEmpty();
-        bool bufferFull = _bufferMeterValues.isFull();
-        bool timeToUpload = (millis() - _lastMillisMeterPublish) > (_influxDbConfiguration.frequency * 1000 * INFLUXDB_FREQUENCY_UPLOAD_MULTIPLIER) ||
-                            (millis() - _lastMillisMeterPublish) > INFLUXDB_MAX_INTERVAL_METER_PUBLISH;
-
-        if (!bufferEmpty && (bufferFull || timeToUpload)) _uploadBufferedData();
-    }
-}
-
-bool InfluxDbClient::_connectInfluxDb()
-{
-    _logger.debug("Attempt to connect to InfluxDB (attempt %d)...", TAG, _influxDbConnectionAttempt + 1);
-
-    // Test connection to InfluxDB
-    if (!_testConnection())
-    {
-        _logger.warning("Failed to ping InfluxDB (attempt %d). Retrying...", TAG, _influxDbConnectionAttempt + 1);
-        _lastMillisInfluxDbFailed = millis();
-        _influxDbConnectionAttempt++;
-
-        _influxDbConfiguration.lastConnectionStatus = "Failed to ping InfluxDB (Attempt " + String(_influxDbConnectionAttempt) + ")";
-        _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
-        _saveConfigurationToSpiffs();
-
-        _isConnected = false;
-
-        // Check if we've exceeded max attempts
-        if (_influxDbConnectionAttempt >= INFLUXDB_MAX_CONNECTION_ATTEMPTS) {
-            _logger.error("InfluxDB connection failed after %d attempts. Disabling InfluxDB.", TAG, _influxDbConnectionAttempt);
-            _disable();
-            _nextInfluxDbConnectionAttemptMillis = UINT32_MAX; // Prevent further attempts until re-enabled
-            return false;
-        }
-
-        // Calculate next attempt time using exponential backoff
-        unsigned long _backoffDelay = INFLUXDB_INITIAL_RECONNECT_INTERVAL;
-        for (int i = 0; i < _influxDbConnectionAttempt - 1 && _backoffDelay < INFLUXDB_MAX_RECONNECT_INTERVAL; ++i) {
-            _backoffDelay *= INFLUXDB_RECONNECT_MULTIPLIER;
-        }
-        _backoffDelay = min(_backoffDelay, (unsigned long)INFLUXDB_MAX_RECONNECT_INTERVAL);
-
-        _nextInfluxDbConnectionAttemptMillis = millis() + _backoffDelay;
-        _logger.info("Next InfluxDB connection attempt in %lu ms", TAG, _backoffDelay);
-
-        return false;
-    }
-
-    _logger.debug("Successfully pinged InfluxDB", TAG);
-
-    if (!_testCredentials())
-    {
-        _logger.warning("Failed to validate InfluxDB credentials (attempt %d). Retrying...", TAG, _influxDbConnectionAttempt + 1);
-        _lastMillisInfluxDbFailed = millis();
-        _influxDbConnectionAttempt++;
-
-        _influxDbConfiguration.lastConnectionStatus = "Failed to validate credentials (Attempt " + String(_influxDbConnectionAttempt) + ")";
-        _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
-        _saveConfigurationToSpiffs();
-
-        _isConnected = false;
-
-        // Check if we've exceeded max attempts
-        if (_influxDbConnectionAttempt >= INFLUXDB_MAX_CONNECTION_ATTEMPTS) {
-            _logger.error("InfluxDB credential validation failed after %d attempts. Disabling InfluxDB.", TAG, _influxDbConnectionAttempt);
-            _disable();
-            _nextInfluxDbConnectionAttemptMillis = UINT32_MAX; // Prevent further attempts until re-enabled
-            return false;
-        }
-
-        // Calculate next attempt time using exponential backoff
-        unsigned long _backoffDelay = INFLUXDB_INITIAL_RECONNECT_INTERVAL;
-        for (int i = 0; i < _influxDbConnectionAttempt - 1 && _backoffDelay < INFLUXDB_MAX_RECONNECT_INTERVAL; ++i) {
-            _backoffDelay *= INFLUXDB_RECONNECT_MULTIPLIER;
-        }
-        _backoffDelay = min(_backoffDelay, (unsigned long)INFLUXDB_MAX_RECONNECT_INTERVAL);
-
-        _nextInfluxDbConnectionAttemptMillis = millis() + _backoffDelay;
-        _logger.info("Next InfluxDB connection attempt in %lu ms", TAG, _backoffDelay);
-
-        return false;
-    }
-
-    _logger.info("Successfully connected to InfluxDB", TAG);
-    _influxDbConnectionAttempt = 0; // Reset attempt counter on success
-    _influxDbConfiguration.lastConnectionStatus = "Connection successful";
-    _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
-    _saveConfigurationToSpiffs();
-    _isConnected = true;
-
-    return true;
-}
-
-void InfluxDbClient::_disable() 
-{
-    _logger.debug("Disabling InfluxDB...", TAG);
-
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(INFLUXDB_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    _jsonDocument["enabled"] = false;
-
-    setConfiguration(_jsonDocument);
+    // InfluxDB helper variables
+    static char _fullUrl[FULL_URL_BUFFER_SIZE];
+    static char _authHeader[AUTH_HEADER_BUFFER_SIZE];
     
-    _isSetupDone = false;
-    _isConnected = false;
-    _influxDbConnectionAttempt = 0;
-    _bufferMeterValues.clear();
+    // Runtime connection status - kept in memory only, not saved to preferences
+    static char _status[STATUS_BUFFER_SIZE];
+    static uint64_t _statusTimestampUnix;
 
-    _logger.debug("InfluxDB disabled", TAG);
-}
+    // Task variables
+    static TaskHandle_t _influxDbTaskHandle = nullptr;
+    static bool _taskShouldRun = false;
 
-void InfluxDbClient::_bufferMeterData()
-{
-    if (!_customTime.isTimeSynched() || millis() < MINIMUM_TIME_BEFORE_VALID_METER)
+    // Thread safety
+    static SemaphoreHandle_t _configMutex = nullptr;
+
+    // Private function declarations
+    // =========================================================
+
+    // Configuration management
+    static void _setConfigurationFromPreferences();
+    static void _saveConfigurationToPreferences();
+    
+    // InfluxDB helper functions
+    static void _setInfluxFullUrl();
+    static void _setInfluxHeader();
+
+    // Data sending
+    static void _sendData();
+    static void _formatLineProtocol(
+        uint8_t channel, 
+        const char *label,
+        const MeterValues &meterValues, 
+        char *lineProtocolBuffer, 
+        size_t lineProtocolBufferSize, 
+        bool isEnergyData
+    );
+    
+    // JSON validation
+    static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial = false);
+    
+    // Task management
+    static void _influxDbTask(void* parameter);
+    static void _startTask();
+    static void _stopTask();
+    static void _disable(); // Needed for halting the functionality if we have too many failures
+
+    // Public API functions
+    // =========================================================
+
+    void begin()
     {
-        _logger.debug("Time not synced or not enough time passed, skipping data buffering", TAG);
-        return;
-    }
-
-    // Buffer only real-time data (power, voltage, current) for active channels
-    for (int i = 0; i < CHANNEL_COUNT; i++)
-    {
-        if (_ade7953.channelData[i].active)
-        {
-            if (_ade7953.meterValues[i].lastUnixTimeMilliseconds == 0) // Default value when initialized
-            {
-                _logger.debug("Channel does not have real measurements yet, skipping channel %d", TAG, i);
-                continue;
-            }
-
-            if (!validateUnixTime(_ade7953.meterValues[i].lastUnixTimeMilliseconds))
-            {
-                _logger.warning("Invalid unixTime for channel %d in payload meter: %llu", TAG, i, _ade7953.meterValues[i].lastUnixTimeMilliseconds);
-                continue;
-            }
-
-            // Create a simplified point with only real-time measurements
-            MeterValues realtimeValues;
-            realtimeValues.voltage = _ade7953.meterValues[i].voltage;
-            realtimeValues.current = _ade7953.meterValues[i].current;
-            realtimeValues.activePower = _ade7953.meterValues[i].activePower;
-            realtimeValues.reactivePower = _ade7953.meterValues[i].reactivePower;
-            realtimeValues.apparentPower = _ade7953.meterValues[i].apparentPower;
-            realtimeValues.powerFactor = _ade7953.meterValues[i].powerFactor;
-            
-            BufferedPoint point(realtimeValues, i, _ade7953.meterValues[i].lastUnixTimeMilliseconds);
-            _bufferMeterValues.push(point);
-
-            if (_bufferMeterValues.isFull())
-            {
-                _logger.debug("Buffer full, will upload on next loop", TAG);
-                break;
-            }
-        }
-    }
-
-    _logger.debug("Meter data buffered. Buffer size: %d/%d", TAG, _bufferMeterValues.size(), INFLUXDB_BUFFER_SIZE);
-}
-
-void InfluxDbClient::_uploadBufferedData()
-{
-    if (_bufferMeterValues.isEmpty())
-        return;
-
-    HTTPClient http;
-    String url;
-
-    if (_influxDbConfiguration.version == 2)
-    {
-        url = _baseUrl + "/api/v2/write?org=" + _influxDbConfiguration.organization + "&bucket=" + _influxDbConfiguration.bucket;
-    }
-    else
-    {
-        url = _baseUrl + "/write?db=" + _influxDbConfiguration.database;
-    }
-
-    http.begin(url);
-    http.addHeader("Content-Type", "text/plain");
-
-    // Set authorization header based on InfluxDB version
-    if (_influxDbConfiguration.version == 2)
-    {
-        String authHeader = "Token " + _influxDbConfiguration.token;
-        http.addHeader("Authorization", authHeader);
-    }
-    else if (_influxDbConfiguration.version == 1)
-    {
-        String credentials = _influxDbConfiguration.username + ":" + _influxDbConfiguration.password;
-        String encodedCredentials = base64::encode(credentials);
-        String authHeader = "Basic " + encodedCredentials;
-        http.addHeader("Authorization", authHeader);
-    }
-
-    // Build line protocol payload with both buffered real-time data and current energy data
-    String payload = "";
-    unsigned int pointCount = 0;
-
-    // First, add all buffered real-time data points
-    unsigned int _loops = 0;
-    while (!_bufferMeterValues.isEmpty() && pointCount < _bufferMeterValues.size() && _loops < MAX_LOOP_ITERATIONS)
-    {
-        _loops++;
-        BufferedPoint point = _bufferMeterValues.shift();
-        String lineProtocol = _formatRealtimeLineProtocol(point.meterValues, point.channel, point.unixTimeMilliseconds);
-
-        if (payload.length() + lineProtocol.length() > 25000)
-        { // Keep under safe HTTP limit (reduced to leave room for energy data)
-            _logger.warning("Payload too large, pushing point back to buffer", TAG);
-            _bufferMeterValues.unshift(point);
-            break;
-        }
-
-        if (payload.length() > 0)
-            payload += "\n";
-        payload += lineProtocol;
-        pointCount++;
-    }
-
-    // Then, add current energy data for all active channels
-    unsigned long long currentTimestamp = _customTime.getUnixTimeMilliseconds();
-    for (int i = 0; i < CHANNEL_COUNT; i++)
-    {
-        if (_ade7953.channelData[i].active)
-        {
-            String energyLineProtocol = _formatEnergyLineProtocol(_ade7953.meterValues[i], i, currentTimestamp);
-            
-            if (payload.length() + energyLineProtocol.length() > 30000)
-            { // Check if adding energy data would exceed limit
-                _logger.warning("Payload too large to include energy data for channel %d", TAG, i);
-                break;
-            }
-
-            if (payload.length() > 0)
-                payload += "\n";
-            payload += energyLineProtocol;
-        }
-    }
-
-    int httpCode = http.POST(payload);
-
-    if (httpCode >= 200 && httpCode < 300)
-    {
-        _logger.debug("Successfully uploaded %d real-time points + energy data to InfluxDB", TAG, pointCount);
-        _influxDbConfiguration.lastConnectionStatus = "Upload successful";
-        _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
+        logger.debug("Setting up InfluxDB client...", TAG);
         
-        // Reset connection state on successful upload
-        _isConnected = true;
-        _influxDbConnectionAttempt = 0;
-
-        _lastMillisMeterPublish = millis();
-        statistics.influxdbUploadCount++;
+        // Create configuration mutex
+        if (_configMutex == nullptr) {
+            _configMutex = xSemaphoreCreateMutex();
+            if (_configMutex == nullptr) {
+                logger.error("Failed to create configuration mutex", TAG);
+                return;
+            }
+        }
+        
+        _isSetupDone = true; // Must set before since we have checks on the setup later
+        _setConfigurationFromPreferences(); // Here we load and set the config. The setConfig will handle starting the task if enabled
+        logger.debug("InfluxDB client setup complete", TAG);
     }
-    else
+
+    void stop()
     {
-        String response = http.getString();
-        _logger.error("Failed to upload to InfluxDB. HTTP code: %d, Response: %.100s", TAG, httpCode, response.c_str()); // Limit response logging
-        response = ""; // Explicitly clear
-        _lastMillisInfluxDbFailed = millis();
-        _influxDbConfiguration.lastConnectionStatus = "Upload failed (HTTP " + String(httpCode) + ")";
-        _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
-        _saveConfigurationToSpiffs();
+        logger.debug("Stopping InfluxDB client...", TAG);
+        _stopTask();
+        
+        // Clean up mutex
+        if (_configMutex != nullptr) {
+            vSemaphoreDelete(_configMutex);
+            _configMutex = nullptr;
+        }
+        
+        _isSetupDone = false;
+        logger.info("InfluxDB client stopped", TAG);
+    }
 
-        // Mark as disconnected to trigger reconnection attempts
-        _isConnected = false;
-        _nextInfluxDbConnectionAttemptMillis = millis() + INFLUXDB_MIN_CONNECTION_INTERVAL;
-        statistics.influxdbUploadCountError++;
+    void getConfiguration(InfluxDbConfiguration &config)
+    {
+        if (!_isSetupDone) begin();
+        config = _influxDbConfiguration;
+    }
 
-        // Put points back in buffer for retry (if there's space)
-        unsigned int _loops = 0;
-        while (pointCount-- > 0 && !_bufferMeterValues.isFull() && _loops < MAX_LOOP_ITERATIONS)
+    bool setConfiguration(const InfluxDbConfiguration &config)
+    {
+        logger.debug("Setting InfluxDB configuration...", TAG);
+        
+        if (!_isSetupDone) begin();
+
+        // Acquire mutex with timeout
+        if (_configMutex == nullptr || xSemaphoreTake(_configMutex, pdMS_TO_TICKS(CONFIG_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            logger.error("Failed to acquire configuration mutex for setConfiguration", TAG);
+            return false;
+        }
+
+        _stopTask();
+
+        _influxDbConfiguration = config; // Copy to the static configuration variable
+        
+        snprintf(_status, sizeof(_status), "Configuration updated");
+        _statusTimestampUnix = CustomTime::getUnixTime();
+
+        _nextSendAttemptMillis = 0; // Immediately attempt to send data
+        _currentSendAttempt = 0;
+
+        _saveConfigurationToPreferences();
+
+        _setInfluxFullUrl();
+        _setInfluxHeader();
+
+        if (_influxDbConfiguration.enabled) _startTask();
+
+        // Release mutex
+        xSemaphoreGive(_configMutex);
+
+        logger.debug("InfluxDB configuration set", TAG);
+        return true;
+    }
+
+    void resetConfiguration() {
+        logger.debug("Resetting InfluxDB configuration to default", TAG);
+        
+        if (!_isSetupDone) begin();
+
+        InfluxDbConfiguration defaultConfig;
+        setConfiguration(defaultConfig);
+
+        logger.info("InfluxDB configuration reset to default", TAG);
+    }
+
+    void getConfigurationAsJson(JsonDocument &jsonDocument) {
+        if (!_isSetupDone) begin();
+        configurationToJson(_influxDbConfiguration, jsonDocument);
+    }
+
+    bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial)
+    {
+        if (!_isSetupDone) begin();
+
+        InfluxDbConfiguration config;
+        config = _influxDbConfiguration; // Start with current configuration (yeah I know it's cumbersome)
+        if (!configurationFromJson(jsonDocument, config, partial)) {
+            logger.error("Failed to set configuration from JSON", TAG);
+            return false;
+        }
+
+        return setConfiguration(config);
+    }
+
+    void configurationToJson(InfluxDbConfiguration &config, JsonDocument &jsonDocument)
+    {
+        if (!_isSetupDone) begin();
+
+        jsonDocument["enabled"] = config.enabled;
+        jsonDocument["server"] = config.server;
+        jsonDocument["port"] = config.port;
+        jsonDocument["version"] = config.version;
+        jsonDocument["database"] = config.database;
+        jsonDocument["username"] = config.username;
+        jsonDocument["password"] = config.password;
+        jsonDocument["organization"] = config.organization;
+        jsonDocument["bucket"] = config.bucket;
+        jsonDocument["token"] = config.token;
+        jsonDocument["measurement"] = config.measurement;
+        jsonDocument["frequency"] = config.frequencySeconds;
+        jsonDocument["useSSL"] = config.useSSL;
+
+        logger.debug("Successfully converted configuration to JSON", TAG);
+    }
+
+    bool configurationFromJson(JsonDocument &jsonDocument, InfluxDbConfiguration &config, bool partial)
+    {
+        if (!_isSetupDone) begin();
+
+        if (!_validateJsonConfiguration(jsonDocument, partial))
         {
-            _loops++;
-            BufferedPoint point = _bufferMeterValues.shift();
-            _bufferMeterValues.push(point);
+            logger.warning("Invalid JSON configuration", TAG);
+            return false;
+        }
+
+        if (partial) {
+            // Update only fields that are present in JSON
+            if (jsonDocument["enabled"].is<bool>())             config.enabled = jsonDocument["enabled"].as<bool>();
+            if (jsonDocument["server"].is<const char*>())       snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
+            if (jsonDocument["port"].is<uint16_t>())            config.port = jsonDocument["port"].as<uint16_t>();
+            if (jsonDocument["version"].is<uint8_t>())          config.version = jsonDocument["version"].as<uint8_t>();
+            if (jsonDocument["database"].is<const char*>())     snprintf(config.database, sizeof(config.database), "%s", jsonDocument["database"].as<const char*>());
+            if (jsonDocument["username"].is<const char*>())     snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
+            if (jsonDocument["password"].is<const char*>())     snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
+            if (jsonDocument["organization"].is<const char*>()) snprintf(config.organization, sizeof(config.organization), "%s", jsonDocument["organization"].as<const char*>());
+            if (jsonDocument["bucket"].is<const char*>())       snprintf(config.bucket, sizeof(config.bucket), "%s", jsonDocument["bucket"].as<const char*>());
+            if (jsonDocument["token"].is<const char*>())        snprintf(config.token, sizeof(config.token), "%s", jsonDocument["token"].as<const char*>());
+            if (jsonDocument["measurement"].is<const char*>())  snprintf(config.measurement, sizeof(config.measurement), "%s", jsonDocument["measurement"].as<const char*>());
+            if (jsonDocument["frequency"].is<int32_t>())        config.frequencySeconds = jsonDocument["frequency"].as<int32_t>();
+            if (jsonDocument["useSSL"].is<bool>())              config.useSSL = jsonDocument["useSSL"].as<bool>();
+        } else {
+            // Full update - set all fields
+            config.enabled = jsonDocument["enabled"].as<bool>();
+            snprintf(config.server, sizeof(config.server), "%s", jsonDocument["server"].as<const char*>());
+            config.port = jsonDocument["port"].as<uint16_t>();
+            config.version = jsonDocument["version"].as<uint8_t>();
+            snprintf(config.database, sizeof(config.database), "%s", jsonDocument["database"].as<const char*>());
+            snprintf(config.username, sizeof(config.username), "%s", jsonDocument["username"].as<const char*>());
+            snprintf(config.password, sizeof(config.password), "%s", jsonDocument["password"].as<const char*>());
+            snprintf(config.organization, sizeof(config.organization), "%s", jsonDocument["organization"].as<const char*>());
+            snprintf(config.bucket, sizeof(config.bucket), "%s", jsonDocument["bucket"].as<const char*>());
+            snprintf(config.token, sizeof(config.token), "%s", jsonDocument["token"].as<const char*>());
+            snprintf(config.measurement, sizeof(config.measurement), "%s", jsonDocument["measurement"].as<const char*>());
+            config.frequencySeconds = jsonDocument["frequency"].as<int32_t>();
+            config.useSSL = jsonDocument["useSSL"].as<bool>();
+        }
+        
+        snprintf(_status, sizeof(_status), "Configuration updated");
+        _statusTimestampUnix = CustomTime::getUnixTime();
+
+        logger.debug("Successfully converted JSON to configuration%s", TAG, partial ? " (partial)" : "");
+        return true;
+    }
+
+    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize)
+    {
+        if (!_isSetupDone) begin();
+
+        if (statusBuffer && statusSize > 0) snprintf(statusBuffer, statusSize, "%s", _status);
+        if (timestampBuffer && timestampSize > 0) CustomTime::timestampIsoFromUnix(_statusTimestampUnix, timestampBuffer, timestampSize);
+    }
+
+    // Private function implementations
+    // =========================================================
+
+    static void _startTask()
+    {
+        if (_influxDbTaskHandle != nullptr) {
+            logger.debug("InfluxDB task is already running", TAG);
+            return;
+        }
+
+        logger.debug("Starting InfluxDB task", TAG);
+        BaseType_t result = xTaskCreate(
+            _influxDbTask,
+            INFLUXDB_TASK_NAME,
+            INFLUXDB_TASK_STACK_SIZE,
+            nullptr,
+            INFLUXDB_TASK_PRIORITY,
+            &_influxDbTaskHandle
+        );
+
+        if (result != pdPASS) {
+            logger.error("Failed to create InfluxDB task", TAG);
+            _influxDbTaskHandle = nullptr;
         }
     }
 
-    http.end();
-}
+    static void _stopTask() { stopTaskGracefully(&_influxDbTaskHandle, "InfluxDB task"); }
 
-String InfluxDbClient::_formatRealtimeLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp)
-{
-    char lineBuffer[512];
-    
-    String channelLabel = _ade7953.channelData[channel].label;
-    channelLabel.replace(" ", "_");
-    channelLabel.replace(",", "_");
-    channelLabel.replace("=", "_");
-    channelLabel.replace(":", "_");
+    static void _influxDbTask(void* parameter)
+    {
+        logger.debug("InfluxDB task started", TAG);
+        
+        _taskShouldRun = true;
+        uint64_t lastSendTime = 0;
 
-    snprintf(lineBuffer, sizeof(lineBuffer),
-        "%s,channel=%d,label=%s,device_id=%s voltage=%.2f,current=%.3f,active_power=%.2f,reactive_power=%.2f,apparent_power=%.2f,power_factor=%.3f %llu000000",
-        _influxDbConfiguration.measurement.c_str(),
-        channel,
-        channelLabel.c_str(),
-        _deviceId.c_str(),
-        meterValues.voltage,
-        meterValues.current,
-        meterValues.activePower,
-        meterValues.reactivePower,
-        meterValues.apparentPower,
-        meterValues.powerFactor,
-        timestamp
-    );
+        while (_taskShouldRun) {
+            if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) { // We are connected and time is synched (needed as InfluxDB requires timestamps)
+                if (_influxDbConfiguration.enabled) { // We have the InfluxDB enabled
+                    uint64_t currentTime = millis64();
+                    if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) { // Enough time has passed since last send
+                        if (currentTime >= _nextSendAttemptMillis) { // Enough time has passed since last attempt (in case of failures)
+                            _sendData();
+                            lastSendTime = currentTime;
+                        } else {
+                            logger.debug("Delaying InfluxDB send due to previous failures", TAG);
+                        }
+                    }
+                }
+            }
 
-    return String(lineBuffer);
-}
+            // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));
+            if (notificationValue > 0) {
+                _taskShouldRun = false;
+                break;
+            }
+        }
 
-String InfluxDbClient::_formatEnergyLineProtocol(const MeterValues &meterValues, int channel, unsigned long long timestamp)
-{
-    char lineBuffer[512];
-    
-    String channelLabel = _ade7953.channelData[channel].label;
-    channelLabel.replace(" ", "_");
-    channelLabel.replace(",", "_");
-    channelLabel.replace("=", "_");
-    channelLabel.replace(":", "_");
-
-    snprintf(lineBuffer, sizeof(lineBuffer),
-        "%s,channel=%d,label=%s,device_id=%s active_energy_imported=%.3f,active_energy_exported=%.3f,reactive_energy_imported=%.3f,reactive_energy_exported=%.3f,apparent_energy=%.3f %llu000000",
-        _influxDbConfiguration.measurement.c_str(),
-        channel,
-        channelLabel.c_str(),
-        _deviceId.c_str(),
-        meterValues.activeEnergyImported,
-        meterValues.activeEnergyExported,
-        meterValues.reactiveEnergyImported,
-        meterValues.reactiveEnergyExported,
-        meterValues.apparentEnergy,
-        timestamp
-    );
-
-    return String(lineBuffer);
-}
-
-bool InfluxDbClient::_testConnection()
-{
-    _logger.debug("Testing InfluxDB connection...", TAG);
-
-    if (!_influxDbConfiguration.enabled) {
-        _logger.warning("InfluxDB is not enabled. Skipping connection test", TAG);
-        return false;
+        logger.debug("InfluxDB task stopping", TAG);
+        _influxDbTaskHandle = nullptr;
+        vTaskDelete(nullptr);
     }
 
-    HTTPClient http;
-    String url = _baseUrl + "/ping";
-
-    http.begin(url);
-    int httpCode = http.GET();
-
-    if (httpCode == 204)
+    static void _setConfigurationFromPreferences()
     {
-        _logger.debug("InfluxDB connection successful (204 No Content)", TAG);
+        logger.debug("Setting InfluxDB configuration from Preferences...", TAG);
+
+        InfluxDbConfiguration config; // Start with default configuration
+
+        Preferences preferences;
+        if (preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, true)) {
+            config.enabled = preferences.getBool(INFLUXDB_ENABLED_KEY, INFLUXDB_ENABLED_DEFAULT);
+            snprintf(config.server, sizeof(config.server), "%s", preferences.getString(INFLUXDB_SERVER_KEY, INFLUXDB_SERVER_DEFAULT).c_str());
+            config.port = preferences.getUShort(INFLUXDB_PORT_KEY, INFLUXDB_PORT_DEFAULT);
+            config.version = preferences.getUChar(INFLUXDB_VERSION_KEY, INFLUXDB_VERSION_DEFAULT);
+            snprintf(config.database, sizeof(config.database), "%s", preferences.getString(INFLUXDB_DATABASE_KEY, INFLUXDB_DATABASE_DEFAULT).c_str());
+            snprintf(config.username, sizeof(config.username), "%s", preferences.getString(INFLUXDB_USERNAME_KEY, INFLUXDB_USERNAME_DEFAULT).c_str());
+            snprintf(config.password, sizeof(config.password), "%s", preferences.getString(INFLUXDB_PASSWORD_KEY, INFLUXDB_PASSWORD_DEFAULT).c_str());
+            snprintf(config.organization, sizeof(config.organization), "%s", preferences.getString(INFLUXDB_ORGANIZATION_KEY, INFLUXDB_ORGANIZATION_DEFAULT).c_str());
+            snprintf(config.bucket, sizeof(config.bucket), "%s", preferences.getString(INFLUXDB_BUCKET_KEY, INFLUXDB_BUCKET_DEFAULT).c_str());
+            snprintf(config.token, sizeof(config.token), "%s", preferences.getString(INFLUXDB_TOKEN_KEY, INFLUXDB_TOKEN_DEFAULT).c_str());
+            snprintf(config.measurement, sizeof(config.measurement), "%s", preferences.getString(INFLUXDB_MEASUREMENT_KEY, INFLUXDB_MEASUREMENT_DEFAULT).c_str());
+            config.frequencySeconds = preferences.getInt(INFLUXDB_FREQUENCY_KEY, INFLUXDB_FREQUENCY_DEFAULT);
+            config.useSSL = preferences.getBool(INFLUXDB_USE_SSL_KEY, INFLUXDB_USE_SSL_DEFAULT);
+            
+            snprintf(_status, sizeof(_status), "Configuration loaded from Preferences");
+            _statusTimestampUnix = CustomTime::getUnixTime();
+
+            preferences.end();
+        } else {
+            logger.error("Failed to open Preferences namespace for InfluxDB. Using default configuration", TAG);
+        }
+
+        setConfiguration(config);
+
+        logger.debug("Successfully set InfluxDB configuration from Preferences", TAG);
+    }
+
+    static void _saveConfigurationToPreferences()
+    {
+        logger.debug("Saving InfluxDB configuration to Preferences...", TAG);
+
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false)) {
+            logger.error("Failed to open Preferences namespace for InfluxDB", TAG);
+            return;
+        }
+
+        preferences.putBool(INFLUXDB_ENABLED_KEY, _influxDbConfiguration.enabled);
+        preferences.putString(INFLUXDB_SERVER_KEY, _influxDbConfiguration.server);
+        preferences.putUShort(INFLUXDB_PORT_KEY, _influxDbConfiguration.port);
+        preferences.putUChar(INFLUXDB_VERSION_KEY, _influxDbConfiguration.version);
+        preferences.putString(INFLUXDB_DATABASE_KEY, _influxDbConfiguration.database);
+        preferences.putString(INFLUXDB_USERNAME_KEY, _influxDbConfiguration.username);
+        preferences.putString(INFLUXDB_PASSWORD_KEY, _influxDbConfiguration.password);
+        preferences.putString(INFLUXDB_ORGANIZATION_KEY, _influxDbConfiguration.organization);
+        preferences.putString(INFLUXDB_BUCKET_KEY, _influxDbConfiguration.bucket);
+        preferences.putString(INFLUXDB_TOKEN_KEY, _influxDbConfiguration.token);
+        preferences.putString(INFLUXDB_MEASUREMENT_KEY, _influxDbConfiguration.measurement);
+        preferences.putInt(INFLUXDB_FREQUENCY_KEY, _influxDbConfiguration.frequencySeconds);
+        preferences.putBool(INFLUXDB_USE_SSL_KEY, _influxDbConfiguration.useSSL);
+
+        preferences.end();
+
+        logger.debug("Successfully saved InfluxDB configuration to Preferences", TAG);
+    }
+
+    static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial)
+    {
+        if (jsonDocument.isNull() || !jsonDocument.is<JsonObject>())
+        {
+            logger.warning("Invalid JSON document", TAG);
+            return false;
+        }
+
+        if (partial) {
+            // Partial validation - at least one valid field must be present
+            if (jsonDocument["enabled"].is<bool>()) return true;        
+            if (jsonDocument["server"].is<const char*>()) return true;        
+            if (jsonDocument["port"].is<int16_t>()) return true;        
+            if (jsonDocument["version"].is<uint8_t>()) return true;        
+            if (jsonDocument["database"].is<const char*>()) return true;        
+            if (jsonDocument["username"].is<const char*>()) return true;        
+            if (jsonDocument["password"].is<const char*>()) return true;        
+            if (jsonDocument["organization"].is<const char*>()) return true;        
+            if (jsonDocument["bucket"].is<const char*>()) return true;        
+            if (jsonDocument["token"].is<const char*>()) return true;        
+            if (jsonDocument["measurement"].is<const char*>()) return true;        
+            if (jsonDocument["frequency"].is<int32_t>()) return true;        
+            if (jsonDocument["useSSL"].is<bool>()) return true;
+
+            logger.warning("No valid fields found in JSON document", TAG);
+            return false;
+        } else {
+            // Full validation - all fields must be present and valid
+            if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
+            if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
+            if (!jsonDocument["port"].is<uint16_t>()) { logger.warning("port field is not an integer", TAG); return false; }
+            if (!jsonDocument["version"].is<uint8_t>()) { logger.warning("version field is not an integer", TAG); return false; }
+            if (!jsonDocument["database"].is<const char*>()) { logger.warning("database field is not a string", TAG); return false; }
+            if (!jsonDocument["username"].is<const char*>()) { logger.warning("username field is not a string", TAG); return false; }
+            if (!jsonDocument["password"].is<const char*>()) { logger.warning("password field is not a string", TAG); return false; }
+            if (!jsonDocument["organization"].is<const char*>()) { logger.warning("organization field is not a string", TAG); return false; }
+            if (!jsonDocument["bucket"].is<const char*>()) { logger.warning("bucket field is not a string", TAG); return false; }
+            if (!jsonDocument["token"].is<const char*>()) { logger.warning("token field is not a string", TAG); return false; }
+            if (!jsonDocument["measurement"].is<const char*>()) { logger.warning("measurement field is not a string", TAG); return false; }
+            if (!jsonDocument["frequency"].is<int32_t>()) { logger.warning("frequency field is not an integer", TAG); return false; }
+            if (!jsonDocument["useSSL"].is<bool>()) { logger.warning("useSSL field is not a boolean", TAG); return false; }
+
+            if (jsonDocument["frequency"].as<int32_t>() < INFLUXDB_MINIMUM_FREQUENCY || jsonDocument["frequency"].as<int32_t>() > INFLUXDB_MAXIMUM_FREQUENCY)
+            {
+                logger.warning("frequency field must be between %d and %d seconds", TAG, INFLUXDB_MINIMUM_FREQUENCY, INFLUXDB_MAXIMUM_FREQUENCY);
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    static void _disable() {
+        logger.debug("Disabling InfluxDB due to persistent failures...", TAG);
+
+        _influxDbConfiguration.enabled = false;
+        setConfiguration(_influxDbConfiguration); // This will handling the task stop and saving the configuration
+
+        snprintf(_status, sizeof(_status), "Disabled due to persistent failures");
+        _statusTimestampUnix = CustomTime::getUnixTime();
+
+        logger.debug("InfluxDB disabled", TAG);
+    }
+
+    static void _setInfluxFullUrl() {
+        char baseUrl[URL_BUFFER_SIZE + 15]; // Extra space for "http(s)://", server, and port
+
+        snprintf(baseUrl, sizeof(baseUrl), "http%s://%s:%u", 
+                _influxDbConfiguration.useSSL ? "s" : "", 
+                _influxDbConfiguration.server, 
+                _influxDbConfiguration.port);
+
+        if (_influxDbConfiguration.version == 2)
+        {
+            snprintf(_fullUrl, sizeof(_fullUrl), "%s/api/v2/write?org=%s&bucket=%s",
+                     baseUrl,
+                     _influxDbConfiguration.organization,
+                     _influxDbConfiguration.bucket);
+        }
+        else if (_influxDbConfiguration.version == 1)
+        {
+            snprintf(_fullUrl, sizeof(_fullUrl), "%s/write?db=%s",
+                     baseUrl,
+                     _influxDbConfiguration.database);
+        } else {
+            logger.error("Unsupported InfluxDB version: %u", TAG, _influxDbConfiguration.version);
+            return;
+        }
+
+        logger.debug("InfluxDB full URL set to: %s", TAG, _fullUrl);
+    }
+
+    static void _setInfluxHeader() {
+        if (_influxDbConfiguration.version == 2)
+        {
+            snprintf(_authHeader, sizeof(_authHeader), "Token %s", _influxDbConfiguration.token);
+        }
+        else if (_influxDbConfiguration.version == 1)
+        {
+            char credentials[sizeof(_influxDbConfiguration.username) + sizeof(_influxDbConfiguration.password) + 2];
+            snprintf(credentials, sizeof(credentials), "%s:%s", _influxDbConfiguration.username, _influxDbConfiguration.password);
+
+            String encodedCredentials = base64::encode((const uint8_t*)credentials, strlen(credentials));
+
+            snprintf(_authHeader, sizeof(_authHeader), "Basic %s", encodedCredentials.c_str());
+        } else {
+            logger.error("Unsupported InfluxDB version for authorization header: %u", TAG, _influxDbConfiguration.version);
+            return;
+        }
+
+        logger.debug("InfluxDB authorization header set", TAG);
+    }
+
+    static void _sendData()
+    {
+        HTTPClient http;
+        http.begin(_fullUrl);
+        http.addHeader("Authorization", _authHeader);
+        http.addHeader("Content-Type", "text/plain");
+
+        char payload[PAYLOAD_BUFFER_SIZE] = "";
+        char *ptr = payload;
+        size_t remaining = PAYLOAD_BUFFER_SIZE;
+        bool bufferFull = false;
+
+        for (uint8_t i = 0; i < CHANNEL_COUNT && !bufferFull; i++)
+        {
+            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i))
+            {
+                MeterValues meterValues;
+                Ade7953::getMeterValues(meterValues, i);
+                
+                char label[NAME_BUFFER_SIZE];
+                Ade7953::getChannelLabel(i, label, sizeof(label));
+
+                // Add separator if not first entry
+                if (ptr != payload) {
+                    int written = snprintf(ptr, remaining, "\n");
+                    if (written >= remaining) { bufferFull = true; break; }
+                    ptr += written;
+                    remaining -= written;
+                }
+                
+                // Add realtime line protocol
+                char realtimeLineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
+                _formatLineProtocol(i, label, meterValues, realtimeLineProtocol, sizeof(realtimeLineProtocol), false);
+                int written = snprintf(ptr, remaining, "%s", realtimeLineProtocol);
+                if (written >= remaining) { bufferFull = true; break; }
+                ptr += written;
+                remaining -= written;
+                
+                // Add energy line protocol
+                char energyLineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
+                _formatLineProtocol(i, label, meterValues, energyLineProtocol, sizeof(energyLineProtocol), true);
+                written = snprintf(ptr, remaining, "\n%s", energyLineProtocol);
+
+                if (written >= remaining) { bufferFull = true; break; }
+                ptr += written;
+                remaining -= written;
+            }
+        }
+
+        if (bufferFull) logger.warning("Payload buffer filled completely, some data may be truncated", TAG);
+
+        if (ptr == payload)
+        {
+            logger.debug("No data to send to InfluxDB", TAG);
+            http.end();
+            return;
+        }
+
+        int32_t httpCode = http.POST(payload);
+
+        if (httpCode >= HTTP_CODE_OK && httpCode < HTTP_CODE_MULTIPLE_CHOICES)
+        {
+            logger.debug("Successfully sent data to InfluxDB (HTTP %d)", TAG, httpCode);
+            statistics.influxdbUploadCount++;
+            snprintf(_status, sizeof(_status), "Data sent successfully");
+            _currentSendAttempt = 0;
+        }
+        else
+        {
+            statistics.influxdbUploadCountError++;
+            _currentSendAttempt++;
+
+            // Check for specific errors that warrant disabling InfluxDB
+            if (httpCode == HTTP_CODE_UNAUTHORIZED || httpCode == HTTP_CODE_FORBIDDEN) {
+                logger.error("InfluxDB send failed due to authorization error (%d). Disabling InfluxDB.", TAG, httpCode);
+                _disable();
+                http.end();
+                return;
+            }
+            
+            // Check if we've exceeded the maximum number of failures
+            if (_currentSendAttempt >= INFLUXDB_MAX_CONSECUTIVE_FAILURES) {
+                logger.error("InfluxDB send failed %u consecutive times. Disabling InfluxDB.", TAG, _currentSendAttempt);
+                _disable();
+                http.end();
+                return;
+            }
+            
+            // Calculate next attempt time using exponential backoff
+            uint64_t backoffDelay = calculateExponentialBackoff(_currentSendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
+            _nextSendAttemptMillis = millis64() + backoffDelay;
+
+            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %ld) - Attempt %u", httpCode, _currentSendAttempt);
+            _statusTimestampUnix = CustomTime::getUnixTime();
+            
+            logger.warning("Failed to send data to InfluxDB (HTTP %d). Next attempt in %llu ms", TAG, httpCode, _nextSendAttemptMillis - millis64());
+        }
+        
+        _statusTimestampUnix = CustomTime::getUnixTime();
         http.end();
-        return true;
-    }
-    else if (httpCode > 0)
-    {
-        _logger.debug("InfluxDB connection response: %s", TAG, http.getString().c_str());
-        http.end();
-        return httpCode >= 200 && httpCode < 300;
-    }
-    else
-    {
-        _logger.error("InfluxDB connection failed: %s", TAG, http.errorToString(httpCode).c_str());
-        http.end();
-        return false;
-    }
-}
-
-bool InfluxDbClient::_testCredentials()
-{
-    _logger.debug("Testing InfluxDB credentials...", TAG);
-
-    if (!_influxDbConfiguration.enabled)
-    {
-        _logger.warning("InfluxDB is not enabled. Skipping credentials test", TAG);
-        return false;
     }
 
-    HTTPClient http;
-    String url = _baseUrl + "/api/v2";
+    static void _formatLineProtocol(
+        uint8_t channel, 
+        const char *label,
+        const MeterValues &meterValues, 
+        char *lineProtocolBuffer, 
+        size_t lineProtocolBufferSize, 
+        bool isEnergyData
+    ) {
+        char sanitizedLabel[sizeof(label) + 20]; // Give some extra space for sanitization
 
-    http.begin(url);
+        size_t labelLen = strlen(label);
+        size_t writePos = 0;
+        for (size_t i = 0; i < labelLen && writePos < sizeof(sanitizedLabel) - 1; i++)
+        {
+            char c = label[i];
+            // Remove spaces, commas, equal signs, and colons and replace with underscores
+            if (c == ' ' || c == ',' || c == '=' || c == ':') sanitizedLabel[writePos++] = '_';
+            else sanitizedLabel[writePos++] = c;
+        }
+        sanitizedLabel[writePos] = '\0';
 
-    // Set authorization header based on InfluxDB version
-    if (_influxDbConfiguration.version == 2)
-    {
-        // InfluxDB v2 uses Token authentication
-        String authHeader = "Token " + _influxDbConfiguration.token;
-        http.addHeader("Authorization", authHeader);
+        if (isEnergyData)
+        {
+            snprintf(lineProtocolBuffer, lineProtocolBufferSize,
+                     "%s,channel=%u,label=%s,device_id=%s active_energy_imported=%.3f,active_energy_exported=%.3f,reactive_energy_imported=%.3f,reactive_energy_exported=%.3f,apparent_energy=%.3f %llu000000",
+                     _influxDbConfiguration.measurement,
+                     channel,
+                     sanitizedLabel,
+                     DEVICE_ID,
+                     meterValues.activeEnergyImported,
+                     meterValues.activeEnergyExported,
+                     meterValues.reactiveEnergyImported,
+                     meterValues.reactiveEnergyExported,
+                     meterValues.apparentEnergy,
+                     meterValues.lastUnixTimeMilliseconds);
+        }
+        else
+        {
+            snprintf(lineProtocolBuffer, lineProtocolBufferSize,
+                     "%s,channel=%u,label=%s,device_id=%s voltage=%.2f,current=%.3f,active_power=%.2f,reactive_power=%.2f,apparent_power=%.2f,power_factor=%.3f %llu000000",
+                     _influxDbConfiguration.measurement,
+                     channel,
+                     sanitizedLabel,
+                     DEVICE_ID,
+                     meterValues.voltage,
+                     meterValues.current,
+                     meterValues.activePower,
+                     meterValues.reactivePower,
+                     meterValues.apparentPower,
+                     meterValues.powerFactor,
+                     meterValues.lastUnixTimeMilliseconds);
+        }
     }
-    else if (_influxDbConfiguration.version == 1)
-    {
-        // InfluxDB v1.x compatibility API uses Basic authentication
-        String credentials = _influxDbConfiguration.username + ":" + _influxDbConfiguration.password;
-        String encodedCredentials = base64::encode(credentials);
-        String authHeader = "Basic " + encodedCredentials;
-        http.addHeader("Authorization", authHeader);
-    }
-
-    int httpCode = http.GET();
-
-    if (httpCode == 200)
-    {
-        _logger.debug("InfluxDB credentials test successful (200 OK)", TAG);
-        http.end();
-        return true;
-    }
-    else if (httpCode == 401)
-    {
-        _logger.error("InfluxDB credentials test failed: Unauthorized (401)", TAG);
-        http.end();
-        return false;
-    }
-    else if (httpCode > 0)
-    {
-        _logger.debug("InfluxDB credentials test response: %s", TAG, http.getString().c_str());
-        http.end();
-        return httpCode >= 200 && httpCode < 300;
-    }
-    else
-    {
-        _logger.error("InfluxDB credentials test failed: %s", TAG, http.errorToString(httpCode).c_str());
-        http.end();
-        return false;
-    }
-}
-
-void InfluxDbClient::_setDefaultConfiguration()
-{
-    _logger.debug("Setting default InfluxDB configuration...", TAG);
-
-    createDefaultInfluxDbConfigurationFile();
-
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(INFLUXDB_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    setConfiguration(_jsonDocument);
-
-    _logger.debug("Default InfluxDB configuration set", TAG);
-}
-
-bool InfluxDbClient::setConfiguration(JsonDocument &jsonDocument)
-{
-    _logger.debug("Setting InfluxDB configuration...", TAG);
-
-    if (!_validateJsonConfiguration(jsonDocument))
-    {
-        _logger.error("Invalid InfluxDB configuration", TAG);
-        return false;
-    }
-
-    _influxDbConfiguration.enabled = jsonDocument["enabled"].as<bool>();
-    _influxDbConfiguration.server = jsonDocument["server"].as<String>();
-    _influxDbConfiguration.port = jsonDocument["port"].as<int>();
-    _influxDbConfiguration.version = jsonDocument["version"].as<int>();
-    _influxDbConfiguration.database = jsonDocument["database"].as<String>();
-    _influxDbConfiguration.username = jsonDocument["username"].as<String>();
-    _influxDbConfiguration.password = jsonDocument["password"].as<String>();
-    _influxDbConfiguration.organization = jsonDocument["organization"].as<String>();
-    _influxDbConfiguration.bucket = jsonDocument["bucket"].as<String>();
-    _influxDbConfiguration.token = jsonDocument["token"].as<String>();
-    _influxDbConfiguration.measurement = jsonDocument["measurement"].as<String>();
-    _influxDbConfiguration.frequency = jsonDocument["frequency"].as<int>();
-    _influxDbConfiguration.useSSL = jsonDocument["useSSL"].as<bool>();
-
-    _saveConfigurationToSpiffs();
-
-    // Reset connection state and attempt counters
-    _influxDbConnectionAttempt = 0;
-    _nextInfluxDbConnectionAttemptMillis = millis(); // Try connecting immediately
-    _isConnected = false;
-    _influxDbConfiguration.lastConnectionStatus = "Disconnected";
-    _influxDbConfiguration.lastConnectionAttemptTimestamp = _customTime.getTimestamp();
-
-    _logger.debug("InfluxDB configuration set", TAG);
-
-    // Reset state
-    _isSetupDone = false;
-    _bufferMeterValues.clear();
-
-    return true;
-}
-
-void InfluxDbClient::_setConfigurationFromSpiffs()
-{
-    _logger.debug("Setting InfluxDB configuration from SPIFFS...", TAG);
-
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(INFLUXDB_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    if (!setConfiguration(_jsonDocument))
-    {
-        _logger.error("Failed to set InfluxDB configuration from SPIFFS. Using default one", TAG);
-        _setDefaultConfiguration();
-        return;
-    }
-
-    _logger.debug("Successfully set InfluxDB configuration from SPIFFS", TAG);
-}
-
-void InfluxDbClient::_saveConfigurationToSpiffs()
-{
-    _logger.debug("Saving InfluxDB configuration to SPIFFS...", TAG);
-
-    JsonDocument _jsonDocument;
-    _jsonDocument["enabled"] = _influxDbConfiguration.enabled;
-    _jsonDocument["server"] = _influxDbConfiguration.server;
-    _jsonDocument["port"] = _influxDbConfiguration.port;
-    _jsonDocument["version"] = _influxDbConfiguration.version;
-    _jsonDocument["database"] = _influxDbConfiguration.database;
-    _jsonDocument["username"] = _influxDbConfiguration.username;
-    _jsonDocument["password"] = _influxDbConfiguration.password;
-    _jsonDocument["organization"] = _influxDbConfiguration.organization;
-    _jsonDocument["bucket"] = _influxDbConfiguration.bucket;
-    _jsonDocument["token"] = _influxDbConfiguration.token;
-    _jsonDocument["measurement"] = _influxDbConfiguration.measurement;
-    _jsonDocument["frequency"] = _influxDbConfiguration.frequency;
-    _jsonDocument["useSSL"] = _influxDbConfiguration.useSSL;
-    _jsonDocument["lastConnectionStatus"] = _influxDbConfiguration.lastConnectionStatus;
-    _jsonDocument["lastConnectionAttemptTimestamp"] = _influxDbConfiguration.lastConnectionAttemptTimestamp;
-
-    serializeJsonToSpiffs(INFLUXDB_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    _logger.debug("Successfully saved InfluxDB configuration to SPIFFS", TAG);
-}
-
-bool InfluxDbClient::_validateJsonConfiguration(JsonDocument &jsonDocument)
-{
-    if (jsonDocument.isNull() || !jsonDocument.is<JsonObject>())
-    {_logger.warning("Invalid JSON document", TAG); return false; }
-
-    if (!jsonDocument["enabled"].is<bool>()) {_logger.warning("enabled field is not a boolean", TAG); return false; }
-    if (!jsonDocument["server"].is<String>()) {_logger.warning("server field is not a string", TAG); return false; }
-    if (!jsonDocument["port"].is<int>()) {_logger.warning("port field is not an integer", TAG); return false; }
-    if (!jsonDocument["version"].is<int>()) {_logger.warning("version field is not an integer", TAG); return false; }
-    if (!jsonDocument["database"].is<String>()) {_logger.warning("database field is not a string", TAG); return false; }
-    if (!jsonDocument["username"].is<String>()) {_logger.warning("username field is not a string", TAG); return false; }
-    if (!jsonDocument["password"].is<String>()) {_logger.warning("password field is not a string", TAG); return false; }
-    if (!jsonDocument["organization"].is<String>()) {_logger.warning("organization field is not a string", TAG); return false; }
-    if (!jsonDocument["bucket"].is<String>()) {_logger.warning("bucket field is not a string", TAG); return false; }
-    if (!jsonDocument["token"].is<String>()) {_logger.warning("token field is not a string", TAG); return false; }
-    if (!jsonDocument["measurement"].is<String>()) {_logger.warning("measurement field is not a string", TAG); return false; }
-    if (!jsonDocument["frequency"].is<int>()) {_logger.warning("frequency field is not an integer", TAG); return false; }
-    // Also ensure frequency is between 1 and 3600
-    if (jsonDocument["frequency"].as<int>() < 1 || jsonDocument["frequency"].as<int>() > 3600) {
-        _logger.warning("frequency field must be between 1 and 3600 seconds", TAG); 
-        return false; 
-    }
-    if (!jsonDocument["useSSL"].is<bool>()) {_logger.warning("useSSL field is not a boolean", TAG); return false; }
-
-    return true;
-}
+} // namespace InfluxDbClient

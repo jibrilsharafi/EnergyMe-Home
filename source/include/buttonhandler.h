@@ -1,18 +1,32 @@
 #pragma once
 
 #include <Arduino.h>
-#include <AdvancedLogger.h>
 #include <Preferences.h>
 
-#include "constants.h"
+// #include "constants.h"
 #include "led.h"
 #include "customwifi.h"
+#include "customserver.h"
 #include "customtime.h"
 #include "utils.h"
 
-/**
- * Button press types for different functionalities
- */
+#define BUTTON_TASK_NAME "button_task"
+#define BUTTON_TASK_STACK_SIZE (8 * 1024)
+#define BUTTON_TASK_PRIORITY 2
+
+#define PREFERENCES_LAST_OPERATION_KEY "last_operation"
+#define PREFERENCES_LAST_OPERATION_TIMESTAMP_KEY "last_op_timestamp" // Cannot be too int32_t
+
+// Timing constants
+#define BUTTON_DEBOUNCE_TIME 50
+#define BUTTON_SHORT_PRESS_TIME (2 * 1000)
+#define BUTTON_MEDIUM_PRESS_TIME (5 * 1000)
+#define BUTTON_LONG_PRESS_TIME (10 * 1000)
+#define BUTTON_VERY_LONG_PRESS_TIME (15 * 1000)
+#define BUTTON_MAX_PRESS_TIME (20 * 1000)
+
+#define ZERO_START_TIME 0 // Used to indicate no button press has started
+
 enum class ButtonPressType
 {
   NONE,
@@ -22,105 +36,13 @@ enum class ButtonPressType
   SINGLE_VERY_LONG // Factory reset
 };
 
-/**
- * Button handler class for managing critical functionality control
- * via GPIO0 button with immediate visual feedback during press
- */
-class ButtonHandler
-{ // TODO: add this to the readme
-public:
-  /**
-   * Constructor
-   * @param buttonPin GPIO pin number for the button
-   * @param logger Reference to logger instance
-   * @param led Reference to LED instance for feedback
-   * @param customWifi Reference to WiFi manager instance
-   */
-  ButtonHandler(
-      int buttonPin,
-      AdvancedLogger &logger,
-      Led &led,
-      CustomWifi &customWifi);
+namespace ButtonHandler {
+    void begin(uint8_t buttonPin);
+    void stop();
 
-  /**
-   * Initialize the button handler
-   * Sets up GPIO pin and internal state
-   */
-  void begin();
-
-  /**
-   * Main loop function - should be called frequently
-   * Handles button press detection and timing
-   */
-  void loop();
-
-  /**
-   * Get current button press type being processed
-   * @return Current button press type
-   */
-  ButtonPressType getCurrentPressType() const { return _currentPressType; }
-
-  /**
-   * Check if button operation is currently in progress
-   * @return true if operation is active
-   */
-  bool isOperationInProgress() const { return _operationInProgress; }
-  /**
-   * Get the name of the current operation being processed
-   * @return Name of the operation
-   */
-  String getCurrentOperationName() const { return _operationName; }
-
-  /**
-   * Get the Unix timestamp of the last operation
-   * @return Unix timestamp when the last operation was performed
-   */
-  unsigned long getCurrentOperationTimestamp() const { return _operationTimestamp; }
-
-  /**
-   * Clear the current operation name
-   */
-  void clearCurrentOperationName();
-
-private:
-  // Hardware
-  int _buttonPin;
-
-  // Dependencies
-  AdvancedLogger &_logger;
-  Led &_led;
-  CustomWifi &_customWifi;
-  Preferences _preferences;
-
-  // Button state tracking
-  bool _buttonPressed;
-  bool _lastButtonState;
-  unsigned long _buttonPressStartTime;
-  unsigned long _lastDebounceTime;
-  // Operation state
-  ButtonPressType _currentPressType;
-  String _operationName;
-  bool _operationInProgress;
-  unsigned long _operationTimestamp;
-
-  // Private methods
-  void _updateButtonState();
-  void _handleButtonPress();
-  void _handleButtonRelease();
-  void _processButtonPressType();
-  void _updatePressVisualFeedback();
-
-  // Operation handlers
-  void _handleRestart();
-  void _handlePasswordReset();
-  void _handleWifiReset();
-  void _handleFactoryReset();
-
-  // Utility methods
-  bool _readButton();
-  // NVS methods for persistence
-  void _saveLastOperationToNVS();
-  void _loadLastOperationFromNVS();
-  void _saveOperationTimestampToNVS();
-  void _loadOperationTimestampFromNVS();
-};
+    ButtonPressType getCurrentPressType();
+    bool isOperationInProgress();
+    void getOperationName(char* buffer, size_t bufferSize);
+    uint64_t getOperationTimestamp();
+    void clearCurrentOperationName();
+}

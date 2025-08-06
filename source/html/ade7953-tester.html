@@ -1,0 +1,988 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ADE7953 Register Tester - EnergyMe-Home</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/button.css">
+  <link rel="stylesheet" href="/css/section.css">
+  <link rel="stylesheet" href="/css/typography.css">
+  <style>
+    /* Navigation styles - consistent with other pages */
+    .buttonNavigation-container { 
+      margin-bottom: 20px; 
+    }
+    
+    /* Specific styles for the register tester - integrated with existing theme */
+    .register-tester-container { 
+      padding: 20px; 
+      max-width: 1400px; 
+      margin: 0 auto; 
+    }
+    
+    .register-tester-grid { 
+      display: grid; 
+      grid-template-columns: 1fr 2fr 0.8fr; 
+      gap: 20px; 
+      margin-top: 20px;
+    }
+    
+    .register-list { 
+      height: 400px; 
+      overflow-y: auto; 
+      border: 2px solid var(--border-color, #e2e8f0); 
+      border-radius: 8px; 
+      background: var(--background-light, #f7fafc);
+    }
+    
+    .register-item { 
+      padding: 12px 16px; 
+      border-bottom: 1px solid var(--border-color, #e2e8f0); 
+      cursor: pointer; 
+      transition: background-color 0.1s;
+    }
+    
+    .register-item:hover { 
+      background: var(--background-hover, #edf2f7); 
+    }
+    
+    .register-item.selected { 
+      background: var(--primary-color, #3182ce); 
+      color: white; 
+    }
+    
+    .register-item.hidden { 
+      display: none; 
+    }
+    
+    .register-name { 
+      font-weight: 600; 
+      color: var(--text-primary, #2d3748); 
+    }
+    
+    .register-item.selected .register-name { 
+      color: white; 
+    }
+    
+    .register-details { 
+      font-size: 0.85rem; 
+      color: var(--text-secondary, #718096); 
+      margin-top: 4px; 
+    }
+    
+    .register-item.selected .register-details { 
+      color: var(--text-light, #e2e8f0); 
+    }
+    
+    .register-desc { 
+      font-size: 0.8rem; 
+      color: var(--text-muted, #a0aec0); 
+      margin-top: 2px; 
+    }
+    
+    .register-item.selected .register-desc { 
+      color: var(--text-light-muted, #cbd5e0); 
+    }
+    
+    .register-badge {
+      background: rgba(0,0,0,0.1); 
+      padding: 2px 6px; 
+      border-radius: 4px; 
+      margin-right: 8px;
+      font-size: 0.75rem;
+    }
+    
+    .value-display { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
+      gap: 12px; 
+      margin-top: 12px;
+    }
+    
+    .value-item { 
+      background: white; 
+      padding: 12px; 
+      border-radius: 6px; 
+      border: 1px solid var(--border-color, #e2e8f0); 
+      text-align: center;
+    }
+    
+    .value-label { 
+      font-size: 0.8rem; 
+      color: var(--text-secondary, #718096); 
+      margin-bottom: 4px; 
+    }
+    
+    .value-number { 
+      font-size: 1.1rem; 
+      font-weight: 600; 
+      color: var(--text-primary, #2d3748); 
+      font-family: monospace; 
+    }
+    
+    .burst-controls {
+      display: flex; 
+      gap: 12px; 
+      flex-wrap: wrap; 
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    
+    .burst-controls .btn {
+      min-width: 120px;
+    }
+    
+    .burst-interval-group {
+      display: flex; 
+      align-items: center; 
+      gap: 8px;
+    }
+    
+    .chart-container {
+      height: 200px; 
+      border: 1px solid var(--border-color, #e2e8f0); 
+      border-radius: 6px; 
+      background: white; 
+      position: relative; 
+      overflow: hidden;
+    }
+    
+    .history-log {
+      height: 150px; 
+      overflow-y: auto; 
+      border: 1px solid var(--border-color, #e2e8f0); 
+      border-radius: 6px; 
+      background: var(--background-light, #f7fafc); 
+      padding: 8px; 
+      margin-top: 8px; 
+      font-family: monospace; 
+      font-size: 0.8rem;
+    }
+    
+    .timing-info { 
+      font-size: 0.8rem; 
+      color: var(--text-secondary, #718096); 
+      margin-top: 8px; 
+    }
+    
+    .burst-stats { 
+      font-size: 0.8rem; 
+      color: var(--text-secondary, #718096); 
+    }
+    
+    .current-register-info {
+      background: var(--background-light, #f7fafc); 
+      padding: 12px; 
+      border-radius: 6px; 
+      margin-bottom: 16px; 
+      font-size: 0.9rem; 
+      color: var(--text-secondary, #4a5568);
+    }
+    
+    .grid-2 { 
+      display: grid; 
+      grid-template-columns: 1fr 1fr; 
+      gap: 12px; 
+    }
+    
+    .loading { 
+      opacity: 0.6; 
+      pointer-events: none; 
+    }
+    
+    /* Status messages */
+    .status-message {
+      padding: 8px 12px; 
+      border-radius: 6px; 
+      font-size: 0.9rem; 
+      margin: 8px 0;
+      display: none;
+    }
+    
+    .status-message.show { 
+      display: block; 
+    }
+    
+    .status-message.success { 
+      background: var(--success-light, #c6f6d5); 
+      color: var(--success-dark, #22543d); 
+    }
+    
+    .status-message.error { 
+      background: var(--error-light, #fed7d7); 
+      color: var(--error-dark, #742a2a); 
+    }
+    
+    .status-message.info { 
+      background: var(--info-light, #bee3f8); 
+      color: var(--info-dark, #2a4365); 
+    }
+    
+    /* Write section styling */
+    .write-section {
+      max-width: 100%;
+    }
+    
+    .write-section .btn {
+      width: 100%;
+      margin-top: 12px;
+    }
+    
+    @media (max-width: 1024px) {
+      .register-tester-grid { 
+        grid-template-columns: 1fr; 
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="buttonNavigation-container">
+    <a class="buttonNavigation" type="home" href="/">🏠 Home</a>
+    <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
+    <a class="buttonNavigation" type="inner" href="/calibration">⚖️ Calibration</a>
+  </div>
+  
+  <div class="register-tester-container">
+    <!-- Header -->
+    <div class="section">
+      <h1>🔬 ADE7953 Register Tester</h1>
+      <p>Direct access to ADE7953 energy meter registers for testing and calibration</p>
+      
+      <div id="status-message" class="status-message">
+        Status messages will appear here
+      </div>
+    </div>
+
+    <div class="register-tester-grid">
+      <!-- Register Selection -->
+      <div class="section">
+        <h3>📋 Register Selection</h3>
+        
+        <div class="form-group">
+          <label for="search">🔍 Filter Registers</label>
+          <input id="search" type="text" placeholder="Type to filter by name, address, or description...">
+        </div>
+        
+        <div class="register-list" id="register-list">
+          <!-- Registers will be populated by JavaScript -->
+        </div>
+      </div>
+
+      <!-- Read Operations -->
+      <div class="section">
+        <h3>📖 Read Register</h3>
+        
+        <div id="current-register-info" class="current-register-info">
+          Select a register to read
+        </div>
+        
+        <div class="burst-controls">
+          <button id="read-btn" class="btn btn-primary" disabled>📖 Read Once</button>
+          <button id="burst-btn" class="btn btn-secondary" disabled>🔄 Start Burst</button>
+          <div class="burst-interval-group">
+            <label for="burst-interval" style="margin: 0; font-size: 0.85rem;">Interval:</label>
+            <select id="burst-interval" style="width: auto; min-width: 80px;">
+              <option value="10">10ms</option>
+              <option value="100">100ms</option>
+              <option value="250">250ms</option>
+              <option value="500" selected>500ms</option>
+              <option value="1000">1s</option>
+              <option value="2000">2s</option>
+              <option value="5000">5s</option>
+            </select>
+          </div>
+        </div>
+        
+        <div id="read-result" style="display: none;">
+          <div class="value-display">
+            <div class="value-item">
+              <div class="value-label">Decimal</div>
+              <div class="value-number" id="read-decimal">-</div>
+            </div>
+            <div class="value-item">
+              <div class="value-label">Hexadecimal</div>
+              <div class="value-number" id="read-hex">-</div>
+            </div>
+            <div class="value-item">
+              <div class="value-label">Binary</div>
+              <div class="value-number" id="read-binary" style="font-size: 0.8rem; word-break: break-all;">-</div>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+            <div class="timing-info" id="read-timing"></div>
+            <div id="burst-stats" class="burst-stats"></div>
+          </div>
+        </div>
+        
+        <!-- Burst History -->
+        <div id="burst-history" style="display: none; margin-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h4 style="margin: 0; font-size: 1rem;">📊 Real-time History</h4>
+            <button id="clear-history-btn" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem;">Clear</button>
+          </div>
+          <div id="history-chart" class="chart-container">
+            <canvas id="chart-canvas" style="width: 100%; height: 100%;"></canvas>
+          </div>
+          <div id="history-log" class="history-log"></div>
+        </div>
+      </div>
+
+      <!-- Write Operations -->
+      <div class="section write-section">
+        <h3>✏️ Write Register</h3>
+        
+        <div class="form-group">
+          <label for="write-value">Value (decimal, hex 0x..., or binary 0b...)</label>
+          <input id="write-value" type="text" placeholder="e.g. 4194304, 0x400000, 0b...">
+        </div>
+        
+        <button id="write-btn" class="btn btn-primary" disabled>✏️ Write Register</button>
+        
+        <div id="write-result" style="display: none;">
+          <div class="timing-info" id="write-timing"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ADE7953 Registers data
+const REGISTERS = [
+  // 8-bit
+  {"name": "SAGCYC_8", "address": 0x000, "bits": 8, "signed": false, "desc": "SAGCYC (R/W) Sag lines Cycle"},
+  {"name": "DISNOLOAD_8", "address": 0x001, "bits": 8, "signed": false, "desc": "DISNOLOAD (R/W) No-load detection disable"},
+  {"name": "LCYCMODE_8", "address": 0x004, "bits": 8, "signed": false, "desc": "LCYCMODE (R/W) Line cycle accumulation mode"},
+  {"name": "PGA_V_8", "address": 0x007, "bits": 8, "signed": false, "desc": "PGA_V (R/W) Voltage channel gain"},
+  {"name": "PGA_IA_8", "address": 0x008, "bits": 8, "signed": false, "desc": "PGA_IA (R/W) Current A gain"},
+  {"name": "PGA_IB_8", "address": 0x009, "bits": 8, "signed": false, "desc": "PGA_IB (R/W) Current B gain"},
+  {"name": "WRITE_PROTECT_8", "address": 0x040, "bits": 8, "signed": false, "desc": "WRITE_PROTECT (R/W)"},
+  {"name": "LAST_OP_8", "address": 0x0FD, "bits": 8, "signed": false, "desc": "LAST_OP (R/W) 0x35 read, 0xCA write"},
+  {"name": "LAST_RWDATA_8", "address": 0x0FF, "bits": 8, "signed": false, "desc": "LAST_RWDATA (R/W) 8-bit"},
+  {"name": "Version_8", "address": 0x702, "bits": 8, "signed": false, "desc": "Version (R/W) Silicon version"},
+  {"name": "EX_REF_8", "address": 0x800, "bits": 8, "signed": false, "desc": "EX_REF (R/W) Reference input config"},
+  // 16-bit
+  {"name": "ZXTOUT_16", "address": 0x100, "bits": 16, "signed": false, "desc": "ZXTOUT (R/W) Zero-crossing timeout"},
+  {"name": "LINECYC_16", "address": 0x101, "bits": 16, "signed": false, "desc": "LINECYC (R/W) Half line cycles"},
+  {"name": "CONFIG_16", "address": 0x102, "bits": 16, "signed": false, "desc": "CONFIG (R/W) Configuration"},
+  {"name": "CF1DEN_16", "address": 0x103, "bits": 16, "signed": false, "desc": "CF1DEN (R/W) CF1 divider denom (double write)"},
+  {"name": "CF2DEN_16", "address": 0x104, "bits": 16, "signed": false, "desc": "CF2DEN (R/W) CF2 divider denom (double write)"},
+  {"name": "CFMODE_16", "address": 0x107, "bits": 16, "signed": false, "desc": "CFMODE (R/W) CF output selection"},
+  {"name": "PHCALA_16", "address": 0x108, "bits": 16, "signed": true, "desc": "PHCALA (R/W) Phase calibration A (sign-magnitude)"},
+  {"name": "PHCALB_16", "address": 0x109, "bits": 16, "signed": true, "desc": "PHCALB (R/W) Phase calibration B (sign-magnitude)"},
+  {"name": "PFA_16", "address": 0x10A, "bits": 16, "signed": true, "desc": "PFA (R) Power factor A"},
+  {"name": "PFB_16", "address": 0x10B, "bits": 16, "signed": true, "desc": "PFB (R) Power factor B"},
+  {"name": "ANGLE_A_16", "address": 0x10C, "bits": 16, "signed": true, "desc": "ANGLE_A (R) Angle V vs IA"},
+  {"name": "ANGLE_B_16", "address": 0x10D, "bits": 16, "signed": true, "desc": "ANGLE_B (R) Angle V vs IB"},
+  {"name": "PERIOD_16", "address": 0x10E, "bits": 16, "signed": false, "desc": "PERIOD (R)"},
+  {"name": "ALT_OUTPUT_16", "address": 0x110, "bits": 16, "signed": false, "desc": "ALT_OUTPUT (R/W) Alt pin functions"},
+  {"name": "LAST_ADD_16", "address": 0x1FE, "bits": 16, "signed": false, "desc": "LAST_ADD (R) Last successful address"},
+  {"name": "LAST_RWDATA_16", "address": 0x1FF, "bits": 16, "signed": false, "desc": "LAST_RWDATA (R) 16-bit"},
+  {"name": "Reserved_16", "address": 0x120, "bits": 16, "signed": false, "desc": "Reserved (R/W) set to 0x30 after unlock"},
+  // 24/32-bit pairs & singles (key ones for space)
+  {"name": "SAGLVL_24", "address": 0x200, "bits": 24, "signed": false, "desc": "SAGLVL (R/W) Sag Voltage Level"},
+  {"name": "SAGLVL_32", "address": 0x300, "bits": 32, "signed": false, "desc": "SAGLVL (R/W) Sag Voltage Level"},
+  {"name": "ACCMODE_24", "address": 0x201, "bits": 24, "signed": false, "desc": "ACCMODE (R/W) Accumulation mode"},
+  {"name": "ACCMODE_32", "address": 0x301, "bits": 32, "signed": false, "desc": "ACCMODE (R/W) Accumulation mode"},
+  {"name": "AP_NOLOAD_24", "address": 0x203, "bits": 24, "signed": false, "desc": "Active power no-load level"},
+  {"name": "AP_NOLOAD_32", "address": 0x303, "bits": 32, "signed": false, "desc": "Active power no-load level"},
+  {"name": "VAR_NOLOAD_24", "address": 0x204, "bits": 24, "signed": false, "desc": "Reactive power no-load level"},
+  {"name": "VAR_NOLOAD_32", "address": 0x304, "bits": 32, "signed": false, "desc": "Reactive power no-load level"},
+  {"name": "VA_NOLOAD_24", "address": 0x205, "bits": 24, "signed": false, "desc": "Apparent power no-load level"},
+  {"name": "VA_NOLOAD_32", "address": 0x305, "bits": 32, "signed": false, "desc": "Apparent power no-load level"},
+  {"name": "AVA_24", "address": 0x210, "bits": 24, "signed": true, "desc": "Instantaneous apparent power A"},
+  {"name": "AVA_32", "address": 0x310, "bits": 32, "signed": true, "desc": "Instantaneous apparent power A"},
+  {"name": "BVA_24", "address": 0x211, "bits": 24, "signed": true, "desc": "Instantaneous apparent power B"},
+  {"name": "BVA_32", "address": 0x311, "bits": 32, "signed": true, "desc": "Instantaneous apparent power B"},
+  {"name": "AWATT_24", "address": 0x212, "bits": 24, "signed": true, "desc": "Instantaneous active power A"},
+  {"name": "AWATT_32", "address": 0x312, "bits": 32, "signed": true, "desc": "Instantaneous active power A"},
+  {"name": "BWATT_24", "address": 0x213, "bits": 24, "signed": true, "desc": "Instantaneous active power B"},
+  {"name": "BWATT_32", "address": 0x313, "bits": 32, "signed": true, "desc": "Instantaneous active power B"},
+  {"name": "AVAR_24", "address": 0x214, "bits": 24, "signed": true, "desc": "Instantaneous reactive power A"},
+  {"name": "AVAR_32", "address": 0x314, "bits": 32, "signed": true, "desc": "Instantaneous reactive power A"},
+  {"name": "BVAR_24", "address": 0x215, "bits": 24, "signed": true, "desc": "Instantaneous reactive power B"},
+  {"name": "BVAR_32", "address": 0x315, "bits": 32, "signed": true, "desc": "Instantaneous reactive power B"},
+  {"name": "IA_24", "address": 0x216, "bits": 24, "signed": true, "desc": "Instantaneous current A"},
+  {"name": "IA_32", "address": 0x316, "bits": 32, "signed": true, "desc": "Instantaneous current A"},
+  {"name": "IB_24", "address": 0x217, "bits": 24, "signed": true, "desc": "Instantaneous current B"},
+  {"name": "IB_32", "address": 0x317, "bits": 32, "signed": true, "desc": "Instantaneous current B"},
+  {"name": "V_24", "address": 0x218, "bits": 24, "signed": true, "desc": "Instantaneous voltage"},
+  {"name": "V_32", "address": 0x318, "bits": 32, "signed": true, "desc": "Instantaneous voltage"},
+  {"name": "IRMSA_24", "address": 0x21A, "bits": 24, "signed": false, "desc": "IRMS A"},
+  {"name": "IRMSA_32", "address": 0x31A, "bits": 32, "signed": false, "desc": "IRMS A"},
+  {"name": "IRMSB_24", "address": 0x21B, "bits": 24, "signed": false, "desc": "IRMS B"},
+  {"name": "IRMSB_32", "address": 0x31B, "bits": 32, "signed": false, "desc": "IRMS B"},
+  {"name": "VRMS_24", "address": 0x21C, "bits": 24, "signed": false, "desc": "VRMS"},
+  {"name": "VRMS_32", "address": 0x31C, "bits": 32, "signed": false, "desc": "VRMS"},
+  {"name": "AENERGYA_24", "address": 0x21E, "bits": 24, "signed": true, "desc": "Active energy A"},
+  {"name": "AENERGYA_32", "address": 0x31E, "bits": 32, "signed": true, "desc": "Active energy A"},
+  {"name": "AENERGYB_24", "address": 0x21F, "bits": 24, "signed": true, "desc": "Active energy B"},
+  {"name": "AENERGYB_32", "address": 0x31F, "bits": 32, "signed": true, "desc": "Active energy B"},
+  {"name": "RENERGYA_24", "address": 0x220, "bits": 24, "signed": true, "desc": "Reactive energy A"},
+  {"name": "RENERGYA_32", "address": 0x320, "bits": 32, "signed": true, "desc": "Reactive energy A"},
+  {"name": "RENERGYB_24", "address": 0x221, "bits": 24, "signed": true, "desc": "Reactive energy B"},
+  {"name": "RENERGYB_32", "address": 0x321, "bits": 32, "signed": true, "desc": "Reactive energy B"},
+  {"name": "APENERGYA_24", "address": 0x222, "bits": 24, "signed": true, "desc": "Apparent energy A"},
+  {"name": "APENERGYA_32", "address": 0x322, "bits": 32, "signed": true, "desc": "Apparent energy A"},
+  {"name": "APENERGYB_24", "address": 0x223, "bits": 24, "signed": true, "desc": "Apparent energy B"},
+  {"name": "APENERGYB_32", "address": 0x323, "bits": 32, "signed": true, "desc": "Apparent energy B"}
+  // ... (truncated for size - full list would include all registers)
+];
+
+// Global state
+let currentRegister = null;
+let burstMode = {
+  active: false,
+  intervalId: null,
+  readings: [],
+  maxReadings: 100,
+  startTime: null,
+  totalReads: 0,
+  errors: 0,
+  abortController: null,
+  pendingRequests: 0
+};
+
+// DOM elements
+const registerList = document.getElementById('register-list');
+const searchInput = document.getElementById('search');
+const readBtn = document.getElementById('read-btn');
+const burstBtn = document.getElementById('burst-btn');
+const writeBtn = document.getElementById('write-btn');
+const writeValueInput = document.getElementById('write-value');
+const currentRegisterInfo = document.getElementById('current-register-info');
+const burstIntervalSelect = document.getElementById('burst-interval');
+const statusMessage = document.getElementById('status-message');
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+  setupEventListeners();
+  populateRegisterList();
+  filterRegisters();
+});
+
+function setupEventListeners() {
+  // Search functionality
+  searchInput.addEventListener('input', filterRegisters);
+  
+  // Register selection
+  registerList.addEventListener('click', function(e) {
+    const item = e.target.closest('.register-item');
+    if (item) selectRegister(item);
+  });
+  
+  // Action buttons
+  readBtn.addEventListener('click', performRead);
+  burstBtn.addEventListener('click', toggleBurstMode);
+  writeBtn.addEventListener('click', performWrite);
+  document.getElementById('clear-history-btn').addEventListener('click', clearHistory);
+}
+
+function populateRegisterList() {
+  registerList.innerHTML = '';
+  
+  REGISTERS.forEach(register => {
+    const item = document.createElement('div');
+    item.className = 'register-item';
+    item.dataset.name = register.name;
+    item.dataset.address = register.address;
+    item.dataset.bits = register.bits;
+    item.dataset.signed = register.signed ? '1' : '0';
+    item.dataset.desc = register.desc;
+    
+    item.innerHTML = `
+      <div class="register-name">${register.name}</div>
+      <div class="register-details">
+        <span class="register-badge">0x${register.address.toString(16).toUpperCase().padStart(3, '0')}</span>
+        <span class="register-badge">${register.bits}-bit</span>
+        <span class="register-badge">${register.signed ? 'signed' : 'unsigned'}</span>
+      </div>
+      <div class="register-desc">${register.desc}</div>
+    `;
+    
+    registerList.appendChild(item);
+  });
+}
+
+function filterRegisters() {
+  const query = searchInput.value.toLowerCase();
+  const items = registerList.querySelectorAll('.register-item');
+  
+  items.forEach(item => {
+    const name = item.dataset.name.toLowerCase();
+    const address = item.dataset.address;
+    const desc = item.dataset.desc.toLowerCase();
+    const addressHex = '0x' + parseInt(address).toString(16);
+    
+    const matches = name.includes(query) || 
+                   address.includes(query) || 
+                   addressHex.includes(query) ||
+                   desc.includes(query);
+    
+    item.classList.toggle('hidden', !matches);
+  });
+}
+
+function selectRegister(item) {
+  // Remove previous selection
+  registerList.querySelectorAll('.register-item').forEach(i => i.classList.remove('selected'));
+  
+  // Select new item
+  item.classList.add('selected');
+  
+  currentRegister = {
+    name: item.dataset.name,
+    address: parseInt(item.dataset.address),
+    bits: parseInt(item.dataset.bits),
+    signed: item.dataset.signed === '1',
+    desc: item.dataset.desc
+  };
+  
+  updateRegisterInfo();
+  enableButtons();
+}
+
+function parseAddress(addr) {
+  addr = addr.trim();
+  if (addr.toLowerCase().startsWith('0x')) {
+    return parseInt(addr, 16);
+  } else if (addr.toLowerCase().startsWith('0b')) {
+    return parseInt(addr.slice(2), 2);
+  }
+  return parseInt(addr, 10);
+}
+
+function parseValue(val) {
+  val = val.trim();
+  if (val.toLowerCase().startsWith('0x')) {
+    return parseInt(val, 16);
+  } else if (val.toLowerCase().startsWith('0b')) {
+    return parseInt(val.slice(2), 2);
+  }
+  return parseInt(val, 10);
+}
+
+function updateRegisterInfo() {
+  if (currentRegister) {
+    currentRegisterInfo.innerHTML = `
+      <strong>${currentRegister.name}</strong><br>
+      Address: <code>0x${currentRegister.address.toString(16).toUpperCase().padStart(3, '0')}</code> 
+      (${currentRegister.address})<br>
+      ${currentRegister.bits}-bit ${currentRegister.signed ? 'signed' : 'unsigned'}<br>
+      <em>${currentRegister.desc}</em>
+    `;
+  } else {
+    currentRegisterInfo.textContent = 'Select a register or enter manual address';
+  }
+}
+
+function enableButtons() {
+  readBtn.disabled = false;
+  burstBtn.disabled = false;
+  writeBtn.disabled = false;
+}
+
+function disableButtons() {
+  readBtn.disabled = true;
+  burstBtn.disabled = true;
+  writeBtn.disabled = true;
+}
+
+function showStatus(message, type = 'info') {
+  statusMessage.textContent = message;
+  statusMessage.className = `status-message show ${type}`;
+  
+  setTimeout(() => {
+    statusMessage.classList.remove('show');
+  }, 5000);
+}
+
+function toggleBurstMode() {
+  if (burstMode.active) {
+    stopBurstMode();
+  } else {
+    startBurstMode();
+  }
+}
+
+function startBurstMode() {
+  if (!currentRegister) return;
+  
+  burstMode.active = true;
+  burstMode.startTime = Date.now();
+  burstMode.totalReads = 0;
+  burstMode.errors = 0;
+  burstMode.readings = [];
+  burstMode.pendingRequests = 0;
+  burstMode.abortController = new AbortController();
+  
+  // Update UI
+  burstBtn.textContent = '⏹️ Stop Burst';
+  burstBtn.className = 'btn btn-danger';
+  readBtn.disabled = true;
+  writeBtn.disabled = true;
+  burstIntervalSelect.disabled = true;
+  
+  // Show history section
+  document.getElementById('burst-history').style.display = 'block';
+  initChart();
+  
+  // Start reading
+  const interval = parseInt(burstIntervalSelect.value);
+  burstMode.intervalId = setInterval(() => {
+    if (burstMode.active) {
+      performBurstRead();
+    }
+  }, interval);
+  
+  showStatus(`Burst mode started (${interval}ms interval)`, 'success');
+}
+
+function stopBurstMode() {
+  burstMode.active = false;
+  
+  // Cancel all pending requests
+  if (burstMode.abortController) {
+    burstMode.abortController.abort();
+    burstMode.abortController = null;
+  }
+  
+  if (burstMode.intervalId) {
+    clearInterval(burstMode.intervalId);
+    burstMode.intervalId = null;
+  }
+  
+  // Update UI
+  burstBtn.textContent = '🔄 Start Burst';
+  burstBtn.className = 'btn btn-secondary';
+  readBtn.disabled = false;
+  writeBtn.disabled = false;
+  burstIntervalSelect.disabled = false;
+  
+  const duration = Math.round((Date.now() - burstMode.startTime) / 1000);
+  const pendingMsg = burstMode.pendingRequests > 0 ? ` (${burstMode.pendingRequests} requests cancelled)` : '';
+  showStatus(`Burst mode stopped. ${burstMode.totalReads} reads in ${duration}s${pendingMsg}`, 'info');
+  
+  // Reset pending counter
+  burstMode.pendingRequests = 0;
+}
+
+async function performBurstRead() {
+  // Double check if burst mode is still active
+  if (!currentRegister || !burstMode.active) return;
+  
+  // Increment pending requests counter
+  burstMode.pendingRequests++;
+  
+  try {
+    const startTime = performance.now();
+    
+    const params = new URLSearchParams({
+      address: currentRegister.address,
+      bits: currentRegister.bits
+    });
+    
+    if (currentRegister.signed) {
+      params.append('signed', 'true');
+    }
+    
+    const response = await fetch(`/api/v1/ade7953/register?${params}`, {
+      method: 'GET',
+      signal: burstMode.abortController?.signal
+    });
+    
+    // Check again if burst mode is still active after the request
+    if (!burstMode.active) {
+      burstMode.pendingRequests--;
+      return;
+    }
+    
+    const endTime = performance.now();
+    const duration = Math.round(endTime - startTime);
+    
+    if (response.ok) {
+      const data = await response.json();
+      
+      // Final check before processing the response
+      if (!burstMode.active) {
+        burstMode.pendingRequests--;
+        return;
+      }
+      
+      burstMode.totalReads++;
+      
+      // Add to readings history
+      const reading = {
+        timestamp: Date.now(),
+        value: data.value,
+        duration: duration
+      };
+      
+      burstMode.readings.push(reading);
+      if (burstMode.readings.length > burstMode.maxReadings) {
+        burstMode.readings.shift(); // Remove oldest
+      }
+      
+      // Update display
+      displayReadResult(data.value, duration);
+      updateBurstStats();
+      updateChart();
+      addToHistory(reading);
+      
+    } else {
+      if (burstMode.active) {
+        burstMode.errors++;
+        updateBurstStats();
+      }
+      console.error('Burst read failed:', await response.text());
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      // Request was cancelled, this is expected when stopping burst mode
+      console.log('Burst read cancelled');
+    } else if (burstMode.active) {
+      burstMode.errors++;
+      updateBurstStats();
+      console.error('Burst read error:', error);
+    }
+  } finally {
+    // Always decrement pending requests counter
+    burstMode.pendingRequests--;
+  }
+}
+
+function updateBurstStats() {
+  const statsEl = document.getElementById('burst-stats');
+  const elapsed = Math.round((Date.now() - burstMode.startTime) / 1000);
+  const rate = elapsed > 0 ? (burstMode.totalReads / elapsed).toFixed(1) : '0.0';
+  
+  statsEl.textContent = `📊 ${burstMode.totalReads} reads, ${burstMode.errors} errors, ${rate} reads/s`;
+}
+
+function initChart() {
+  const canvas = document.getElementById('chart-canvas');
+  const ctx = canvas.getContext('2d');
+  
+  // Set canvas size
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw axes
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1;
+  
+  // Y axis
+  ctx.beginPath();
+  ctx.moveTo(40, 20);
+  ctx.lineTo(40, canvas.height - 30);
+  ctx.stroke();
+  
+  // X axis
+  ctx.beginPath();
+  ctx.moveTo(40, canvas.height - 30);
+  ctx.lineTo(canvas.width - 20, canvas.height - 30);
+  ctx.stroke();
+}
+
+function updateChart() {
+  if (burstMode.readings.length < 2) return;
+  
+  const canvas = document.getElementById('chart-canvas');
+  const ctx = canvas.getContext('2d');
+  
+  // Clear and redraw axes
+  initChart();
+  
+  const readings = burstMode.readings;
+  const chartWidth = canvas.width - 60;
+  const chartHeight = canvas.height - 50;
+  
+  // Find min/max values
+  const values = readings.map(r => r.value);
+  const minVal = Math.min(...values);
+  const maxVal = Math.max(...values);
+  const range = maxVal - minVal || 1;
+  
+  // Draw value labels
+  ctx.fillStyle = '#718096';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(maxVal.toString(), 35, 25);
+  ctx.fillText(minVal.toString(), 35, canvas.height - 35);
+  
+  // Draw line
+  ctx.strokeStyle = '#3182ce';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  
+  readings.forEach((reading, index) => {
+    const x = 40 + (index / (readings.length - 1)) * chartWidth;
+    const y = 20 + (1 - (reading.value - minVal) / range) * chartHeight;
+    
+    if (index === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  });
+  
+  ctx.stroke();
+  
+  // Draw points
+  ctx.fillStyle = '#3182ce';
+  readings.forEach((reading, index) => {
+    const x = 40 + (index / (readings.length - 1)) * chartWidth;
+    const y = 20 + (1 - (reading.value - minVal) / range) * chartHeight;
+    
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, 2 * Math.PI);
+    ctx.fill();
+  });
+}
+
+function addToHistory(reading) {
+  const historyLog = document.getElementById('history-log');
+  const timestamp = new Date(reading.timestamp).toLocaleTimeString();
+  
+  const logEntry = document.createElement('div');
+  logEntry.innerHTML = `<span style="color: #718096;">${timestamp}</span> <span style="color: #2d3748; font-weight: 600;">${reading.value}</span> <span style="color: #a0aec0;">(0x${reading.value.toString(16).toUpperCase()}) ${reading.duration}ms</span>`;
+  
+  historyLog.appendChild(logEntry);
+  historyLog.scrollTop = historyLog.scrollHeight;
+  
+  // Limit log entries
+  while (historyLog.children.length > 100) {
+    historyLog.removeChild(historyLog.firstChild);
+  }
+}
+
+function clearHistory() {
+  burstMode.readings = [];
+  document.getElementById('history-log').innerHTML = '';
+  initChart();
+}
+
+async function performRead() {
+  if (!currentRegister) return;
+  
+  const startTime = performance.now();
+  readBtn.classList.add('loading');
+  readBtn.textContent = 'Reading...';
+  
+  try {
+    const params = new URLSearchParams({
+      address: currentRegister.address,
+      bits: currentRegister.bits
+    });
+    
+    if (currentRegister.signed) {
+      params.append('signed', 'true');
+    }
+    
+    const response = await fetch(`/api/v1/ade7953/register?${params}`, {
+      method: 'GET'
+    });
+    
+    const endTime = performance.now();
+    const duration = Math.round(endTime - startTime);
+    
+    if (response.ok) {
+      const data = await response.json();
+      displayReadResult(data.value, duration);
+      showStatus(`Read successful (${duration}ms)`, 'success');
+    } else {
+      const error = await response.text();
+      showStatus(`Read failed: ${error}`, 'error');
+      hideReadResult();
+    }
+  } catch (error) {
+    const endTime = performance.now();
+    const duration = Math.round(endTime - startTime);
+    showStatus(`Network error: ${error.message}`, 'error');
+    hideReadResult();
+  } finally {
+    readBtn.classList.remove('loading');
+    readBtn.textContent = 'Read Once';
+  }
+}
+
+async function performWrite() {
+  if (!currentRegister) return;
+  
+  const valueStr = writeValueInput.value.trim();
+  if (!valueStr) {
+    showStatus('Please enter a value to write', 'error');
+    return;
+  }
+  
+  try {
+    const value = parseValue(valueStr);
+    
+    const startTime = performance.now();
+    writeBtn.classList.add('loading');
+    writeBtn.textContent = '✏️ Writing...';
+    
+    const payload = {
+      address: currentRegister.address,
+      bits: currentRegister.bits,
+      value: value
+    };
+    
+    const response = await fetch('/api/v1/ade7953/register', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    
+    const endTime = performance.now();
+    const duration = Math.round(endTime - startTime);
+    
+    if (response.ok) {
+      const result = await response.json();
+      displayWriteResult('Write successful', duration);
+      showStatus(`Write successful (${duration}ms)`, 'success');
+    } else {
+      const error = await response.text();
+      showStatus(`Write failed: ${error}`, 'error');
+      hideWriteResult();
+    }
+  } catch (error) {
+    showStatus(`Invalid value: ${error.message}`, 'error');
+  } finally {
+    writeBtn.classList.remove('loading');
+    writeBtn.textContent = '✏️ Write Register';
+  }
+}
+
+function displayReadResult(value, duration) {
+  document.getElementById('read-decimal').textContent = value;
+  document.getElementById('read-hex').textContent = '0x' + value.toString(16).toUpperCase();
+  document.getElementById('read-binary').textContent = '0b' + value.toString(2);
+  document.getElementById('read-timing').textContent = `⏱️ ${duration}ms`;
+  document.getElementById('read-result').style.display = 'block';
+}
+
+function hideReadResult() {
+  document.getElementById('read-result').style.display = 'none';
+}
+
+function displayWriteResult(message, duration) {
+  const writeResult = document.getElementById('write-result');
+  writeResult.innerHTML = `
+    <div style="color: #22543d; font-weight: 600;">✅ ${message}</div>
+  `;
+  document.getElementById('write-timing').textContent = `⏱️ ${duration}ms`;
+  writeResult.style.display = 'block';
+}
+
+function hideWriteResult() {
+  document.getElementById('write-result').style.display = 'none';
+}
+</script>
+</body>
+</html>

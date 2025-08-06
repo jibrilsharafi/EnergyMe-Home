@@ -10,7 +10,6 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <script src="/html/auth.js"></script>
 
     <title>📊 Device Information</title>
     <style>
@@ -348,11 +347,11 @@
                 </div>
             </div>
 
-            <!-- Project Information Card -->
+            <!-- Product Information Card -->
             <div class="info-card">
                 <div class="card-header">
                     <span class="card-icon">🚀</span>
-                    <h2 class="card-title">Project Details</h2>
+                    <h2 class="card-title">Product Details</h2>
                 </div>
                 <div class="info-item">
                     <span class="info-label"><span class="emoji">🏢</span>Company</span>
@@ -481,22 +480,26 @@
             var wifiXhttp = new XMLHttpRequest();
             wifiXhttp.onreadystatechange = handleRequest;
             wifiXhttp.open("GET", "/rest/wifi-info", true);
-            wifiXhttp.send();            var projectXhttp = new XMLHttpRequest();
-            projectXhttp.onreadystatechange = handleRequest;
-            projectXhttp.open("GET", "/rest/project-info", true);
-            projectXhttp.send();
+            wifiXhttp.send();            
+            
+            var productXhttp = new XMLHttpRequest();
+            productXhttp.onreadystatechange = handleRequest;
+            productXhttp.open("GET", "/rest/product-info", true);
+            productXhttp.send();
 
             var statisticsXhttp = new XMLHttpRequest();
             statisticsXhttp.onreadystatechange = handleRequest;
             statisticsXhttp.open("GET", "/rest/get-statistics", true);
             statisticsXhttp.send();
-        }        function displayData(data, responseUrl) {
+        }        
+        
+        function displayData(data, responseUrl) {
             if (responseUrl.includes("device-info")) {
                 displayDeviceInfo(data);
             } else if (responseUrl.includes("wifi-info")) {
                 displayWifiInfo(data);
-            } else if (responseUrl.includes("project-info")) {
-                displayProjectInfo(data);
+            } else if (responseUrl.includes("product-info")) {
+                displayProductInfo(data);
             } else if (responseUrl.includes("get-statistics")) {
                 displayStatistics(data);
             } else {
@@ -687,7 +690,7 @@
             document.getElementById('subnetMask').textContent = data.subnetMask || 'N/A';
         }
 
-        function displayProjectInfo(data) {
+        function displayProductInfo(data) {
             document.getElementById('companyName').textContent = data.companyName || 'N/A';
             document.getElementById('fullProductName').textContent = data.fullProductName || 'N/A';
             document.getElementById('productName').textContent = data.productName || 'N/A';

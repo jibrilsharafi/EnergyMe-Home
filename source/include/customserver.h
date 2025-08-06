@@ -1,66 +1,80 @@
 #pragma once
 
+#include <WiFiManager.h>
 #include <Arduino.h>
 #include <AsyncTCP.h>
-#include <Update.h>
-#include <ArduinoJson.h>
+#include <ESPAsyncWebServer.h>
 #include <AdvancedLogger.h>
-#include <SPIFFS.h>
+#include <ArduinoJson.h>
+#include <AsyncJson.h>
+#include <Update.h>
+#include "esp_ota_ops.h"
 
-#include "ade7953.h"
-#include "led.h"
-#include "customtime.h"
-#include "customwifi.h"
-#include "crashmonitor.h"
-#include <ESPAsyncWebServer.h> // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
 #include "constants.h"
-#include "influxdbclient.h"
-#include "utils.h"
+#include "crashmonitor.h"
 #include "custommqtt.h"
+#include "mqtt.h"
+#include "influxdbclient.h"
+#include "ade7953.h"
+#include "globals.h"
 #include "binaries.h"
-#include "buttonhandler.h"
+#include "utils.h"
+#include "led.h"
 
-class CustomServer
-{
-public:
-    CustomServer(
-        AsyncWebServer &server,
-        AdvancedLogger &logger,
-        Led &led,
-        Ade7953 &ade7953,
-        CustomWifi &customWifi,
-        CustomMqtt &customMqtt,
-        InfluxDbClient &influxDbClient,
-        ButtonHandler &buttonHandler);
+// Rate limiting
+#define WEBSERVER_MAX_REQUESTS 6000
+#define WEBSERVER_WINDOW_SIZE_SECONDS 600
 
+#define MINIMUM_FREE_HEAP_OTA (20 * 1024) // Minimum free heap required for OTA updates
+#define SIZE_REPORT_UPDATE_OTA (128 * 1024) // Print progress every X bytes during OTA update
+// Here used to lie the delay before restarting or doing some operations to ensure the response is sent
+// but then I undestood that the delay was (also) blocking the AsyncTCP task itself, so it was useless ¯\_(ツ)_/¯
+
+// Health check task
+#define HEALTH_CHECK_TASK_NAME "health_check_task"
+#define HEALTH_CHECK_TASK_STACK_SIZE (4 * 1024)
+#define HEALTH_CHECK_TASK_PRIORITY 1
+#define HEALTH_CHECK_INTERVAL_MS (60 * 1000)
+#define HEALTH_CHECK_TIMEOUT_MS (5 * 1000)
+#define HEALTH_CHECK_MAX_FAILURES 3 // Maximum consecutive failures before restart
+
+// Authentication
+#define PREFERENCES_KEY_PASSWORD "password"
+#define WEBSERVER_DEFAULT_USERNAME "admin"
+#define WEBSERVER_DEFAULT_PASSWORD "energyme"
+#define WEBSERVER_REALM "EnergyMe-Home"
+#define MAX_PASSWORD_LENGTH 64
+#define MIN_PASSWORD_LENGTH 4
+
+// API Request Synchronization
+#define API_MUTEX_TIMEOUT_MS (5 * 1000) // Time to wait for API mutex for non-GET operations before giving up
+
+// Buffer sizes
+#define HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE 256 // Only needed for health check HTTP response to own server
+
+// Content length validations
+#define HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL 64
+#define HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT 512
+#define HTTP_MAX_CONTENT_LENGTH_INFLUXDB 1024
+#define HTTP_MAX_CONTENT_LENGTH_LED_BRIGHTNESS 64
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_CONFIG 1024
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_SAMPLE_TIME 64
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA 256
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_REGISTER 128
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_ENERGY 256
+#define HTTP_MAX_CONTENT_LENGTH_MQTT_CLOUD_SERVICES 64
+#define HTTP_MAX_CONTENT_LENGTH_PASSWORD 256
+
+// Crash dump chunk sizes
+#define CRASH_DUMP_DEFAULT_CHUNK_SIZE (1 * 1024)
+#define CRASH_DUMP_MAX_CHUNK_SIZE (4 * 1024) // Maximum chunk size for core dump retrieval. Can be set high thanks to chunked transfer, but above 4-8 kB it will crash the wdt
+
+namespace CustomServer {
+    // Web server management
     void begin();
+    void stop();
 
-private:
-    void _setHtmlPages();
-    void _setOta();
-    void _setRestApi();
-    void _setOtherEndpoints();
-    void _handleDoUpdate(AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final);
-    void _onUpdateSuccessful(AsyncWebServerRequest *request);
-    void _onUpdateFailed(AsyncWebServerRequest *request, const char *reason);
-    void _updateJsonFirmwareStatus(const char *status, const char *reason);
-    void _serveJsonFile(AsyncWebServerRequest *request, const char *filePath);
-
-    // Authentication methods
-    bool _requireAuth(AsyncWebServerRequest *request);
-    bool _checkAuth(AsyncWebServerRequest *request);
-    void _sendUnauthorized(AsyncWebServerRequest *request);
-
-    void _serverLog(const char *message, const char *function, LogLevel logLevel, AsyncWebServerRequest *request);
-
-    AsyncWebServer &_server;
-    AdvancedLogger &_logger;
-    Led &_led;
-    Ade7953 &_ade7953;
-    CustomWifi &_customWifi;
-    CustomMqtt &_customMqtt;
-    InfluxDbClient &_influxDbClient;
-    ButtonHandler &_buttonHandler;
-
-    String _md5;
-};
+    // Authentication management
+    void updateAuthPasswordWithOneFromPreferences();
+    bool resetWebPassword(); // This has to be accessible from buttonHandler to physically reset the password 
+}
