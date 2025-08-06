@@ -1,10 +1,10 @@
 #include "multiplexer.h"
 
 namespace Multiplexer {
-    static uint8_t _s0Pin = -1;
-    static uint8_t _s1Pin = -1;
-    static uint8_t _s2Pin = -1;
-    static uint8_t _s3Pin = -1;
+    static uint8_t _s0Pin = INVALID_PIN;
+    static uint8_t _s1Pin = INVALID_PIN;
+    static uint8_t _s2Pin = INVALID_PIN;
+    static uint8_t _s3Pin = INVALID_PIN;
 
     void begin(uint8_t s0Pin, uint8_t s1Pin, uint8_t s2Pin, uint8_t s3Pin) {
         _s0Pin = s0Pin;

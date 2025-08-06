@@ -4,6 +4,8 @@
 
 #include "structs.h"
 
+#define INVALID_PIN 255
+
 namespace Multiplexer {
     void begin(
         uint8_t s0Pin,
