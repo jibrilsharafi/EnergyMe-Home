@@ -14,7 +14,7 @@
 #define TIME_SYNC_INTERVAL_SECONDS (60 * 60)
 
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
-#define TIMESTAMP_ISO_FORMAT "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ" // ISO 8601 format with milliseconds
+#define TIMESTAMP_ISO_FORMAT "%04d-%02d-%02dT%02d:%02d:%02d.%03ldZ" // ISO 8601 format with milliseconds
 #define DATE_FORMAT "%Y-%m-%d"
 #define DATE_ISO_FORMAT "%04d-%02d-%02d"
 

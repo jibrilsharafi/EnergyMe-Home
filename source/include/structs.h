@@ -4,7 +4,7 @@
 
 #include "constants.h"
 
-struct Statistics {
+struct Statistics { // Make uint64
   uint32_t ade7953TotalInterrupts;
   uint32_t ade7953TotalHandledInterrupts;
   uint32_t ade7953ReadingCount;

@@ -186,7 +186,7 @@ namespace CustomTime {
                 utc_tm.tm_hour,
                 utc_tm.tm_min,
                 utc_tm.tm_sec,
-                0); // No milliseconds in rounded timestamp
+                uint32_t(0)); // No milliseconds in rounded timestamp. Cast needed to match format specifier
     }
 
     void timestampFromUnix(time_t unixSeconds, char* buffer, size_t bufferSize) {

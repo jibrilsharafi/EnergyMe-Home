@@ -39,7 +39,7 @@
 // ENERGY_SAVING
 #define SAVE_ENERGY_INTERVAL (5 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory 
 #define DAILY_ENERGY_CSV_HEADER "timestamp,channel,label,phase,active_imported,active_exported,reactive_imported,reactive_exported,apparent"
-#define DAILY_ENERGY_CSV_DIGITS 1 // Since the energy is in Wh, it is useless to go below 0.1 Wh
+#define DAILY_ENERGY_CSV_DIGITS 0 // Since the energy is in Wh, it is useless to go below 1 Wh, and we also save in space usage
 #define ENERGY_SAVE_THRESHOLD 100.0f // Threshold for saving energy data (in Wh) and in any case not more frequent than SAVE_ENERGY_INTERVAL
 
 // Interrupt handling
@@ -217,7 +217,7 @@
 #define BIT_24 24
 #define BIT_32 32
 
-#define INVALID_CHANNEL 999 // Invalid channel identifier, used to indicate no active channel
+#define INVALID_CHANNEL 255 // Invalid channel identifier, used to indicate no active channel
 
 // Enumeration for different types of ADE7953 interrupts
 enum class Ade7953InterruptType {
@@ -424,7 +424,7 @@ namespace Ade7953
      * @param isVerificationRequired Flag indicating whether to verify the last communication.
      * @return The value read from the register.
      */
-    int32_t readRegister(int32_t registerAddress, int32_t nBits, bool signedData, bool isVerificationRequired = true);
+    int32_t readRegister(uint16_t registerAddress, uint8_t nBits, bool signedData, bool isVerificationRequired = true);
     /**
      * Writes data to a register in the ADE7953 energy meter.
      * 
@@ -433,7 +433,7 @@ namespace Ade7953
      * @param data The data to write to the register. (nBits-bit value)
      * @param isVerificationRequired Flag indicating whether to verify the last communication.
      */
-    void writeRegister(int32_t registerAddress, int32_t nBits, int32_t data, bool isVerificationRequired = true);
+    void writeRegister(uint16_t registerAddress, uint8_t nBits, int32_t data, bool isVerificationRequired = true);
 
     // Task control
     void pauseTasks();

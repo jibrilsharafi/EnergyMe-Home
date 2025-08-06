@@ -18,15 +18,12 @@ namespace Ade7953
 
     // Timing and measurement variables
     static uint64_t _sampleTime; // in milliseconds, time between linecycles readings
-    static uint32_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
+    static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
     static float _gridFrequency = 50.0f;
 
     // Failure tracking
     static uint32_t _failureCount = 0;
     static uint64_t _firstFailureTime = 0;
-
-    // Energy saving timestamps
-    static uint64_t _lastMillisSaveEnergy = 0;
 
     // Operational flags
     static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
@@ -201,7 +198,7 @@ namespace Ade7953
     // Verification and validation functions
     static void _recordFailure();
     static void _checkForTooManyFailures();
-    static bool _verifyLastSpiCommunication(int32_t expectedAddress, int32_t expectedBits, int32_t expectedData, bool signedData, bool wasWrite);
+    static bool _verifyLastSpiCommunication(uint16_t expectedAddress, uint8_t expectedBits, int32_t expectedData, bool signedData, bool wasWrite);
     static bool _validateValue(float newValue, float min, float max);
     static bool _validateVoltage(float newValue);
     static bool _validateCurrent(float newValue);
@@ -210,7 +207,7 @@ namespace Ade7953
     static bool _validateGridFrequency(float newValue);
 
     // Utility functions
-    static uint32_t _findNextActiveChannel(uint32_t currentChannel);
+    static uint8_t _findNextActiveChannel(uint8_t currentChannel);
     static Phase _getLaggingPhase(Phase phase);
     static Phase _getLeadingPhase(Phase phase);
     // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
@@ -256,6 +253,9 @@ namespace Ade7953
         _setConfigurationFromPreferences();
         logger.debug("Done setting configuration from Preferences", TAG);
 
+        _setSampleTimeFromPreferences();
+        logger.debug("Done setting sample time from Preferences", TAG);
+
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             _setChannelDataFromPreferences(i);
         }
@@ -293,8 +293,18 @@ namespace Ade7953
     // Register operations
     // ===================
 
-    int32_t readRegister(int32_t registerAddress, int32_t nBits, bool signedData, bool isVerificationRequired) {
+    int32_t readRegister(uint16_t registerAddress, uint8_t nBits, bool signedData, bool isVerificationRequired) {
+        // Ensure the bits are valid (must be 8, 16, 24, or 32 bits)
+        if (nBits != BIT_8 && nBits != BIT_16 && nBits != BIT_24 && nBits != BIT_32) {
+            logger.error(
+                "Invalid number of bits (%u) for register read operation on register %ld (0x%04lX)", 
+                TAG, 
+                nBits, registerAddress, registerAddress
+            );
+            return INVALID_SPI_READ_WRITE; // Return an invalid value
+        }
 
+        // If we need to verify, ensure we are able to take the full SPI operation mutex
         if (isVerificationRequired) {
             if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
                 logger.error("Failed to acquire SPI operation mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
@@ -302,66 +312,79 @@ namespace Ade7953
             }
         }
 
-        // Acquire SPI mutex with timeout to prevent deadlocks
+        // Acquire direct SPI mutex
         if (_spiMutex == NULL || xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
             logger.error("Failed to acquire SPI mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
             if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
             return INVALID_SPI_READ_WRITE;
         }
 
+        // Signal the start of the SPI operation
         digitalWrite(_ssPin, LOW);
 
-        SPI.transfer(registerAddress >> 8);
-        SPI.transfer(registerAddress & 0xFF);
-        SPI.transfer(READ_TRANSFER);
+        // Send the register address (two 8-bit transfers) and read command
+        // Note: The register address is sent in big-endian format (MSB first)
+        SPI.transfer(static_cast<uint8_t>(registerAddress >> 8));
+        SPI.transfer(static_cast<uint8_t>(registerAddress & 0xFF));
+        SPI.transfer(static_cast<uint8_t>(READ_TRANSFER));
 
-        byte _response[nBits / 8];
+        // Create the array of bytes to read (one element per each 8 bits)
+        uint8_t response[nBits / 8];
         for (uint32_t i = 0; i < nBits / 8; i++) {
-            _response[i] = SPI.transfer(READ_TRANSFER);
+            response[i] = SPI.transfer(static_cast<uint8_t>(READ_TRANSFER)); // Read the data byte by byte
         }
 
+        // Signal the end of the SPI operation
         digitalWrite(_ssPin, HIGH);
 
-        xSemaphoreGive(_spiMutex); // Leave as soon as possible since no more SPI operations are needed
+        xSemaphoreGive(_spiMutex); // Leave as soon as possible since no more direct SPI operations are needed
 
-        int32_t _long_response = 0;
-        for (uint32_t i = 0; i < nBits / 8; i++) {
-            _long_response = (_long_response << 8) | _response[i];
+        // Compose the long response from the byte array
+        int32_t longResponse = 0;
+        for (uint8_t i = 0; i < nBits / 8; i++) {
+            longResponse = (longResponse << 8) | response[i];
         }
+
+        // If it is signed data, we need to check the sign bit
+        // and eventually convert it to a negative value
         if (signedData) {
-            if (_long_response & (1 << (nBits - 1))) {
-                _long_response -= (1 << nBits);
+            if (longResponse & (1 << (nBits - 1))) { // Check if the sign bit (the highest bit) is set
+                longResponse -= (1 << nBits);
             }
         }
-        logger.verbose(
-            "Read %ld from register %ld with %d bits",
-            TAG,
-            _long_response,
-            registerAddress,
-            nBits
-        );
 
+        // Verify the data if required by reading the dedicated ADE7953 register
         if (isVerificationRequired) {
-            if (!_verifyLastSpiCommunication(registerAddress, nBits, _long_response, signedData, false)) {
-                logger.debug("Failed to verify last read communication for register %ld (0x%04lX). Value was %ld (0x%04lX)", TAG, registerAddress, registerAddress, _long_response, _long_response);
+            if (!_verifyLastSpiCommunication(registerAddress, nBits, longResponse, signedData, false)) {
+                logger.debug("Failed to verify last read communication for register %lu (0x%04lX). Value was %ld (0x%04lX)", TAG, registerAddress, registerAddress, longResponse, longResponse);
                 _recordFailure();
-                _long_response = INVALID_SPI_READ_WRITE; // Return an invalid value if verification fails
+                longResponse = INVALID_SPI_READ_WRITE; // Return an invalid value if verification fails
             }
             xSemaphoreGive(_spiOperationMutex);
         }
 
-        return _long_response;
-    }
-
-    void writeRegister(int32_t registerAddress, int32_t nBits, int32_t data, bool isVerificationRequired) {
-        logger.debug(
-            "Writing %ld (0x%04lX) to register %ld (0x%04lX) with %d bits",
+        logger.verbose(
+            "Read successfully %ld from register %lu with %u bits",
             TAG,
-            data, data,
-            registerAddress, registerAddress,
+            longResponse,
+            registerAddress,
             nBits
         );
+        return longResponse;
+    }
 
+    void writeRegister(uint16_t registerAddress, uint8_t nBits, int32_t data, bool isVerificationRequired) {
+        // Ensure the bits are valid (must be 8, 16, 24, or 32 bits)
+        if (nBits != BIT_8 && nBits != BIT_16 && nBits != BIT_24 && nBits != BIT_32) {
+            logger.error(
+                "Invalid number of bits (%u) for register write operation on register %ld (0x%04lX)", 
+                TAG, 
+                nBits, registerAddress, registerAddress
+            );
+            return; // Return an invalid value
+        }
+
+        // If we need to verify, ensure we are able to take the full SPI operation mutex
         if (isVerificationRequired) {
             if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
                 logger.error("Failed to acquire SPI operation mutex for read operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
@@ -369,39 +392,52 @@ namespace Ade7953
             }
         }
 
-        // Acquire SPI mutex with timeout to prevent deadlocks
+        // Acquire direct SPI mutex
         if (_spiMutex == NULL || xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
             logger.error("Failed to acquire SPI mutex for write operation on register %ld (0x%04lX)", TAG, registerAddress, registerAddress);
             if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
             return;
         }
 
+        // Signal the start of the SPI operation
         digitalWrite(_ssPin, LOW);
 
-        SPI.transfer(registerAddress >> 8);
-        SPI.transfer(registerAddress & 0xFF);
-        SPI.transfer(WRITE_TRANSFER);
+        // Send the register address (two 8-bit transfers) and write command
+        // Note: The register address is sent in big-endian format (MSB first)
+        SPI.transfer(static_cast<uint8_t>(registerAddress >> 8));
+        SPI.transfer(static_cast<uint8_t>(registerAddress & 0xFF));
+        SPI.transfer(static_cast<uint8_t>(WRITE_TRANSFER));
 
-        if (nBits / 8 == 4) {
-            SPI.transfer((data >> 24) &  0xFF);
-            SPI.transfer((data >> 16) & 0xFF);
-            SPI.transfer((data >> 8) & 0xFF);
-            SPI.transfer(data & 0xFF);
-        } else if (nBits / 8 == 3) {
-            SPI.transfer((data >> 16) & 0xFF);
-            SPI.transfer((data >> 8) & 0xFF);
-            SPI.transfer(data & 0xFF);
-        } else if (nBits / 8 == 2) {
-            SPI.transfer((data >> 8) & 0xFF);
-            SPI.transfer(data & 0xFF);
-        } else if (nBits / 8 == 1) {
-            SPI.transfer(data & 0xFF);
+        // Send the data to write, depending on the number of bits
+        // Note: The data is sent in big-endian format (MSB first)
+        if (nBits == BIT_32) {
+            SPI.transfer(static_cast<uint8_t>((data >> 24) &  0xFF));
+            SPI.transfer(static_cast<uint8_t>((data >> 16) & 0xFF));
+            SPI.transfer(static_cast<uint8_t>((data >> 8) & 0xFF));
+            SPI.transfer(static_cast<uint8_t>(data & 0xFF));
+        } else if (nBits == BIT_24) {
+            SPI.transfer(static_cast<uint8_t>((data >> 16) & 0xFF));
+            SPI.transfer(static_cast<uint8_t>((data >> 8) & 0xFF));
+            SPI.transfer(static_cast<uint8_t>(data & 0xFF));
+        } else if (nBits == BIT_16) {
+            SPI.transfer(static_cast<uint8_t>((data >> 8) & 0xFF));
+            SPI.transfer(static_cast<uint8_t>(data & 0xFF));
+        } else if (nBits == BIT_8) {
+            SPI.transfer(static_cast<uint8_t>(data & 0xFF));
+        } else {
+            logger.error("Invalid number of bits (%u) for register write operation on register %ld (0x%04lX)", TAG, nBits, registerAddress, registerAddress);
+            digitalWrite(_ssPin, HIGH); // Ensure we release the SS pin
+            xSemaphoreGive(_spiMutex);
+            if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
+            return; // Return without writing
         }
 
+        // Signal the end of the SPI operation
         digitalWrite(_ssPin, HIGH);
 
         xSemaphoreGive(_spiMutex);
 
+        // Verify the data if required by reading the dedicated ADE7953 register
         if (isVerificationRequired) {
             if (!_verifyLastSpiCommunication(registerAddress, nBits, data, false, true)) {
                 logger.warning("Failed to verify last write communication for register %ld", TAG, registerAddress);
@@ -409,7 +445,17 @@ namespace Ade7953
             }
             xSemaphoreGive(_spiOperationMutex);
         }
-        _hasConfigurationChanged = true; // Put here since when writing a register, we inherently change the configuration and thus trigger a CRC change interrupt
+
+        // When writing a register, we inherently change the configuration and thus trigger a CRC change interrupt
+        _hasConfigurationChanged = true;
+
+        logger.debug(
+            "Written successfully %ld (0x%04lX) to register %lu (0x%04lX) with %u bits",
+            TAG,
+            data, data,
+            registerAddress, registerAddress,
+            nBits
+        );
     }
 
     // Task control
@@ -659,7 +705,7 @@ namespace Ade7953
         }
 
         ChannelData channelData;
-        for (int i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             setChannelData(channelData, i);
         }
 
@@ -692,7 +738,7 @@ namespace Ade7953
             return false;
         }
 
-        uint8_t channelIndex = jsonDocument["index"].as<uint32_t>();
+        uint8_t channelIndex = jsonDocument["index"].as<uint8_t>();
         
         if (!isChannelValid(channelIndex)) {
             logger.warning("Invalid channel index: %lu. Skipping setting data", TAG, channelIndex);
@@ -749,7 +795,7 @@ namespace Ade7953
             }
         } else {
             // Full update - set all fields
-            channelData.index = jsonDocument["index"].as<float>();
+            channelData.index = jsonDocument["index"].as<uint8_t>();
             channelData.active = jsonDocument["active"].as<bool>();
             channelData.reverse = jsonDocument["reverse"].as<bool>();
             snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
@@ -808,7 +854,7 @@ namespace Ade7953
         float reactiveEnergyExported,
         float apparentEnergy
     ) {
-        if (channelIndex < 0 || channelIndex >= CHANNEL_COUNT) {
+        if (!isChannelValid(channelIndex)) {
             logger.error("Invalid channel index %d", TAG, channelIndex);
             return false;
         }
@@ -885,9 +931,9 @@ namespace Ade7953
 
     float getAggregatedActivePower(bool includeChannel0) {
         float sum = 0.0f;
-        uint32_t activeChannelCount = 0;
+        uint8_t activeChannelCount = 0;
 
-        for (uint32_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 sum += _meterValues[i].activePower;
                 activeChannelCount++;
@@ -898,9 +944,9 @@ namespace Ade7953
 
     float getAggregatedReactivePower(bool includeChannel0) {
         float sum = 0.0f;
-        uint32_t activeChannelCount = 0;
+        uint8_t activeChannelCount = 0;
 
-        for (uint32_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 sum += _meterValues[i].reactivePower;
                 activeChannelCount++;
@@ -911,9 +957,9 @@ namespace Ade7953
 
     float getAggregatedApparentPower(bool includeChannel0) {
         float sum = 0.0f;
-        uint32_t activeChannelCount = 0;
+        uint8_t activeChannelCount = 0;
 
-        for (uint32_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 sum += _meterValues[i].apparentPower;
                 activeChannelCount++;
@@ -1189,12 +1235,12 @@ namespace Ade7953
             // Only for CYCEND interrupts, switch to next channel and set multiplexer
             // This is because thanks to the linecyc approach, the data in the ADE7953 is "frozen"
             // until the next linecyc interrupt is received, which is plenty of time to read the data
-            uint32_t previousChannel = _currentChannel; // Save the current channel before switching (but switch ASAP to ensure the ADE7953 reads the correct data)
+            uint8_t previousChannel = _currentChannel; // Save the current channel before switching (but switch ASAP to ensure the ADE7953 reads the correct data)
             _currentChannel = _findNextActiveChannel(_currentChannel);
 
             // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
             // 1 (since channel 0 does not pass through the multiplexer)
-            Multiplexer::setChannel(max(_currentChannel - 1UL, 0UL));
+            Multiplexer::setChannel(static_cast<uint8_t>(max(static_cast<int>(_currentChannel) - 1, 0)));
             
             // Process current channel (if active)
             if (previousChannel != INVALID_CHANNEL) _processChannelReading(previousChannel, linecycUnix);
@@ -1453,15 +1499,11 @@ namespace Ade7953
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_ADE7953, true)) { // true = read-only
             logger.error("Failed to open Preferences for ADE7953 configuration", TAG);
-            // Set default configuration
-            _configuration = Ade7953Configuration();
-            _sampleTime = DEFAULT_SAMPLE_TIME;
-            _updateSampleTime();
+            // Default configuration already set in constructor, so no need to do anything
             return;
         }
 
         // Load configuration values (use defaults if not found)
-        _sampleTime = preferences.getULong64(CONFIG_SAMPLE_TIME_KEY, DEFAULT_SAMPLE_TIME);
         _configuration.aVGain = preferences.getLong(CONFIG_AV_GAIN_KEY, DEFAULT_CONFIG_AV_GAIN);
         _configuration.aIGain = preferences.getLong(CONFIG_AI_GAIN_KEY, DEFAULT_CONFIG_AI_GAIN);
         _configuration.bIGain = preferences.getLong(CONFIG_BI_GAIN_KEY, DEFAULT_CONFIG_BI_GAIN);
@@ -1484,15 +1526,8 @@ namespace Ade7953
 
         preferences.end();
 
-        // Validate sample time
-        if (_sampleTime < MINIMUM_SAMPLE_TIME) {
-            logger.warning("Sample time %llu is below minimum %llu, using default", TAG, _sampleTime, MINIMUM_SAMPLE_TIME);
-            _sampleTime = DEFAULT_SAMPLE_TIME;
-        }
-
         // Apply the configuration
         _applyConfiguration(_configuration);
-        _updateSampleTime();
 
         logger.debug("Successfully set configuration from Preferences", TAG);
     }
@@ -1728,13 +1763,13 @@ namespace Ade7953
         }
 
         // Index is always required for channel operations
-        if (!jsonDocument["index"].is<uint32_t>()) {
-            logger.warning("index is missing or not uint32_t", TAG);
+        if (!jsonDocument["index"].is<uint8_t>()) {
+            logger.warning("index is missing or not uint8_t", TAG);
             return false;
         }
 
-        if (!isChannelValid(jsonDocument["index"].as<uint32_t>())) {
-            logger.warning("Invalid channel index: %lu", TAG, jsonDocument["index"].as<uint32_t>());
+        if (!isChannelValid(jsonDocument["index"].as<uint8_t>())) {
+            logger.warning("Invalid channel index: %lu", TAG, jsonDocument["index"].as<uint8_t>());
             return false;
         }
 
@@ -1916,6 +1951,8 @@ namespace Ade7953
     }
 
     void _saveHourlyEnergyToCsv() {
+        // TODO: if memory approaches to be full, we should either delete the oldest file or group the data to only keep one data point per channel per day
+        // TODO: improve effiency of saving data (keep only active energy, save binary, remove label and phase, etc.)
         logger.debug("Saving hourly energy to CSV...", TAG);
 
         // Ensure time is synchronized before saving
@@ -2078,20 +2115,23 @@ namespace Ade7953
 
         if (_channelData[channelIndex].phase == basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
             
-            // These are the three most important values to read
+            // These are the three most important (and only) values to read. All of the rest will be computed from these.
+            // These are the most reliable since they are computed on the whole line cycle, thus they incorporate any harmonic.
+            // Using directly power or RMS values would require instead constant sampling and averaging. Let's avoid that and leave
+            // the ADE7953 do the hard work for us.
             // Use multiplication instead of division as it is faster in embedded systems
             activeEnergy = float(_readActiveEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.whLsb * (_channelData[channelIndex].reverse ? -1 : 1);
             reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.varhLsb * (_channelData[channelIndex].reverse ? -1 : 1);
             apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.vahLsb;
 
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
-            // as channel 0 (sampled just before)
+            // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
             if (channelIndex == 0) {
                 voltage = float(_readVoltageRms()) * VOLT_PER_LSB;
 
                 // Update grid frequency during channel 0 reading
                 int32_t period = _readPeriod();
-                float newGridFrequency = period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / period : 0.0f;
+                float newGridFrequency = period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / float(period) : 0.0f;
                 if (_validateGridFrequency(newGridFrequency)) _gridFrequency = newGridFrequency;
             } else {
                 voltage = _meterValues[0].voltage;
@@ -2101,15 +2141,15 @@ namespace Ade7953
             // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
             // Use multiplication instead of division as it is faster in embedded systems
             float deltaHoursSampleTime = float(_sampleTime) / 1000.0f / 3600.0f; // Convert milliseconds to hours | ENSURE THEY ARE FLOAT: YOU LOST A LOT OF TIME DEBUGGING THIS!!!
-            activePower = deltaHoursSampleTime > 0 ? activeEnergy / deltaHoursSampleTime : 0.0f; // W
-            reactivePower = deltaHoursSampleTime > 0 ? reactiveEnergy / deltaHoursSampleTime : 0.0f; // VAR
-            apparentPower = deltaHoursSampleTime > 0 ? apparentEnergy / deltaHoursSampleTime : 0.0f; // VA
+            activePower = deltaHoursSampleTime > 0.0f ? activeEnergy / deltaHoursSampleTime : 0.0f; // W
+            reactivePower = deltaHoursSampleTime > 0.0f ? reactiveEnergy / deltaHoursSampleTime : 0.0f; // VAR
+            apparentPower = deltaHoursSampleTime > 0.0f ? apparentEnergy / deltaHoursSampleTime : 0.0f; // VA
 
             // It is faster and more consistent to compute the values rather than reading them from the ADE7953
-            if (apparentPower == 0) powerFactor = 0.0f; // Avoid division by zero
-            else powerFactor = activePower / apparentPower * (reactivePower >= 0 ? 1 : -1); // Apply sign as by datasheet (page 38)
+            if (apparentPower == 0.0f) powerFactor = 0.0f; // Avoid division by zero
+            else powerFactor = activePower / apparentPower * (reactivePower >= 0.0f ? 1.0f : -1.0f); // Apply sign as by datasheet (page 38)
 
-            current = voltage > 0 ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
+            current = voltage > 0.0f ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
         } else {
             // TODO: understand if this can be improved using the energy registers
             // Assume everything is the same as channel 0 except the current
@@ -2136,10 +2176,10 @@ namespace Ade7953
             // provide information about the direction of the power.
 
             if (_channelData[channelIndex].phase == _getLaggingPhase(basePhase)) {
-                powerFactor = cos(acos(_powerFactorPhaseOne) - (2.0f * PI / 3.0f));
+                powerFactor = cos(acos(_powerFactorPhaseOne) - (2.0f * (float)PI / 3.0f));
             } else if (_channelData[channelIndex].phase == _getLeadingPhase(basePhase)) {
                 // I cannot prove why, but I am SURE the minus is needed if the phase is leading
-                powerFactor = - cos(acos(_powerFactorPhaseOne) + (2.0f * PI / 3.0f));
+                powerFactor = - cos(acos(_powerFactorPhaseOne) + (2.0f * (float)PI / 3.0f));
             } else {
                 logger.error("Invalid phase %d for channel %d", TAG, _channelData[channelIndex].phase, channelIndex);
                 _recordFailure();
@@ -2157,7 +2197,8 @@ namespace Ade7953
 
         apparentPower = abs(apparentPower); // Apparent power must be positive
 
-        // If the power factor is below a certain threshold, assume everything is 0 to avoid weird readings
+        // If the power factor is below a certain threshold, assume everything is 0 to avoid weird readings sinc
+        // in any case reading reliable values at such low power factor is not possible with CTs.
         if (abs(powerFactor) < MINIMUM_POWER_FACTOR) {
             logger.verbose(
                 "%s (%d): Power factor %.3f is below %.3f, setting all values to 0", 
@@ -2227,12 +2268,14 @@ namespace Ade7953
         // Leverage the no-load feature of the ADE7953 to discard the noise
         // As such, when the energy read by the ADE7953 in the given linecycle is below
         // a certain threshold (set during setup), the read value is 0
+        // In this way, we can avoid worrying about setting up thresholds (which are always specific to one case)
+        // and instead use this feature to really discard zero-power readings.
         float deltaHoursFromLastEnergyIncrement = float(deltaMillis) / 1000.0f / 3600.0f; // Convert milliseconds to hours
-        if (activeEnergy > 0) {
+        if (activeEnergy > 0) { // Increment imported
             _meterValues[channelIndex].activeEnergyImported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
-        } else if (activeEnergy < 0) {
+        } else if (activeEnergy < 0) { // Increment exported
             _meterValues[channelIndex].activeEnergyExported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
-        } else {
+        } else { // No load active energy detected
             logger.debug(
                 "%s (%d): No load active energy reading. Setting active power and power factor to 0", 
                 TAG,
@@ -2243,11 +2286,11 @@ namespace Ade7953
             _meterValues[channelIndex].powerFactor = 0.0f;
         }
 
-        if (reactiveEnergy > 0) {
+        if (reactiveEnergy > 0) { // Increment imported reactive energy
             _meterValues[channelIndex].reactiveEnergyImported += abs(_meterValues[channelIndex].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
-        } else if (reactiveEnergy < 0) {
+        } else if (reactiveEnergy < 0) { // Increment exported reactive energy
             _meterValues[channelIndex].reactiveEnergyExported += abs(_meterValues[channelIndex].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
-        } else {
+        } else { // No load reactive energy detected
             logger.debug(
                 "%s (%d): No load reactive energy reading. Setting reactive power to 0", 
                 TAG,
@@ -2327,7 +2370,7 @@ namespace Ade7953
     // ==================================
 
     void _setLinecyc(uint32_t linecyc) {
-        uint32_t constrainedLinecyc = min(max(linecyc, ADE7953_MIN_LINECYC), ADE7953_MAX_LINECYC);
+        int32_t constrainedLinecyc = min(max(linecyc, ADE7953_MIN_LINECYC), ADE7953_MAX_LINECYC);
         writeRegister(LINECYC_16, BIT_16, constrainedLinecyc);
         logger.debug("Linecyc set to %d", TAG, constrainedLinecyc);
     }
@@ -2341,6 +2384,9 @@ namespace Ade7953
                 case MeasurementType::CURRENT:
                     writeRegister(PGA_IA_8, BIT_8, pgaGain);
                     break;
+                default:
+                    logger.error("Invalid measurement type %s for channel A", TAG, MEASUREMENT_TYPE_TO_STRING(measurementType));
+                    return;
             }
         } else {
             switch (measurementType) {
@@ -2350,6 +2396,9 @@ namespace Ade7953
                 case MeasurementType::CURRENT:
                     writeRegister(PGA_IB_8, BIT_8, pgaGain);
                     break;
+                default:
+                    logger.error("Invalid measurement type %s for channel B", TAG, MEASUREMENT_TYPE_TO_STRING(measurementType));
+                    return;
             }
         }
 
@@ -2380,6 +2429,9 @@ namespace Ade7953
                 case MeasurementType::APPARENT_POWER:
                     writeRegister(AVAGAIN_32, BIT_32, gain);
                     break;
+                default:
+                    logger.error("Invalid measurement type %s for channel A", TAG, MEASUREMENT_TYPE_TO_STRING(measurementType));
+                    return;
             }
         } else {
             switch (measurementType) {
@@ -2398,6 +2450,9 @@ namespace Ade7953
                 case MeasurementType::APPARENT_POWER:
                     writeRegister(BVAGAIN_32, BIT_32, gain);
                     break;
+                default:
+                    logger.error("Invalid measurement type %s for channel B", TAG, MEASUREMENT_TYPE_TO_STRING(measurementType));
+                    return;
             }
         }
 
@@ -2422,6 +2477,9 @@ namespace Ade7953
                 case MeasurementType::APPARENT_POWER:
                     writeRegister(AVAOS_32, BIT_32, offset);
                     break;
+                default:
+                    logger.error("Invalid measurement type %s for channel A", TAG, MEASUREMENT_TYPE_TO_STRING(measurementType));
+                    return;
             }
         } else {
             switch (measurementType) {
@@ -2440,6 +2498,9 @@ namespace Ade7953
                 case MeasurementType::APPARENT_POWER:
                     writeRegister(BVAOS_32, BIT_32, offset);
                     break;
+                default:
+                    logger.error("Invalid measurement type %s for channel B", TAG, MEASUREMENT_TYPE_TO_STRING(measurementType));
+                    return;
             }
         }
 
@@ -2455,12 +2516,12 @@ namespace Ade7953
             logger.error("Failed to open Preferences for loading sample time", TAG);
             return;
         }
-        uint32_t sampleTime = preferences.getULong(CONFIG_SAMPLE_TIME_KEY, DEFAULT_SAMPLE_TIME);
+        uint64_t sampleTime = preferences.getULong64(CONFIG_SAMPLE_TIME_KEY, DEFAULT_SAMPLE_TIME);
         preferences.end();
         
         setSampleTime(sampleTime);
 
-        logger.debug("Loaded sample time %d ms from preferences", TAG, sampleTime);
+        logger.debug("Loaded sample time %llu ms from preferences", TAG, sampleTime);
     }
 
     void _saveSampleTimeToPreferences() {
@@ -2477,10 +2538,11 @@ namespace Ade7953
 
     void _updateSampleTime() { //TODO: We could get rid of this and instead directly use the linecycles as input, and reading the period, making the code agnostic to 50 or 60 Hz
         // Example: sample time at 1000 ms -> 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
-        uint64_t linecyc = _sampleTime * CYCLES_PER_SECOND * 2 / 1000;
+        uint64_t calculatedLinecyc = _sampleTime * CYCLES_PER_SECOND * 2 / 1000;
+        uint32_t linecyc = static_cast<uint32_t>(calculatedLinecyc);
         _setLinecyc(linecyc);
 
-        logger.info("Successfully updated sample time to %llu ms (%llu line cycles)", TAG, _sampleTime, linecyc);
+        logger.info("Successfully updated sample time to %llu ms (%lu line cycles)", TAG, _sampleTime, linecyc);
     }
 
     // ADE7953 register reading functions
@@ -2551,7 +2613,7 @@ namespace Ade7953
     // Verification and validation functions
     // =====================================
 
-    void _recordFailure() {
+    void _recordFailure() { // Record failure per channel and disable channel
         
         logger.debug("Recording failure for ADE7953 communication", TAG);
 
@@ -2586,8 +2648,9 @@ namespace Ade7953
         }
     }
 
-    bool _verifyLastSpiCommunication(int32_t expectedAddress, int32_t expectedBits, int32_t expectedData, bool signedData, bool wasWrite) 
-    {        
+    bool _verifyLastSpiCommunication(uint16_t expectedAddress, uint8_t expectedBits, int32_t expectedData, bool signedData, bool wasWrite) 
+    {
+        // To verify
         int32_t lastAddress = readRegister(LAST_ADD_16, 16, false, false);
         if (lastAddress != expectedAddress) {
             logger.warning(
@@ -2610,8 +2673,8 @@ namespace Ade7953
         }    
         
         // Select the appropriate LAST_RWDATA register based on the bit size
-        int32_t dataRegister;
-        int32_t dataRegisterBits;
+        uint16_t dataRegister;
+        uint8_t dataRegisterBits;
         
         if (expectedBits == BIT_8) {
             dataRegister = LAST_RWDATA_8;
@@ -2633,7 +2696,7 @@ namespace Ade7953
             return false;
         }
 
-        logger.verbose("Last communication verified successfully", TAG);
+        logger.verbose("Last communication verified successfully (register: 0x%04lX)", TAG, dataRegister);
         return true;
     }
 
@@ -2668,15 +2731,15 @@ namespace Ade7953
     // Utility functions
     // =================
 
-    uint32_t _findNextActiveChannel(uint32_t currentChannel) {
+    uint8_t _findNextActiveChannel(uint8_t currentChannel) {
         // Since the current channel is initialized with the invalid one (which has a very high value),
         // we need to convert it to a valid channel index (0 is always active) and move on
-        uint32_t realCurrentChannel = currentChannel == INVALID_CHANNEL ? 0 : currentChannel;
+        uint8_t realCurrentChannel = currentChannel == INVALID_CHANNEL ? 0 : currentChannel;
 
         // This returns the next channel (except 0, which has to be always active) that is active
         // For i that starts from currentChannel + 1, it will return the first active channel found
         // up to the maximum channel count
-        for (uint32_t i = realCurrentChannel + 1; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = realCurrentChannel + 1; i < CHANNEL_COUNT; i++) {
             if (i != 0 && isChannelActive(i)) {
                 return i;
             }
@@ -2684,7 +2747,7 @@ namespace Ade7953
 
         // If no active channel is found after the current one, it will start from 1 and go up to currentChannel
         // simulating us starting from the beginning
-        for (uint32_t i = 1; i < realCurrentChannel; i++) {
+        for (uint8_t i = 1; i < realCurrentChannel; i++) {
             if (i != 0 && isChannelActive(i)) {
                 return i;
             }
