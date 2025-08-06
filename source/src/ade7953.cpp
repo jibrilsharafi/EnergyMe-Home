@@ -1324,14 +1324,12 @@ namespace Ade7953
         logger.debug("ADE7953 meter reading task started", TAG);
         
         _meterReadingTaskShouldRun = true;
-        // Wait for the interrupt (every sample time plus some headroom)
-        const TickType_t timeoutTicks = pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + _sampleTime);
         
         while (_meterReadingTaskShouldRun)
         {
             // Wait for interrupt signal with timeout
             if (_ade7953InterruptSemaphore != NULL &&
-                xSemaphoreTake(_ade7953InterruptSemaphore, timeoutTicks) == pdTRUE)
+                xSemaphoreTake(_ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + _sampleTime)) == pdTRUE)
             {
                 // Grab as quickly as possible the current unix time in milliseconds
                 // that refers to the "true" time at which the data is temporarily frozen in the ADE7953
@@ -1363,6 +1361,10 @@ namespace Ade7953
                         // Already logged in _handleInterrupt(), just continue
                         break;
                 }
+            } else {
+                // TODO: if we don't read any value of a bit, it should indicate some problem. Use #if with env variable because in development or similar
+                // the board is not connected to the grid and thus no interrupts are received after X line cycles
+                logger.verbose("No ADE7953 interrupt received within timeout, checking for stop notification", TAG);
             }
             
             // Check for stop notification (non-blocking) - this gives immediate shutdown response
@@ -2032,7 +2034,7 @@ namespace Ade7953
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) _saveEnergyToPreferences(i, true); // Force save to ensure all values are saved
         }
-        _saveHourlyEnergyToCsv();
+        if (CustomTime::isNowCloseToHour()) _saveHourlyEnergyToCsv(); // If we are not close to the hour, we avoid saving since we will save at the hour anyway on the next reboot
 
         logger.debug("Successfully saved complete energy data", TAG);
     }

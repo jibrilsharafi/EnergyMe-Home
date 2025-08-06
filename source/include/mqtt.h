@@ -8,6 +8,9 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include "mbedtls/gcm.h"
+#include "mbedtls/sha256.h"
+#include "mbedtls/base64.h"
 
 #include "ade7953.h"
 #include "binaries.h"

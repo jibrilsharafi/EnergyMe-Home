@@ -7,8 +7,6 @@
 #include <HTTPClient.h>
 #include <SPIFFS.h>
 #include <Preferences.h>
-#include "mbedtls/aes.h"
-#include "mbedtls/base64.h"
 #include <esp_system.h>
 #include <rom/rtc.h>
 #include <vector>

@@ -184,34 +184,18 @@ namespace CustomWifi
     Led::blinkBlueSlow(Led::PRIO_MEDIUM);
     
     // Try initial connection with retries for handshake timeouts
-    int32_t connectionAttempts = 0;
-    const int32_t maxAttempts = 3;
-    bool connected = false;
-    uint32_t loops = 0;
-    while (!connected && connectionAttempts < maxAttempts && loops < MAX_LOOP_ITERATIONS) {
-      connectionAttempts++;
-      logger.debug("WiFi connection attempt %d/%d", TAG, connectionAttempts, maxAttempts);
+    logger.debug("Attempt WiFi connection", TAG);
       
-      if (_wifiManager.autoConnect(hostname)) {
-        connected = true;
-        break;
-      }
-      
-      // If failed, wait a bit before retry (helps with handshake timeouts)
-      if (connectionAttempts < maxAttempts) {
-        logger.warning("Connection attempt %d failed, retrying in 5 seconds...", TAG, connectionAttempts);
-        delay(5000);
-      }
+    if (!_wifiManager.autoConnect(hostname)) {
+      logger.warning("WiFi connection failed, exiting wifi task", TAG);
+      Led::blinkRedFast(Led::PRIO_URGENT);
+      _taskShouldRun = false;
+      _cleanup();
+      _wifiTaskHandle = NULL;
+      vTaskDelete(NULL);
+      return;
     }
-    
-    if (!connected) {
-      logger.error("All WiFi connection attempts failed - restarting", TAG);
-      Led::doubleBlinkYellow(Led::PRIO_CRITICAL);
-      delay(1000);
-      // Do not wait for any further operations, since the WiFi is critical and this is the first connection attempt
-      ESP.restart();
-    }
-    
+
     Led::clearPattern(Led::PRIO_MEDIUM);
     
     // If we reach here, we are connected
