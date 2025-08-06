@@ -10,7 +10,6 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <script src="/html/auth.js"></script>
 
     <title>Calibration</title>
     <style>
@@ -39,6 +38,7 @@
 <body>
     <div class="buttonNavigation-container">
         <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
+        <a class="buttonNavigation" type="inner" href="/ade7953-tester">🔬 Register Tester</a>
     </div>
     <div id="calibrationBox" class="section-box">
         <h1>Calibration</h1>
@@ -47,8 +47,6 @@
         <button id="addButton" class="buttonForm" onclick="addNewCalibration()">➕ Add</button>
         <form id="calibrationForm">
             <h3>Values</h3>
-            <p><span class="list-key">Voltage:</span> <input id="vLsb" name="vLsb" type="number" required> <span
-                    class="list-unit">LSB/V</span></p>
             <p><span class="list-key">Current:</span> <input id="aLsb" name="aLsb" type="number" required> <span
                     class="list-unit">LSB/A</span></p>
             <p><span class="list-key">Power:</span> <input id="wLsb" name="wLsb" type="number" required> <span
@@ -129,7 +127,6 @@
             var selectedCalibration = calibrationData[selectedKey];
 
             if (selectedCalibration) {
-                document.getElementById('vLsb').value = selectedCalibration.vLsb;
                 document.getElementById('aLsb').value = selectedCalibration.aLsb;
                 document.getElementById('wLsb').value = selectedCalibration.wLsb;
                 document.getElementById('varLsb').value = selectedCalibration.varLsb;
@@ -191,7 +188,6 @@
 
             var calibrationDataModified = {
                 [label]: {
-                    vLsb: parseFloat(document.getElementById('vLsb').value),
                     aLsb: parseFloat(document.getElementById('aLsb').value),
                     wLsb: parseFloat(document.getElementById('wLsb').value),
                     varLsb: parseFloat(document.getElementById('varLsb').value),

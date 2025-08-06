@@ -269,3 +269,10 @@ Authentication implementation spans multiple modules:
 - **Configuration Files**: Secure storage of hashed passwords and session data
 
 The system uses ESP32 Preferences for secure credential storage and implements comprehensive error handling with fallback mechanisms for enhanced reliability.
+
+**Various notes**
+- The PSRAM usage should not interfere heavily with Preferences, and in any case it should at worst slow it down, not crash the system. Given this assumption, the usage of Preferences is retained in the single modules and files, instead of being centralized in a single file.
+- The ArduinoJson library uses by default the PSRAM when possible, thus already optimizing memory usage.
+- The arduino framework converts delay to vTaskDelay anyway, so we use delay for cleaner APIs.
+- The custom `millis64()` function is used in place of the standard `millis()` that returns a 32-bit value and thus overflows after only 49 days.
+- The PSRAM seems to be used only when the heap is almost saturated, but it works in the end.

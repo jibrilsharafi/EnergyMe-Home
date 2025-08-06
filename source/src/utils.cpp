@@ -2,467 +2,575 @@
 
 static const char *TAG = "utils";
 
-void getJsonProductInfo(JsonDocument& jsonDocument) { 
-    logger.debug("Getting product info...", TAG);
+static TaskHandle_t _restartTaskHandle = NULL;
+static TaskHandle_t _maintenanceTaskHandle = NULL;
+static bool _maintenanceTaskShouldRun = false;
 
-    jsonDocument["companyName"] = COMPANY_NAME;
-    jsonDocument["fullProductName"] = FULL_PRODUCT_NAME;
-    jsonDocument["productName"] = PRODUCT_NAME;
-    jsonDocument["productDescription"] = PRODUCT_DESCRIPTION;
-    jsonDocument["githubUrl"] = GITHUB_URL;
-    jsonDocument["author"] = AUTHOR;
-    jsonDocument["authorEmail"] = AUTHOR_EMAIL;
+// Static function declarations
+static void _factoryReset();
+static void _restartSystem();
+static void _maintenanceTask(void* parameter);
 
-    logger.debug("Product info retrieved", TAG);
-}
+// New system info functions
+void populateSystemStaticInfo(SystemStaticInfo& info) {
+    // Initialize the struct to ensure clean state
+    memset(&info, 0, sizeof(info));
 
-void getJsonDeviceInfo(JsonDocument& jsonDocument)
-{
-    logger.debug("Getting device info...", TAG);
-
-    jsonDocument["system"]["uptime"] = millis();
-    jsonDocument["system"]["systemTime"] = customTime.getTimestamp();
-
-    jsonDocument["firmware"]["buildVersion"] = FIRMWARE_BUILD_VERSION;
-    jsonDocument["firmware"]["buildDate"] = FIRMWARE_BUILD_DATE;
-    jsonDocument["firmware"]["buildTime"] = FIRMWARE_BUILD_TIME;
-
-    jsonDocument["memory"]["heap"]["free"] = ESP.getFreeHeap();
-    jsonDocument["memory"]["heap"]["total"] = ESP.getHeapSize();
-    jsonDocument["memory"]["heap"]["used"] = ESP.getHeapSize() - ESP.getFreeHeap();
-    jsonDocument["memory"]["heap"]["freePercentage"] = ((float)ESP.getFreeHeap() / ESP.getHeapSize()) * 100.0;
-    jsonDocument["memory"]["heap"]["usedPercentage"] = ((float)(ESP.getHeapSize() - ESP.getFreeHeap()) / ESP.getHeapSize()) * 100.0;
+    // Product info
+    snprintf(info.companyName, sizeof(info.companyName), "%s", COMPANY_NAME);
+    snprintf(info.productName, sizeof(info.productName), "%s", PRODUCT_NAME);
+    snprintf(info.fullProductName, sizeof(info.fullProductName), "%s", FULL_PRODUCT_NAME);
+    snprintf(info.productDescription, sizeof(info.productDescription), "%s", PRODUCT_DESCRIPTION);
+    snprintf(info.githubUrl, sizeof(info.githubUrl), "%s", GITHUB_URL);
+    snprintf(info.author, sizeof(info.author), "%s", AUTHOR);
+    snprintf(info.authorEmail, sizeof(info.authorEmail), "%s", AUTHOR_EMAIL);
     
-    jsonDocument["memory"]["spiffs"]["free"] = SPIFFS.totalBytes() - SPIFFS.usedBytes();
-    jsonDocument["memory"]["spiffs"]["total"] = SPIFFS.totalBytes();
-    jsonDocument["memory"]["spiffs"]["used"] = SPIFFS.usedBytes();
-    jsonDocument["memory"]["spiffs"]["freePercentage"] = ((float)(SPIFFS.totalBytes() - SPIFFS.usedBytes()) / SPIFFS.totalBytes()) * 100.0;
-    jsonDocument["memory"]["spiffs"]["usedPercentage"] = ((float)SPIFFS.usedBytes() / SPIFFS.totalBytes()) * 100.0;
+    // Firmware info
+    snprintf(info.buildVersion, sizeof(info.buildVersion), "%s", FIRMWARE_BUILD_VERSION);
+    snprintf(info.buildDate, sizeof(info.buildDate), "%s", FIRMWARE_BUILD_DATE);
+    snprintf(info.buildTime, sizeof(info.buildTime), "%s", FIRMWARE_BUILD_TIME);
+    snprintf(info.sketchMD5, sizeof(info.sketchMD5), "%s", ESP.getSketchMD5().c_str());
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    snprintf(info.partitionAppName, sizeof(info.partitionAppName), "%s", running->label);
+    
+    // Hardware info
+    snprintf(info.chipModel, sizeof(info.chipModel), "%s", ESP.getChipModel());
+    info.chipRevision = ESP.getChipRevision();
+    info.chipCores = ESP.getChipCores();
+    info.chipId = ESP.getEfuseMac();
+    info.flashChipSizeBytes = ESP.getFlashChipSize();
+    info.flashChipSpeedHz = ESP.getFlashChipSpeed();
+    info.psramSizeBytes = ESP.getPsramSize();
+    info.cpuFrequencyMHz = ESP.getCpuFreqMHz();
+    
+    // // Crash and reset monitoring
+    info.crashCount = CrashMonitor::getCrashCount();
+    info.consecutiveCrashCount = CrashMonitor::getConsecutiveCrashCount();
+    info.resetCount = CrashMonitor::getResetCount();
+    info.consecutiveResetCount = CrashMonitor::getConsecutiveResetCount();
+    info.lastResetReason = (uint32_t)esp_reset_reason();
+    snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s", CrashMonitor::getResetReasonString(esp_reset_reason()));
+    info.lastResetWasCrash = CrashMonitor::isLastResetDueToCrash();
+    
+    // SDK info
+    snprintf(info.sdkVersion, sizeof(info.sdkVersion), "%s", ESP.getSdkVersion());
+    snprintf(info.coreVersion, sizeof(info.coreVersion), "%s", ESP.getCoreVersion());
+    
+    // Device ID
+    getDeviceId(info.deviceId, sizeof(info.deviceId));
 
-
-    jsonDocument["chip"]["model"] = ESP.getChipModel();
-    jsonDocument["chip"]["revision"] = ESP.getChipRevision();
-    jsonDocument["chip"]["cpuFrequency"] = ESP.getCpuFreqMHz();
-    jsonDocument["chip"]["sdkVersion"] = ESP.getSdkVersion();
-    jsonDocument["chip"]["id"] = ESP.getEfuseMac();
-
-    jsonDocument["device"]["id"] = getDeviceId();
-
-    logger.debug("Device info retrieved", TAG);
+    logger.debug("Static system info populated", TAG);
 }
 
-void deserializeJsonFromSpiffs(const char* path, JsonDocument& jsonDocument) {
-    logger.debug("Deserializing JSON from SPIFFS", TAG);
+void populateSystemDynamicInfo(SystemDynamicInfo& info) {
+    // Initialize the struct to ensure clean state
+    memset(&info, 0, sizeof(info));
 
-    TRACE();
-    File _file = SPIFFS.open(path, FILE_READ);
-    if (!_file){
-        logger.error("%s Failed to open file", TAG, path);
-        return;
-    }
+    // Time
+    info.uptimeMilliseconds = millis64();
+    info.uptimeSeconds = info.uptimeMilliseconds / 1000;
+    CustomTime::getTimestamp(info.currentTimestamp, sizeof(info.currentTimestamp));
+    CustomTime::getTimestampIso(info.currentTimestampIso, sizeof(info.currentTimestampIso));
 
-    DeserializationError _error = deserializeJson(jsonDocument, _file);
-    _file.close();
-    if (_error){
-        logger.error("Failed to deserialize file %s. Error: %s", TAG, path, _error.c_str());
-        return;
-    }
-
-    if (jsonDocument.isNull() || jsonDocument.size() == 0){
-        logger.debug("%s JSON being deserialized is {}", TAG, path);
+    // Memory - Heap
+    info.heapTotalBytes = ESP.getHeapSize();
+    info.heapFreeBytes = ESP.getFreeHeap();
+    info.heapUsedBytes = info.heapTotalBytes - info.heapFreeBytes;
+    info.heapMinFreeBytes = ESP.getMinFreeHeap();
+    info.heapMaxAllocBytes = ESP.getMaxAllocHeap();
+    info.heapFreePercentage = info.heapTotalBytes > 0 ? ((float)info.heapFreeBytes / (float)info.heapTotalBytes) * 100.0f : 0.0f;
+    info.heapUsedPercentage = 100.0f - info.heapFreePercentage;
+    
+    // Memory - PSRAM
+    info.psramTotalBytes = ESP.getPsramSize();
+    if (info.psramTotalBytes > 0) {
+        info.psramFreeBytes = ESP.getFreePsram();
+        info.psramUsedBytes = info.psramTotalBytes - info.psramFreeBytes;
+        info.psramMinFreeBytes = ESP.getMinFreePsram();
+        info.psramMaxAllocBytes = ESP.getMaxAllocPsram();
+        info.psramFreePercentage = info.psramTotalBytes > 0 ? ((float)info.psramFreeBytes / (float)info.psramTotalBytes) * 100.0f : 0.0f;
+        info.psramUsedPercentage = 100.0f - info.psramFreePercentage;
+    } else {
+        info.psramFreeBytes = 0;
+        info.psramUsedBytes = 0;
+        info.psramMinFreeBytes = 0;
+        info.psramMaxAllocBytes = 0;
+        info.psramFreePercentage = 0.0f;
+        info.psramUsedPercentage = 0.0f;
     }
     
-    String _jsonString;
-    serializeJson(jsonDocument, _jsonString);
+    // Storage - SPIFFS
+    info.spiffsTotalBytes = SPIFFS.totalBytes();
+    info.spiffsUsedBytes = SPIFFS.usedBytes();
+    info.spiffsFreeBytes = info.spiffsTotalBytes - info.spiffsUsedBytes;
+    info.spiffsFreePercentage = info.spiffsTotalBytes > 0 ? ((float)info.spiffsFreeBytes / (float)info.spiffsTotalBytes) * 100.0f : 0.0f;
+    info.spiffsUsedPercentage = 100.0f - info.spiffsFreePercentage;
 
-    logger.debug("JSON deserialized from SPIFFS correctly: %s", TAG, _jsonString.c_str());
+    // Storage - NVS
+    nvs_stats_t nvs_stats;
+    esp_err_t err = nvs_get_stats(NULL, &nvs_stats);
+    if (err != ESP_OK) {
+        logger.error("Failed to get NVS stats: %s", TAG, esp_err_to_name(err));
+        info.usedEntries = 0;
+        info.availableEntries = 0;
+        info.totalUsableEntries = 0;
+        info.usedEntriesPercentage = 0.0f;
+        info.availableEntriesPercentage = 0.0f;
+        info.namespaceCount = 0;
+    } else {
+        info.usedEntries = nvs_stats.used_entries;
+        info.availableEntries = nvs_stats.available_entries;
+        info.totalUsableEntries = info.usedEntries + info.availableEntries; // Some are reserved
+        info.usedEntriesPercentage = info.totalUsableEntries > 0 ? ((float)info.usedEntries / (float)info.totalUsableEntries) * 100.0f : 0.0f;
+        info.availableEntriesPercentage = info.totalUsableEntries > 0 ? ((float)info.availableEntries / (float)info.totalUsableEntries) * 100.0f : 0.0f;
+        info.namespaceCount = nvs_stats.namespace_count;
+    }
+
+    // Performance
+    info.temperatureCelsius = temperatureRead();
+    
+    // Network (if connected)
+    if (CustomWifi::isFullyConnected()) {
+        info.wifiConnected = true;
+        info.wifiRssi = WiFi.RSSI();
+        snprintf(info.wifiSsid, sizeof(info.wifiSsid), "%s", WiFi.SSID().c_str());
+        snprintf(info.wifiLocalIp, sizeof(info.wifiLocalIp), "%s", WiFi.localIP().toString().c_str());
+        snprintf(info.wifiGatewayIp, sizeof(info.wifiGatewayIp), "%s", WiFi.gatewayIP().toString().c_str());
+        snprintf(info.wifiSubnetMask, sizeof(info.wifiSubnetMask), "%s", WiFi.subnetMask().toString().c_str());
+        snprintf(info.wifiDnsIp, sizeof(info.wifiDnsIp), "%s", WiFi.dnsIP().toString().c_str());
+        snprintf(info.wifiBssid, sizeof(info.wifiBssid), "%s", WiFi.BSSIDstr().c_str());
+    } else {
+        info.wifiConnected = false;
+        info.wifiRssi = -100; // Invalid RSSI
+        snprintf(info.wifiSsid, sizeof(info.wifiSsid), "Not connected");
+        snprintf(info.wifiLocalIp, sizeof(info.wifiLocalIp), "0.0.0.0");
+        snprintf(info.wifiGatewayIp, sizeof(info.wifiGatewayIp), "0.0.0.0");
+        snprintf(info.wifiSubnetMask, sizeof(info.wifiSubnetMask), "0.0.0.0");
+        snprintf(info.wifiDnsIp, sizeof(info.wifiDnsIp), "0.0.0.0");
+        snprintf(info.wifiBssid, sizeof(info.wifiBssid), "00:00:00:00:00:00");
+    }
+    snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
+   
+    logger.debug("Dynamic system info populated", TAG);
 }
 
-bool serializeJsonToSpiffs(const char* path, JsonDocument& jsonDocument){
-    logger.debug("Serializing JSON to SPIFFS...", TAG);
+void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
+    // Product
+    doc["product"]["companyName"] = info.companyName;
+    doc["product"]["productName"] = info.productName;
+    doc["product"]["fullProductName"] = info.fullProductName;
+    doc["product"]["productDescription"] = info.productDescription;
+    doc["product"]["githubUrl"] = info.githubUrl;
+    doc["product"]["author"] = info.author;
+    doc["product"]["authorEmail"] = info.authorEmail;
+    
+    // Firmware
+    doc["firmware"]["buildVersion"] = info.buildVersion;
+    doc["firmware"]["buildDate"] = info.buildDate;
+    doc["firmware"]["buildTime"] = info.buildTime;
+    doc["firmware"]["sketchMD5"] = info.sketchMD5;
+    doc["firmware"]["partitionAppName"] = info.partitionAppName;
 
-    TRACE();
-    File _file = SPIFFS.open(path, FILE_WRITE);
-    if (!_file){
-        logger.error("%s Failed to open file", TAG, path);
+    // Hardware
+    doc["hardware"]["chipModel"] = info.chipModel;
+    doc["hardware"]["chipRevision"] = info.chipRevision;
+    doc["hardware"]["chipCores"] = info.chipCores;
+    doc["hardware"]["chipId"] = (uint64_t)info.chipId;
+    doc["hardware"]["cpuFrequencyMHz"] = info.cpuFrequencyMHz;
+    doc["hardware"]["flashChipSizeBytes"] = info.flashChipSizeBytes;
+    doc["hardware"]["flashChipSpeedHz"] = info.flashChipSpeedHz;
+    doc["hardware"]["psramSizeBytes"] = info.psramSizeBytes;
+    doc["hardware"]["cpuFrequencyMHz"] = info.cpuFrequencyMHz;
+
+    // Crash monitoring
+    doc["monitoring"]["crashCount"] = info.crashCount;
+    doc["monitoring"]["consecutiveCrashCount"] = info.consecutiveCrashCount;
+    doc["monitoring"]["resetCount"] = info.resetCount;
+    doc["monitoring"]["consecutiveResetCount"] = info.consecutiveResetCount;
+    doc["monitoring"]["lastResetReason"] = info.lastResetReason;
+    doc["monitoring"]["lastResetReasonString"] = info.lastResetReasonString;
+    doc["monitoring"]["lastResetWasCrash"] = info.lastResetWasCrash;
+    
+    // SDK
+    doc["sdk"]["sdkVersion"] = info.sdkVersion;
+    doc["sdk"]["coreVersion"] = info.coreVersion;
+    
+    // Device
+    doc["device"]["id"] = info.deviceId;
+
+    logger.debug("Static system info converted to JSON", TAG);
+}
+
+void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
+    // Time
+    doc["time"]["uptimeMilliseconds"] = (uint64_t)info.uptimeMilliseconds;
+    doc["time"]["uptimeSeconds"] = info.uptimeSeconds;
+    doc["time"]["currentTimestamp"] = info.currentTimestamp;
+    doc["time"]["currentTimestampIso"] = info.currentTimestampIso;
+
+    // Memory - Heap
+    doc["memory"]["heap"]["totalBytes"] = info.heapTotalBytes;
+    doc["memory"]["heap"]["freeBytes"] = info.heapFreeBytes;
+    doc["memory"]["heap"]["usedBytes"] = info.heapUsedBytes;
+    doc["memory"]["heap"]["minFreeBytes"] = info.heapMinFreeBytes;
+    doc["memory"]["heap"]["maxAllocBytes"] = info.heapMaxAllocBytes;
+    doc["memory"]["heap"]["freePercentage"] = info.heapFreePercentage;
+    doc["memory"]["heap"]["usedPercentage"] = info.heapUsedPercentage;
+    
+    // Memory - PSRAM
+    doc["memory"]["psram"]["totalBytes"] = info.psramTotalBytes;
+    doc["memory"]["psram"]["freeBytes"] = info.psramFreeBytes;
+    doc["memory"]["psram"]["usedBytes"] = info.psramUsedBytes;
+    doc["memory"]["psram"]["minFreeBytes"] = info.psramMinFreeBytes;
+    doc["memory"]["psram"]["maxAllocBytes"] = info.psramMaxAllocBytes;
+    doc["memory"]["psram"]["freePercentage"] = info.psramFreePercentage;
+    doc["memory"]["psram"]["usedPercentage"] = info.psramUsedPercentage;
+    
+    // Storage
+    doc["storage"]["spiffs"]["totalBytes"] = info.spiffsTotalBytes;
+    doc["storage"]["spiffs"]["usedBytes"] = info.spiffsUsedBytes;
+    doc["storage"]["spiffs"]["freeBytes"] = info.spiffsFreeBytes;
+    doc["storage"]["spiffs"]["freePercentage"] = info.spiffsFreePercentage;
+    doc["storage"]["spiffs"]["usedPercentage"] = info.spiffsUsedPercentage;
+
+    // Storage - NVS
+    doc["storage"]["nvs"]["totalUsableEntries"] = info.totalUsableEntries;
+    doc["storage"]["nvs"]["usedEntries"] = info.usedEntries;
+    doc["storage"]["nvs"]["availableEntries"] = info.availableEntries;
+    doc["storage"]["nvs"]["usedEntriesPercentage"] = info.usedEntriesPercentage;
+    doc["storage"]["nvs"]["availableEntriesPercentage"] = info.availableEntriesPercentage;
+    doc["storage"]["nvs"]["namespaceCount"] = info.namespaceCount;
+
+    // Performance
+    doc["performance"]["temperatureCelsius"] = info.temperatureCelsius;
+    
+    // Network
+    doc["network"]["wifiConnected"] = info.wifiConnected;
+    doc["network"]["wifiSsid"] = info.wifiSsid;
+    doc["network"]["wifiMacAddress"] = info.wifiMacAddress;
+    doc["network"]["wifiLocalIp"] = info.wifiLocalIp;
+    doc["network"]["wifiGatewayIp"] = info.wifiGatewayIp;
+    doc["network"]["wifiSubnetMask"] = info.wifiSubnetMask;
+    doc["network"]["wifiDnsIp"] = info.wifiDnsIp;
+    doc["network"]["wifiBssid"] = info.wifiBssid;
+    doc["network"]["wifiRssi"] = info.wifiRssi;
+
+    logger.debug("Dynamic system info converted to JSON", TAG);
+}
+
+void getJsonDeviceStaticInfo(JsonDocument& doc) {
+    SystemStaticInfo info;
+    populateSystemStaticInfo(info);
+    systemStaticInfoToJson(info, doc);
+}
+
+void getJsonDeviceDynamicInfo(JsonDocument& doc) {
+    SystemDynamicInfo info;
+    populateSystemDynamicInfo(info);
+    systemDynamicInfoToJson(info, doc);
+}
+
+bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError) {
+    // Validate inputs
+    if (!buffer || bufferSize == 0) {
+        logger.warning("Invalid buffer parameters passed to safeSerializeJson", TAG);
         return false;
     }
 
-    serializeJson(jsonDocument, _file);
-    _file.close();
-
-    if (jsonDocument.isNull() || jsonDocument.size() == 0){ // It should never happen as createEmptyJsonFile should be used instead
-        logger.debug("%s JSON being serialized is {}", TAG, path);
+    size_t size = measureJson(jsonDocument);
+    if (size >= bufferSize) {
+        if (truncateOnError) {
+            // Truncate JSON to fit buffer
+            serializeJson(jsonDocument, buffer, bufferSize);
+            // Ensure null-termination (avoid weird last character issues)
+            buffer[bufferSize - 1] = '\0';
+            
+            logger.debug("Truncating JSON to fit buffer size (%zu bytes vs %zu bytes)", TAG, bufferSize, size);
+        } else {
+            logger.warning("JSON size (%zu bytes) exceeds buffer size (%zu bytes)", TAG, size, bufferSize);
+            snprintf(buffer, bufferSize, "%s", ""); // Clear buffer on failure
+        }
+        return false;
     }
 
-    String _jsonString;
-    serializeJson(jsonDocument, _jsonString);
-    logger.debug("JSON serialized to SPIFFS correctly: %s", TAG, _jsonString.c_str());
-
+    serializeJson(jsonDocument, buffer, bufferSize);
+    logger.verbose("JSON serialized successfully (bytes: %zu): %s", TAG, size, buffer);
     return true;
 }
 
-void createEmptyJsonFile(const char* path) {
-    logger.debug("Creating empty JSON file %s...", TAG, path);
+// Task function that handles periodic maintenance checks
+static void _maintenanceTask(void* parameter) {
+    logger.debug("Maintenance task started", TAG);
+    
+    _maintenanceTaskShouldRun = true;
+    while (_maintenanceTaskShouldRun) {
+        // Update and print statistics
+        updateStatistics();
+        printStatistics();
+        printDeviceStatusDynamic();
 
-    TRACE();
-    File _file = SPIFFS.open(path, FILE_WRITE);
-    if (!_file) {
-        logger.error("Failed to open file %s", TAG, path);
+        // Check heap memory
+        if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) {
+            logger.fatal("Heap memory has degraded below safe minimum (%d bytes): %lu bytes", TAG, MINIMUM_FREE_HEAP_SIZE, ESP.getFreeHeap());
+            setRestartSystem(TAG, "Heap memory has degraded below safe minimum");
+        }
+
+        // Check PSRAM memory
+        if (ESP.getFreePsram() < MINIMUM_FREE_PSRAM_SIZE) {
+            logger.fatal("PSRAM memory has degraded below safe minimum (%d bytes): %lu bytes", TAG, MINIMUM_FREE_PSRAM_SIZE, ESP.getFreePsram());
+            setRestartSystem(TAG, "PSRAM memory has degraded below safe minimum");
+        }
+
+        // Check SPIFFS memory and clear log if needed
+        if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
+            logger.clearLog();
+            logger.warning("Log cleared due to low memory", TAG);
+        }
+        
+        logger.debug("Maintenance checks completed", TAG);
+
+        // Wait for stop notification with timeout (blocking)
+        uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MAINTENANCE_CHECK_INTERVAL));
+        if (notificationValue > 0) {
+            _maintenanceTaskShouldRun = false;
+            break;
+        }
+    }
+
+    logger.debug("Maintenance task stopping", TAG);
+    _maintenanceTaskHandle = NULL;
+    vTaskDelete(NULL);
+}
+
+void startMaintenanceTask() {
+    if (_maintenanceTaskHandle != NULL) {
+        logger.debug("Maintenance task is already running", TAG);
+        return;
+    }
+    
+    logger.debug("Starting maintenance task", TAG);
+    
+    BaseType_t result = xTaskCreate(
+        _maintenanceTask,
+        TASK_MAINTENANCE_NAME,
+        TASK_MAINTENANCE_STACK_SIZE,
+        NULL,
+        TASK_MAINTENANCE_PRIORITY,
+        &_maintenanceTaskHandle
+    );
+    
+    if (result != pdPASS) {
+        logger.error("Failed to create maintenance task", TAG);
+    }
+}
+
+void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
+    if (!taskHandle || *taskHandle == NULL) {
+        logger.debug("%s was not running", TAG, taskName ? taskName : "Task");
         return;
     }
 
-    _file.print("{}");
-    _file.close();
-
-    logger.debug("Empty JSON file %s created", TAG, path);
-}
-
-void createDefaultGeneralConfigurationFile() {
-    logger.debug("Creating default general %s...", TAG, GENERAL_CONFIGURATION_JSON_PATH);
-
-    JsonDocument _jsonDocument;
-
-    _jsonDocument["isCloudServicesEnabled"] = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
-    _jsonDocument["gmtOffset"] = DEFAULT_GMT_OFFSET;
-    _jsonDocument["dstOffset"] = DEFAULT_DST_OFFSET;
-    _jsonDocument["ledBrightness"] = DEFAULT_LED_BRIGHTNESS;
-    _jsonDocument["sendPowerData"] = DEFAULT_SEND_POWER_DATA;
-
-    serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    logger.debug("Default %s created", TAG, GENERAL_CONFIGURATION_JSON_PATH);
-}
-
-void createDefaultEnergyFile() {
-    logger.debug("Creating default %s...", TAG, ENERGY_JSON_PATH);
-
-    JsonDocument _jsonDocument;
-
-    for (int i = 0; i < CHANNEL_COUNT; i++) {
-        _jsonDocument[String(i)]["activeEnergyImported"] = 0;
-        _jsonDocument[String(i)]["activeEnergyExported"] = 0;
-        _jsonDocument[String(i)]["reactiveEnergyImported"] = 0;
-        _jsonDocument[String(i)]["reactiveEnergyExported"] = 0;
-        _jsonDocument[String(i)]["apparentEnergy"] = 0;
-    }
-
-    serializeJsonToSpiffs(ENERGY_JSON_PATH, _jsonDocument);
-
-    logger.debug("Default %s created", TAG, ENERGY_JSON_PATH);
-}
-
-void createDefaultDailyEnergyFile() {
-    logger.debug("Creating default %s...", TAG, DAILY_ENERGY_JSON_PATH);
-
-    createEmptyJsonFile(DAILY_ENERGY_JSON_PATH);
-
-    logger.debug("Default %s created", TAG, DAILY_ENERGY_JSON_PATH);
-}
-
-void createDefaultFirmwareUpdateInfoFile() {
-    logger.debug("Creating default %s...", TAG, FW_UPDATE_INFO_JSON_PATH);
-
-    createEmptyJsonFile(FW_UPDATE_INFO_JSON_PATH);
-
-    logger.debug("Default %s created", TAG, FW_UPDATE_INFO_JSON_PATH);
-}
-
-void createDefaultFirmwareUpdateStatusFile() {
-    logger.debug("Creating default %s...", TAG, FW_UPDATE_STATUS_JSON_PATH);
-
-    createEmptyJsonFile(FW_UPDATE_STATUS_JSON_PATH);
-
-    logger.debug("Default %s created", TAG, FW_UPDATE_STATUS_JSON_PATH);
-}
-
-void createDefaultAde7953ConfigurationFile() {
-    logger.debug("Creating default %s...", TAG, CONFIGURATION_ADE7953_JSON_PATH);
-
-    JsonDocument _jsonDocument;
-
-    _jsonDocument["sampleTime"] = MINIMUM_SAMPLE_TIME;
-    _jsonDocument["aVGain"] = DEFAULT_GAIN;
-    _jsonDocument["aIGain"] = DEFAULT_GAIN;
-    _jsonDocument["bIGain"] = DEFAULT_GAIN;
-    _jsonDocument["aIRmsOs"] = DEFAULT_OFFSET;
-    _jsonDocument["bIRmsOs"] = DEFAULT_OFFSET;
-    _jsonDocument["aWGain"] = DEFAULT_GAIN;
-    _jsonDocument["bWGain"] = DEFAULT_GAIN;
-    _jsonDocument["aWattOs"] = DEFAULT_OFFSET;
-    _jsonDocument["bWattOs"] = DEFAULT_OFFSET;
-    _jsonDocument["aVarGain"] = DEFAULT_GAIN;
-    _jsonDocument["bVarGain"] = DEFAULT_GAIN;
-    _jsonDocument["aVarOs"] = DEFAULT_OFFSET;
-    _jsonDocument["bVarOs"] = DEFAULT_OFFSET;
-    _jsonDocument["aVaGain"] = DEFAULT_GAIN;
-    _jsonDocument["bVaGain"] = DEFAULT_GAIN;
-    _jsonDocument["aVaOs"] = DEFAULT_OFFSET;
-    _jsonDocument["bVaOs"] = DEFAULT_OFFSET;
-    _jsonDocument["phCalA"] = DEFAULT_PHCAL;
-    _jsonDocument["phCalB"] = DEFAULT_PHCAL;
-
-    serializeJsonToSpiffs(CONFIGURATION_ADE7953_JSON_PATH, _jsonDocument);
-
-    logger.debug("Default %s created", TAG, CONFIGURATION_ADE7953_JSON_PATH);
-}
-
-void createDefaultCalibrationFile() {
-    logger.debug("Creating default %s...", TAG, CALIBRATION_JSON_PATH);
-
-    JsonDocument _jsonDocument;
-    deserializeJson(_jsonDocument, default_config_calibration_json);
-
-    serializeJsonToSpiffs(CALIBRATION_JSON_PATH, _jsonDocument);
-
-    logger.debug("Default %s created", TAG, CALIBRATION_JSON_PATH);
-}
-
-void createDefaultChannelDataFile() {
-    logger.debug("Creating default %s...", TAG, CHANNEL_DATA_JSON_PATH);
-
-    JsonDocument _jsonDocument;
-    deserializeJson(_jsonDocument, default_config_channel_json);
-
-    serializeJsonToSpiffs(CHANNEL_DATA_JSON_PATH, _jsonDocument);
-
-    logger.debug("Default %s created", TAG, CHANNEL_DATA_JSON_PATH);
-}
-
-void createDefaultCustomMqttConfigurationFile() {
-    logger.debug("Creating default %s...", TAG, CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
-
-    JsonDocument _jsonDocument;
-
-    _jsonDocument["enabled"] = DEFAULT_IS_CUSTOM_MQTT_ENABLED;
-    _jsonDocument["server"] = MQTT_CUSTOM_SERVER_DEFAULT;
-    _jsonDocument["port"] = MQTT_CUSTOM_PORT_DEFAULT;
-    _jsonDocument["clientid"] = MQTT_CUSTOM_CLIENTID_DEFAULT;
-    _jsonDocument["topic"] = MQTT_CUSTOM_TOPIC_DEFAULT;
-    _jsonDocument["frequency"] = MQTT_CUSTOM_FREQUENCY_DEFAULT;
-    _jsonDocument["useCredentials"] = MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT;
-    _jsonDocument["username"] = MQTT_CUSTOM_USERNAME_DEFAULT;
-    _jsonDocument["password"] = MQTT_CUSTOM_PASSWORD_DEFAULT;
-    _jsonDocument["lastConnectionStatus"] = "Never attempted";
-    _jsonDocument["lastConnectionAttemptTimestamp"] = "";
-
-    serializeJsonToSpiffs(CUSTOM_MQTT_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    logger.debug("Default %s created", TAG, CUSTOM_MQTT_CONFIGURATION_JSON_PATH);
-}
-
-void createDefaultInfluxDbConfigurationFile() {
-    logger.debug("Creating default %s...", TAG, INFLUXDB_CONFIGURATION_JSON_PATH);
-
-    JsonDocument _jsonDocument;
-
-    _jsonDocument["enabled"] = DEFAULT_IS_INFLUXDB_ENABLED;
-    _jsonDocument["server"] = INFLUXDB_SERVER_DEFAULT;
-    _jsonDocument["port"] = INFLUXDB_PORT_DEFAULT;
-    _jsonDocument["version"] = INFLUXDB_VERSION_DEFAULT; // Default to v2
-    _jsonDocument["database"] = INFLUXDB_DATABASE_DEFAULT;
-    _jsonDocument["username"] = INFLUXDB_USERNAME_DEFAULT;
-    _jsonDocument["password"] = INFLUXDB_PASSWORD_DEFAULT;
-    _jsonDocument["organization"] = INFLUXDB_ORGANIZATION_DEFAULT;
-    _jsonDocument["bucket"] = INFLUXDB_BUCKET_DEFAULT;
-    _jsonDocument["token"] = INFLUXDB_TOKEN_DEFAULT;
-    _jsonDocument["measurement"] = INFLUXDB_MEASUREMENT_DEFAULT;
-    _jsonDocument["frequency"] = INFLUXDB_FREQUENCY_DEFAULT;
-    _jsonDocument["useSSL"] = INFLUXDB_USE_SSL_DEFAULT;
-    _jsonDocument["lastConnectionStatus"] = "Never attempted";
-    _jsonDocument["lastConnectionAttemptTimestamp"] = "";
-
-    serializeJsonToSpiffs(INFLUXDB_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    logger.debug("Default %s created", TAG, INFLUXDB_CONFIGURATION_JSON_PATH);
-}
-
-std::vector<const char*> checkMissingFiles() {
-    logger.debug("Checking missing files...", TAG);
-
-    std::vector<const char*> missingFiles;
+    logger.debug("Stopping %s...", TAG, taskName ? taskName : "task");
     
-    const char* CONFIG_FILE_PATHS[] = {
-        GENERAL_CONFIGURATION_JSON_PATH,
-        CONFIGURATION_ADE7953_JSON_PATH,
-        CALIBRATION_JSON_PATH,
-        CHANNEL_DATA_JSON_PATH,
-        CUSTOM_MQTT_CONFIGURATION_JSON_PATH,
-        INFLUXDB_CONFIGURATION_JSON_PATH,
-        ENERGY_JSON_PATH,
-        DAILY_ENERGY_JSON_PATH,
-        FW_UPDATE_INFO_JSON_PATH,
-        FW_UPDATE_STATUS_JSON_PATH
-    };
-
-    const size_t CONFIG_FILE_COUNT = sizeof(CONFIG_FILE_PATHS) / sizeof(CONFIG_FILE_PATHS[0]);
-
-    TRACE();
-    for (size_t i = 0; i < CONFIG_FILE_COUNT; ++i) {
-        const char* path = CONFIG_FILE_PATHS[i];
-        if (!SPIFFS.exists(path)) {
-            missingFiles.push_back(path);
-        }
-    }
-
-    logger.debug("Missing files checked", TAG);
-    return missingFiles;
-}
-
-void createDefaultFilesForMissingFiles(const std::vector<const char*>& missingFiles) {
-    logger.debug("Creating default files for missing files...", TAG);
-
-    TRACE();
-    for (const char* path : missingFiles) {
-        if (strcmp(path, GENERAL_CONFIGURATION_JSON_PATH) == 0) {
-            createDefaultGeneralConfigurationFile();
-        } else if (strcmp(path, CONFIGURATION_ADE7953_JSON_PATH) == 0) {
-            createDefaultAde7953ConfigurationFile();
-        } else if (strcmp(path, CALIBRATION_JSON_PATH) == 0) {
-            createDefaultCalibrationFile();
-        } else if (strcmp(path, CHANNEL_DATA_JSON_PATH) == 0) {
-            createDefaultChannelDataFile();
-        } else if (strcmp(path, CUSTOM_MQTT_CONFIGURATION_JSON_PATH) == 0) {
-            createDefaultCustomMqttConfigurationFile();
-        } else if (strcmp(path, INFLUXDB_CONFIGURATION_JSON_PATH) == 0) {
-            createDefaultInfluxDbConfigurationFile();
-        } else if (strcmp(path, ENERGY_JSON_PATH) == 0) {
-            createDefaultEnergyFile();
-        } else if (strcmp(path, DAILY_ENERGY_JSON_PATH) == 0) {
-            createDefaultDailyEnergyFile();
-        } else if (strcmp(path, FW_UPDATE_INFO_JSON_PATH) == 0) {
-            createDefaultFirmwareUpdateInfoFile();
-        } else if (strcmp(path, FW_UPDATE_STATUS_JSON_PATH) == 0) {
-            createDefaultFirmwareUpdateStatusFile();
-        } else {
-            // Handle other files if needed
-            logger.warning("No default creation function for path: %s", TAG, path);
-        }
-    }
-
-    logger.debug("Default files created for missing files", TAG);
-}
-
-bool checkAllFiles() {
-    logger.debug("Checking all files...", TAG);
-
-    TRACE();
-    std::vector<const char*> missingFiles = checkMissingFiles();
-    if (!missingFiles.empty()) {
-        createDefaultFilesForMissingFiles(missingFiles);
-        return true;
-    }
-
-    logger.debug("All files checked", TAG);
-    return false;
-}
-
-void setRestartEsp32(const char* functionName, const char* reason) { 
-    logger.info("Restart required from function %s. Reason: %s", TAG, functionName, reason);
+    xTaskNotifyGive(*taskHandle);
     
-    restartConfiguration.isRequired = true;
-    restartConfiguration.requiredAt = millis();
-    restartConfiguration.functionName = String(functionName);
-    restartConfiguration.reason = String(reason);
-
-    // Don't cleanup interrupts immediately - let MQTT finish final operations first
-}
-
-void checkIfRestartEsp32Required() {
-    if (restartConfiguration.isRequired) {
-        if ((millis() - restartConfiguration.requiredAt) > ESP32_RESTART_DELAY) {
-            restartEsp32();
-        }
+    // Wait with timeout for clean shutdown
+    int32_t timeout = TASK_STOPPING_TIMEOUT;
+    uint32_t loops = 0;
+    while (*taskHandle != NULL && timeout > 0 && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
+        delay(TASK_STOPPING_CHECK_INTERVAL);
+        timeout -= TASK_STOPPING_CHECK_INTERVAL;
+    }
+    
+    // Force cleanup if needed
+    if (*taskHandle != NULL) {
+        logger.warning("Force stopping %s", TAG, taskName ? taskName : "task");
+        vTaskDelete(*taskHandle);
+        *taskHandle = NULL;
+    } else {
+        logger.debug("%s stopped successfully", TAG, taskName ? taskName : "Task");
     }
 }
 
-void restartEsp32() {
-    TRACE();
-    led.block();
-    led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
-    led.setWhite(true);
-    
-    logger.info("Restarting ESP32 from function %s. Reason: %s", TAG, restartConfiguration.functionName.c_str(), restartConfiguration.reason.c_str());
-    
-    TRACE();
-    clearAllAuthTokens();
+void stopMaintenanceTask() {
+    stopTaskGracefully(&_maintenanceTaskHandle, "maintenance task");
+}
 
-    // If a firmware evaluation is in progress, set the firmware to test again
-    TRACE();
-    FirmwareState _firmwareStatus = CrashMonitor::getFirmwareStatus();
+// Task function that handles delayed restart. No need for complex handling here, just a simple delay and restart.
+void restartTask(void* parameter) {
+    bool factoryReset = (bool)(uintptr_t)parameter;
 
-    TRACE();
-    if (_firmwareStatus == TESTING) {
-        logger.info("Firmware evaluation is in progress. Setting firmware to test again", TAG);
-        TRACE();
-        if (!CrashMonitor::setFirmwareStatus(NEW_TO_TEST)) logger.error("Failed to set firmware status", TAG);
+    logger.debug(
+        "Restart task started, stopping all services and waiting %d ms before restart (factory reset: %s)",
+        TAG,
+        SYSTEM_RESTART_DELAY,
+        factoryReset ? "true" : "false"
+    );
+
+    // Wait for the specified delay
+    // In theory we could restart immediately since the task stopping was done earlier.. but let's be careful
+    // and give time for other possible tasks or things to clean up properly
+    delay(SYSTEM_RESTART_DELAY);
+    
+    // Execute the operation
+    if (factoryReset) _factoryReset();
+    _restartSystem();
+    
+    // Task should never reach here, but clean up just in case
+    vTaskDelete(NULL);
+}
+
+void setRestartSystem(const char* functionName, const char* reason, bool factoryReset) {
+    logger.info("Restart required from function %s. Reason: %s. Factory reset: %s", TAG, functionName, reason, factoryReset ? "true" : "false");
+    
+    if (_restartTaskHandle != NULL) {
+        logger.info("A restart is already scheduled. Keeping the existing one.", TAG);
+        return; // Prevent overwriting an existing restart request
     }
 
-    TRACE();
-    logger.end();
+    // Create a task that will handle the delayed restart/factory reset
+    BaseType_t result = xTaskCreate(
+        restartTask,
+        TASK_RESTART_NAME,
+        TASK_RESTART_STACK_SIZE,
+        (void*)(uintptr_t)factoryReset,
+        TASK_RESTART_PRIORITY,
+        &_restartTaskHandle
+    );
 
-    TRACE();
+    // We need to stop all services here instead of in the restart task
+    // so to ensure that even if something is blocking, the restart will happen no matter what
+    stopMaintenanceTask();
+    Ade7953::stop();
+    #if HAS_SECRETS
+    Mqtt::stop();
+    #endif
+    CustomMqtt::stop();
+    InfluxDbClient::stop();
+    ModbusTcp::stop();
+    CustomServer::stop();
+    
+    if (result != pdPASS) {
+        logger.error("Failed to create restart task, performing immediate operation", TAG);
+        if (factoryReset) { _factoryReset(); }
+        _restartSystem();
+    } else {
+        logger.debug("Restart task created successfully", TAG);
+    }
+}
+
+void setFactoryReset(const char* functionName, const char* reason) {
+    setRestartSystem(functionName, reason, true);
+}
+
+static void _restartSystem() {
+    Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
+    Led::setOrange(Led::PRIO_CRITICAL);
+
+    logger.info("Restarting system", TAG);
+    logger.end(); // Only stop at last to ensure stopping logs are sent
+
+    // Give time for AsyncTCP connections to close gracefully
+    delay(1000);
+
+    // Stop at last to ensure all logs are sent
+    CustomLog::stop();
+    CustomWifi::stop();
+    
+    // Additional delay to ensure clean shutdown
+    delay(500);
+
     ESP.restart();
 }
-
 
 // Print functions
 // -----------------------------
 
-void printMeterValues(MeterValues* meterValues, ChannelData* channelData) {
-    logger.debug(
-        "%s (%D): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
-        TAG, 
-        channelData->label.c_str(),
-        channelData->index,
-        meterValues->voltage, 
-        meterValues->current, 
-        meterValues->activePower, 
-        meterValues->reactivePower, 
-        meterValues->apparentPower, 
-        meterValues->powerFactor, 
-        meterValues->activeEnergyImported,
-        meterValues->activeEnergyExported,
-        meterValues->reactiveEnergyImported, 
-        meterValues->reactiveEnergyExported, 
-        meterValues->apparentEnergy
-    );
+void printDeviceStatusStatic()
+{
+    SystemStaticInfo info;
+    populateSystemStaticInfo(info);
+
+    logger.debug("--- Static System Info ---", TAG);
+    logger.debug("Product: %s (%s)", TAG, info.fullProductName, info.productName);
+    logger.debug("Company: %s | Author: %s", TAG, info.companyName, info.author);
+    logger.debug("Firmware: %s | Build: %s %s", TAG, info.buildVersion, info.buildDate, info.buildTime);
+    logger.debug("Sketch MD5: %s | Partition app name: %s", TAG, info.sketchMD5, info.partitionAppName);
+    logger.debug("Flash: %lu bytes, %lu Hz | PSRAM: %lu bytes", TAG, info.flashChipSizeBytes, info.flashChipSpeedHz, info.psramSizeBytes);
+    logger.debug("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", TAG, info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
+    logger.debug("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
+    logger.debug("Device ID: %s", TAG, info.deviceId);
+    logger.debug("Monitoring: %lu crashes (%lu consecutive), %lu resets (%lu consecutive) | Last reset: %s", TAG, info.crashCount, info.consecutiveCrashCount, info.resetCount, info.consecutiveResetCount, info.lastResetReasonString);
+
+    logger.debug("------------------------", TAG);
 }
 
-void printDeviceStatus()
+void printDeviceStatusDynamic()
 {
-    unsigned int heapSize = ESP.getHeapSize();
-    unsigned int freeHeap = ESP.getFreeHeap();
-    unsigned int minFreeHeap = ESP.getMinFreeHeap();
-    unsigned int maxAllocHeap = ESP.getMaxAllocHeap();
+    SystemDynamicInfo info;
+    populateSystemDynamicInfo(info);
 
-    unsigned int SpiffsTotalBytes = SPIFFS.totalBytes();
-    unsigned int SpiffsUsedBytes = SPIFFS.usedBytes();
-    unsigned int SpiffsFreeBytes = SpiffsTotalBytes - SpiffsUsedBytes;
-    
-    float heapUsedPercentage = ((float)(heapSize - freeHeap) / heapSize) * 100.0;
-    float heapFreePercentage = ((float)freeHeap / heapSize) * 100.0;
-    float spiffsUsedPercentage = ((float)SpiffsUsedBytes / SpiffsTotalBytes) * 100.0;
-    float spiffsFreePercentage = ((float)SpiffsFreeBytes / SpiffsTotalBytes) * 100.0;
-
+    logger.debug("--- Dynamic System Info ---", TAG);
     logger.debug(
-        "Heap: %.1f%% used, %.1f%% free (%u free / %u total bytes) (min: %u bytes, max alloc: %u bytes) | SPIFFS: %.1f%% used, %.1f%% free (%u free / %u total bytes)",
+        "Uptime: %llu s (%llu ms) | Timestamp: %s | Temperature: %.2f C", 
         TAG,
-        heapUsedPercentage,
-        heapFreePercentage,
-        freeHeap,
-        heapSize,
-        minFreeHeap,
-        maxAllocHeap,
-        spiffsUsedPercentage,
-        spiffsFreePercentage,
-        SpiffsFreeBytes,
-        SpiffsTotalBytes
+        info.uptimeSeconds, info.uptimeMilliseconds, info.currentTimestamp, info.temperatureCelsius
     );
+
+    logger.debug("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
+        TAG, 
+        info.heapTotalBytes, 
+        info.heapFreeBytes, info.heapFreePercentage, 
+        info.heapUsedBytes, info.heapUsedPercentage, 
+        info.heapMinFreeBytes, info.heapMaxAllocBytes
+    );
+    if (info.psramFreeBytes > 0 || info.psramUsedBytes > 0) {
+        logger.debug("PSRAM: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
+            TAG, 
+            info.psramTotalBytes,
+            info.psramFreeBytes, info.psramFreePercentage, 
+            info.psramUsedBytes, info.psramUsedPercentage, 
+            info.psramMinFreeBytes, info.psramMaxAllocBytes
+        );
+    }
+    logger.debug("SPIFFS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%)", 
+        TAG, 
+        info.spiffsTotalBytes, 
+        info.spiffsFreeBytes, info.spiffsFreePercentage, 
+        info.spiffsUsedBytes, info.spiffsUsedPercentage
+    );
+    logger.debug("NVS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %u namespaces", 
+        TAG, 
+        info.totalUsableEntries, info.availableEntries, info.availableEntriesPercentage, 
+        info.usedEntries, info.usedEntriesPercentage, info.namespaceCount
+    );
+
+    if (info.wifiConnected) {
+        logger.debug("WiFi: Connected to '%s' (BSSID: %s) | RSSI %ld dBm | MAC %s", TAG, info.wifiSsid, info.wifiBssid, info.wifiRssi, info.wifiMacAddress);
+        logger.debug("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", TAG, info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp, info.wifiSubnetMask);
+    } else {
+        logger.debug("WiFi: Disconnected | MAC %s", TAG, info.wifiMacAddress);
+    }
+
+    logger.debug("-------------------------", TAG);
+}
+
+void updateStatistics() {
+    // The only statistic which is (currently) updated manually here is the log count
+    statistics.logVerbose = logger.getVerboseCount();
+    statistics.logDebug = logger.getDebugCount();
+    statistics.logInfo = logger.getInfoCount();
+    statistics.logWarning = logger.getWarningCount();
+    statistics.logError = logger.getErrorCount();
+    statistics.logFatal = logger.getFatalCount();
+
+    logger.debug("Statistics updated", TAG);
 }
 
 void printStatistics() {
-    logger.debug("Statistics - ADE7953: %d total interrupts | %d handled interrupts | %d readings | %d reading failures", 
+    logger.debug("--- Statistics ---", TAG);
+    logger.debug("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu readings | %llu reading failures", 
         TAG, 
         statistics.ade7953TotalInterrupts, 
         statistics.ade7953TotalHandledInterrupts, 
@@ -470,921 +578,298 @@ void printStatistics() {
         statistics.ade7953ReadingCountFailure
     );
 
-    logger.debug("Statistics - MQTT: %d messages published | %d errors", 
+    logger.debug("Statistics - MQTT: %llu messages published | %llu errors | %llu connections | %llu connection errors", 
         TAG, 
         statistics.mqttMessagesPublished, 
-        statistics.mqttMessagesPublishedError
+        statistics.mqttMessagesPublishedError,
+        statistics.mqttConnections,
+        statistics.mqttConnectionErrors
     );
 
-    logger.debug("Statistics - Custom MQTT: %d messages published | %d errors", 
+    logger.debug("Statistics - Custom MQTT: %llu messages published | %llu errors", 
         TAG, 
         statistics.customMqttMessagesPublished, 
         statistics.customMqttMessagesPublishedError
     );
 
-    logger.debug("Statistics - Modbus: %d requests | %d errors", 
+    logger.debug("Statistics - Modbus: %llu requests | %llu errors", 
         TAG, 
         statistics.modbusRequests, 
         statistics.modbusRequestsError
     );
 
-    logger.debug("Statistics - InfluxDB: %d uploads | %d errors", 
+    logger.debug("Statistics - InfluxDB: %llu uploads | %llu errors", 
         TAG, 
         statistics.influxdbUploadCount, 
         statistics.influxdbUploadCountError
     );
 
-    logger.debug("Statistics - WiFi: %d connections | %d errors", 
+    logger.debug("Statistics - WiFi: %llu connections | %llu errors", 
         TAG, 
         statistics.wifiConnection, 
         statistics.wifiConnectionError
     );
-}
 
-// General configuration
-// -----------------------------
+    logger.debug("Statistics - Web Server: %llu requests | %llu errors", 
+        TAG, 
+        statistics.webServerRequests, 
+        statistics.webServerRequestsError
+    );
 
-bool setGeneralConfigurationFromSpiffs() {
-    logger.debug("Setting general configuration from SPIFFS...", TAG);
-
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    if (!setGeneralConfiguration(_jsonDocument)) {
-        logger.error("Failed to open general configuration file", TAG);
-        setDefaultGeneralConfiguration();
-        return false;
-    }
-    
-    logger.debug("General configuration set from SPIFFS", TAG);
-    return true;
-}
-
-void setDefaultGeneralConfiguration() {
-    logger.debug("Setting default general configuration...", TAG);
-    
-    createDefaultGeneralConfigurationFile();
-
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    setGeneralConfiguration(_jsonDocument);
-    
-    logger.debug("Default general configuration set", TAG);
-}
-
-void saveGeneralConfigurationToSpiffs() {
-    logger.debug("Saving general configuration to SPIFFS...", TAG);
-
-    JsonDocument _jsonDocument;
-    generalConfigurationToJson(generalConfiguration, _jsonDocument);
-
-    serializeJsonToSpiffs(GENERAL_CONFIGURATION_JSON_PATH, _jsonDocument);
-
-    logger.debug("General configuration saved to SPIFFS", TAG);
-}
-
-bool setGeneralConfiguration(JsonDocument& jsonDocument) {
-    logger.debug("Setting general configuration...", TAG);
-
-    if (!validateGeneralConfigurationJson(jsonDocument)) {
-        logger.warning("Failed to set general configuration", TAG);
-        return false;
-    }
-#if HAS_SECRETS
-    generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
-    generalConfiguration.sendPowerData = jsonDocument["sendPowerData"].as<bool>();
-#else
-    logger.info("Cloud services cannot be enabled due to missing secrets", TAG);
-    generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
-    generalConfiguration.sendPowerData = DEFAULT_SEND_POWER_DATA;
-#endif
-    generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
-    generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
-    generalConfiguration.ledBrightness = jsonDocument["ledBrightness"].as<int>();
-
-    applyGeneralConfiguration();
-
-    saveGeneralConfigurationToSpiffs();
-
-    publishMqtt.generalConfiguration = true;
-
-    logger.debug("General configuration set", TAG);
-
-    return true;
-}
-
-void generalConfigurationToJson(GeneralConfiguration& generalConfiguration, JsonDocument& jsonDocument) {
-    logger.debug("Converting general configuration to JSON...", TAG);
-
-    jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
-    jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
-    jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
-    jsonDocument["ledBrightness"] = generalConfiguration.ledBrightness;
-    jsonDocument["sendPowerData"] = generalConfiguration.sendPowerData;
-
-    logger.debug("General configuration converted to JSON", TAG);
+    logger.debug("Statistics - Log: %llu verbose | %llu debug | %llu info | %llu warning | %llu error | %llu fatal", 
+        TAG, 
+        statistics.logVerbose, 
+        statistics.logDebug, 
+        statistics.logInfo, 
+        statistics.logWarning, 
+        statistics.logError, 
+        statistics.logFatal
+    );
+    logger.debug("-------------------", TAG);
 }
 
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
-    logger.debug("Converting statistics to JSON...", TAG);
+    // ADE7953 statistics
+    jsonDocument["ade7953"]["totalInterrupts"] = statistics.ade7953TotalInterrupts;
+    jsonDocument["ade7953"]["totalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;
+    jsonDocument["ade7953"]["readingCount"] = statistics.ade7953ReadingCount;
+    jsonDocument["ade7953"]["readingCountFailure"] = statistics.ade7953ReadingCountFailure;
 
-    jsonDocument["ade7953TotalInterrupts"] = statistics.ade7953TotalInterrupts;
-    jsonDocument["ade7953TotalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;
-    jsonDocument["ade7953ReadingCount"] = statistics.ade7953ReadingCount;
-    jsonDocument["ade7953ReadingCountFailure"] = statistics.ade7953ReadingCountFailure;
-    
-    jsonDocument["mqttMessagesPublished"] = statistics.mqttMessagesPublished;
-    jsonDocument["mqttMessagesPublishedError"] = statistics.mqttMessagesPublishedError;
-    
-    jsonDocument["customMqttMessagesPublished"] = statistics.customMqttMessagesPublished;
-    jsonDocument["customMqttMessagesPublishedError"] = statistics.customMqttMessagesPublishedError;
-    
-    jsonDocument["modbusRequests"] = statistics.modbusRequests;
-    jsonDocument["modbusRequestsError"] = statistics.modbusRequestsError;
-    
-    jsonDocument["influxdbUploadCount"] = statistics.influxdbUploadCount;
-    jsonDocument["influxdbUploadCountError"] = statistics.influxdbUploadCountError;
-    
-    jsonDocument["wifiConnection"] = statistics.wifiConnection;
-    jsonDocument["wifiConnectionError"] = statistics.wifiConnectionError;
+    // MQTT statistics
+    jsonDocument["mqtt"]["messagesPublished"] = statistics.mqttMessagesPublished;
+    jsonDocument["mqtt"]["messagesPublishedError"] = statistics.mqttMessagesPublishedError;
+    jsonDocument["mqtt"]["connections"] = statistics.mqttConnections;
+    jsonDocument["mqtt"]["connectionErrors"] = statistics.mqttConnectionErrors;
+
+    // Custom MQTT statistics
+    jsonDocument["customMqtt"]["messagesPublished"] = statistics.customMqttMessagesPublished;
+    jsonDocument["customMqtt"]["messagesPublishedError"] = statistics.customMqttMessagesPublishedError;
+
+    // Modbus statistics
+    jsonDocument["modbus"]["requests"] = statistics.modbusRequests;
+    jsonDocument["modbus"]["requestsError"] = statistics.modbusRequestsError;
+
+    // InfluxDB statistics
+    jsonDocument["influxdb"]["uploadCount"] = statistics.influxdbUploadCount;
+    jsonDocument["influxdb"]["uploadCountError"] = statistics.influxdbUploadCountError;
+
+    // WiFi statistics
+    jsonDocument["wifi"]["connection"] = statistics.wifiConnection;
+    jsonDocument["wifi"]["connectionError"] = statistics.wifiConnectionError;
+
+    // Web Server statistics
+    jsonDocument["webServer"]["requests"] = statistics.webServerRequests;
+    jsonDocument["webServer"]["requestsError"] = statistics.webServerRequestsError;
+
+    // Log statistics
+    jsonDocument["log"]["verbose"] = statistics.logVerbose;
+    jsonDocument["log"]["debug"] = statistics.logDebug;
+    jsonDocument["log"]["info"] = statistics.logInfo;
+    jsonDocument["log"]["warning"] = statistics.logWarning;
+    jsonDocument["log"]["error"] = statistics.logError;
+    jsonDocument["log"]["fatal"] = statistics.logFatal;
 
     logger.debug("Statistics converted to JSON", TAG);
-}
-
-void applyGeneralConfiguration() {
-    logger.debug("Applying general configuration...", TAG);
-
-    led.setBrightness(generalConfiguration.ledBrightness);
-
-    logger.debug("General configuration applied", TAG);
-}
-
-bool validateGeneralConfigurationJson(JsonDocument& jsonDocument) {
-    logger.debug("Validating general configuration JSON...", TAG);
-
-    if (!jsonDocument.is<JsonObject>()) { logger.warning("JSON is not an object", TAG); return false; }
-    
-    if (!jsonDocument["isCloudServicesEnabled"].is<bool>()) { logger.warning("isCloudServicesEnabled is not a boolean", TAG); return false; }
-    if (!jsonDocument["gmtOffset"].is<int>()) { logger.warning("gmtOffset is not an integer", TAG); return false; }
-    if (!jsonDocument["dstOffset"].is<int>()) { logger.warning("dstOffset is not an integer", TAG); return false; }
-    if (!jsonDocument["ledBrightness"].is<int>()) { logger.warning("ledBrightness is not an integer", TAG); return false; }
-    if (!jsonDocument["sendPowerData"].is<bool>()) { logger.warning("sendPowerData is not a boolean", TAG); return false; }
-
-    return true;
 }
 
 // Helper functions
 // -----------------------------
 
-void getPublicLocation(PublicLocation* publicLocation) {
-    HTTPClient _http;
-    JsonDocument _jsonDocument;
+static void _factoryReset() { 
+    logger.warning("Factory reset requested", TAG);
 
-    _http.begin(PUBLIC_LOCATION_ENDPOINT);
-
-    int httpCode = _http.GET();
-    if (httpCode > 0) {
-        if (httpCode == HTTP_CODE_OK) {
-            String payload = _http.getString();
-            payload.trim();
-            
-            deserializeJson(_jsonDocument, payload);
-
-            publicLocation->country = _jsonDocument["country"].as<String>();
-            publicLocation->city = _jsonDocument["city"].as<String>();
-            publicLocation->latitude = _jsonDocument["lat"].as<String>();
-            publicLocation->longitude = _jsonDocument["lon"].as<String>();
-
-            logger.debug(
-                "Location: %s, %s | Lat: %.4f | Lon: %.4f",
-                TAG,
-                publicLocation->country.c_str(),
-                publicLocation->city.c_str(),
-                publicLocation->latitude.toFloat(),
-                publicLocation->longitude.toFloat()
-            );
-        }
-    } else {
-        logger.error("Error on HTTP request: %d", TAG, httpCode);
-    }
-
-    _http.end();
-}
-
-void getPublicTimezone(int* gmtOffset, int* dstOffset) {
-    PublicLocation _publicLocation;
-    getPublicLocation(&_publicLocation);
-
-    HTTPClient _http;
-    String _url = PUBLIC_TIMEZONE_ENDPOINT;
-    _url += "lat=" + _publicLocation.latitude;
-    _url += "&lng=" + _publicLocation.longitude;
-    _url += "&username=" + String(PUBLIC_TIMEZONE_USERNAME);
-
-    _http.begin(_url);
-    int httpCode = _http.GET();
-
-    if (httpCode > 0) {
-        if (httpCode == HTTP_CODE_OK) {
-            String payload = _http.getString();
-            payload.trim();
-            
-            JsonDocument _jsonDocument;
-
-            deserializeJson(_jsonDocument, payload);
-
-            *gmtOffset = _jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
-            *dstOffset = _jsonDocument["dstOffset"].as<int>() * 3600 - *gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
-
-            logger.debug(
-                "GMT offset: %d | DST offset: %d",
-                TAG,
-                _jsonDocument["rawOffset"].as<int>(),
-                _jsonDocument["dstOffset"].as<int>()
-            );
-        }
-    } else {
-        logger.error(
-            "Error on HTTP request: %d", 
-            TAG, 
-            httpCode
-        );
-    }
-}
-
-void updateTimezone() {
-    if (!WiFi.isConnected()) {
-        logger.warning("WiFi is not connected. Cannot update timezone", TAG);
-        return;
-    }
-
-    logger.debug("Updating timezone...", TAG);
-
-    getPublicTimezone(&generalConfiguration.gmtOffset, &generalConfiguration.dstOffset);
-    saveGeneralConfigurationToSpiffs();
-
-    logger.debug("Timezone updated", TAG);
-}
-
-void factoryReset() { 
-    logger.fatal("Factory reset requested", TAG);
-
-    mainFlags.blockLoop = true;
-
-    led.block();
-    led.setBrightness(max(led.getBrightness(), 1)); // Show a faint light even if it is off
-    led.setRed(true);
+    Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
+    Led::blinkRedFast(Led::PRIO_CRITICAL);
 
     clearAllPreferences();
+
+    logger.warning("Formatting SPIFFS. This will take some time.", TAG);
     SPIFFS.format();
 
-    // Directly call ESP.restart() so that a fresh start is done
-    ESP.restart();
+    CrashMonitor::clearConsecutiveCrashCount(); // Reset crash monitor to clear crash count and last reset reason
+
+    // Removed ESP.restart() call since the factory reset can only be called from the restart task
+}
+
+bool isFirstBootDone() {
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_GENERAL, true)) {
+        logger.debug("Could not open preferences namespace: %s. Assuming first boot", TAG, PREFERENCES_NAMESPACE_GENERAL);
+        return false;
+    }
+    bool firstBoot = preferences.getBool(IS_FIRST_BOOT_DONE_KEY, false);
+    preferences.end();
+
+    return firstBoot;
+}
+
+void setFirstBootDone() { // No arguments because the only way to set first boot done to false it through a complete wipe - thus automatically setting it to "false"
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
+        logger.error("Failed to open preferences namespace: %s", TAG, PREFERENCES_NAMESPACE_GENERAL);
+        return;
+    }
+    preferences.putBool(IS_FIRST_BOOT_DONE_KEY, true);
+    preferences.end();
+}
+
+void createAllNamespaces() {
+    Preferences preferences;
+
+    preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_MQTT, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_TIME, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.end();
+
+    logger.debug("All namespaces created", TAG);
 }
 
 void clearAllPreferences() {
-    logger.fatal("Clear all preferences requested", TAG);
-
     Preferences preferences;
-    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); // false = read-write mode
-    preferences.clear();
-    preferences.end();
-    
-    preferences.begin(PREFERENCES_DATA_KEY, false); // false = read-write mode
-    preferences.clear();
-    preferences.end();
 
-    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); // false = read-write mode
-    preferences.clear();
-    preferences.end();
-    
-    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); // false = read-write mode
-    preferences.clear();
-    preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_MQTT, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_TIME, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.clear(); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.clear(); preferences.end();
+
+    #if ENV_DEV
+    nvs_flash_erase(); // Nuclear solution. In development, the NVS can get overcrowded with test data, so we clear it completely.
+    #endif
+
+    logger.warning("Cleared all preferences", TAG);
 }
 
-bool isLatestFirmwareInstalled() {
-    JsonDocument _jsonDocument;
-    deserializeJsonFromSpiffs(FW_UPDATE_INFO_JSON_PATH, _jsonDocument);
+void getDeviceId(char* deviceId, size_t maxLength) {
+    uint8_t mac[6];
+    esp_efuse_mac_get_default(mac);
     
-    if (_jsonDocument.isNull() || _jsonDocument.size() == 0) {
-        logger.debug("Firmware update info file is empty", TAG);
-        return true;
-    }
-
-    String _latestFirmwareVersion = _jsonDocument["buildVersion"].as<String>();
-    String _currentFirmwareVersion = FIRMWARE_BUILD_VERSION;
-
-    logger.debug(
-        "Latest firmware version: %s | Current firmware version: %s",
-        TAG,
-        _latestFirmwareVersion.c_str(),
-        _currentFirmwareVersion.c_str()
-    );
-
-    if (_latestFirmwareVersion.length() == 0 || _latestFirmwareVersion.indexOf(".") == -1) {
-        logger.warning("Latest firmware version is empty or in the wrong format", TAG);
-        return true;
-    }
-
-    int _latestMajor, _latestMinor, _latestPatch;
-    sscanf(_latestFirmwareVersion.c_str(), "%d.%d.%d", &_latestMajor, &_latestMinor, &_latestPatch);
-
-    int _currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
-    int _currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
-    int _currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
-
-    if (_latestMajor < _currentMajor) return true;
-    if (_latestMajor > _currentMajor) return false;
-    if (_latestMinor < _currentMinor) return true;
-    if (_latestMinor > _currentMinor) return false;
-    return _latestPatch <= _currentPatch;
+    // Use lowercase hex formatting without colons
+    snprintf(deviceId, maxLength, "%02x%02x%02x%02x%02x%02x", 
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-void updateJsonFirmwareStatus(const char *status, const char *reason)
-{
-    JsonDocument _jsonDocument;
-
-    _jsonDocument["status"] = status;
-    _jsonDocument["reason"] = reason;
-    _jsonDocument["timestamp"] = CustomTime::getTimestamp();
-
-    serializeJsonToSpiffs(FW_UPDATE_STATUS_JSON_PATH, _jsonDocument);
-}
-
-String getDeviceId() {
-    String _macAddress = WiFi.macAddress();
-    _macAddress.replace(":", "");
-    return _macAddress;
-}
-
-const char* getMqttStateReason(int state)
-{
-
-    // Full description of the MQTT state codes
-    // -4 : MQTT_CONNECTION_TIMEOUT - the server didn't respond within the keepalive time
-    // -3 : MQTT_CONNECTION_LOST - the network connection was broken
-    // -2 : MQTT_CONNECT_FAILED - the network connection failed
-    // -1 : MQTT_DISCONNECTED - the client is disconnected cleanly
-    // 0 : MQTT_CONNECTED - the client is connected
-    // 1 : MQTT_CONNECT_BAD_PROTOCOL - the server doesn't support the requested version of MQTT
-    // 2 : MQTT_CONNECT_BAD_CLIENT_ID - the server rejected the client identifier
-    // 3 : MQTT_CONNECT_UNAVAILABLE - the server was unable to accept the connection
-    // 4 : MQTT_CONNECT_BAD_CREDENTIALS - the username/password were rejected
-    // 5 : MQTT_CONNECT_UNAUTHORIZED - the client was not authorized to connect
-
-    switch (state)
-    {
-    case -4:
-        return "MQTT_CONNECTION_TIMEOUT";
-    case -3:
-        return "MQTT_CONNECTION_LOST";
-    case -2:
-        return "MQTT_CONNECT_FAILED";
-    case -1:
-        return "MQTT_DISCONNECTED";
-    case 0:
-        return "MQTT_CONNECTED";
-    case 1:
-        return "MQTT_CONNECT_BAD_PROTOCOL";
-    case 2:
-        return "MQTT_CONNECT_BAD_CLIENT_ID";
-    case 3:
-        return "MQTT_CONNECT_UNAVAILABLE";
-    case 4:
-        return "MQTT_CONNECT_BAD_CREDENTIALS";
-    case 5:
-        return "MQTT_CONNECT_UNAUTHORIZED";
-    default:
-        return "Unknown MQTT state";
-    }
-}
-
-String decryptData(String encryptedData, String key) {
-    mbedtls_aes_context aes;
-    mbedtls_aes_init(&aes);
-    mbedtls_aes_setkey_dec(&aes, (const unsigned char *)key.c_str(), KEY_SIZE);
-
-    size_t decodedLength = 0;
-    size_t inputLength = encryptedData.length();
+uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier) {
+    if (attempt == 0) return 0;
     
-    unsigned char *decodedData = (unsigned char *)malloc(inputLength);
+    uint64_t backoffDelay = initialInterval;
     
-    int ret = mbedtls_base64_decode(decodedData, inputLength, &decodedLength, 
-                                   (const unsigned char *)encryptedData.c_str(), 
-                                   encryptedData.length());
-    
-    unsigned char *output = (unsigned char *)malloc(decodedLength + 1);
-    memset(output, 0, decodedLength + 1);
-    
-    for(size_t i = 0; i < decodedLength; i += 16) {
-        mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, &decodedData[i], &output[i]);
+    for (uint64_t i = 0; i < attempt - 1 && backoffDelay < maxInterval; ++i) {
+        backoffDelay *= multiplier;
     }
     
-    uint8_t paddingLength = output[decodedLength - 1];
-    if(paddingLength <= 16) {
-        output[decodedLength - paddingLength] = '\0';
-    }
-    
-    String decryptedData = String((char *)output);
-    
-    free(output);
-    free(decodedData);
-    mbedtls_aes_free(&aes);
-
-    return decryptedData;
+    return min(backoffDelay, maxInterval);
 }
+    
+// === SPIFFS FILE OPERATIONS ===
 
-String readEncryptedPreferences(const char* preference_key) {
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) { // true = read-only mode
-        logger.error("Failed to open preferences", TAG);
-        return String("");
-    }
-
-    String _encryptedData = preferences.getString(preference_key, "");
-    preferences.end();
-
-    if (_encryptedData.isEmpty()) {
-        logger.warning("No encrypted data found for key: %s", TAG, preference_key);
-        return String("");
-    }
-
-    return decryptData(_encryptedData, String(preshared_encryption_key) + getDeviceId());
-}
-
-bool checkCertificatesExist() {
-    logger.debug("Checking if certificates exist...", TAG);
-
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) {
-        logger.error("Failed to open preferences", TAG);
+bool listSpiffsFiles(JsonDocument& doc) {
+    File root = SPIFFS.open("/");
+    if (!root) {
+        logger.error("Failed to open SPIFFS root directory", TAG);
         return false;
     }
 
-    bool _deviceCertExists = !preferences.getString(PREFS_KEY_CERTIFICATE, "").isEmpty(); 
-    bool _privateKeyExists = !preferences.getString(PREFS_KEY_PRIVATE_KEY, "").isEmpty();
-
-    preferences.end();
-
-    bool _allCertificatesExist = _deviceCertExists && _privateKeyExists;
-
-    logger.debug("Certificates exist: %s", TAG, _allCertificatesExist ? "true" : "false");
-    return _allCertificatesExist;
-}
-
-void writeEncryptedPreferences(const char* preference_key, const char* value) {
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) { // false = read-write mode
-        logger.error("Failed to open preferences", TAG);
-        return;
-    }
-
-    preferences.putString(preference_key, value);
-    preferences.end();
-}
-
-void clearCertificates() {
-    logger.debug("Clearing certificates...", TAG);
-
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) {
-        logger.error("Failed to open preferences", TAG);
-        return;
-    }
-
-    preferences.clear();
-    preferences.end();
-
-    logger.info("Certificates for cloud services cleared", TAG);
-}
-
-// Authentication functions
-// -----------------------------
-
-// Static variables for token management
-static int activeTokenCount = 0;
-
-void initializeAuthentication() {
-    logger.debug("Initializing authentication...", TAG);
+    File file = root.openNextFile();
+    uint32_t loops = 0;
     
-    clearAllAuthTokens();
-    activeTokenCount = 0;
-    
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
-        logger.warning("Failed to open auth preferences for reading, trying to create namespace", TAG);
+    while (file && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
+        const char* filename = file.path();
+
+        // Remove first char which is always a slash 
+        // (useful to remove so later in the get content we can directly use the filename)
+        if (filename[0] == '/') filename++; // Skip the leading slash
         
-        // Try to create the namespace by opening in write mode
-        if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
-            logger.error("Failed to create auth preferences namespace", TAG);
-            return;
-        }
-        preferences.end();
+        // Add file with its size to the JSON document
+        doc[filename] = file.size();
         
-        // Now try to open in read mode again
-        if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
-            logger.error("Failed to open auth preferences after creation", TAG);
-            return;
-        }
+        file = root.openNextFile();
     }
-    
-    String storedPassword = preferences.getString(PREFERENCES_KEY_PASSWORD, "");
-    preferences.end();
-    
-    if (storedPassword.isEmpty()) {
-        logger.info("No password set, using default password", TAG);
-        if (!setAuthPassword(DEFAULT_WEB_PASSWORD)) {
-            logger.error("Failed to set default password", TAG);
-            return;
-        }
-    }
-    
-    logger.debug("Authentication initialized", TAG);
-}
 
-bool validatePassword(const String& password) {
-    if (password.length() < MIN_PASSWORD_LENGTH || password.length() > MAX_PASSWORD_LENGTH) {
-        return false;
-    }
-    
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
-        logger.warning("Failed to open auth preferences, allowing access as fallback", TAG);
-        return true; // Fallback: return true when preferences cannot be opened
-    }
-    
-    String storedPasswordHash = preferences.getString(PREFERENCES_KEY_PASSWORD, "");
-    preferences.end();
-    
-    if (storedPasswordHash.isEmpty()) {
-        logger.debug("No stored password hash found, allowing access as fallback", TAG);
-        return true; // Fallback: return true when no password is stored
-    }
-    
-    String passwordHash = hashPassword(password);
-    return passwordHash.equals(storedPasswordHash);
-}
-
-bool setAuthPassword(const String& newPassword) {
-    if (newPassword.length() < MIN_PASSWORD_LENGTH || newPassword.length() > MAX_PASSWORD_LENGTH) {
-        logger.warning("Password length invalid: %d characters", TAG, newPassword.length());
-        return false;
-    }
-    
-    String passwordHash = hashPassword(newPassword);
-    
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
-        logger.warning("Failed to open auth preferences, treating as successful fallback", TAG);
-        return true; // Fallback: return true when preferences cannot be opened
-    }
-    
-    preferences.putString(PREFERENCES_KEY_PASSWORD, passwordHash);
-    preferences.end();
-    
-    // Clear all existing tokens when password changes
-    clearAllAuthTokens();
-    
-    logger.info("Password updated successfully", TAG);
-    return true;
-}
-String generateAuthToken() {
-    // Check if we can accept more tokens
-    if (!canAcceptMoreTokens()) {
-        logger.warning("Cannot generate new token: maximum concurrent sessions reached (%d)", TAG, MAX_CONCURRENT_SESSIONS);
-        return "";
-    }
-    
-    String token = "";
-    const char chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    
-    for (int i = 0; i < AUTH_TOKEN_LENGTH; i++) {
-        token += chars[random(0, sizeof(chars) - 1)];
-    }
-    
-    // Store token with timestamp using a hash-based short key
-    Preferences preferences;
-    if (preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
-        // Create a short hash from the token for the key (max 15 chars for NVS)
-        uint32_t tokenHash = 0;
-        for (int i = 0; i < token.length(); i++) {
-            tokenHash = tokenHash * 31 + token.charAt(i);
-        }
-        String shortKey = "t" + String(tokenHash, HEX); // "t" + 8-char hex = 9 chars max
-        
-        // Store both the timestamp and the original token
-        preferences.putULong64(shortKey.c_str(), millis());
-        // Store mapping from short key to full token
-        preferences.putString((shortKey + "_f").c_str(), token); // "_f" for full token
-        preferences.end();
-        
-        // Increment the active token count
-        activeTokenCount++;
-        logger.debug("Token generated successfully. Active tokens: %d/%d", TAG, activeTokenCount, MAX_CONCURRENT_SESSIONS);
-    }
-    
-    return token;
-}
-
-bool validateAuthToken(const String& token) {
-    if (token.length() != AUTH_TOKEN_LENGTH) {
-        return false;
-    }
-    
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, true)) {
-        logger.warning("Failed to open auth preferences for token validation, allowing access as fallback", TAG);
-        return true; // Fallback: return true when preferences cannot be opened
-    }
-    
-    // Create the same hash-based short key
-    uint32_t tokenHash = 0;
-    for (int i = 0; i < token.length(); i++) {
-        tokenHash = tokenHash * 31 + token.charAt(i);
-    }
-    String shortKey = "t" + String(tokenHash, HEX);
-    
-    unsigned long long tokenTimestamp = preferences.getULong64(shortKey.c_str(), 0);
-    
-    // Verify the full token matches
-    String storedToken = preferences.getString((shortKey + "_f").c_str(), "");
-    preferences.end();
-    
-    if (tokenTimestamp == 0 || !storedToken.equals(token)) {
-        return false;
-    }
-    
-    // Check if token has expired
-    if (millis() - tokenTimestamp > AUTH_SESSION_TIMEOUT) {
-        logger.debug("Token expired, removing it", TAG);
-        clearAuthToken(token);
-        return false;
-    }
-    
+    root.close();
     return true;
 }
 
-void clearAuthToken(const String& token) {
-    Preferences preferences;
-    if (preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
-        // Create the same hash-based short key
-        uint32_t tokenHash = 0;
-        for (int i = 0; i < token.length(); i++) {
-            tokenHash = tokenHash * 31 + token.charAt(i);
-        }
-        String shortKey = "t" + String(tokenHash, HEX);
-        
-        // Check if token exists before removing
-        if (preferences.getULong64(shortKey.c_str(), 0) != 0) {
-            preferences.remove(shortKey.c_str());
-            preferences.remove((shortKey + "_f").c_str());
-            
-            // Decrement the active token count
-            if (activeTokenCount > 0) {
-                activeTokenCount--;
-                logger.debug("Token cleared. Active tokens: %d/%d", TAG, activeTokenCount, MAX_CONCURRENT_SESSIONS);
-            }
-        }
-        preferences.end();
-    }
-}
-
-void clearAllAuthTokens() {
-    logger.debug("Clearing all auth tokens...", TAG);
-    
-    Preferences preferences;
-    if (!preferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
-        return;
-    }
-    
-    // Clear all preferences except password to remove all tokens
-    String storedPassword = preferences.getString(PREFERENCES_KEY_PASSWORD, "");
-    preferences.clear();
-    
-    // Restore the password
-    if (!storedPassword.isEmpty()) {
-        preferences.putString(PREFERENCES_KEY_PASSWORD, storedPassword);
-    }
-    
-    preferences.end();
-    
-    // Reset the token count
-    activeTokenCount = 0;
-    logger.debug("All tokens cleared. Active tokens: %d", TAG, activeTokenCount);
-}
-
-String hashPassword(const String& password) {
-    // Simple hash using device ID as salt
-    String saltedPassword = password + getDeviceId();
-    
-    // Basic hash implementation (you might want to use a more secure method)
-    uint32_t hash = 0;
-    for (int i = 0; i < saltedPassword.length(); i++) {
-        hash = hash * 31 + saltedPassword.charAt(i);
-    }
-    
-    return String(hash, HEX);
-}
-
-int getActiveTokenCount() {
-    return activeTokenCount;
-}
-
-bool canAcceptMoreTokens() {
-    return activeTokenCount < MAX_CONCURRENT_SESSIONS;
-}
-
-bool setupMdns()
-{
-    logger.debug("Setting up mDNS...", TAG);
-    
-    // Ensure mDNS is stopped before starting
-    MDNS.end();
-    delay(100);
-
-    if (
-        MDNS.begin(MDNS_HOSTNAME) &&
-        MDNS.addService("http", "tcp", WEBSERVER_PORT) &&
-        MDNS.addService("mqtt", "tcp", MQTT_CUSTOM_PORT_DEFAULT) &&
-        MDNS.addService("modbus", "tcp", MODBUS_TCP_PORT))
-    {
-        logger.info("mDNS setup done", TAG);
-        return true;
-    }
-    else
-    {
-        logger.warning("Error setting up mDNS", TAG);
+bool getSpiffsFileContent(const char* filepath, char* buffer, size_t bufferSize) {
+    if (!filepath || !buffer || bufferSize == 0) {
+        logger.error("Invalid arguments provided", TAG);
         return false;
     }
+    
+    // Check if file exists
+    if (!SPIFFS.exists(filepath)) {
+        logger.debug("File not found: %s", TAG, filepath);
+        return false;
+    }
+    
+    File file = SPIFFS.open(filepath, "r");
+    if (!file) {
+        logger.error("Failed to open file: %s", TAG, filepath);
+        return false;
+    }
+
+    size_t bytesRead = file.readBytes(buffer, bufferSize - 1);
+    buffer[bytesRead] = '\0';  // Null-terminate the string
+    file.close();
+
+    logger.debug("Successfully read file: %s (%d bytes)", TAG, filepath, bytesRead);
+    return true;
 }
 
-bool validateUnixTime(unsigned long long unixTime, bool isMilliseconds) {
-    if (isMilliseconds) {
-        return (unixTime >= MINIMUM_UNIX_TIME_MILLISECONDS && unixTime <= MAXIMUM_UNIX_TIME_MILLISECONDS);
-    } else {
-        return (unixTime >= MINIMUM_UNIX_TIME && unixTime <= MAXIMUM_UNIX_TIME);
+const char* getContentTypeFromFilename(const char* filename) {
+    if (!filename) return "application/octet-stream";
+    
+    // Find the file extension
+    const char* ext = strrchr(filename, '.');
+    if (!ext) return "application/octet-stream";
+    
+    // Convert to lowercase for comparison
+    char extension[16];
+    size_t extLen = strlen(ext);
+    if (extLen >= sizeof(extension)) return "application/octet-stream";
+    
+    for (size_t i = 0; i < extLen; i++) {
+        extension[i] = (char)tolower(ext[i]);
     }
+    extension[extLen] = '\0';
+    
+    // Common file types used in the project
+    if (strcmp(extension, ".json") == 0) return "application/json";
+    if (strcmp(extension, ".txt") == 0) return "text/plain";
+    if (strcmp(extension, ".log") == 0) return "text/plain";
+    if (strcmp(extension, ".csv") == 0) return "text/csv";
+    if (strcmp(extension, ".xml") == 0) return "application/xml";
+    if (strcmp(extension, ".html") == 0) return "text/html";
+    if (strcmp(extension, ".css") == 0) return "text/css";
+    if (strcmp(extension, ".js") == 0) return "application/javascript";
+    if (strcmp(extension, ".bin") == 0) return "application/octet-stream";
+    
+    return "application/octet-stream";
 }
 
-bool isUsingDefaultPassword() {
-    return validatePassword(DEFAULT_WEB_PASSWORD);
-}
-
-// Rate limiting functions for DoS protection
-// -----------------------------
-
-// Static array to store rate limit entries (ESP32 memory constraint)
-static RateLimitEntry rateLimitEntries[MAX_TRACKED_IPS];
-static int rateLimitEntryCount = 0;
-static unsigned long lastCleanupTime = 0;
-
-void initializeRateLimiting() {
-    logger.debug("Initializing rate limiting...", TAG);
-    
-    // Clear all rate limit entries
-    for (int i = 0; i < MAX_TRACKED_IPS; i++) {
-        rateLimitEntries[i] = RateLimitEntry();
-    }
-    rateLimitEntryCount = 0;
-    lastCleanupTime = millis();
-    
-    logger.debug("Rate limiting initialized", TAG);
-}
-
-bool isIpBlocked(const String& clientIp) {
-    if (clientIp.isEmpty()) {
-        return false; // Don't block if IP is unknown
-    }
-    
-    // Clean up old entries periodically
-    if (millis() - lastCleanupTime > RATE_LIMIT_CLEANUP_INTERVAL) {
-        cleanupOldRateLimitEntries();
-        lastCleanupTime = millis();
-    }
-    
-    // Look for existing entry for this IP
-    for (int i = 0; i < rateLimitEntryCount; i++) {
-        if (rateLimitEntries[i].ipAddress.equals(clientIp)) {
-            // Check if IP is currently blocked
-            if (rateLimitEntries[i].blockedUntil > millis()) {
-                logger.debug("IP %s is blocked until %lu (current: %lu)", TAG, 
-                           clientIp.c_str(), rateLimitEntries[i].blockedUntil, millis());
-                return true;
-            }
-            break;
-        }
-    }
-    
-    return false;
-}
-
-void recordFailedLogin(const String& clientIp) {
-    if (clientIp.isEmpty()) {
-        return; // Can't track empty IP
-    }
-    
-    logger.debug("Recording failed login for IP: %s", TAG, clientIp.c_str());
-    
-    // Look for existing entry for this IP
-    for (int i = 0; i < rateLimitEntryCount; i++) {
-        if (rateLimitEntries[i].ipAddress.equals(clientIp)) {
-            rateLimitEntries[i].failedAttempts++;
-            rateLimitEntries[i].lastFailedAttempt = millis();
-            
-            // Block IP if too many failed attempts
-            if (rateLimitEntries[i].failedAttempts >= MAX_LOGIN_ATTEMPTS) {
-                rateLimitEntries[i].blockedUntil = millis() + LOGIN_BLOCK_DURATION;
-                logger.warning("IP %s blocked for %d minutes after %d failed login attempts", TAG,
-                             clientIp.c_str(), LOGIN_BLOCK_DURATION / (60 * 1000), rateLimitEntries[i].failedAttempts);
-            } else {
-                logger.debug("IP %s has %d failed attempts", TAG, clientIp.c_str(), rateLimitEntries[i].failedAttempts);
-            }
-            return;
-        }
-    }
-    
-    // Create new entry if we have space
-    if (rateLimitEntryCount < MAX_TRACKED_IPS) {
-        rateLimitEntries[rateLimitEntryCount] = RateLimitEntry(clientIp);
-        rateLimitEntries[rateLimitEntryCount].failedAttempts = 1;
-        rateLimitEntries[rateLimitEntryCount].lastFailedAttempt = millis();
-        rateLimitEntryCount++;
-        logger.debug("New rate limit entry created for IP: %s", TAG, clientIp.c_str());
-    } else {
-        // Array is full, replace oldest entry
-        int oldestIndex = 0;
-        unsigned long oldestTime = rateLimitEntries[0].lastFailedAttempt;
-        
-        for (int i = 1; i < MAX_TRACKED_IPS; i++) {
-            if (rateLimitEntries[i].lastFailedAttempt < oldestTime) {
-                oldestTime = rateLimitEntries[i].lastFailedAttempt;
-                oldestIndex = i;
-            }
-        }
-        
-        logger.debug("Rate limit array full, replacing oldest entry (IP: %s) with new IP: %s", TAG, 
-                   rateLimitEntries[oldestIndex].ipAddress.c_str(), clientIp.c_str());
-        
-        rateLimitEntries[oldestIndex] = RateLimitEntry(clientIp);
-        rateLimitEntries[oldestIndex].failedAttempts = 1;
-        rateLimitEntries[oldestIndex].lastFailedAttempt = millis();
-    }
-}
-
-void recordSuccessfulLogin(const String& clientIp) {
-    if (clientIp.isEmpty()) {
-        return; // Can't track empty IP
-    }
-    
-    // Reset failed attempts for this IP on successful login
-    for (int i = 0; i < rateLimitEntryCount; i++) {
-        if (rateLimitEntries[i].ipAddress.equals(clientIp)) {
-            logger.debug("Resetting failed attempts for IP %s after successful login", TAG, clientIp.c_str());
-            rateLimitEntries[i].failedAttempts = 0;
-            rateLimitEntries[i].blockedUntil = 0;
-            return;
-        }
-    }
-}
-
-void cleanupOldRateLimitEntries() {
-    unsigned long currentTime = millis();
-    int newCount = 0;
-    
-    // Remove entries that are no longer blocked and haven't had recent activity
-    for (int i = 0; i < rateLimitEntryCount; i++) {
-        bool shouldKeep = false;
-        
-        // Keep if currently blocked
-        if (rateLimitEntries[i].blockedUntil > currentTime) {
-            shouldKeep = true;
-        }
-        // Keep if had recent failed attempts (within cleanup interval)
-        else if (currentTime - rateLimitEntries[i].lastFailedAttempt < RATE_LIMIT_CLEANUP_INTERVAL) {
-            shouldKeep = true;
-        }
-        
-        if (shouldKeep) {
-            if (newCount != i) {
-                rateLimitEntries[newCount] = rateLimitEntries[i];
-            }
-            newCount++;
-        } else {
-            logger.debug("Cleaning up old rate limit entry for IP: %s", TAG, rateLimitEntries[i].ipAddress.c_str());
-        }
-    }
-    
-    // Clear remaining entries
-    for (int i = newCount; i < rateLimitEntryCount; i++) {
-        rateLimitEntries[i] = RateLimitEntry();
-    }
-    
-    int removedCount = rateLimitEntryCount - newCount;
-    rateLimitEntryCount = newCount;
-    
-    if (removedCount > 0) {
-        logger.debug("Rate limit cleanup completed. Removed %d entries, %d entries remaining", TAG, removedCount, rateLimitEntryCount);
-    }
+bool endsWith(const char* s, const char* suffix) {
+    size_t ls = strlen(s), lsf = strlen(suffix);
+    return lsf <= ls && strcmp(s + ls - lsf, suffix) == 0;
 }
