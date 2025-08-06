@@ -5,40 +5,44 @@
 #include "constants.h"
 
 struct Statistics { // Make uint64
-  uint32_t ade7953TotalInterrupts;
-  uint32_t ade7953TotalHandledInterrupts;
-  uint32_t ade7953ReadingCount;
-  uint32_t ade7953ReadingCountFailure;
+  uint64_t ade7953TotalInterrupts;
+  uint64_t ade7953TotalHandledInterrupts;
+  uint64_t ade7953ReadingCount;
+  uint64_t ade7953ReadingCountFailure;
 
-  uint32_t mqttMessagesPublished;
-  uint32_t mqttMessagesPublishedError;
+  uint64_t mqttMessagesPublished;
+  uint64_t mqttMessagesPublishedError;
+  uint64_t mqttConnections;
+  uint64_t mqttConnectionErrors;
   
-  uint32_t customMqttMessagesPublished; // TODO: add also connection error and not
-  uint32_t customMqttMessagesPublishedError;
+  uint64_t customMqttMessagesPublished; // TODO: add also connection error and not
+  uint64_t customMqttMessagesPublishedError;
   
-  uint32_t modbusRequests;
-  uint32_t modbusRequestsError;
+  uint64_t modbusRequests;
+  uint64_t modbusRequestsError;
   
-  uint32_t influxdbUploadCount;
-  uint32_t influxdbUploadCountError;
+  uint64_t influxdbUploadCount;
+  uint64_t influxdbUploadCountError;
 
-  uint32_t wifiConnection;
-  uint32_t wifiConnectionError;
+  uint64_t wifiConnection;
+  uint64_t wifiConnectionError;
 
-  uint32_t webServerRequests;
-  uint32_t webServerRequestsError;
+  uint64_t webServerRequests;
+  uint64_t webServerRequestsError;
 
-  uint32_t logVerbose;
-  uint32_t logDebug;
-  uint32_t logInfo;
-  uint32_t logWarning;
-  uint32_t logError;
-  uint32_t logFatal;
+  uint64_t logVerbose;
+  uint64_t logDebug;
+  uint64_t logInfo;
+  uint64_t logWarning;
+  uint64_t logError;
+  uint64_t logFatal;
 
   Statistics() 
     : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0), 
-    mqttMessagesPublished(0), mqttMessagesPublishedError(0), customMqttMessagesPublished(0), customMqttMessagesPublishedError(0), modbusRequests(0), modbusRequestsError(0), 
+    mqttMessagesPublished(0), mqttMessagesPublishedError(0), mqttConnections(0), mqttConnectionErrors(0), 
+    customMqttMessagesPublished(0), customMqttMessagesPublishedError(0), modbusRequests(0), modbusRequestsError(0), 
     influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0),
+    webServerRequests(0), webServerRequestsError(0),
     logVerbose(0), logDebug(0), logInfo(0), logWarning(0), logError(0), logFatal(0) {}
 };
 

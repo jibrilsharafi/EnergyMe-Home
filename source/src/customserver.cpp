@@ -1305,8 +1305,20 @@ namespace CustomServer
                 return;
             }
 
-            uint16_t address = request->getParam("address")->value().toInt();
-            uint8_t bits = request->getParam("bits")->value().toInt();
+            int32_t addressValue = request->getParam("address")->value().toInt();
+            int32_t bitsValue = request->getParam("bits")->value().toInt();
+
+            if (addressValue < 0 || addressValue > UINT16_MAX) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register address out of range (0-65535)");
+                return;
+            }
+            if (bitsValue < 0 || bitsValue > UINT8_MAX) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register bits out of range (0-255)");
+                return;
+            }
+
+            uint16_t address = static_cast<uint16_t>(addressValue);
+            uint8_t bits = static_cast<uint8_t>(bitsValue);
             bool signedData = request->hasParam("signed") ? request->getParam("signed")->value().equals("true") : false;
 
             int32_t value = Ade7953::readRegister(address, bits, signedData);
@@ -1335,8 +1347,20 @@ namespace CustomServer
                     return;
                 }
 
-                uint16_t address = doc["address"].as<int32_t>();
-                uint8_t bits = doc["bits"].as<int32_t>();
+                int32_t addressValue = request->getParam("address")->value().toInt();
+                int32_t bitsValue = request->getParam("bits")->value().toInt();
+
+                if (addressValue < 0 || addressValue > UINT16_MAX) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register address out of range (0-65535)");
+                    return;
+                }
+                if (bitsValue < 0 || bitsValue > UINT8_MAX) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register bits out of range (0-255)");
+                    return;
+                }
+
+                uint16_t address = static_cast<uint16_t>(addressValue);
+                uint8_t bits = static_cast<uint8_t>(bitsValue);
                 int32_t value = doc["value"].as<int32_t>();
 
                 Ade7953::writeRegister(address, bits, value);

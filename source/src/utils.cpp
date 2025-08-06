@@ -570,7 +570,7 @@ void updateStatistics() {
 
 void printStatistics() {
     logger.debug("--- Statistics ---", TAG);
-    logger.debug("Statistics - ADE7953: %ld total interrupts | %ld handled interrupts | %ld readings | %ld reading failures", 
+    logger.debug("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu readings | %llu reading failures", 
         TAG, 
         statistics.ade7953TotalInterrupts, 
         statistics.ade7953TotalHandledInterrupts, 
@@ -578,43 +578,45 @@ void printStatistics() {
         statistics.ade7953ReadingCountFailure
     );
 
-    logger.debug("Statistics - MQTT: %ld messages published | %ld errors", 
+    logger.debug("Statistics - MQTT: %llu messages published | %llu errors | %llu connections | %llu connection errors", 
         TAG, 
         statistics.mqttMessagesPublished, 
-        statistics.mqttMessagesPublishedError
+        statistics.mqttMessagesPublishedError,
+        statistics.mqttConnections,
+        statistics.mqttConnectionErrors
     );
 
-    logger.debug("Statistics - Custom MQTT: %ld messages published | %ld errors", 
+    logger.debug("Statistics - Custom MQTT: %llu messages published | %llu errors", 
         TAG, 
         statistics.customMqttMessagesPublished, 
         statistics.customMqttMessagesPublishedError
     );
 
-    logger.debug("Statistics - Modbus: %ld requests | %ld errors", 
+    logger.debug("Statistics - Modbus: %llu requests | %llu errors", 
         TAG, 
         statistics.modbusRequests, 
         statistics.modbusRequestsError
     );
 
-    logger.debug("Statistics - InfluxDB: %ld uploads | %ld errors", 
+    logger.debug("Statistics - InfluxDB: %llu uploads | %llu errors", 
         TAG, 
         statistics.influxdbUploadCount, 
         statistics.influxdbUploadCountError
     );
 
-    logger.debug("Statistics - WiFi: %ld connections | %ld errors", 
+    logger.debug("Statistics - WiFi: %llu connections | %llu errors", 
         TAG, 
         statistics.wifiConnection, 
         statistics.wifiConnectionError
     );
 
-    logger.debug("Statistics - Web Server: %ld requests | %ld errors", 
+    logger.debug("Statistics - Web Server: %llu requests | %llu errors", 
         TAG, 
         statistics.webServerRequests, 
         statistics.webServerRequestsError
     );
 
-    logger.debug("Statistics - Log: %ld verbose | %ld debug | %ld info | %ld warning | %ld error | %ld fatal", 
+    logger.debug("Statistics - Log: %llu verbose | %llu debug | %llu info | %llu warning | %llu error | %llu fatal", 
         TAG, 
         statistics.logVerbose, 
         statistics.logDebug, 
@@ -636,6 +638,8 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
     // MQTT statistics
     jsonDocument["mqtt"]["messagesPublished"] = statistics.mqttMessagesPublished;
     jsonDocument["mqtt"]["messagesPublishedError"] = statistics.mqttMessagesPublishedError;
+    jsonDocument["mqtt"]["connections"] = statistics.mqttConnections;
+    jsonDocument["mqtt"]["connectionErrors"] = statistics.mqttConnectionErrors;
 
     // Custom MQTT statistics
     jsonDocument["customMqtt"]["messagesPublished"] = statistics.customMqttMessagesPublished;
@@ -863,4 +867,9 @@ const char* getContentTypeFromFilename(const char* filename) {
     if (strcmp(extension, ".bin") == 0) return "application/octet-stream";
     
     return "application/octet-stream";
+}
+
+bool endsWith(const char* s, const char* suffix) {
+    size_t ls = strlen(s), lsf = strlen(suffix);
+    return lsf <= ls && strcmp(s + ls - lsf, suffix) == 0;
 }

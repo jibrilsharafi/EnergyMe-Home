@@ -112,5 +112,21 @@ void clearAllPreferences();
 
 // SPIFFS file operations
 bool listSpiffsFiles(JsonDocument& doc);
-bool getSpiffsFileContent(const char* filepath, String& content);
+bool getSpiffsFileContent(const char* filepath, char* buffer, size_t bufferSize);
 const char* getContentTypeFromFilename(const char* filename);
+
+// String utilities
+bool endsWith(const char* s, const char* suffix);
+
+// Mutex utilities
+inline bool acquireMutex(SemaphoreHandle_t* mutex, uint64_t timeout) {
+    if (mutex && xSemaphoreTake(*mutex, pdMS_TO_TICKS(timeout)) != pdTRUE) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
+inline void releaseMutex(SemaphoreHandle_t* mutex) {
+    if (mutex) xSemaphoreGive(*mutex);
+}
