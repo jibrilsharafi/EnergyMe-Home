@@ -4,8 +4,8 @@
 
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
-#define FIRMWARE_BUILD_VERSION_MINOR "11"
-#define FIRMWARE_BUILD_VERSION_PATCH "15"
+#define FIRMWARE_BUILD_VERSION_MINOR "12"
+#define FIRMWARE_BUILD_VERSION_PATCH "00"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -45,8 +45,6 @@
 
 // Logger
 #define LOG_PATH "/logger/log.txt"
-#define LOG_CONFIG_PATH "/logger/config.txt"
-#define LOG_TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
 
 // Buffer Sizes for String Operations
 // =================================
@@ -56,7 +54,6 @@
 #define DEVICE_ID_BUFFER_SIZE 16        // For device ID (increased slightly for safety)
 #define IP_ADDRESS_BUFFER_SIZE 16       // For IPv4 addresses (e.g., "192.168.1.1")
 #define MAC_ADDRESS_BUFFER_SIZE 18      // For MAC addresses (e.g., "00:1A:2B:3C:4D:5E")
-#define TIMESTAMP_BUFFER_SIZE 20        // For timestamps (formatted as "YYYY-MM-DD HH:MM:SS")
 #define TIMESTAMP_ISO_BUFFER_SIZE 25    // For ISO UTC timestamps (formatted as "YYYY-MM-DDTHH:MM:SS.sssZ")
 #define SHORT_NAME_BUFFER_SIZE 32       // For short names (e.g., channel names, labels)
 #define MD5_BUFFER_SIZE 33              // 32 characters + null terminator
@@ -69,7 +66,7 @@
 #define STATUS_BUFFER_SIZE 128          // Generic status messages (e.g., connection status, error messages)
 
 // Timeouts and intervals
-#define TASK_STOPPING_TIMEOUT (3 * 1000)
+#define TASK_STOPPING_TIMEOUT (5 * 1000)
 #define TASK_STOPPING_CHECK_INTERVAL 100
 #define CONFIG_MUTEX_TIMEOUT_MS (5 * 1000) // Generic timeout for configuration mutexes
 

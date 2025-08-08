@@ -26,13 +26,13 @@
 #define MQTT_TASK_STACK_SIZE (16 * 1024)
 #define MQTT_TASK_PRIORITY 3
 
-#define MQTT_LOG_QUEUE_SIZE 1000 // Generous log size thanks to PSRAM
-#define MQTT_METER_QUEUE_SIZE 50000 // Very big since we have plenty of PSRAM
+#define MQTT_LOG_QUEUE_SIZE (750 * 1024) // Generous log size (in bytes) thanks to PSRAM
+#define MQTT_METER_QUEUE_SIZE (500 * 1024) // Size in bytes to allocate to PSRAM
 #define MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD 0.90 // Threshold for publishing
 
 #define JSON_MQTT_BUFFER_SIZE (4 * 1024)     // For MQTT JSON payloads
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (6 * 1024) // For MQTT subscribe messages (reduced from 1KB)
-#define CERTIFICATE_BUFFER_SIZE (4 * 1024) // TODO: can this be reduced?
+#define CERTIFICATE_BUFFER_SIZE (4 * 1024)
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
 
@@ -55,7 +55,7 @@
 #define MQTT_MAX_RECONNECT_INTERVAL (5 * 60 * 1000) // Maximum interval for MQTT reconnection attempts
 #define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
-#define MQTT_PAYLOAD_LIMIT (16 * 1024) // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
+#define MQTT_PAYLOAD_LIMIT (8 * 1024) // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
 
 #define MQTT_INITIAL_RETRY_INTERVAL (5 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds
@@ -151,7 +151,7 @@ namespace Mqtt
     void requestCrashPublish();
     
     // Public methods for pushing data to queues
-    void pushLog(const char* timestamp, uint64_t millisEsp, const char* level, uint32_t coreId, const char* function, const char* message);
+    void pushLog(const LogEntry& entry);
     void pushMeter(const PayloadMeter& payload);
 }
 #endif

@@ -252,17 +252,17 @@
                     <span id="heapTotal" class="info-value">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">💿</span>SPIFFS Storage</span>
+                    <span class="info-label"><span class="emoji">💿</span>LittleFS Storage</span>
                     <div style="text-align: right;">
-                        <div id="spiffsFree" class="info-value">Loading...</div>
+                        <div id="littlefsFree" class="info-value">Loading...</div>
                         <div class="progress-bar">
-                            <div id="spiffsProgress" class="progress-fill progress-good" style="width: 0%"></div>
+                            <div id="littlefsProgress" class="progress-fill progress-good" style="width: 0%"></div>
                         </div>
                     </div>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📈</span>Total SPIFFS</span>
-                    <span id="spiffsTotal" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">📈</span>Total LittleFS</span>
+                    <span id="littlefsTotal" class="info-value">Loading...</span>
                 </div>
             </div>
 
@@ -621,18 +621,18 @@
             heapProgress.style.width = `${100 - heapUsedPercentage}%`;
             heapProgress.className = `progress-fill ${heapStatus.class}`;
 
-            var spiffsFree = data.memory.spiffs.free;
-            var spiffsTotal = data.memory.spiffs.total;
-            var spiffsUsedPercentage = ((spiffsTotal - spiffsFree) / spiffsTotal) * 100;
-            var spiffsStatus = getMemoryStatus(spiffsFree, spiffsTotal);
+            var littlefsFree = data.memory.littlefs.free;
+            var littlefsTotal = data.memory.littlefs.total;
+            var littlefsUsedPercentage = ((littlefsTotal - littlefsFree) / littlefsTotal) * 100;
+            var littlefsStatus = getMemoryStatus(littlefsFree, littlefsTotal);
             
-            document.getElementById('spiffsFree').textContent = 
-                `${formatBytes(spiffsFree)} free (${(100 - spiffsUsedPercentage).toFixed(1)}%)`;
-            document.getElementById('spiffsTotal').textContent = formatBytes(spiffsTotal);
+            document.getElementById('littlefsFree').textContent = 
+                `${formatBytes(littlefsFree)} free (${(100 - littlefsUsedPercentage).toFixed(1)}%)`;
+            document.getElementById('littlefsTotal').textContent = formatBytes(littlefsTotal);
             
-            const spiffsProgress = document.getElementById('spiffsProgress');
-            spiffsProgress.style.width = `${100 - spiffsUsedPercentage}%`;
-            spiffsProgress.className = `progress-fill ${spiffsStatus.class}`;
+            const littlefsProgress = document.getElementById('littlefsProgress');
+            littlefsProgress.style.width = `${100 - littlefsUsedPercentage}%`;
+            littlefsProgress.className = `progress-fill ${littlefsStatus.class}`;
 
             // Hardware information
             document.getElementById('chipModel').textContent = data.chip.model;

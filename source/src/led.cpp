@@ -131,7 +131,7 @@ namespace Led
                 else
                 {
                     // Lower priority: put back in queue for later
-                    xQueueSendToBack(_ledQueue, &command, 0);
+                    if (_ledQueue) xQueueSendToBack(_ledQueue, &command, 0);
                 }
             }
 

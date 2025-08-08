@@ -29,7 +29,7 @@
 
 // Custom MQTT task constants
 #define CUSTOM_MQTT_TASK_NAME "custom_mqtt_task"
-#define CUSTOM_MQTT_TASK_STACK_SIZE (16 * 1024)
+#define CUSTOM_MQTT_TASK_STACK_SIZE (8 * 1024)
 #define CUSTOM_MQTT_TASK_PRIORITY 1
 #define CUSTOM_MQTT_TASK_CHECK_INTERVAL 500 // Cannot send mqtt messages faster than this
 

@@ -3,9 +3,9 @@ import json
 import os
 from typing import Any, Dict
 from pymodbus.client import ModbusTcpClient
+import sys
 
 # Modbus server details
-SERVER_HOST = "192.168.1.60"  # Replace with your server's IP address
 SERVER_PORT = 502  # Replace with your server's port if different
 
 # Mapping from old string types to ModbusTcpClient.DATATYPE enum values
@@ -313,17 +313,22 @@ def test_register_source_comparison(client: ModbusTcpClient, register_dict: Dict
     print("─"*80)
 
 def main():
-    client = ModbusTcpClient(SERVER_HOST, port=SERVER_PORT)
+    if len(sys.argv) < 2:
+        print("Usage: python modbus_tester.py <SERVER_IP>")
+        print("Example: python modbus_tester.py 192.168.1.60")
+        return
+
+    server_ip = sys.argv[1]
+    client = ModbusTcpClient(server_ip, port=SERVER_PORT)
 
     if not client.connect():
         print("❌ Failed to connect to the Modbus server")
         return
 
-    # try:
     print("=" * 90)
     print("🔌 MODBUS REGISTER TESTING SUITE - JSON CONFIGURATION")
     print("=" * 90)
-    print(f"🌐 Server: {SERVER_HOST}:{SERVER_PORT}")
+    print(f"🌐 Server: {server_ip}:{SERVER_PORT}")
     
     # Load JSON registers
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -336,35 +341,28 @@ def main():
     
     print(f"📊 Loaded {len(registers)} registers from configuration")
     
-    # Track overall statistics
     overall_start_time = time.time()
     test_results = {}
     
-    # Test 1: Register source comparison
     print(f"\n🧪 TEST 1: Individual Register Validation")
     test_register_source_comparison(client, registers)
     
-    # Test 2: Channel 0 polling speed
     print(f"\n🧪 TEST 2: High-Speed Polling Performance")
     test_channel0_polling_speed(client, registers)
     
-    # Test 3: Channel 0 vs aggregated power comparison
     print(f"\n🧪 TEST 3: Power Measurement Accuracy")
     test_channel0_active_power(client, registers)
     
-    # Calculate overall statistics
     total_test_time = time.time() - overall_start_time
     
-    # Final comprehensive report
     print("\n" + "="*90)
     print("📈 COMPREHENSIVE TEST SUITE RESULTS")
     print("="*90)
     print(f"🏁 Test Suite Duration: {total_test_time:.2f} seconds")
     print(f"📊 Total Registers Tested: {len(registers)}")
-    print(f"🌐 Modbus Server: {SERVER_HOST}:{SERVER_PORT}")
+    print(f"🌐 Modbus Server: {server_ip}:{SERVER_PORT}")
     print(f"📋 Configuration Source: {json_file_path}")
     
-    # Analyze register types
     type_counts = {}
     address_ranges = {"min": float('inf'), "max": 0}
     
@@ -387,14 +385,6 @@ def main():
     
     print(f"\n✅ Test suite completed successfully!")
     print("="*90)
-    
-    # except KeyboardInterrupt:
-    #     print("\n⚠️  Test suite interrupted by user")
-    # except Exception as e:
-    #     print(f"\n❌ Test suite failed with error: {e}")
-    # finally:
-    #     client.close()
-    #     print("🔌 Modbus connection closed")
 
 if __name__ == "__main__":
     main()

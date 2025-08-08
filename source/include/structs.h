@@ -36,6 +36,7 @@ struct Statistics { // Make uint64
   uint64_t logWarning;
   uint64_t logError;
   uint64_t logFatal;
+  uint64_t logDropped;
 
   Statistics() 
     : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0), 
@@ -43,7 +44,7 @@ struct Statistics { // Make uint64
     customMqttMessagesPublished(0), customMqttMessagesPublishedError(0), modbusRequests(0), modbusRequestsError(0), 
     influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0),
     webServerRequests(0), webServerRequestsError(0),
-    logVerbose(0), logDebug(0), logInfo(0), logWarning(0), logError(0), logFatal(0) {}
+    logVerbose(0), logDebug(0), logInfo(0), logWarning(0), logError(0), logFatal(0), logDropped(0) {}
 };
 
 // Static system information (rarely changes, only with firmware updates)
@@ -59,8 +60,8 @@ struct SystemStaticInfo {
     
     // Firmware & Build
     char buildVersion[VERSION_BUFFER_SIZE];
-    char buildDate[TIMESTAMP_BUFFER_SIZE];
-    char buildTime[TIMESTAMP_BUFFER_SIZE];
+    char buildDate[TIMESTAMP_ISO_BUFFER_SIZE];
+    char buildTime[TIMESTAMP_ISO_BUFFER_SIZE];
     char sketchMD5[MD5_BUFFER_SIZE];  // MD5 hash (32 chars + null terminator)
     char partitionAppName[NAME_BUFFER_SIZE]; // Name of the partition for the app (e.g., "app0", "app1")
     
@@ -118,7 +119,6 @@ struct SystemDynamicInfo {
     // Time & Uptime
     uint64_t uptimeMilliseconds;
     uint64_t uptimeSeconds;
-    char currentTimestamp[TIMESTAMP_BUFFER_SIZE];
     char currentTimestampIso[TIMESTAMP_ISO_BUFFER_SIZE];
     
     // Memory - Heap (DRAM)
@@ -139,12 +139,12 @@ struct SystemDynamicInfo {
     float psramFreePercentage;
     float psramUsedPercentage;
     
-    // Storage - SPIFFS
-    uint32_t spiffsTotalBytes;
-    uint32_t spiffsUsedBytes;
-    uint32_t spiffsFreeBytes;
-    float spiffsFreePercentage;
-    float spiffsUsedPercentage;
+    // Storage - LittleFS
+    uint32_t littlefsTotalBytes;
+    uint32_t littlefsUsedBytes;
+    uint32_t littlefsFreeBytes;
+    float littlefsFreePercentage;
+    float littlefsUsedPercentage;
 
     // Storage - NVS
     uint32_t totalUsableEntries;

@@ -1,7 +1,5 @@
 #include "modbustcp.h"
 
-static const char *TAG = "modbustcp";
-
 namespace ModbusTcp
 {
     // Static state variables
@@ -19,26 +17,26 @@ namespace ModbusTcp
 
     void begin()
     {
-        logger.debug("Initializing Modbus TCP", TAG);
+        LOG_DEBUG("Initializing Modbus TCP");
         
         _mbServer.registerWorker(MODBUS_TCP_SERVER_ID, READ_HOLD_REGISTER, &_handleReadHoldingRegisters);
         _mbServer.start(MODBUS_TCP_PORT, MODBUS_TCP_MAX_CLIENTS, MODBUS_TCP_TIMEOUT);
         
-        logger.debug("Modbus TCP initialized", TAG);
+        LOG_DEBUG("Modbus TCP initialized");
     }
 
     void stop()
     {
-        logger.debug("Stopping Modbus TCP server", TAG);
+        LOG_DEBUG("Stopping Modbus TCP server");
         _mbServer.stop();
-        logger.info("Modbus TCP server stopped", TAG);
+        LOG_INFO("Modbus TCP server stopped");
     }
 
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request)
     {
         if (request.getFunctionCode() != READ_HOLD_REGISTER)
         {
-            logger.warning("Invalid function code: %d", TAG, request.getFunctionCode());
+            LOG_WARNING("Invalid function code: %d", request.getFunctionCode());
             statistics.modbusRequestsError++;
             ModbusMessage errorResponse;
             errorResponse.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_FUNCTION);
@@ -53,7 +51,7 @@ namespace ModbusTcp
         // Validate register count (Modbus standard allows max 125 registers)
         if (registerCount == 0 || registerCount > 125)
         {
-            logger.warning("Invalid register count: %u - returning ILLEGAL_DATA_VALUE", TAG, registerCount);
+            LOG_WARNING("Invalid register count: %u - returning ILLEGAL_DATA_VALUE", registerCount);
             statistics.modbusRequestsError++;
             ModbusMessage errorResponse;
             errorResponse.setError(request.getServerID(), request.getFunctionCode(), ILLEGAL_DATA_VALUE);
@@ -88,8 +86,8 @@ namespace ModbusTcp
         }
         
         statistics.modbusRequests++;
-        logger.verbose("Modbus TCP request handled: Server ID: %d, Function Code: %d, Start Address: %u, Register Count: %u", 
-                      TAG, request.getServerID(), request.getFunctionCode(), startAddress, registerCount);
+        LOG_VERBOSE("Modbus TCP request handled: Server ID: %d, Function Code: %d, Start Address: %u, Register Count: %u", 
+                    request.getServerID(), request.getFunctionCode(), startAddress, registerCount);
         return response;
     }
 

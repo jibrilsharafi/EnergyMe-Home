@@ -25,7 +25,7 @@ Handles energy measurements with features like:
 ### Additional Components
 
 - **Multiplexer**: Manages channel switching for the 16 secondary channels
-- **SPIFFS**: Stores configuration and calibration data
+- **LittleFS**: Stores configuration and calibration data
 - **Web Interface**: Provides configuration, monitoring, and firmware update capabilities
 - **Authentication System**: Token-based security with HTTP-only cookies, password hashing, and comprehensive endpoint protection
 - **MQTT**: Enables remote data logging and device management (including optional AWS IoT Core integration)
@@ -59,7 +59,7 @@ The firmware is built around several key modules/classes, typically found in `in
 - `CustomWifi`: Manages Wi-Fi connectivity, including the captive portal for initial setup.
 - `CrashMonitor`: Implements the crash reporting feature using RTC memory.
 - `Led`: Controls status LEDs.
-- **Configuration Management**: Loads, saves, and applies system settings from JSON files on SPIFFS.
+- **Configuration Management**: Loads, saves, and applies system settings from JSON files on LittleFS.
 - **Data Logging/Storage**: Handles storage and retrieval of energy data.
 
 ### Design Principles
@@ -204,7 +204,7 @@ This section outlines the key technical specifications and capabilities of the E
 
 ### Data Management
 
-- **Local Storage**: SPIFFS (Serial Peripheral Interface Flash File System) on ESP32 flash.
+- **Local Storage**: LittleFS (Serial Peripheral Interface Flash File System) on ESP32 flash.
 - **Configuration Storage**: JSON files (e.g., `calibration.json`, `channel.json`).
 - **Energy Data Storage**: JSON files (e.g., `energy.json`, `daily-energy.json`).
 - **Data Update Rates**:

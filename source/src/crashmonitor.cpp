@@ -1,8 +1,4 @@
 #include "crashmonitor.h"
-#include "esp_core_dump.h"
-#include "mbedtls/base64.h"
-
-static const char *TAG = "crashmonitor";
 
 namespace CrashMonitor
 {
@@ -37,10 +33,10 @@ namespace CrashMonitor
     }
 
     void begin() {
-        logger.debug("Setting up crash monitor...", TAG);
+        LOG_DEBUG("Setting up crash monitor...");
 
         if (_magicWord != MAGIC_WORD_RTC) {
-            logger.debug("RTC magic word is invalid, resetting crash counters", TAG);
+            LOG_DEBUG("RTC magic word is invalid, resetting crash counters");
             _magicWord = MAGIC_WORD_RTC;
             _resetCount = 0;
             _crashCount = 0;
@@ -63,9 +59,8 @@ namespace CrashMonitor
         _resetCount++;
         _consecutiveResetCount++;
 
-        logger.debug(
+        LOG_DEBUG(
             "Crash count: %d (consecutive: %d), Reset count: %d (consecutive: %d)", 
-            TAG, 
             _crashCount, _consecutiveCrashCount, _resetCount, _consecutiveResetCount
         );
         _handleCounters();
@@ -80,18 +75,18 @@ namespace CrashMonitor
             &_crashResetTaskHandle
         );
 
-        logger.debug("Crash monitor setup done", TAG);
+        LOG_DEBUG("Crash monitor setup done");
     }
 
     // Very simple task, no need for complex stuff
     static void _crashResetTask(void *parameter)
     {
-        logger.debug("Starting crash reset task...", TAG);
+        LOG_DEBUG("Starting crash reset task...");
 
         delay(COUNTERS_RESET_TIMEOUT);
         
         if (_consecutiveCrashCount > 0 || _consecutiveResetCount > 0){
-            logger.debug("Consecutive crash and reset counters reset to 0", TAG);
+            LOG_DEBUG("Consecutive crash and reset counters reset to 0");
         }
         _consecutiveCrashCount = 0;
         _consecutiveResetCount = 0;
@@ -123,11 +118,11 @@ namespace CrashMonitor
 
     void _handleCounters() {
         if (_consecutiveCrashCount >= MAX_CRASH_COUNT || _consecutiveResetCount >= MAX_RESET_COUNT) {
-            logger.error("The consecutive crash count limit (%d) or the reset count limit (%d) has been reached", TAG, MAX_CRASH_COUNT, MAX_RESET_COUNT);
+            LOG_ERROR("The consecutive crash count limit (%d) or the reset count limit (%d) has been reached", MAX_CRASH_COUNT, MAX_RESET_COUNT);
 
             // If we can rollback, but most importantly, if we have not tried it yet (to avoid infinite rollback loops - IT CAN HAPPEN!)
             if (Update.canRollBack() && !_rollbackTried) {
-                logger.warning("Rolling back to previous firmware version", TAG);
+                LOG_WARNING("Rolling back to previous firmware version");
                 if (Update.rollBack()) {
                     // Reset both counters before restart since we're trying a different firmware
                     _consecutiveCrashCount = 0;
@@ -135,28 +130,28 @@ namespace CrashMonitor
                     _rollbackTried = true; // Indicate rollback was attempted
 
                     // Immediate reset to avoid any further issues
-                    logger.info("Rollback successful, restarting system", TAG);
+                    LOG_INFO("Rollback successful, restarting system");
                     ESP.restart();
                 }
             }
 
             // If we got here, it means the rollback could not be executed, so we try at least to format everything
-            logger.fatal("Could not rollback, performing factory reset", TAG);
-            setRestartSystem(TAG, "Consecutive crash/reset count limit reached", true);
+            LOG_FATAL("Could not rollback, performing factory reset");
+            setRestartSystem("Consecutive crash/reset count limit reached", true);
         }
     }
 
     static void _checkAndPrintCoreDump() {
-        logger.debug("Checking for core dump from previous crash...", TAG);
+        LOG_DEBUG("Checking for core dump from previous crash...");
         
         // Check if a core dump image exists
         esp_err_t image_check = esp_core_dump_image_check();
         if (image_check != ESP_OK) {
-            logger.debug("No core dump found (esp_err: %s)", TAG, esp_err_to_name(image_check));
+            LOG_DEBUG("No core dump found (esp_err: %s)", esp_err_to_name(image_check));
             return;
         }
 
-        logger.info("Core dump found from previous crash, retrieving summary...", TAG);
+        LOG_INFO("Core dump found from previous crash, retrieving summary...");
         
         // Log only essential crash data for analysis
         _logCompleteCrashData();
@@ -188,7 +183,7 @@ namespace CrashMonitor
 
         const esp_partition_t *pt = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, "coredump");
         if (!pt) {
-            logger.error("Core dump partition not found", TAG);
+            LOG_ERROR("Core dump partition not found");
             return false;
         }
 
@@ -213,14 +208,14 @@ namespace CrashMonitor
                         searchBuffer[i+2] == 'L' && searchBuffer[i+3] == 'F') {
                         elfOffset = i;
                         elfOffsetFound = true;
-                        logger.info("Found ELF header at offset %zu in core dump partition", TAG, elfOffset);
+                        LOG_INFO("Found ELF header at offset %zu in core dump partition", elfOffset);
                         break;
                     }
                 }
             }
             
             if (!elfOffsetFound) {
-                logger.error("Could not find ELF header in core dump partition", TAG);
+                LOG_ERROR("Could not find ELF header in core dump partition");
                 *bytesRead = 0;
                 return false;
             }
@@ -241,11 +236,11 @@ namespace CrashMonitor
         esp_err_t err = esp_partition_read(pt, elfOffset + offset, buffer, actualChunkSize);
         if (err == ESP_OK) {
             *bytesRead = actualChunkSize;
-            logger.debug("Read core dump chunk: offset=%zu, size=%zu from partition offset=%zu", TAG, 
+            LOG_DEBUG("Read core dump chunk: offset=%zu, size=%zu from partition offset=%zu", 
                         offset, actualChunkSize, elfOffset + offset);
             return true;
         } else {
-            logger.error("Failed to read core dump chunk at offset %zu (error: %d)", TAG, offset, err);
+            LOG_ERROR("Failed to read core dump chunk at offset %zu (error: %d)", offset, err);
             *bytesRead = 0;
             return false;
         }
@@ -263,7 +258,7 @@ namespace CrashMonitor
         }
 
         if (bufferSize < totalSize) {
-            logger.error("Buffer too small for core dump: need %zu bytes, have %zu", TAG, totalSize, bufferSize);
+            LOG_ERROR("Buffer too small for core dump: need %zu bytes, have %zu", totalSize, bufferSize);
             *actualSize = totalSize; // Return required size
             return false;
         }
@@ -276,15 +271,15 @@ namespace CrashMonitor
 
     void clearCoreDump() {
         esp_core_dump_image_erase();
-        logger.debug("Core dump cleared from flash", TAG);
+        LOG_DEBUG("Core dump cleared from flash");
     }
 
     static void _logCompleteCrashData() {
-        logger.warning("=== Crash Analysis ===", TAG);
+        LOG_WARNING("=== Crash Analysis ===");
         
         // Get reset reason and counters
         esp_reset_reason_t resetReason = esp_reset_reason();
-        logger.warning("Reset reason: %s (%d) | crashes: %lu, consecutive: %lu", TAG,
+        LOG_WARNING("Reset reason: %s (%d) | crashes: %lu, consecutive: %lu",
                     getResetReasonString(resetReason), (int32_t)resetReason, 
                     _crashCount, _consecutiveCrashCount);
         
@@ -294,12 +289,12 @@ namespace CrashMonitor
             esp_err_t err = esp_core_dump_get_summary(summary);
             if (err == ESP_OK) {                
                 // Essential crash info
-                logger.warning("Task: %s | PC: 0x%08x | TCB: 0x%08x | SHA256 (partial): %s", TAG,
+                LOG_WARNING("Task: %s | PC: 0x%08x | TCB: 0x%08x | SHA256 (partial): %s",
                             summary->exc_task, (uint32_t)summary->exc_pc, 
                             (uint32_t)summary->exc_tcb, summary->app_elf_sha256);
                 
                 // Backtrace info
-                logger.warning("Backtrace depth: %d | Corrupted: %s", TAG, 
+                LOG_WARNING("Backtrace depth: %d | Corrupted: %s", 
                             summary->exc_bt_info.depth, summary->exc_bt_info.corrupted ? "yes" : "no");
                 
                 // The key data for debugging - backtrace addresses
@@ -311,28 +306,28 @@ namespace CrashMonitor
                         snprintf(addr, sizeof(addr), "0x%08lx ", (uint32_t)summary->exc_bt_info.bt[i]);
                         strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
                     }
-                    logger.warning("Backtrace addresses: %s", TAG, btAddresses);
+                    LOG_WARNING("Backtrace addresses: %s", btAddresses);
 
                     // Ready-to-use command for debugging
                     char debugCommand[BACKTRACE_DECODE_CMD_SIZE];
                     snprintf(debugCommand, sizeof(debugCommand), BACKTRACE_DECODE_CMD, btAddresses);
-                    logger.warning("Command: %s", TAG, debugCommand);
+                    LOG_WARNING("Command: %s", debugCommand);
                 }
                 
                 // Core dump availability info
                 size_t dumpSize = 0;
                 size_t dumpAddress = 0;
                 if (esp_core_dump_image_get(&dumpAddress, &dumpSize) == ESP_OK) {
-                    logger.warning("Core dump available: %zu bytes at 0x%08x", TAG,
+                    LOG_WARNING("Core dump available: %zu bytes at 0x%08x",
                                 dumpSize, (uint32_t)dumpAddress);
                 }
             } else {
-                logger.warning("Crash summary error: %d", TAG, err);
+                LOG_WARNING("Crash summary error: %d", err);
             }
             free(summary);
         }
         
-        logger.warning("=== End Crash Analysis ===", TAG);
+        LOG_WARNING("=== End Crash Analysis ===");
     }
 
     bool getCoreDumpInfoJson(JsonDocument& doc) {

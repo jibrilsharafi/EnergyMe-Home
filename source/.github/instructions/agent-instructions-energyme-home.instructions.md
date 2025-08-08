@@ -14,7 +14,7 @@ Provide project context and coding guidelines that AI should follow when generat
     - EnergyMe-Home is an open-source ESP32-based energy monitoring system using the Arduino framework with PlatformIO
     - Monitors up to 17 circuits (1 direct + 16 multiplexed) via ADE7953 energy meter IC
     - Primary interfaces: Web UI, MQTT, InfluxDB, Modbus TCP
-    - Uses SPIFFS for configuration storage (JSON files)
+    - Uses LittleFS for configuration storage (JSON files)
     - Most processing is handled by the ADE7953 IC - ESP32 mainly handles communication and data routing
 
 2. **Coding Philosophy**:
@@ -88,7 +88,7 @@ Provide project context and coding guidelines that AI should follow when generat
 
 7. **Data storage**:
     - Use Preferences wherever possible for configuration storage
-    - Use SPIFFS (to update in the future to LittleFS) for historical data storage
+    - Use LittleFS (to update in the future to LittleFS) for historical data storage
 
 8. **Timestamp and Time Handling**:
     - **Data types**: Always use `uint64_t` for timestamps, millis, and time intervals to avoid rollover issues
@@ -117,7 +117,7 @@ Provide project context and coding guidelines that AI should follow when generat
       bool taskShouldRun = false;
       
       void myTask(void* parameter) {
-          logger.debug("Task X started", TAG);
+          LOG_DEBUG("Task X started");
 
           taskShouldRun = true;
           while (taskShouldRun) {
@@ -131,17 +131,17 @@ Provide project context and coding guidelines that AI should follow when generat
               }
           }
 
-          logger.debug("Task X stopping", TAG);
+          LOG_DEBUG("Task X stopping");
           taskHandle = NULL;
           vTaskDelete(NULL);
       }
       
       void startTask() {
           if (taskHandle == NULL) {
-              logger.debug("Starting task X", TAG);
+              LOG_DEBUG("Starting task X");
               xTaskCreate(myTask, X_TASK_NAME, X_TASK_STACK_SIZE, NULL, X_TASK_PRIORITY, &taskHandle);
           } else {
-              logger.debug("Task X is already running", TAG);
+              LOG_DEBUG("Task X is already running");
           }
       }
       

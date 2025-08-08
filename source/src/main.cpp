@@ -4,7 +4,8 @@ Copyright (C) 2025 Jibril Sharafi
 */
 
 #include <Arduino.h>
-#include <SPIFFS.h>
+#include <AdvancedLogger.h>
+#include <LittleFS.h>
 
 // Project includes
 // Initialization before everything
@@ -29,18 +30,8 @@ Copyright (C) 2025 Jibril Sharafi
 // Global variables
 // --------------------
 
-static const char *TAG = "main";
-
-Statistics statistics;
+Statistics statistics; // Move both to utils and use getter to get and set them
 char DEVICE_ID[DEVICE_ID_BUFFER_SIZE];
-
-// Classes instances
-// --------------------
-
-AdvancedLogger logger(
-    LOG_PATH,
-    LOG_CONFIG_PATH,
-    LOG_TIMESTAMP_FORMAT);
 
 void setup()
 {
@@ -64,45 +55,46 @@ void setup()
   {
     setFirstBootDone();
     createAllNamespaces();
-    logger.info("First boot setup complete. Welcome aboard!", TAG);
+    LOG_INFO("First boot setup complete. Welcome aboard!");
   }
 
-  // Disable watchdog during SPIFFS begin because if the formatting is required, it can take a while
-  // And we don't want to continuously print an error to Serial
-  // TODO: actually do this (code 705)
-  if (!SPIFFS.begin(true))
+  if (!LittleFS.begin(true)) // Ensure the partition name is "spiffs" in partitions.csv (even when using LittleFS)
   {
-    Serial.println("SPIFFS initialization failed!");
+    Serial.println("LittleFS initialization failed!");
     ESP.restart();
     return;
   }
 
   Led::setYellow(Led::PRIO_NORMAL);
-  logger.begin();
-  logger.setCallback(CustomLog::callbackMultiple);
+  AdvancedLogger::begin(LOG_PATH);
+  LOG_DEBUG("AdvancedLogger initialized with log path: %s", LOG_PATH);
+  
+  LOG_DEBUG("Setting up callbacks for AdvancedLogger...");
+  AdvancedLogger::setCallback(CustomLog::callbackMultiple);
+  LOG_DEBUG("Callbacks for AdvancedLogger set up successfully");
 
-  logger.info("Guess who's back, back again! EnergyMe - Home is starting up...", TAG);
-  logger.info("Build version: %s | Build date: %s %s | Device ID: %s", TAG, FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
+  LOG_INFO("Guess who's back, back again! EnergyMe - Home is starting up...");
+  LOG_INFO("Build version: %s | Build date: %s %s | Device ID: %s", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
   printDeviceStatusStatic();
   
-  logger.debug("Setting up crash monitor...", TAG);
+  LOG_DEBUG("Setting up crash monitor...");
   CrashMonitor::begin();
-  logger.info("Crash monitor setup done", TAG);
+  LOG_INFO("Crash monitor setup done");
 
   Led::setPurple(Led::PRIO_NORMAL);
-  logger.debug("Setting up multiplexer...", TAG);
+  LOG_DEBUG("Setting up multiplexer...");
   Multiplexer::begin(
       MULTIPLEXER_S0_PIN,
       MULTIPLEXER_S1_PIN,
       MULTIPLEXER_S2_PIN,
       MULTIPLEXER_S3_PIN);
-  logger.info("Multiplexer setup done", TAG);
+  LOG_INFO("Multiplexer setup done");
 
-  logger.debug("Setting up button handler...", TAG);
+  LOG_DEBUG("Setting up button handler...");
   ButtonHandler::begin(BUTTON_GPIO0_PIN);
-  logger.info("Button handler setup done", TAG);
+  LOG_INFO("Button handler setup done");
 
-  logger.debug("Setting up ADE7953...", TAG);
+  LOG_DEBUG("Setting up ADE7953...");
   if (Ade7953::begin(
       ADE7953_SS_PIN,
       ADE7953_SCK_PIN,
@@ -111,69 +103,61 @@ void setup()
       ADE7953_RESET_PIN,
       ADE7953_INTERRUPT_PIN)
     ) {
-      logger.info("ADE7953 setup done", TAG);
+      LOG_INFO("ADE7953 setup done");
   } else {
-      logger.error("ADE7953 initialization failed! This is a big issue mate..", TAG);
+      LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
   }
 
   Led::setBlue(Led::PRIO_NORMAL);
-  logger.debug("Setting up WiFi...", TAG);
+  LOG_DEBUG("Setting up WiFi...");
   CustomWifi::begin();
-  logger.info("WiFi setup done", TAG);
+  LOG_INFO("WiFi setup done");
 
   while (!CustomWifi::isFullyConnected())
   {
-    logger.debug("Waiting for full WiFi connection...", TAG);
+    LOG_DEBUG("Waiting for full WiFi connection...");
     delay(1000);
   }
 
   // Add UDP logging setup after WiFi
-  logger.debug("Setting up UDP logging...", TAG);
+  LOG_DEBUG("Setting up UDP logging...");
   CustomLog::begin();
-  logger.info("UDP logging setup done", TAG);
+  LOG_INFO("UDP logging setup done");
 
-  logger.debug("Syncing time...", TAG);
-  if (CustomTime::begin())
-  {
-    char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
-    CustomTime::getTimestamp(timestampBuffer, sizeof(timestampBuffer));
-    logger.info("Initial time sync successful. Current timestamp: %s", TAG, timestampBuffer);
-  }
-  else
-  {
-    logger.error("Initial time sync failed! Will retry later.", TAG);
-  }
+  LOG_DEBUG("Syncing time...");
+  if (CustomTime::begin()) LOG_INFO("Initial time sync successful");
+  else LOG_ERROR("Initial time sync failed! Will retry later.");
 
-  logger.debug("Setting up server...", TAG);
+  LOG_DEBUG("Setting up server...");
   CustomServer::begin();
-  logger.info("Server setup done", TAG);
+  LOG_INFO("Server setup done");
 
-  logger.debug("Setting up Modbus TCP...", TAG);
+  LOG_DEBUG("Setting up Modbus TCP...");
   ModbusTcp::begin();
-  logger.info("Modbus TCP setup done", TAG);
+  LOG_INFO("Modbus TCP setup done");
 
   #if HAS_SECRETS
-  logger.debug("Setting up MQTT client...", TAG);
+  LOG_DEBUG("Setting up MQTT client...");
   Mqtt::begin();
-  logger.info("MQTT client setup done", TAG);
+  LOG_INFO("MQTT client setup done");
   #endif
 
-  logger.debug("Setting up Custom MQTT client...", TAG);
+  LOG_DEBUG("Setting up Custom MQTT client...");
   CustomMqtt::begin();
-  logger.info("Custom MQTT client setup done", TAG);
+  LOG_INFO("Custom MQTT client setup done");
 
-  logger.debug("Setting up InfluxDB client...", TAG);
+  LOG_DEBUG("Setting up InfluxDB client...");
   InfluxDbClient::begin();
-  logger.info("InfluxDB client setup done", TAG);
+  LOG_INFO("InfluxDB client setup done");
 
-  logger.debug("Starting maintenance task...", TAG);
+  LOG_DEBUG("Starting maintenance task...");
   startMaintenanceTask();
-  logger.info("Maintenance task started", TAG);
+  LOG_INFO("Maintenance task started");
 
   Led::setGreen(Led::PRIO_NORMAL);
   printStatistics();
   printDeviceStatusDynamic();
-  logger.info("Setup done! Let's get this energetic party started!", TAG);
+  LOG_INFO("Setup done! Let's get this energetic party started!");
 }
 
 void loop()

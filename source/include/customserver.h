@@ -25,14 +25,14 @@
 #define WEBSERVER_MAX_REQUESTS 6000
 #define WEBSERVER_WINDOW_SIZE_SECONDS 600
 
-#define MINIMUM_FREE_HEAP_OTA (20 * 1024) // Minimum free heap required for OTA updates
+#define MINIMUM_FREE_HEAP_OTA (10 * 1024) // Minimum free heap required for OTA updates
 #define SIZE_REPORT_UPDATE_OTA (128 * 1024) // Print progress every X bytes during OTA update
 // Here used to lie the delay before restarting or doing some operations to ensure the response is sent
 // but then I undestood that the delay was (also) blocking the AsyncTCP task itself, so it was useless ¯\_(ツ)_/¯
 
 // Health check task
 #define HEALTH_CHECK_TASK_NAME "health_check_task"
-#define HEALTH_CHECK_TASK_STACK_SIZE (4 * 1024)
+#define HEALTH_CHECK_TASK_STACK_SIZE (8 * 1024)
 #define HEALTH_CHECK_TASK_PRIORITY 1
 #define HEALTH_CHECK_INTERVAL_MS (60 * 1000)
 #define HEALTH_CHECK_TIMEOUT_MS (5 * 1000)

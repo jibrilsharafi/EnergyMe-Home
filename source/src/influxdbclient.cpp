@@ -1,7 +1,5 @@
 #include "influxdbclient.h"
 
-static const char *TAG = "influxdbclient";
-
 namespace InfluxDbClient
 {
     // Static variables
@@ -64,25 +62,25 @@ namespace InfluxDbClient
 
     void begin()
     {
-        logger.debug("Setting up InfluxDB client...", TAG);
+        LOG_DEBUG("Setting up InfluxDB client...");
         
         // Create configuration mutex
         if (_configMutex == nullptr) {
             _configMutex = xSemaphoreCreateMutex();
             if (_configMutex == nullptr) {
-                logger.error("Failed to create configuration mutex", TAG);
+                LOG_ERROR("Failed to create configuration mutex");
                 return;
             }
         }
         
         _isSetupDone = true; // Must set before since we have checks on the setup later
         _setConfigurationFromPreferences(); // Here we load and set the config. The setConfig will handle starting the task if enabled
-        logger.debug("InfluxDB client setup complete", TAG);
+        LOG_DEBUG("InfluxDB client setup complete");
     }
 
     void stop()
     {
-        logger.debug("Stopping InfluxDB client...", TAG);
+        LOG_DEBUG("Stopping InfluxDB client...");
         _stopTask();
         
         // Clean up mutex
@@ -92,7 +90,7 @@ namespace InfluxDbClient
         }
         
         _isSetupDone = false;
-        logger.info("InfluxDB client stopped", TAG);
+        LOG_INFO("InfluxDB client stopped");
     }
 
     void getConfiguration(InfluxDbConfiguration &config)
@@ -103,13 +101,13 @@ namespace InfluxDbClient
 
     bool setConfiguration(const InfluxDbConfiguration &config)
     {
-        logger.debug("Setting InfluxDB configuration...", TAG);
+        LOG_DEBUG("Setting InfluxDB configuration...");
         
         if (!_isSetupDone) begin();
 
         // Acquire mutex with timeout
         if (_configMutex == nullptr || xSemaphoreTake(_configMutex, pdMS_TO_TICKS(CONFIG_MUTEX_TIMEOUT_MS)) != pdTRUE) {
-            logger.error("Failed to acquire configuration mutex for setConfiguration", TAG);
+            LOG_ERROR("Failed to acquire configuration mutex for setConfiguration");
             return false;
         }
 
@@ -133,19 +131,19 @@ namespace InfluxDbClient
         // Release mutex
         xSemaphoreGive(_configMutex);
 
-        logger.debug("InfluxDB configuration set", TAG);
+        LOG_DEBUG("InfluxDB configuration set");
         return true;
     }
 
     void resetConfiguration() {
-        logger.debug("Resetting InfluxDB configuration to default", TAG);
+        LOG_DEBUG("Resetting InfluxDB configuration to default");
         
         if (!_isSetupDone) begin();
 
         InfluxDbConfiguration defaultConfig;
         setConfiguration(defaultConfig);
 
-        logger.info("InfluxDB configuration reset to default", TAG);
+        LOG_INFO("InfluxDB configuration reset to default");
     }
 
     void getConfigurationAsJson(JsonDocument &jsonDocument) {
@@ -160,7 +158,7 @@ namespace InfluxDbClient
         InfluxDbConfiguration config;
         config = _influxDbConfiguration; // Start with current configuration (yeah I know it's cumbersome)
         if (!configurationFromJson(jsonDocument, config, partial)) {
-            logger.error("Failed to set configuration from JSON", TAG);
+            LOG_ERROR("Failed to set configuration from JSON");
             return false;
         }
 
@@ -185,7 +183,7 @@ namespace InfluxDbClient
         jsonDocument["frequency"] = config.frequencySeconds;
         jsonDocument["useSSL"] = config.useSSL;
 
-        logger.debug("Successfully converted configuration to JSON", TAG);
+        LOG_DEBUG("Successfully converted configuration to JSON");
     }
 
     bool configurationFromJson(JsonDocument &jsonDocument, InfluxDbConfiguration &config, bool partial)
@@ -194,7 +192,7 @@ namespace InfluxDbClient
 
         if (!_validateJsonConfiguration(jsonDocument, partial))
         {
-            logger.warning("Invalid JSON configuration", TAG);
+            LOG_WARNING("Invalid JSON configuration");
             return false;
         }
 
@@ -233,7 +231,7 @@ namespace InfluxDbClient
         snprintf(_status, sizeof(_status), "Configuration updated");
         _statusTimestampUnix = CustomTime::getUnixTime();
 
-        logger.debug("Successfully converted JSON to configuration%s", TAG, partial ? " (partial)" : "");
+        LOG_DEBUG("Successfully converted JSON to configuration%s", partial ? " (partial)" : "");
         return true;
     }
 
@@ -251,11 +249,11 @@ namespace InfluxDbClient
     static void _startTask()
     {
         if (_influxDbTaskHandle != nullptr) {
-            logger.debug("InfluxDB task is already running", TAG);
+            LOG_DEBUG("InfluxDB task is already running");
             return;
         }
 
-        logger.debug("Starting InfluxDB task", TAG);
+        LOG_DEBUG("Starting InfluxDB task");
         BaseType_t result = xTaskCreate(
             _influxDbTask,
             INFLUXDB_TASK_NAME,
@@ -266,7 +264,7 @@ namespace InfluxDbClient
         );
 
         if (result != pdPASS) {
-            logger.error("Failed to create InfluxDB task", TAG);
+            LOG_ERROR("Failed to create InfluxDB task");
             _influxDbTaskHandle = nullptr;
         }
     }
@@ -275,7 +273,7 @@ namespace InfluxDbClient
 
     static void _influxDbTask(void* parameter)
     {
-        logger.debug("InfluxDB task started", TAG);
+        LOG_DEBUG("InfluxDB task started");
         
         _taskShouldRun = true;
         uint64_t lastSendTime = 0;
@@ -289,7 +287,7 @@ namespace InfluxDbClient
                             _sendData();
                             lastSendTime = currentTime;
                         } else {
-                            logger.debug("Delaying InfluxDB send due to previous failures", TAG);
+                            LOG_DEBUG("Delaying InfluxDB send due to previous failures");
                         }
                     }
                 }
@@ -303,14 +301,14 @@ namespace InfluxDbClient
             }
         }
 
-        logger.debug("InfluxDB task stopping", TAG);
+        LOG_DEBUG("InfluxDB task stopping");
         _influxDbTaskHandle = nullptr;
         vTaskDelete(nullptr);
     }
 
     static void _setConfigurationFromPreferences()
     {
-        logger.debug("Setting InfluxDB configuration from Preferences...", TAG);
+        LOG_DEBUG("Setting InfluxDB configuration from Preferences...");
 
         InfluxDbConfiguration config; // Start with default configuration
 
@@ -335,21 +333,21 @@ namespace InfluxDbClient
 
             preferences.end();
         } else {
-            logger.error("Failed to open Preferences namespace for InfluxDB. Using default configuration", TAG);
+            LOG_ERROR("Failed to open Preferences namespace for InfluxDB. Using default configuration");
         }
 
         setConfiguration(config);
 
-        logger.debug("Successfully set InfluxDB configuration from Preferences", TAG);
+        LOG_DEBUG("Successfully set InfluxDB configuration from Preferences");
     }
 
     static void _saveConfigurationToPreferences()
     {
-        logger.debug("Saving InfluxDB configuration to Preferences...", TAG);
+        LOG_DEBUG("Saving InfluxDB configuration to Preferences...");
 
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false)) {
-            logger.error("Failed to open Preferences namespace for InfluxDB", TAG);
+            LOG_ERROR("Failed to open Preferences namespace for InfluxDB");
             return;
         }
 
@@ -369,14 +367,14 @@ namespace InfluxDbClient
 
         preferences.end();
 
-        logger.debug("Successfully saved InfluxDB configuration to Preferences", TAG);
+        LOG_DEBUG("Successfully saved InfluxDB configuration to Preferences");
     }
 
     static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial)
     {
         if (jsonDocument.isNull() || !jsonDocument.is<JsonObject>())
         {
-            logger.warning("Invalid JSON document", TAG);
+            LOG_WARNING("Invalid JSON document");
             return false;
         }
 
@@ -396,27 +394,27 @@ namespace InfluxDbClient
             if (jsonDocument["frequency"].is<int32_t>()) return true;        
             if (jsonDocument["useSSL"].is<bool>()) return true;
 
-            logger.warning("No valid fields found in JSON document", TAG);
+            LOG_WARNING("No valid fields found in JSON document");
             return false;
         } else {
             // Full validation - all fields must be present and valid
-            if (!jsonDocument["enabled"].is<bool>()) { logger.warning("enabled field is not a boolean", TAG); return false; }
-            if (!jsonDocument["server"].is<const char*>()) { logger.warning("server field is not a string", TAG); return false; }
-            if (!jsonDocument["port"].is<uint16_t>()) { logger.warning("port field is not an integer", TAG); return false; }
-            if (!jsonDocument["version"].is<uint8_t>()) { logger.warning("version field is not an integer", TAG); return false; }
-            if (!jsonDocument["database"].is<const char*>()) { logger.warning("database field is not a string", TAG); return false; }
-            if (!jsonDocument["username"].is<const char*>()) { logger.warning("username field is not a string", TAG); return false; }
-            if (!jsonDocument["password"].is<const char*>()) { logger.warning("password field is not a string", TAG); return false; }
-            if (!jsonDocument["organization"].is<const char*>()) { logger.warning("organization field is not a string", TAG); return false; }
-            if (!jsonDocument["bucket"].is<const char*>()) { logger.warning("bucket field is not a string", TAG); return false; }
-            if (!jsonDocument["token"].is<const char*>()) { logger.warning("token field is not a string", TAG); return false; }
-            if (!jsonDocument["measurement"].is<const char*>()) { logger.warning("measurement field is not a string", TAG); return false; }
-            if (!jsonDocument["frequency"].is<int32_t>()) { logger.warning("frequency field is not an integer", TAG); return false; }
-            if (!jsonDocument["useSSL"].is<bool>()) { logger.warning("useSSL field is not a boolean", TAG); return false; }
+            if (!jsonDocument["enabled"].is<bool>()) { LOG_WARNING("enabled field is not a boolean"); return false; }
+            if (!jsonDocument["server"].is<const char*>()) { LOG_WARNING("server field is not a string"); return false; }
+            if (!jsonDocument["port"].is<uint16_t>()) { LOG_WARNING("port field is not an integer"); return false; }
+            if (!jsonDocument["version"].is<uint8_t>()) { LOG_WARNING("version field is not an integer"); return false; }
+            if (!jsonDocument["database"].is<const char*>()) { LOG_WARNING("database field is not a string"); return false; }
+            if (!jsonDocument["username"].is<const char*>()) { LOG_WARNING("username field is not a string"); return false; }
+            if (!jsonDocument["password"].is<const char*>()) { LOG_WARNING("password field is not a string"); return false; }
+            if (!jsonDocument["organization"].is<const char*>()) { LOG_WARNING("organization field is not a string"); return false; }
+            if (!jsonDocument["bucket"].is<const char*>()) { LOG_WARNING("bucket field is not a string"); return false; }
+            if (!jsonDocument["token"].is<const char*>()) { LOG_WARNING("token field is not a string"); return false; }
+            if (!jsonDocument["measurement"].is<const char*>()) { LOG_WARNING("measurement field is not a string"); return false; }
+            if (!jsonDocument["frequency"].is<int32_t>()) { LOG_WARNING("frequency field is not an integer"); return false; }
+            if (!jsonDocument["useSSL"].is<bool>()) { LOG_WARNING("useSSL field is not a boolean"); return false; }
 
             if (jsonDocument["frequency"].as<int32_t>() < INFLUXDB_MINIMUM_FREQUENCY || jsonDocument["frequency"].as<int32_t>() > INFLUXDB_MAXIMUM_FREQUENCY)
             {
-                logger.warning("frequency field must be between %d and %d seconds", TAG, INFLUXDB_MINIMUM_FREQUENCY, INFLUXDB_MAXIMUM_FREQUENCY);
+                LOG_WARNING("frequency field must be between %d and %d seconds", INFLUXDB_MINIMUM_FREQUENCY, INFLUXDB_MAXIMUM_FREQUENCY);
                 return false;
             }
 
@@ -425,7 +423,7 @@ namespace InfluxDbClient
     }
 
     static void _disable() {
-        logger.debug("Disabling InfluxDB due to persistent failures...", TAG);
+        LOG_DEBUG("Disabling InfluxDB due to persistent failures...");
 
         _influxDbConfiguration.enabled = false;
         setConfiguration(_influxDbConfiguration); // This will handling the task stop and saving the configuration
@@ -433,7 +431,7 @@ namespace InfluxDbClient
         snprintf(_status, sizeof(_status), "Disabled due to persistent failures");
         _statusTimestampUnix = CustomTime::getUnixTime();
 
-        logger.debug("InfluxDB disabled", TAG);
+        LOG_DEBUG("InfluxDB disabled");
     }
 
     static void _setInfluxFullUrl() {
@@ -457,11 +455,11 @@ namespace InfluxDbClient
                      baseUrl,
                      _influxDbConfiguration.database);
         } else {
-            logger.error("Unsupported InfluxDB version: %u", TAG, _influxDbConfiguration.version);
+            LOG_ERROR("Unsupported InfluxDB version: %u", _influxDbConfiguration.version);
             return;
         }
 
-        logger.debug("InfluxDB full URL set to: %s", TAG, _fullUrl);
+        LOG_DEBUG("InfluxDB full URL set to: %s", _fullUrl);
     }
 
     static void _setInfluxHeader() {
@@ -478,11 +476,11 @@ namespace InfluxDbClient
 
             snprintf(_authHeader, sizeof(_authHeader), "Basic %s", encodedCredentials.c_str());
         } else {
-            logger.error("Unsupported InfluxDB version for authorization header: %u", TAG, _influxDbConfiguration.version);
+            LOG_ERROR("Unsupported InfluxDB version for authorization header: %u", _influxDbConfiguration.version);
             return;
         }
 
-        logger.debug("InfluxDB authorization header set", TAG);
+        LOG_DEBUG("InfluxDB authorization header set");
     }
 
     static void _sendData()
@@ -534,11 +532,11 @@ namespace InfluxDbClient
             }
         }
 
-        if (bufferFull) logger.warning("Payload buffer filled completely, some data may be truncated", TAG);
+        if (bufferFull) LOG_WARNING("Payload buffer filled completely, some data may be truncated");
 
         if (ptr == payload)
         {
-            logger.debug("No data to send to InfluxDB", TAG);
+            LOG_DEBUG("No data to send to InfluxDB");
             http.end();
             return;
         }
@@ -547,7 +545,7 @@ namespace InfluxDbClient
 
         if (httpCode >= HTTP_CODE_OK && httpCode < HTTP_CODE_MULTIPLE_CHOICES)
         {
-            logger.debug("Successfully sent data to InfluxDB (HTTP %d)", TAG, httpCode);
+            LOG_DEBUG("Successfully sent data to InfluxDB (HTTP %d)", httpCode);
             statistics.influxdbUploadCount++;
             snprintf(_status, sizeof(_status), "Data sent successfully");
             _currentSendAttempt = 0;
@@ -559,7 +557,7 @@ namespace InfluxDbClient
 
             // Check for specific errors that warrant disabling InfluxDB
             if (httpCode == HTTP_CODE_UNAUTHORIZED || httpCode == HTTP_CODE_FORBIDDEN) {
-                logger.error("InfluxDB send failed due to authorization error (%d). Disabling InfluxDB.", TAG, httpCode);
+                LOG_ERROR("InfluxDB send failed due to authorization error (%d). Disabling InfluxDB.", httpCode);
                 _disable();
                 http.end();
                 return;
@@ -567,7 +565,7 @@ namespace InfluxDbClient
             
             // Check if we've exceeded the maximum number of failures
             if (_currentSendAttempt >= INFLUXDB_MAX_CONSECUTIVE_FAILURES) {
-                logger.error("InfluxDB send failed %u consecutive times. Disabling InfluxDB.", TAG, _currentSendAttempt);
+                LOG_ERROR("InfluxDB send failed %u consecutive times. Disabling InfluxDB.", _currentSendAttempt);
                 _disable();
                 http.end();
                 return;
@@ -580,7 +578,7 @@ namespace InfluxDbClient
             snprintf(_status, sizeof(_status), "Failed to send data (HTTP %ld) - Attempt %u", httpCode, _currentSendAttempt);
             _statusTimestampUnix = CustomTime::getUnixTime();
             
-            logger.warning("Failed to send data to InfluxDB (HTTP %d). Next attempt in %llu ms", TAG, httpCode, _nextSendAttemptMillis - millis64());
+            LOG_WARNING("Failed to send data to InfluxDB (HTTP %d). Next attempt in %llu ms", httpCode, _nextSendAttemptMillis - millis64());
         }
         
         _statusTimestampUnix = CustomTime::getUnixTime();

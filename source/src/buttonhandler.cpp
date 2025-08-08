@@ -1,7 +1,5 @@
 #include "buttonhandler.h"
 
-static const char *TAG = "buttonhandler";
-
 namespace ButtonHandler
 {
     // Static state variables
@@ -38,7 +36,7 @@ namespace ButtonHandler
     void begin(uint8_t buttonPin)
     {
         _buttonPin = buttonPin;
-        logger.debug("Initializing interrupt-driven button handler on GPIO%d", TAG, _buttonPin);
+        LOG_DEBUG("Initializing interrupt-driven button handler on GPIO%d", _buttonPin);
 
         // Setup GPIO with pull-up
         pinMode(_buttonPin, INPUT_PULLUP);
@@ -47,26 +45,26 @@ namespace ButtonHandler
         _buttonSemaphore = xSemaphoreCreateBinary();
         if (_buttonSemaphore == NULL)
         {
-            logger.error("Failed to create button semaphore", TAG);
+            LOG_ERROR("Failed to create button semaphore");
             return;
         }
 
         // Create button handling task with higher stack size for safety
         if (xTaskCreate(_buttonTask, BUTTON_TASK_NAME, BUTTON_TASK_STACK_SIZE, NULL, BUTTON_TASK_PRIORITY, &_buttonTaskHandle) != pdPASS)
         {
-            logger.error("Failed to create button task", TAG);
+            LOG_ERROR("Failed to create button task");
             return;
         }
 
         // Setup interrupt on both edges (press and release)
         attachInterrupt(digitalPinToInterrupt(_buttonPin), _buttonISR, CHANGE);
 
-        logger.debug("Button handler ready - interrupt-driven with task processing", TAG);
+        LOG_DEBUG("Button handler ready - interrupt-driven with task processing");
     }
 
     void stop() 
     {
-        logger.debug("Stopping button handler", TAG);
+        LOG_DEBUG("Stopping button handler");
 
         // Detach interrupt
         detachInterrupt(_buttonPin);
@@ -131,7 +129,7 @@ namespace ButtonHandler
                 {
                     // Button was released - process the press
                     uint64_t pressDuration = millis64() - _buttonPressStartTime;
-                    logger.debug("Button released after %llu ms", TAG, pressDuration);
+                    LOG_DEBUG("Button released after %llu ms", pressDuration);
 
                     _processButtonPress(pressDuration);
                     _buttonPressStartTime = ZERO_START_TIME;
@@ -142,7 +140,7 @@ namespace ButtonHandler
                 else if (_buttonPressed)
                 {
                     // Button was pressed - start visual feedback
-                    logger.debug("Button pressed", TAG);
+                    LOG_DEBUG("Button pressed");
 
                     Led::setBrightness(max(Led::getBrightness(), (uint32_t)1));
                     Led::setWhite(Led::PRIO_URGENT);
@@ -184,7 +182,7 @@ namespace ButtonHandler
         else
         {
             _currentPressType = ButtonPressType::NONE;
-            logger.debug("Button press duration %llu ms - no action", TAG, pressDuration);
+            LOG_DEBUG("Button press duration %llu ms - no action", pressDuration);
         }
     }
 
@@ -219,14 +217,14 @@ namespace ButtonHandler
 
     static void _handleRestart()
     {
-        logger.info("Restart initiated via button", TAG);
+        LOG_INFO("Restart initiated via button");
         snprintf(_operationName, sizeof(_operationName), "Restart");
         _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
 
         Led::setCyan(Led::PRIO_URGENT);
 
-        setRestartSystem(TAG, "Restart via button");
+        setRestartSystem("Restart via button");
 
         _operationInProgress = false;
         _currentPressType = ButtonPressType::NONE;
@@ -234,7 +232,7 @@ namespace ButtonHandler
 
     static void _handlePasswordReset()
     {
-        logger.info("Password reset to default initiated via button", TAG);
+        LOG_INFO("Password reset to default initiated via button");
         snprintf(_operationName, sizeof(_operationName), "Password Reset");
         _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
@@ -246,12 +244,12 @@ namespace ButtonHandler
             // Update authentication middleware with new password
             CustomServer::updateAuthPasswordWithOneFromPreferences();
             
-            logger.info("Password reset to default successfully", TAG);
+            LOG_INFO("Password reset to default successfully");
             Led::blinkGreenSlow(Led::PRIO_URGENT, 2000ULL);
         }
         else
         {
-            logger.error("Failed to reset password to default", TAG);
+            LOG_ERROR("Failed to reset password to default");
             Led::blinkRedFast(Led::PRIO_CRITICAL, 2000ULL);
         }
 
@@ -261,7 +259,7 @@ namespace ButtonHandler
 
     static void _handleWifiReset()
     {
-        logger.info("WiFi reset initiated via button", TAG);
+        LOG_INFO("WiFi reset initiated via button");
         snprintf(_operationName, sizeof(_operationName), "WiFi Reset");
         _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
@@ -276,12 +274,12 @@ namespace ButtonHandler
 
     static void _handleFactoryReset()
     {
-        logger.info("Factory reset initiated via button", TAG);
+        LOG_INFO("Factory reset initiated via button");
         snprintf(_operationName, sizeof(_operationName), "Factory Reset");
         _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
 
-        setRestartSystem(TAG, "Factory reset via button", true);
+        setRestartSystem("Factory reset via button", true);
 
         _operationInProgress = false;
         _currentPressType = ButtonPressType::NONE;

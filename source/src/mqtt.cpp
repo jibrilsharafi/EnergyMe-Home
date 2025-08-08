@@ -1,8 +1,6 @@
 #if HAS_SECRETS
 #include "mqtt.h"
 
-static const char *TAG = "mqtt";
-
 namespace Mqtt
 {
     // Static variables
@@ -130,7 +128,7 @@ namespace Mqtt
     static void _publishChannel();
     static void _publishStatistics();
     static void _publishCrash();
-    static void _publishLog(const LogJson& logEntry);
+    static void _publishLog(const LogEntry& entry);
     static bool _publishProvisioningRequest();
     
     // Queue processing
@@ -188,42 +186,42 @@ namespace Mqtt
 
     void begin()
     {
-        logger.debug("Setting up MQTT client...", TAG);
+        LOG_DEBUG("Setting up MQTT client...");
         
         // Create configuration mutex
         if (_configMutex == nullptr) {
             _configMutex = xSemaphoreCreateMutex();
             if (_configMutex == nullptr) {
-                logger.error("Failed to create configuration mutex", TAG);
+                LOG_ERROR("Failed to create configuration mutex");
                 return;
             }
         }
 
         // Initialize RTC debug flags
         if (_debugFlagsRtc.signature != MAGIC_WORD_RTC) {
-            logger.debug("RTC magic word is invalid, resetting debug flags", TAG);
+            LOG_DEBUG("RTC magic word is invalid, resetting debug flags");
             _debugFlagsRtc.enableMqttDebugLogging = false;
             _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
             _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
             _debugFlagsRtc.signature = MAGIC_WORD_RTC;
         } else if (_debugFlagsRtc.enableMqttDebugLogging) {
             // If the RTC is valid, and before the restart we were logging with debug info, reset the clock and start again the debugging
-            logger.debug("RTC debug logging was enabled, restarting duration of %lu ms", TAG, _debugFlagsRtc.mqttDebugLoggingDurationMillis);
+            LOG_DEBUG("RTC debug logging was enabled, restarting duration of %lu ms", _debugFlagsRtc.mqttDebugLoggingDurationMillis);
             _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = _debugFlagsRtc.mqttDebugLoggingDurationMillis;
         }
 
         _isSetupDone = true; // Must set before since we have checks on the setup later
         _setupTopics();
         _loadConfigFromPreferences(); // Here we load the config. The setCloudServicesEnabled will handle starting the task if enabled
+        _initializeLogQueue();
+        _initializeMeterQueue();
         
-        if (_cloudServicesEnabled) _startTask(); // TODO: remove this as it is probably reduntant (and also check that when setting from prefs, we use the correct methods)
-        
-        logger.debug("MQTT client setup complete", TAG);
+        LOG_DEBUG("MQTT client setup complete");
     }
 
     void stop()
     {
-        logger.debug("Stopping MQTT client...", TAG);
+        LOG_DEBUG("Stopping MQTT client...");
         _stopTask();
         
         _logQueue = nullptr;
@@ -233,14 +231,14 @@ namespace Mqtt
             heap_caps_free(_logQueueStorage);
             _logQueueStorage = nullptr;
             _isLogQueueInitialized = false;
-            logger.debug("MQTT log queue PSRAM freed", TAG);
+            LOG_DEBUG("MQTT log queue PSRAM freed");
         }
         
         if (_isMeterQueueInitialized && _meterQueueStorage != nullptr) {
             heap_caps_free(_meterQueueStorage);
             _meterQueueStorage = nullptr;
             _isMeterQueueInitialized = false;
-            logger.debug("MQTT meter queue PSRAM freed", TAG);
+            LOG_DEBUG("MQTT meter queue PSRAM freed");
         }
 
         if (_configMutex != nullptr) {
@@ -253,18 +251,18 @@ namespace Mqtt
         memset(_awsIotCorePrivateKey, 0, sizeof(_awsIotCorePrivateKey));
         
         _isSetupDone = false;
-        logger.info("MQTT client stopped", TAG);
+        LOG_INFO("MQTT client stopped");
     }
 
     void setCloudServicesEnabled(bool enabled)
     {
         if (!_isSetupDone) begin();
         if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            logger.error("Failed to acquire configuration mutex for setCloudServicesEnabled", TAG);
+            LOG_ERROR("Failed to acquire configuration mutex for setCloudServicesEnabled");
             return;
         }
 
-        logger.debug("Setting cloud services to %s...", TAG, enabled ? "enabled" : "disabled");
+        LOG_DEBUG("Setting cloud services to %s...", enabled ? "enabled" : "disabled");
         
         _stopTask();
 
@@ -280,7 +278,7 @@ namespace Mqtt
         
         releaseMutex(&_configMutex);
 
-        logger.info("Cloud services %s", TAG, enabled ? "enabled" : "disabled");
+        LOG_INFO("Cloud services %s", enabled ? "enabled" : "disabled");
     }
 
     bool isCloudServicesEnabled() { return _cloudServicesEnabled; }
@@ -288,7 +286,7 @@ namespace Mqtt
 
     void getFirmwareUpdateVersion(char* buffer, size_t bufferSize) {
         if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            logger.error("Failed to acquire configuration mutex for getFirmwareUpdateVersion", TAG);
+            LOG_ERROR("Failed to acquire configuration mutex for getFirmwareUpdateVersion");
             snprintf(buffer, bufferSize, "%s", "");
             return;
         }
@@ -298,7 +296,7 @@ namespace Mqtt
 
     void getFirmwareUpdateUrl(char* buffer, size_t bufferSize) {
         if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            logger.error("Failed to acquire configuration mutex for getFirmwareUpdateUrl", TAG);
+            LOG_ERROR("Failed to acquire configuration mutex for getFirmwareUpdateUrl");
             snprintf(buffer, bufferSize, "%s", "");
             return;
         }
@@ -308,12 +306,12 @@ namespace Mqtt
 
     bool isLatestFirmwareInstalled() {
         if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            logger.error("Failed to acquire configuration mutex for isLatestFirmwareInstalled", TAG);
+            LOG_ERROR("Failed to acquire configuration mutex for isLatestFirmwareInstalled");
             return false; // Assume not installed if we can't access
         }
 
         if (strlen(_firmwareUpdateVersion) == 0 || strchr(_firmwareUpdateVersion, '.') == NULL) {
-            logger.debug("Latest firmware version is empty or in the wrong format", TAG);
+            LOG_DEBUG("Latest firmware version is empty or in the wrong format");
             releaseMutex(&_configMutex);
             return true;
         }
@@ -341,37 +339,39 @@ namespace Mqtt
     void requestCrashPublish() {_publishMqtt.crash = true; }
 
     // Public methods for pushing data to queues
-    void pushLog(const char* timestamp, uint64_t millisEsp, const char* level, uint32_t coreId, const char* function, const char* message)
+    void pushLog(const LogEntry& entry)
     {
+        // Early return if MQTT is not set up or cloud services disabled
+        if (!_isSetupDone || !_cloudServicesEnabled) return;
+
         if (!_isLogQueueInitialized) {
             if (!_initializeLogQueue()) {
                 return; // Failed to initialize, drop this log
             }
         }
         
-        if ((strcmp(level, "debug") == 0 && !_debugFlagsRtc.enableMqttDebugLogging) || 
-            (strcmp(level, "verbose") == 0)) {
+        if ((entry.level == LogLevel::DEBUG && !_debugFlagsRtc.enableMqttDebugLogging) || 
+            (entry.level == LogLevel::VERBOSE)) {
             return; // Never send verbose logs via MQTT
         }
         
-        LogJson logEntry(timestamp, millisEsp, level, coreId, function, message);
-        
-        // Check if queue is full, if so remove oldest entry
-        if (uxQueueSpacesAvailable(_logQueue) == 0) {
-            LogJson discardedEntry;
-            xQueueReceive(_logQueue, &discardedEntry, 0); // Remove oldest
-        }
         // Now send the new entry
-        xQueueSend(_logQueue, &logEntry, 0);
+        if (_logQueue) xQueueSend(_logQueue, &entry, 0);
     }
 
     void pushMeter(const PayloadMeter& payload)
     {
+        // Early return if MQTT is not set up or cloud services disabled
+        if (!_isSetupDone || !_cloudServicesEnabled) return;
+
         if (!_isMeterQueueInitialized) {
             if (!_initializeMeterQueue()) {
                 return; // Failed to initialize, drop this meter data
             }
         }
+        
+        // Early return if queue is unavailable
+        if (_meterQueue == nullptr) return;
         
         // Check if queue is full, if so remove oldest entry
         if (uxQueueSpacesAvailable(_meterQueue) == 0) {
@@ -379,7 +379,7 @@ namespace Mqtt
             xQueueReceive(_meterQueue, &discardedEntry, 0); // Remove oldest
         }
         // Now send the new entry
-        xQueueSend(_meterQueue, &payload, 0);
+        if (_meterQueue) xQueueSend(_meterQueue, &payload, 0);
     }
 
     // Private functions
@@ -393,13 +393,13 @@ namespace Mqtt
         // Ensure we don't exceed buffer bounds
         uint32_t maxLength = sizeof(message) - 1; // Reserve space for null terminator
         if (length > maxLength) {
-            logger.warning("MQTT message from topic %s too large (%u bytes), truncating to %u", TAG, topic, length, maxLength);
+            LOG_WARNING("MQTT message from topic %s too large (%u bytes), truncating to %u", topic, length, maxLength);
             length = maxLength;
         }
         
         snprintf(message, sizeof(message), "%.*s", (int)length, (char*)payload);
 
-        logger.debug("Received MQTT message from %s", TAG, topic);
+        LOG_DEBUG("Received MQTT message from %s", topic);
 
         if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_FIRMWARE_UPDATE)) _handleFirmwareUpdateMessage(message);
         else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_RESTART)) _handleRestartMessage();
@@ -407,7 +407,7 @@ namespace Mqtt
         else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES)) _handleEraseCertificatesMessage();
         else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_SET_SEND_POWER_DATA)) _handleSetSendPowerDataMessage(message);
         else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING)) _handleEnableDebugLoggingMessage(message);
-        else logger.warning("Unknown MQTT topic received: %s", TAG, topic);
+        else LOG_WARNING("Unknown MQTT topic received: %s", topic);
     }
 
     static void _handleFirmwareUpdateMessage(const char* message)
@@ -415,7 +415,7 @@ namespace Mqtt
         // Expected JSON format: {"version": "1.0.0", "url": "https://example.com/firmware.bin"}
         JsonDocument jsonDocument;
         if (deserializeJson(jsonDocument, message)) {
-            logger.error("Failed to parse firmware update JSON message", TAG);
+            LOG_ERROR("Failed to parse firmware update JSON message");
             return;
         }
 
@@ -425,7 +425,7 @@ namespace Mqtt
 
     static void _handleRestartMessage()
     {
-        setRestartSystem(TAG, "Restart requested from MQTT");
+        setRestartSystem("Restart requested from MQTT");
     }
 
     static void _handleProvisioningResponseMessage(const char* message)
@@ -433,7 +433,7 @@ namespace Mqtt
         // Expected JSON format: {"status": "success", "encryptedCertificatePem": "...", "encryptedPrivateKey": "..."}
         JsonDocument jsonDocument;
         if (deserializeJson(jsonDocument, message)) {
-            logger.error("Failed to parse provisioning response JSON message", TAG);
+            LOG_ERROR("Failed to parse provisioning response JSON message");
             return;
         }
 
@@ -442,7 +442,7 @@ namespace Mqtt
             // Validate that certificate fields exist and are strings
             if (!jsonDocument["encryptedCertificatePem"].is<const char*>() || 
                 !jsonDocument["encryptedPrivateKey"].is<const char*>()) {
-                logger.error("Invalid provisioning response: missing or invalid certificate fields", TAG);
+                LOG_ERROR("Invalid provisioning response: missing or invalid certificate fields");
                 return;
             }
 
@@ -454,26 +454,26 @@ namespace Mqtt
             
             // TODO: use maybe setcerts function here?
             if (certLen >= CERTIFICATE_BUFFER_SIZE || keyLen >= CERTIFICATE_BUFFER_SIZE) {
-                logger.error("Provisioning payload too large (cert %zu, key %zu)", TAG, certLen, keyLen);
+                LOG_ERROR("Provisioning payload too large (cert %zu, key %zu)", certLen, keyLen);
                 return;
             }
 
             Preferences preferences;
             if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) {
-                logger.error("Failed to open preferences", TAG);
+                LOG_ERROR("Failed to open preferences");
                 return;
             }
 
             size_t writtenSize = preferences.putString(PREFS_KEY_CERTIFICATE, certData);
             if (writtenSize != certLen) {
-                logger.error("Failed to write encrypted certificate to preferences (%zu != %zu)", TAG, writtenSize, certLen);
+                LOG_ERROR("Failed to write encrypted certificate to preferences (%zu != %zu)", writtenSize, certLen);
                 preferences.end();
                 return;
             }
 
             writtenSize = preferences.putString(PREFS_KEY_PRIVATE_KEY, keyData);
             if (writtenSize != keyLen) {
-                logger.error("Failed to write encrypted private key to preferences (%zu != %zu)", TAG, writtenSize, keyLen);
+                LOG_ERROR("Failed to write encrypted private key to preferences (%zu != %zu)", writtenSize, keyLen);
                 preferences.end();
                 return;
             }
@@ -481,20 +481,17 @@ namespace Mqtt
             preferences.end();
 
             _provisioningSucceeded = true; // signal to claim loop
-
-            // Restart to reconfigure with new certs (kept for simplicity and clean TLS ctx)
-            setRestartSystem(TAG, "Restarting after successful certificates provisioning");
         } else {
             char buffer[STATUS_BUFFER_SIZE];
             safeSerializeJson(jsonDocument, buffer, sizeof(buffer));
-            logger.error("Provisioning failed: %s", TAG, buffer);
+            LOG_ERROR("Provisioning failed: %s", buffer);
         }
     }
 
     static void _handleEraseCertificatesMessage()
     {
         _clearCertificates();
-        setRestartSystem(TAG, "Certificates erase requested from MQTT");
+        setRestartSystem("Certificates erase requested from MQTT");
     }
 
     static void _handleSetSendPowerDataMessage(const char* message)
@@ -502,7 +499,7 @@ namespace Mqtt
         // Expected JSON format: {"sendPowerData": true}
         JsonDocument jsonDocument;
         if (deserializeJson(jsonDocument, message)) {
-            logger.error("Failed to parse send power data JSON message", TAG);
+            LOG_ERROR("Failed to parse send power data JSON message");
             return;
         }
         
@@ -517,7 +514,7 @@ namespace Mqtt
         // Expected JSON format: {"enable": true, "duration_minutes": 10}
         JsonDocument jsonDocument;
         if (deserializeJson(jsonDocument, message)) {
-            logger.error("Failed to parse enable debug logging JSON message", TAG);
+            LOG_ERROR("Failed to parse enable debug logging JSON message");
             return;
         }
 
@@ -549,29 +546,30 @@ namespace Mqtt
         }
     }
 
-    bool _initializeLogQueue() // Cannot use logger here to avoid circular dependency
+    bool _initializeLogQueue() // Cannot use logger here to avoid recursion
     {
         if (_isLogQueueInitialized) return true;
 
         // Allocate queue storage in PSRAM
-        size_t queueStorageSize = MQTT_LOG_QUEUE_SIZE * sizeof(LogJson);
-        _logQueueStorage = (uint8_t*)heap_caps_malloc(queueStorageSize, MALLOC_CAP_SPIRAM);
-        
+        uint32_t queueLength = MQTT_LOG_QUEUE_SIZE / sizeof(LogEntry);
+        size_t realQueueSize = queueLength * sizeof(LogEntry);
+        _logQueueStorage = (uint8_t*)heap_caps_malloc(realQueueSize, MALLOC_CAP_SPIRAM);
+
         if (_logQueueStorage == nullptr) {
-            Serial.printf("[ERROR] Failed to allocate PSRAM for MQTT log queue (%d bytes)\n", queueStorageSize);
+            Serial.printf("[ERROR] Failed to allocate PSRAM for MQTT log queue (%d bytes)\n", realQueueSize);
             return false;
         }
 
-        _logQueue = xQueueCreateStatic(MQTT_LOG_QUEUE_SIZE, sizeof(LogJson), _logQueueStorage, &_logQueueStruct);
+        _logQueue = xQueueCreateStatic(queueLength, sizeof(LogEntry), _logQueueStorage, &_logQueueStruct);
         if (_logQueue == nullptr) {
-            Serial.printf("[ERROR] Failed to create MQTT log queue\n");
+            Serial.println("[ERROR] Failed to create MQTT log queue");
             heap_caps_free(_logQueueStorage);
             _logQueueStorage = nullptr;
             return false;
         }
 
         _isLogQueueInitialized = true;
-        Serial.printf("[DEBUG] MQTT log queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", queueStorageSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        Serial.printf("[DEBUG] MQTT log queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
         return true;
     }
 
@@ -580,31 +578,32 @@ namespace Mqtt
         if (_isMeterQueueInitialized) return true;
 
         // Allocate queue storage in PSRAM
-        size_t queueStorageSize = MQTT_METER_QUEUE_SIZE * sizeof(PayloadMeter);
-        _meterQueueStorage = (uint8_t*)heap_caps_malloc(queueStorageSize, MALLOC_CAP_SPIRAM);
-        
+        uint32_t queueLength = MQTT_METER_QUEUE_SIZE / sizeof(PayloadMeter);
+        size_t realQueueSize = queueLength * sizeof(PayloadMeter);
+        _meterQueueStorage = (uint8_t*)heap_caps_malloc(realQueueSize, MALLOC_CAP_SPIRAM);
+
         if (_meterQueueStorage == nullptr) {
-            logger.error("Failed to allocate PSRAM for MQTT meter queue (%zu bytes)\n", TAG, queueStorageSize);
+            LOG_ERROR("Failed to allocate PSRAM for MQTT meter queue (%zu bytes)\n", realQueueSize);
             return false;
         }
 
-        _meterQueue = xQueueCreateStatic(MQTT_METER_QUEUE_SIZE, sizeof(PayloadMeter), _meterQueueStorage, &_meterQueueStruct);
+        _meterQueue = xQueueCreateStatic(queueLength, sizeof(PayloadMeter), _meterQueueStorage, &_meterQueueStruct);
         if (_meterQueue == nullptr) {
-            logger.error("Failed to create MQTT meter queue\n", TAG);
+            LOG_ERROR("Failed to create MQTT meter queue\n");
             heap_caps_free(_meterQueueStorage);
             _meterQueueStorage = nullptr;
             return false;
         }
 
         _isMeterQueueInitialized = true;
-        logger.debug("MQTT meter queue initialized with PSRAM buffer (%zu bytes) | Free PSRAM: %zu bytes\n", TAG, queueStorageSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        LOG_DEBUG("MQTT meter queue initialized with PSRAM buffer (%zu bytes) | Free PSRAM: %zu bytes\n", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
         return true;
     }
 
     // State management helper functions
     static void _setState(MqttState newState) {
         if (_currentState != newState) {
-            logger.debug("MQTT state transition: %d -> %d", TAG, static_cast<int>(_currentState), static_cast<int>(newState));
+            LOG_DEBUG("MQTT state transition: %d -> %d", static_cast<int>(_currentState), static_cast<int>(newState));
             _currentState = newState;
         }
     }
@@ -642,7 +641,7 @@ namespace Mqtt
 
     static void _handleConnectedState() {
         if (!_clientMqtt.connected() || !_clientMqtt.loop()) { // Also process incoming messages with loop()
-            logger.debug("MQTT disconnected, transitioning to connecting state", TAG);
+            LOG_DEBUG("MQTT disconnected, transitioning to connecting state");
             statistics.mqttConnectionErrors++;
             _setState(MqttState::CONNECTING);
             return;
@@ -658,16 +657,15 @@ namespace Mqtt
 
     static void _mqttTask(void *parameter)
     {
-        logger.debug("MQTT task started", TAG);
+        LOG_DEBUG("MQTT task started");
         
         _taskShouldRun = true;
-        const TickType_t xFrequency = pdMS_TO_TICKS(MQTT_LOOP_INTERVAL);
 
         while (_taskShouldRun)
         {
             // Skip processing if WiFi is not connected
             if (!CustomWifi::isFullyConnected()) {
-                uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, xFrequency);
+                uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
                 if (notificationValue > 0) { _taskShouldRun = false; break; }
                 continue;
             }
@@ -678,7 +676,7 @@ namespace Mqtt
                 _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
                 _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
                 _debugFlagsRtc.signature = 0;
-                logger.debug("The MQTT debug period has ended", TAG);
+                LOG_DEBUG("The MQTT debug period has ended");
             }
 
             switch (_currentState) {
@@ -690,13 +688,13 @@ namespace Mqtt
                 case MqttState::ERROR:                   _setState(MqttState::IDLE); break;
             }
             
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, xFrequency);
+            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
             if (notificationValue > 0) { _taskShouldRun = false; break; }
         }
         
         _clientMqtt.disconnect();
         _setState(MqttState::IDLE);
-        logger.debug("MQTT task stopping", TAG);
+        LOG_DEBUG("MQTT task stopping");
         _taskHandle = nullptr;
         vTaskDelete(nullptr);
     }
@@ -704,7 +702,7 @@ namespace Mqtt
     // Certificate validation helper function
     static bool _validateCertificateFormat(const char* cert, const char* certType) {
         if (!cert || strlen(cert) == 0) {
-            logger.error("Certificate %s is empty or null", TAG, certType);
+            LOG_ERROR("Certificate %s is empty or null", certType);
             return false;
         }
 
@@ -714,7 +712,7 @@ namespace Mqtt
                               strstr(cert, "-----BEGIN RSA PRIVATE KEY-----") != nullptr;
 
         if (!hasValidHeader) {
-            logger.error("Certificate %s does not have valid PEM header", TAG, certType);
+            LOG_ERROR("Certificate %s does not have valid PEM header", certType);
             return false;
         }
 
@@ -724,17 +722,17 @@ namespace Mqtt
     // Simple error handling wrapper
     static bool _handleMqttError(const char* operation, int32_t errorCode = 0) {
         if (errorCode == MQTT_CONNECT_BAD_CREDENTIALS || errorCode == MQTT_CONNECT_UNAUTHORIZED) { // TODO: this could disable after a bit or limit the reboots/similar
-            logger.error("MQTT %s failed due to authorization error (%d). Clearing certificates", TAG, operation, errorCode);
+            LOG_ERROR("MQTT %s failed due to authorization error (%d). Clearing certificates", operation, errorCode);
             _clearCertificates();
             _setState(MqttState::ERROR);
-            setRestartSystem(TAG, "MQTT Authentication/Authorization Error");
+            setRestartSystem("MQTT Authentication/Authorization Error");
             return false;
         }
         
         if (errorCode != 0) {
-            logger.error("MQTT %s failed with error: %s (%d)", TAG, operation, _getMqttStateReason(errorCode), errorCode);
+            LOG_ERROR("MQTT %s failed with error: %s (%d)", operation, _getMqttStateReason(errorCode), errorCode);
         } else {
-            logger.error("MQTT %s failed", TAG, operation);
+            LOG_ERROR("MQTT %s failed", operation);
         }
         
         _setState(MqttState::ERROR);
@@ -745,7 +743,7 @@ namespace Mqtt
         _clientMqtt.setCallback(_subscribeCallback);
 
         if (!_setCertificatesFromPreferences()) {
-            logger.error("Failed to set certificates", TAG);
+            LOG_ERROR("Failed to set certificates");
             _setState(MqttState::ERROR);
             return;
         }
@@ -753,7 +751,7 @@ namespace Mqtt
         // Validate certificates before setting them
         if (!_validateCertificateFormat(_awsIotCoreCert, "device cert") ||
             !_validateCertificateFormat(_awsIotCorePrivateKey, "private key")) {
-            logger.error("Certificate validation failed", TAG);
+            LOG_ERROR("Certificate validation failed");
             _setState(MqttState::ERROR);
             return;
         }
@@ -767,16 +765,16 @@ namespace Mqtt
         _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
         _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
 
-        logger.debug("MQTT certificates setup complete", TAG);
+        LOG_DEBUG("MQTT certificates setup complete");
     }    
     
     static bool _connectMqtt()
     {
-        logger.debug("Attempting to connect to MQTT (attempt %lu)...", TAG, _mqttConnectionAttempt + 1);
+        LOG_DEBUG("Attempting to connect to MQTT (attempt %lu)...", _mqttConnectionAttempt + 1);
 
         if (_clientMqtt.connect(DEVICE_ID))
         {
-            logger.info("Connected to MQTT", TAG);
+            LOG_INFO("Connected to MQTT");
 
             _mqttConnectionAttempt = 0; // Reset attempt counter on success
             statistics.mqttConnections++;
@@ -803,7 +801,7 @@ namespace Mqtt
 
             uint64_t _backoffDelay = calculateExponentialBackoff(_mqttConnectionAttempt, MQTT_INITIAL_RETRY_INTERVAL, MQTT_MAX_RETRY_INTERVAL, MQTT_RETRY_MULTIPLIER);
             _nextMqttConnectionAttemptMillis = millis64() + _backoffDelay;
-            logger.warning("Failed to connect to MQTT (attempt %lu). Reason: %s. Next attempt in %llu ms", TAG, _mqttConnectionAttempt, _getMqttStateReason(currentState), _backoffDelay);
+            LOG_WARNING("Failed to connect to MQTT (attempt %lu). Reason: %s. Next attempt in %llu ms", _mqttConnectionAttempt, _getMqttStateReason(currentState), _backoffDelay);
 
             return false;
         }
@@ -824,18 +822,18 @@ namespace Mqtt
             (!strstr(_awsIotCorePrivateKey, "-----BEGIN PRIVATE KEY-----") &&
              !strstr(_awsIotCorePrivateKey, "-----BEGIN RSA PRIVATE KEY-----"))) 
         {
-            logger.error("Invalid device certificates", TAG);
+            LOG_ERROR("Invalid device certificates");
             _clearCertificates();
-            setRestartSystem(TAG, "Invalid device certificates. Cleared and waiting for claim process");
+            setRestartSystem("Invalid device certificates. Cleared and waiting for claim process");
             return false;
         }
 
-        logger.debug("Certificates set and validated", TAG);
+        LOG_DEBUG("Certificates set and validated");
         return true;
     }
 
     static void _claimProcess() {
-        logger.debug("Claiming certificates...", TAG);
+        LOG_DEBUG("Claiming certificates...");
         _provisioningSucceeded = false;
 
         _clientMqtt.setCallback(_subscribeCallback);
@@ -847,31 +845,33 @@ namespace Mqtt
         _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
         _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
 
-        logger.debug("MQTT setup for claiming certificates complete", TAG);
+        LOG_DEBUG("MQTT setup for claiming certificates complete");
 
         // Connect with controlled attempts + backoff
         for (int32_t connectionAttempt = 0; connectionAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT && _taskShouldRun; ++connectionAttempt) {
-            logger.debug("Attempting to connect to MQTT for claiming certificates (%d/%d)...", TAG, connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
+            LOG_DEBUG("Attempting to connect to MQTT for claiming certificates (%d/%d)...", connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
 
             if (_clientMqtt.connect(DEVICE_ID)) {
-                logger.debug("Connected to MQTT for claiming certificates", TAG);
+                LOG_DEBUG("Connected to MQTT for claiming certificates");
                 statistics.mqttConnections++;
                 break;
             }
 
-            logger.warning("Failed to connect to MQTT for claiming certificates (attempt %d). Reason: %s", TAG, connectionAttempt + 1, _getMqttStateReason(_clientMqtt.state()));
+            LOG_WARNING("Failed to connect to MQTT for claiming certificates (attempt %d). Reason: %s", connectionAttempt + 1, _getMqttStateReason(_clientMqtt.state()));
             statistics.mqttConnectionErrors++;
 
             uint64_t backoffDelay = calculateExponentialBackoff(connectionAttempt, MQTT_CLAIM_INITIAL_RETRY_INTERVAL, MQTT_CLAIM_MAX_RETRY_INTERVAL, MQTT_CLAIM_RETRY_MULTIPLIER);
             uint64_t start = millis64();
             while (_taskShouldRun && (millis64() - start) < backoffDelay) {
-                vTaskDelay(pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
+                // Be immediately responsive to stop notifications
+                uint32_t n = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
+                if (n > 0) { _taskShouldRun = false; return; }
             }
 
             if (connectionAttempt == MQTT_CLAIM_MAX_CONNECTION_ATTEMPT - 1) {
-                logger.error("Failed to connect to MQTT for claiming certificates after %d attempts", TAG, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
+                LOG_ERROR("Failed to connect to MQTT for claiming certificates after %d attempts", MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
                 _setState(MqttState::ERROR);
-                setRestartSystem(TAG, "Failed to claim certificates");
+                setRestartSystem("Failed to claim certificates");
                 return;
             }
         }
@@ -880,32 +880,35 @@ namespace Mqtt
 
         // Publish provisioning request (limited retries)
         for (int32_t publishAttempt = 0; publishAttempt < MQTT_CLAIM_MAX_CONNECTION_ATTEMPT && _taskShouldRun; ++publishAttempt) {
-            logger.debug("Attempting to publish provisioning request (%d/%d)...", TAG, publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
+            LOG_DEBUG("Attempting to publish provisioning request (%d/%d)...", publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
             if (_publishProvisioningRequest()) {
-                logger.debug("Provisioning request published", TAG);
+                LOG_DEBUG("Provisioning request published");
                 break;
             }
-            logger.warning("Failed to publish provisioning request (%d/%d)", TAG, publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
-            vTaskDelay(pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
+            LOG_WARNING("Failed to publish provisioning request (%d/%d)", publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_ATTEMPT);
+            uint32_t n = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
+            if (n > 0) { _taskShouldRun = false; return; }
             if (publishAttempt == MQTT_CLAIM_MAX_CONNECTION_ATTEMPT - 1) {
                 _setState(MqttState::ERROR);
-                setRestartSystem(TAG, "Failed to publish provisioning request");
+                setRestartSystem("Failed to publish provisioning request");
                 return;
             }
         }
 
         // Wait for response or presence of certs
-        logger.debug("Waiting for provisioning response...", TAG);
+        LOG_DEBUG("Waiting for provisioning response...");
         uint64_t deadline = millis64() + MQTT_CLAIM_TIMEOUT;
 
         while (_taskShouldRun && millis64() < deadline) {
             _clientMqtt.loop();
 
             if (_provisioningSucceeded || _isDeviceCertificatesPresent()) {
-                logger.debug("Certificates provisioning confirmed", TAG);
+                LOG_DEBUG("Certificates provisioning confirmed");
                 break;
             }
-            vTaskDelay(pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
+            // Be immediately responsive to stop notifications
+            uint32_t n = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
+            if (n > 0) { _taskShouldRun = false; return; }
         }
 
         // Always disconnect the claim session before switching state
@@ -916,7 +919,7 @@ namespace Mqtt
             return;
         }
 
-        logger.warning("Provisioning response timeout. Will retry later.", TAG);
+        LOG_WARNING("Provisioning response timeout. Will retry later.");
         // Stay in CLAIMING; outer task loop will re-enter with backoff via connect attempts
     }
 
@@ -933,7 +936,7 @@ namespace Mqtt
             finalTopic
         );
 
-        logger.debug("Constructing MQTT topic with rule for %s | %s", TAG, finalTopic, topic);
+        LOG_DEBUG("Constructing MQTT topic with rule for %s | %s", finalTopic, topic);
     }
 
     static void _constructMqttTopic(const char* finalTopic, char* topic, size_t topicBufferSize) {
@@ -947,7 +950,7 @@ namespace Mqtt
             finalTopic
         );
 
-        logger.debug("Constructing MQTT topic for %s | %s", TAG, finalTopic, topic);
+        LOG_DEBUG("Constructing MQTT topic for %s | %s", finalTopic, topic);
     }
 
     static void _setupTopics() {
@@ -960,7 +963,7 @@ namespace Mqtt
         _setTopicLog();
         _setTopicProvisioningRequest();
 
-        logger.debug("MQTT topics setup complete", TAG);
+        LOG_DEBUG("MQTT topics setup complete");
     }
 
     static void _setTopicMeter() { _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
@@ -976,7 +979,7 @@ namespace Mqtt
         // Check if we have any data to publish
         MeterValues meterValuesZeroChannel;
         Ade7953::getMeterValues(meterValuesZeroChannel, 0);
-        UBaseType_t queueSize = uxQueueMessagesWaiting(_meterQueue);
+        UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
         
         bool hasVoltageData = (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0);
         bool hasQueueData = (queueSize > 0 && _isSendPowerDataEnabled());
@@ -990,12 +993,12 @@ namespace Mqtt
         }
         
         if (!hasVoltageData && !hasQueueData && !hasChannelData) {
-            logger.verbose("No valid meter data to publish", TAG);
+            LOG_VERBOSE("No valid meter data to publish");
             return;
         }
         
         if (!_publishMeterStreaming()) {
-            logger.error("Failed to publish meter data via streaming", TAG);
+            LOG_ERROR("Failed to publish meter data via streaming");
             return;
         }
 
@@ -1020,7 +1023,7 @@ namespace Mqtt
             _publishMqtt.systemStatic = false; // retain static info since it is idempotent
         }
 
-        logger.debug("System static info published to MQTT", TAG);
+        LOG_DEBUG("System static info published to MQTT");
     }
 
     static void _publishSystemDynamic() {
@@ -1041,7 +1044,7 @@ namespace Mqtt
             _lastMillisSystemDynamicPublished = millis64();
         }
 
-        logger.debug("System dynamic info published to MQTT", TAG);
+        LOG_DEBUG("System dynamic info published to MQTT");
     }
 
     static void _publishChannel() {
@@ -1061,7 +1064,7 @@ namespace Mqtt
             _publishMqtt.channel = false; // retain channel info since it is idempotent
         }
 
-        logger.debug("Channel data published to MQTT", TAG);
+        LOG_DEBUG("Channel data published to MQTT");
     }
 
     static void _publishStatistics() {
@@ -1080,12 +1083,12 @@ namespace Mqtt
             _lastMillisStatisticsPublished = millis64();
         }
 
-        logger.debug("Statistics published to MQTT", TAG);
+        LOG_DEBUG("Statistics published to MQTT");
     }
 
     static void _publishCrash() {
         if (!_publishCrashStreaming()) {
-            logger.error("Failed to publish crash data via streaming", TAG);
+            LOG_ERROR("Failed to publish crash data via streaming");
         }
     }
 
@@ -1107,48 +1110,48 @@ namespace Mqtt
 
     static bool _publishMessage(const char* topic, const char* message, bool retain) {
         if (topic == nullptr || message == nullptr) {
-            logger.warning("Null ptr, MQTT not initialized yet", TAG);
+            LOG_WARNING("Null ptr, MQTT not initialized yet");
             statistics.mqttMessagesPublishedError++;
             return false;
         }
 
         if (!_clientMqtt.connected()) {
-            logger.warning("MQTT not connected (%s). Skipping publish on %s", TAG, _getMqttStateReason(_clientMqtt.state()), topic);
+            LOG_WARNING("MQTT not connected (%s). Skipping publish on %s", _getMqttStateReason(_clientMqtt.state()), topic);
             statistics.mqttMessagesPublishedError++;
             return false;
         }
 
         if (!_clientMqtt.publish(topic, message, retain)) {
-            logger.error("Failed to publish on %s (state %s)", TAG, topic, _getMqttStateReason(_clientMqtt.state()));
+            LOG_ERROR("Failed to publish on %s (state %s)", topic, _getMqttStateReason(_clientMqtt.state()));
             statistics.mqttMessagesPublishedError++;
             return false;
         }
 
         statistics.mqttMessagesPublished++;
-        logger.verbose("Message published: %s", TAG, message); // Cannot be debug otherwise when remote debugging on MQTT is enabled, we get a loop
+        LOG_VERBOSE("Message published: %s", message); // Cannot be debug otherwise when remote debugging on MQTT is enabled, we get a loop
         return true;
     }
 
     static void _checkIfPublishMeterNeeded() {
-        UBaseType_t queueSize = uxQueueMessagesWaiting(_meterQueue);
+        UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
         if ( ((queueSize > (MQTT_METER_QUEUE_SIZE * MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD)) && _isSendPowerDataEnabled()) || 
              ((millis64() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH && queueSize > 0) ) { // Queue has to have at least one element to publish
             _publishMqtt.meter = true;
-            logger.debug("Set flag to publish %u meter data points", TAG, queueSize);
+            LOG_DEBUG("Set flag to publish %u meter data points", queueSize);
         }
     }
 
     static void _checkIfPublishSystemDynamicNeeded() {
         if ((millis64() - _lastMillisSystemDynamicPublished) > MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH) {
             _publishMqtt.systemDynamic = true;
-            logger.debug("Set flag to publish system dynamic", TAG);
+            LOG_DEBUG("Set flag to publish system dynamic");
         }
     }
     
     static void _checkIfPublishStatisticsNeeded() {
         if ((millis64() - _lastMillisStatisticsPublished) > MQTT_MAX_INTERVAL_STATISTICS_PUBLISH) {
             _publishMqtt.statistics = true;
-            logger.debug("Set flag to publish statistics", TAG);
+            LOG_DEBUG("Set flag to publish statistics");
         }
     }
 
@@ -1169,7 +1172,7 @@ namespace Mqtt
         _subscribeSetSendPowerData();
         _subscribeEnableDebugLogging();
 
-        logger.debug("Subscribed to topics", TAG);
+        LOG_DEBUG("Subscribed to topics");
     }
 
     static bool _subscribeToTopic(const char* topicSuffix, const char* description) {
@@ -1177,11 +1180,11 @@ namespace Mqtt
         _constructMqttTopic(topicSuffix, topic, sizeof(topic));
         
         if (!_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
-            logger.warning("Failed to subscribe to %s", TAG, description);
+            LOG_WARNING("Failed to subscribe to %s", description);
             return false;
         }
 
-        logger.debug("Subscribed to %s topic: %s", TAG, description, topicSuffix);
+        LOG_DEBUG("Subscribed to %s topic: %s", description, topicSuffix);
         return true;
     }
 
@@ -1194,49 +1197,54 @@ namespace Mqtt
 
     static void _processLogQueue()
     {
-        LogJson logEntry;
+        if (!_cloudServicesEnabled) return; // No processing when disabled
+        if (_logQueue == nullptr) return; // Early return if queue is unavailable
+        LogEntry entry;
         uint32_t loops = 0;
-        while (xQueueReceive(_logQueue, &logEntry, 0) == pdTRUE &&
+        while (_logQueue && xQueueReceive(_logQueue, &entry, 0) == pdTRUE &&
                 loops < MAX_LOOP_ITERATIONS) {
             // Only process if MQTT is connected and WiFi is available
             if (CustomWifi::isFullyConnected() && _clientMqtt.connected()) {
-                _publishLog(logEntry);
+                _publishLog(entry);
             } else {
                 // If not connected, put it back in the queue if there's space
-                xQueueSendToFront(_logQueue, &logEntry, 0);
+                if (_logQueue) xQueueSendToFront(_logQueue, &entry, 0);
                 break; // Stop processing if not connected
             }
         }
     }
-    
-    static void _publishLog(const LogJson& logEntry)
+
+    static void _publishLog(const LogEntry& entry)
     {
-        char logTopic[sizeof(_mqttTopicLog) + sizeof(logEntry.level) + 2];
-        snprintf(logTopic, sizeof(logTopic), "%s/%s", _mqttTopicLog, logEntry.level);
+        char logTopic[sizeof(_mqttTopicLog) + 8 + 2]; // 8 is the maximum size of the log level string
+        snprintf(logTopic, sizeof(logTopic), "%s/%s", _mqttTopicLog, AdvancedLogger::logLevelToStringLower(entry.level));
 
         JsonDocument jsonDocument;
-        jsonDocument["timestamp"] = logEntry.timestamp;
-        jsonDocument["millis"] = logEntry.millisEsp;
-        jsonDocument["core"] = logEntry.coreId;
-        jsonDocument["function"] = logEntry.function;
-        jsonDocument["message"] = logEntry.message;
+        char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
+        AdvancedLogger::getTimestampIsoUtcFromUnixTimeMilliseconds(entry.unixTimeMilliseconds, timestamp, sizeof(timestamp));
+        jsonDocument["timestamp"] = timestamp;
+        jsonDocument["millis"] = entry.millis;
+        jsonDocument["core"] = entry.coreId;
+        jsonDocument["file"] = entry.file;
+        jsonDocument["function"] = entry.function;
+        jsonDocument["message"] = entry.message;
 
         char logMessage[JSON_MQTT_BUFFER_SIZE];
         safeSerializeJson(jsonDocument, logMessage, sizeof(logMessage));
-        
-        if (!_publishMessage(logTopic, logMessage)) xQueueSendToFront(_logQueue, &logEntry, 0);
+
+        if (!_publishMessage(logTopic, logMessage)) { if (_logQueue) xQueueSendToFront(_logQueue, &entry, 0); }
     }
     
     static void _loadConfigFromPreferences()
     {
         if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            logger.error("Failed to acquire configuration mutex for loading preferences", TAG);
+            LOG_ERROR("Failed to acquire configuration mutex for loading preferences");
             return;
         }
 
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
-            logger.error("Failed to open MQTT preferences. Setting defaults.", TAG);
+            LOG_ERROR("Failed to open MQTT preferences. Setting defaults.");
             _cloudServicesEnabled = DEFAULT_CLOUD_SERVICES_ENABLED;
             _sendPowerDataEnabled = DEFAULT_SEND_POWER_DATA_ENABLED;
             snprintf(_firmwareUpdateUrl, sizeof(_firmwareUpdateUrl), "%s", "");
@@ -1252,10 +1260,10 @@ namespace Mqtt
         prefs.getString(MQTT_PREFERENCES_FW_UPDATE_URL_KEY, _firmwareUpdateUrl, sizeof(_firmwareUpdateUrl));
         prefs.getString(MQTT_PREFERENCES_FW_UPDATE_VERSION_KEY, _firmwareUpdateVersion, sizeof(_firmwareUpdateVersion));
         
-        logger.debug("Cloud services enabled: %s, Send power data enabled: %s", TAG, 
+        LOG_DEBUG("Cloud services enabled: %s, Send power data enabled: %s", 
                    _cloudServicesEnabled ? "true" : "false",
                    _sendPowerDataEnabled ? "true" : "false");
-        logger.debug("Firmware update | URL: %s, Version: %s", TAG, 
+        LOG_DEBUG("Firmware update | URL: %s, Version: %s", 
                    _firmwareUpdateUrl,
                    _firmwareUpdateVersion);
 
@@ -1263,7 +1271,7 @@ namespace Mqtt
         releaseMutex(&_configMutex);
 
         _saveConfigToPreferences();
-        logger.debug("MQTT preferences loaded", TAG);
+        LOG_DEBUG("MQTT preferences loaded");
     }
 
     static void _saveConfigToPreferences()
@@ -1273,31 +1281,27 @@ namespace Mqtt
         _saveFirmwareUpdateUrlToPreferences(_firmwareUpdateUrl);
         _saveFirmwareUpdateVersionToPreferences(_firmwareUpdateVersion);
         
-        logger.debug("MQTT preferences saved", TAG);
+        LOG_DEBUG("MQTT preferences saved");
     }
 
     static void _startTask()
     {
         if (_taskHandle != nullptr) {
-            logger.debug("MQTT task is already running", TAG);
+            LOG_DEBUG("MQTT task is already running");
             return;
         }
 
-        logger.debug("Starting MQTT task", TAG);
+        LOG_DEBUG("Starting MQTT task");
 
         if (!_initializeLogQueue()) {
-            logger.error("Failed to initialize MQTT log queue", TAG);
+            LOG_ERROR("Failed to initialize MQTT log queue");
             return;
         }
 
         if (!_initializeMeterQueue()) {
-            logger.error("Failed to initialize MQTT meter queue", TAG);
+            LOG_ERROR("Failed to initialize MQTT meter queue");
             return;
         }
-
-        size_t logQueueStorageSize = MQTT_LOG_QUEUE_SIZE * sizeof(LogJson);
-        size_t meterQueueStorageSize = MQTT_METER_QUEUE_SIZE * sizeof(PayloadMeter);
-        logger.debug("MQTT queues created with PSRAM - Log: %d bytes, Meter: %d bytes", TAG, logQueueStorageSize, meterQueueStorageSize);
 
         _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
         _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
@@ -1312,61 +1316,61 @@ namespace Mqtt
         );
 
         if (result != pdPASS) {
-            logger.error("Failed to create MQTT task", TAG);
+            LOG_ERROR("Failed to create MQTT task");
             _taskHandle = nullptr;
         }
     }
 
-    static void _stopTask() { stopTaskGracefully(&_taskHandle, "MQTT task"); }
+    static void _stopTask() { _taskShouldRun = false; stopTaskGracefully(&_taskHandle, "MQTT task"); }
 
     static void _setSendPowerDataEnabled(bool enabled)
     {
         _sendPowerDataEnabled = enabled;
         _saveSendPowerDataEnabledToPreferences(enabled);
-        logger.debug("Set send power data enabled to %s", TAG, enabled ? "true" : "false");
+        LOG_DEBUG("Set send power data enabled to %s", enabled ? "true" : "false");
     }
     
     static void _setFirmwareUpdateVersion(const char* version) {
         if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            logger.error("Failed to acquire configuration mutex for setting firmware update version", TAG);
+            LOG_ERROR("Failed to acquire configuration mutex for setting firmware update version");
             return;
         }
         if (version == nullptr) {
-            logger.error("Invalid firmware update version provided", TAG);
+            LOG_ERROR("Invalid firmware update version provided");
             releaseMutex(&_configMutex);
             return;
         }
         snprintf(_firmwareUpdateVersion, sizeof(_firmwareUpdateVersion), "%s", version);
         _saveFirmwareUpdateVersionToPreferences(_firmwareUpdateVersion);
         releaseMutex(&_configMutex);
-        logger.debug("Firmware update version set to %s", TAG, _firmwareUpdateVersion);
+        LOG_DEBUG("Firmware update version set to %s", _firmwareUpdateVersion);
     }
 
     static void _setFirmwareUpdateUrl(const char* url) {
         if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            logger.error("Failed to acquire configuration mutex for setting firmware update URL", TAG);
+            LOG_ERROR("Failed to acquire configuration mutex for setting firmware update URL");
             return;
         }
         if (url == nullptr) {
-            logger.error("Invalid firmware update URL provided", TAG);
+            LOG_ERROR("Invalid firmware update URL provided");
             releaseMutex(&_configMutex);
             return;
         }
         snprintf(_firmwareUpdateUrl, sizeof(_firmwareUpdateUrl), "%s", url);
         _saveFirmwareUpdateUrlToPreferences(_firmwareUpdateUrl);
         releaseMutex(&_configMutex);
-        logger.debug("Firmware update URL set to %s", TAG, _firmwareUpdateUrl);
+        LOG_DEBUG("Firmware update URL set to %s", _firmwareUpdateUrl);
     }
 
     static void _saveCloudServicesEnabledToPreferences(bool enabled) {
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open MQTT preferences", TAG);
+            LOG_ERROR("Failed to open MQTT preferences");
             return;
         }
         size_t bytesWritten = prefs.putBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, enabled);
         if (bytesWritten == 0) {
-            logger.error("Failed to save cloud services enabled preference", TAG);
+            LOG_ERROR("Failed to save cloud services enabled preference");
         }
         prefs.end();
     }
@@ -1374,12 +1378,12 @@ namespace Mqtt
     static void _saveSendPowerDataEnabledToPreferences(bool enabled) {
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open MQTT preferences", TAG);
+            LOG_ERROR("Failed to open MQTT preferences");
             return;
         }
         size_t bytesWritten = prefs.putBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, enabled);
         if (bytesWritten == 0) {
-            logger.error("Failed to save send power data enabled preference", TAG);
+            LOG_ERROR("Failed to save send power data enabled preference");
         }
         prefs.end();
     }
@@ -1388,14 +1392,13 @@ namespace Mqtt
         // TODO: this could become more complex to allow for AWS IoT Core Jobs (so SHA256, etc.)
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open firmware update preferences", TAG);
+            LOG_ERROR("Failed to open firmware update preferences");
             return;
         }
         size_t bytesWritten = prefs.putString(MQTT_PREFERENCES_FW_UPDATE_VERSION_KEY, version);
         if (bytesWritten != strlen(version)) {
-            logger.error(
+            LOG_ERROR(
                 "Failed to save firmware update version preference (written %zu | expected %zu): %s",
-                TAG,
                 bytesWritten, strlen(version), version
             );
         }
@@ -1405,14 +1408,13 @@ namespace Mqtt
     static void _saveFirmwareUpdateUrlToPreferences(const char* url) {
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
-            logger.error("Failed to open firmware update preferences", TAG);
+            LOG_ERROR("Failed to open firmware update preferences");
             return;
         }
         size_t bytesWritten = prefs.putString(MQTT_PREFERENCES_FW_UPDATE_URL_KEY, url);
         if (bytesWritten != strlen(url)) {
-            logger.error(
+            LOG_ERROR(
                 "Failed to save firmware update URL preference (written %zu | expected %zu): %s", 
-                TAG, 
                 bytesWritten, strlen(url), url
             );
         }
@@ -1430,13 +1432,19 @@ namespace Mqtt
 
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) {
-            logger.error("Failed to open preferences", TAG);
+            LOG_ERROR("Failed to open preferences");
+            if (decryptedData && decryptedDataSize > 0) decryptedData[0] = '\0';
+            return;
+        }
+
+        // Avoid NOT_FOUND spam by checking key existence first
+        if (!preferences.isKey(preference_key)) {
+            preferences.end();
             if (decryptedData && decryptedDataSize > 0) decryptedData[0] = '\0';
             return;
         }
 
         char encryptedData[CERTIFICATE_BUFFER_SIZE];
-        // Initialize buffer to prevent garbage data
         memset(encryptedData, 0, sizeof(encryptedData));
         preferences.getString(preference_key, encryptedData, sizeof(encryptedData));
         preferences.end();
@@ -1456,29 +1464,23 @@ namespace Mqtt
             return false;
         }
 
-        char buffer[CERTIFICATE_BUFFER_SIZE];
-        memset(buffer, 0, sizeof(buffer));
-        size_t deviceCertLen = preferences.getString(PREFS_KEY_CERTIFICATE, buffer, sizeof(buffer));
-        bool _deviceCertExists = (deviceCertLen >= MINIMUM_CERTIFICATE_LENGTH && deviceCertLen < CERTIFICATE_BUFFER_SIZE);
-
-        memset(buffer, 0, sizeof(buffer));
-        size_t privateKeyLen = preferences.getString(PREFS_KEY_PRIVATE_KEY, buffer, sizeof(buffer));
-        bool _privateKeyExists = (privateKeyLen >= MINIMUM_CERTIFICATE_LENGTH && privateKeyLen < CERTIFICATE_BUFFER_SIZE);
-
+        // Avoid NOT_FOUND spam by checking key presence only
+        bool deviceCertExists = preferences.isKey(PREFS_KEY_CERTIFICATE);
+        bool privateKeyExists = preferences.isKey(PREFS_KEY_PRIVATE_KEY);
         preferences.end();
-        return _deviceCertExists && _privateKeyExists;
+        return deviceCertExists && privateKeyExists;
     }
 
     static void _clearCertificates() {
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false)) {
-            logger.error("Failed to open preferences", TAG);
+            LOG_ERROR("Failed to open preferences");
             return;
         }
         preferences.clear();
         preferences.end();
         _setState(MqttState::IDLE);
-        logger.info("Certificates for cloud services cleared", TAG);
+        LOG_INFO("Certificates for cloud services cleared");
     }
 
     // Utilities
@@ -1527,7 +1529,7 @@ namespace Mqtt
     void _decryptData(const char* encryptedDataBase64, const char* presharedKey, char* decryptedData, size_t decryptedDataSize) {
         if (!encryptedDataBase64 || !presharedKey || !decryptedData || decryptedDataSize == 0) {
             if (decryptedData && decryptedDataSize > 0) decryptedData[0] = '\0';
-            logger.warning("Invalid parameters for decryption", TAG);
+            LOG_WARNING("Invalid parameters for decryption");
             return;
         }
 
@@ -1544,7 +1546,7 @@ namespace Mqtt
                                         reinterpret_cast<const unsigned char*>(encryptedDataBase64), inputLength);
         if (ret != 0 || decodedLen < (12 + 16)) { // must at least contain IV + TAG
             decryptedData[0] = '\0';
-            logger.error("Failed to decode base64 or data too short (%u)", TAG, (unsigned)decodedLen);
+            LOG_ERROR("Failed to decode base64 or data too short (%u)", (unsigned)decodedLen);
             return;
         }
 
@@ -1564,7 +1566,7 @@ namespace Mqtt
             decryptedData[0] = '\0';
             mbedtls_gcm_free(&gcm);
             memset(key, 0, sizeof(key));
-            logger.error("Failed to set AES-GCM key", TAG);
+            LOG_ERROR("Failed to set AES-GCM key");
             return;
         }
 
@@ -1582,7 +1584,7 @@ namespace Mqtt
 
         if (dec != 0) {
             decryptedData[0] = '\0';
-            logger.error("AES-GCM auth decrypt failed (%d)", TAG, dec);
+            LOG_ERROR("AES-GCM auth decrypt failed (%d)", dec);
             return;
         }
 
@@ -1593,7 +1595,7 @@ namespace Mqtt
         // Clear sensitive buffers
         memset(decoded, 0, sizeof(decoded));
 
-        logger.debug("Decrypted data successfully", TAG);
+        LOG_DEBUG("Decrypted data successfully");
     }
 
 
@@ -1608,7 +1610,7 @@ estimatedSize += 80; // {"unixTime":1234567890123,"voltage":230.5}
         }
         
         // Add size for queue items
-        UBaseType_t queueSize = uxQueueMessagesWaiting(_meterQueue);
+        UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
         if (_isSendPowerDataEnabled()) { // TODO: eventually this will become a simple array with no keys
             // Each queue item: {"unixTime":1234567890123,"channel":1,"activePower":1234.56,"powerFactor":0.95}
             estimatedSize += queueSize * 100;
@@ -1622,11 +1624,11 @@ estimatedSize += 80; // {"unixTime":1234567890123,"voltage":230.5}
             }
         }
         
-        logger.debug("Estimated meter message size: %zu bytes", TAG, estimatedSize);
+        LOG_DEBUG("Estimated meter message size: %zu bytes", estimatedSize);
         return estimatedSize;
     }
 
-    static size_t _calculateCrashMessageSize() { // TODO: make the estimates a constants in mqtt.h
+    static size_t _calculateCrashMessageSize() {
         size_t estimatedSize = 150; // Base JSON: {"unixTime":123,"crashInfo":{...}}
         
         // Add crash info size - conservative estimate
@@ -1639,7 +1641,7 @@ estimatedSize += 80; // {"unixTime":1234567890123,"voltage":230.5}
             estimatedSize += (dumpDataSize * 4 / 3) + 100;
         }
         
-        logger.debug("Estimated crash message size: %zu bytes", TAG, estimatedSize);
+        LOG_DEBUG("Estimated crash message size: %zu bytes", estimatedSize);
         return estimatedSize;
     }
 
@@ -1648,7 +1650,7 @@ estimatedSize += 80; // {"unixTime":1234567890123,"voltage":230.5}
         size_t estimatedSize = _calculateMeterMessageSize();
         
         if (!_clientMqtt.beginPublish(_mqttTopicMeter, estimatedSize, false)) {
-            logger.error("Failed to begin meter data streaming publish", TAG);
+            LOG_ERROR("Failed to begin meter data streaming publish");
             statistics.mqttMessagesPublishedError++;
             return false;
         }
@@ -1670,12 +1672,12 @@ estimatedSize += 80; // {"unixTime":1234567890123,"voltage":230.5}
         
         PayloadMeter payloadMeter;
         uint32_t loops = 0;
-        while (uxQueueMessagesWaiting(_meterQueue) > 0 && loops < MAX_LOOP_ITERATIONS && _isSendPowerDataEnabled()) {
+        while ((_meterQueue && uxQueueMessagesWaiting(_meterQueue) > 0) && loops < MAX_LOOP_ITERATIONS && _isSendPowerDataEnabled()) {
             loops++;
-            if (xQueueReceive(_meterQueue, &payloadMeter, 0) != pdTRUE) break;
+            if (!_meterQueue || xQueueReceive(_meterQueue, &payloadMeter, 0) != pdTRUE) break;
             
             if (payloadMeter.unixTimeMs == 0) {
-                logger.debug("Payload meter has zero unixTime, skipping...", TAG);
+                LOG_DEBUG("Payload meter has zero unixTime, skipping...");
                 continue;
             }
 
@@ -1698,7 +1700,7 @@ estimatedSize += 80; // {"unixTime":1234567890123,"voltage":230.5}
                 Ade7953::getMeterValues(meterValues, i);
 
                 if (meterValues.lastUnixTimeMilliseconds == 0) {
-                    logger.debug("Meter values for channel %d have zero unixTime, skipping...", TAG, i);
+                    LOG_DEBUG("Meter values for channel %d have zero unixTime, skipping...", i);
                     continue;
                 }
 
@@ -1727,10 +1729,10 @@ estimatedSize += 80; // {"unixTime":1234567890123,"voltage":230.5}
         if (_clientMqtt.endPublish()) {
             _publishMqtt.meter = false;
             statistics.mqttMessagesPublished++;
-            logger.debug("Meter data streamed successfully", TAG);
+            LOG_DEBUG("Meter data streamed successfully");
             return true;
         } else {
-            logger.error("Failed to complete meter data streaming", TAG);
+            LOG_ERROR("Failed to complete meter data streaming");
             statistics.mqttMessagesPublishedError++;
             return false;
         }
@@ -1740,7 +1742,7 @@ estimatedSize += 80; // {"unixTime":1234567890123,"voltage":230.5}
         size_t estimatedSize = _calculateCrashMessageSize();
         
         if (!_clientMqtt.beginPublish(_mqttTopicCrash, estimatedSize, false)) {
-            logger.error("Failed to begin crash data streaming publish", TAG);
+            LOG_ERROR("Failed to begin crash data streaming publish");
             statistics.mqttMessagesPublishedError++;
             return false;
         }
@@ -1799,10 +1801,10 @@ estimatedSize += 80; // {"unixTime":1234567890123,"voltage":230.5}
             _publishMqtt.crash = false;
             CrashMonitor::clearCoreDump();
             statistics.mqttMessagesPublished++;
-            logger.debug("Crash data with full dump streamed successfully", TAG);
+            LOG_DEBUG("Crash data with full dump streamed successfully");
             return true;
         } else {
-            logger.error("Failed to complete crash data streaming", TAG);
+            LOG_ERROR("Failed to complete crash data streaming");
             statistics.mqttMessagesPublishedError++;
             return false;
         }

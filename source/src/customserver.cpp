@@ -1,7 +1,5 @@
 #include "customserver.h"
 
-static const char *TAG = "customserver";
-
 namespace CustomServer
 {
     // Private variables
@@ -97,15 +95,15 @@ namespace CustomServer
 
     void begin()
     {
-        logger.debug("Setting up web server...", TAG);
+        LOG_DEBUG("Setting up web server...");
 
         // Initialize API synchronization mutex
         _apiMutex = xSemaphoreCreateMutex();
         if (_apiMutex == NULL) {
-            logger.error("Failed to create API mutex", TAG);
+            LOG_ERROR("Failed to create API mutex");
             return;
         }
-        logger.debug("API mutex created successfully", TAG);
+        LOG_DEBUG("API mutex created successfully");
 
         _setupMiddleware();
         _serveStaticContent();
@@ -113,7 +111,7 @@ namespace CustomServer
 
         server.begin();
 
-        logger.info("Web server started on port %d", TAG, WEBSERVER_PORT);
+        LOG_INFO("Web server started on port %d", WEBSERVER_PORT);
 
         // Start health check task to ensure the web server is responsive, and if it is not, restart the ESP32
         _startHealthCheckTask();
@@ -121,7 +119,7 @@ namespace CustomServer
 
     void stop()
     {
-        logger.debug("Stopping web server...", TAG);
+        LOG_DEBUG("Stopping web server...");
 
         // Stop health check task
         _stopHealthCheckTask();
@@ -133,10 +131,10 @@ namespace CustomServer
         if (_apiMutex != NULL) {
             vSemaphoreDelete(_apiMutex);
             _apiMutex = NULL;
-            logger.debug("API mutex deleted", TAG);
+            LOG_DEBUG("API mutex deleted");
         }
         
-        logger.info("Web server stopped", TAG);
+        LOG_INFO("Web server stopped");
     }
 
     void updateAuthPasswordWithOneFromPreferences()
@@ -146,17 +144,17 @@ namespace CustomServer
         {
             digestAuth.setPassword(webPassword);
             digestAuth.generateHash(); // regenerate hash with new password
-            logger.info("Authentication password updated", TAG);
+            LOG_INFO("Authentication password updated");
         }
         else
         {
-            logger.error("Failed to load new password for authentication", TAG);
+            LOG_ERROR("Failed to load new password for authentication");
         }
     }
 
     bool resetWebPassword()
     {
-        logger.info("Resetting web password to default", TAG);
+        LOG_INFO("Resetting web password to default");
         return _setWebPassword(WEBSERVER_DEFAULT_PASSWORD);
     }
 
@@ -175,16 +173,16 @@ namespace CustomServer
         if (_getWebPasswordFromPreferences(webPassword, sizeof(webPassword)))
         {
             digestAuth.setPassword(webPassword);
-            logger.debug("Web password loaded from Preferences", TAG);
+            LOG_DEBUG("Web password loaded from Preferences");
         }
         else
         {
             // Fallback to default password if Preferences failed
             digestAuth.setPassword(WEBSERVER_DEFAULT_PASSWORD);
-            logger.warning("Failed to load web password, using default", TAG);
+            LOG_INFO("Failed to load web password, using default");
 
             // Try to initialize the password in Preferences for next time
-            if (_setWebPassword(WEBSERVER_DEFAULT_PASSWORD)) { logger.debug("Default password saved to Preferences for future use", TAG); }
+            if (_setWebPassword(WEBSERVER_DEFAULT_PASSWORD)) { LOG_DEBUG("Default password saved to Preferences for future use"); }
         }
 
         digestAuth.setRealm(WEBSERVER_REALM);
@@ -194,7 +192,7 @@ namespace CustomServer
 
         server.addMiddleware(&digestAuth);
 
-        logger.debug("Digest authentication configured", TAG);
+        LOG_DEBUG("Digest authentication configured");
 
         // ---- Rate Limiting Middleware Setup ----
         // Set rate limiting to prevent abuse
@@ -203,9 +201,9 @@ namespace CustomServer
 
         server.addMiddleware(&rateLimit);
 
-        logger.debug("Rate limiting configured: max requests = %d, window size = %d seconds", TAG, WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
+        LOG_DEBUG("Rate limiting configured: max requests = %d, window size = %d seconds", WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
 
-        logger.debug("Logging middleware configured", TAG);
+        LOG_DEBUG("Logging middleware configured");
     }
 
     // Helper functions for common response patterns
@@ -242,19 +240,19 @@ namespace CustomServer
     static bool _acquireApiMutex(AsyncWebServerRequest *request)
     {
         if (_apiMutex == NULL) {
-            logger.error("API mutex not initialized", TAG);
+            LOG_ERROR("API mutex not initialized");
             _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Server synchronization error");
             return false;
         }
 
         BaseType_t result = xSemaphoreTake(_apiMutex, pdMS_TO_TICKS(API_MUTEX_TIMEOUT_MS));
         if (result != pdTRUE) {
-            logger.warning("Failed to acquire API mutex within timeout", TAG);
+            LOG_WARNING("Failed to acquire API mutex within timeout");
             _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Server busy, please try again");
             return false;
         }
 
-        logger.debug("API mutex acquired for request: %s", TAG, request->url().c_str());
+        LOG_DEBUG("API mutex acquired for request: %s", request->url().c_str());
         return true;
     }
 
@@ -262,7 +260,7 @@ namespace CustomServer
     {
         if (_apiMutex != NULL) {
             xSemaphoreGive(_apiMutex);
-            logger.debug("API mutex released", TAG);
+            LOG_DEBUG("API mutex released");
         }
     }
 
@@ -328,11 +326,11 @@ namespace CustomServer
     {
         if (_healthCheckTaskHandle != NULL)
         {
-            logger.debug("Health check task is already running", TAG);
+            LOG_DEBUG("Health check task is already running");
             return;
         }
 
-        logger.debug("Starting health check task", TAG);
+        LOG_DEBUG("Starting health check task");
         _consecutiveFailures = 0;
 
         BaseType_t result = xTaskCreate(
@@ -343,14 +341,14 @@ namespace CustomServer
             HEALTH_CHECK_TASK_PRIORITY,
             &_healthCheckTaskHandle);
 
-        if (result != pdPASS) { logger.error("Failed to create health check task", TAG); }
+        if (result != pdPASS) { LOG_ERROR("Failed to create health check task"); }
     }
 
     static void _stopHealthCheckTask() { stopTaskGracefully(&_healthCheckTaskHandle, "Health check task"); }
 
     static void _healthCheckTask(void *parameter)
     {
-        logger.debug("Health check task started", TAG);
+        LOG_DEBUG("Health check task started");
 
         _healthCheckTaskShouldRun = true;
         while (_healthCheckTaskShouldRun)
@@ -361,20 +359,20 @@ namespace CustomServer
                 // Reset failure counter on success
                 if (_consecutiveFailures > 0)
                 {
-                    logger.info("Health check recovered after %d failures", TAG, _consecutiveFailures);
+                    LOG_INFO("Health check recovered after %d failures", _consecutiveFailures);
                     _consecutiveFailures = 0;
                 }
-                logger.debug("Health check passed", TAG);
+                LOG_DEBUG("Health check passed");
             }
             else
             {
                 _consecutiveFailures++;
-                logger.warning("Health check failed (attempt %d/%d)", TAG, _consecutiveFailures, HEALTH_CHECK_MAX_FAILURES);
+                LOG_WARNING("Health check failed (attempt %d/%d)", _consecutiveFailures, HEALTH_CHECK_MAX_FAILURES);
 
                 if (_consecutiveFailures >= HEALTH_CHECK_MAX_FAILURES)
                 {
-                    logger.error("Health check failed %d consecutive times, requesting system restart", TAG, HEALTH_CHECK_MAX_FAILURES);
-                    setRestartSystem(TAG, "Server health check failures exceeded maximum threshold");
+                    LOG_ERROR("Health check failed %d consecutive times, requesting system restart", HEALTH_CHECK_MAX_FAILURES);
+                    setRestartSystem("Server health check failures exceeded maximum threshold");
                     break; // Exit the task as we're restarting
                 }
             }
@@ -388,7 +386,7 @@ namespace CustomServer
             }
         }
 
-        logger.debug("Health check task stopping", TAG);
+        LOG_DEBUG("Health check task stopping");
         _healthCheckTaskHandle = NULL;
         vTaskDelete(NULL);
     }
@@ -398,7 +396,7 @@ namespace CustomServer
         // Check if WiFi is connected
         if (!CustomWifi::isFullyConnected())
         {
-            logger.warning("Health check: WiFi not connected", TAG);
+            LOG_DEBUG("Health check: WiFi not connected");
             return false;
         }
 
@@ -408,7 +406,7 @@ namespace CustomServer
 
         if (!client.connect("127.0.0.1", WEBSERVER_PORT))
         {
-            logger.warning("Health check: Cannot connect to local web server", TAG);
+            LOG_INFO("Health check: Cannot connect to local web server");
             return false;
         }
 
@@ -441,7 +439,7 @@ namespace CustomServer
                     }
                     else
                     {
-                        logger.warning("Health check: HTTP status code %d", TAG, statusCode);
+                        LOG_WARNING("Health check: HTTP status code %d", statusCode);
                         return false;
                     }
                 }
@@ -450,7 +448,7 @@ namespace CustomServer
         }
 
         client.stop();
-        logger.warning("Health check: HTTP request timeout", TAG);
+        LOG_WARNING("Health check: HTTP request timeout");
         return false;
     }
 
@@ -460,40 +458,40 @@ namespace CustomServer
     {
         if (!_validatePasswordStrength(password))
         {
-            logger.error("Password does not meet strength requirements", TAG);
+            LOG_ERROR("Password does not meet strength requirements");
             return false;
         }
 
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_AUTH, false))
         {
-            logger.error("Failed to open auth preferences for writing", TAG);
+            LOG_ERROR("Failed to open auth preferences for writing");
             return false;
         }
 
         bool success = prefs.putString(PREFERENCES_KEY_PASSWORD, password) > 0;
         prefs.end();
 
-        if (success) { logger.info("Web password updated successfully", TAG); }
-        else { logger.error("Failed to save web password", TAG); }
+        if (success) { LOG_INFO("Web password updated successfully"); }
+        else { LOG_ERROR("Failed to save web password"); }
 
         return success;
     }
 
     static bool _getWebPasswordFromPreferences(char *buffer, size_t bufferSize) // TODO: this can be improved as it is cumbersome the password management
     {
-        logger.debug("Getting web password", TAG);
+        LOG_DEBUG("Getting web password");
 
         if (buffer == nullptr || bufferSize == 0)
         {
-            logger.error("Invalid buffer for getWebPassword", TAG);
+            LOG_ERROR("Invalid buffer for getWebPassword");
             return false;
         }
 
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_AUTH, true))
         {
-            logger.error("Failed to open auth preferences for reading", TAG);
+            LOG_ERROR("Failed to open auth preferences for reading");
             return false;
         }
 
@@ -512,14 +510,14 @@ namespace CustomServer
         // Check minimum length
         if (length < MIN_PASSWORD_LENGTH)
         {
-            logger.warning("Password too short", TAG);
+            LOG_WARNING("Password too short");
             return false;
         }
 
         // Check maximum length
         if (length > MAX_PASSWORD_LENGTH)
         {
-            logger.warning("Password too int32_t", TAG);
+            LOG_WARNING("Password too int32_t");
             return false;
         }
         
@@ -663,7 +661,7 @@ namespace CustomServer
                     return;
                 }
 
-                logger.info("Password changed successfully via API", TAG);
+                LOG_INFO("Password changed successfully via API");
                 _sendSuccessResponse(request, "Password changed successfully");
                 
                 // Update authentication middleware with new password
@@ -678,7 +676,7 @@ namespace CustomServer
                   {
             if (resetWebPassword()) {
                 updateAuthPasswordWithOneFromPreferences();
-                logger.warning("Password reset to default via API", TAG);
+                LOG_WARNING("Password reset to default via API");
                 _sendSuccessResponse(request, "Password reset to default");
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to reset password");
@@ -713,7 +711,7 @@ namespace CustomServer
             doc["message"] = Update.errorString();
             _sendJsonResponse(request, doc);
             
-            logger.error("OTA update failed: %s", TAG, Update.errorString());
+            LOG_ERROR("OTA update failed: %s", Update.errorString());
             Update.printError(Serial);
             
             Led::blinkRedFast(Led::PRIO_CRITICAL, 5000ULL);
@@ -724,11 +722,11 @@ namespace CustomServer
             doc["md5"] = Update.md5String();
             _sendJsonResponse(request, doc);
             
-            logger.info("OTA update completed successfully", TAG);
-            logger.debug("New firmware MD5: %s", TAG, Update.md5String().c_str());
+            LOG_INFO("OTA update completed successfully");
+            LOG_DEBUG("New firmware MD5: %s", Update.md5String().c_str());
             
             Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
-            setRestartSystem(TAG, "Restart needed after firmware update");
+            setRestartSystem("Restart needed after firmware update");
         }
     }
 
@@ -764,11 +762,11 @@ namespace CustomServer
 
     static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename)
     {
-        logger.info("Starting OTA update with file: %s", TAG, filename.c_str());
+        LOG_INFO("Starting OTA update with file: %s", filename.c_str());
         
         // Validate file extension
         if (!filename.endsWith(".bin")) {
-            logger.error("Invalid file type. Only .bin files are supported", TAG);
+            LOG_ERROR("Invalid file type. Only .bin files are supported");
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File must be in .bin format");
             return false;
         }
@@ -776,30 +774,30 @@ namespace CustomServer
         // Get content length from header
         size_t contentLength = request->header("Content-Length").toInt();
         if (contentLength == 0) {
-            logger.error("No Content-Length header found or empty file", TAG);
+            LOG_ERROR("No Content-Length header found or empty file");
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing Content-Length header or empty file");
             return false;
         }
         
         // Validate minimum firmware size
         if (contentLength < MINIMUM_FIRMWARE_SIZE) {
-            logger.error("Firmware file too small: %zu bytes (minimum: %d bytes)", TAG, contentLength, MINIMUM_FIRMWARE_SIZE);
+            LOG_ERROR("Firmware file too small: %zu bytes (minimum: %d bytes)", contentLength, MINIMUM_FIRMWARE_SIZE);
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware file too small");
             return false;
         }
         
         // Check free heap
         size_t freeHeap = ESP.getFreeHeap();
-        logger.debug("Free heap before OTA: %zu bytes", TAG, freeHeap);
+        LOG_DEBUG("Free heap before OTA: %zu bytes", freeHeap);
         if (freeHeap < MINIMUM_FREE_HEAP_OTA) {
-            logger.error("Insufficient memory for OTA update", TAG);
+            LOG_ERROR("Insufficient memory for OTA update");
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Insufficient memory for update");
             return false;
         }
         
         // Begin OTA update with known size
         if (!Update.begin(contentLength, U_FLASH)) {
-            logger.error("Failed to begin OTA update: %s", TAG, Update.errorString());
+            LOG_ERROR("Failed to begin OTA update: %s", Update.errorString());
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Failed to begin update");
             Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
             return false;
@@ -811,14 +809,14 @@ namespace CustomServer
         // Start LED indication for OTA progress
         Led::blinkPurpleFast(Led::PRIO_MEDIUM);
         
-        logger.debug("OTA update started, expected size: %zu bytes", TAG, contentLength);
+        LOG_DEBUG("OTA update started, expected size: %zu bytes", contentLength);
         return true;
     }
 
     static void _setupOtaMd5Verification(AsyncWebServerRequest *request)
     {
         if (!request->hasHeader("X-MD5")) {
-            logger.warning("No MD5 header provided, skipping verification", TAG);
+            LOG_WARNING("No MD5 header provided, skipping verification");
             return;
         }
         
@@ -835,11 +833,11 @@ namespace CustomServer
             }
             
             Update.setMD5(md5Header);
-            logger.debug("MD5 verification enabled: %s", TAG, md5Header);
+            LOG_DEBUG("MD5 verification enabled: %s", md5Header);
         } else if (headerLength > 0) {
-            logger.warning("Invalid MD5 length (%zu), skipping verification", TAG, headerLength);
+            LOG_WARNING("Invalid MD5 length (%zu), skipping verification", headerLength);
         } else {
-            logger.warning("No MD5 header provided, skipping verification", TAG);
+            LOG_WARNING("No MD5 header provided, skipping verification");
         }
     }
 
@@ -847,7 +845,7 @@ namespace CustomServer
     {
         size_t written = Update.write(data, len);
         if (written != len) {
-            logger.error("OTA write failed: expected %zu bytes, wrote %zu bytes", TAG, len, written);
+            LOG_ERROR("OTA write failed: expected %zu bytes, wrote %zu bytes", len, written);
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Write failed");
             Update.abort();
             return false;
@@ -857,7 +855,7 @@ namespace CustomServer
         static size_t lastProgressIndex = 0;
         if (index >= lastProgressIndex + SIZE_REPORT_UPDATE_OTA || index == 0) {
             float progress = Update.size() > 0UL ? (float)Update.progress() / (float)Update.size() * 100.0f : 0.0f;
-            logger.debug("OTA progress: %.1f%% (%zu / %zu bytes)", TAG, progress, Update.progress(), Update.size());
+            LOG_DEBUG("OTA progress: %.1f%% (%zu / %zu bytes)", progress, Update.progress(), Update.size());
             lastProgressIndex = index;
         }
         
@@ -866,11 +864,11 @@ namespace CustomServer
 
     static void _finalizeOtaUpload(AsyncWebServerRequest *request)
     {
-        logger.debug("Finalizing OTA update...", TAG);
+        LOG_DEBUG("Finalizing OTA update...");
         
         // Validate that we actually received data
         if (Update.progress() == 0) {
-            logger.error("OTA finalization failed: No data received", TAG);
+            LOG_ERROR("OTA finalization failed: No data received");
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "No firmware data received");
             Update.abort();
             return;
@@ -878,17 +876,17 @@ namespace CustomServer
         
         // Validate minimum size
         if (Update.progress() < MINIMUM_FIRMWARE_SIZE) {
-            logger.error("OTA finalization failed: Firmware too small (%zu bytes)", TAG, Update.progress());
+            LOG_ERROR("OTA finalization failed: Firmware too small (%zu bytes)", Update.progress());
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware file too small");
             Update.abort();
             return;
         }
         
         if (!Update.end(true)) {
-            logger.error("OTA finalization failed: %s", TAG, Update.errorString());
+            LOG_ERROR("OTA finalization failed: %s", Update.errorString());
             // Error response will be handled in the main handler
         } else {
-            logger.debug("OTA update finalization successful", TAG);
+            LOG_DEBUG("OTA update finalization successful");
             Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
         }
     }
@@ -925,17 +923,17 @@ namespace CustomServer
                   {
             if (Update.isRunning()) {
                 Update.abort();
-                logger.info("Aborted running OTA update", TAG);
+                LOG_INFO("Aborted running OTA update");
             }
 
             if (Update.canRollBack()) {
-                logger.warning("Firmware rollback requested via API", TAG);
+                LOG_WARNING("Firmware rollback requested via API");
                 _sendSuccessResponse(request, "Rollback initiated. Device will restart.");
                 
                 Update.rollBack();
-                setRestartSystem(TAG, "Firmware rollback requested via API");
+                setRestartSystem("Firmware rollback requested via API");
             } else {
-                logger.error("Rollback not possible: %s", TAG, Update.errorString());
+                LOG_ERROR("Rollback not possible: %s", Update.errorString());
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Rollback not possible");
             }
         });
@@ -1008,7 +1006,7 @@ namespace CustomServer
             if (!_validateRequest(request, "POST")) return;
 
             _sendSuccessResponse(request, "System restart initiated");
-            setRestartSystem(TAG, "System restart requested via API"); });
+            setRestartSystem("System restart requested via API"); });
 
         // Factory reset
         server.on("/api/v1/system/factory-reset", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -1016,7 +1014,7 @@ namespace CustomServer
             if (!_validateRequest(request, "POST")) return;
 
             _sendSuccessResponse(request, "Factory reset initiated");
-            setRestartSystem(TAG, "Factory reset requested via API", true); });
+            setRestartSystem("Factory reset requested via API", true); });
 
         // Check if secrets exist
         server.on("/api/v1/system/secrets", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -1045,8 +1043,8 @@ namespace CustomServer
         server.on("/api/v1/logs/level", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             JsonDocument doc;
-            doc["print"] = logger.logLevelToString(logger.getPrintLevel());
-            doc["save"] = logger.logLevelToString(logger.getSaveLevel());
+            doc["print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
+            doc["save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
             _sendJsonResponse(request, doc);
         });
 
@@ -1080,7 +1078,7 @@ namespace CustomServer
                     LogLevel level;
                     if (_parseLogLevel(printLevel, level))
                     {
-                        logger.setPrintLevel(level);
+                        AdvancedLogger::setPrintLevel(level);
                         snprintf(resultMsg + strlen(resultMsg), sizeof(resultMsg) - strlen(resultMsg),
                                  " print=%s", printLevel);
                     }
@@ -1096,7 +1094,7 @@ namespace CustomServer
                     LogLevel level;
                     if (_parseLogLevel(saveLevel, level))
                     {
-                        logger.setSaveLevel(level);
+                        AdvancedLogger::setSaveLevel(level);
                         snprintf(resultMsg + strlen(resultMsg), sizeof(resultMsg) - strlen(resultMsg),
                                  " save=%s", saveLevel);
                     }
@@ -1109,7 +1107,7 @@ namespace CustomServer
                 if (success)
                 {
                     _sendSuccessResponse(request, resultMsg);
-                    logger.info("Log levels %s via API", TAG, isPartialUpdate ? "partially updated" : "updated");
+                    LOG_INFO("Log levels %s via API", isPartialUpdate ? "partially updated" : "updated");
                 }
                 else
                 {
@@ -1121,7 +1119,7 @@ namespace CustomServer
         // Get all logs
         server.on("/api/v1/logs", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            request->send(SPIFFS, LOG_PATH, "text/plain");
+            request->send(LittleFS, LOG_PATH, "text/plain");
         });
 
         // Clear logs
@@ -1129,9 +1127,9 @@ namespace CustomServer
                   {
             if (!_validateRequest(request, "POST")) return;
 
-            logger.clearLog();
+            AdvancedLogger::clearLog();
             _sendSuccessResponse(request, "Logs cleared successfully");
-            logger.info("Logs cleared via API", TAG);
+            LOG_INFO("Logs cleared via API");
         });
     }
 
@@ -1161,7 +1159,7 @@ namespace CustomServer
 
                 if (Ade7953::setConfigurationFromJson(doc, isPartialUpdate))
                 {
-                    logger.info("ADE7953 configuration %s via API", TAG, isPartialUpdate ? "partially updated" : "updated");
+                    LOG_INFO("ADE7953 configuration %s via API", isPartialUpdate ? "partially updated" : "updated");
                     _sendSuccessResponse(request, "ADE7953 configuration updated successfully");
                 }
                 else
@@ -1210,7 +1208,7 @@ namespace CustomServer
 
                 if (Ade7953::setSampleTime(sampleTime))
                 {
-                    logger.info("ADE7953 sample time updated to %lu ms via API", TAG, sampleTime);
+                    LOG_INFO("ADE7953 sample time updated to %lu ms via API", sampleTime);
                     _sendSuccessResponse(request, "ADE7953 sample time updated successfully");
                 }
                 else
@@ -1258,7 +1256,7 @@ namespace CustomServer
                 if (Ade7953::setChannelDataFromJson(doc, isPartialUpdate))
                 {
                     uint32_t channelIndex = doc["index"].as<uint32_t>();
-                    logger.info("ADE7953 channel %lu data %s via API", TAG, channelIndex, isPartialUpdate ? "partially updated" : "updated");
+                    LOG_INFO("ADE7953 channel %lu data %s via API", channelIndex, isPartialUpdate ? "partially updated" : "updated");
                     _sendSuccessResponse(request, "ADE7953 channel data updated successfully");
                 }
                 else
@@ -1286,7 +1284,7 @@ namespace CustomServer
             uint8_t channelIndex = static_cast<uint8_t>(indexValue);
             Ade7953::resetChannelData(channelIndex);
 
-            logger.info("ADE7953 channel %u data reset via API", TAG, channelIndex);
+            LOG_INFO("ADE7953 channel %u data reset via API", channelIndex);
             _sendSuccessResponse(request, "ADE7953 channel data reset successfully");
         });
 
@@ -1365,7 +1363,7 @@ namespace CustomServer
 
                 Ade7953::writeRegister(address, bits, value);
                 
-                logger.info("ADE7953 register 0x%X (%d bits) written with value 0x%X via API", TAG, address, bits, value);
+                LOG_INFO("ADE7953 register 0x%X (%d bits) written with value 0x%X via API", address, bits, value);
                 _sendSuccessResponse(request, "ADE7953 register written successfully");
             });
         server.addHandler(writeRegisterHandler);
@@ -1414,7 +1412,7 @@ namespace CustomServer
             if (!_validateRequest(request, "POST")) return;
 
             Ade7953::resetEnergyValues();
-            logger.info("ADE7953 energy values reset via API", TAG);
+            LOG_INFO("ADE7953 energy values reset via API");
             _sendSuccessResponse(request, "ADE7953 energy values reset successfully");
         });
 
@@ -1443,7 +1441,7 @@ namespace CustomServer
                 if (Ade7953::setEnergyValues(channel, activeEnergyImported, activeEnergyExported, 
                                            reactiveEnergyImported, reactiveEnergyExported, apparentEnergy))
                 {
-                    logger.info("ADE7953 energy values set for channel %lu via API", TAG, channel);
+                    LOG_INFO("ADE7953 energy values set for channel %lu via API", channel);
                     _sendSuccessResponse(request, "ADE7953 energy values updated successfully");
                 }
                 else
@@ -1477,7 +1475,7 @@ namespace CustomServer
 
                 if (CustomMqtt::setConfigurationFromJson(doc, isPartialUpdate))
                 {
-                    logger.info("Custom MQTT configuration %s via API", TAG, isPartialUpdate ? "partially updated" : "updated");
+                    LOG_INFO("Custom MQTT configuration %s via API", isPartialUpdate ? "partially updated" : "updated");
                     _sendSuccessResponse(request, "Custom MQTT configuration updated successfully");
                 }
                 else
@@ -1540,7 +1538,7 @@ namespace CustomServer
                 bool enabled = doc["enabled"];
                 Mqtt::setCloudServicesEnabled(enabled);
                 
-                logger.info("Cloud services %s via API", TAG, enabled ? "enabled" : "disabled");
+                LOG_INFO("Cloud services %s via API", enabled ? "enabled" : "disabled");
                 _sendSuccessResponse(request, enabled ? "Cloud services enabled successfully" : "Cloud services disabled successfully");
             });
         server.addHandler(setCloudServicesHandler);
@@ -1571,7 +1569,7 @@ namespace CustomServer
 
                 if (InfluxDbClient::setConfigurationFromJson(doc, isPartialUpdate))
                 {
-                    logger.info("InfluxDB configuration updated via API", TAG);
+                    LOG_INFO("InfluxDB configuration updated via API");
                     _sendSuccessResponse(request, "InfluxDB configuration updated successfully");
                 }
                 else
@@ -1637,7 +1635,7 @@ namespace CustomServer
                 chunkSize = request->getParam("size")->value().toInt();
                 // Limit maximum chunk size to prevent memory issues
                 if (chunkSize > CRASH_DUMP_MAX_CHUNK_SIZE) {
-                    logger.debug("Chunk size too large, limiting to %zu bytes", TAG, CRASH_DUMP_MAX_CHUNK_SIZE);
+                    LOG_DEBUG("Chunk size too large, limiting to %zu bytes", CRASH_DUMP_MAX_CHUNK_SIZE);
                     chunkSize = CRASH_DUMP_MAX_CHUNK_SIZE;
                 }
                 if (chunkSize == 0) {
@@ -1666,7 +1664,7 @@ namespace CustomServer
 
             if (CrashMonitor::hasCoreDump()) {
                 CrashMonitor::clearCoreDump();
-                logger.info("Core dump cleared via API", TAG);
+                LOG_INFO("Core dump cleared via API");
                 _sendSuccessResponse(request, "Core dump cleared successfully");
             } else {
                 _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No core dump available to clear");
@@ -1720,15 +1718,15 @@ namespace CustomServer
     // === FILE OPERATION ENDPOINTS ===
     static void _serveFileEndpoints()
     {
-        // List files in SPIFFS. The endpoint cannot be only "files" as it conflicts with the file serving endpoint (defined below)
+        // List files in LittleFS. The endpoint cannot be only "files" as it conflicts with the file serving endpoint (defined below)
         server.on("/api/v1/list-files", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             JsonDocument doc;
             
-            if (listSpiffsFiles(doc)) {
+            if (listLittleFsFiles(doc)) {
                 _sendJsonResponse(request, doc);
             } else {
-                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to list SPIFFS files");
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to list LittleFS files");
             }
         });
 
@@ -1754,7 +1752,7 @@ namespace CustomServer
             }
 
             // Check if file exists
-            if (!SPIFFS.exists(filename)) {
+            if (!LittleFS.exists(filename)) {
                 _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "File not found");
                 return;
             }
@@ -1762,8 +1760,8 @@ namespace CustomServer
             // Determine content type based on file extension
             const char* contentType = getContentTypeFromFilename(filename.c_str());
 
-            // Serve the file directly from SPIFFS with proper content type
-            request->send(SPIFFS, filename, contentType);
+            // Serve the file directly from LittleFS with proper content type
+            request->send(LittleFS, filename, contentType);
         });
     }
 }

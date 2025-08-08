@@ -1,8 +1,4 @@
-
-
 #include "customlog.h"
-
-static const char *TAG = "customlog";
 
 namespace CustomLog
 {
@@ -16,63 +12,28 @@ namespace CustomLog
     static bool _isUdpInitialized = false;
     static bool _isQueueInitialized = false;
 
-    static void _callbackMqtt(
-        const char* timestamp,
-        uint64_t millisEsp,
-        const char* level,
-        uint32_t coreId,
-        const char* function,
-        const char* message
-    );
-    static void _callbackUdp(
-        const char* timestamp,
-        uint64_t millisEsp,
-        const char* level,
-        uint32_t coreId,
-        const char* function,
-        const char* message
-    );
+    // Task state
+    static TaskHandle_t _udpTaskHandle = NULL;
+    static bool _udpTaskShouldRun = false;
+
+    static void _callbackMqtt(const LogEntry& entry);
+    static void _callbackUdp(const LogEntry& entry);
+
     static bool _initializeQueue();
-
-    static bool _initializeQueue() // Cannot use logger here to avoid circular dependency
-    {
-        if (_isQueueInitialized) {
-            return true;
-        }
-
-        // Allocate queue storage in PSRAM
-        size_t queueStorageSize = LOG_BUFFER_SIZE * sizeof(LogJson);
-        _udpLogQueueStorage = (uint8_t*)heap_caps_malloc(queueStorageSize, MALLOC_CAP_SPIRAM);
-        
-        if (_udpLogQueueStorage == nullptr) {
-            Serial.printf("[ERROR] Failed to allocate PSRAM for UDP log queue (%d bytes) | Free PSRAM: %d bytes\n", queueStorageSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-            return false;
-        }
-
-        // Create FreeRTOS static queue using PSRAM buffer
-        _udpLogQueue = xQueueCreateStatic(LOG_BUFFER_SIZE, sizeof(LogJson), _udpLogQueueStorage, &_udpLogQueueStruct);
-        if (_udpLogQueue == nullptr) {
-            Serial.printf("[ERROR] Failed to create UDP log queue\n");
-            heap_caps_free(_udpLogQueueStorage);
-            _udpLogQueueStorage = nullptr;
-            return false;
-        }
-
-        _isQueueInitialized = true;
-        Serial.printf("[DEBUG] UDP log queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", queueStorageSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-        return true;
-    }
+    static void _startTask();
+    static void _stopTask();
+    static void _udpTask(void* parameter);
 
     void begin()
     {
         if (_isUdpInitialized) {
-            logger.debug("UDP logging already initialized", TAG);
+            LOG_DEBUG("UDP logging already initialized");
             return;
         }
 
         // Initialize queue if not already done
         if (!_initializeQueue()) {
-            logger.error("Failed to initialize UDP log queue", TAG);
+            LOG_ERROR("Failed to initialize UDP log queue");
             return;
         }
 
@@ -81,18 +42,22 @@ namespace CustomLog
         
         _udpClient.begin(UDP_LOG_PORT);
         _isUdpInitialized = true;
-        
-        size_t queueStorageSize = LOG_BUFFER_SIZE * sizeof(LogJson);
-        logger.debug("UDP logging configured - destination: %s:%d, PSRAM buffer: %zu bytes", TAG,
-                    _udpDestinationIp.toString().c_str(), UDP_LOG_PORT, queueStorageSize);
+
+        LOG_DEBUG("UDP logging configured - destination: %s:%d, PSRAM buffer: %zu bytes",
+                    _udpDestinationIp.toString().c_str(), UDP_LOG_PORT, LOG_BUFFER_SIZE);
+
+        // Start async task
+        _startTask();
     }
 
     void stop()
     {
+        _stopTask();
+
         if (_isUdpInitialized) {
             _udpClient.stop();
             _isUdpInitialized = false;
-            logger.debug("UDP client stopped", TAG);
+            LOG_DEBUG("UDP client stopped");
         }
         
         // Clean up the queue and PSRAM buffer
@@ -106,114 +71,167 @@ namespace CustomLog
             }
             
             _isQueueInitialized = false;
-            logger.debug("UDP logging queue stopped, PSRAM freed", TAG);
+            LOG_DEBUG("UDP logging queue stopped, PSRAM freed");
         }
     }
 
-    void callbackMultiple(
-        const char* timestamp,
-        uint64_t millisEsp,
-        const char* level,
-        uint32_t coreId,
-        const char* function,
-        const char* message
-    )
+    void callbackMultiple(const LogEntry& entry)
     {
-        _callbackUdp(timestamp, millisEsp, level, coreId, function, message);
-        _callbackMqtt(timestamp, millisEsp, level, coreId, function, message);
+        _callbackUdp(entry);
+        _callbackMqtt(entry);
     }
 
-    static void _callbackMqtt(
-        const char* timestamp,
-        uint64_t millisEsp,
-        const char* level,
-        uint32_t coreId,
-        const char* function,
-        const char* message
-    )
+    static bool _initializeQueue() // Cannot use logger here to avoid recursion
+    {
+        if (_isQueueInitialized) {
+            return true;
+        }
+
+        // Allocate queue storage in PSRAM
+        uint32_t queueLength = LOG_BUFFER_SIZE / sizeof(LogEntry);
+        size_t realQueueSize = queueLength * sizeof(LogEntry);
+        _udpLogQueueStorage = (uint8_t*)heap_caps_malloc(realQueueSize, MALLOC_CAP_SPIRAM);
+        
+        if (_udpLogQueueStorage == nullptr) {
+            Serial.printf("[ERROR] Failed to allocate PSRAM for UDP log queue (%d bytes) | Free PSRAM: %d bytes\n", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+            return false;
+        }
+
+        // Create FreeRTOS static queue using PSRAM buffer
+        _udpLogQueue = xQueueCreateStatic(queueLength, sizeof(LogEntry), _udpLogQueueStorage, &_udpLogQueueStruct);
+        if (_udpLogQueue == nullptr) {
+            Serial.printf("[ERROR] Failed to create UDP log queue\n");
+            heap_caps_free(_udpLogQueueStorage);
+            _udpLogQueueStorage = nullptr;
+            return false;
+        }
+
+        _isQueueInitialized = true;
+        Serial.printf("[DEBUG] UDP log queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        return true;
+    }
+
+    static void _callbackMqtt(const LogEntry& entry)
     {
         #if HAS_SECRETS
-        Mqtt::pushLog(timestamp, millisEsp, level, coreId, function, message);
+        Mqtt::pushLog(entry);
         #endif
     }
 
-    static void _callbackUdp(
-        const char* timestamp,
-        uint64_t millisEsp,
-        const char* level,
-        uint32_t coreId,
-        const char* function,
-        const char* message
-    )
+    static void _callbackUdp(const LogEntry& entry)
     {
+        if (!_udpLogQueue) return;
         if (!DEFAULT_IS_UDP_LOGGING_ENABLED) return;
-        if (strcmp(level, "verbose") == 0) return; // Never send verbose logs via UDP
-        
+        if (entry.level == LogLevel::VERBOSE) return; // Never send verbose logs via UDP
+
         // Initialize queue on first use if not already done
         if (!_isQueueInitialized) {
-            if (!_initializeQueue()) {
-                return; // Failed to initialize, drop this log
-            }
+            if (!_initializeQueue()) return; // Failed to initialize, drop this log
         }
         
-        // Create log entry
-        LogJson logEntry(timestamp, millisEsp, level, coreId, function, message);
-        
-        // Try to send to queue (non-blocking)
-        if (xQueueSend(_udpLogQueue, &logEntry, 0) != pdTRUE) {
-            // Queue is full, could optionally remove oldest item and try again
-            // For now, just drop the log entry
+        // Send to queue (non-blocking). Copy the struct value, not pointer.
+        if (xQueueSend(_udpLogQueue, &entry, 0) != pdTRUE) {
+            // Queue full -> drop
+        }
+    }
+
+    static void _startTask()
+    {
+        if (_udpTaskHandle != NULL) {
+            LOG_DEBUG("UDP log task already running");
+            return;
         }
 
-        // If not connected to WiFi or no valid IP or UDP not initialized, return (log is still stored in queue for later)
-        if (!_isUdpInitialized) return;
-        if (!CustomWifi::isFullyConnected()) return;
+        LOG_DEBUG("Starting UDP log task");
+        BaseType_t result = xTaskCreate(
+            _udpTask,
+            UDP_LOG_TASK_NAME,
+            UDP_LOG_TASK_STACK_SIZE,
+            NULL,
+            UDP_LOG_TASK_PRIORITY,
+            &_udpTaskHandle
+        );
 
-        uint32_t loops = 0;
-        LogJson log;
-        
-        while (uxQueueMessagesWaiting(_udpLogQueue) > 0 && loops < MAX_LOOP_ITERATIONS) {
-            loops++;
+        if (result != pdPASS) {
+            LOG_ERROR("Failed to create UDP log task");
+            _udpTaskHandle = NULL;
+        }
+    }
 
-            // Receive from queue (non-blocking)
-            if (xQueueReceive(_udpLogQueue, &log, 0) != pdTRUE) {
-                break; // No more items in queue
+    static void _stopTask()
+    {
+        stopTaskGracefully(&_udpTaskHandle, "UDP log task");
+    }
+
+    static void _udpTask(void* parameter) // No logging to avoid recursion
+    {
+        _udpTaskShouldRun = true;
+
+        while (_udpTaskShouldRun) {
+            if (!_udpLogQueue) continue;
+
+            // Block waiting for a log entry, but wake up periodically to allow shutdown
+            LogEntry entry; // non-const for xQueueReceive
+            if (xQueueReceive(_udpLogQueue, &entry, pdMS_TO_TICKS(UDP_LOG_LOOP_INTERVAL)) != pdTRUE) {
+                // Timeout: check for stop notification
+                uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, 0);
+                if (notificationValue > 0) { _udpTaskShouldRun = false; break; }
+                continue;
             }
 
-            // Format as simplified syslog message
+            // If not connected or UDP not initialized, requeue to front and wait
+            if (!_isUdpInitialized || !CustomWifi::isFullyConnected()) {
+                if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
+                // Wait a bit to avoid busy loop
+                delay(DELAY_SEND_UDP);
+                continue;
+            }
+
+            // Prepare timestamp
+            char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
+            AdvancedLogger::getTimestampIsoUtcFromUnixTimeMilliseconds(
+                entry.unixTimeMilliseconds,
+                timestamp,
+                sizeof(timestamp)
+            );
+
+            // Format message
             snprintf(_udpBuffer, sizeof(_udpBuffer),
-                "<%d>%s %s[%llu]: [%s][Core%lu] %s: %s",
-                UDP_LOG_SERVERITY_FACILITY, // Facility.Severity (local0.info)
-                log.timestamp,
+                "<%d>%s %s[%llu]: [%s][Core%d] %s[%s]: %s",
+                UDP_LOG_SERVERITY_FACILITY,
+                timestamp,
                 DEVICE_ID,
-                log.millisEsp,
-                log.level,
-                log.coreId,
-                log.function,
-                log.message);
+                entry.millis,
+                AdvancedLogger::logLevelToString(entry.level),
+                entry.coreId,
+                entry.file,
+                entry.function,
+                entry.message);
             
             if (!_udpClient.beginPacket(_udpDestinationIp, UDP_LOG_PORT)) {
                 // Put the log back in the queue (front of queue)
-                xQueueSendToFront(_udpLogQueue, &log, 0);
-                break;
+                if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
+                continue;
             }
             
             size_t bytesWritten = _udpClient.write((const uint8_t*)_udpBuffer, strlen(_udpBuffer));
             if (bytesWritten == 0) {
-                xQueueSendToFront(_udpLogQueue, &log, 0);
+                if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
                 _udpClient.endPacket(); // Clean up the packet
-                break;
+                continue;
             }
             
             if (!_udpClient.endPacket()) {
-                xQueueSendToFront(_udpLogQueue, &log, 0);
-                break;
+                if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
+                continue;
             }
-            
-            // Small delay between UDP packets to avoid overwhelming the stack
-            if (uxQueueMessagesWaiting(_udpLogQueue) > 0) {
-                delay(DELAY_SEND_UDP);
-            }
+
+            // Optional small delay if more messages pending
+            if (_udpLogQueue && uxQueueMessagesWaiting(_udpLogQueue) > 0) delay(DELAY_SEND_UDP);
         }
+
+        // Removed LOG_DEBUG here to avoid recursive logging
+        _udpTaskHandle = NULL;
+        vTaskDelete(NULL);
     }
 }

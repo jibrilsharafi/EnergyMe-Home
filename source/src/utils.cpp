@@ -1,14 +1,12 @@
 #include "utils.h"
 
-static const char *TAG = "utils";
-
 static TaskHandle_t _restartTaskHandle = NULL;
 static TaskHandle_t _maintenanceTaskHandle = NULL;
 static bool _maintenanceTaskShouldRun = false;
 
 // Static function declarations
 static void _factoryReset();
-static void _restartSystem();
+static void _restartSystem(bool factoryReset = false);
 static void _maintenanceTask(void* parameter);
 
 // New system info functions
@@ -59,7 +57,7 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     // Device ID
     getDeviceId(info.deviceId, sizeof(info.deviceId));
 
-    logger.debug("Static system info populated", TAG);
+    LOG_DEBUG("Static system info populated");
 }
 
 void populateSystemDynamicInfo(SystemDynamicInfo& info) {
@@ -69,7 +67,6 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     // Time
     info.uptimeMilliseconds = millis64();
     info.uptimeSeconds = info.uptimeMilliseconds / 1000;
-    CustomTime::getTimestamp(info.currentTimestamp, sizeof(info.currentTimestamp));
     CustomTime::getTimestampIso(info.currentTimestampIso, sizeof(info.currentTimestampIso));
 
     // Memory - Heap
@@ -99,18 +96,18 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
         info.psramUsedPercentage = 0.0f;
     }
     
-    // Storage - SPIFFS
-    info.spiffsTotalBytes = SPIFFS.totalBytes();
-    info.spiffsUsedBytes = SPIFFS.usedBytes();
-    info.spiffsFreeBytes = info.spiffsTotalBytes - info.spiffsUsedBytes;
-    info.spiffsFreePercentage = info.spiffsTotalBytes > 0 ? ((float)info.spiffsFreeBytes / (float)info.spiffsTotalBytes) * 100.0f : 0.0f;
-    info.spiffsUsedPercentage = 100.0f - info.spiffsFreePercentage;
+    // Storage - LittleFS
+    info.littlefsTotalBytes = LittleFS.totalBytes();
+    info.littlefsUsedBytes = LittleFS.usedBytes();
+    info.littlefsFreeBytes = info.littlefsTotalBytes - info.littlefsUsedBytes;
+    info.littlefsFreePercentage = info.littlefsTotalBytes > 0 ? ((float)info.littlefsFreeBytes / (float)info.littlefsTotalBytes) * 100.0f : 0.0f;
+    info.littlefsUsedPercentage = 100.0f - info.littlefsFreePercentage;
 
     // Storage - NVS
     nvs_stats_t nvs_stats;
     esp_err_t err = nvs_get_stats(NULL, &nvs_stats);
     if (err != ESP_OK) {
-        logger.error("Failed to get NVS stats: %s", TAG, esp_err_to_name(err));
+        LOG_ERROR("Failed to get NVS stats: %s", esp_err_to_name(err));
         info.usedEntries = 0;
         info.availableEntries = 0;
         info.totalUsableEntries = 0;
@@ -151,7 +148,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     }
     snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
    
-    logger.debug("Dynamic system info populated", TAG);
+    LOG_DEBUG("Dynamic system info populated");
 }
 
 void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
@@ -198,14 +195,13 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
     // Device
     doc["device"]["id"] = info.deviceId;
 
-    logger.debug("Static system info converted to JSON", TAG);
+    LOG_DEBUG("Static system info converted to JSON");
 }
 
 void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     // Time
     doc["time"]["uptimeMilliseconds"] = (uint64_t)info.uptimeMilliseconds;
     doc["time"]["uptimeSeconds"] = info.uptimeSeconds;
-    doc["time"]["currentTimestamp"] = info.currentTimestamp;
     doc["time"]["currentTimestampIso"] = info.currentTimestampIso;
 
     // Memory - Heap
@@ -227,11 +223,11 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["memory"]["psram"]["usedPercentage"] = info.psramUsedPercentage;
     
     // Storage
-    doc["storage"]["spiffs"]["totalBytes"] = info.spiffsTotalBytes;
-    doc["storage"]["spiffs"]["usedBytes"] = info.spiffsUsedBytes;
-    doc["storage"]["spiffs"]["freeBytes"] = info.spiffsFreeBytes;
-    doc["storage"]["spiffs"]["freePercentage"] = info.spiffsFreePercentage;
-    doc["storage"]["spiffs"]["usedPercentage"] = info.spiffsUsedPercentage;
+    doc["storage"]["littlefs"]["totalBytes"] = info.littlefsTotalBytes;
+    doc["storage"]["littlefs"]["usedBytes"] = info.littlefsUsedBytes;
+    doc["storage"]["littlefs"]["freeBytes"] = info.littlefsFreeBytes;
+    doc["storage"]["littlefs"]["freePercentage"] = info.littlefsFreePercentage;
+    doc["storage"]["littlefs"]["usedPercentage"] = info.littlefsUsedPercentage;
 
     // Storage - NVS
     doc["storage"]["nvs"]["totalUsableEntries"] = info.totalUsableEntries;
@@ -255,7 +251,7 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["network"]["wifiBssid"] = info.wifiBssid;
     doc["network"]["wifiRssi"] = info.wifiRssi;
 
-    logger.debug("Dynamic system info converted to JSON", TAG);
+    LOG_DEBUG("Dynamic system info converted to JSON");
 }
 
 void getJsonDeviceStaticInfo(JsonDocument& doc) {
@@ -273,7 +269,7 @@ void getJsonDeviceDynamicInfo(JsonDocument& doc) {
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError) {
     // Validate inputs
     if (!buffer || bufferSize == 0) {
-        logger.warning("Invalid buffer parameters passed to safeSerializeJson", TAG);
+        LOG_WARNING("Invalid buffer parameters passed to safeSerializeJson");
         return false;
     }
 
@@ -285,22 +281,22 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
             // Ensure null-termination (avoid weird last character issues)
             buffer[bufferSize - 1] = '\0';
             
-            logger.debug("Truncating JSON to fit buffer size (%zu bytes vs %zu bytes)", TAG, bufferSize, size);
+            LOG_DEBUG("Truncating JSON to fit buffer size (%zu bytes vs %zu bytes)", bufferSize, size);
         } else {
-            logger.warning("JSON size (%zu bytes) exceeds buffer size (%zu bytes)", TAG, size, bufferSize);
+            LOG_WARNING("JSON size (%zu bytes) exceeds buffer size (%zu bytes)", size, bufferSize);
             snprintf(buffer, bufferSize, "%s", ""); // Clear buffer on failure
         }
         return false;
     }
 
     serializeJson(jsonDocument, buffer, bufferSize);
-    logger.verbose("JSON serialized successfully (bytes: %zu): %s", TAG, size, buffer);
+    LOG_VERBOSE("JSON serialized successfully (bytes: %zu): %s", size, buffer);
     return true;
 }
 
 // Task function that handles periodic maintenance checks
 static void _maintenanceTask(void* parameter) {
-    logger.debug("Maintenance task started", TAG);
+    LOG_DEBUG("Maintenance task started");
     
     _maintenanceTaskShouldRun = true;
     while (_maintenanceTaskShouldRun) {
@@ -311,23 +307,23 @@ static void _maintenanceTask(void* parameter) {
 
         // Check heap memory
         if (ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE) {
-            logger.fatal("Heap memory has degraded below safe minimum (%d bytes): %lu bytes", TAG, MINIMUM_FREE_HEAP_SIZE, ESP.getFreeHeap());
-            setRestartSystem(TAG, "Heap memory has degraded below safe minimum");
+            LOG_FATAL("Heap memory has degraded below safe minimum (%d bytes): %lu bytes", MINIMUM_FREE_HEAP_SIZE, ESP.getFreeHeap());
+            setRestartSystem("Heap memory has degraded below safe minimum");
         }
 
         // Check PSRAM memory
         if (ESP.getFreePsram() < MINIMUM_FREE_PSRAM_SIZE) {
-            logger.fatal("PSRAM memory has degraded below safe minimum (%d bytes): %lu bytes", TAG, MINIMUM_FREE_PSRAM_SIZE, ESP.getFreePsram());
-            setRestartSystem(TAG, "PSRAM memory has degraded below safe minimum");
+            LOG_FATAL("PSRAM memory has degraded below safe minimum (%d bytes): %lu bytes", MINIMUM_FREE_PSRAM_SIZE, ESP.getFreePsram());
+            setRestartSystem("PSRAM memory has degraded below safe minimum");
         }
 
-        // Check SPIFFS memory and clear log if needed
-        if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
-            logger.clearLog();
-            logger.warning("Log cleared due to low memory", TAG);
+        // Check LittleFS memory and clear log if needed
+        if (LittleFS.totalBytes() - LittleFS.usedBytes() < MINIMUM_FREE_LITTLEFS_SIZE) {
+            AdvancedLogger::clearLog();
+            LOG_WARNING("Log cleared due to low memory");
         }
         
-        logger.debug("Maintenance checks completed", TAG);
+        LOG_DEBUG("Maintenance checks completed");
 
         // Wait for stop notification with timeout (blocking)
         uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MAINTENANCE_CHECK_INTERVAL));
@@ -337,18 +333,18 @@ static void _maintenanceTask(void* parameter) {
         }
     }
 
-    logger.debug("Maintenance task stopping", TAG);
+    LOG_DEBUG("Maintenance task stopping");
     _maintenanceTaskHandle = NULL;
     vTaskDelete(NULL);
 }
 
 void startMaintenanceTask() {
     if (_maintenanceTaskHandle != NULL) {
-        logger.debug("Maintenance task is already running", TAG);
+        LOG_DEBUG("Maintenance task is already running");
         return;
     }
     
-    logger.debug("Starting maintenance task", TAG);
+    LOG_DEBUG("Starting maintenance task");
     
     BaseType_t result = xTaskCreate(
         _maintenanceTask,
@@ -360,17 +356,17 @@ void startMaintenanceTask() {
     );
     
     if (result != pdPASS) {
-        logger.error("Failed to create maintenance task", TAG);
+        LOG_ERROR("Failed to create maintenance task");
     }
 }
 
 void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
     if (!taskHandle || *taskHandle == NULL) {
-        logger.debug("%s was not running", TAG, taskName ? taskName : "Task");
+        LOG_DEBUG("%s was not running", taskName ? taskName : "Task");
         return;
     }
 
-    logger.debug("Stopping %s...", TAG, taskName ? taskName : "task");
+    LOG_DEBUG("Stopping %s...", taskName ? taskName : "task");
     
     xTaskNotifyGive(*taskHandle);
     
@@ -385,11 +381,11 @@ void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
     
     // Force cleanup if needed
     if (*taskHandle != NULL) {
-        logger.warning("Force stopping %s", TAG, taskName ? taskName : "task");
+        LOG_WARNING("Force stopping %s", taskName ? taskName : "task");
         vTaskDelete(*taskHandle);
         *taskHandle = NULL;
     } else {
-        logger.debug("%s stopped successfully", TAG, taskName ? taskName : "Task");
+        LOG_DEBUG("%s stopped successfully", taskName ? taskName : "Task");
     }
 }
 
@@ -401,46 +397,17 @@ void stopMaintenanceTask() {
 void restartTask(void* parameter) {
     bool factoryReset = (bool)(uintptr_t)parameter;
 
-    logger.debug(
+    LOG_DEBUG(
         "Restart task started, stopping all services and waiting %d ms before restart (factory reset: %s)",
-        TAG,
         SYSTEM_RESTART_DELAY,
         factoryReset ? "true" : "false"
     );
 
-    // Wait for the specified delay
-    // In theory we could restart immediately since the task stopping was done earlier.. but let's be careful
-    // and give time for other possible tasks or things to clean up properly
-    delay(SYSTEM_RESTART_DELAY);
-    
-    // Execute the operation
-    if (factoryReset) _factoryReset();
-    _restartSystem();
-    
-    // Task should never reach here, but clean up just in case
-    vTaskDelete(NULL);
-}
+    // Stop forwarding logs to asynchronous sinks to avoid queue races during shutdown
+    AdvancedLogger::removeCallback();
+    delay(50); // small grace period to let any in-flight callbacks finish
 
-void setRestartSystem(const char* functionName, const char* reason, bool factoryReset) {
-    logger.info("Restart required from function %s. Reason: %s. Factory reset: %s", TAG, functionName, reason, factoryReset ? "true" : "false");
-    
-    if (_restartTaskHandle != NULL) {
-        logger.info("A restart is already scheduled. Keeping the existing one.", TAG);
-        return; // Prevent overwriting an existing restart request
-    }
-
-    // Create a task that will handle the delayed restart/factory reset
-    BaseType_t result = xTaskCreate(
-        restartTask,
-        TASK_RESTART_NAME,
-        TASK_RESTART_STACK_SIZE,
-        (void*)(uintptr_t)factoryReset,
-        TASK_RESTART_PRIORITY,
-        &_restartTaskHandle
-    );
-
-    // We need to stop all services here instead of in the restart task
-    // so to ensure that even if something is blocking, the restart will happen no matter what
+    // Stop all services here (in a dedicated task context), not in the caller's context (e.g., MQTT callback)
     stopMaintenanceTask();
     Ade7953::stop();
     #if HAS_SECRETS
@@ -450,26 +417,64 @@ void setRestartSystem(const char* functionName, const char* reason, bool factory
     InfluxDbClient::stop();
     ModbusTcp::stop();
     CustomServer::stop();
+
+    // Wait for the specified delay to allow clean shutdown
+    delay(SYSTEM_RESTART_DELAY);
     
+    _restartSystem(factoryReset);
+    
+    // Task should never reach here, but clean up just in case
+    vTaskDelete(NULL);
+}
+
+void setRestartSystem(const char* reason, bool factoryReset) {
+    LOG_INFO("Restart required for reason: %s. Factory reset: %s", reason, factoryReset ? "true" : "false");
+
+    if (_restartTaskHandle != NULL) {
+        LOG_INFO("A restart is already scheduled. Keeping the existing one.");
+        return; // Prevent overwriting an existing restart request
+    }
+
+    // Create a task that will handle the delayed restart/factory reset and stop services safely
+    BaseType_t result = xTaskCreate(
+        restartTask,
+        TASK_RESTART_NAME,
+        TASK_RESTART_STACK_SIZE,
+        (void*)(uintptr_t)factoryReset,
+        TASK_RESTART_PRIORITY,
+        &_restartTaskHandle
+    );
+
     if (result != pdPASS) {
-        logger.error("Failed to create restart task, performing immediate operation", TAG);
-        if (factoryReset) { _factoryReset(); }
-        _restartSystem();
+        LOG_ERROR("Failed to create restart task, performing immediate operation");
+        
+        // Stop forwarding logs to asynchronous sinks to avoid queue races during shutdown
+        AdvancedLogger::removeCallback();
+        delay(50); // small grace period to let any in-flight callbacks finish
+
+        // Last resort: perform sync stop and restart here
+        stopMaintenanceTask();
+        Ade7953::stop();
+        #if HAS_SECRETS
+        Mqtt::stop();
+        #endif
+        CustomMqtt::stop();
+        InfluxDbClient::stop();
+        ModbusTcp::stop();
+        CustomServer::stop();
+
+        _restartSystem(factoryReset);
     } else {
-        logger.debug("Restart task created successfully", TAG);
+        LOG_DEBUG("Restart task created successfully");
     }
 }
 
-void setFactoryReset(const char* functionName, const char* reason) {
-    setRestartSystem(functionName, reason, true);
-}
-
-static void _restartSystem() {
+static void _restartSystem(bool factoryReset) {
     Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
     Led::setOrange(Led::PRIO_CRITICAL);
 
-    logger.info("Restarting system", TAG);
-    logger.end(); // Only stop at last to ensure stopping logs are sent
+    LOG_INFO("Restarting system. Factory reset: %s", factoryReset ? "true" : "false");
+    AdvancedLogger::end(); // Only stop at last to ensure stopping logs are sent
 
     // Give time for AsyncTCP connections to close gracefully
     delay(1000);
@@ -480,6 +485,9 @@ static void _restartSystem() {
     
     // Additional delay to ensure clean shutdown
     delay(500);
+
+    // Last action when everything has been already closed
+    if (factoryReset) {_factoryReset();}
 
     ESP.restart();
 }
@@ -492,18 +500,18 @@ void printDeviceStatusStatic()
     SystemStaticInfo info;
     populateSystemStaticInfo(info);
 
-    logger.debug("--- Static System Info ---", TAG);
-    logger.debug("Product: %s (%s)", TAG, info.fullProductName, info.productName);
-    logger.debug("Company: %s | Author: %s", TAG, info.companyName, info.author);
-    logger.debug("Firmware: %s | Build: %s %s", TAG, info.buildVersion, info.buildDate, info.buildTime);
-    logger.debug("Sketch MD5: %s | Partition app name: %s", TAG, info.sketchMD5, info.partitionAppName);
-    logger.debug("Flash: %lu bytes, %lu Hz | PSRAM: %lu bytes", TAG, info.flashChipSizeBytes, info.flashChipSpeedHz, info.psramSizeBytes);
-    logger.debug("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", TAG, info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
-    logger.debug("SDK: %s | Core: %s", TAG, info.sdkVersion, info.coreVersion);
-    logger.debug("Device ID: %s", TAG, info.deviceId);
-    logger.debug("Monitoring: %lu crashes (%lu consecutive), %lu resets (%lu consecutive) | Last reset: %s", TAG, info.crashCount, info.consecutiveCrashCount, info.resetCount, info.consecutiveResetCount, info.lastResetReasonString);
+    LOG_DEBUG("--- Static System Info ---");
+    LOG_DEBUG("Product: %s (%s)", info.fullProductName, info.productName);
+    LOG_DEBUG("Company: %s | Author: %s", info.companyName, info.author);
+    LOG_DEBUG("Firmware: %s | Build: %s %s", info.buildVersion, info.buildDate, info.buildTime);
+    LOG_DEBUG("Sketch MD5: %s | Partition app name: %s", info.sketchMD5, info.partitionAppName);
+    LOG_DEBUG("Flash: %lu bytes, %lu Hz | PSRAM: %lu bytes", info.flashChipSizeBytes, info.flashChipSpeedHz, info.psramSizeBytes);
+    LOG_DEBUG("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
+    LOG_DEBUG("SDK: %s | Core: %s", info.sdkVersion, info.coreVersion);
+    LOG_DEBUG("Device ID: %s", info.deviceId);
+    LOG_DEBUG("Monitoring: %lu crashes (%lu consecutive), %lu resets (%lu consecutive) | Last reset: %s", info.crashCount, info.consecutiveCrashCount, info.resetCount, info.consecutiveResetCount, info.lastResetReasonString);
 
-    logger.debug("------------------------", TAG);
+    LOG_DEBUG("------------------------");
 }
 
 void printDeviceStatusDynamic()
@@ -511,121 +519,111 @@ void printDeviceStatusDynamic()
     SystemDynamicInfo info;
     populateSystemDynamicInfo(info);
 
-    logger.debug("--- Dynamic System Info ---", TAG);
-    logger.debug(
+    LOG_DEBUG("--- Dynamic System Info ---");
+    LOG_DEBUG(
         "Uptime: %llu s (%llu ms) | Timestamp: %s | Temperature: %.2f C", 
-        TAG,
-        info.uptimeSeconds, info.uptimeMilliseconds, info.currentTimestamp, info.temperatureCelsius
+        info.uptimeSeconds, info.uptimeMilliseconds, info.currentTimestampIso, info.temperatureCelsius
     );
 
-    logger.debug("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
-        TAG, 
+    LOG_DEBUG("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc",  
         info.heapTotalBytes, 
         info.heapFreeBytes, info.heapFreePercentage, 
         info.heapUsedBytes, info.heapUsedPercentage, 
         info.heapMinFreeBytes, info.heapMaxAllocBytes
     );
     if (info.psramFreeBytes > 0 || info.psramUsedBytes > 0) {
-        logger.debug("PSRAM: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
-            TAG, 
+        LOG_DEBUG("PSRAM: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
+ 
             info.psramTotalBytes,
             info.psramFreeBytes, info.psramFreePercentage, 
             info.psramUsedBytes, info.psramUsedPercentage, 
             info.psramMinFreeBytes, info.psramMaxAllocBytes
         );
     }
-    logger.debug("SPIFFS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%)", 
-        TAG, 
-        info.spiffsTotalBytes, 
-        info.spiffsFreeBytes, info.spiffsFreePercentage, 
-        info.spiffsUsedBytes, info.spiffsUsedPercentage
+    LOG_DEBUG("LittleFS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%)",  
+        info.littlefsTotalBytes, 
+        info.littlefsFreeBytes, info.littlefsFreePercentage, 
+        info.littlefsUsedBytes, info.littlefsUsedPercentage
     );
-    logger.debug("NVS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %u namespaces", 
-        TAG, 
+    LOG_DEBUG("NVS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %u namespaces",  
         info.totalUsableEntries, info.availableEntries, info.availableEntriesPercentage, 
         info.usedEntries, info.usedEntriesPercentage, info.namespaceCount
     );
 
     if (info.wifiConnected) {
-        logger.debug("WiFi: Connected to '%s' (BSSID: %s) | RSSI %ld dBm | MAC %s", TAG, info.wifiSsid, info.wifiBssid, info.wifiRssi, info.wifiMacAddress);
-        logger.debug("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", TAG, info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp, info.wifiSubnetMask);
+        LOG_DEBUG("WiFi: Connected to '%s' (BSSID: %s) | RSSI %ld dBm | MAC %s", info.wifiSsid, info.wifiBssid, info.wifiRssi, info.wifiMacAddress);
+        LOG_DEBUG("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp, info.wifiSubnetMask);
     } else {
-        logger.debug("WiFi: Disconnected | MAC %s", TAG, info.wifiMacAddress);
+        LOG_DEBUG("WiFi: Disconnected | MAC %s", info.wifiMacAddress);
     }
 
-    logger.debug("-------------------------", TAG);
+    LOG_DEBUG("-------------------------");
 }
 
 void updateStatistics() {
     // The only statistic which is (currently) updated manually here is the log count
-    statistics.logVerbose = logger.getVerboseCount();
-    statistics.logDebug = logger.getDebugCount();
-    statistics.logInfo = logger.getInfoCount();
-    statistics.logWarning = logger.getWarningCount();
-    statistics.logError = logger.getErrorCount();
-    statistics.logFatal = logger.getFatalCount();
+    statistics.logVerbose = AdvancedLogger::getVerboseCount();
+    statistics.logDebug = AdvancedLogger::getDebugCount();
+    statistics.logInfo = AdvancedLogger::getInfoCount();
+    statistics.logWarning = AdvancedLogger::getWarningCount();
+    statistics.logError = AdvancedLogger::getErrorCount();
+    statistics.logFatal = AdvancedLogger::getFatalCount();
+    statistics.logDropped = AdvancedLogger::getDroppedCount();
 
-    logger.debug("Statistics updated", TAG);
+    LOG_DEBUG("Statistics updated");
 }
 
 void printStatistics() {
-    logger.debug("--- Statistics ---", TAG);
-    logger.debug("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu readings | %llu reading failures", 
-        TAG, 
+    LOG_DEBUG("--- Statistics ---");
+    LOG_DEBUG("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu readings | %llu reading failures",  
         statistics.ade7953TotalInterrupts, 
         statistics.ade7953TotalHandledInterrupts, 
         statistics.ade7953ReadingCount, 
         statistics.ade7953ReadingCountFailure
     );
 
-    logger.debug("Statistics - MQTT: %llu messages published | %llu errors | %llu connections | %llu connection errors", 
-        TAG, 
+    LOG_DEBUG("Statistics - MQTT: %llu messages published | %llu errors | %llu connections | %llu connection errors",  
         statistics.mqttMessagesPublished, 
         statistics.mqttMessagesPublishedError,
         statistics.mqttConnections,
         statistics.mqttConnectionErrors
     );
 
-    logger.debug("Statistics - Custom MQTT: %llu messages published | %llu errors", 
-        TAG, 
+    LOG_DEBUG("Statistics - Custom MQTT: %llu messages published | %llu errors",  
         statistics.customMqttMessagesPublished, 
         statistics.customMqttMessagesPublishedError
     );
 
-    logger.debug("Statistics - Modbus: %llu requests | %llu errors", 
-        TAG, 
+    LOG_DEBUG("Statistics - Modbus: %llu requests | %llu errors",  
         statistics.modbusRequests, 
         statistics.modbusRequestsError
     );
 
-    logger.debug("Statistics - InfluxDB: %llu uploads | %llu errors", 
-        TAG, 
+    LOG_DEBUG("Statistics - InfluxDB: %llu uploads | %llu errors",  
         statistics.influxdbUploadCount, 
         statistics.influxdbUploadCountError
     );
 
-    logger.debug("Statistics - WiFi: %llu connections | %llu errors", 
-        TAG, 
+    LOG_DEBUG("Statistics - WiFi: %llu connections | %llu errors",  
         statistics.wifiConnection, 
         statistics.wifiConnectionError
     );
 
-    logger.debug("Statistics - Web Server: %llu requests | %llu errors", 
-        TAG, 
+    LOG_DEBUG("Statistics - Web Server: %llu requests | %llu errors",  
         statistics.webServerRequests, 
         statistics.webServerRequestsError
     );
 
-    logger.debug("Statistics - Log: %llu verbose | %llu debug | %llu info | %llu warning | %llu error | %llu fatal", 
-        TAG, 
+    LOG_DEBUG("Statistics - Log: %llu verbose | %llu debug | %llu info | %llu warning | %llu error | %llu fatal, %llu dropped",
         statistics.logVerbose, 
         statistics.logDebug, 
         statistics.logInfo, 
         statistics.logWarning, 
         statistics.logError, 
-        statistics.logFatal
+        statistics.logFatal,
+        statistics.logDropped
     );
-    logger.debug("-------------------", TAG);
+    LOG_DEBUG("-------------------");
 }
 
 void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
@@ -668,25 +666,26 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
     jsonDocument["log"]["warning"] = statistics.logWarning;
     jsonDocument["log"]["error"] = statistics.logError;
     jsonDocument["log"]["fatal"] = statistics.logFatal;
+    jsonDocument["log"]["dropped"] = statistics.logDropped;
 
-    logger.debug("Statistics converted to JSON", TAG);
+    LOG_VERBOSE("Statistics converted to JSON");
 }
 
 // Helper functions
 // -----------------------------
 
 static void _factoryReset() { 
-    logger.warning("Factory reset requested", TAG);
+    Serial.println("[WARNING] Factory reset requested");
 
     Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
     Led::blinkRedFast(Led::PRIO_CRITICAL);
 
     clearAllPreferences();
 
-    logger.warning("Formatting SPIFFS. This will take some time.", TAG);
-    SPIFFS.format();
+    Serial.println("[WARNING] Formatting LittleFS. This will take some time.");
+    LittleFS.format();
 
-    CrashMonitor::clearConsecutiveCrashCount(); // Reset crash monitor to clear crash count and last reset reason
+    CrashMonitor::clearConsecutiveCrashCount();
 
     // Removed ESP.restart() call since the factory reset can only be called from the restart task
 }
@@ -694,7 +693,7 @@ static void _factoryReset() {
 bool isFirstBootDone() {
     Preferences preferences;
     if (!preferences.begin(PREFERENCES_NAMESPACE_GENERAL, true)) {
-        logger.debug("Could not open preferences namespace: %s. Assuming first boot", TAG, PREFERENCES_NAMESPACE_GENERAL);
+        LOG_DEBUG("Could not open preferences namespace: %s. Assuming first boot", PREFERENCES_NAMESPACE_GENERAL);
         return false;
     }
     bool firstBoot = preferences.getBool(IS_FIRST_BOOT_DONE_KEY, false);
@@ -706,7 +705,7 @@ bool isFirstBootDone() {
 void setFirstBootDone() { // No arguments because the only way to set first boot done to false it through a complete wipe - thus automatically setting it to "false"
     Preferences preferences;
     if (!preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
-        logger.error("Failed to open preferences namespace: %s", TAG, PREFERENCES_NAMESPACE_GENERAL);
+        LOG_ERROR("Failed to open preferences namespace: %s", PREFERENCES_NAMESPACE_GENERAL);
         return;
     }
     preferences.putBool(IS_FIRST_BOOT_DONE_KEY, true);
@@ -732,7 +731,7 @@ void createAllNamespaces() {
     preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.end();
 
-    logger.debug("All namespaces created", TAG);
+    LOG_DEBUG("All namespaces created");
 }
 
 void clearAllPreferences() {
@@ -758,7 +757,7 @@ void clearAllPreferences() {
     nvs_flash_erase(); // Nuclear solution. In development, the NVS can get overcrowded with test data, so we clear it completely.
     #endif
 
-    logger.warning("Cleared all preferences", TAG);
+    LOG_WARNING("Cleared all preferences");
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {
@@ -782,12 +781,12 @@ uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval,
     return min(backoffDelay, maxInterval);
 }
     
-// === SPIFFS FILE OPERATIONS ===
+// === LittleFS FILE OPERATIONS ===
 
-bool listSpiffsFiles(JsonDocument& doc) {
-    File root = SPIFFS.open("/");
+bool listLittleFsFiles(JsonDocument& doc) {
+    File root = LittleFS.open("/");
     if (!root) {
-        logger.error("Failed to open SPIFFS root directory", TAG);
+        LOG_ERROR("Failed to open LittleFS root directory");
         return false;
     }
 
@@ -812,21 +811,21 @@ bool listSpiffsFiles(JsonDocument& doc) {
     return true;
 }
 
-bool getSpiffsFileContent(const char* filepath, char* buffer, size_t bufferSize) {
+bool getLittleFsFileContent(const char* filepath, char* buffer, size_t bufferSize) {
     if (!filepath || !buffer || bufferSize == 0) {
-        logger.error("Invalid arguments provided", TAG);
+        LOG_ERROR("Invalid arguments provided");
         return false;
     }
     
     // Check if file exists
-    if (!SPIFFS.exists(filepath)) {
-        logger.debug("File not found: %s", TAG, filepath);
+    if (!LittleFS.exists(filepath)) {
+        LOG_DEBUG("File not found: %s", filepath);
         return false;
     }
     
-    File file = SPIFFS.open(filepath, "r");
+    File file = LittleFS.open(filepath, "r");
     if (!file) {
-        logger.error("Failed to open file: %s", TAG, filepath);
+        LOG_ERROR("Failed to open file: %s", filepath);
         return false;
     }
 
@@ -834,7 +833,7 @@ bool getSpiffsFileContent(const char* filepath, char* buffer, size_t bufferSize)
     buffer[bytesRead] = '\0';  // Null-terminate the string
     file.close();
 
-    logger.debug("Successfully read file: %s (%d bytes)", TAG, filepath, bytesRead);
+    LOG_DEBUG("Successfully read file: %s (%d bytes)", filepath, bytesRead);
     return true;
 }
 

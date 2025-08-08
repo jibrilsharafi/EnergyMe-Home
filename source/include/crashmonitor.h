@@ -7,6 +7,7 @@
 #include <Update.h>
 #include <ArduinoJson.h>
 #include "mbedtls/base64.h"
+#include "esp_core_dump.h"
 
 #include "constants.h"
 #include "globals.h"
@@ -19,7 +20,7 @@
 #define COUNTERS_RESET_TIMEOUT (180 * 1000) // Timeout for the consecutive crash counter to reset
 
 #define CRASH_RESET_TASK_NAME "crash_reset_task"
-#define CRASH_RESET_TASK_STACK_SIZE (4 * 1024) // PLEASE: never put below this as even a single log will exceed 1024 kB easily.. We don't need to optimize so much :)
+#define CRASH_RESET_TASK_STACK_SIZE (8 * 1024) // PLEASE: never put below this as even a single log will exceed 1024 kB easily.. We don't need to optimize so much :)
 #define CRASH_RESET_TASK_PRIORITY 1 // This does not need to be high priority since it will only reset a counter and not do any heavy work
 
 #define ELF_LOCATION ".pio/build/esp32dev/firmware.elf" // Location of the ELF file for backtrace decoding (standard for PlatformIO)

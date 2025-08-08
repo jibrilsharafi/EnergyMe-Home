@@ -1,7 +1,5 @@
 #include "customwifi.h"
 
-static const char *TAG = "customwifi";
-
 namespace CustomWifi
 {
   // Static variables - minimal state
@@ -34,11 +32,11 @@ namespace CustomWifi
   {
     if (_wifiTaskHandle != NULL)
     {
-      logger.debug("WiFi task is already running", TAG);
+      LOG_DEBUG("WiFi task is already running");
       return true;
     }
 
-    logger.debug("Starting WiFi...", TAG);
+    LOG_DEBUG("Starting WiFi...");
 
     // Configure WiFi for better authentication reliability
     WiFi.setAutoReconnect(true);
@@ -64,7 +62,7 @@ namespace CustomWifi
     // Disconnect WiFi and clean up
     if (WiFi.isConnected())
     {
-      logger.debug("Disconnecting WiFi...", TAG);
+      LOG_DEBUG("Disconnecting WiFi...");
       WiFi.disconnect(true);
       delay(1000); // Allow time for disconnection
       _cleanup();
@@ -79,7 +77,7 @@ namespace CustomWifi
 
   static void _setupWiFiManager()
   {
-    logger.debug("Setting up the WiFiManager...", TAG);
+    LOG_DEBUG("Setting up the WiFiManager...");
 
     _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SECONDS);
     _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SECONDS);
@@ -92,13 +90,13 @@ namespace CustomWifi
 
         // Callback when portal starts
     _wifiManager.setAPCallback([](WiFiManager *wm) {
-                                logger.info("WiFi configuration portal started: %s", TAG, wm->getConfigPortalSSID().c_str());
+                                LOG_INFO("WiFi configuration portal started: %s", wm->getConfigPortalSSID().c_str());
                                 Led::blinkBlueFast(Led::PRIO_MEDIUM);
                               });
 
     // Callback when config is saved
     _wifiManager.setSaveConfigCallback([]() {
-            logger.info("WiFi credentials saved via portal - restarting...", TAG);
+            LOG_INFO("WiFi credentials saved via portal - restarting...");
             Led::setPattern(
               LedPattern::BLINK_FAST,
               Led::Colors::CYAN,
@@ -108,10 +106,10 @@ namespace CustomWifi
             // Maybe with some smart management we could avoid the restart..
             // But we know that a reboot always solves any issues, so we leave it here
             // to ensure we start fresh
-            setRestartSystem(TAG, "Restart after WiFi config save");
+            setRestartSystem("Restart after WiFi config save");
           });
 
-    logger.debug("WiFiManager set up", TAG);
+    LOG_DEBUG("WiFiManager set up");
   }
 
   static void _onWiFiEvent(WiFiEvent_t event)
@@ -167,12 +165,12 @@ namespace CustomWifi
     _setupMdns();
     printDeviceStatusDynamic();
 
-    logger.info("WiFi fully connected and operational", TAG);
+    LOG_INFO("WiFi fully connected and operational");
   }
 
   static void _wifiConnectionTask(void *parameter)
   {
-    logger.debug("WiFi task started", TAG);
+    LOG_DEBUG("WiFi task started");
     uint32_t notificationValue;
     _taskShouldRun = true;
 
@@ -184,10 +182,10 @@ namespace CustomWifi
     Led::blinkBlueSlow(Led::PRIO_MEDIUM);
     
     // Try initial connection with retries for handshake timeouts
-    logger.debug("Attempt WiFi connection", TAG);
+    LOG_DEBUG("Attempt WiFi connection");
       
     if (!_wifiManager.autoConnect(hostname)) {
-      logger.warning("WiFi connection failed, exiting wifi task", TAG);
+      LOG_WARNING("WiFi connection failed, exiting wifi task");
       Led::blinkRedFast(Led::PRIO_URGENT);
       _taskShouldRun = false;
       _cleanup();
@@ -223,11 +221,11 @@ namespace CustomWifi
         {
         case WIFI_EVENT_CONNECTED:
           statistics.wifiConnection++;
-          logger.debug("WiFi connected to: %s", TAG, WiFi.SSID().c_str());
+          LOG_DEBUG("WiFi connected to: %s", WiFi.SSID().c_str());
           continue; // No further action needed
 
         case WIFI_EVENT_GOT_IP:
-          logger.debug("WiFi got IP: %s", TAG, WiFi.localIP().toString().c_str());
+          LOG_DEBUG("WiFi got IP: %s", WiFi.localIP().toString().c_str());
           // Handle successful connection operations safely in task context
           _handleSuccessfulConnection();
           continue; // No further action needed
@@ -235,7 +233,7 @@ namespace CustomWifi
         case WIFI_EVENT_DISCONNECTED:
           statistics.wifiConnectionError++;
           Led::blinkBlueSlow(Led::PRIO_MEDIUM);
-          logger.warning("WiFi disconnected - auto-reconnect will handle", TAG);
+          LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
 
           // Wait a bit for auto-reconnect (enabled by default) to work
           delay(WIFI_DISCONNECT_DELAY);
@@ -246,21 +244,21 @@ namespace CustomWifi
             _reconnectAttempts++;
             _lastReconnectAttempt = millis64();
 
-            logger.warning("Auto-reconnect failed, attempt %d", TAG, _reconnectAttempts);
+            LOG_WARNING("Auto-reconnect failed, attempt %d", _reconnectAttempts);
 
             // After several failures, try WiFiManager as fallback
             if (_reconnectAttempts >= WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS)
             {
-              logger.error("Multiple reconnection failures - starting portal", TAG);
+              LOG_ERROR("Multiple reconnection failures - starting portal");
 
               // Try WiFiManager portal
               // TODO: this eventually will need to be async or similar since we lose meter 
               // readings in the meanwhile (and infinite loop of portal - reboots)
               if (!_wifiManager.startConfigPortal(hostname))
               {
-                logger.error("Portal failed - restarting device", TAG);
+                LOG_ERROR("Portal failed - restarting device");
                 Led::blinkRedFast(Led::PRIO_URGENT);
-                setRestartSystem(TAG, "Restart after portal failure");
+                setRestartSystem("Restart after portal failure");
               }
               // If portal succeeds, device will restart automatically
             }
@@ -270,10 +268,10 @@ namespace CustomWifi
         default:
           // Handle unknown WiFi events for debugging
           if (notificationValue >= 100) { // WiFi events are >= 100
-            logger.debug("Unknown WiFi event received: %lu", TAG, notificationValue);
+            LOG_DEBUG("Unknown WiFi event received: %lu", notificationValue);
           } else {
             // Legacy notification or timeout - treat as disconnection check
-            logger.debug("WiFi periodic check or timeout", TAG);
+            LOG_DEBUG("WiFi periodic check or timeout");
           }
           break;
         }
@@ -286,7 +284,7 @@ namespace CustomWifi
           // Reset failure counter on sustained connection
           if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
           {
-            logger.debug("WiFi connection stable - resetting counters", TAG);
+            LOG_DEBUG("WiFi connection stable - resetting counters");
             _reconnectAttempts = 0;
           }
         }
@@ -296,22 +294,22 @@ namespace CustomWifi
     // Cleanup before task exit
     _cleanup();
     
-    logger.debug("WiFi task stopping", TAG);
+    LOG_DEBUG("WiFi task stopping");
     _wifiTaskHandle = NULL;
     vTaskDelete(NULL);
   }
 
   void resetWifi()
   {
-    logger.warning("Resetting WiFi credentials and restarting...", TAG);
+    LOG_WARNING("Resetting WiFi credentials and restarting...");
     Led::blinkOrangeFast(Led::PRIO_CRITICAL);
     _wifiManager.resetSettings();
-    setRestartSystem(TAG, "Restart after WiFi reset");
+    setRestartSystem("Restart after WiFi reset");
   }
 
   bool _setupMdns()
   {
-    logger.debug("Setting up mDNS...", TAG);
+    LOG_DEBUG("Setting up mDNS...");
 
     // Ensure mDNS is stopped before starting
     MDNS.end();
@@ -341,19 +339,19 @@ namespace CustomWifi
       MDNS.addServiceTxt("modbus", "tcp", "version", FIRMWARE_BUILD_VERSION);
       MDNS.addServiceTxt("modbus", "tcp", "channels", "17");
 
-      logger.info("mDNS setup done: %s.local", TAG, MDNS_HOSTNAME);
+      LOG_INFO("mDNS setup done: %s.local", MDNS_HOSTNAME);
       return true;
     }
     else
     {
-      logger.warning("Error setting up mDNS", TAG);
+      LOG_WARNING("Error setting up mDNS");
       return false;
     }
   }
 
   static void _cleanup()
   {
-    logger.debug("Cleaning up WiFi resources...", TAG);
+    LOG_DEBUG("Cleaning up WiFi resources...");
     
     // Disable event handling first
     _eventsEnabled = false;
@@ -364,14 +362,14 @@ namespace CustomWifi
     // Stop mDNS
     MDNS.end();
     
-    logger.debug("WiFi cleanup completed", TAG);
+    LOG_DEBUG("WiFi cleanup completed");
   }
 
   static void _startWifiTask()
   {
     if (_wifiTaskHandle == NULL)
     {
-      logger.debug("Starting WiFi task", TAG);
+      LOG_DEBUG("Starting WiFi task");
       BaseType_t result = xTaskCreate(
         _wifiConnectionTask,
         WIFI_TASK_NAME,
@@ -380,11 +378,11 @@ namespace CustomWifi
         WIFI_TASK_PRIORITY,
         &_wifiTaskHandle);
 
-      if (result != pdPASS) { logger.error("Failed to create WiFi task", TAG); }
+      if (result != pdPASS) { LOG_ERROR("Failed to create WiFi task"); }
     }
     else
     {
-      logger.debug("WiFi task is already running", TAG);
+      LOG_DEBUG("WiFi task is already running");
     }
   }
 
@@ -392,11 +390,11 @@ namespace CustomWifi
   {
     if (_wifiTaskHandle == NULL)
     {
-      logger.debug("WiFi task was not running", TAG);
+      LOG_DEBUG("WiFi task was not running");
       return;
     }
 
-    logger.debug("Stopping WiFi task", TAG);
+    LOG_DEBUG("Stopping WiFi task");
 
     // Send shutdown notification using the special shutdown event (cannot use standard stopTaskGracefully)
     xTaskNotify(_wifiTaskHandle, WIFI_EVENT_SHUTDOWN, eSetValueWithOverwrite);
@@ -412,13 +410,13 @@ namespace CustomWifi
     // Force cleanup if needed
     if (_wifiTaskHandle != NULL)
     {
-      logger.warning("Force stopping WiFi task after timeout", TAG);
+      LOG_WARNING("Force stopping WiFi task after timeout");
       vTaskDelete(_wifiTaskHandle);
       _wifiTaskHandle = NULL;
     }
     else
     {
-      logger.debug("WiFi task stopped gracefully", TAG);
+      LOG_DEBUG("WiFi task stopped gracefully");
     }
 
     WiFi.disconnect(true);

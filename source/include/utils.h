@@ -5,7 +5,7 @@
 #include <ArduinoJson.h>
 #include <FS.h>
 #include <HTTPClient.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include <esp_system.h>
 #include <rom/rtc.h>
@@ -34,18 +34,18 @@
 #include "globals.h"
 
 #define TASK_RESTART_NAME "restart_task"
-#define TASK_RESTART_STACK_SIZE (4 * 1024)
+#define TASK_RESTART_STACK_SIZE (8 * 1024)
 #define TASK_RESTART_PRIORITY 5
 
 #define TASK_MAINTENANCE_NAME "maintenance_task"
-#define TASK_MAINTENANCE_STACK_SIZE (4 * 1024)
+#define TASK_MAINTENANCE_STACK_SIZE (8 * 1024)
 #define TASK_MAINTENANCE_PRIORITY 3
 #define MAINTENANCE_CHECK_INTERVAL (60 * 1000) // Interval to check main parameters, to avoid overloading the loop
 
 // System restart thresholds
 #define MINIMUM_FREE_HEAP_SIZE (1 * 1024) // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support
 #define MINIMUM_FREE_PSRAM_SIZE (10 * 1024) // Below this value (in bytes), the system will restart
-#define MINIMUM_FREE_SPIFFS_SIZE (10 * 1024) // Below this value (in bytes), the system will clear the log
+#define MINIMUM_FREE_LITTLEFS_SIZE (10 * 1024) // Below this value (in bytes), the system will clear the log
 #define SYSTEM_RESTART_DELAY (3 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations
 #define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
 
@@ -97,7 +97,7 @@ void startMaintenanceTask();
 void stopMaintenanceTask();
 
 // System restart and maintenance
-void setRestartSystem(const char* functionName, const char* reason, bool factoryReset = false);
+void setRestartSystem(const char* reason, bool factoryReset = false);
 
 // JSON utilities
 bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
@@ -108,9 +108,9 @@ void setFirstBootDone();
 void createAllNamespaces();
 void clearAllPreferences();
 
-// SPIFFS file operations
-bool listSpiffsFiles(JsonDocument& doc);
-bool getSpiffsFileContent(const char* filepath, char* buffer, size_t bufferSize);
+// LittleFS file operations
+bool listLittleFsFiles(JsonDocument& doc);
+bool getLittleFsFileContent(const char* filepath, char* buffer, size_t bufferSize);
 const char* getContentTypeFromFilename(const char* filename);
 
 // String utilities

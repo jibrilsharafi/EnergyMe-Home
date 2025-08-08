@@ -278,6 +278,8 @@ paths:
                     type: integer
                   logFatal:
                     type: integer
+                  logDropped:
+                    type: integer
 
   /api/v1/system/restart:
     post:
@@ -358,8 +360,8 @@ paths:
   # File Operations endpoints
   /api/v1/list-files:
     get:
-      summary: List SPIFFS files
-      description: Get a list of all files stored in SPIFFS with their sizes
+      summary: List LittleFS files
+      description: Get a list of all files stored in LittleFS with their sizes
       tags:
         - Files
       responses:
@@ -383,14 +385,14 @@ paths:
   /api/v1/files/{filepath}:
     get:
       summary: Get file content
-      description: Download or view the content of a specific file from SPIFFS
+      description: Download or view the content of a specific file from LittleFS
       tags:
         - Files
       parameters:
         - name: filepath
           in: path
           required: true
-          description: Path to the file in SPIFFS (without leading slash)
+          description: Path to the file in LittleFS (without leading slash)
           schema:
             type: string
           example: "logger/log.txt"
@@ -1696,7 +1698,7 @@ tags:
   - name: LED
     description: LED brightness control and status endpoints
   - name: Files
-    description: SPIFFS file system operations and management endpoints
+    description: LittleFS file system operations and management endpoints
 
 components:
   # Common response patterns
