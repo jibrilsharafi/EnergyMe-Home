@@ -366,6 +366,11 @@ namespace Mqtt
         xQueueSend(_meterQueue, &payload, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT));
     }
 
+    TaskInfo getTaskInfo()
+    {
+        return TaskInfo(MQTT_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_taskHandle));
+    }
+
     // Private functions
     // =================
     // =================
@@ -1386,7 +1391,7 @@ namespace Mqtt
         }
 
         char meterMessage[JSON_MQTT_BUFFER_SIZE];
-        LOG_DEBUG("Serializing meter JSON with %u entries | Size: %u bytes", jsonDocument.size(), measureJson(jsonDocument));
+        LOG_DEBUG("Serializing meter JSON with %u entries | Size: %u bytes | Entries in queue: %u", jsonDocument.size(), measureJson(jsonDocument), uxQueueMessagesWaiting(_meterQueue));
         if (!safeSerializeJson(jsonDocument, meterMessage, sizeof(meterMessage))) {
             LOG_ERROR("Failed to serialize meter JSON");
             return false;
@@ -1413,28 +1418,28 @@ namespace Mqtt
         jsonDocument["crashInfo"] = crashInfoJson;
 
         // Add dump data if available
-        size_t dumpDataSize = CrashMonitor::getCoreDumpSize();
-        if (dumpDataSize > 0) {
-            // Read all dump data
-            uint8_t* dumpBuffer = (uint8_t*)malloc(dumpDataSize);
-            if (dumpBuffer != nullptr) {
-                size_t bytesRead = 0;
-                if (CrashMonitor::getCoreDumpChunk(dumpBuffer, 0, dumpDataSize, &bytesRead)) {
-                    // Encode to base64
-                    size_t base64Len = 0;
-                    char* base64Buffer = (char*)malloc(dumpDataSize * 4 / 3 + 4);
-                    if (base64Buffer != nullptr) {
-                        if (mbedtls_base64_encode((unsigned char*)base64Buffer, dumpDataSize * 4 / 3 + 4, 
-                                                  &base64Len, dumpBuffer, bytesRead) == 0) {
-                            base64Buffer[base64Len] = '\0';
-                            jsonDocument["crashInfo"]["dumpData"] = base64Buffer;
-                        }
-                        free(base64Buffer);
-                    }
-                }
-                free(dumpBuffer);
-            }
-        }
+        // size_t dumpDataSize = CrashMonitor::getCoreDumpSize();
+        // if (dumpDataSize > 0) {
+        //     // Read all dump data
+        //     uint8_t* dumpBuffer = (uint8_t*)malloc(dumpDataSize);
+        //     if (dumpBuffer != nullptr) {
+        //         size_t bytesRead = 0;
+        //         if (CrashMonitor::getCoreDumpChunk(dumpBuffer, 0, dumpDataSize, &bytesRead)) {
+        //             // Encode to base64
+        //             size_t base64Len = 0;
+        //             char* base64Buffer = (char*)malloc(dumpDataSize * 4 / 3 + 4);
+        //             if (base64Buffer != nullptr) {
+        //                 if (mbedtls_base64_encode((unsigned char*)base64Buffer, dumpDataSize * 4 / 3 + 4, 
+        //                                           &base64Len, dumpBuffer, bytesRead) == 0) {
+        //                     base64Buffer[base64Len] = '\0';
+        //                     jsonDocument["crashInfo"]["dumpData"] = base64Buffer;
+        //                 }
+        //                 free(base64Buffer);
+        //             }
+        //         }
+        //         free(dumpBuffer);
+        //     }
+        // }
 
         char crashMessage[JSON_MQTT_BUFFER_SIZE];
         if (!safeSerializeJson(jsonDocument, crashMessage, sizeof(crashMessage))) {

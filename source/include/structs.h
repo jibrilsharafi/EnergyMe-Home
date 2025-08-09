@@ -4,7 +4,7 @@
 
 #include "constants.h"
 
-struct Statistics { // Make uint64
+struct Statistics {
   uint64_t ade7953TotalInterrupts;
   uint64_t ade7953TotalHandledInterrupts;
   uint64_t ade7953ReadingCount;
@@ -45,6 +45,19 @@ struct Statistics { // Make uint64
     influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0),
     webServerRequests(0), webServerRequestsError(0),
     logVerbose(0), logDebug(0), logInfo(0), logWarning(0), logError(0), logFatal(0), logDropped(0) {}
+};
+
+struct TaskInfo {
+  uint32_t allocatedStack;
+  uint32_t minimumFreeStack;
+  float freePercentage;
+  float usedPercentage;
+
+  TaskInfo() : allocatedStack(0), minimumFreeStack(0), freePercentage(0.0f), usedPercentage(0.0f) {}
+  TaskInfo(uint32_t allocated, uint32_t minimum) : allocatedStack(allocated), minimumFreeStack(minimum) {
+    freePercentage = (allocatedStack > 0) ? (100.0f * (float)(allocatedStack - minimumFreeStack) / (float)(allocatedStack)) : 0.0f;
+    usedPercentage = (allocatedStack > 0) ? (100.0f * (float)(minimumFreeStack) / (float)(allocatedStack)) : 0.0f;
+  }
 };
 
 // Static system information (rarely changes, only with firmware updates)
@@ -167,11 +180,12 @@ struct SystemDynamicInfo {
     char wifiSubnetMask[IP_ADDRESS_BUFFER_SIZE];
     char wifiDnsIp[IP_ADDRESS_BUFFER_SIZE];
     char wifiBssid[MAC_ADDRESS_BUFFER_SIZE];
+    
+    // Tasks
+    TaskInfo mqttTaskInfo;
 
     SystemDynamicInfo() {
         memset(this, 0, sizeof(*this));
-        temperatureCelsius = -273.15f; // Invalid temp indicator
-        wifiRssi = -100; // Invalid RSSI indicator
         snprintf(wifiSsid, sizeof(wifiSsid), "Unknown");
         snprintf(wifiMacAddress, sizeof(wifiMacAddress), "00:00:00:00:00:00");
         snprintf(wifiLocalIp, sizeof(wifiLocalIp), "0.0.0.0");

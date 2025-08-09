@@ -155,5 +155,7 @@ namespace Mqtt
     // Public methods for pushing data to queues
     void pushLog(const LogEntry& entry);
     void pushMeter(const PayloadMeter& payload);
+
+    TaskInfo getTaskInfo();
 }
 #endif

@@ -16,6 +16,10 @@ namespace CustomServer
     static bool _healthCheckTaskShouldRun = false;
     static uint32_t _consecutiveFailures = 0;
 
+    // OTA timeout task variables
+    static TaskHandle_t _otaTimeoutTaskHandle = NULL;
+    static bool _otaTimeoutTaskShouldRun = false;
+
     // API request synchronization
     static SemaphoreHandle_t _apiMutex = NULL;
 
@@ -33,6 +37,11 @@ namespace CustomServer
     static void _stopHealthCheckTask();
     static void _healthCheckTask(void *parameter);
     static bool _performHealthCheck();
+
+    // OTA timeout task
+    static void _startOtaTimeoutTask();
+    static void _stopOtaTimeoutTask();
+    static void _otaTimeoutTask(void *parameter);
 
     // Authentication management
     static bool _setWebPassword(const char *password);
@@ -123,6 +132,9 @@ namespace CustomServer
 
         // Stop health check task
         _stopHealthCheckTask();
+
+        // Stop OTA timeout task
+        _stopOtaTimeoutTask();
 
         // Stop the server
         server.end();
@@ -345,6 +357,50 @@ namespace CustomServer
     }
 
     static void _stopHealthCheckTask() { stopTaskGracefully(&_healthCheckTaskHandle, "Health check task"); }
+
+    static void _startOtaTimeoutTask()
+    {
+        if (_otaTimeoutTaskHandle != NULL)
+        {
+            LOG_DEBUG("OTA timeout task is already running");
+            return;
+        }
+
+        LOG_DEBUG("Starting OTA timeout task");
+
+        BaseType_t result = xTaskCreate(
+            _otaTimeoutTask,
+            OTA_TIMEOUT_TASK_NAME,
+            OTA_TIMEOUT_TASK_STACK_SIZE,
+            NULL,
+            OTA_TIMEOUT_TASK_PRIORITY,
+            &_otaTimeoutTaskHandle);
+
+        if (result != pdPASS) { LOG_ERROR("Failed to create OTA timeout task"); }
+    }
+
+    static void _stopOtaTimeoutTask() { stopTaskGracefully(&_otaTimeoutTaskHandle, "OTA timeout task"); }
+
+    static void _otaTimeoutTask(void *parameter)
+    {
+        LOG_DEBUG("OTA timeout task started - system will reboot in %d seconds if OTA doesn't complete", OTA_TIMEOUT / 1000);
+
+        _otaTimeoutTaskShouldRun = true;
+        
+        // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
+        uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(OTA_TIMEOUT));
+        
+        if (notificationValue == 0 && _otaTimeoutTaskShouldRun) {
+            // Timeout occurred and task wasn't stopped - force reboot
+            LOG_ERROR("OTA timeout exceeded (%d seconds), forcing system restart", OTA_TIMEOUT / 1000);
+            setRestartSystem("OTA process timeout - forcing restart for system recovery");
+        } else {
+            LOG_DEBUG("OTA timeout task stopped normally");
+        }
+
+        _otaTimeoutTaskHandle = NULL;
+        vTaskDelete(NULL);
+    }
 
     static void _healthCheckTask(void *parameter)
     {
@@ -686,7 +742,7 @@ namespace CustomServer
     }
 
     // === OTA UPDATE ENDPOINTS ===
-    static void _serveOtaEndpoints()
+    static void _serveOtaEndpoints() // TODO: if ota fails or in 60 seconds, reboot anyway
     {
         _serveOtaUploadEndpoint();
         _serveOtaStatusEndpoint();
@@ -706,6 +762,9 @@ namespace CustomServer
         // Handle the completion of the upload
         if (request->getResponse()) return;  // Response already set due to error
         
+        // Stop OTA timeout task since OTA process is completing
+        _stopOtaTimeoutTask();
+        
         if (Update.hasError()) {
             JsonDocument doc;
             doc["success"] = false;
@@ -716,6 +775,9 @@ namespace CustomServer
             Update.printError(Serial);
             
             Led::blinkRedFast(Led::PRIO_CRITICAL, 5000ULL);
+            
+            // Schedule restart even on failure for system recovery
+            setRestartSystem("Restart needed after failed firmware update for system recovery");
         } else {
             JsonDocument doc;
             doc["success"] = true;
@@ -796,11 +858,15 @@ namespace CustomServer
             return false;
         }
         
+        // Start OTA timeout watchdog task before beginning the actual OTA process
+        _startOtaTimeoutTask();
+        
         // Begin OTA update with known size
         if (!Update.begin(contentLength, U_FLASH)) {
             LOG_ERROR("Failed to begin OTA update: %s", Update.errorString());
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Failed to begin update");
             Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
+            _stopOtaTimeoutTask(); // Stop timeout task on failure
             return false;
         }
         
@@ -849,6 +915,7 @@ namespace CustomServer
             LOG_ERROR("OTA write failed: expected %zu bytes, wrote %zu bytes", len, written);
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Write failed");
             Update.abort();
+            _stopOtaTimeoutTask(); // Stop timeout task on write failure
             return false;
         }
         
@@ -872,6 +939,7 @@ namespace CustomServer
             LOG_ERROR("OTA finalization failed: No data received");
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "No firmware data received");
             Update.abort();
+            _stopOtaTimeoutTask(); // Stop timeout task on failure
             return;
         }
         
@@ -880,15 +948,18 @@ namespace CustomServer
             LOG_ERROR("OTA finalization failed: Firmware too small (%zu bytes)", Update.progress());
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware file too small");
             Update.abort();
+            _stopOtaTimeoutTask(); // Stop timeout task on failure
             return;
         }
         
         if (!Update.end(true)) {
             LOG_ERROR("OTA finalization failed: %s", Update.errorString());
+            _stopOtaTimeoutTask(); // Stop timeout task on failure
             // Error response will be handled in the main handler
         } else {
             LOG_DEBUG("OTA update finalization successful");
             Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
+            // Note: timeout task will be stopped in _handleOtaUploadComplete
         }
     }
 
@@ -925,6 +996,7 @@ namespace CustomServer
             if (Update.isRunning()) {
                 Update.abort();
                 LOG_INFO("Aborted running OTA update");
+                _stopOtaTimeoutTask(); // Stop timeout task when aborting OTA
             }
 
             if (Update.canRollBack()) {

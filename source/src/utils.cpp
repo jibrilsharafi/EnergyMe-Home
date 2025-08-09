@@ -148,7 +148,10 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
         snprintf(info.wifiBssid, sizeof(info.wifiBssid), "00:00:00:00:00:00");
     }
     snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
-   
+
+    // Tasks
+    info.mqttTaskInfo = Mqtt::getTaskInfo();
+
     LOG_DEBUG("Dynamic system info populated");
 }
 
@@ -251,6 +254,12 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["network"]["wifiDnsIp"] = info.wifiDnsIp;
     doc["network"]["wifiBssid"] = info.wifiBssid;
     doc["network"]["wifiRssi"] = info.wifiRssi;
+
+    // Tasks
+    doc["tasks"]["mqtt"]["allocatedStack"] = info.mqttTaskInfo.allocatedStack;
+    doc["tasks"]["mqtt"]["minimumFreeStack"] = info.mqttTaskInfo.minimumFreeStack;
+    doc["tasks"]["mqtt"]["freePercentage"] = info.mqttTaskInfo.freePercentage;
+    doc["tasks"]["mqtt"]["usedPercentage"] = info.mqttTaskInfo.usedPercentage;
 
     LOG_DEBUG("Dynamic system info converted to JSON");
 }
@@ -557,6 +566,12 @@ void printDeviceStatusDynamic()
     } else {
         LOG_DEBUG("WiFi: Disconnected | MAC %s", info.wifiMacAddress);
     }
+
+    LOG_DEBUG("Tasks - MQTT: %lu total, %lu minimum free (%.2f%%)",
+        info.mqttTaskInfo.allocatedStack, 
+        info.mqttTaskInfo.minimumFreeStack, 
+        info.mqttTaskInfo.freePercentage
+    );
 
     LOG_DEBUG("-------------------------");
 }
