@@ -1336,43 +1336,42 @@ namespace Mqtt
         }
     }
 
-    static bool _publishMeterJson() {
-        if (!_initializeMeterQueue()) return false;
+    static bool _publishMeterBatch(JsonDocument& jsonDocument, bool includeStaticData) {
+        if (includeStaticData) {
+            // Add voltage data if available
+            MeterValues meterValuesZeroChannel;
+            Ade7953::getMeterValues(meterValuesZeroChannel, 0);
+            if (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
+                JsonObject voltageObj = jsonDocument.add<JsonObject>();
+                voltageObj["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
+                voltageObj["voltage"] = meterValuesZeroChannel.voltage;
+            }
 
-        JsonDocument jsonDocument;
+            // Add channel energy data
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
+                    MeterValues meterValues;
+                    Ade7953::getMeterValues(meterValues, i);
 
-        // Add voltage data if available
-        MeterValues meterValuesZeroChannel;
-        Ade7953::getMeterValues(meterValuesZeroChannel, 0);
-        if (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
-            JsonObject voltageObj = jsonDocument.add<JsonObject>();
-            voltageObj["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
-            voltageObj["voltage"] = meterValuesZeroChannel.voltage;
-        }
+                    if (meterValues.lastUnixTimeMilliseconds == 0) {
+                        LOG_DEBUG("Meter values for channel %d have zero unixTime, skipping...", i);
+                        continue;
+                    }
 
-        // Add channel energy data
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
-                MeterValues meterValues;
-                Ade7953::getMeterValues(meterValues, i);
-
-                if (meterValues.lastUnixTimeMilliseconds == 0) {
-                    LOG_DEBUG("Meter values for channel %d have zero unixTime, skipping...", i);
-                    continue;
+                    JsonObject channelObj = jsonDocument.add<JsonObject>();
+                    channelObj["unixTime"] = meterValues.lastUnixTimeMilliseconds;
+                    channelObj["channel"] = i;
+                    channelObj["activeEnergyImported"] = meterValues.activeEnergyImported;
+                    channelObj["activeEnergyExported"] = meterValues.activeEnergyExported;
+                    channelObj["reactiveEnergyImported"] = meterValues.reactiveEnergyImported;
+                    channelObj["reactiveEnergyExported"] = meterValues.reactiveEnergyExported;
+                    channelObj["apparentEnergy"] = meterValues.apparentEnergy;
                 }
-
-                JsonObject channelObj = jsonDocument.add<JsonObject>();
-                channelObj["unixTime"] = meterValues.lastUnixTimeMilliseconds;
-                channelObj["channel"] = i;
-                channelObj["activeEnergyImported"] = meterValues.activeEnergyImported;
-                channelObj["activeEnergyExported"] = meterValues.activeEnergyExported;
-                channelObj["reactiveEnergyImported"] = meterValues.reactiveEnergyImported;
-                channelObj["reactiveEnergyExported"] = meterValues.reactiveEnergyExported;
-                channelObj["apparentEnergy"] = meterValues.apparentEnergy;
             }
         }
         
         // Add queue data if power data is enabled
+        uint32_t entriesAdded = 0;
         if (_sendPowerDataEnabled) {
             PayloadMeter payloadMeter;
             uint32_t loops = 0;
@@ -1386,31 +1385,73 @@ namespace Mqtt
                 powerArray.add(payloadMeter.channel);
                 powerArray.add(payloadMeter.activePower);
                 powerArray.add(payloadMeter.powerFactor);
+                entriesAdded++;
 
                 if (measureJson(jsonDocument) > JSON_MQTT_BUFFER_SIZE * 0.95) {
-                    LOG_DEBUG("Meter data JSON size exceeds 95%% of buffer, stopping addition of new entries");
+                    LOG_DEBUG("Meter data JSON size exceeds 95%% of buffer, will publish batch and continue");
                     break; // Stop adding new entries if the buffer is nearly full
                 }
             }
         }
 
         char meterMessage[JSON_MQTT_BUFFER_SIZE];
-        LOG_DEBUG("Serializing meter JSON with %u entries | Size: %u bytes | Entries in queue: %u", jsonDocument.size(), measureJson(jsonDocument), uxQueueMessagesWaiting(_meterQueue));
+        LOG_DEBUG("Serializing meter JSON with %u entries | Size: %u bytes | Queue entries added: %u | Remaining in queue: %u", 
+                  jsonDocument.size(), measureJson(jsonDocument), entriesAdded, uxQueueMessagesWaiting(_meterQueue));
+        
         if (!safeSerializeJson(jsonDocument, meterMessage, sizeof(meterMessage))) {
             LOG_ERROR("Failed to serialize meter JSON");
             return false;
         }
 
         if (_publishMessage(_mqttTopicMeter, meterMessage)) {
-            _publishMqtt.meter = false;
             statistics.mqttMessagesPublished++;
-            LOG_DEBUG("Meter data published to %s", _mqttTopicMeter);
+            LOG_DEBUG("Meter data batch published to %s", _mqttTopicMeter);
             return true;
         } else {
-            LOG_ERROR("Failed to publish meter data");
+            LOG_ERROR("Failed to publish meter data batch");
             statistics.mqttMessagesPublishedError++;
             return false;
         }
+    }
+
+    static bool _publishMeterJson() {
+        if (!_initializeMeterQueue()) return false;
+
+        bool overallSuccess = true;
+        bool isFirstBatch = true;
+        uint32_t batchCount = 0;
+        
+        // Continue publishing batches until queue is empty or we hit max batches
+        while (uxQueueMessagesWaiting(_meterQueue) > 0 || isFirstBatch) {
+            JsonDocument jsonDocument;
+            
+            // Publish the batch (include static data only in first batch)
+            if (!_publishMeterBatch(jsonDocument, isFirstBatch)) {
+                overallSuccess = false;
+                break;
+            }
+            
+            batchCount++;
+            isFirstBatch = false;
+            
+            // Safety check to prevent infinite loops
+            if (batchCount >= MQTT_METER_MAX_BATCHES) {
+                LOG_WARNING("Maximum meter batch count reached, stopping to prevent infinite loop");
+                break;
+            }
+            
+            // If no queue items were processed in this batch, we're done
+            if (!_sendPowerDataEnabled || uxQueueMessagesWaiting(_meterQueue) == 0) {
+                break;
+            }
+        }
+        
+        if (overallSuccess) {
+            _publishMqtt.meter = false;
+            LOG_DEBUG("All meter data published successfully in %u batch(es)", batchCount);
+        }
+        
+        return overallSuccess;
     }
 
     static bool _publishCrashJson() {

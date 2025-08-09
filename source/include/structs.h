@@ -55,8 +55,8 @@ struct TaskInfo {
 
   TaskInfo() : allocatedStack(0), minimumFreeStack(0), freePercentage(0.0f), usedPercentage(0.0f) {}
   TaskInfo(uint32_t allocated, uint32_t minimum) : allocatedStack(allocated), minimumFreeStack(minimum) {
-    freePercentage = (allocatedStack > 0) ? (100.0f * (float)(allocatedStack - minimumFreeStack) / (float)(allocatedStack)) : 0.0f;
-    usedPercentage = (allocatedStack > 0) ? (100.0f * (float)(minimumFreeStack) / (float)(allocatedStack)) : 0.0f;
+    freePercentage = (allocatedStack > 0) ? (100.0f * (float)(minimumFreeStack) / (float)(allocatedStack)) : 0.0f;
+    usedPercentage = (allocatedStack > 0) ? (100.0f * (float)(allocatedStack - minimumFreeStack) / (float)(allocatedStack)) : 0.0f;
   }
 };
 
@@ -190,7 +190,7 @@ struct SystemDynamicInfo {
     TaskInfo influxDbTaskInfo;
     TaskInfo crashMonitorTaskInfo;
     TaskInfo buttonHandlerTaskInfo;
-    TaskInfo customLogTaskInfo;
+    TaskInfo udpLogTaskInfo;
     TaskInfo customWifiTaskInfo;
     TaskInfo ade7953MeterReadingTaskInfo;
     TaskInfo ade7953EnergySaveTaskInfo;

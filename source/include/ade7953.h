@@ -25,15 +25,15 @@
 
 // Tasks
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task" // The name of the ADE7953 task
-#define ADE7953_METER_READING_TASK_STACK_SIZE (8 * 1024) // The stack size for the ADE7953 task
+#define ADE7953_METER_READING_TASK_STACK_SIZE (6 * 1024) // The stack size for the ADE7953 task
 #define ADE7953_METER_READING_TASK_PRIORITY 5 // The priority for the ADE7953 task
 
 #define ADE7953_ENERGY_SAVE_TASK_NAME "energy_save_task" // The name of the energy save task
-#define ADE7953_ENERGY_SAVE_TASK_STACK_SIZE (8 * 1024) // The stack size for the energy save task
+#define ADE7953_ENERGY_SAVE_TASK_STACK_SIZE (6 * 1024) // The stack size for the energy save task
 #define ADE7953_ENERGY_SAVE_TASK_PRIORITY 1 // The priority for the energy save task
 
 #define ADE7953_HOURLY_CSV_SAVE_TASK_NAME "hourly_csv_task" // The name of the hourly CSV save task
-#define ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE (8 * 1024) // The stack size for the hourly CSV save task
+#define ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE (6 * 1024) // The stack size for the hourly CSV save task
 #define ADE7953_HOURLY_CSV_SAVE_TASK_PRIORITY 1 // The priority for the hourly CSV save task
 
 // ENERGY_SAVING

@@ -1204,7 +1204,7 @@ namespace Ade7953
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         statistics.ade7953TotalInterrupts++;
-        _interruptHandledChannelA = false;
+        _interruptHandledChannelA = false; // TODO: understand if reset both or no, but in any case we can do better
         _interruptHandledChannelB = false;
 
         // Signal the task to handle the interrupt - let the task determine the cause

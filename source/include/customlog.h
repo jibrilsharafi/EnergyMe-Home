@@ -32,7 +32,7 @@
 
 // Task configuration for async UDP sender
 #define UDP_LOG_TASK_NAME "udp_log_task"
-#define UDP_LOG_TASK_STACK_SIZE (8 * 1024)
+#define UDP_LOG_TASK_STACK_SIZE (6 * 1024)
 #define UDP_LOG_TASK_PRIORITY 1
 #define UDP_LOG_LOOP_INTERVAL 100
 

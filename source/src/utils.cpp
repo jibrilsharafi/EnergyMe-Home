@@ -158,7 +158,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.influxDbTaskInfo = InfluxDbClient::getTaskInfo();
     info.crashMonitorTaskInfo = CrashMonitor::getTaskInfo();
     info.buttonHandlerTaskInfo = ButtonHandler::getTaskInfo();
-    info.customLogTaskInfo = CustomLog::getTaskInfo();
+    info.udpLogTaskInfo = CustomLog::getTaskInfo();
     info.customWifiTaskInfo = CustomWifi::getTaskInfo();
     info.ade7953MeterReadingTaskInfo = Ade7953::getMeterReadingTaskInfo();
     info.ade7953EnergySaveTaskInfo = Ade7953::getEnergySaveTaskInfo();
@@ -309,10 +309,10 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["tasks"]["buttonHandler"]["freePercentage"] = info.buttonHandlerTaskInfo.freePercentage;
     doc["tasks"]["buttonHandler"]["usedPercentage"] = info.buttonHandlerTaskInfo.usedPercentage;
 
-    doc["tasks"]["customLog"]["allocatedStack"] = info.customLogTaskInfo.allocatedStack;
-    doc["tasks"]["customLog"]["minimumFreeStack"] = info.customLogTaskInfo.minimumFreeStack;
-    doc["tasks"]["customLog"]["freePercentage"] = info.customLogTaskInfo.freePercentage;
-    doc["tasks"]["customLog"]["usedPercentage"] = info.customLogTaskInfo.usedPercentage;
+    doc["tasks"]["udpLog"]["allocatedStack"] = info.udpLogTaskInfo.allocatedStack;
+    doc["tasks"]["udpLog"]["minimumFreeStack"] = info.udpLogTaskInfo.minimumFreeStack;
+    doc["tasks"]["udpLog"]["freePercentage"] = info.udpLogTaskInfo.freePercentage;
+    doc["tasks"]["udpLog"]["usedPercentage"] = info.udpLogTaskInfo.usedPercentage;
 
     doc["tasks"]["customWifi"]["allocatedStack"] = info.customWifiTaskInfo.allocatedStack;
     doc["tasks"]["customWifi"]["minimumFreeStack"] = info.customWifiTaskInfo.minimumFreeStack;
@@ -694,10 +694,10 @@ void printDeviceStatusDynamic()
         info.buttonHandlerTaskInfo.minimumFreeStack, 
         info.buttonHandlerTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - Custom Log: %lu total, %lu minimum free (%.2f%%)",
-        info.customLogTaskInfo.allocatedStack, 
-        info.customLogTaskInfo.minimumFreeStack, 
-        info.customLogTaskInfo.freePercentage
+    LOG_DEBUG("Tasks - UDP Log: %lu total, %lu minimum free (%.2f%%)",
+        info.udpLogTaskInfo.allocatedStack, 
+        info.udpLogTaskInfo.minimumFreeStack, 
+        info.udpLogTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - Custom WiFi: %lu total, %lu minimum free (%.2f%%)",
         info.customWifiTaskInfo.allocatedStack, 

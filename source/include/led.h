@@ -24,7 +24,7 @@
 
 // LED Task configuration
 #define LED_TASK_NAME "led_task"
-#define LED_TASK_STACK_SIZE (4 * 1024)
+#define LED_TASK_STACK_SIZE (2 * 1024)
 #define LED_TASK_PRIORITY 1
 #define LED_QUEUE_SIZE 10
 #define LED_TASK_DELAY_MS 50

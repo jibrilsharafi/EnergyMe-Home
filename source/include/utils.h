@@ -35,11 +35,11 @@
 #include "globals.h"
 
 #define TASK_RESTART_NAME "restart_task"
-#define TASK_RESTART_STACK_SIZE (8 * 1024)
+#define TASK_RESTART_STACK_SIZE (6 * 1024)
 #define TASK_RESTART_PRIORITY 5
 
 #define TASK_MAINTENANCE_NAME "maintenance_task"
-#define TASK_MAINTENANCE_STACK_SIZE (8 * 1024)
+#define TASK_MAINTENANCE_STACK_SIZE (6 * 1024)
 #define TASK_MAINTENANCE_PRIORITY 3
 #define MAINTENANCE_CHECK_INTERVAL (60 * 1000) // Interval to check main parameters, to avoid overloading the loop
 

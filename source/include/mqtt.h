@@ -23,12 +23,13 @@
 #include "utils.h"
 
 #define MQTT_TASK_NAME "mqtt_task"
-#define MQTT_TASK_STACK_SIZE (12 * 1024)
+#define MQTT_TASK_STACK_SIZE (16 * 1024)
 #define MQTT_TASK_PRIORITY 3
 
 #define MQTT_LOG_QUEUE_SIZE (750 * 1024) // Generous log size (in bytes) thanks to PSRAM
 #define MQTT_METER_QUEUE_SIZE (500 * 1024) // Size in bytes to allocate to PSRAM
-#define MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD 0.90 // Threshold for publishing
+#define MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD 0.10 // Threshold for publishing
+#define MQTT_METER_MAX_BATCHES 10 // Number of consecutive batches to publish before stopping to avoid infinite loop
 #define QUEUE_WAIT_TIMEOUT 100 // Amount of milliseconds to wait if the queue is full or busy
 
 #define JSON_MQTT_BUFFER_SIZE (4 * 1024)     // For MQTT JSON payloads
@@ -40,7 +41,7 @@
 #define DEFAULT_CLOUD_SERVICES_ENABLED false // If we compile with secrets, we might as well just directly connect // FIXME: enable
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
 
-#define MQTT_MAX_INTERVAL_METER_PUBLISH (15 * 1000) // The maximum interval between two meter payloads
+#define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
 #define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (15 * 60 * 1000) // The maximum interval between two system dynamic payloads
 #define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (15 * 60 * 1000) // The interval between two statistics publish
 
