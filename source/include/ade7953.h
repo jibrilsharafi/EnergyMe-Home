@@ -48,7 +48,7 @@
 // Setup
 #define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low
 #define ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS 5
-#define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500 
+#define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500
 
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
@@ -300,7 +300,7 @@ struct MeterValues
   float reactiveEnergyExported;
   float apparentEnergy;
   uint64_t lastUnixTimeMilliseconds;
-  uint64_t lastMillis; // TODO: do we need both of them?
+  uint64_t lastMillis; 
 
   MeterValues()
     : voltage(230.0), current(0.0f), activePower(0.0f), reactivePower(0.0f), apparentPower(0.0f), powerFactor(0.0f),
@@ -409,8 +409,8 @@ namespace Ade7953
         uint8_t misoPin,
         uint8_t mosiPin,
         uint8_t resetPin,
-        uint8_t interruptPin
-    );
+        uint8_t interruptPin);
+    bool _initializeAde7953(bool &retFlag);
     void stop();
 
 

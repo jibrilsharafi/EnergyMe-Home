@@ -10,7 +10,6 @@ namespace CustomLog
     static IPAddress _udpDestinationIp;
     static char _udpBuffer[UDP_LOG_BUFFER_SIZE];
     static bool _isUdpInitialized = false;
-    static bool _isQueueInitialized = false;
 
     // Task state
     static TaskHandle_t _udpTaskHandle = NULL;
@@ -61,7 +60,7 @@ namespace CustomLog
         }
         
         // Clean up the queue and PSRAM buffer
-        if (_isQueueInitialized) {
+        if (_udpLogQueueStorage != nullptr) {
             _udpLogQueue = nullptr;
             
             // Free PSRAM buffer
@@ -69,8 +68,7 @@ namespace CustomLog
                 heap_caps_free(_udpLogQueueStorage);
                 _udpLogQueueStorage = nullptr;
             }
-            
-            _isQueueInitialized = false;
+
             LOG_DEBUG("UDP logging queue stopped, PSRAM freed");
         }
     }
@@ -83,9 +81,7 @@ namespace CustomLog
 
     static bool _initializeQueue() // Cannot use logger here to avoid recursion
     {
-        if (_isQueueInitialized) {
-            return true;
-        }
+        if (_udpLogQueueStorage != nullptr) return true;
 
         // Allocate queue storage in PSRAM
         uint32_t queueLength = LOG_BUFFER_SIZE / sizeof(LogEntry);
@@ -106,7 +102,6 @@ namespace CustomLog
             return false;
         }
 
-        _isQueueInitialized = true;
         Serial.printf("[DEBUG] UDP log queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
         return true;
     }
@@ -120,17 +115,11 @@ namespace CustomLog
 
     static void _callbackUdp(const LogEntry& entry)
     {
-        if (!_udpLogQueue) return;
         if (!DEFAULT_IS_UDP_LOGGING_ENABLED) return;
         if (entry.level == LogLevel::VERBOSE) return; // Never send verbose logs via UDP
-
-        // Initialize queue on first use if not already done
-        if (!_isQueueInitialized) {
-            if (!_initializeQueue()) return; // Failed to initialize, drop this log
-        }
+        if (!_initializeQueue()) return; // Failed to initialize, drop this log
         
-        // Send to queue (non-blocking). Copy the struct value, not pointer.
-        if (xQueueSend(_udpLogQueue, &entry, 0) != pdTRUE) {
+        if (xQueueSend(_udpLogQueue, &entry, 0) != pdTRUE) { // Send to queue with no wait to avoid blocking
             // Queue full -> drop
         }
     }
@@ -168,21 +157,19 @@ namespace CustomLog
         _udpTaskShouldRun = true;
 
         while (_udpTaskShouldRun) {
-            if (!_udpLogQueue) continue;
+            if (!_initializeQueue()) continue;
 
             // Block waiting for a log entry, but wake up periodically to allow shutdown
             LogEntry entry; // non-const for xQueueReceive
             if (xQueueReceive(_udpLogQueue, &entry, pdMS_TO_TICKS(UDP_LOG_LOOP_INTERVAL)) != pdTRUE) {
                 // Timeout: check for stop notification
-                uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, 0);
-                if (notificationValue > 0) { _udpTaskShouldRun = false; break; }
+                if (ulTaskNotifyTake(pdTRUE, 0) > 0) { _udpTaskShouldRun = false; break; }
                 continue;
             }
 
             // If not connected or UDP not initialized, requeue to front and wait
             if (!_isUdpInitialized || !CustomWifi::isFullyConnected()) {
-                if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
-                // Wait a bit to avoid busy loop
+                xQueueSendToFront(_udpLogQueue, &entry, 0);
                 delay(DELAY_SEND_UDP);
                 continue;
             }
@@ -211,6 +198,7 @@ namespace CustomLog
             if (!_udpClient.beginPacket(_udpDestinationIp, UDP_LOG_PORT)) {
                 // Put the log back in the queue (front of queue)
                 // if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
+                delay(DELAY_SEND_UDP);
                 continue;
             }
             
@@ -218,16 +206,15 @@ namespace CustomLog
             if (bytesWritten == 0) {
                 // if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
                 _udpClient.endPacket(); // Clean up the packet
+                delay(DELAY_SEND_UDP);
                 continue;
             }
             
             if (!_udpClient.endPacket()) {
                 // if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
+                delay(DELAY_SEND_UDP);
                 continue;
             }
-
-            // Optional small delay if more messages pending
-            if (_udpLogQueue && uxQueueMessagesWaiting(_udpLogQueue) > 0) delay(DELAY_SEND_UDP);
         }
 
         // Removed LOG_DEBUG here to avoid recursive logging

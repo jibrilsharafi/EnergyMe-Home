@@ -26,6 +26,7 @@ namespace Ade7953
     // Operational flags
     static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
     static bool _hasToSkipReading = true; // Flag to skip every other reading on Channel B so we purge the ADE7953 data when switching multiplexer channel
+    static bool volatile _interruptHandled = false; // TODO: actually solve this
 
     // Synchronization primitives
     static SemaphoreHandle_t _spiMutex = NULL; // To handle single SPI operations
@@ -648,7 +649,7 @@ namespace Ade7953
             return false;
         }
 
-        return _meterValues[channelIndex].lastUnixTimeMilliseconds != 0; // If it is 0, we did not add any data point yet
+        return CustomTime::isUnixTimeValid(_meterValues[channelIndex].lastUnixTimeMilliseconds);
     }
 
     void getChannelLabel(uint8_t channelIndex, char* buffer, size_t bufferSize) {
@@ -991,8 +992,6 @@ namespace Ade7953
         uint8_t resetPin,
         uint8_t interruptPin
     ) {
-        LOG_DEBUG("Setting hardware pins...");
-
         _ssPin = ssPin;
         _sckPin = sckPin;
         _misoPin = misoPin;
@@ -1148,7 +1147,7 @@ namespace Ade7953
             attempt++;
             lastMillisAttempt = millis64();
 
-            if ((readRegister(AP_NOLOAD_32, 32, false)) == DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
+            if ((readRegister(AP_NOLOAD_32, BIT_32, false)) == DEFAULT_EXPECTED_AP_NOLOAD_REGISTER) {
                 LOG_DEBUG("Communication successful with ADE7953");
                 return true;
             }
@@ -1162,21 +1161,19 @@ namespace Ade7953
     // ==================
 
     void _setupInterrupts() {
-        LOG_DEBUG("Setting up ADE7953 interrupts...");
-        
         // Enable only CYCEND interrupt for line cycle end detection (bit 18)
-        writeRegister(IRQENA_32, 32, DEFAULT_IRQENA_REGISTER);
+        writeRegister(IRQENA_32, BIT_32, DEFAULT_IRQENA_REGISTER);
         
         // Clear any existing interrupt status
-        readRegister(RSTIRQSTATA_32, 32, false);
-        readRegister(RSTIRQSTATB_32, 32, false);
+        readRegister(RSTIRQSTATA_32, BIT_32, false);
+        readRegister(RSTIRQSTATB_32, BIT_32, false);
 
         LOG_DEBUG("ADE7953 interrupts enabled: CYCEND, RESET");
     }
 
     Ade7953InterruptType _handleInterrupt() 
     {    
-        uint32_t statusA = readRegister(RSTIRQSTATA_32, 32, false);
+        uint32_t statusA = readRegister(RSTIRQSTATA_32, BIT_32, false);
         // No need to read for channel B (only channel A has the relevant information for use)
 
         if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
@@ -1206,6 +1203,7 @@ namespace Ade7953
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         statistics.ade7953TotalInterrupts++;
+        _interruptHandled = false;
 
         // Signal the task to handle the interrupt - let the task determine the cause
         if (_ade7953InterruptSemaphore != NULL) {
@@ -1322,9 +1320,10 @@ namespace Ade7953
         while (_meterReadingTaskShouldRun)
         {
             // Wait for interrupt signal with timeout
-            if (_ade7953InterruptSemaphore != NULL &&
-                xSemaphoreTake(_ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + _sampleTime)) == pdTRUE)
-            {
+            if (
+                _ade7953InterruptSemaphore != NULL &&
+                xSemaphoreTake(_ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + _sampleTime)) == pdTRUE
+            ) {
                 // Grab as quickly as possible the current unix time in milliseconds
                 // that refers to the "true" time at which the data is temporarily frozen in the ADE7953
                 uint64_t linecycUnix = CustomTime::getUnixTimeMilliseconds();
@@ -1358,12 +1357,15 @@ namespace Ade7953
             } else {
                 // TODO: if we don't read any value of a bit, it should indicate some problem. Use #if with env variable because in development or similar
                 // the board is not connected to the grid and thus no interrupts are received after X line cycles
-                LOG_VERBOSE("No ADE7953 interrupt received within timeout, checking for stop notification");
+                #if ENV_DEV
+                LOG_DEBUG("No ADE7953 interrupt received within timeout, checking for stop notification");
+                #else
+                LOG_WARNING("No ADE7953 interrupt received within time expected, this indicates some problems.");
+                #endif
             }
             
             // Check for stop notification (non-blocking) - this gives immediate shutdown response
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, 0);
-            if (notificationValue > 0) {
+            if (ulTaskNotifyTake(pdTRUE, 0) > 0) {
                 _meterReadingTaskShouldRun = false;
                 break;
             }
@@ -1490,8 +1492,6 @@ namespace Ade7953
     // ==================================
 
     void _setConfigurationFromPreferences() {
-        LOG_DEBUG("Setting configuration from Preferences...");
-
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_ADE7953, true)) { // true = read-only
             LOG_ERROR("Failed to open Preferences for ADE7953 configuration");
@@ -1852,7 +1852,7 @@ namespace Ade7953
         ctSpec.varhLsb = wattHourPerLsb * (1 + ctSpec.scalingFraction);
         ctSpec.vahLsb = wattHourPerLsb * (1 + ctSpec.scalingFraction);
 
-        LOG_DEBUG(
+        LOG_VERBOSE(
             "LSB values for %.1f A, %.3f V, scaling %.3f | A per LSB: %.10f, Wh per LSB: %.10f",
             ctSpec.currentRating,
             ctSpec.voltageOutput,
@@ -2114,6 +2114,13 @@ namespace Ade7953
             // Using directly power or RMS values would require instead constant sampling and averaging. Let's avoid that and leave
             // the ADE7953 do the hard work for us.
             // Use multiplication instead of division as it is faster in embedded systems
+                    
+            if (_interruptHandled) {
+                LOG_DEBUG("Tried to handle CYCEND interrupt, but it was already handled");
+                return false; // Already handled, no need to read again
+            }
+
+            _interruptHandled = true;
             activeEnergy = float(_readActiveEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.whLsb * (_channelData[channelIndex].reverse ? -1 : 1);
             reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.varhLsb * (_channelData[channelIndex].reverse ? -1 : 1);
             apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.vahLsb;
@@ -2213,7 +2220,7 @@ namespace Ade7953
 
         // Sometimes the power factor is very close to 1 but above 1. If so, clamp it to 1 as the measure is still valid
         if (abs(powerFactor) > VALIDATE_POWER_FACTOR_MAX && abs(powerFactor) < MAXIMUM_POWER_FACTOR_CLAMP) {
-            LOG_DEBUG(
+            LOG_VERBOSE(
                 "%s (%d): Power factor %.3f is above %.3f, clamping it", 
                 _channelData[channelIndex].label, 
                 channelIndex, 
@@ -2335,16 +2342,11 @@ namespace Ade7953
 
     void _addMeterDataToPayload(uint8_t channelIndex) {
         #if HAS_SECRETS
-        if (!CustomTime::isTimeSynched()) return;
 
         LOG_VERBOSE("Adding meter data to payload for channel %u", channelIndex);
-        if (!isChannelActive(channelIndex) || !hasChannelValidMeasurements(channelIndex)) {
-            LOG_WARNING("Channel %d is not active or has no valid measurements", channelIndex);
-            return;
-        }
 
         if (!CustomTime::isUnixTimeValid(_meterValues[channelIndex].lastUnixTimeMilliseconds)) {
-            LOG_DEBUG("Channel %d has invalid Unix time. Skipping payload addition", channelIndex);
+            LOG_VERBOSE("Channel %d has invalid Unix time. Skipping payload addition", channelIndex);
             return;
         }
 
@@ -2395,7 +2397,7 @@ namespace Ade7953
             }
         }
 
-        LOG_DEBUG("Setting PGA gain to %ld on channel %s for measurement type %s", pgaGain, ADE7953_CHANNEL_TO_STRING(ade7953Channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
+        LOG_DEBUG("Set PGA gain to %ld on channel %s for measurement type %s", pgaGain, ADE7953_CHANNEL_TO_STRING(ade7953Channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
     }
 
     void _setPhaseCalibration(int32_t phaseCalibration, Ade7953Channel channel) {
@@ -2449,7 +2451,7 @@ namespace Ade7953
             }
         }
 
-        LOG_DEBUG("Setting gain to %ld on channel %s for measurement type %s", gain, ADE7953_CHANNEL_TO_STRING(channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
+        LOG_DEBUG("Set gain to %ld on channel %s for measurement type %s", gain, ADE7953_CHANNEL_TO_STRING(channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
     }
 
     void _setOffset(int32_t offset, Ade7953Channel ade7953Channel, MeasurementType measurementType) {
@@ -2497,7 +2499,7 @@ namespace Ade7953
             }
         }
 
-        LOG_DEBUG("Setting offset to %ld on channel %s for measurement type %s", offset, ADE7953_CHANNEL_TO_STRING(ade7953Channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
+        LOG_DEBUG("Set offset to %ld on channel %s for measurement type %s", offset, ADE7953_CHANNEL_TO_STRING(ade7953Channel), MEASUREMENT_TYPE_TO_STRING(measurementType));
     }
 
     // Sample time management
@@ -2644,7 +2646,7 @@ namespace Ade7953
     bool _verifyLastSpiCommunication(uint16_t expectedAddress, uint8_t expectedBits, int32_t expectedData, bool signedData, bool wasWrite) 
     {
         // To verify
-        int32_t lastAddress = readRegister(LAST_ADD_16, 16, false, false);
+        int32_t lastAddress = readRegister(LAST_ADD_16, BIT_16, false, false);
         if (lastAddress != expectedAddress) {
             LOG_WARNING(
                 "Last address %ld (0x%04lX) (write: %d) does not match expected %ld (0x%04lX). Expected data %ld (0x%04lX)", 
@@ -2655,7 +2657,7 @@ namespace Ade7953
             return false;
         }
         
-        int32_t lastOp = readRegister(LAST_OP_8, 8, false, false);
+        int32_t lastOp = readRegister(LAST_OP_8, BIT_8, false, false);
         if (wasWrite && lastOp != LAST_OP_WRITE_VALUE) {
             LOG_WARNING("Last operation was not a write (expected %d, got %ld)", LAST_OP_WRITE_VALUE, lastOp);
             return false;
@@ -2700,25 +2702,11 @@ namespace Ade7953
         return true;
     }
 
-    bool _validateVoltage(float newValue) {
-        return _validateValue(newValue, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
-    }
-
-    bool _validateCurrent(float newValue) {
-        return _validateValue(newValue, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
-    }
-
-    bool _validatePower(float newValue) {
-        return _validateValue(newValue, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
-    }
-
-    bool _validatePowerFactor(float newValue) {
-        return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
-    }
-
-    bool _validateGridFrequency(float newValue) {
-        return _validateValue(newValue, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
-    }
+    bool _validateVoltage(float newValue) { return _validateValue(newValue, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX); }
+    bool _validateCurrent(float newValue) { return _validateValue(newValue, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX); }
+    bool _validatePower(float newValue) { return _validateValue(newValue, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX); }
+    bool _validatePowerFactor(float newValue) { return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX); }
+    bool _validateGridFrequency(float newValue) { return _validateValue(newValue, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX); }
 
     // Utility functions
     // =================
@@ -2805,7 +2793,7 @@ namespace Ade7953
     }
 
     void _printMeterValues(uint8_t channelIndex) {
-        LOG_VERBOSE(
+        LOG_DEBUG(
             "%s (%lu): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.1f%% || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
             _channelData[channelIndex].label,
             _channelData[channelIndex].index,

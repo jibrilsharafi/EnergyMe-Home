@@ -16,6 +16,7 @@
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
+
 #define WIFI_LOOP_INTERVAL (1 * 1000)
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
 #define WIFI_PORTAL_TIMEOUT_SECONDS (5 * 60)
@@ -25,6 +26,8 @@
 #define WIFI_RECONNECT_DELAY_BASE (5 * 1000)        // Base delay for exponential backoff
 #define WIFI_STABLE_CONNECTION_DURATION (5 * 60 * 1000)    // Duration of uninterrupted WiFi connection to reset the reconnection counter
 #define WIFI_PERIODIC_CHECK_INTERVAL (30 * 1000)    // Interval to check WiFi connection status (does not need to be too frequent since we have an event-based system)
+#define WIFI_CONNECTIVITY_TEST_INTERVAL (60 * 1000) // Test actual network connectivity every minute
+#define WIFI_FORCE_RECONNECT_DELAY (2 * 1000)      // Delay after forcing reconnection
 
 #define MDNS_HOSTNAME "energyme"
 #define MDNS_QUERY_TIMEOUT (5 * 1000)
@@ -40,6 +43,8 @@ namespace CustomWifi
     void stop();
     
     bool isFullyConnected();
+    bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
+    void forceReconnect();   // Force immediate WiFi reconnection
 
     void resetWifi();
 }

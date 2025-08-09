@@ -306,7 +306,6 @@ namespace CrashMonitor
                         snprintf(addr, sizeof(addr), "0x%08lx ", (uint32_t)summary->exc_bt_info.bt[i]);
                         strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
                     }
-                    LOG_WARNING("Backtrace addresses: %s", btAddresses);
 
                     // Ready-to-use command for debugging
                     char debugCommand[BACKTRACE_DECODE_CMD_SIZE];

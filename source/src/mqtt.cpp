@@ -157,10 +157,8 @@ namespace Mqtt
 
     // Queue processing and streaming
     static void _processLogQueue();
-    static size_t _calculateMeterMessageSize();
-    static size_t _calculateCrashMessageSize();
-    static bool _publishMeterStreaming();
-    static bool _publishCrashStreaming();
+    static bool _publishMeterJson();
+    static bool _publishCrashJson();
     
     // Certificate management
     static void _readEncryptedPreferences(const char* preference_key, const char* preshared_encryption_key, char* decryptedData, size_t decryptedDataSize);
@@ -353,20 +351,19 @@ namespace Mqtt
     void pushLog(const LogEntry& entry)
     {
         if (!_initializeLogQueue()) return;
-        
-        if ((entry.level == LogLevel::DEBUG && !_debugFlagsRtc.enableMqttDebugLogging) || 
+
+        if ((entry.level == LogLevel::DEBUG && (!_debugFlagsRtc.enableMqttDebugLogging && _debugFlagsRtc.signature == MAGIC_WORD_RTC)) || // DEBUG level and (real) debug logging disabled
             (entry.level == LogLevel::VERBOSE)) { // Never send verbose logs via MQTT
             return;
         }
         
-        if (_logQueueStorage != nullptr) xQueueSend(_logQueue, &entry, 0);
+        xQueueSend(_logQueue, &entry, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT));
     }
 
     void pushMeter(const PayloadMeter& payload)
     {
         if (!_initializeMeterQueue()) return;
-
-        if (_meterQueueStorage != nullptr) xQueueSend(_meterQueue, &payload, 0);
+        xQueueSend(_meterQueue, &payload, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT));
     }
 
     // Private functions
@@ -926,12 +923,11 @@ namespace Mqtt
             return;
         }
         
-        if (!_publishMeterStreaming()) {
-            LOG_ERROR("Failed to publish meter data via streaming");
+        if (!_publishMeterJson()) {
+            LOG_ERROR("Failed to publish meter data via JSON");
             return;
         }
 
-        _publishMqtt.meter = false;
         _lastMillisMeterPublished = millis64();
     }
     
@@ -1016,8 +1012,8 @@ namespace Mqtt
     }
 
     static void _publishCrash() {
-        if (!_publishCrashStreaming()) {
-            LOG_ERROR("Failed to publish crash data via streaming");
+        if (!_publishCrashJson()) {
+            LOG_ERROR("Failed to publish crash data via JSON");
             return;
         }
 
@@ -1288,8 +1284,6 @@ namespace Mqtt
     }
 
     static bool _publishMessage(const char* topic, const char* message, bool retain) {
-        delay(MQTT_LOOP_INTERVAL); // It may be strange but here we yield for a bit to avoid eventually starving the other tasks
-
         if (topic == nullptr || message == nullptr) {
             LOG_WARNING("Null ptr, MQTT not initialized yet"); // TODO: will this cause a loop with log publish?
             statistics.mqttMessagesPublishedError++;
@@ -1333,98 +1327,21 @@ namespace Mqtt
         }
     }
 
-    static size_t _calculateMeterMessageSize() {
-        size_t estimatedSize = 100; // Base JSON structure: {"data":[]}
-        
-        // Add size for voltage data (always present if valid)
-        MeterValues meterValuesZeroChannel;
-        Ade7953::getMeterValues(meterValuesZeroChannel, 0);
-        if (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
-            estimatedSize += 80; // {"unixTime":1234567890123,"voltage":230.5}
-        }
-        
-        // Add size for queue items
-        UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
-        if (_sendPowerDataEnabled) { // TODO: eventually this will become a simple array with no keys
-            // Each queue item: {"unixTime":1234567890123,"channel":1,"activePower":1234.56,"powerFactor":0.95}
-            estimatedSize += queueSize * 100;
-        }
-        
-        // Add size for channel energy data
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
-                // Each channel: {"unixTime":123,"channel":1,"activeEnergyImported":123.45,...}
-                estimatedSize += 300; // Conservative estimate for all energy fields
-            }
-        }
-        
-        LOG_DEBUG("Estimated meter message size: %zu bytes", estimatedSize);
-        return estimatedSize;
-    }
-
-    static size_t _calculateCrashMessageSize() {
-        size_t estimatedSize = 150; // Base JSON: {"unixTime":123,"crashInfo":{...}}
-        
-        // Add crash info size - conservative estimate
-        estimatedSize += 500; // Basic crash info fields
-        
-        // Add dump data size - this is the big one
-        size_t dumpDataSize = CrashMonitor::getCoreDumpSize();
-        if (dumpDataSize > 0) {
-            // Base64 encoding increases size by ~33%, plus JSON field structure
-            estimatedSize += (dumpDataSize * 4 / 3) + 100;
-        }
-        
-        LOG_DEBUG("Estimated crash message size: %zu bytes", estimatedSize);
-        return estimatedSize;
-    }
-
-    // TODO: use messagepack instead of JSON here for efficiency
-    static bool _publishMeterStreaming() {
+    static bool _publishMeterJson() {
         if (!_initializeMeterQueue()) return false;
 
-        size_t estimatedSize = _calculateMeterMessageSize();
-        
-        if (!_clientMqtt.beginPublish(_mqttTopicMeter, estimatedSize, false)) {
-            LOG_ERROR("Failed to begin meter data streaming publish");
-            statistics.mqttMessagesPublishedError++;
-            return false;
-        }
+        JsonDocument jsonDocument;
 
-        _clientMqtt.print("{\"data\":[");
-        bool firstItem = true;
-
+        // Add voltage data if available
         MeterValues meterValuesZeroChannel;
         Ade7953::getMeterValues(meterValuesZeroChannel, 0);
         if (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
-            _clientMqtt.print("{\"unixTime\":");
-            _clientMqtt.print(meterValuesZeroChannel.lastUnixTimeMilliseconds);
-            _clientMqtt.print(",\"voltage\":");
-            _clientMqtt.print(meterValuesZeroChannel.voltage);
-            _clientMqtt.print("}");
-            firstItem = false;
-        }
-        
-        PayloadMeter payloadMeter;
-        uint32_t loops = 0;
-        while ((uxQueueMessagesWaiting(_meterQueue) > 0) && loops < MAX_LOOP_ITERATIONS) {
-            loops++;
-            
-            if (xQueueReceive(_meterQueue, &payloadMeter, 0) != pdTRUE) break; // Time to wait should be 0 so we don't block the publisher
-
-            if (!firstItem) _clientMqtt.print(",");
-            _clientMqtt.print("{\"unixTime\":");
-            _clientMqtt.print(payloadMeter.unixTimeMs);
-            _clientMqtt.print(",\"channel\":");
-            _clientMqtt.print(payloadMeter.channel);
-            _clientMqtt.print(",\"activePower\":");
-            _clientMqtt.print(payloadMeter.activePower);
-            _clientMqtt.print(",\"powerFactor\":");
-            _clientMqtt.print(payloadMeter.powerFactor);
-            _clientMqtt.print("}");
-            firstItem = false;
+            JsonObject voltageObj = jsonDocument.add<JsonObject>();
+            voltageObj["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
+            voltageObj["voltage"] = meterValuesZeroChannel.voltage;
         }
 
+        // Add channel energy data
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 MeterValues meterValues;
@@ -1435,107 +1352,104 @@ namespace Mqtt
                     continue;
                 }
 
-                if (!firstItem) _clientMqtt.print(",");
-                _clientMqtt.print("{\"unixTime\":");
-                _clientMqtt.print(meterValues.lastUnixTimeMilliseconds);
-                _clientMqtt.print(",\"channel\":");
-                _clientMqtt.print(i);
-                _clientMqtt.print(",\"activeEnergyImported\":");
-                _clientMqtt.print(meterValues.activeEnergyImported);
-                _clientMqtt.print(",\"activeEnergyExported\":");
-                _clientMqtt.print(meterValues.activeEnergyExported);
-                _clientMqtt.print(",\"reactiveEnergyImported\":");
-                _clientMqtt.print(meterValues.reactiveEnergyImported);
-                _clientMqtt.print(",\"reactiveEnergyExported\":");
-                _clientMqtt.print(meterValues.reactiveEnergyExported);
-                _clientMqtt.print(",\"apparentEnergy\":");
-                _clientMqtt.print(meterValues.apparentEnergy);
-                _clientMqtt.print("}");
-                firstItem = false;
+                JsonObject channelObj = jsonDocument.add<JsonObject>();
+                channelObj["unixTime"] = meterValues.lastUnixTimeMilliseconds;
+                channelObj["channel"] = i;
+                channelObj["activeEnergyImported"] = meterValues.activeEnergyImported;
+                channelObj["activeEnergyExported"] = meterValues.activeEnergyExported;
+                channelObj["reactiveEnergyImported"] = meterValues.reactiveEnergyImported;
+                channelObj["reactiveEnergyExported"] = meterValues.reactiveEnergyExported;
+                channelObj["apparentEnergy"] = meterValues.apparentEnergy;
+            }
+        }
+        
+        // Add queue data if power data is enabled
+        if (_sendPowerDataEnabled) {
+            PayloadMeter payloadMeter;
+            uint32_t loops = 0;
+            while ((uxQueueMessagesWaiting(_meterQueue) > 0) && loops < MAX_LOOP_ITERATIONS) {
+                loops++;
+
+                if (xQueueReceive(_meterQueue, &payloadMeter, 0) != pdTRUE) break;
+
+                JsonArray powerArray = jsonDocument.add<JsonArray>();
+                powerArray.add(payloadMeter.unixTimeMs);
+                powerArray.add(payloadMeter.channel);
+                powerArray.add(payloadMeter.activePower);
+                powerArray.add(payloadMeter.powerFactor);
+
+                if (measureJson(jsonDocument) > JSON_MQTT_BUFFER_SIZE * 0.95) {
+                    LOG_DEBUG("Meter data JSON size exceeds 95%% of buffer, stopping addition of new entries");
+                    break; // Stop adding new entries if the buffer is nearly full
+                }
             }
         }
 
-        _clientMqtt.print("]}");
+        char meterMessage[JSON_MQTT_BUFFER_SIZE];
+        LOG_DEBUG("Serializing meter JSON with %u entries | Size: %u bytes", jsonDocument.size(), measureJson(jsonDocument));
+        if (!safeSerializeJson(jsonDocument, meterMessage, sizeof(meterMessage))) {
+            LOG_ERROR("Failed to serialize meter JSON");
+            return false;
+        }
 
-        if (_clientMqtt.endPublish()) {
+        if (_publishMessage(_mqttTopicMeter, meterMessage)) {
             _publishMqtt.meter = false;
             statistics.mqttMessagesPublished++;
-            LOG_DEBUG("Meter data streamed successfully to %s", _mqttTopicMeter);
+            LOG_DEBUG("Meter data published to %s", _mqttTopicMeter);
             return true;
         } else {
-            LOG_ERROR("Failed to complete meter data streaming");
+            LOG_ERROR("Failed to publish meter data");
             statistics.mqttMessagesPublishedError++;
             return false;
         }
     }
 
-    static bool _publishCrashStreaming() {
-        size_t estimatedSize = _calculateCrashMessageSize();
-        
-        if (!_clientMqtt.beginPublish(_mqttTopicCrash, estimatedSize, false)) {
-            LOG_ERROR("Failed to begin crash data streaming publish");
-            statistics.mqttMessagesPublishedError++;
-            return false;
-        }
-
-        _clientMqtt.print("{\"unixTime\":");
-        _clientMqtt.print(CustomTime::getUnixTimeMilliseconds());
-        _clientMqtt.print(",\"crashInfo\":{");
+    static bool _publishCrashJson() {
+        JsonDocument jsonDocument;
+        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
 
         JsonDocument crashInfoJson;
         CrashMonitor::getCoreDumpInfoJson(crashInfoJson);
-        
-        bool firstField = true;
-        for (JsonPair field : crashInfoJson.as<JsonObject>()) {
-            if (!firstField) _clientMqtt.print(",");
-            _clientMqtt.print("\"");
-            _clientMqtt.print(field.key().c_str());
-            _clientMqtt.print("\":");
-            if (field.value().is<const char*>()) {
-                _clientMqtt.print("\"");
-                _clientMqtt.print(field.value().as<const char*>());
-                _clientMqtt.print("\"");
-            } else if (field.value().is<int>()) {
-                _clientMqtt.print(field.value().as<int>());
-            } else if (field.value().is<bool>()) {
-                _clientMqtt.print(field.value().as<bool>() ? "true" : "false");
-            }
-            firstField = false;
-        }
+        jsonDocument["crashInfo"] = crashInfoJson;
 
+        // Add dump data if available
         size_t dumpDataSize = CrashMonitor::getCoreDumpSize();
         if (dumpDataSize > 0) {
-            if (!firstField) _clientMqtt.print(",");
-            _clientMqtt.print("\"dumpData\":\"");
-
-            // Stream dump data in base64 encoded chunks
-            const size_t CHUNK_SIZE = 1024; // Process 1KB at a time
-            uint8_t buffer[CHUNK_SIZE];
-            char base64Buffer[CHUNK_SIZE * 4 / 3 + 4]; // Base64 encoding buffer
-            
-            for (size_t offset = 0; offset < dumpDataSize; offset += CHUNK_SIZE) {
-                size_t chunkSize = min(CHUNK_SIZE, dumpDataSize - offset);
+            // Read all dump data
+            uint8_t* dumpBuffer = (uint8_t*)malloc(dumpDataSize);
+            if (dumpBuffer != nullptr) {
                 size_t bytesRead = 0;
-                if (CrashMonitor::getCoreDumpChunk(buffer, offset, chunkSize, &bytesRead)) {
+                if (CrashMonitor::getCoreDumpChunk(dumpBuffer, 0, dumpDataSize, &bytesRead)) {
+                    // Encode to base64
                     size_t base64Len = 0;
-                    mbedtls_base64_encode((unsigned char*)base64Buffer, sizeof(base64Buffer), &base64Len, buffer, bytesRead);
-                    base64Buffer[base64Len] = '\0';
-                    _clientMqtt.print(base64Buffer);
+                    char* base64Buffer = (char*)malloc(dumpDataSize * 4 / 3 + 4);
+                    if (base64Buffer != nullptr) {
+                        if (mbedtls_base64_encode((unsigned char*)base64Buffer, dumpDataSize * 4 / 3 + 4, 
+                                                  &base64Len, dumpBuffer, bytesRead) == 0) {
+                            base64Buffer[base64Len] = '\0';
+                            jsonDocument["crashInfo"]["dumpData"] = base64Buffer;
+                        }
+                        free(base64Buffer);
+                    }
                 }
+                free(dumpBuffer);
             }
-            _clientMqtt.print("\"");
         }
 
-        _clientMqtt.print("}}");
+        char crashMessage[JSON_MQTT_BUFFER_SIZE];
+        if (!safeSerializeJson(jsonDocument, crashMessage, sizeof(crashMessage))) {
+            LOG_ERROR("Failed to serialize crash JSON");
+            return false;
+        }
 
-        if (_clientMqtt.endPublish()) {
+        if (_publishMessage(_mqttTopicCrash, crashMessage)) {
             _publishMqtt.crash = false;
             CrashMonitor::clearCoreDump();
             statistics.mqttMessagesPublished++;
-            LOG_DEBUG("Crash data with full dump streamed successfully to %s", _mqttTopicCrash);
+            LOG_DEBUG("Crash data published to %s", _mqttTopicCrash);
             return true;
         } else {
-            LOG_ERROR("Failed to complete crash data streaming");
+            LOG_ERROR("Failed to publish crash data");
             statistics.mqttMessagesPublishedError++;
             return false;
         }

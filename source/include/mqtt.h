@@ -29,6 +29,7 @@
 #define MQTT_LOG_QUEUE_SIZE (750 * 1024) // Generous log size (in bytes) thanks to PSRAM
 #define MQTT_METER_QUEUE_SIZE (500 * 1024) // Size in bytes to allocate to PSRAM
 #define MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD 0.90 // Threshold for publishing
+#define QUEUE_WAIT_TIMEOUT 100 // Amount of milliseconds to wait if the queue is full or busy
 
 #define JSON_MQTT_BUFFER_SIZE (4 * 1024)     // For MQTT JSON payloads
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (6 * 1024) // For MQTT subscribe messages (reduced from 1KB)

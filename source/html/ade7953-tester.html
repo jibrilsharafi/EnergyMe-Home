@@ -1,13 +1,17 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
+
 <head>
-  <meta charset="utf-8">
-  <title>ADE7953 Register Tester - EnergyMe-Home</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/styles.css">
-  <link rel="stylesheet" href="/css/button.css">
-  <link rel="stylesheet" href="/css/section.css">
-  <link rel="stylesheet" href="/css/typography.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" type="text/css" href="/css/button.css">
+  <link rel="stylesheet" type="text/css" href="/css/styles.css">
+  <link rel="stylesheet" type="text/css" href="/css/section.css">
+  <link rel="stylesheet" type="text/css" href="/css/typography.css">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+  <title>Register Tester</title>
   <style>
     /* Navigation styles - consistent with other pages */
     .buttonNavigation-container { 
@@ -425,8 +429,87 @@ const REGISTERS = [
   {"name": "APENERGYA_24", "address": 0x222, "bits": 24, "signed": true, "desc": "Apparent energy A"},
   {"name": "APENERGYA_32", "address": 0x322, "bits": 32, "signed": true, "desc": "Apparent energy A"},
   {"name": "APENERGYB_24", "address": 0x223, "bits": 24, "signed": true, "desc": "Apparent energy B"},
-  {"name": "APENERGYB_32", "address": 0x323, "bits": 32, "signed": true, "desc": "Apparent energy B"}
-  // ... (truncated for size - full list would include all registers)
+  {"name": "APENERGYB_32", "address": 0x323, "bits": 32, "signed": true, "desc": "Apparent energy B"},
+  {"name": "OVLVL_24", "address": 0x224, "bits": 24, "signed": false, "desc": "OVLVL (R/W) Overvoltage level (24 bit)"},
+  {"name": "OVLVL_32", "address": 0x324, "bits": 32, "signed": false, "desc": "OVLVL (R/W) Overvoltage level (32 bit)"},
+  {"name": "OILVL_24", "address": 0x225, "bits": 24, "signed": false, "desc": "OILVL (R/W) Overcurrent level (24 bit)"},
+  {"name": "OILVL_32", "address": 0x325, "bits": 32, "signed": false, "desc": "OILVL (R/W) Overcurrent level (32 bit)"},
+  {"name": "VPEAK_24", "address": 0x226, "bits": 24, "signed": false, "desc": "VPEAK (R) Voltage channel peak (24 bit)"},
+  {"name": "VPEAK_32", "address": 0x326, "bits": 32, "signed": false, "desc": "VPEAK (R) Voltage channel peak (32 bit)"},
+  {"name": "RSTVPEAK_24", "address": 0x227, "bits": 24, "signed": false, "desc": "RSTVPEAK (R) Read voltage peak with reset (24 bit)"},
+  {"name": "RSTVPEAK_32", "address": 0x327, "bits": 32, "signed": false, "desc": "RSTVPEAK (R) Read voltage peak with reset (32 bit)"},
+  {"name": "IAPEAK_24", "address": 0x228, "bits": 24, "signed": false, "desc": "IAPEAK (R) Current Channel A peak (24 bit)"},
+  {"name": "IAPEAK_32", "address": 0x328, "bits": 32, "signed": false, "desc": "IAPEAK (R) Current Channel A peak (32 bit)"},
+  {"name": "RSTIAPEAK_24", "address": 0x229, "bits": 24, "signed": false, "desc": "RSTIAPEAK (R) Read Current Channel A peak with reset (24 bit)"},
+  {"name": "RSTIAPEAK_32", "address": 0x329, "bits": 32, "signed": false, "desc": "RSTIAPEAK (R) Read Current Channel A peak with reset (32 bit)"},
+  {"name": "IBPEAK_24", "address": 0x22A, "bits": 24, "signed": false, "desc": "IBPEAK (R) Current Channel B peak (24 bit)"},
+  {"name": "IBPEAK_32", "address": 0x32A, "bits": 32, "signed": false, "desc": "IBPEAK (R) Current Channel B peak (32 bit)"},
+  {"name": "RSTIBPEAK_24", "address": 0x22B, "bits": 24, "signed": false, "desc": "RSTIBPEAK (R) Read Current Channel B peak with reset (24 bit)"},
+  {"name": "RSTIBPEAK_32", "address": 0x32B, "bits": 32, "signed": false, "desc": "RSTIBPEAK (R) Read Current Channel B peak with reset (32 bit)"},
+  {"name": "IRQENA_24", "address": 0x22C, "bits": 24, "signed": false, "desc": "IRQENA (R/W) Interrupt enable (Current Channel A, 24 bit)"},
+  {"name": "IRQENA_32", "address": 0x32C, "bits": 32, "signed": false, "desc": "IRQENA (R/W) Interrupt enable (Current Channel A, 32 bit)"},
+  {"name": "IRQSTATA_24", "address": 0x22D, "bits": 24, "signed": false, "desc": "IRQSTATA (R) Interrupt status (Current Channel A, 24 bit)"},
+  {"name": "IRQSTATA_32", "address": 0x32D, "bits": 32, "signed": false, "desc": "IRQSTATA (R) Interrupt status (Current Channel A, 32 bit)"},
+  {"name": "RSTIRQSTATA_24", "address": 0x22E, "bits": 24, "signed": false, "desc": "RSTIRQSTATA (R) Reset interrupt status (Current Channel A, 24 bit)"},
+  {"name": "RSTIRQSTATA_32", "address": 0x32E, "bits": 32, "signed": false, "desc": "RSTIRQSTATA (R) Reset interrupt status (Current Channel A, 32 bit)"},
+  {"name": "IRQENB_24", "address": 0x22F, "bits": 24, "signed": false, "desc": "IRQENB (R/W) Interrupt enable (Current Channel B, 24 bit)"},
+  {"name": "IRQENB_32", "address": 0x32F, "bits": 32, "signed": false, "desc": "IRQENB (R/W) Interrupt enable (Current Channel B, 32 bit)"},
+  {"name": "IRQSTATB_24", "address": 0x230, "bits": 24, "signed": false, "desc": "IRQSTATB (R) Interrupt status (Current Channel B, 24 bit)"},
+  {"name": "IRQSTATB_32", "address": 0x330, "bits": 32, "signed": false, "desc": "IRQSTATB (R) Interrupt status (Current Channel B, 32 bit)"},
+  {"name": "RSTIRQSTATB_24", "address": 0x231, "bits": 24, "signed": false, "desc": "RSTIRQSTATB (R) Reset interrupt status (Current Channel B, 24 bit)"},
+  {"name": "RSTIRQSTATB_32", "address": 0x331, "bits": 32, "signed": false, "desc": "RSTIRQSTATB (R) Reset interrupt status (Current Channel B, 32 bit)"},
+  {"name": "CRC_24", "address": 0x000, "bits": 24, "signed": false, "desc": "CRC (R) Checksum (24 bit)"},
+  {"name": "CRC_32", "address": 0x37F, "bits": 32, "signed": false, "desc": "CRC (R) Checksum (32 bit)"},
+  {"name": "AIGAIN_24", "address": 0x280, "bits": 24, "signed": false, "desc": "AIGAIN (R/W) Current channel gain (A, 24 bit)"},
+  {"name": "AIGAIN_32", "address": 0x380, "bits": 32, "signed": false, "desc": "AIGAIN (R/W) Current channel gain (A, 32 bit)"},
+  {"name": "AVGAIN_24", "address": 0x281, "bits": 24, "signed": false, "desc": "AVGAIN (R/W) Voltage channel gain (24 bit)"},
+  {"name": "AVGAIN_32", "address": 0x381, "bits": 32, "signed": false, "desc": "AVGAIN (R/W) Voltage channel gain (32 bit)"},
+  {"name": "AWGAIN_24", "address": 0x282, "bits": 24, "signed": false, "desc": "AWGAIN (R/W) Active power gain (A, 24 bit)"},
+  {"name": "AWGAIN_32", "address": 0x382, "bits": 32, "signed": false, "desc": "AWGAIN (R/W) Active power gain (A, 32 bit)"},
+  {"name": "AVARGAIN_24", "address": 0x283, "bits": 24, "signed": false, "desc": "AVARGAIN (R/W) Reactive power gain (A, 24 bit)"},
+  {"name": "AVARGAIN_32", "address": 0x383, "bits": 32, "signed": false, "desc": "AVARGAIN (R/W) Reactive power gain (A, 32 bit)"},
+  {"name": "AVAGAIN_24", "address": 0x284, "bits": 24, "signed": false, "desc": "AVAGAIN (R/W) Apparent power gain (A, 24 bit)"},
+  {"name": "AVAGAIN_32", "address": 0x384, "bits": 32, "signed": false, "desc": "AVAGAIN (R/W) Apparent power gain (A, 32 bit)"},
+  {"name": "Reserved_24", "address": 0x285, "bits": 24, "signed": true, "desc": "Reserved (R/W) Do not modify (24 bit)"},
+  {"name": "Reserved_32", "address": 0x385, "bits": 32, "signed": true, "desc": "Reserved (R/W) Do not modify (32 bit)"},
+  {"name": "AIRMSOS_24", "address": 0x286, "bits": 24, "signed": true, "desc": "AIRMSOS (R/W) IRMS offset (A, 24 bit)"},
+  {"name": "AIRMSOS_32", "address": 0x386, "bits": 32, "signed": true, "desc": "AIRMSOS (R/W) IRMS offset (A, 32 bit)"},
+  {"name": "Reserved1_24", "address": 0x287, "bits": 24, "signed": true, "desc": "Reserved (R/W) Do not modify (24 bit)"},
+  {"name": "Reserved1_32", "address": 0x387, "bits": 32, "signed": true, "desc": "Reserved (R/W) Do not modify (32 bit)"},
+  {"name": "VRMSOS_24", "address": 0x288, "bits": 24, "signed": true, "desc": "VRMSOS (R/W) VRMS offset (24 bit)"},
+  {"name": "VRMSOS_32", "address": 0x388, "bits": 32, "signed": true, "desc": "VRMSOS (R/W) VRMS offset (32 bit)"},
+  {"name": "AWATTOS_24", "address": 0x289, "bits": 24, "signed": true, "desc": "AWATTOS (R/W) Active power offset correction (A, 24 bit)"},
+  {"name": "AWATTOS_32", "address": 0x389, "bits": 32, "signed": true, "desc": "AWATTOS (R/W) Active power offset correction (A, 32 bit)"},
+  {"name": "AVAROS_24", "address": 0x28A, "bits": 24, "signed": true, "desc": "AVAROS (R/W) Reactive power offset correction (A, 24 bit)"},
+  {"name": "AVAROS_32", "address": 0x38A, "bits": 32, "signed": true, "desc": "AVAROS (R/W) Reactive power offset correction (A, 32 bit)"},
+  {"name": "AVAOS_24", "address": 0x28B, "bits": 24, "signed": true, "desc": "AVAOS (R/W) Apparent power offset correction (A, 24 bit)"},
+  {"name": "AVAOS_32", "address": 0x38B, "bits": 32, "signed": true, "desc": "AVAOS (R/W) Apparent power offset correction (A, 32 bit)"},
+  {"name": "BIGAIN_24", "address": 0x28C, "bits": 24, "signed": false, "desc": "BIGAIN (R/W) Current channel gain (B, 24 bit)"},
+  {"name": "BIGAIN_32", "address": 0x38C, "bits": 32, "signed": false, "desc": "BIGAIN (R/W) Current channel gain (B, 32 bit)"},
+  {"name": "BVGAIN_24", "address": 0x28D, "bits": 24, "signed": false, "desc": "BVGAIN (R/W) Do not modify (24 bit)"},
+  {"name": "BVGAIN_32", "address": 0x38D, "bits": 32, "signed": false, "desc": "BVGAIN (R/W) Do not modify (32 bit)"},
+  {"name": "BWGAIN_24", "address": 0x28E, "bits": 24, "signed": false, "desc": "BWGAIN (R/W) Active power gain (B, 24 bit)"},
+  {"name": "BWGAIN_32", "address": 0x38E, "bits": 32, "signed": false, "desc": "BWGAIN (R/W) Active power gain (B, 32 bit)"},
+  {"name": "BVARGAIN_24", "address": 0x28F, "bits": 24, "signed": false, "desc": "BVARGAIN (R/W) Reactive power gain (B, 24 bit)"},
+  {"name": "BVARGAIN_32", "address": 0x38F, "bits": 32, "signed": false, "desc": "BVARGAIN (R/W) Reactive power gain (B, 32 bit)"},
+  {"name": "BVAGAIN_24", "address": 0x290, "bits": 24, "signed": false, "desc": "BVAGAIN (R/W) Apparent power gain (B, 24 bit)"},
+  {"name": "BVAGAIN_32", "address": 0x390, "bits": 32, "signed": false, "desc": "BVAGAIN (R/W) Apparent power gain (B, 32 bit)"},
+  {"name": "Reserved2_24", "address": 0x291, "bits": 24, "signed": true, "desc": "Reserved (R/W) Do not modify (24 bit)"},
+  {"name": "Reserved2_32", "address": 0x391, "bits": 32, "signed": true, "desc": "Reserved (R/W) Do not modify (32 bit)"},
+  {"name": "BIRMSOS_24", "address": 0x292, "bits": 24, "signed": false, "desc": "BIRMSOS (R/W) IRMS offset (B, 24 bit)"},
+  {"name": "BIRMSOS_32", "address": 0x392, "bits": 32, "signed": false, "desc": "BIRMSOS (R/W) IRMS offset (B, 32 bit)"},
+  {"name": "Reserved3_24", "address": 0x293, "bits": 24, "signed": true, "desc": "Reserved (R/W) Do not modify (24 bit)"},
+  {"name": "Reserved3_32", "address": 0x393, "bits": 32, "signed": true, "desc": "Reserved (R/W) Do not modify (32 bit)"},
+  {"name": "Reserved4_24", "address": 0x294, "bits": 24, "signed": true, "desc": "Reserved (R/W) Do not modify (24 bit)"},
+  {"name": "Reserved4_32", "address": 0x394, "bits": 32, "signed": true, "desc": "Reserved (R/W) Do not modify (32 bit)"},
+  {"name": "BWATTOS_24", "address": 0x295, "bits": 24, "signed": false, "desc": "BWATTOS (R/W) Active power offset correction (B, 24 bit)"},
+  {"name": "BWATTOS_32", "address": 0x395, "bits": 32, "signed": false, "desc": "BWATTOS (R/W) Active power offset correction (B, 32 bit)"},
+  {"name": "BVAROS_24", "address": 0x296, "bits": 24, "signed": false, "desc": "BVAROS (R/W) Reactive power offset correction (B, 24 bit)"},
+  {"name": "BVAROS_32", "address": 0x396, "bits": 32, "signed": false, "desc": "BVAROS (R/W) Reactive power offset correction (B, 32 bit)"},
+  {"name": "BVAOS_24", "address": 0x297, "bits": 24, "signed": false, "desc": "BVAOS (R/W) Apparent power offset correction (B, 24 bit)"},
+  {"name": "BVAOS_32", "address": 0x397, "bits": 32, "signed": false, "desc": "BVAOS (R/W) Apparent power offset correction (B, 32 bit)"},
+  {"name": "LAST_RWDATA_24", "address": 0x2FF, "bits": 24, "signed": false, "desc": "LAST_RWDATA (R) Last successful 24/32-bit register comm (24 bit)"},
+  {"name": "LAST_RWDATA_32", "address": 0x3FF, "bits": 32, "signed": false, "desc": "LAST_RWDATA (R) Last successful 24/32-bit register comm (32 bit)"}
 ];
 
 // Global state
@@ -943,9 +1026,19 @@ async function performWrite() {
     const duration = Math.round(endTime - startTime);
     
     if (response.ok) {
-      const result = await response.json();
-      displayWriteResult('Write successful', duration);
-      showStatus(`Write successful (${duration}ms)`, 'success');
+      const resultValueCell = document.getElementById(`result-value-${currentRegister.name}`);
+      if (resultValueCell) {
+        resultValueCell.textContent = 'OK';
+      } else {
+        // If the cell doesn't exist, create it
+        const row = document.getElementById(`row-${currentRegister.name}`);
+        if (row) {
+          const newCell = row.insertCell(-1);
+          newCell.id = `result-value-${currentRegister.name}`;
+          newCell.textContent = 'OK';
+        }
+      }
+      showToast('Register written successfully');
     } else {
       const error = await response.text();
       showStatus(`Write failed: ${error}`, 'error');

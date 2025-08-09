@@ -6,6 +6,7 @@ static bool _maintenanceTaskShouldRun = false;
 
 // Static function declarations
 static void _factoryReset();
+static void _restartTask(void* parameter);
 static void _restartSystem(bool factoryReset = false);
 static void _maintenanceTask(void* parameter);
 
@@ -394,7 +395,7 @@ void stopMaintenanceTask() {
 }
 
 // Task function that handles delayed restart. No need for complex handling here, just a simple delay and restart.
-void restartTask(void* parameter) {
+static void _restartTask(void* parameter) {
     bool factoryReset = (bool)(uintptr_t)parameter;
 
     LOG_DEBUG(
@@ -404,19 +405,19 @@ void restartTask(void* parameter) {
     );
 
     // Stop forwarding logs to asynchronous sinks to avoid queue races during shutdown
-    AdvancedLogger::removeCallback();
-    delay(50); // small grace period to let any in-flight callbacks finish
+    // AdvancedLogger::removeCallback();
+    // delay(50); // small grace period to let any in-flight callbacks finish
 
     // Stop all services here (in a dedicated task context), not in the caller's context (e.g., MQTT callback)
-    stopMaintenanceTask();
+    // stopMaintenanceTask();
     Ade7953::stop();
-    #if HAS_SECRETS
-    Mqtt::stop();
-    #endif
-    CustomMqtt::stop();
-    InfluxDbClient::stop();
-    ModbusTcp::stop();
-    CustomServer::stop();
+    // #if HAS_SECRETS
+    // Mqtt::stop();
+    // #endif
+    // CustomMqtt::stop(); // TODO: do we really need this?
+    // InfluxDbClient::stop();
+    // ModbusTcp::stop();
+    // CustomServer::stop();
 
     // Wait for the specified delay to allow clean shutdown
     delay(SYSTEM_RESTART_DELAY);
@@ -427,7 +428,7 @@ void restartTask(void* parameter) {
     vTaskDelete(NULL);
 }
 
-void setRestartSystem(const char* reason, bool factoryReset) { // TODO: check thoroughly that this function is correctly implemented
+void setRestartSystem(const char* reason, bool factoryReset) {
     LOG_INFO("Restart required for reason: %s. Factory reset: %s", reason, factoryReset ? "true" : "false");
 
     if (_restartTaskHandle != NULL) {
@@ -437,7 +438,7 @@ void setRestartSystem(const char* reason, bool factoryReset) { // TODO: check th
 
     // Create a task that will handle the delayed restart/factory reset and stop services safely
     BaseType_t result = xTaskCreate(
-        restartTask,
+        _restartTask,
         TASK_RESTART_NAME,
         TASK_RESTART_STACK_SIZE,
         (void*)(uintptr_t)factoryReset,
@@ -449,19 +450,19 @@ void setRestartSystem(const char* reason, bool factoryReset) { // TODO: check th
         LOG_ERROR("Failed to create restart task, performing immediate operation");
         
         // Stop forwarding logs to asynchronous sinks to avoid queue races during shutdown
-        AdvancedLogger::removeCallback();
-        delay(50); // small grace period to let any in-flight callbacks finish
+        // AdvancedLogger::removeCallback();
+        // delay(50); // small grace period to let any in-flight callbacks finish
 
         // Last resort: perform sync stop and restart here
-        stopMaintenanceTask();
+        // stopMaintenanceTask();
         Ade7953::stop();
-        #if HAS_SECRETS
-        Mqtt::stop();
-        #endif
-        CustomMqtt::stop();
-        InfluxDbClient::stop();
-        ModbusTcp::stop();
-        CustomServer::stop();
+        // #if HAS_SECRETS
+        // Mqtt::stop();
+        // #endif
+        // CustomMqtt::stop();
+        // InfluxDbClient::stop();
+        // ModbusTcp::stop();
+        // CustomServer::stop();
 
         _restartSystem(factoryReset);
     } else {
@@ -474,17 +475,17 @@ static void _restartSystem(bool factoryReset) {
     Led::setOrange(Led::PRIO_CRITICAL);
 
     LOG_INFO("Restarting system. Factory reset: %s", factoryReset ? "true" : "false");
-    AdvancedLogger::end(); // Only stop at last to ensure stopping logs are sent
+    // AdvancedLogger::end(); // Only stop at last to ensure stopping logs are sent
 
     // Give time for AsyncTCP connections to close gracefully
-    delay(1000);
+    // delay(1000);
 
-    // Stop at last to ensure all logs are sent
-    CustomLog::stop();
-    CustomWifi::stop();
+    // // Stop at last to ensure all logs are sent
+    // CustomLog::stop();
+    // CustomWifi::stop();
     
-    // Additional delay to ensure clean shutdown
-    delay(500);
+    // // Additional delay to ensure clean shutdown
+    // delay(1000);
 
     // Last action when everything has been already closed
     if (factoryReset) {_factoryReset();}

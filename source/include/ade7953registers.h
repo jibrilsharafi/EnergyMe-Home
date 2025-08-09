@@ -12,7 +12,7 @@
 #define WRITE_PROTECT_8 0x040 //WRITE_PROTECT, (R/W) Default: 0x00, Unsigned, Write protection bits (Bits[2:0]) 
 #define LAST_OP_8 0x0FD //LAST_OP, (R/W) Default: 0x00, Unsigned, Contains the type (read or write) of the last successful communication (0x35 read 0xCA = write) 
 #define LAST_RWDATA_8 0x0FF //LAST_RWDATA_8, (R/W) Default: 0x00, Unsigned, Contains the data from the last successful 8-bit register communication  
-#define Version_8 0x702 //Version, (R/W) Default: N/A, Unsigned, Contains the silicon version number 
+#define VERSION_8 0x702 //Version, (R/W) Default: N/A, Unsigned, Contains the silicon version number 
 #define EX_REF_8 0x800 //EX_REF, (R/W) Default: 0x00, Unsigned, Reference input configuration:0 = internal 1 = external 
 
 //16-bit Registers

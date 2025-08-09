@@ -7,12 +7,14 @@ namespace CustomWifi
   static TaskHandle_t _wifiTaskHandle = NULL;
   static uint64_t _lastReconnectAttempt = 0;
   static int32_t _reconnectAttempts = 0; // Increased every disconnection, reset on stable (few minutes) connection
+  static uint64_t _lastConnectivityTest = 0;
 
   // WiFi event notification values for task communication
   static const uint32_t WIFI_EVENT_CONNECTED = 1;
   static const uint32_t WIFI_EVENT_GOT_IP = 2;
   static const uint32_t WIFI_EVENT_DISCONNECTED = 3;
   static const uint32_t WIFI_EVENT_SHUTDOWN = 4;
+  static const uint32_t WIFI_EVENT_FORCE_RECONNECT = 5;
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -27,6 +29,8 @@ namespace CustomWifi
   static void _cleanup();
   static void _startWifiTask();
   static void _stopWifiTask();
+  static bool _testConnectivity();
+  static void _forceReconnectInternal();
 
   bool begin()
   {
@@ -73,6 +77,21 @@ namespace CustomWifi
   {
     // Check if WiFi is connected and has an IP address
     return WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0);
+  }
+
+  bool testConnectivity()
+  {
+    return _testConnectivity();
+  }
+
+  void forceReconnect()
+  {
+    if (_wifiTaskHandle != NULL) {
+      LOG_WARNING("Forcing WiFi reconnection...");
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_FORCE_RECONNECT, eSetValueWithOverwrite);
+    } else {
+      LOG_WARNING("Cannot force reconnect - WiFi task not running");
+    }
   }
 
   static void _setupWiFiManager()
@@ -230,6 +249,10 @@ namespace CustomWifi
           _handleSuccessfulConnection();
           continue; // No further action needed
 
+        case WIFI_EVENT_FORCE_RECONNECT:
+          _forceReconnectInternal();
+          continue; // No further action needed
+
         case WIFI_EVENT_DISCONNECTED:
           statistics.wifiConnectionError++;
           Led::blinkBlueSlow(Led::PRIO_MEDIUM);
@@ -281,8 +304,19 @@ namespace CustomWifi
         // Timeout occurred - perform periodic health check
         if (_taskShouldRun && isFullyConnected())
         {
+          // Perform connectivity test periodically
+          uint64_t currentTime = millis64();
+          if (currentTime - _lastConnectivityTest >= WIFI_CONNECTIVITY_TEST_INTERVAL) {
+            _lastConnectivityTest = currentTime;
+            
+            if (!_testConnectivity()) {
+              LOG_WARNING("Connectivity test failed - forcing reconnection");
+              _forceReconnectInternal();
+            }
+          }
+          
           // Reset failure counter on sustained connection
-          if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
+          if (_reconnectAttempts > 0 && currentTime - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
           {
             LOG_DEBUG("WiFi connection stable - resetting counters");
             _reconnectAttempts = 0;
@@ -363,6 +397,51 @@ namespace CustomWifi
     MDNS.end();
     
     LOG_DEBUG("WiFi cleanup completed");
+  }
+
+  static bool _testConnectivity()
+  {
+    if (!isFullyConnected()) return false;
+
+    // Check if we have a valid gateway IP
+    IPAddress gateway = WiFi.gatewayIP();
+    if (gateway == IPAddress(0, 0, 0, 0)) {
+      LOG_WARNING("No gateway IP available - connectivity issue detected");
+      statistics.wifiConnectionError++;
+      return false;
+    }
+
+    // Check if we have valid DNS servers
+    IPAddress dns1 = WiFi.dnsIP(0);
+    IPAddress dns2 = WiFi.dnsIP(1);
+    if (dns1 == IPAddress(0, 0, 0, 0) && dns2 == IPAddress(0, 0, 0, 0)) {
+      LOG_WARNING("No DNS servers available - connectivity issue detected");
+      statistics.wifiConnectionError++;
+      return false;
+    }
+
+    LOG_DEBUG("Connectivity test passed - Gateway: %s, DNS: %s", 
+              gateway.toString().c_str(), 
+              dns1.toString().c_str());
+    return true;
+  }
+
+  static void _forceReconnectInternal()
+  {
+    LOG_WARNING("Performing forced WiFi reconnection...");
+    
+    // Disconnect and reconnect
+    WiFi.disconnect(false); // Don't erase credentials
+    delay(WIFI_FORCE_RECONNECT_DELAY);
+    
+    // Trigger reconnection
+    WiFi.reconnect();
+    
+    _reconnectAttempts++;
+    _lastReconnectAttempt = millis64();
+    statistics.wifiConnectionError++;
+    
+    LOG_INFO("Forced reconnection initiated (attempt %d)", _reconnectAttempts);
   }
 
   static void _startWifiTask()

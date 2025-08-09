@@ -420,6 +420,7 @@ namespace CustomServer
         uint32_t loops = 0;
         while (client.connected() && (millis64() - startTime) < HEALTH_CHECK_TIMEOUT_MS && loops < MAX_LOOP_ITERATIONS)
         {
+            loops++;
             if (client.available())
             {
                 char line[HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE];
@@ -700,7 +701,7 @@ namespace CustomServer
             _handleOtaUploadData);
     }
 
-    static void _handleOtaUploadComplete(AsyncWebServerRequest *request)
+    static void _handleOtaUploadComplete(AsyncWebServerRequest *request) // TODO: pause other tasks here? sometimes it breaks and it crashes
     {
         // Handle the completion of the upload
         if (request->getResponse()) return;  // Response already set due to error
@@ -1335,36 +1336,36 @@ namespace CustomServer
             "/api/v1/ade7953/register",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_REGISTER)) return;
+            if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_REGISTER)) return;
 
-                JsonDocument doc;
-                doc.set(json);
+            JsonDocument doc;
+            doc.set(json);
 
-                if (!doc["address"].is<int32_t>() || !doc["bits"].is<int32_t>() || !doc["value"].is<int32_t>()) {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "address, bits, and value fields must be integers");
-                    return;
-                }
+            if (!doc["address"].is<int32_t>() || !doc["bits"].is<int32_t>() || !doc["value"].is<int32_t>()) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "address, bits, and value fields must be integers");
+                return;
+            }
 
-                int32_t addressValue = request->getParam("address")->value().toInt();
-                int32_t bitsValue = request->getParam("bits")->value().toInt();
+            int32_t addressValue = doc["address"].as<int32_t>();
+            int32_t bitsValue = doc["bits"].as<int32_t>();
 
-                if (addressValue < 0 || addressValue > UINT16_MAX) {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register address out of range (0-65535)");
-                    return;
-                }
-                if (bitsValue < 0 || bitsValue > UINT8_MAX) {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register bits out of range (0-255)");
-                    return;
-                }
+            if (addressValue < 0 || addressValue > UINT16_MAX) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register address out of range (0-65535)");
+                return;
+            }
+            if (bitsValue < 0 || bitsValue > UINT8_MAX) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register bits out of range (0-255)");
+                return;
+            }
 
-                uint16_t address = static_cast<uint16_t>(addressValue);
-                uint8_t bits = static_cast<uint8_t>(bitsValue);
-                int32_t value = doc["value"].as<int32_t>();
+            uint16_t address = static_cast<uint16_t>(addressValue);
+            uint8_t bits = static_cast<uint8_t>(bitsValue);
+            int32_t value = doc["value"].as<int32_t>();
 
-                Ade7953::writeRegister(address, bits, value);
-                
-                LOG_INFO("ADE7953 register 0x%X (%d bits) written with value 0x%X via API", address, bits, value);
-                _sendSuccessResponse(request, "ADE7953 register written successfully");
+            Ade7953::writeRegister(address, bits, value);
+
+            LOG_INFO("ADE7953 register 0x%X (%d bits) written with value 0x%X via API", address, bits, value);
+            _sendSuccessResponse(request, "ADE7953 register written successfully");
             });
         server.addHandler(writeRegisterHandler);
 
