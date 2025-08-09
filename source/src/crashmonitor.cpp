@@ -90,7 +90,8 @@ namespace CrashMonitor
         }
         _consecutiveCrashCount = 0;
         _consecutiveResetCount = 0;
-        
+
+        _crashResetTaskHandle = nullptr;
         vTaskDelete(NULL);
     }
 

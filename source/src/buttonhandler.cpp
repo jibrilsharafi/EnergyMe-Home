@@ -153,6 +153,8 @@ namespace ButtonHandler
             }
         }
 
+        LOG_DEBUG("Button task stopping");
+        _buttonTaskHandle = NULL;
         vTaskDelete(NULL);
     }
 
