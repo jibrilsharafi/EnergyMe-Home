@@ -210,19 +210,19 @@ namespace CustomLog
             
             if (!_udpClient.beginPacket(_udpDestinationIp, UDP_LOG_PORT)) {
                 // Put the log back in the queue (front of queue)
-                if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
+                // if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
                 continue;
             }
             
             size_t bytesWritten = _udpClient.write((const uint8_t*)_udpBuffer, strlen(_udpBuffer));
             if (bytesWritten == 0) {
-                if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
+                // if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
                 _udpClient.endPacket(); // Clean up the packet
                 continue;
             }
             
             if (!_udpClient.endPacket()) {
-                if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
+                // if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
                 continue;
             }
 

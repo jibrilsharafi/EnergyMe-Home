@@ -2334,6 +2334,7 @@ namespace Ade7953
     }
 
     void _addMeterDataToPayload(uint8_t channelIndex) {
+        #if HAS_SECRETS
         if (!CustomTime::isTimeSynched()) return;
 
         LOG_VERBOSE("Adding meter data to payload for channel %u", channelIndex);
@@ -2342,7 +2343,11 @@ namespace Ade7953
             return;
         }
 
-        #if HAS_SECRETS
+        if (!CustomTime::isUnixTimeValid(_meterValues[channelIndex].lastUnixTimeMilliseconds)) {
+            LOG_DEBUG("Channel %d has invalid Unix time. Skipping payload addition", channelIndex);
+            return;
+        }
+
         Mqtt::pushMeter(
             PayloadMeter(
                 channelIndex,
@@ -2800,7 +2805,7 @@ namespace Ade7953
     }
 
     void _printMeterValues(uint8_t channelIndex) {
-        LOG_DEBUG(
+        LOG_VERBOSE(
             "%s (%lu): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.1f%% || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
             _channelData[channelIndex].label,
             _channelData[channelIndex].index,

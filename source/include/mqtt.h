@@ -45,7 +45,7 @@
 
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
 
-#define MQTT_CLAIM_MAX_CONNECTION_ATTEMPT 10 // The maximum number of attempts to connect to AWS IoT Core MQTT broker for claiming certificates
+#define MQTT_CLAIM_MAX_CONNECTION_PUBLISH_ATTEMPT 10 // The maximum number of attempts to connect or publish to AWS IoT Core MQTT broker for claiming certificates
 #define MQTT_CLAIM_INITIAL_RETRY_INTERVAL (5 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_CLAIM_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds
 #define MQTT_CLAIM_RETRY_MULTIPLIER 2 // Multiplier for exponential backoff
@@ -55,7 +55,8 @@
 #define MQTT_MAX_RECONNECT_INTERVAL (5 * 60 * 1000) // Maximum interval for MQTT reconnection attempts
 #define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
-#define MQTT_PAYLOAD_LIMIT (8 * 1024) // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
+#define MQTT_CLAIMING_INTERVAL (1 * 1000) // Interval between two MQTT claiming checks
+#define MQTT_PAYLOAD_LIMIT (4 * 1024) // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
 
 #define MQTT_INITIAL_RETRY_INTERVAL (5 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds

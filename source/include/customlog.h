@@ -28,7 +28,7 @@
 #define LOG_CALLBACK_FUNCTION_SIZE 16 // Size for function name
 #define LOG_CALLBACK_MESSAGE_SIZE 256 // Size for log message (not critical, so even if the message is truncated, it will not cause issues)
 
-#define DELAY_SEND_UDP 1 // Millisecond delay between UDP sends to avoid flooding the network
+#define DELAY_SEND_UDP 10 // Millisecond delay between UDP sends to avoid flooding the network and starving
 
 // Task configuration for async UDP sender
 #define UDP_LOG_TASK_NAME "udp_log_task"

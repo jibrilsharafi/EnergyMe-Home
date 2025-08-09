@@ -11,7 +11,8 @@
 #define NTP_SERVER_2 "time.google.com"
 #define NTP_SERVER_3 "time.apple.com"
 
-#define TIME_SYNC_INTERVAL_SECONDS (60 * 60)
+#define TIME_SYNC_INTERVAL (60 * 60 * 1000)
+#define TIME_SYNC_RETRY_IF_NOT_SYNCHED (60 * 1000)
 
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
 #define TIMESTAMP_ISO_FORMAT "%04d-%02d-%02dT%02d:%02d:%02d.%03ldZ" // ISO 8601 format with milliseconds
@@ -41,4 +42,6 @@ namespace CustomTime {
     uint64_t getMillisecondsUntilNextHour();
 
     void timestampIsoFromUnix(time_t unix, char* buffer, size_t bufferSize);
+
+    bool isUnixTimeValid(uint64_t unixTime, bool isMilliseconds = true);
 }

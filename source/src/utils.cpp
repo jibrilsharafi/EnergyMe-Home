@@ -427,7 +427,7 @@ void restartTask(void* parameter) {
     vTaskDelete(NULL);
 }
 
-void setRestartSystem(const char* reason, bool factoryReset) {
+void setRestartSystem(const char* reason, bool factoryReset) { // TODO: check thoroughly that this function is correctly implemented
     LOG_INFO("Restart required for reason: %s. Factory reset: %s", reason, factoryReset ? "true" : "false");
 
     if (_restartTaskHandle != NULL) {
@@ -772,9 +772,21 @@ void getDeviceId(char* deviceId, size_t maxLength) {
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier) {
     if (attempt == 0) return 0;
     
-    uint64_t backoffDelay = initialInterval;
+    // Direct calculation using bit shifting for power of 2 multipliers
+    if (multiplier == 2) {
+        // For multiplier=2, use bit shifting: delay = initial * 2^(attempt-1)
+        if (attempt >= 64) return maxInterval; // Prevent overflow
+        uint64_t backoffDelay = initialInterval << (attempt - 1);
+        return min(backoffDelay, maxInterval);
+    }
     
-    for (uint64_t i = 0; i < attempt - 1 && backoffDelay < maxInterval; ++i) {
+    // General case: calculate multiplier^(attempt-1)
+    uint64_t backoffDelay = initialInterval;
+    for (uint64_t i = 1; i < attempt; ++i) {
+        // Check for overflow before multiplication
+        if (backoffDelay > maxInterval / multiplier) {
+            return maxInterval;
+        }
         backoffDelay *= multiplier;
     }
     

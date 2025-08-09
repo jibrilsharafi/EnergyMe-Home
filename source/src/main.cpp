@@ -75,11 +75,12 @@ void setup()
 
   LOG_INFO("Guess who's back, back again! EnergyMe - Home is starting up...");
   LOG_INFO("Build version: %s | Build date: %s %s | Device ID: %s", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
-  printDeviceStatusStatic();
   
   LOG_DEBUG("Setting up crash monitor...");
   CrashMonitor::begin();
   LOG_INFO("Crash monitor setup done");
+
+  printDeviceStatusStatic();
 
   Led::setPurple(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up multiplexer...");

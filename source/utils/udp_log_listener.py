@@ -33,7 +33,7 @@ Device-specific logging:
     - Device reboots are detected (millis reset or "Guess who's back" message)
     - First message from a new device is received
     
-    Log format matches the requested output:
+    Log format
     2025-08-01 22:09:10 588c81c47ad8 [110246ms] INFO    [Core0] utils: Restarting system
 """
 
@@ -87,16 +87,16 @@ class LogFilter:
 class SyslogParser:
     """Parse syslog-formatted messages from EnergyMe-Home"""
     
-    # Regex pattern to match the syslog format from ESP32
-    # Format: <16>2024-12-13 10:30:45 energyme-abc123[12345]: [info][Core0] main: Setup done!
+    # Regex pattern to match the new syslog format from ESP32
+    # Format: <16>2025-08-08T18:36:33.275Z 588c81c47a98[9313286]: [DEBUG][Core1] src/utils.cpp[printDeviceStatusDynamic]: Message
     SYSLOG_PATTERN = re.compile(
-        r'<(\d+)>'                          # Priority
-        r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+'  # Timestamp (YYYY-MM-DD HH:MM:SS)
-        r'([^\[]+)\[(\d+)\]:\s+'            # Device[millis]:
-        r'\[([^\]]+)\]'                     # [level]
-        r'\[Core(\d+)\]\s+'                 # [CoreX]
-        r'([^:]+):\s+'                      # function:
-        r'(.+)'                             # message
+        r'<(\d+)>'                                  # Priority
+        r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+'  # Timestamp (ISO 8601)
+        r'([a-fA-F0-9]+)\[(\d+)\]:\s+'              # Device[millis]:
+        r'\[([^\]]+)\]'                             # [level]
+        r'\[Core(\d+)\]\s+'                         # [CoreX]
+        r'([^:]+):\s+'                              # function: (e.g., src/utils.cpp[printDeviceStatusDynamic])
+        r'(.+)'                                     # message
     )
     
     @classmethod

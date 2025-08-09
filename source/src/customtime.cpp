@@ -8,8 +8,6 @@ namespace CustomTime {
     static bool _getTime();
     static void _checkAndSyncTime();
 
-    static bool _isUnixTimeValid(uint64_t unixTime, bool isMilliseconds = true);
-
     bool begin() {
         // Initial sync attempt
         configTime(0, 0, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
@@ -48,16 +46,6 @@ namespace CustomTime {
             LOG_DEBUG("Current time is not close to any hour (since hour: %llu ms, until next: %llu ms)", millisSinceCurrentHour, millisUntilNextHour);
             return false;
         }
-    }
-
-    bool _getTime() {
-        time_t _now;
-        struct tm _timeinfo;
-        if(!getLocalTime(&_timeinfo)){
-            return false;
-        }
-        time(&_now);
-        return _isUnixTimeValid(_now, false);
     }
 
     uint64_t getUnixTime() {
@@ -181,23 +169,58 @@ namespace CustomTime {
         return static_cast<uint64_t>(secondsUntilNextHour) * 1000ULL;
     }
 
+    bool isUnixTimeValid(uint64_t unixTime, bool isMilliseconds) {
+        if (isMilliseconds) { return (unixTime >= MINIMUM_UNIX_TIME_MILLISECONDS && unixTime <= MAXIMUM_UNIX_TIME_MILLISECONDS); }
+        else { return (unixTime >= MINIMUM_UNIX_TIME_SECONDS && unixTime <= MAXIMUM_UNIX_TIME_SECONDS); }
+    }
+
+    static bool _getTime() {
+        struct tm timeinfo;
+        if (!getLocalTime(&timeinfo)) {
+            LOG_DEBUG("Failed to get local time from NTP");
+            return false;
+        }
+        
+        time_t now;
+        time(&now);
+        
+        if (!isUnixTimeValid(now, false)) {
+            LOG_DEBUG("Retrieved time is outside valid range: %ld", now);
+            return false;
+        }
+        
+        LOG_DEBUG("Time sync successful: %ld", now);
+        return true;
+    }
+
     static void _checkAndSyncTime() {
         uint64_t currentTime = millis64();
-        
-        // Check if it's time to sync (every TIME_SYNC_INTERVAL_SECONDS seconds)
-        if (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_INTERVAL_SECONDS * 1000ULL) {
+
+        // Either enough time has passed since last successful sync, or we failed previously and we retry earlier
+        bool isTimeToSync = (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_INTERVAL);
+        bool needToRetry = !_isTimeSynched && (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_RETRY_IF_NOT_SYNCHED);
+
+        if (isTimeToSync || needToRetry) {
+            if (!CustomWifi::isFullyConnected()) {
+                LOG_DEBUG("Skipping time sync - WiFi not connected");
+                return;
+            }
             _lastSyncAttempt = currentTime;
             
             // Re-configure time to trigger a new sync
             configTime(0, 0, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
             
             // Check if sync was successful
+            bool previousSyncState = _isTimeSynched;
             _isTimeSynched = _getTime();
+            
+            if (_isTimeSynched && !previousSyncState) {
+                LOG_INFO("Time successfully synchronized with NTP");
+            } else if (!_isTimeSynched && previousSyncState) {
+                LOG_WARNING("Time synchronization lost");
+            } else if (!_isTimeSynched) {
+                LOG_DEBUG("Time synchronization attempt failed, will retry");
+            }
         }
-    }
-
-    static bool _isUnixTimeValid(uint64_t unixTime, bool isMilliseconds) {
-        if (isMilliseconds) { return (unixTime >= MINIMUM_UNIX_TIME_MILLISECONDS && unixTime <= MAXIMUM_UNIX_TIME_MILLISECONDS); }
-        else { return (unixTime >= MINIMUM_UNIX_TIME_SECONDS && unixTime <= MAXIMUM_UNIX_TIME_SECONDS); }
     }
 };
