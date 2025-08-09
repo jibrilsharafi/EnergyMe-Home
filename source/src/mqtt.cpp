@@ -368,7 +368,11 @@ namespace Mqtt
 
     TaskInfo getTaskInfo()
     {
-        return TaskInfo(MQTT_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_taskHandle));
+        if (_taskHandle != nullptr) {
+            return TaskInfo(MQTT_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_taskHandle));
+        } else {
+            return TaskInfo(); // Return empty/default TaskInfo if task is not running
+        }
     }
 
     // Private functions
@@ -590,7 +594,7 @@ namespace Mqtt
             return;
         }
 
-        _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
+        _clientMqtt.setBufferSize(JSON_MQTT_BUFFER_SIZE);
         _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
 
         _nextMqttConnectionAttemptMillis = 0;

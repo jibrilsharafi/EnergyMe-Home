@@ -151,6 +151,19 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
 
     // Tasks
     info.mqttTaskInfo = Mqtt::getTaskInfo();
+    info.customMqttTaskInfo = CustomMqtt::getTaskInfo();
+    info.customServerHealthCheckTaskInfo = CustomServer::getHealthCheckTaskInfo();
+    info.customServerOtaTimeoutTaskInfo = CustomServer::getOtaTimeoutTaskInfo();
+    info.ledTaskInfo = Led::getTaskInfo();
+    info.influxDbTaskInfo = InfluxDbClient::getTaskInfo();
+    info.crashMonitorTaskInfo = CrashMonitor::getTaskInfo();
+    info.buttonHandlerTaskInfo = ButtonHandler::getTaskInfo();
+    info.customLogTaskInfo = CustomLog::getTaskInfo();
+    info.customWifiTaskInfo = CustomWifi::getTaskInfo();
+    info.ade7953MeterReadingTaskInfo = Ade7953::getMeterReadingTaskInfo();
+    info.ade7953EnergySaveTaskInfo = Ade7953::getEnergySaveTaskInfo();
+    info.ade7953HourlyCsvTaskInfo = Ade7953::getHourlyCsvTaskInfo();
+    info.maintenanceTaskInfo = getMaintenanceTaskInfo();
 
     LOG_DEBUG("Dynamic system info populated");
 }
@@ -260,6 +273,71 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["tasks"]["mqtt"]["minimumFreeStack"] = info.mqttTaskInfo.minimumFreeStack;
     doc["tasks"]["mqtt"]["freePercentage"] = info.mqttTaskInfo.freePercentage;
     doc["tasks"]["mqtt"]["usedPercentage"] = info.mqttTaskInfo.usedPercentage;
+
+    doc["tasks"]["customMqtt"]["allocatedStack"] = info.customMqttTaskInfo.allocatedStack;
+    doc["tasks"]["customMqtt"]["minimumFreeStack"] = info.customMqttTaskInfo.minimumFreeStack;
+    doc["tasks"]["customMqtt"]["freePercentage"] = info.customMqttTaskInfo.freePercentage;
+    doc["tasks"]["customMqtt"]["usedPercentage"] = info.customMqttTaskInfo.usedPercentage;
+
+    doc["tasks"]["customServerHealthCheck"]["allocatedStack"] = info.customServerHealthCheckTaskInfo.allocatedStack;
+    doc["tasks"]["customServerHealthCheck"]["minimumFreeStack"] = info.customServerHealthCheckTaskInfo.minimumFreeStack;
+    doc["tasks"]["customServerHealthCheck"]["freePercentage"] = info.customServerHealthCheckTaskInfo.freePercentage;
+    doc["tasks"]["customServerHealthCheck"]["usedPercentage"] = info.customServerHealthCheckTaskInfo.usedPercentage;
+
+    doc["tasks"]["customServerOtaTimeout"]["allocatedStack"] = info.customServerOtaTimeoutTaskInfo.allocatedStack;
+    doc["tasks"]["customServerOtaTimeout"]["minimumFreeStack"] = info.customServerOtaTimeoutTaskInfo.minimumFreeStack;
+    doc["tasks"]["customServerOtaTimeout"]["freePercentage"] = info.customServerOtaTimeoutTaskInfo.freePercentage;
+    doc["tasks"]["customServerOtaTimeout"]["usedPercentage"] = info.customServerOtaTimeoutTaskInfo.usedPercentage;
+
+    doc["tasks"]["led"]["allocatedStack"] = info.ledTaskInfo.allocatedStack;
+    doc["tasks"]["led"]["minimumFreeStack"] = info.ledTaskInfo.minimumFreeStack;
+    doc["tasks"]["led"]["freePercentage"] = info.ledTaskInfo.freePercentage;
+    doc["tasks"]["led"]["usedPercentage"] = info.ledTaskInfo.usedPercentage;
+
+    doc["tasks"]["influxDb"]["allocatedStack"] = info.influxDbTaskInfo.allocatedStack;
+    doc["tasks"]["influxDb"]["minimumFreeStack"] = info.influxDbTaskInfo.minimumFreeStack;
+    doc["tasks"]["influxDb"]["freePercentage"] = info.influxDbTaskInfo.freePercentage;
+    doc["tasks"]["influxDb"]["usedPercentage"] = info.influxDbTaskInfo.usedPercentage;
+
+    doc["tasks"]["crashMonitor"]["allocatedStack"] = info.crashMonitorTaskInfo.allocatedStack;
+    doc["tasks"]["crashMonitor"]["minimumFreeStack"] = info.crashMonitorTaskInfo.minimumFreeStack;
+    doc["tasks"]["crashMonitor"]["freePercentage"] = info.crashMonitorTaskInfo.freePercentage;
+    doc["tasks"]["crashMonitor"]["usedPercentage"] = info.crashMonitorTaskInfo.usedPercentage;
+
+    doc["tasks"]["buttonHandler"]["allocatedStack"] = info.buttonHandlerTaskInfo.allocatedStack;
+    doc["tasks"]["buttonHandler"]["minimumFreeStack"] = info.buttonHandlerTaskInfo.minimumFreeStack;
+    doc["tasks"]["buttonHandler"]["freePercentage"] = info.buttonHandlerTaskInfo.freePercentage;
+    doc["tasks"]["buttonHandler"]["usedPercentage"] = info.buttonHandlerTaskInfo.usedPercentage;
+
+    doc["tasks"]["customLog"]["allocatedStack"] = info.customLogTaskInfo.allocatedStack;
+    doc["tasks"]["customLog"]["minimumFreeStack"] = info.customLogTaskInfo.minimumFreeStack;
+    doc["tasks"]["customLog"]["freePercentage"] = info.customLogTaskInfo.freePercentage;
+    doc["tasks"]["customLog"]["usedPercentage"] = info.customLogTaskInfo.usedPercentage;
+
+    doc["tasks"]["customWifi"]["allocatedStack"] = info.customWifiTaskInfo.allocatedStack;
+    doc["tasks"]["customWifi"]["minimumFreeStack"] = info.customWifiTaskInfo.minimumFreeStack;
+    doc["tasks"]["customWifi"]["freePercentage"] = info.customWifiTaskInfo.freePercentage;
+    doc["tasks"]["customWifi"]["usedPercentage"] = info.customWifiTaskInfo.usedPercentage;
+
+    doc["tasks"]["ade7953MeterReading"]["allocatedStack"] = info.ade7953MeterReadingTaskInfo.allocatedStack;
+    doc["tasks"]["ade7953MeterReading"]["minimumFreeStack"] = info.ade7953MeterReadingTaskInfo.minimumFreeStack;
+    doc["tasks"]["ade7953MeterReading"]["freePercentage"] = info.ade7953MeterReadingTaskInfo.freePercentage;
+    doc["tasks"]["ade7953MeterReading"]["usedPercentage"] = info.ade7953MeterReadingTaskInfo.usedPercentage;
+
+    doc["tasks"]["ade7953EnergySave"]["allocatedStack"] = info.ade7953EnergySaveTaskInfo.allocatedStack;
+    doc["tasks"]["ade7953EnergySave"]["minimumFreeStack"] = info.ade7953EnergySaveTaskInfo.minimumFreeStack;
+    doc["tasks"]["ade7953EnergySave"]["freePercentage"] = info.ade7953EnergySaveTaskInfo.freePercentage;
+    doc["tasks"]["ade7953EnergySave"]["usedPercentage"] = info.ade7953EnergySaveTaskInfo.usedPercentage;
+
+    doc["tasks"]["ade7953HourlyCsv"]["allocatedStack"] = info.ade7953HourlyCsvTaskInfo.allocatedStack;
+    doc["tasks"]["ade7953HourlyCsv"]["minimumFreeStack"] = info.ade7953HourlyCsvTaskInfo.minimumFreeStack;
+    doc["tasks"]["ade7953HourlyCsv"]["freePercentage"] = info.ade7953HourlyCsvTaskInfo.freePercentage;
+    doc["tasks"]["ade7953HourlyCsv"]["usedPercentage"] = info.ade7953HourlyCsvTaskInfo.usedPercentage;
+
+    doc["tasks"]["maintenance"]["allocatedStack"] = info.maintenanceTaskInfo.allocatedStack;
+    doc["tasks"]["maintenance"]["minimumFreeStack"] = info.maintenanceTaskInfo.minimumFreeStack;
+    doc["tasks"]["maintenance"]["freePercentage"] = info.maintenanceTaskInfo.freePercentage;
+    doc["tasks"]["maintenance"]["usedPercentage"] = info.maintenanceTaskInfo.usedPercentage;
 
     LOG_DEBUG("Dynamic system info converted to JSON");
 }
@@ -401,6 +479,15 @@ void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
 
 void stopMaintenanceTask() {
     stopTaskGracefully(&_maintenanceTaskHandle, "maintenance task");
+}
+
+TaskInfo getMaintenanceTaskInfo()
+{
+    if (_maintenanceTaskHandle != NULL) {
+        return TaskInfo(TASK_MAINTENANCE_STACK_SIZE, uxTaskGetStackHighWaterMark(_maintenanceTaskHandle));
+    } else {
+        return TaskInfo(); // Return empty/default TaskInfo if task is not running
+    }
 }
 
 // Task function that handles delayed restart. No need for complex handling here, just a simple delay and restart.
@@ -571,6 +658,71 @@ void printDeviceStatusDynamic()
         info.mqttTaskInfo.allocatedStack, 
         info.mqttTaskInfo.minimumFreeStack, 
         info.mqttTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - Custom MQTT: %lu total, %lu minimum free (%.2f%%)",
+        info.customMqttTaskInfo.allocatedStack, 
+        info.customMqttTaskInfo.minimumFreeStack, 
+        info.customMqttTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - Custom Server Health Check: %lu total, %lu minimum free (%.2f%%)",
+        info.customServerHealthCheckTaskInfo.allocatedStack, 
+        info.customServerHealthCheckTaskInfo.minimumFreeStack, 
+        info.customServerHealthCheckTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - Custom Server OTA Timeout: %lu total, %lu minimum free (%.2f%%)",
+        info.customServerOtaTimeoutTaskInfo.allocatedStack, 
+        info.customServerOtaTimeoutTaskInfo.minimumFreeStack, 
+        info.customServerOtaTimeoutTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - LED: %lu total, %lu minimum free (%.2f%%)",
+        info.ledTaskInfo.allocatedStack, 
+        info.ledTaskInfo.minimumFreeStack, 
+        info.ledTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - InfluxDB: %lu total, %lu minimum free (%.2f%%)",
+        info.influxDbTaskInfo.allocatedStack, 
+        info.influxDbTaskInfo.minimumFreeStack, 
+        info.influxDbTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - Crash Monitor: %lu total, %lu minimum free (%.2f%%)",
+        info.crashMonitorTaskInfo.allocatedStack, 
+        info.crashMonitorTaskInfo.minimumFreeStack, 
+        info.crashMonitorTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - Button Handler: %lu total, %lu minimum free (%.2f%%)",
+        info.buttonHandlerTaskInfo.allocatedStack, 
+        info.buttonHandlerTaskInfo.minimumFreeStack, 
+        info.buttonHandlerTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - Custom Log: %lu total, %lu minimum free (%.2f%%)",
+        info.customLogTaskInfo.allocatedStack, 
+        info.customLogTaskInfo.minimumFreeStack, 
+        info.customLogTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - Custom WiFi: %lu total, %lu minimum free (%.2f%%)",
+        info.customWifiTaskInfo.allocatedStack, 
+        info.customWifiTaskInfo.minimumFreeStack, 
+        info.customWifiTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - ADE7953 Meter Reading: %lu total, %lu minimum free (%.2f%%)",
+        info.ade7953MeterReadingTaskInfo.allocatedStack, 
+        info.ade7953MeterReadingTaskInfo.minimumFreeStack, 
+        info.ade7953MeterReadingTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - ADE7953 Energy Save: %lu total, %lu minimum free (%.2f%%)",
+        info.ade7953EnergySaveTaskInfo.allocatedStack, 
+        info.ade7953EnergySaveTaskInfo.minimumFreeStack, 
+        info.ade7953EnergySaveTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - ADE7953 Hourly CSV: %lu total, %lu minimum free (%.2f%%)",
+        info.ade7953HourlyCsvTaskInfo.allocatedStack, 
+        info.ade7953HourlyCsvTaskInfo.minimumFreeStack, 
+        info.ade7953HourlyCsvTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - Maintenance: %lu total, %lu minimum free (%.2f%%)",
+        info.maintenanceTaskInfo.allocatedStack, 
+        info.maintenanceTaskInfo.minimumFreeStack, 
+        info.maintenanceTaskInfo.freePercentage
     );
 
     LOG_DEBUG("-------------------------");

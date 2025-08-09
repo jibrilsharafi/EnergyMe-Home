@@ -114,4 +114,7 @@ namespace InfluxDbClient
 
     // Get runtime status
     void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
+
+    // Task information
+    TaskInfo getTaskInfo();
 }

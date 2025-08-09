@@ -92,34 +92,62 @@ def lambda_handler(event, context):
     # --- Process each message in the payload ---
     for message in meter_payloads:
         logger.debug(f"[{request_id}] Processing message: {message}")
-        unixTime = int(message['unixTime'])
 
-        # --- InfluxDB Point Creation Logic ---
-        # This part is identical to your original InfluxDB Lambda's point creation
+        # --- Detect new format arrays ---
+        if isinstance(message, list):
+            try:
+                # Expected: [unixTime, channel, activePower, powerFactor]
+                unixTime = int(message[0])
+                channel = int(message[1])
+                activePower = float(message[2])
+                powerFactor = float(message[3])
+
+                # --- InfluxDB Point ---
+                point = Point(MEASUREMENT) \
+                    .tag("device_id", device_id) \
+                    .tag("channel", channel) \
+                    .time(unixTime, write_precision="ms" if unixTime > 1e11 else "s") \
+                    .field("active_power", activePower) \
+                    .field("power_factor", powerFactor)
+                influx_points.append(point)
+
+                # --- Firehose record ---
+                transformed_item = {
+                    'unixtime': unixTime,
+                    'device_id': device_id,
+                    'channel': channel,
+                    'active_power': activePower,
+                    'power_factor': powerFactor,
+                    'active_energy_imported': None,
+                    'active_energy_exported': None,
+                    'reactive_energy_imported': None,
+                    'reactive_energy_exported': None,
+                    'apparent_energy': None,
+                    'voltage': None,
+                    'record_type': 'power_reading'
+                }
+                firehose_record_type_counts['power_reading'] = firehose_record_type_counts.get('power_reading', 0) + 1
+                firehose_transformed_json_strings.append(json.dumps(transformed_item))
+            except Exception as e:
+                logger.error(f"[{request_id}] Error processing array-format message {message}: {e}", exc_info=True)
+            continue  # Skip old-format logic for arrays
+
+        # --- Legacy / object-based format ---
         try:
-            point = Point(MEASUREMENT).tag("device_id", device_id).time(unixTime, write_precision="ms" if unixTime > 1e11 else "s")
+            unixTime = int(message['unixTime'])
+        except (KeyError, ValueError):
+            logger.warning(f"[{request_id}] Skipping message without valid unixTime: {message}")
+            continue
 
-            # Note: The original logic skips points if voltage is 0 for InfluxDB.
-            # This is preserved.
+        try:
+            point = Point(MEASUREMENT).tag("device_id", device_id).time(
+                unixTime, write_precision="ms" if unixTime > 1e11 else "s"
+            )
+
             if 'voltage' in message:
                 voltage = float(message['voltage'])
-                if voltage == 0:
-                    logger.debug(f"[{request_id}] Skipping InfluxDB point for voltage 0 for device {device_id}, unixTime {unixTime}")
-                    # If this point is skipped, the other fields for *this specific point*
-                    # would not be written to InfluxDB either.
-                    # This is a key difference if Firehose still processes it.
-                    # If you want to skip the *entire* message for InfluxDB if voltage is 0,
-                    # you'd need a more complex condition here. For now, we add fields only if voltage != 0
-                    # but continue processing other fields for this point.
-                    # The original code's `continue` was for the *entire* point if voltage was 0.
-                    # I'm re-interpreting it to mean 'don't add voltage field if 0, but add other fields if present'.
-                    # If you want to skip the entire point, uncomment the 'continue' below and remove the check from the field add.
-                    # if voltage == 0:
-                    #     continue # Skip this message entirely for InfluxDB
-                    point.field("voltage", voltage) # Add if voltage is not 0
-                else:
+                if voltage != 0:
                     point.field("voltage", voltage)
-
 
             if 'current' in message:
                 point.field("current", float(message['current']))
@@ -142,60 +170,44 @@ def lambda_handler(event, context):
                 point.field("reactive_energy_exported", float(message['reactiveEnergyExported']))
             if 'apparentEnergy' in message:
                 point.field("apparent_energy", float(message['apparentEnergy']))
-            
-            channel = message.get('channel', None)
+
+            channel = message.get('channel')
             if channel is not None:
-                point.tag("channel", channel)  
-            
+                point.tag("channel", channel)
+
             influx_points.append(point)
         except Exception as e:
             logger.error(f"[{request_id}] Error creating InfluxDB point for message {message}: {e}", exc_info=True)
-            # Do NOT re-raise, allow Firehose processing to continue for this message
 
-
-        # --- Firehose Transformation Logic ---
-        # This part is identical to your original Firehose Lambda's transformation
+        # --- Firehose transformation ---
         try:
             transformed_item = {
                 'unixtime': message.get('unixTime'),
                 'device_id': device_id,
                 'channel': message.get('channel'),
-                'active_power': None,
-                'power_factor': None,
-                'active_energy_imported': None,
-                'active_energy_exported': None,
-                'reactive_energy_imported': None,
-                'reactive_energy_exported': None,
-                'apparent_energy': None,
-                'voltage': None,
+                'active_power': message.get('activePower'),
+                'power_factor': message.get('powerFactor'),
+                'active_energy_imported': message.get('activeEnergyImported'),
+                'active_energy_exported': message.get('activeEnergyExported'),
+                'reactive_energy_imported': message.get('reactiveEnergyImported'),
+                'reactive_energy_exported': message.get('reactiveEnergyExported'),
+                'apparent_energy': message.get('apparentEnergy'),
+                'voltage': message.get('voltage'),
             }
 
-            record_type = "unknown"
             if "activePower" in message and "powerFactor" in message:
-                record_type = "power_reading"
-                transformed_item['active_power'] = message.get('activePower')
-                transformed_item['power_factor'] = message.get('powerFactor')
+                transformed_item['record_type'] = "power_reading"
             elif "activeEnergyImported" in message:
-                record_type = "energy_summary"
-                transformed_item['active_energy_imported'] = message.get('activeEnergyImported')
-                transformed_item['active_energy_exported'] = message.get('activeEnergyExported')
-                transformed_item['reactive_energy_imported'] = message.get('reactiveEnergyImported')
-                transformed_item['reactive_energy_exported'] = message.get('reactiveEnergyExported')
-                transformed_item['apparent_energy'] = message.get('apparentEnergy')
+                transformed_item['record_type'] = "energy_summary"
             elif "voltage" in message:
-                record_type = "voltage_reading"
-                transformed_item['voltage'] = message.get('voltage')
+                transformed_item['record_type'] = "voltage_reading"
             else:
-                logger.warning(f"[{request_id}] Unknown record type encountered for item: {message} from device: {device_id}")
+                transformed_item['record_type'] = "unknown"
 
-            transformed_item['record_type'] = record_type
-            firehose_record_type_counts[record_type] = firehose_record_type_counts.get(record_type, 0) + 1
-
+            firehose_record_type_counts[transformed_item['record_type']] = firehose_record_type_counts.get(transformed_item['record_type'], 0) + 1
             firehose_transformed_json_strings.append(json.dumps(transformed_item))
         except Exception as e:
             logger.error(f"[{request_id}] Error transforming message for Firehose {message}: {e}", exc_info=True)
-            # Do NOT re-raise, allow InfluxDB processing to continue for this message
-
 
     # --- Attempt to write to InfluxDB ---
     influxdb_success = False

@@ -1837,4 +1837,22 @@ namespace CustomServer
             request->send(LittleFS, filename, contentType);
         });
     }
+
+    TaskInfo getHealthCheckTaskInfo()
+    {
+        if (_healthCheckTaskHandle != NULL) {
+            return TaskInfo(HEALTH_CHECK_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_healthCheckTaskHandle));
+        } else {
+            return TaskInfo(); // Return empty/default TaskInfo if task is not running
+        }
+    }
+
+    TaskInfo getOtaTimeoutTaskInfo()
+    {
+        if (_otaTimeoutTaskHandle != NULL) {
+            return TaskInfo(OTA_TIMEOUT_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_otaTimeoutTaskHandle));
+        } else {
+            return TaskInfo(); // Return empty/default TaskInfo if task is not running
+        }
+    }
 }

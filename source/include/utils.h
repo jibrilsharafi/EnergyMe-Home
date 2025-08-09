@@ -21,6 +21,7 @@
 #include <esp_ota_ops.h>
 
 #include "binaries.h"
+#include "buttonhandler.h"
 #include "constants.h"
 #include "customtime.h"
 #include "customwifi.h"
@@ -95,6 +96,9 @@ void printDeviceStatusDynamic();
 void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
 void startMaintenanceTask();
 void stopMaintenanceTask();
+
+// Task information
+TaskInfo getMaintenanceTaskInfo();
 
 // System restart and maintenance
 void setRestartSystem(const char* reason, bool factoryReset = false);

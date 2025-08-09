@@ -493,4 +493,9 @@ namespace Ade7953
 
     // Grid frequency
     float getGridFrequency();
+
+    // Task information
+    TaskInfo getMeterReadingTaskInfo();
+    TaskInfo getEnergySaveTaskInfo();
+    TaskInfo getHourlyCsvTaskInfo();
 };

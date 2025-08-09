@@ -42,4 +42,7 @@ namespace CustomLog
     void stop();
     
     void callbackMultiple(const LogEntry& entry);
+
+    // Task information
+    TaskInfo getTaskInfo();
 }

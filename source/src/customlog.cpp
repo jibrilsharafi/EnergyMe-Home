@@ -221,4 +221,13 @@ namespace CustomLog
         _udpTaskHandle = NULL;
         vTaskDelete(NULL);
     }
+
+    TaskInfo getTaskInfo()
+    {
+        if (_udpTaskHandle != NULL) {
+            return TaskInfo(UDP_LOG_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_udpTaskHandle));
+        } else {
+            return TaskInfo(); // Return empty/default TaskInfo if task is not running
+        }
+    }
 }

@@ -638,4 +638,13 @@ namespace InfluxDbClient
                      meterValues.lastUnixTimeMilliseconds);
         }
     }
+
+    TaskInfo getTaskInfo()
+    {
+        if (_influxDbTaskHandle != nullptr) {
+            return TaskInfo(INFLUXDB_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_influxDbTaskHandle));
+        } else {
+            return TaskInfo(); // Return empty/default TaskInfo if task is not running
+        }
+    }
 } // namespace InfluxDbClient

@@ -490,4 +490,13 @@ namespace CrashMonitor
         free(buffer);
         return success;
     }
+
+    TaskInfo getTaskInfo()
+    {
+        if (_crashResetTaskHandle != NULL) {
+            return TaskInfo(CRASH_RESET_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_crashResetTaskHandle));
+        } else {
+            return TaskInfo(); // Return empty/default TaskInfo if task is not running
+        }
+    }
 }

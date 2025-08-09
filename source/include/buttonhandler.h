@@ -11,7 +11,7 @@
 #include "utils.h"
 
 #define BUTTON_TASK_NAME "button_task"
-#define BUTTON_TASK_STACK_SIZE (8 * 1024)
+#define BUTTON_TASK_STACK_SIZE (4 * 1024)
 #define BUTTON_TASK_PRIORITY 2
 
 #define PREFERENCES_LAST_OPERATION_KEY "last_operation"
@@ -45,4 +45,7 @@ namespace ButtonHandler {
     void getOperationName(char* buffer, size_t bufferSize);
     uint64_t getOperationTimestamp();
     void clearCurrentOperationName();
+
+    // Task information
+    TaskInfo getTaskInfo();
 }

@@ -36,7 +36,7 @@
 
 // Health check task
 #define HEALTH_CHECK_TASK_NAME "health_check_task"
-#define HEALTH_CHECK_TASK_STACK_SIZE (8 * 1024)
+#define HEALTH_CHECK_TASK_STACK_SIZE (4 * 1024)
 #define HEALTH_CHECK_TASK_PRIORITY 1
 #define HEALTH_CHECK_INTERVAL_MS (60 * 1000)
 #define HEALTH_CHECK_TIMEOUT_MS (5 * 1000)
@@ -81,4 +81,8 @@ namespace CustomServer {
     // Authentication management
     void updateAuthPasswordWithOneFromPreferences();
     bool resetWebPassword(); // This has to be accessible from buttonHandler to physically reset the password 
+
+    // Task information
+    TaskInfo getHealthCheckTaskInfo();
+    TaskInfo getOtaTimeoutTaskInfo();
 }

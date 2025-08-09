@@ -26,7 +26,8 @@ namespace Ade7953
     // Operational flags
     static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
     static bool _hasToSkipReading = true; // Flag to skip every other reading on Channel B so we purge the ADE7953 data when switching multiplexer channel
-    static bool volatile _interruptHandled = false; // TODO: actually solve this
+    static bool volatile _interruptHandledChannelA = false; // TODO: explain
+    static bool volatile _interruptHandledChannelB = false; // TODO: explain
 
     // Synchronization primitives
     static SemaphoreHandle_t _spiMutex = NULL; // To handle single SPI operations
@@ -1203,7 +1204,8 @@ namespace Ade7953
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         statistics.ade7953TotalInterrupts++;
-        _interruptHandled = false;
+        _interruptHandledChannelA = false;
+        _interruptHandledChannelB = false;
 
         // Signal the task to handle the interrupt - let the task determine the cause
         if (_ade7953InterruptSemaphore != NULL) {
@@ -2115,15 +2117,24 @@ namespace Ade7953
             // the ADE7953 do the hard work for us.
             // Use multiplication instead of division as it is faster in embedded systems
                     
-            if (_interruptHandled) {
-                LOG_DEBUG("Tried to handle CYCEND interrupt, but it was already handled");
-                return false; // Already handled, no need to read again
+            // Handle interrupt flag depending on channel
+            if (ade7953Channel == Ade7953Channel::A) {
+                if (_interruptHandledChannelA) {
+                    LOG_DEBUG("Tried to handle CYCEND interrupt for channel A, but it was already handled");
+                    return false; // Already handled, no need to read again
+                }
+                _interruptHandledChannelA = true;
+            } else {
+                if (_interruptHandledChannelB) {
+                    LOG_DEBUG("Tried to handle CYCEND interrupt for channel B, but it was already handled");
+                    return false; // Already handled, no need to read again
+                }
+                _interruptHandledChannelB = true;
             }
 
             activeEnergy = float(_readActiveEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.whLsb * (_channelData[channelIndex].reverse ? -1 : 1);
             reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.varhLsb * (_channelData[channelIndex].reverse ? -1 : 1);
             apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.vahLsb;
-            _interruptHandled = true;
 
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
             // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
@@ -2809,5 +2820,32 @@ namespace Ade7953
             _meterValues[channelIndex].reactiveEnergyExported,
             _meterValues[channelIndex].apparentEnergy
         );
+    }
+
+    TaskInfo getMeterReadingTaskInfo()
+    {
+        if (_meterReadingTaskHandle != NULL) {
+            return TaskInfo(ADE7953_METER_READING_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_meterReadingTaskHandle));
+        } else {
+            return TaskInfo(); // Return empty/default TaskInfo if task is not running
+        }
+    }
+
+    TaskInfo getEnergySaveTaskInfo()
+    {
+        if (_energySaveTaskHandle != NULL) {
+            return TaskInfo(ADE7953_ENERGY_SAVE_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_energySaveTaskHandle));
+        } else {
+            return TaskInfo(); // Return empty/default TaskInfo if task is not running
+        }
+    }
+
+    TaskInfo getHourlyCsvTaskInfo()
+    {
+        if (_hourlyCsvSaveTaskHandle != NULL) {
+            return TaskInfo(ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_hourlyCsvSaveTaskHandle));
+        } else {
+            return TaskInfo(); // Return empty/default TaskInfo if task is not running
+        }
     }
 }

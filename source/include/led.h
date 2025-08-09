@@ -12,6 +12,7 @@
 
 #include "constants.h"
 #include "utils.h"
+#include "structs.h"
 
 #define PREFERENCES_BRIGHTNESS_KEY "brightness"
 
@@ -23,7 +24,7 @@
 
 // LED Task configuration
 #define LED_TASK_NAME "led_task"
-#define LED_TASK_STACK_SIZE (8 * 1024)
+#define LED_TASK_STACK_SIZE (4 * 1024)
 #define LED_TASK_PRIORITY 1
 #define LED_QUEUE_SIZE 10
 #define LED_TASK_DELAY_MS 50
@@ -107,4 +108,7 @@ namespace Led {
     inline void blinkPurpleSlow(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_SLOW, Colors::PURPLE, priority, durationMs); }
     inline void blinkPurpleFast(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::PURPLE, priority, durationMs); }
     inline void doubleBlinkYellow(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::DOUBLE_BLINK, Colors::YELLOW, priority, durationMs); }
+
+    // Task information
+    TaskInfo getTaskInfo();
 }

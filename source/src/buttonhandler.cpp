@@ -290,4 +290,13 @@ namespace ButtonHandler
         snprintf(_operationName, sizeof(_operationName), "%s", "");
         _operationTimestamp = ZERO_START_TIME;
     }
+
+    TaskInfo getTaskInfo()
+    {
+        if (_buttonTaskHandle != NULL) {
+            return TaskInfo(BUTTON_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_buttonTaskHandle));
+        } else {
+            return TaskInfo(); // Return empty/default TaskInfo if task is not running
+        }
+    }
 }

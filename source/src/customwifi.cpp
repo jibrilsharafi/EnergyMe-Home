@@ -500,4 +500,13 @@ namespace CustomWifi
 
     WiFi.disconnect(true);
   }
+
+  TaskInfo getTaskInfo()
+  {
+    if (_wifiTaskHandle != NULL) {
+      return TaskInfo(WIFI_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_wifiTaskHandle));
+    } else {
+      return TaskInfo(); // Return empty/default TaskInfo if task is not running
+    }
+  }
 }

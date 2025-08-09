@@ -47,4 +47,7 @@ namespace CustomWifi
     void forceReconnect();   // Force immediate WiFi reconnection
 
     void resetWifi();
+
+    // Task information
+    TaskInfo getTaskInfo();
 }

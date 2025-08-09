@@ -183,6 +183,19 @@ struct SystemDynamicInfo {
     
     // Tasks
     TaskInfo mqttTaskInfo;
+    TaskInfo customMqttTaskInfo;
+    TaskInfo customServerHealthCheckTaskInfo;
+    TaskInfo customServerOtaTimeoutTaskInfo;
+    TaskInfo ledTaskInfo;
+    TaskInfo influxDbTaskInfo;
+    TaskInfo crashMonitorTaskInfo;
+    TaskInfo buttonHandlerTaskInfo;
+    TaskInfo customLogTaskInfo;
+    TaskInfo customWifiTaskInfo;
+    TaskInfo ade7953MeterReadingTaskInfo;
+    TaskInfo ade7953EnergySaveTaskInfo;
+    TaskInfo ade7953HourlyCsvTaskInfo;
+    TaskInfo maintenanceTaskInfo;
 
     SystemDynamicInfo() {
         memset(this, 0, sizeof(*this));
