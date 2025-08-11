@@ -18,3 +18,8 @@ coredump/
 
 # Python
 __pycache__/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/

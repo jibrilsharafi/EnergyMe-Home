@@ -26,8 +26,15 @@ namespace Ade7953
     // Operational flags
     static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
     static bool _hasToSkipReading = true; // Flag to skip every other reading on Channel B so we purge the ADE7953 data when switching multiplexer channel
-    static bool volatile _interruptHandledChannelA = false; // TODO: explain
-    static bool volatile _interruptHandledChannelB = false; // TODO: explain
+    
+    // Interrupt management
+    // We set this flag to false in the ISR and to true immediately after reading the energy registers (with reset)
+    // This ensures that we only process the interrupt once and avoid reading 0 energy values when reading twice in a row
+    // This happens when the CPU is starved (e.g. during OTA) and thus we fall late, starting the reading just before an
+    // interrupt is triggered, meaning we read twice in a row in the same window.
+    // TL;DR: This flag helps us avoid reading zero energy data during OTA.
+    static bool volatile _interruptHandledChannelA = false;
+    static bool volatile _interruptHandledChannelB = false;
 
     // Synchronization primitives
     static SemaphoreHandle_t _spiMutex = NULL; // To handle single SPI operations
@@ -323,14 +330,14 @@ namespace Ade7953
 
         // Send the register address (two 8-bit transfers) and read command
         // Note: The register address is sent in big-endian format (MSB first)
-        SPI.transfer(static_cast<uint8_t>(registerAddress >> 8));
-        SPI.transfer(static_cast<uint8_t>(registerAddress & 0xFF));
-        SPI.transfer(static_cast<uint8_t>(READ_TRANSFER));
+        SPI.transfer((uint8_t)(registerAddress >> 8));
+        SPI.transfer((uint8_t)(registerAddress & 0xFF));
+        SPI.transfer((uint8_t)(READ_TRANSFER));
 
         // Create the array of bytes to read (one element per each 8 bits)
         uint8_t response[nBits / 8];
         for (uint32_t i = 0; i < nBits / 8; i++) {
-            response[i] = SPI.transfer(static_cast<uint8_t>(READ_TRANSFER)); // Read the data byte by byte
+            response[i] = SPI.transfer((uint8_t)(READ_TRANSFER)); // Read the data byte by byte
         }
 
         // Signal the end of the SPI operation
@@ -401,26 +408,26 @@ namespace Ade7953
 
         // Send the register address (two 8-bit transfers) and write command
         // Note: The register address is sent in big-endian format (MSB first)
-        SPI.transfer(static_cast<uint8_t>(registerAddress >> 8));
-        SPI.transfer(static_cast<uint8_t>(registerAddress & 0xFF));
-        SPI.transfer(static_cast<uint8_t>(WRITE_TRANSFER));
+        SPI.transfer((uint8_t)(registerAddress >> 8));
+        SPI.transfer((uint8_t)(registerAddress & 0xFF));
+        SPI.transfer((uint8_t)(WRITE_TRANSFER));
 
         // Send the data to write, depending on the number of bits
         // Note: The data is sent in big-endian format (MSB first)
         if (nBits == BIT_32) {
-            SPI.transfer(static_cast<uint8_t>((data >> 24) &  0xFF));
-            SPI.transfer(static_cast<uint8_t>((data >> 16) & 0xFF));
-            SPI.transfer(static_cast<uint8_t>((data >> 8) & 0xFF));
-            SPI.transfer(static_cast<uint8_t>(data & 0xFF));
+            SPI.transfer((uint8_t)((data >> 24) &  0xFF));
+            SPI.transfer((uint8_t)((data >> 16) & 0xFF));
+            SPI.transfer((uint8_t)((data >> 8) & 0xFF));
+            SPI.transfer((uint8_t)(data & 0xFF));
         } else if (nBits == BIT_24) {
-            SPI.transfer(static_cast<uint8_t>((data >> 16) & 0xFF));
-            SPI.transfer(static_cast<uint8_t>((data >> 8) & 0xFF));
-            SPI.transfer(static_cast<uint8_t>(data & 0xFF));
+            SPI.transfer((uint8_t)((data >> 16) & 0xFF));
+            SPI.transfer((uint8_t)((data >> 8) & 0xFF));
+            SPI.transfer((uint8_t)(data & 0xFF));
         } else if (nBits == BIT_16) {
-            SPI.transfer(static_cast<uint8_t>((data >> 8) & 0xFF));
-            SPI.transfer(static_cast<uint8_t>(data & 0xFF));
+            SPI.transfer((uint8_t)((data >> 8) & 0xFF));
+            SPI.transfer((uint8_t)(data & 0xFF));
         } else if (nBits == BIT_8) {
-            SPI.transfer(static_cast<uint8_t>(data & 0xFF));
+            SPI.transfer((uint8_t)(data & 0xFF));
         } else {
             LOG_ERROR("Invalid number of bits (%u) for register write operation on register %ld (0x%04lX)", nBits, registerAddress, registerAddress);
             digitalWrite(_ssPin, HIGH); // Ensure we release the SS pin
@@ -1043,7 +1050,7 @@ namespace Ade7953
 
         // To compute the no load register, we use X_NOLOAD = 65536 - DYNAMIC_RANGE / 1.4 (as per datasheet)
         // The higher the dynamic range, the lower the no load value (thus we are able to pick up smaller currents)
-        int32_t xNoLoad = 65536 - (DEFAULT_NOLOAD_DYNAMIC_RANGE / 1.4);
+        int32_t xNoLoad = 65536UL - (int32_t)(DEFAULT_NOLOAD_DYNAMIC_RANGE / 1.4);
 
         writeRegister(AP_NOLOAD_32, BIT_32, xNoLoad);
         writeRegister(VAR_NOLOAD_32, BIT_32, xNoLoad);
@@ -1208,7 +1215,7 @@ namespace Ade7953
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         statistics.ade7953TotalInterrupts++;
-        _interruptHandledChannelA = false; // TODO: understand if reset both or no, but in any case we can do better
+        _interruptHandledChannelA = false;
         _interruptHandledChannelB = false;
 
         // Signal the task to handle the interrupt - let the task determine the cause
@@ -1238,7 +1245,7 @@ namespace Ade7953
 
             // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
             // 1 (since channel 0 does not pass through the multiplexer)
-            Multiplexer::setChannel(static_cast<uint8_t>(max(static_cast<int>(_currentChannel) - 1, 0)));
+            Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
             
             // Process current channel (if active)
             if (previousChannel != INVALID_CHANNEL) _processChannelReading(previousChannel, linecycUnix);
@@ -1694,7 +1701,7 @@ namespace Ade7953
         }
 
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
-        channelData.phase = static_cast<Phase>(preferences.getUChar(key, static_cast<uint8_t>(DEFAULT_CHANNEL_PHASE)));
+        channelData.phase = static_cast<Phase>(preferences.getUChar(key, (uint8_t)(DEFAULT_CHANNEL_PHASE)));
 
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
@@ -1738,7 +1745,7 @@ namespace Ade7953
         preferences.putString(key, _channelData[channelIndex].label);
 
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
-        preferences.putUChar(key, static_cast<uint8_t>(_channelData[channelIndex].phase));
+        preferences.putUChar(key, (uint8_t)(_channelData[channelIndex].phase));
 
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
@@ -2155,7 +2162,6 @@ namespace Ade7953
             // Assume everything is the same as channel 0 except the current
             // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
             // It is easier just to ensure during installation that the CTs are installed correctly
-
             
             // Assume from channel 0
             voltage = _meterValues[0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
@@ -2530,13 +2536,21 @@ namespace Ade7953
         LOG_DEBUG("Saved sample time %llu ms to preferences", _sampleTime);
     }
 
-    void _updateSampleTime() { //TODO: We could get rid of this and instead directly use the linecycles as input, and reading the period, making the code agnostic to 50 or 60 Hz
-        // Example: sample time at 1000 ms -> 1000 ms / 1000 * 50 * 2 = 100 linecyc, as linecyc is half of the cycle
-        uint64_t calculatedLinecyc = _sampleTime * CYCLES_PER_SECOND * 2 / 1000;
-        uint32_t linecyc = static_cast<uint32_t>(calculatedLinecyc);
-        _setLinecyc(linecyc);
+    void _updateSampleTime() {
+        int32_t period = _readPeriod();
+        float gridFrequency = period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / float(period) : 0.0f;
+        uint64_t gridFrequencyInt = DEFAULT_FALLBACK_FREQUENCY;
 
-        LOG_INFO("Successfully updated sample time to %llu ms (%lu line cycles)", _sampleTime, linecyc);
+        if (
+            _validateGridFrequency(gridFrequency) &&
+            fabs(gridFrequency - 60.0f) < 2.0f
+        ) gridFrequencyInt = 60; // If valid frequency and close to 60 Hz, set to 60 Hz
+        else gridFrequencyInt = DEFAULT_FALLBACK_FREQUENCY; // Otherwise, set to 50 Hz as most of the world uses this
+
+        uint64_t calculatedLinecyc = _sampleTime * gridFrequencyInt * 2 / 1000;
+        _setLinecyc((uint32_t)calculatedLinecyc);
+
+        LOG_INFO("Successfully updated sample time to %llu ms (%llu line cycles) with grid frequency %llu Hz", _sampleTime, calculatedLinecyc, gridFrequencyInt);
     }
 
     // ADE7953 register reading functions

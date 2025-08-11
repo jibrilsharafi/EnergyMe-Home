@@ -30,7 +30,7 @@ namespace CustomTime {
         localtime_r(&tv.tv_sec, &timeinfo);
         
         // Calculate milliseconds since the current hour started (minutes and seconds)
-        uint64_t millisSinceCurrentHour = (static_cast<uint64_t>(timeinfo.tm_min) * 60ULL + static_cast<uint64_t>(timeinfo.tm_sec)) * 1000ULL;
+        uint64_t millisSinceCurrentHour = ((uint64_t)(timeinfo.tm_min) * 60ULL + (uint64_t)(timeinfo.tm_sec)) * 1000ULL;
         
         // Calculate milliseconds until the next hour
         uint64_t millisUntilNextHour = 3600000ULL - millisSinceCurrentHour;
@@ -51,7 +51,7 @@ namespace CustomTime {
     uint64_t getUnixTime() {
         struct timeval tv;
         gettimeofday(&tv, NULL);
-        return static_cast<uint64_t>(tv.tv_sec);
+        return (uint64_t)(tv.tv_sec);
     }
 
     uint64_t getUnixTimeMilliseconds() {
@@ -166,7 +166,7 @@ namespace CustomTime {
         int32_t secondsUntilNextHour = 3600 - (timeinfo.tm_min * 60 + timeinfo.tm_sec);
         
         // Convert to milliseconds
-        return static_cast<uint64_t>(secondsUntilNextHour) * 1000ULL;
+        return (uint64_t)(secondsUntilNextHour) * 1000ULL;
     }
 
     bool isUnixTimeValid(uint64_t unixTime, bool isMilliseconds) {

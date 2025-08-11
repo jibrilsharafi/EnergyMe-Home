@@ -9,7 +9,6 @@ namespace CustomServer
     static AsyncWebServer server(WEBSERVER_PORT);
     static AsyncAuthenticationMiddleware digestAuth;
     static AsyncRateLimitMiddleware rateLimit;
-    //TODO: custom middleware for statistics
 
     // Health check task variables
     static TaskHandle_t _healthCheckTaskHandle = NULL;
@@ -535,7 +534,7 @@ namespace CustomServer
         return success;
     }
 
-    static bool _getWebPasswordFromPreferences(char *buffer, size_t bufferSize) // TODO: this can be improved as it is cumbersome the password management
+    static bool _getWebPasswordFromPreferences(char *buffer, size_t bufferSize)
     {
         LOG_DEBUG("Getting web password");
 
@@ -742,7 +741,7 @@ namespace CustomServer
     }
 
     // === OTA UPDATE ENDPOINTS ===
-    static void _serveOtaEndpoints() // TODO: if ota fails or in 60 seconds, reboot anyway
+    static void _serveOtaEndpoints()
     {
         _serveOtaUploadEndpoint();
         _serveOtaStatusEndpoint();
@@ -757,7 +756,7 @@ namespace CustomServer
             _handleOtaUploadData);
     }
 
-    static void _handleOtaUploadComplete(AsyncWebServerRequest *request) // TODO: pause other tasks here? sometimes it breaks and it crashes
+    static void _handleOtaUploadComplete(AsyncWebServerRequest *request)
     {
         // Handle the completion of the upload
         if (request->getResponse()) return;  // Response already set due to error
@@ -797,8 +796,6 @@ namespace CustomServer
                                    size_t index, uint8_t *data, size_t len, bool final)
     {
         static bool otaInitialized = false;
-
-        // TODO: we should pause tasks here probably, and resume then only later. But how can we do it safely?
         
         if (!index) {
             // First chunk - initialize OTA
@@ -1304,7 +1301,7 @@ namespace CustomServer
                 if (indexValue < 0 || indexValue > UINT8_MAX) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
                 } else {
-                    uint8_t channelIndex = static_cast<uint8_t>(indexValue);
+                    uint8_t channelIndex = (uint8_t)(indexValue);
                     Ade7953::getChannelDataAsJson(doc, channelIndex);
                 }
             } else {
@@ -1354,7 +1351,7 @@ namespace CustomServer
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
                 return;
             }
-            uint8_t channelIndex = static_cast<uint8_t>(indexValue);
+            uint8_t channelIndex = (uint8_t)(indexValue);
             Ade7953::resetChannelData(channelIndex);
 
             LOG_INFO("ADE7953 channel %u data reset via API", channelIndex);
@@ -1388,8 +1385,8 @@ namespace CustomServer
                 return;
             }
 
-            uint16_t address = static_cast<uint16_t>(addressValue);
-            uint8_t bits = static_cast<uint8_t>(bitsValue);
+            uint16_t address = (uint16_t)(addressValue);
+            uint8_t bits = (uint8_t)(bitsValue);
             bool signedData = request->hasParam("signed") ? request->getParam("signed")->value().equals("true") : false;
 
             int32_t value = Ade7953::readRegister(address, bits, signedData);
@@ -1430,8 +1427,8 @@ namespace CustomServer
                 return;
             }
 
-            uint16_t address = static_cast<uint16_t>(addressValue);
-            uint8_t bits = static_cast<uint8_t>(bitsValue);
+            uint16_t address = (uint16_t)(addressValue);
+            uint8_t bits = (uint8_t)(bitsValue);
             int32_t value = doc["value"].as<int32_t>();
 
             Ade7953::writeRegister(address, bits, value);
@@ -1454,7 +1451,7 @@ namespace CustomServer
                 if (indexValue < 0 || indexValue > UINT8_MAX) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
                 } else {
-                    uint8_t channelIndex = static_cast<uint8_t>(indexValue);
+                    uint8_t channelIndex = (uint8_t)(indexValue);
                     Ade7953::singleMeterValuesToJson(doc, channelIndex);
                 }
             } else {

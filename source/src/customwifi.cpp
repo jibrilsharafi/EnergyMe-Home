@@ -482,7 +482,7 @@ namespace CustomWifi
     // Wait with timeout for clean shutdown using standard pattern
     uint64_t startTime = millis64();
     
-    while (_wifiTaskHandle != NULL && (millis64() - startTime) < TASK_STOPPING_TIMEOUT) // TODO: use graceful here from utils?
+    while (_wifiTaskHandle != NULL && (millis64() - startTime) < TASK_STOPPING_TIMEOUT)
     {
       delay(TASK_STOPPING_CHECK_INTERVAL);
     }

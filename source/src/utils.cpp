@@ -500,20 +500,8 @@ static void _restartTask(void* parameter) {
         factoryReset ? "true" : "false"
     );
 
-    // Stop forwarding logs to asynchronous sinks to avoid queue races during shutdown
-    // AdvancedLogger::removeCallback();
-    // delay(50); // small grace period to let any in-flight callbacks finish
-
-    // Stop all services here (in a dedicated task context), not in the caller's context (e.g., MQTT callback)
-    // stopMaintenanceTask();
+    // Only stop Ade7953 as we need to save the energy data. Everything else can just die abruptly
     Ade7953::stop();
-    // #ifdef HAS_SECRETS
-    // Mqtt::stop();
-    // #endif
-    // CustomMqtt::stop(); // TODO: do we really need this?
-    // InfluxDbClient::stop();
-    // ModbusTcp::stop();
-    // CustomServer::stop();
 
     // Wait for the specified delay to allow clean shutdown
     delay(SYSTEM_RESTART_DELAY);
@@ -544,22 +532,7 @@ void setRestartSystem(const char* reason, bool factoryReset) {
 
     if (result != pdPASS) {
         LOG_ERROR("Failed to create restart task, performing immediate operation");
-        
-        // Stop forwarding logs to asynchronous sinks to avoid queue races during shutdown
-        // AdvancedLogger::removeCallback();
-        // delay(50); // small grace period to let any in-flight callbacks finish
-
-        // Last resort: perform sync stop and restart here
-        // stopMaintenanceTask();
         Ade7953::stop();
-        // #ifdef HAS_SECRETS
-        // Mqtt::stop();
-        // #endif
-        // CustomMqtt::stop();
-        // InfluxDbClient::stop();
-        // ModbusTcp::stop();
-        // CustomServer::stop();
-
         _restartSystem(factoryReset);
     } else {
         LOG_DEBUG("Restart task created successfully");
@@ -571,19 +544,6 @@ static void _restartSystem(bool factoryReset) {
     Led::setOrange(Led::PRIO_CRITICAL);
 
     LOG_INFO("Restarting system. Factory reset: %s", factoryReset ? "true" : "false");
-    // AdvancedLogger::end(); // Only stop at last to ensure stopping logs are sent
-
-    // Give time for AsyncTCP connections to close gracefully
-    // delay(1000);
-
-    // // Stop at last to ensure all logs are sent
-    // CustomLog::stop();
-    // CustomWifi::stop();
-    
-    // // Additional delay to ensure clean shutdown
-    // delay(1000);
-
-    // Last action when everything has been already closed
     if (factoryReset) {_factoryReset();}
 
     ESP.restart();

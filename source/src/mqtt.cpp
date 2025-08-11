@@ -702,8 +702,7 @@ namespace Mqtt
         LOG_DEBUG("MQTT topics setup complete");
     }
 
-    // static void _setTopicMeter() { _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); } // FIXME
-    static void _setTopicMeter() { _constructMqttTopic(MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
+    static void _setTopicMeter() { _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
     static void _setTopicSystemStatic() { _constructMqttTopic(MQTT_TOPIC_SYSTEM_STATIC, _mqttTopicSystemStatic, sizeof(_mqttTopicSystemStatic)); }
     static void _setTopicSystemDynamic() { _constructMqttTopic(MQTT_TOPIC_SYSTEM_DYNAMIC, _mqttTopicSystemDynamic, sizeof(_mqttTopicSystemDynamic)); }
     static void _setTopicChannel() { _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel, sizeof(_mqttTopicChannel)); }
@@ -1294,7 +1293,7 @@ namespace Mqtt
 
     static bool _publishMessage(const char* topic, const char* message, bool retain) {
         if (topic == nullptr || message == nullptr) {
-            LOG_WARNING("Null ptr, MQTT not initialized yet"); // TODO: will this cause a loop with log publish?
+            LOG_WARNING("Null ptr, MQTT not initialized yet");
             statistics.mqttMessagesPublishedError++;
             return false;
         }

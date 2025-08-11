@@ -71,7 +71,7 @@ namespace ModbusTcp
         }
         
         // Calculate the byte count (2 bytes per register)
-        uint8_t byteCount = static_cast<uint8_t>(registerCount * 2);
+        uint8_t byteCount = (uint8_t)(registerCount * 2);
         
         // Create the response
         ModbusMessage response;
@@ -96,8 +96,8 @@ namespace ModbusTcp
     {
         uint32_t intValue = 0;
         memcpy(&intValue, &value, sizeof(uint32_t));
-        if (high) return static_cast<uint16_t>(intValue >> 16);
-        return static_cast<uint16_t>(intValue & 0xFFFF);
+        if (high) return (uint16_t)(intValue >> 16);
+        return (uint16_t)(intValue & 0xFFFF);
     }
 
     static uint16_t _getRegisterValue(uint32_t address)
@@ -168,7 +168,7 @@ namespace ModbusTcp
             // Handle channel-specific registers, and thus we need to calculate the channel and offset
             // to avoid manual mapping of all registers
             int32_t realAddress = address - LOWER_LIMIT_CHANNEL_REGISTERS;
-            uint8_t channel = STEP_CHANNEL_REGISTERS ? static_cast<uint8_t>(realAddress / STEP_CHANNEL_REGISTERS) : 0;
+            uint8_t channel = STEP_CHANNEL_REGISTERS ? (uint8_t)(realAddress / STEP_CHANNEL_REGISTERS) : 0;
             int32_t offset = realAddress % STEP_CHANNEL_REGISTERS;
 
             MeterValues meterValues;
