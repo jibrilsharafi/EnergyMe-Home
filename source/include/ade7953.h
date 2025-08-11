@@ -43,10 +43,10 @@
 #define ENERGY_SAVE_THRESHOLD 100.0f // Threshold for saving energy data (in Wh) and in any case not more frequent than SAVE_ENERGY_INTERVAL
 
 // Interrupt handling
-#define ADE7953_INTERRUPT_TIMEOUT_MS 1000ULL // Timeout for waiting on interrupt semaphore (in ms)
+#define ADE7953_INTERRUPT_TIMEOUT_MS 1000ULL // If exceed this plus sample time, something is wrong as we are not receiving the interrupt
 
 // Setup
-#define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low
+#define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low (minimum is way lower, but this is a safe value)
 #define ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS 5
 #define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500
 
@@ -54,14 +54,14 @@
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
 #define UNLOCK_OPTIMUM_REGISTER 0x00FE // Value to write to unlock the optimum register
 #define DEFAULT_OPTIMUM_REGISTER 0x0030 // Default value for the optimum register
-#define DEFAULT_EXPECTED_AP_NOLOAD_REGISTER 0x00E419 // Default expected value for AP_NOLOAD_32 
-#define DEFAULT_X_NOLOAD_REGISTER 0x00E419 // Value for AP_NOLOAD_32, VAR_NOLOAD_32 and VA_NOLOAD_32 register. Represents a scale of 10000:1, meaning that the no-load threshold is 0.01% of the full-scale value
+#define DEFAULT_EXPECTED_AP_NOLOAD_REGISTER 0x00E419 // Default expected value for AP_NOLOAD_32 (used to validate the ADE7953 communication)
+#define DEFAULT_NOLOAD_DYNAMIC_RANGE 20000 // Indicates the 1/X dynamic range before the no load feature kicks in. The higher the more sensible, but more prone to noise. Then there will be a formula to compute the register value.
 #define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (enable all no-load detection)
 #define DEFAULT_LCYCMODE_REGISTER 0b01111111 // 0xFF 0b01111111 (enable accumulation mode for all channels, disable read with reset)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1000000100001100 // Enable bit 2, bit 3 (line accumulation for PF), 8 (CRC is enabled), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
 #define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) and CRC change (bit 21) for line cycle end detection
-#define MINIMUM_SAMPLE_TIME 200ULL
+#define MINIMUM_SAMPLE_TIME 200ULL // The settling time of the ADE7953 is 200 ms, so reading faster than this makes little sense
 
 // Constant hardware-fixed values
 // Leaving 

@@ -108,7 +108,7 @@ namespace CustomLog
 
     static void _callbackMqtt(const LogEntry& entry)
     {
-        #if HAS_SECRETS
+        #ifdef HAS_SECRETS
         Mqtt::pushLog(entry);
         #endif
     }

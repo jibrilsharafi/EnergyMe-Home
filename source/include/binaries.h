@@ -33,7 +33,7 @@ extern const char default_config_calibration_json[] asm("_binary_config_calibrat
 
 // AWS IoT Core secrets
 // --------------------------------------------------
-#if HAS_SECRETS
+#ifdef HAS_SECRETS
 extern const char aws_iot_core_cert_ca[] asm("_binary_secrets_ca_pem_start");
 extern const char aws_iot_core_cert_certclaim[] asm("_binary_secrets_certclaim_pem_start");
 extern const char aws_iot_core_cert_privateclaim[] asm("_binary_secrets_privateclaim_pem_start");

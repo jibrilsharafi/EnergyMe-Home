@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "12"
-#define FIRMWARE_BUILD_VERSION_PATCH "04"
+#define FIRMWARE_BUILD_VERSION_PATCH "05"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -44,7 +44,7 @@
 #define PREFERENCES_NAMESPACE_AUTH "auth_ns" 
 
 // Logger
-#define LOG_PATH "/logger/log.txt"
+#define LOG_PATH "/log.txt"
 
 // Buffer Sizes for String Operations
 // =================================

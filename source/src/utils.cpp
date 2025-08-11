@@ -507,7 +507,7 @@ static void _restartTask(void* parameter) {
     // Stop all services here (in a dedicated task context), not in the caller's context (e.g., MQTT callback)
     // stopMaintenanceTask();
     Ade7953::stop();
-    // #if HAS_SECRETS
+    // #ifdef HAS_SECRETS
     // Mqtt::stop();
     // #endif
     // CustomMqtt::stop(); // TODO: do we really need this?
@@ -552,7 +552,7 @@ void setRestartSystem(const char* reason, bool factoryReset) {
         // Last resort: perform sync stop and restart here
         // stopMaintenanceTask();
         Ade7953::stop();
-        // #if HAS_SECRETS
+        // #ifdef HAS_SECRETS
         // Mqtt::stop();
         // #endif
         // CustomMqtt::stop();
@@ -842,13 +842,13 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
 // Helper functions
 // -----------------------------
 
-static void _factoryReset() { 
+static void _factoryReset() { // No logger here it is likely destroyed already
     Serial.println("[WARNING] Factory reset requested");
 
-    Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
+    Led::setBrightness(max(Led::getBrightness(), 1UL)); // Show a faint light even if it is off
     Led::blinkRedFast(Led::PRIO_CRITICAL);
 
-    clearAllPreferences();
+    clearAllPreferences(false);
 
     Serial.println("[WARNING] Formatting LittleFS. This will take some time.");
     LittleFS.format();
@@ -902,7 +902,7 @@ void createAllNamespaces() {
     LOG_DEBUG("All namespaces created");
 }
 
-void clearAllPreferences() {
+void clearAllPreferences(bool nuclearOption) {
     Preferences preferences;
 
     preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false); preferences.clear(); preferences.end();
@@ -920,10 +920,8 @@ void clearAllPreferences() {
     preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); preferences.clear(); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.clear(); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.clear(); preferences.end();
-
-    #if ENV_DEV
-    nvs_flash_erase(); // Nuclear solution. In development, the NVS can get overcrowded with test data, so we clear it completely.
-    #endif
+    
+    if (nuclearOption) nvs_flash_erase(); // Nuclear solution. In development, the NVS can get overcrowded with test data, so we clear it completely (losing also WiFi credentials, etc.)
 
     LOG_WARNING("Cleared all preferences");
 }

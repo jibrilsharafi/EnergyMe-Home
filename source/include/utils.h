@@ -15,9 +15,7 @@
 #include <WiFi.h>
 #include <Preferences.h>
 #include <nvs.h> // For low-level NVS statistics
-#if ENV_DEV
 #include <nvs_flash.h> // For erasing ALL the NVS
-#endif
 #include <esp_ota_ops.h>
 
 #include "binaries.h"
@@ -110,7 +108,7 @@ bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSi
 bool isFirstBootDone();
 void setFirstBootDone();
 void createAllNamespaces();
-void clearAllPreferences();
+void clearAllPreferences(bool nuclearOption = false); // No real function passes true to this function, but maybe it will be useful in the future
 
 // LittleFS file operations
 bool listLittleFsFiles(JsonDocument& doc);

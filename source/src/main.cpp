@@ -137,7 +137,7 @@ void setup()
   ModbusTcp::begin();
   LOG_INFO("Modbus TCP setup done");
 
-  #if HAS_SECRETS
+  #ifdef HAS_SECRETS
   LOG_DEBUG("Setting up MQTT client...");
   Mqtt::begin();
   LOG_INFO("MQTT client setup done");

@@ -1029,7 +1029,7 @@ namespace CustomServer
             char availableVersion[VERSION_BUFFER_SIZE];
             char updateUrl[URL_BUFFER_SIZE];
             
-            #if HAS_SECRETS
+            #ifdef HAS_SECRETS
             Mqtt::getFirmwareUpdateVersion(availableVersion, sizeof(availableVersion));
             if (strlen(availableVersion) > 0) doc["availableVersion"] = availableVersion;
 
@@ -1037,7 +1037,7 @@ namespace CustomServer
             if (strlen(updateUrl) > 0) doc["updateUrl"] = updateUrl;
             #endif
             
-            #if HAS_SECRETS
+            #ifdef HAS_SECRETS
             doc["isLatest"] = Mqtt::isLatestFirmwareInstalled();
             #else
             doc["isLatest"] = true; // No updates available without secrets

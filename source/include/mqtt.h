@@ -1,4 +1,4 @@
-#if HAS_SECRETS
+#ifdef HAS_SECRETS
 #pragma once
 
 #include <AdvancedLogger.h>
@@ -38,7 +38,11 @@
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
 
-#define DEFAULT_CLOUD_SERVICES_ENABLED false // If we compile with secrets, we might as well just directly connect // FIXME: enable
+#ifdef ENV_PROD
+#define DEFAULT_CLOUD_SERVICES_ENABLED true // In prod, enable by default
+#else
+#define DEFAULT_CLOUD_SERVICES_ENABLED false // Leave manual connection
+#endif
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
 
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads

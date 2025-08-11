@@ -203,10 +203,11 @@ namespace CustomWifi
     // Try initial connection with retries for handshake timeouts
     LOG_DEBUG("Attempt WiFi connection");
       
-    if (!_wifiManager.autoConnect(hostname)) {
+    if (!_wifiManager.autoConnect(hostname)) { // TODO: actually handle this in such a way where we retry constantly, but without restarting the device. Closing the task has little utility
       LOG_WARNING("WiFi connection failed, exiting wifi task");
       Led::blinkRedFast(Led::PRIO_URGENT);
       _taskShouldRun = false;
+      setRestartSystem("Restart after WiFi connection failure");
       _cleanup();
       _wifiTaskHandle = NULL;
       vTaskDelete(NULL);

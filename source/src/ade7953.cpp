@@ -687,7 +687,7 @@ namespace Ade7953
 
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
-        #if HAS_SECRETS
+        #ifdef HAS_SECRETS
         Mqtt::requestChannelPublish();
         #endif
 
@@ -1041,9 +1041,13 @@ namespace Ade7953
 
         writeRegister(DISNOLOAD_8, BIT_8, DEFAULT_DISNOLOAD_REGISTER);
 
-        writeRegister(AP_NOLOAD_32, BIT_32, DEFAULT_X_NOLOAD_REGISTER);
-        writeRegister(VAR_NOLOAD_32, BIT_32, DEFAULT_X_NOLOAD_REGISTER);
-        writeRegister(VA_NOLOAD_32, BIT_32, DEFAULT_X_NOLOAD_REGISTER);
+        // To compute the no load register, we use X_NOLOAD = 65536 - DYNAMIC_RANGE / 1.4 (as per datasheet)
+        // The higher the dynamic range, the lower the no load value (thus we are able to pick up smaller currents)
+        int32_t xNoLoad = 65536 - (DEFAULT_NOLOAD_DYNAMIC_RANGE / 1.4);
+
+        writeRegister(AP_NOLOAD_32, BIT_32, xNoLoad);
+        writeRegister(VAR_NOLOAD_32, BIT_32, xNoLoad);
+        writeRegister(VA_NOLOAD_32, BIT_32, xNoLoad);
 
         writeRegister(LCYCMODE_8, BIT_8, DEFAULT_LCYCMODE_REGISTER);
 
@@ -1357,9 +1361,7 @@ namespace Ade7953
                         break;
                 }
             } else {
-                // TODO: if we don't read any value of a bit, it should indicate some problem. Use #if with env variable because in development or similar
-                // the board is not connected to the grid and thus no interrupts are received after X line cycles
-                #if ENV_DEV
+                #ifdef ENV_DEV
                 LOG_DEBUG("No ADE7953 interrupt received within timeout, checking for stop notification");
                 #else
                 LOG_WARNING("No ADE7953 interrupt received within time expected, this indicates some problems.");
@@ -1948,8 +1950,6 @@ namespace Ade7953
     }
 
     void _saveHourlyEnergyToCsv() {
-        // TODO: if memory approaches to be full, we should either delete the oldest file or group the data to only keep one data point per channel per day
-        // TODO: improve effiency of saving data (keep only active energy, save binary, remove label and phase, etc.)
         LOG_DEBUG("Saving hourly energy to CSV...");
 
         // Ensure time is synchronized before saving
@@ -1991,30 +1991,18 @@ namespace Ade7953
             if (isChannelActive(i)) {
                 LOG_VERBOSE("Saving hourly energy data for channel %d: %s", i, _channelData[i].label);
 
-                // Only save data if energy values are above threshold
-                if (_meterValues[i].activeEnergyImported > ENERGY_SAVE_THRESHOLD || 
-                    _meterValues[i].activeEnergyExported > ENERGY_SAVE_THRESHOLD || 
-                    _meterValues[i].reactiveEnergyImported > ENERGY_SAVE_THRESHOLD || 
-                    _meterValues[i].reactiveEnergyExported > ENERGY_SAVE_THRESHOLD || 
-                    _meterValues[i].apparentEnergy > ENERGY_SAVE_THRESHOLD) {
-                    
+                // Only save data if (absolute) energy values are above threshold
+                if (
+                    _meterValues[i].activeEnergyImported > ENERGY_SAVE_THRESHOLD || 
+                    _meterValues[i].activeEnergyExported > ENERGY_SAVE_THRESHOLD
+                ) {
                     file.print(timestamp);
                     file.print(",");
                     file.print(i);
                     file.print(",");
-                    file.print(_channelData[i].label);
-                    file.print(",");
-                    file.print(_channelData[i].phase);
-                    file.print(",");
                     file.print(_meterValues[i].activeEnergyImported, DAILY_ENERGY_CSV_DIGITS);
                     file.print(",");
                     file.print(_meterValues[i].activeEnergyExported, DAILY_ENERGY_CSV_DIGITS);
-                    file.print(",");
-                    file.print(_meterValues[i].reactiveEnergyImported, DAILY_ENERGY_CSV_DIGITS);
-                    file.print(",");
-                    file.print(_meterValues[i].reactiveEnergyExported, DAILY_ENERGY_CSV_DIGITS);
-                    file.print(",");
-                    file.println(_meterValues[i].apparentEnergy, DAILY_ENERGY_CSV_DIGITS);
                 } else {
                     LOG_DEBUG("Skipping saving hourly energy data for channel %d: %s (values below threshold)", i, _channelData[i].label);
                 }
@@ -2352,7 +2340,7 @@ namespace Ade7953
     }
 
     void _addMeterDataToPayload(uint8_t channelIndex) {
-        #if HAS_SECRETS
+        #ifdef HAS_SECRETS
 
         LOG_VERBOSE("Adding meter data to payload for channel %u", channelIndex);
 

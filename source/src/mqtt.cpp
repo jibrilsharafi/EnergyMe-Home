@@ -1,4 +1,4 @@
-#if HAS_SECRETS
+#ifdef HAS_SECRETS
 #include "mqtt.h"
 
 namespace Mqtt
@@ -1436,7 +1436,7 @@ namespace Mqtt
             
             // Safety check to prevent infinite loops
             if (batchCount >= MQTT_METER_MAX_BATCHES) {
-                LOG_WARNING("Maximum meter batch count reached, stopping to prevent infinite loop");
+                LOG_DEBUG("Maximum meter batch count reached, stopping to prevent infinite loop");
                 break;
             }
             
