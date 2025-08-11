@@ -9,6 +9,7 @@ namespace CustomServer
     static AsyncWebServer server(WEBSERVER_PORT);
     static AsyncAuthenticationMiddleware digestAuth;
     static AsyncRateLimitMiddleware rateLimit;
+    static CustomMiddleware customMiddleware;
 
     // Health check task variables
     static TaskHandle_t _healthCheckTaskHandle = NULL;
@@ -175,6 +176,11 @@ namespace CustomServer
 
     static void _setupMiddleware()
     {
+        // ---- Statistics Middleware Setup ----
+        // Add statistics tracking middleware first to capture all requests
+        server.addMiddleware(&customMiddleware);
+        LOG_DEBUG("Statistics middleware configured");
+
         // ---- Authentication Middleware Setup ----
         // Configure digest authentication (more secure than basic auth)
         digestAuth.setUsername(WEBSERVER_DEFAULT_USERNAME);
@@ -232,7 +238,6 @@ namespace CustomServer
         doc["success"] = true;
         doc["message"] = message;
         _sendJsonResponse(request, doc, HTTP_CODE_OK);
-        statistics.webServerRequests++;
 
         _releaseApiMutex(); // Release mutex on error to avoid deadlocks
     }
@@ -243,7 +248,6 @@ namespace CustomServer
         doc["success"] = false;
         doc["error"] = message;
         _sendJsonResponse(request, doc, statusCode);
-        statistics.webServerRequestsError++;
 
         _releaseApiMutex(); // Release mutex on error to avoid deadlocks
     }

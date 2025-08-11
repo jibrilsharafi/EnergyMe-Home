@@ -2552,7 +2552,7 @@ namespace Ade7953
         uint64_t calculatedLinecyc = _sampleTime * gridFrequencyInt * 2 / 1000;
         _setLinecyc((uint32_t)calculatedLinecyc);
 
-        LOG_INFO("Successfully updated sample time to %llu ms (%llu line cycles) with grid frequency %llu Hz", _sampleTime, calculatedLinecyc, gridFrequencyInt);
+        LOG_DEBUG("Successfully updated sample time to %llu ms (%llu line cycles) with grid frequency %llu Hz", _sampleTime, calculatedLinecyc, gridFrequencyInt);
     }
 
     // ADE7953 register reading functions

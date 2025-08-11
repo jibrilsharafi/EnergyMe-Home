@@ -543,6 +543,9 @@ static void _restartSystem(bool factoryReset) {
     Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
     Led::setOrange(Led::PRIO_CRITICAL);
 
+    // Ensure the log file is properly saved and closed
+    AdvancedLogger::end();
+
     LOG_INFO("Restarting system. Factory reset: %s", factoryReset ? "true" : "false");
     if (factoryReset) {_factoryReset();}
 

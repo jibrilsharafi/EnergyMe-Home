@@ -73,6 +73,41 @@
 #define CRASH_DUMP_DEFAULT_CHUNK_SIZE (1 * 1024)
 #define CRASH_DUMP_MAX_CHUNK_SIZE (4 * 1024) // Maximum chunk size for core dump retrieval. Can be set high thanks to chunked transfer, but above 4-8 kB it will crash the wdt
 
+class CustomMiddleware : public AsyncMiddleware {
+public:
+    void run(AsyncWebServerRequest *request, ArMiddlewareNext next) override {
+        // Log incoming request details
+        LOG_VERBOSE("Request received: %s %s from %s", 
+                    request->methodToString(), 
+                    request->url().c_str(),
+                    request->client()->remoteIP().toString().c_str());
+        
+        // Increment request count before processing
+        statistics.webServerRequests++;
+        
+        // Continue with the middleware chain
+        next();
+        
+        // Check for error responses after processing
+        AsyncWebServerResponse* response = request->getResponse();
+        if (response && response->code() >= HTTP_CODE_BAD_REQUEST) {
+            statistics.webServerRequests--;
+            statistics.webServerRequestsError++;
+            LOG_DEBUG("Request  from %s completed with error: %s %s -> HTTP %d",
+                        request->client()->remoteIP().toString().c_str(),
+                        request->methodToString(), 
+                        request->url().c_str(), 
+                        response->code());
+        } else if (response) {
+            LOG_DEBUG("Request from %s completed successfully: %s %s -> HTTP %d",
+                        request->client()->remoteIP().toString().c_str(),
+                        request->methodToString(),
+                        request->url().c_str(),
+                        response->code());
+        }
+    }
+};
+
 namespace CustomServer {
     // Web server management
     void begin();
