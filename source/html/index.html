@@ -11,6 +11,8 @@
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
+    <script src="/js/api-client.js"></script>
+
     <title>EnergyMe</title>
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -190,11 +192,6 @@
         <a class="buttonNavigation" type="inner" href="/configuration">⚙️ Configuration</a>
         <a class="buttonNavigation" type="inner" href="/update">🚀 Update</a>
         <a class="buttonNavigationExternal" type="inner" href="/swagger-ui" target="_blank">📚 API Docs</a>
-        <a class="buttonNavigation logout-btn" href="#" onclick="authAPI.logout(); return false;"
-            style="float: right; background-color: #dc3545; border-color: #dc3545; color: white; transition: background-color 0.3s ease;"
-            onmouseover="this.style.backgroundColor='#c82333'" onmouseout="this.style.backgroundColor='#dc3545'">
-            🚪 Logout
-        </a>
     </div>
 
     <div class="section-box">
@@ -234,39 +231,30 @@
     var meterData = {};
 
     function getDailyEnergy() {
-        var xhttp = new XMLHttpRequest();
-
-        xhttp.onreadystatechange = function () {
-            if (this.readyState == 4 && this.status == 200) {
-                dailyEnergy = JSON.parse(this.responseText);
-            }
-        };
-        xhttp.open("GET", "/daily-energy", true);
-        xhttp.send();
+        // Note: daily-energy endpoint not available in current API
+        // This would need to be implemented using file list and individual file reads
+        console.warn('Daily energy endpoint not yet implemented in new API');
+        dailyEnergy = {};
     }
 
     function getChannelData() {
-        var xhttp = new XMLHttpRequest();
-
-        xhttp.onreadystatechange = function () {
-            if (this.readyState == 4 && this.status == 200) {
-                channelData = JSON.parse(this.responseText);
-            }
-        };
-        xhttp.open("GET", "/api/v1/ade7953/channel", false);
-        xhttp.send();
+        energyApi.getChannelConfig()
+            .then(data => {
+                channelData = data;
+            })
+            .catch(error => {
+                console.error('Error getting channel data:', error);
+            });
     }
 
     function getMeterData() {
-        var xhttp = new XMLHttpRequest();
-
-        xhttp.onreadystatechange = function () {
-            if (this.readyState == 4 && this.status == 200) {
-                meterData = JSON.parse(this.responseText);
-            }
-        };
-        xhttp.open("GET", "/api/v1/ade7953/meter-values", false);
-        xhttp.send();
+        energyApi.getMeterValues()
+            .then(data => {
+                meterData = data;
+            })
+            .catch(error => {
+                console.error('Error getting meter data:', error);
+            });
     }
 
     function updateMeterData() {
@@ -565,75 +553,61 @@
                 maintainAspectRatio: false
             }
         });
-    } function fetchData(endpoint) {
-        return new Promise(async (resolve, reject) => {
-            try {
-                const response = await window.authManager.apiCall(`/${endpoint}`, {
-                    method: 'GET'
-                });
-
-                if (response && response.ok) {
-                    const data = await response.json();
-                    resolve(data);
-                } else {
-                    console.error(`Error fetching data from ${endpoint}. Status: ${response?.status}`);
-                    reject();
-                }
-            } catch (error) {
-                console.error(`Error fetching data from ${endpoint}:`, error);
-                reject();
-            }
-        });
     }
 
     function plotCharts() {
-        Promise.all([fetchData('daily-energy'), fetchData('rest/get-channel'), fetchData('rest/meter')])
+        Promise.all([
+            // Note: daily-energy endpoint removed - not in current API
+            // Using channel config and meter values only for now
+            Promise.resolve({}), // placeholder for daily energy
+            energyApi.getChannelConfig(), 
+            energyApi.getMeterValues()
+        ])
             .then(data => {
-                dailyEnergy = data[0];
+                dailyEnergy = data[0]; // Will be empty until daily energy endpoint is implemented
                 channelData = data[1];
                 meterData = data[2];
 
                 updateMeterData();
 
-                if (Object.keys(dailyEnergy).length !== 0) {
+                // Disable charts until daily energy data is available
+                if (Object.keys(dailyEnergy).length === 0) {
+                    document.getElementById("consumption-chart").innerHTML = "📊 Daily energy tracking is not yet available in the new API.<br><br>This feature will be implemented in a future update.";
+                    document.getElementById("consumption-chart").style.textAlign = "center";
+                    document.getElementById("consumption-chart").style.fontSize = "18px";
+                    document.getElementById("consumption-chart").style.color = "#666";
+                    document.getElementById("consumption-chart").style.padding = "40px";
+
+                    // Hide the download button
+                    if (document.getElementById("download-csv")) {
+                        document.getElementById("download-csv").style.display = "none";
+                    }
+
+                    document.getElementById("pie-chart").innerHTML = "🥧 Total energy consumption chart is not yet available.<br><br>This feature will be implemented in a future update.";
+                    document.getElementById("pie-chart").style.textAlign = "center";
+                    document.getElementById("pie-chart").style.fontSize = "18px";
+                    document.getElementById("pie-chart").style.color = "#666";
+                    document.getElementById("pie-chart").style.padding = "40px";
+                } else {
                     dailyActiveEnergy = parseDailyEnergy();
                     plotConsumptionChart(dailyActiveEnergy);
 
                     totalActiveEnergy = getTotalActiveEnergy();
                     plotPieChart(totalActiveEnergy);
-                } else {
-                    document.getElementById("consumption-chart").innerHTML = "No data available yet. Come back in a few hours!";
-                    document.getElementById("consumption-chart").style.textAlign = "center";
-                    document.getElementById("consumption-chart").style.fontSize = "20px";
-                    document.getElementById("consumption-chart").style.color = "#808080"; // Gray color
-
-                    // Hide the download button if the charts are present
-                    if (document.getElementById("download-csv")) {
-                        document.getElementById("download-csv").style.display = "none";
-                    }
-
-                    document.getElementById("pie-chart").innerHTML = "No data available yet. Come back in a few hours!";
-                    document.getElementById("pie-chart").style.textAlign = "center";
-                    document.getElementById("pie-chart").style.fontSize = "20px";
-                    document.getElementById("pie-chart").style.color = "#808080"; // Gray color
                 }
 
             })
             .catch(error => console.error('Error:', error));
-    } async function fetchFirmwareUpdateInfo() {
-        try {
-            const response = await window.authManager.apiCall('/rest/is-latest-firmware-installed', {
-                method: 'GET'
-            });
+    }
 
-            if (response && response.ok) {
-                const data = await response.json();
-                if (data.latest == false) {
-                    document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
-                }
+    async function fetchFirmwareUpdateInfo() {
+        try {
+            const data = await energyApi.getFirmwareUpdateInfo();
+            if (data.latest == false) {
+                document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
             }
         } catch (error) {
-            console.error('Error:', error);
+            console.error('Error fetching firmware update info:', error);
         }
     }    plotCharts();
     fetchFirmwareUpdateInfo();
@@ -647,26 +621,18 @@
     // Button Operation Notification Functions
     async function checkButtonOperation() {
         try {
-            const response = await window.authManager.apiCall('/rest/get-button-operation', {
-                method: 'GET'
-            });
-
-            if (response && response.ok) {
-                const data = await response.json();
-                
-                if (data.operationName && data.operationName !== "None") {
-                    showButtonOperationNotification(data.operationName, data.operationTimestampFormatted);
-                } else {
-                    hideButtonOperationNotification();
-                }
+            const data = await energyApi.get('system/button-operation');
+            
+            if (data.operationName && data.operationName !== "None") {
+                showButtonOperationNotification(data.operationName, data.operationTimestampFormatted);
+            } else {
+                hideButtonOperationNotification();
             }
         } catch (error) {
             console.error('Error checking button operation:', error);
             hideButtonOperationNotification();
         }
-    }
-
-    function showButtonOperationNotification(operationName, timestamp) {
+    }    function showButtonOperationNotification(operationName, timestamp) {
         const notification = document.getElementById('button-operation-notification');
         const iconElement = document.getElementById('notification-icon');
         const titleElement = document.getElementById('notification-title');
@@ -712,17 +678,9 @@
 
     async function clearButtonOperation() {
         try {
-            const response = await window.authManager.apiCall('/rest/clear-button-operation', {
-                method: 'POST'
-            });
-
-            if (response && response.ok) {
-                hideButtonOperationNotification();
-                console.log('Button operation cleared successfully');
-            } else {
-                console.error('Failed to clear button operation');
-                alert('Failed to clear button operation. Please try again.');
-            }
+            await energyApi.post('system/button-operation/clear');
+            hideButtonOperationNotification();
+            console.log('Button operation cleared successfully');
         } catch (error) {
             console.error('Error clearing button operation:', error);
             alert('Error clearing button operation. Please try again.');

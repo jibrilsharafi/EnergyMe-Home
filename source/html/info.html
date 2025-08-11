@@ -11,6 +11,8 @@
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
+    <script src="/js/api-client.js"></script>
+
     <title>📊 Device Information</title>
     <style>
         /* Modern Info Page Styles */
@@ -126,20 +128,6 @@
         .progress-warning { background: linear-gradient(90deg, #ff9800, #ffb74d); }
         .progress-critical { background: linear-gradient(90deg, #f44336, #ef5350); }
 
-        .statistics-detail {
-            font-size: 0.8rem;
-            color: #666;
-            margin-top: 2px;
-        }
-
-        .statistics-detail.error {
-            color: #f44336;
-        }
-
-        .statistics-detail.success {
-            color: #4caf50;
-        }
-
         .update-indicator {
             position: fixed;
             top: 20px;
@@ -178,7 +166,6 @@
         @media (max-width: 768px) {
             .info-grid {
                 grid-template-columns: 1fr;
-                gap: 20px;
             }
             
             .info-container {
@@ -208,253 +195,334 @@
         </div>
 
         <div class="info-grid">
-            <!-- System Information Card -->
+            <!-- Product Information Card -->
             <div class="info-card">
                 <div class="card-header">
-                    <span class="card-icon">🖥️</span>
-                    <h2 class="card-title">System Status</h2>
+                    <div class="card-icon">🏷️</div>
+                    <h3 class="card-title">Product Information</h3>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">⏱️</span>Uptime</span>
-                    <span id="uptime" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">🏢</span>Company</span>
+                    <span class="info-value" id="companyName">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🕐</span>System Time</span>
-                    <span id="systemTime" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">📦</span>Product</span>
+                    <span class="info-value" id="productName">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🔖</span>Firmware Version</span>
-                    <span id="firmwareBuildVersion" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">📝</span>Description</span>
+                    <span class="info-value" id="productDescription">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📅</span>Build Date</span>
-                    <span id="firmwareBuildDate" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">👤</span>Author</span>
+                    <span class="info-value" id="author">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔗</span>GitHub</span>
+                    <span class="info-value" id="githubUrl">Loading...</span>
                 </div>
             </div>
 
-            <!-- Memory Information Card -->
+            <!-- Firmware Information Card -->
             <div class="info-card">
                 <div class="card-header">
-                    <span class="card-icon">💾</span>
-                    <h2 class="card-title">Memory Usage</h2>
+                    <div class="card-icon">💾</div>
+                    <h3 class="card-title">Firmware Information</h3>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🧠</span>Heap Memory</span>
-                    <div style="text-align: right;">
-                        <div id="heapFree" class="info-value">Loading...</div>
-                        <div class="progress-bar">
-                            <div id="heapProgress" class="progress-fill progress-good" style="width: 0%"></div>
-                        </div>
-                    </div>
+                    <span class="info-label"><span class="emoji">🔢</span>Version</span>
+                    <span class="info-value" id="buildVersion">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📊</span>Total Heap</span>
-                    <span id="heapTotal" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">📅</span>Build Date</span>
+                    <span class="info-value" id="buildDate">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">💿</span>LittleFS Storage</span>
-                    <div style="text-align: right;">
-                        <div id="littlefsFree" class="info-value">Loading...</div>
-                        <div class="progress-bar">
-                            <div id="littlefsProgress" class="progress-fill progress-good" style="width: 0%"></div>
-                        </div>
-                    </div>
+                    <span class="info-label"><span class="emoji">🕒</span>Build Time</span>
+                    <span class="info-value" id="buildTime">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📈</span>Total LittleFS</span>
-                    <span id="littlefsTotal" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">🔐</span>Sketch MD5</span>
+                    <span class="info-value" id="sketchMD5">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📂</span>Partition</span>
+                    <span class="info-value" id="partitionAppName">Loading...</span>
                 </div>
             </div>
 
             <!-- Hardware Information Card -->
             <div class="info-card">
                 <div class="card-header">
-                    <span class="card-icon">🔧</span>
-                    <h2 class="card-title">Hardware Details</h2>
+                    <div class="card-icon">🔧</div>
+                    <h3 class="card-title">Hardware Information</h3>
                 </div>
                 <div class="info-item">
                     <span class="info-label"><span class="emoji">💻</span>Chip Model</span>
-                    <span id="chipModel" class="info-value">Loading...</span>
+                    <span class="info-value" id="chipModel">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🔄</span>Revision</span>
-                    <span id="chipRevision" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">🔄</span>Chip Revision</span>
+                    <span class="info-value" id="chipRevision">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">⚡</span>CPU Frequency</span>
-                    <span id="chipCpuFrequency" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">⚡</span>CPU Cores</span>
+                    <span class="info-value" id="chipCores">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📦</span>SDK Version</span>
-                    <span id="chipSdkVersion" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">🔁</span>CPU Frequency</span>
+                    <span class="info-value" id="cpuFrequency">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🆔</span>Flash Chip ID</span>
-                    <span id="chipFlashChipId" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">💾</span>Flash Size</span>
+                    <span class="info-value" id="flashSize">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🏷️</span>Device ID</span>
-                    <span id="deviceId" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">🚀</span>PSRAM Size</span>
+                    <span class="info-value" id="psramSize">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🌡️</span>Temperature</span>
+                    <span class="info-value" id="temperature">Loading...</span>
                 </div>
             </div>
 
-            <!-- WiFi Information Card -->
+            <!-- System Status Card -->
             <div class="info-card">
                 <div class="card-header">
-                    <span class="card-icon">📶</span>
-                    <h2 class="card-title">Network Status</h2>
+                    <div class="card-icon">⏱️</div>
+                    <h3 class="card-title">System Status</h3>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🌐</span>Connection Status</span>
-                    <span id="status" class="info-value status-indicator">Loading...</span>
+                    <span class="info-label"><span class="emoji">⏰</span>Uptime</span>
+                    <span class="info-value" id="uptime">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📡</span>WiFi Network</span>
-                    <span id="ssid" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">🕐</span>Current Time</span>
+                    <span class="info-value" id="currentTime">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📊</span>Signal Strength</span>
-                    <div style="text-align: right;">
-                        <div id="rssi" class="info-value">Loading...</div>
-                        <div class="progress-bar">
-                            <div id="rssiProgress" class="progress-fill" style="width: 0%"></div>
-                        </div>
-                    </div>
+                    <span class="info-label"><span class="emoji">🔄</span>Reset Count</span>
+                    <span class="info-value" id="resetCount">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🏠</span>Local IP</span>
-                    <span id="localIp" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">💥</span>Crash Count</span>
+                    <span class="info-value" id="crashCount">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔙</span>Last Reset</span>
+                    <span class="info-value" id="lastResetReason">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🆔</span>Device ID</span>
+                    <span class="info-value" id="deviceId">Loading...</span>
+                </div>
+            </div>
+
+            <!-- Memory Information Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <div class="card-icon">🧠</div>
+                    <h3 class="card-title">Memory Usage</h3>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📊</span>Heap Memory</span>
+                    <span class="info-value" id="heapMemory">Loading...</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="heapProgressBar"></div>
+                </div>
+                <div class="info-item" style="margin-top: 15px;">
+                    <span class="info-label"><span class="emoji">🚀</span>PSRAM Memory</span>
+                    <span class="info-value" id="psramMemory">Loading...</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="psramProgressBar"></div>
+                </div>
+            </div>
+
+            <!-- Storage Information Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <div class="card-icon">💾</div>
+                    <h3 class="card-title">Storage Usage</h3>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📁</span>LittleFS</span>
+                    <span class="info-value" id="littlefsStorage">Loading...</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="littlefsProgressBar"></div>
+                </div>
+                <div class="info-item" style="margin-top: 15px;">
+                    <span class="info-label"><span class="emoji">⚙️</span>NVS Storage</span>
+                    <span class="info-value" id="nvsStorage">Loading...</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="nvsProgressBar"></div>
+                </div>
+            </div>
+
+            <!-- Network Information Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <div class="card-icon">📡</div>
+                    <h3 class="card-title">Network Status</h3>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📶</span>WiFi Status</span>
+                    <span class="info-value status-indicator" id="wifiStatus">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🏠</span>SSID</span>
+                    <span class="info-value" id="wifiSsid">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🌐</span>IP Address</span>
+                    <span class="info-value" id="wifiLocalIp">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📡</span>Signal Strength</span>
+                    <span class="info-value" id="wifiRssi">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔗</span>MAC Address</span>
+                    <span class="info-value" id="wifiMacAddress">Loading...</span>
                 </div>
                 <div class="info-item">
                     <span class="info-label"><span class="emoji">🚪</span>Gateway</span>
-                    <span id="gatewayIp" class="info-value">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">🔍</span>DNS Server</span>
-                    <span id="dnsIp" class="info-value">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">🔖</span>MAC Address</span>
-                    <span id="macAddress" class="info-value">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">📍</span>BSSID</span>
-                    <span id="bssid" class="info-value">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">🌐</span>Subnet Mask</span>
-                    <span id="subnetMask" class="info-value">Loading...</span>
+                    <span class="info-value" id="wifiGateway">Loading...</span>
                 </div>
             </div>
 
-            <!-- Product Information Card -->
+            <!-- SDK Information Card -->
             <div class="info-card">
                 <div class="card-header">
-                    <span class="card-icon">🚀</span>
-                    <h2 class="card-title">Product Details</h2>
+                    <div class="card-icon">⚙️</div>
+                    <h3 class="card-title">SDK Information</h3>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🏢</span>Company</span>
-                    <span id="companyName" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">📚</span>SDK Version</span>
+                    <span class="info-value" id="sdkVersion">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📦</span>Product Name</span>
-                    <span id="fullProductName" class="info-value">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">🏷️</span>Short Name</span>
-                    <span id="productName" class="info-value">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">📝</span>Description</span>
-                    <span id="productDescription" class="info-value">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">📂</span>Repository</span>
-                    <span id="githubUrl" class="info-value">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">👨‍💻</span>Author</span>
-                    <span id="author" class="info-value">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">📧</span>Contact</span>
-                    <span id="authorEmail" class="info-value">Loading...</span>
+                    <span class="info-label"><span class="emoji">🔧</span>Core Version</span>
+                    <span class="info-value" id="coreVersion">Loading...</span>
                 </div>
             </div>
 
-            <!-- Statistics Card -->
+            <!-- ADE7953 Statistics Card -->
             <div class="info-card">
                 <div class="card-header">
-                    <span class="card-icon">📈</span>
-                    <h2 class="card-title">System Statistics</h2>
+                    <div class="card-icon">⚡</div>
+                    <h3 class="card-title">ADE7953 Energy Meter</h3>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">⚡</span>ADE7953 Interrupts</span>
-                    <div style="text-align: right;">
-                        <div id="ade7953Interrupts" class="info-value">Loading...</div>
-                        <small style="color: #666; font-size: 0.8rem;">
-                            <span id="ade7953HandledInterrupts">0</span> handled
-                        </small>
-                    </div>
+                    <span class="info-label"><span class="emoji">📊</span>Total Interrupts</span>
+                    <span class="info-value" id="ade7953TotalInterrupts">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📊</span>ADE7953 Readings</span>
-                    <div style="text-align: right;">
-                        <div id="ade7953Readings" class="info-value">Loading...</div>
-                        <small style="color: #666; font-size: 0.8rem;">
-                            <span id="ade7953ReadingFailures">0</span> failures
-                        </small>
-                    </div>
+                    <span class="info-label"><span class="emoji">✅</span>Handled Interrupts</span>
+                    <span class="info-value" id="ade7953HandledInterrupts">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📡</span>MQTT Messages</span>
-                    <div style="text-align: right;">
-                        <div id="mqttMessages" class="info-value">Loading...</div>
-                        <small style="color: #666; font-size: 0.8rem;">
-                            <span id="mqttErrors">0</span> errors
-                        </small>
-                    </div>
+                    <span class="info-label"><span class="emoji">📈</span>Successful Readings</span>
+                    <span class="info-value" id="ade7953Readings">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🔧</span>Custom MQTT</span>
-                    <div style="text-align: right;">
-                        <div id="customMqttMessages" class="info-value">Loading...</div>
-                        <small style="color: #666; font-size: 0.8rem;">
-                            <span id="customMqttErrors">0</span> errors
-                        </small>
-                    </div>
+                    <span class="info-label"><span class="emoji">❌</span>Failed Readings</span>
+                    <span class="info-value" id="ade7953ReadingFailures">Loading...</span>
+                </div>
+            </div>
+
+            <!-- Communication Statistics Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <div class="card-icon">📡</div>
+                    <h3 class="card-title">Communication Statistics</h3>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🔗</span>Modbus Requests</span>
-                    <div style="text-align: right;">
-                        <div id="modbusRequests" class="info-value">Loading...</div>
-                        <small style="color: #666; font-size: 0.8rem;">
-                            <span id="modbusErrors">0</span> errors
-                        </small>
-                    </div>
+                    <span class="info-label"><span class="emoji">📤</span>MQTT Messages</span>
+                    <span class="info-value" id="mqttMessages">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🗃️</span>InfluxDB Uploads</span>
-                    <div style="text-align: right;">
-                        <div id="influxdbUploads" class="info-value">Loading...</div>
-                        <small style="color: #666; font-size: 0.8rem;">
-                            <span id="influxdbErrors">0</span> errors
-                        </small>
-                    </div>
+                    <span class="info-label"><span class="emoji">🔗</span>MQTT Connections</span>
+                    <span class="info-value" id="mqttConnections">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📶</span>WiFi Connections</span>
-                    <div style="text-align: right;">
-                        <div id="wifiConnections" class="info-value">Loading...</div>
-                        <small style="color: #666; font-size: 0.8rem;">
-                            <span id="wifiConnectionErrors">0</span> errors
-                        </small>
-                    </div>
+                    <span class="info-label"><span class="emoji">🌐</span>Web Requests</span>
+                    <span class="info-value" id="webServerRequests">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📊</span>InfluxDB Uploads</span>
+                    <span class="info-value" id="influxdbUploads">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔧</span>Modbus Requests</span>
+                    <span class="info-value" id="modbusRequests">Loading...</span>
+                </div>
+            </div>
+
+            <!-- Logging Statistics Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <div class="card-icon">📝</div>
+                    <h3 class="card-title">Logging Statistics</h3>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🐛</span>Debug Messages</span>
+                    <span class="info-value" id="logDebug">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">ℹ️</span>Info Messages</span>
+                    <span class="info-value" id="logInfo">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">⚠️</span>Warning Messages</span>
+                    <span class="info-value" id="logWarning">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🚨</span>Error Messages</span>
+                    <span class="info-value" id="logError">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">💀</span>Fatal Messages</span>
+                    <span class="info-value" id="logFatal">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📉</span>Dropped Messages</span>
+                    <span class="info-value" id="logDropped">Loading...</span>
+                </div>
+            </div>
+
+            <!-- System Task Stack Usage Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <div class="card-icon">⚙️</div>
+                    <h3 class="card-title">System Task Stack Usage</h3>
+                </div>
+                <div id="systemTaskStackContainer">
+                    <!-- System tasks will be dynamically added here -->
+                </div>
+            </div>
+
+            <!-- Application Task Stack Usage Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <div class="card-icon">🔧</div>
+                    <h3 class="card-title">Application Task Stack Usage</h3>
+                </div>
+                <div id="appTaskStackContainer">
+                    <!-- Application tasks will be dynamically added here -->
                 </div>
             </div>
         </div>
-    </div>    <script>
+    </div>
+
+    <script>
+        // Global variables for system info
+        let systemInfo = null;
+
         function showUpdateIndicator() {
             const indicator = document.getElementById('updateIndicator');
             indicator.classList.add('show');
@@ -463,61 +531,278 @@
             }, 2000);
         }
 
-        function fetchData() {
-            function handleRequest() {
-                if (this.readyState == 4 && this.status == 200) {
-                    var data = JSON.parse(this.responseText);
-                    displayData(data, this.responseURL);
-                    showUpdateIndicator();
-                }
-            }
-
-            var deviceXhttp = new XMLHttpRequest();
-            deviceXhttp.onreadystatechange = handleRequest;
-            deviceXhttp.open("GET", "/rest/device-info", true);
-            deviceXhttp.send();
-
-            var wifiXhttp = new XMLHttpRequest();
-            wifiXhttp.onreadystatechange = handleRequest;
-            wifiXhttp.open("GET", "/rest/wifi-info", true);
-            wifiXhttp.send();            
-            
-            var productXhttp = new XMLHttpRequest();
-            productXhttp.onreadystatechange = handleRequest;
-            productXhttp.open("GET", "/rest/product-info", true);
-            productXhttp.send();
-
-            var statisticsXhttp = new XMLHttpRequest();
-            statisticsXhttp.onreadystatechange = handleRequest;
-            statisticsXhttp.open("GET", "/rest/get-statistics", true);
-            statisticsXhttp.send();
-        }        
-        
-        function displayData(data, responseUrl) {
-            if (responseUrl.includes("device-info")) {
-                displayDeviceInfo(data);
-            } else if (responseUrl.includes("wifi-info")) {
-                displayWifiInfo(data);
-            } else if (responseUrl.includes("product-info")) {
-                displayProductInfo(data);
-            } else if (responseUrl.includes("get-statistics")) {
-                displayStatistics(data);
-            } else {
-                console.log("Unknown response URL: " + responseUrl);
-                return;
+        async function fetchSystemInfo() {
+            try {
+                // Fetch both system info and statistics in parallel
+                const [systemInfoData, statisticsData] = await Promise.all([
+                    energyApi.getSystemInfo(),
+                    energyApi.get('system/statistics')
+                ]);
+                
+                systemInfo = systemInfoData;
+                displaySystemInfo(systemInfo);
+                displayStatistics(statisticsData);
+                showUpdateIndicator();
+            } catch (error) {
+                console.error('Failed to fetch system info:', error);
+                // Show error state in UI
+                document.querySelectorAll('.info-value').forEach(el => {
+                    if (el.textContent === 'Loading...') {
+                        el.textContent = 'Error loading data';
+                        el.style.color = '#f44336';
+                    }
+                });
             }
         }
 
-        function formatUptime(milliseconds) {
-            var uptime = milliseconds / 1000;
-            var days = Math.floor(uptime / 86400);
-            uptime %= 86400;
-            var hours = Math.floor(uptime / 3600);
-            uptime %= 3600;
-            var minutes = Math.floor(uptime / 60);
-            var seconds = Math.floor(uptime % 60);
+        function displaySystemInfo(data) {
+            // Product Information
+            document.getElementById('companyName').textContent = data.static.product.companyName;
+            document.getElementById('productName').textContent = data.static.product.fullProductName;
+            document.getElementById('productDescription').textContent = data.static.product.productDescription;
+            document.getElementById('author').textContent = `${data.static.product.author} (${data.static.product.authorEmail})`;
+            
+            const githubElement = document.getElementById('githubUrl');
+            githubElement.innerHTML = `<a href="${data.static.product.githubUrl}" target="_blank" style="color: #0066cc; text-decoration: none;">View on GitHub</a>`;
 
-            var parts = [];
+            // Firmware Information
+            document.getElementById('buildVersion').textContent = data.static.firmware.buildVersion;
+            document.getElementById('buildDate').textContent = data.static.firmware.buildDate;
+            document.getElementById('buildTime').textContent = data.static.firmware.buildTime;
+            document.getElementById('sketchMD5').textContent = data.static.firmware.sketchMD5.substring(0, 16) + '...';
+            document.getElementById('partitionAppName').textContent = data.static.firmware.partitionAppName;
+
+            // Hardware Information
+            document.getElementById('chipModel').textContent = data.static.hardware.chipModel;
+            document.getElementById('chipRevision').textContent = `Rev ${data.static.hardware.chipRevision}`;
+            document.getElementById('chipCores').textContent = `${data.static.hardware.chipCores} cores`;
+            document.getElementById('cpuFrequency').textContent = `${data.static.hardware.cpuFrequencyMHz} MHz`;
+            document.getElementById('flashSize').textContent = formatBytes(data.static.hardware.flashChipSizeBytes);
+            document.getElementById('psramSize').textContent = formatBytes(data.static.hardware.psramSizeBytes);
+            document.getElementById('temperature').textContent = `${data.dynamic.performance.temperatureCelsius.toFixed(1)}°C`;
+
+            // System Status
+            document.getElementById('uptime').textContent = formatUptime(data.dynamic.time.uptimeMilliseconds);
+            document.getElementById('currentTime').textContent = new Date(data.dynamic.time.currentTimestampIso).toLocaleString();
+            document.getElementById('resetCount').textContent = `${data.static.monitoring.resetCount} (${data.static.monitoring.consecutiveResetCount} consecutive)`;
+            document.getElementById('crashCount').textContent = `${data.static.monitoring.crashCount} (${data.static.monitoring.consecutiveCrashCount} consecutive)`;
+            document.getElementById('lastResetReason').textContent = data.static.monitoring.lastResetReasonString;
+            document.getElementById('deviceId').textContent = data.static.device.id;
+
+            // Memory Information
+            displayMemoryInfo(data.dynamic.memory);
+
+            // Storage Information
+            displayStorageInfo(data.dynamic.storage);
+
+            // Network Information
+            displayNetworkInfo(data.dynamic.network);
+
+            // Task Information
+            displayTaskInfo(data.dynamic.tasks);
+
+            // SDK Information
+            document.getElementById('sdkVersion').textContent = data.static.sdk.sdkVersion;
+            document.getElementById('coreVersion').textContent = data.static.sdk.coreVersion;
+        }
+
+        function displayStatistics(stats) {
+            // ADE7953 Statistics
+            document.getElementById('ade7953TotalInterrupts').textContent = formatNumber(stats.ade7953.totalInterrupts);
+            document.getElementById('ade7953HandledInterrupts').textContent = formatNumber(stats.ade7953.totalHandledInterrupts);
+            document.getElementById('ade7953Readings').textContent = formatNumber(stats.ade7953.readingCount);
+            
+            const ade7953Failures = stats.ade7953.readingCountFailure;
+            const ade7953FailureElement = document.getElementById('ade7953ReadingFailures');
+            ade7953FailureElement.textContent = formatNumber(ade7953Failures);
+            ade7953FailureElement.style.color = ade7953Failures > 0 ? '#f44336' : '#4caf50';
+
+            // Communication Statistics
+            document.getElementById('mqttMessages').textContent = `${formatNumber(stats.mqtt.messagesPublished)} (${stats.mqtt.messagesPublishedError} errors)`;
+            document.getElementById('mqttConnections').textContent = `${formatNumber(stats.mqtt.connections)} (${stats.mqtt.connectionErrors} errors)`;
+            document.getElementById('webServerRequests').textContent = `${formatNumber(stats.webServer.requests)} (${stats.webServer.requestsError} errors)`;
+            document.getElementById('influxdbUploads').textContent = `${formatNumber(stats.influxdb.uploadCount)} (${stats.influxdb.uploadCountError} errors)`;
+            document.getElementById('modbusRequests').textContent = `${formatNumber(stats.modbus.requests)} (${stats.modbus.requestsError} errors)`;
+
+            // Logging Statistics
+            document.getElementById('logDebug').textContent = formatNumber(stats.log.debug);
+            document.getElementById('logInfo').textContent = formatNumber(stats.log.info);
+            
+            const logWarning = document.getElementById('logWarning');
+            logWarning.textContent = formatNumber(stats.log.warning);
+            logWarning.style.color = stats.log.warning > 0 ? '#ff9800' : '#4caf50';
+            
+            const logError = document.getElementById('logError');
+            logError.textContent = formatNumber(stats.log.error);
+            logError.style.color = stats.log.error > 0 ? '#f44336' : '#4caf50';
+            
+            const logFatal = document.getElementById('logFatal');
+            logFatal.textContent = formatNumber(stats.log.fatal);
+            logFatal.style.color = stats.log.fatal > 0 ? '#d32f2f' : '#4caf50';
+            
+            const logDropped = document.getElementById('logDropped');
+            logDropped.textContent = formatNumber(stats.log.dropped);
+            logDropped.style.color = stats.log.dropped > 0 ? '#f44336' : '#4caf50';
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toString();
+        }
+
+        function displayMemoryInfo(memory) {
+            // Heap Memory
+            const heapUsedPercentage = memory.heap.usedPercentage;
+            document.getElementById('heapMemory').textContent = `${formatBytes(memory.heap.usedBytes)} / ${formatBytes(memory.heap.totalBytes)} (${heapUsedPercentage.toFixed(1)}% used)`;
+            
+            const heapProgressBar = document.getElementById('heapProgressBar');
+            heapProgressBar.style.width = `${heapUsedPercentage}%`;
+            heapProgressBar.className = `progress-fill ${getMemoryProgressClass(memory.heap.freePercentage)}`;
+
+            // PSRAM Memory
+            const psramUsedPercentage = memory.psram.usedPercentage;
+            document.getElementById('psramMemory').textContent = `${formatBytes(memory.psram.usedBytes)} / ${formatBytes(memory.psram.totalBytes)} (${psramUsedPercentage.toFixed(1)}% used)`;
+            
+            const psramProgressBar = document.getElementById('psramProgressBar');
+            psramProgressBar.style.width = `${psramUsedPercentage}%`;
+            psramProgressBar.className = `progress-fill ${getMemoryProgressClass(memory.psram.freePercentage)}`;
+        }
+
+        function displayStorageInfo(storage) {
+            // LittleFS Storage
+            const littlefsUsedPercentage = storage.littlefs.usedPercentage;
+            document.getElementById('littlefsStorage').textContent = `${formatBytes(storage.littlefs.usedBytes)} / ${formatBytes(storage.littlefs.totalBytes)} (${littlefsUsedPercentage.toFixed(1)}% used)`;
+            
+            const littlefsProgressBar = document.getElementById('littlefsProgressBar');
+            littlefsProgressBar.style.width = `${littlefsUsedPercentage}%`;
+            littlefsProgressBar.className = `progress-fill ${getStorageProgressClass(littlefsUsedPercentage)}`;
+
+            // NVS Storage
+            const nvsUsedPercentage = storage.nvs.usedEntriesPercentage;
+            document.getElementById('nvsStorage').textContent = `${storage.nvs.usedEntries} / ${storage.nvs.totalUsableEntries} entries (${nvsUsedPercentage.toFixed(1)}% used)`;
+            
+            const nvsProgressBar = document.getElementById('nvsProgressBar');
+            nvsProgressBar.style.width = `${nvsUsedPercentage}%`;
+            nvsProgressBar.className = `progress-fill ${getStorageProgressClass(nvsUsedPercentage)}`;
+        }
+
+        function displayNetworkInfo(network) {
+            // WiFi Status
+            const wifiStatusElement = document.getElementById('wifiStatus');
+            if (network.wifiConnected) {
+                wifiStatusElement.textContent = 'Connected';
+                wifiStatusElement.className = 'info-value status-indicator status-excellent';
+            } else {
+                wifiStatusElement.textContent = 'Disconnected';
+                wifiStatusElement.className = 'info-value status-indicator status-critical';
+            }
+
+            document.getElementById('wifiSsid').textContent = network.wifiSsid || 'N/A';
+            document.getElementById('wifiLocalIp').textContent = network.wifiLocalIp || 'N/A';
+            
+            // WiFi Signal Strength with color coding
+            const wifiRssiElement = document.getElementById('wifiRssi');
+            if (network.wifiRssi) {
+                const signalQuality = getSignalQuality(network.wifiRssi);
+                const signalClass = getSignalQualityClass(network.wifiRssi);
+                wifiRssiElement.innerHTML = `<span class="status-indicator ${signalClass}">${network.wifiRssi} dBm ${signalQuality}</span>`;
+            } else {
+                wifiRssiElement.textContent = 'N/A';
+            }
+            
+            document.getElementById('wifiMacAddress').textContent = network.wifiMacAddress || 'N/A';
+            document.getElementById('wifiGateway').textContent = network.wifiGatewayIp || 'N/A';
+        }
+
+        function displayTaskInfo(tasks) {
+            const systemContainer = document.getElementById('systemTaskStackContainer');
+            const appContainer = document.getElementById('appTaskStackContainer');
+            systemContainer.innerHTML = ''; // Clear existing content
+            appContainer.innerHTML = ''; // Clear existing content
+
+            // Filter and sort tasks - only show tasks with allocated stack > 0
+            const activeTasks = Object.entries(tasks)
+                .filter(([name, task]) => task.allocatedStack > 0)
+                .sort((a, b) => b[1].usedPercentage - a[1].usedPercentage); // Sort by usage percentage desc
+
+            // Define which tasks are system vs application
+            const systemTasks = ['customWifi', 'customServerHealthCheck', 'customServerOtaTimeout', 
+                               'led', 'crashMonitor', 'buttonHandler', 'udpLog', 'maintenance'];
+            
+            const systemTaskList = activeTasks.filter(([name]) => systemTasks.includes(name));
+            const appTaskList = activeTasks.filter(([name]) => !systemTasks.includes(name));
+
+            // Render system tasks
+            systemTaskList.forEach(([taskName, taskData], index) => {
+                const taskElement = document.createElement('div');
+                taskElement.innerHTML = `
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">🔧</span>${getTaskDisplayName(taskName)}</span>
+                        <span class="info-value">${formatBytes(taskData.allocatedStack - taskData.minimumFreeStack)} / ${formatBytes(taskData.allocatedStack)} (${taskData.usedPercentage.toFixed(1)}% used)</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill ${getTaskProgressClass(taskData.usedPercentage)}" style="width: ${taskData.usedPercentage}%"></div>
+                    </div>
+                    ${index < systemTaskList.length - 1 ? '<div style="margin-bottom: 15px;"></div>' : ''}
+                `;
+                systemContainer.appendChild(taskElement);
+            });
+
+            // Render application tasks
+            appTaskList.forEach(([taskName, taskData], index) => {
+                const taskElement = document.createElement('div');
+                taskElement.innerHTML = `
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">⚡</span>${getTaskDisplayName(taskName)}</span>
+                        <span class="info-value">${formatBytes(taskData.allocatedStack - taskData.minimumFreeStack)} / ${formatBytes(taskData.allocatedStack)} (${taskData.usedPercentage.toFixed(1)}% used)</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill ${getTaskProgressClass(taskData.usedPercentage)}" style="width: ${taskData.usedPercentage}%"></div>
+                    </div>
+                    ${index < appTaskList.length - 1 ? '<div style="margin-bottom: 15px;"></div>' : ''}
+                `;
+                appContainer.appendChild(taskElement);
+            });
+        }
+
+        function getTaskDisplayName(taskName) {
+            const taskNames = {
+                'mqtt': 'MQTT Client',
+                'customMqtt': 'Custom MQTT',
+                'customServerHealthCheck': 'Server Health Check',
+                'customServerOtaTimeout': 'OTA Timeout',
+                'led': 'LED Controller',
+                'influxDb': 'InfluxDB Client',
+                'crashMonitor': 'Crash Monitor',
+                'buttonHandler': 'Button Handler',
+                'udpLog': 'UDP Logger',
+                'customWifi': 'WiFi Manager',
+                'ade7953MeterReading': 'Energy Meter Reading',
+                'ade7953EnergySave': 'Energy Data Save',
+                'ade7953HourlyCsv': 'Hourly CSV Export',
+                'maintenance': 'System Maintenance'
+            };
+            return taskNames[taskName] || taskName;
+        }
+
+        function getTaskProgressClass(usedPercentage) {
+            if (usedPercentage < 50) return 'progress-good';
+            if (usedPercentage < 75) return 'progress-warning';
+            return 'progress-critical';
+        }
+
+        function formatUptime(milliseconds) {
+            const uptime = milliseconds / 1000;
+            const days = Math.floor(uptime / 86400);
+            const hours = Math.floor((uptime % 86400) / 3600);
+            const minutes = Math.floor((uptime % 3600) / 60);
+            const seconds = Math.floor(uptime % 60);
+
+            const parts = [];
             if (days > 0) parts.push(`${days}d`);
             if (hours > 0) parts.push(`${hours}h`);
             if (minutes > 0) parts.push(`${minutes}m`);
@@ -534,182 +819,37 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
-        function formatNumber(num) {
-            if (num >= 1000000) {
-                return (num / 1000000).toFixed(1) + 'M';
-            } else if (num >= 1000) {
-                return (num / 1000).toFixed(1) + 'K';
-            }
-            return num.toString();
+        function getMemoryProgressClass(freePercentage) {
+            if (freePercentage > 50) return 'progress-good';
+            if (freePercentage > 25) return 'progress-warning';
+            return 'progress-critical';
         }
 
-        function getMemoryStatus(freeBytes, totalBytes) {
-            const percentage = (freeBytes / totalBytes) * 100;
-            if (percentage > 50) return { class: 'progress-good', status: 'Excellent' };
-            if (percentage > 25) return { class: 'progress-warning', status: 'Warning' };
-            return { class: 'progress-critical', status: 'Critical' };
-        }        function displayStatistics(data) {
-            // ADE7953 Statistics
-            document.getElementById('ade7953Interrupts').textContent = formatNumber(data.ade7953TotalInterrupts || 0);
-            document.getElementById('ade7953HandledInterrupts').textContent = formatNumber(data.ade7953TotalHandledInterrupts || 0);
-            document.getElementById('ade7953Readings').textContent = formatNumber(data.ade7953ReadingCount || 0);
-            
-            const ade7953Failures = data.ade7953ReadingCountFailure || 0;
-            const ade7953FailureElement = document.getElementById('ade7953ReadingFailures');
-            ade7953FailureElement.textContent = formatNumber(ade7953Failures);
-            ade7953FailureElement.parentElement.className = ade7953Failures > 0 ? 'statistics-detail error' : 'statistics-detail';
-
-            // MQTT Statistics
-            document.getElementById('mqttMessages').textContent = formatNumber(data.mqttMessagesPublished || 0);
-            
-            const mqttErrors = data.mqttMessagesPublishedError || 0;
-            const mqttErrorElement = document.getElementById('mqttErrors');
-            mqttErrorElement.textContent = formatNumber(mqttErrors);
-            mqttErrorElement.parentElement.className = mqttErrors > 0 ? 'statistics-detail error' : 'statistics-detail';
-
-            // Custom MQTT Statistics
-            document.getElementById('customMqttMessages').textContent = formatNumber(data.customMqttMessagesPublished || 0);
-            
-            const customMqttErrors = data.customMqttMessagesPublishedError || 0;
-            const customMqttErrorElement = document.getElementById('customMqttErrors');
-            customMqttErrorElement.textContent = formatNumber(customMqttErrors);
-            customMqttErrorElement.parentElement.className = customMqttErrors > 0 ? 'statistics-detail error' : 'statistics-detail';
-
-            // Modbus Statistics
-            document.getElementById('modbusRequests').textContent = formatNumber(data.modbusRequests || 0);
-            
-            const modbusErrors = data.modbusRequestsError || 0;
-            const modbusErrorElement = document.getElementById('modbusErrors');
-            modbusErrorElement.textContent = formatNumber(modbusErrors);
-            modbusErrorElement.parentElement.className = modbusErrors > 0 ? 'statistics-detail error' : 'statistics-detail';
-
-            // InfluxDB Statistics
-            document.getElementById('influxdbUploads').textContent = formatNumber(data.influxdbUploadCount || 0);
-            
-            const influxdbErrors = data.influxdbUploadCountError || 0;
-            const influxdbErrorElement = document.getElementById('influxdbErrors');
-            influxdbErrorElement.textContent = formatNumber(influxdbErrors);
-            influxdbErrorElement.parentElement.className = influxdbErrors > 0 ? 'statistics-detail error' : 'statistics-detail';
-
-            // WiFi Statistics
-            document.getElementById('wifiConnections').textContent = formatNumber(data.wifiConnection || 0);
-            
-            const wifiErrors = data.wifiConnectionError || 0;
-            const wifiErrorElement = document.getElementById('wifiConnectionErrors');
-            wifiErrorElement.textContent = formatNumber(wifiErrors);
-            wifiErrorElement.parentElement.className = wifiErrors > 0 ? 'statistics-detail error' : 'statistics-detail';
-        }
-
-        function displayDeviceInfo(data) {
-            // System information
-            document.getElementById('uptime').textContent = formatUptime(data.system.uptime);
-            document.getElementById('systemTime').textContent = data.system.systemTime;
-            document.getElementById('firmwareBuildVersion').textContent = data.firmware.buildVersion;
-            document.getElementById('firmwareBuildDate').textContent = data.firmware.buildDate;
-
-            // Memory information with progress bars
-            var heapFree = data.memory.heap.free;
-            var heapTotal = data.memory.heap.total;
-            var heapUsedPercentage = ((heapTotal - heapFree) / heapTotal) * 100;
-            var heapStatus = getMemoryStatus(heapFree, heapTotal);
-            
-            document.getElementById('heapFree').textContent = 
-                `${formatBytes(heapFree)} free (${(100 - heapUsedPercentage).toFixed(1)}%)`;
-            document.getElementById('heapTotal').textContent = formatBytes(heapTotal);
-            
-            const heapProgress = document.getElementById('heapProgress');
-            heapProgress.style.width = `${100 - heapUsedPercentage}%`;
-            heapProgress.className = `progress-fill ${heapStatus.class}`;
-
-            var littlefsFree = data.memory.littlefs.free;
-            var littlefsTotal = data.memory.littlefs.total;
-            var littlefsUsedPercentage = ((littlefsTotal - littlefsFree) / littlefsTotal) * 100;
-            var littlefsStatus = getMemoryStatus(littlefsFree, littlefsTotal);
-            
-            document.getElementById('littlefsFree').textContent = 
-                `${formatBytes(littlefsFree)} free (${(100 - littlefsUsedPercentage).toFixed(1)}%)`;
-            document.getElementById('littlefsTotal').textContent = formatBytes(littlefsTotal);
-            
-            const littlefsProgress = document.getElementById('littlefsProgress');
-            littlefsProgress.style.width = `${100 - littlefsUsedPercentage}%`;
-            littlefsProgress.className = `progress-fill ${littlefsStatus.class}`;
-
-            // Hardware information
-            document.getElementById('chipModel').textContent = data.chip.model;
-            document.getElementById('chipRevision').textContent = `Rev ${data.chip.revision}`;
-            document.getElementById('chipCpuFrequency').textContent = `${data.chip.cpuFrequency} MHz`;
-            document.getElementById('chipSdkVersion').textContent = data.chip.sdkVersion;
-            document.getElementById('chipFlashChipId').textContent = `0x${data.chip.id.toString(16).toUpperCase()}`;
-            document.getElementById('deviceId').textContent = data.device.id;
+        function getStorageProgressClass(usedPercentage) {
+            if (usedPercentage < 50) return 'progress-good';
+            if (usedPercentage < 75) return 'progress-warning';
+            return 'progress-critical';
         }
 
         function getSignalQuality(rssi) {
-            if (rssi >= -30) return { quality: 'Amazing', class: 'progress-good', percentage: 100 };
-            if (rssi >= -50) return { quality: 'Excellent', class: 'progress-good', percentage: 90 };
-            if (rssi >= -60) return { quality: 'Very Good', class: 'progress-good', percentage: 75 };
-            if (rssi >= -70) return { quality: 'Good', class: 'progress-good', percentage: 60 };
-            if (rssi >= -80) return { quality: 'Fair', class: 'progress-warning', percentage: 40 };
-            if (rssi >= -90) return { quality: 'Poor', class: 'progress-critical', percentage: 20 };
-            return { quality: 'Very Poor', class: 'progress-critical', percentage: 5 };
+            if (rssi > -50) return '(Excellent)';
+            if (rssi > -60) return '(Good)';
+            if (rssi > -70) return '(Fair)';
+            return '(Poor)';
         }
 
-        function getConnectionStatus(status) {
-            const statusMap = {
-                'Connected': { class: 'status-excellent', text: '🟢 Connected' },
-                'Connecting': { class: 'status-warning', text: '🟡 Connecting' },
-                'Disconnected': { class: 'status-critical', text: '🔴 Disconnected' },
-                'Failed': { class: 'status-critical', text: '❌ Failed' }
-            };
-            return statusMap[status] || { class: 'status-warning', text: `⚠️ ${status}` };
-        }
-
-        function displayWifiInfo(data) {
-            // Connection status
-            const connectionStatus = getConnectionStatus(data.status);
-            const statusElement = document.getElementById('status');
-            statusElement.textContent = connectionStatus.text;
-            statusElement.className = `info-value status-indicator ${connectionStatus.class}`;
-
-            // Signal strength with progress bar
-            var rssi = data.rssi;
-            var signalInfo = getSignalQuality(rssi);
-            
-            document.getElementById('rssi').textContent = `${rssi} dBm (${signalInfo.quality})`;
-            
-            const rssiProgress = document.getElementById('rssiProgress');
-            rssiProgress.style.width = `${signalInfo.percentage}%`;
-            rssiProgress.className = `progress-fill ${signalInfo.class}`;
-
-            // Network information
-            document.getElementById('ssid').textContent = data.ssid || 'Not connected';
-            document.getElementById('localIp').textContent = data.localIp || 'N/A';
-            document.getElementById('gatewayIp').textContent = data.gatewayIp || 'N/A';
-            document.getElementById('dnsIp').textContent = data.dnsIp || 'N/A';
-            document.getElementById('macAddress').textContent = data.macAddress || 'N/A';
-            document.getElementById('bssid').textContent = data.bssid || 'N/A';
-            document.getElementById('subnetMask').textContent = data.subnetMask || 'N/A';
-        }
-
-        function displayProductInfo(data) {
-            document.getElementById('companyName').textContent = data.companyName || 'N/A';
-            document.getElementById('fullProductName').textContent = data.fullProductName || 'N/A';
-            document.getElementById('productName').textContent = data.productName || 'N/A';
-            document.getElementById('productDescription').textContent = data.productDescription || 'N/A';
-            
-            // Format GitHub URL as clickable link
-            if (data.githubUrl) {
-                document.getElementById('githubUrl').innerHTML = 
-                    `<a href="${data.githubUrl}" target="_blank" style="color: #2196F3; text-decoration: none;">🔗 View Repository</a>`;
-            } else {
-                document.getElementById('githubUrl').textContent = 'N/A';
-            }
-              document.getElementById('author').textContent = data.author || 'N/A';
-            document.getElementById('authorEmail').textContent = data.authorEmail || 'N/A';
+        function getSignalQualityClass(rssi) {
+            if (rssi > -50) return 'status-excellent';  // Excellent signal
+            if (rssi > -60) return 'status-good';       // Good signal
+            if (rssi > -70) return 'status-warning';    // Fair signal
+            return 'status-critical';                   // Poor signal
         }
 
         // Initial load and periodic updates
-        fetchData();
-        setInterval(fetchData, 5000); // Update every 5 seconds instead of 1 second for better performance
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchSystemInfo();
+            setInterval(fetchSystemInfo, 5000); // Update every 5 seconds
+        });
     </script>
 </body>
 

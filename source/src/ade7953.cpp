@@ -1978,17 +1978,32 @@ namespace Ade7953
         char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
         snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, filename);
         
+        // Ensure the energy directory structure exists by creating the file path
+        // In LittleFS, directories are created implicitly when files are created
+        // If this is the first time, we may need to ensure the path exists
+        
         // Check if file exists to determine if we need to write header
         bool fileExists = LittleFS.exists(filepath);
-        
-        // Open file in append mode
+
+        // Open file in append mode (this will create the directory path if needed)
         File file = LittleFS.open(filepath, FILE_APPEND);
         if (!file) {
-            LOG_ERROR("Failed to open CSV file %s for writing", filepath);
-            return;
-        }
-        
-        // Write header if this is a new file
+            // If opening failed, try creating the file in write mode first to establish the directory structure
+            LOG_DEBUG("Append mode failed, trying to create file with write mode to establish directory structure");
+            file = LittleFS.open(filepath, FILE_WRITE);
+            if (!file) {
+                LOG_ERROR("Failed to open CSV file %s for writing", filepath);
+                return;
+            }
+            // Close and reopen in append mode
+            file.close();
+            file = LittleFS.open(filepath, FILE_APPEND);
+            if (!file) {
+                LOG_ERROR("Failed to reopen CSV file %s in append mode", filepath);
+                return;
+            }
+            fileExists = false; // We just created it, so it needs a header
+        }        // Write header if this is a new file
         if (!fileExists) {
             file.println(DAILY_ENERGY_CSV_HEADER);
             LOG_DEBUG("Created new CSV file %s with header", filename);

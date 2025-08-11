@@ -611,6 +611,9 @@ namespace CustomServer
         server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", section_css); });
         server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", typography_css); });
 
+        // JavaScript files
+        server.on("/js/api-client.js", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "application/javascript", api_client_js); });
+
         // Resources
         server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "image/svg+xml", favicon_svg); });
 

@@ -745,7 +745,7 @@ namespace Mqtt
     // Subscription callback handler
     // =============================
 
-    static void _subscribeCallback(const char* topic, byte *payload, uint32_t length)
+    static void _subscribeCallback(const char* topic, byte *payload, uint32_t length) // TODO: maybe make it simpler with one simple command topic
     {
         char message[MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE];
         

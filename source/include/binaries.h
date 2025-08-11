@@ -10,6 +10,9 @@ extern const char styles_css[] asm("_binary_css_styles_css_start");
 extern const char section_css[] asm("_binary_css_section_css_start");
 extern const char typography_css[] asm("_binary_css_typography_css_start");
 
+// JavaScript
+extern const char api_client_js[] asm("_binary_js_api_client_js_start");
+
 // HTML
 extern const char ade7953_tester_html[] asm("_binary_html_ade7953_tester_html_start");
 extern const char calibration_html[] asm("_binary_html_calibration_html_start");
