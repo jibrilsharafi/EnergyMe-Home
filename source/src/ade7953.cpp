@@ -835,10 +835,11 @@ namespace Ade7953
         File root = LittleFS.open("/");
         File file = root.openNextFile();
         while (file) {
-            String fileName = file.name();
-            if (fileName.startsWith("/energy_") && fileName.endsWith(".csv")) {
-                LittleFS.remove(fileName.c_str());
-                LOG_DEBUG("Removed energy CSV file: %s", fileName.c_str());
+            char fileName[NAME_BUFFER_SIZE];
+            snprintf(fileName, sizeof(fileName), "%s", file.name());
+            if (strstr(fileName, ENERGY_CSV_PREFIX) && strstr(fileName, ".csv")) {
+                LittleFS.remove(fileName);
+                LOG_DEBUG("Removed energy CSV file: %s", fileName);
             }
             file = root.openNextFile();
         }
@@ -1966,16 +1967,16 @@ namespace Ade7953
         }
         
         // Create UTC timestamp in ISO format (rounded to the hour)
-        char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
-        CustomTime::getTimestampIsoRoundedToHour(timestamp, sizeof(timestamp));
+        char timestampRoundedHour[TIMESTAMP_ISO_BUFFER_SIZE];
+        CustomTime::getTimestampIsoRoundedToHour(timestampRoundedHour, sizeof(timestampRoundedHour));
         
         // Create filename for today's CSV file (UTC date)
         char filename[NAME_BUFFER_SIZE];
         CustomTime::getDateIso(filename, sizeof(filename));
 
         // We must start the path with "/...."
-        char filepath[NAME_BUFFER_SIZE + 5]; // Added space for "/.csv" suffix
-        snprintf(filepath, sizeof(filepath), "/%s.csv", filename);
+        char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
+        snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, filename);
         
         // Check if file exists to determine if we need to write header
         bool fileExists = LittleFS.exists(filepath);
@@ -2003,13 +2004,14 @@ namespace Ade7953
                     _meterValues[i].activeEnergyImported > ENERGY_SAVE_THRESHOLD || 
                     _meterValues[i].activeEnergyExported > ENERGY_SAVE_THRESHOLD
                 ) {
-                    file.print(timestamp);
+                    file.print(timestampRoundedHour);
                     file.print(",");
                     file.print(i);
                     file.print(",");
                     file.print(_meterValues[i].activeEnergyImported, DAILY_ENERGY_CSV_DIGITS);
                     file.print(",");
                     file.print(_meterValues[i].activeEnergyExported, DAILY_ENERGY_CSV_DIGITS);
+                    file.println();
                 } else {
                     LOG_DEBUG("Skipping saving hourly energy data for channel %d: %s (values below threshold)", i, _channelData[i].label);
                 }
