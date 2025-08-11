@@ -1,3 +1,5 @@
+THIS IS OLD, AND NEEDS TO BE UPDATED A LOT. DO NOT USE AS REFERENCE.
+
 # EnergyMe - Home | Source Code
 
 **Note:** This source code is for hardware revision **v5** and represents a significantly more stable version of the firmware.

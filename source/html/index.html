@@ -253,7 +253,7 @@
                 channelData = JSON.parse(this.responseText);
             }
         };
-        xhttp.open("GET", "/rest/get-channel", false);
+        xhttp.open("GET", "/api/v1/ade7953/channel", false);
         xhttp.send();
     }
 
@@ -265,7 +265,7 @@
                 meterData = JSON.parse(this.responseText);
             }
         };
-        xhttp.open("GET", "/rest/meter", false);
+        xhttp.open("GET", "/api/v1/ade7953/meter-values", false);
         xhttp.send();
     }
 

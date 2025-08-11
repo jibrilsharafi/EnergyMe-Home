@@ -14,7 +14,7 @@
 #define BUTTON_TASK_STACK_SIZE (4 * 1024)  // Increased to 4KB due to logging stack usage
 #define BUTTON_TASK_PRIORITY 2
 
-#define PREFERENCES_LAST_OPERATION_KEY "last_operation"
+#define PREFERENCES_LAST_OPERATION_KEY "last_operation" // TODO: remove, it is useless
 #define PREFERENCES_LAST_OPERATION_TIMESTAMP_KEY "last_op_timestamp" // Cannot be too int32_t
 
 // Timing constants
