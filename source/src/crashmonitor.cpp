@@ -209,7 +209,7 @@ namespace CrashMonitor
                         searchBuffer[i+2] == 'L' && searchBuffer[i+3] == 'F') {
                         elfOffset = i;
                         elfOffsetFound = true;
-                        LOG_INFO("Found ELF header at offset %zu in core dump partition", elfOffset);
+                        LOG_DEBUG("Found ELF header at offset %zu in core dump partition", elfOffset);
                         break;
                     }
                 }

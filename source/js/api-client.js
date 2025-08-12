@@ -49,16 +49,27 @@ class EnergyMeAPI {
     /**
      * GET request helper
      * @param {string} endpoint - API endpoint
-     * @returns {Promise<any>} - Parsed JSON response
+     * @param {Object} options - Additional options
+     * @param {string} options.responseType - Response type: 'json' (default), 'text', 'blob'
+     * @returns {Promise<any>} - Parsed response
      */
-    async get(endpoint) {
+    async get(endpoint, options = {}) {
+        const { responseType = 'json' } = options;
         const response = await this.apiCall(endpoint, { method: 'GET' });
         
         if (!response.ok) {
             throw new Error(`GET ${endpoint} failed: ${response.status}`);
         }
         
-        return response.json();
+        switch (responseType) {
+            case 'text':
+                return response.text();
+            case 'blob':
+                return response.blob();
+            case 'json':
+            default:
+                return response.json();
+        }
     }
 
     /**
@@ -350,7 +361,7 @@ class EnergyMeAPI {
      * Get logs
      */
     async getLogs() {
-        return this.get('logs');
+        return this.get('logs', { responseType: 'text' });
     }
 
     /**
@@ -468,6 +479,13 @@ class EnergyMeAPI {
      */
     async getFile(filepath) {
         return this.get(`files/${encodeURIComponent(filepath)}`);
+    }
+
+    /**
+     * Get specific file content as text
+     */
+    async getFileAsText(filepath) {
+        return this.get(`files/${encodeURIComponent(filepath)}`, { responseType: 'text' });
     }
 }
 

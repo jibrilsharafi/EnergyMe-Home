@@ -13,6 +13,7 @@
 
     <title>Log</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="/js/api-client.js"></script>
     <style>
         .log-table {
             width: 100%;
@@ -160,7 +161,8 @@
                             <th>Elapsed</th>
                             <th>Level</th>
                             <th>Core</th>
-                            <th>Module</th>
+                            <th>File</th>
+                            <th>Function</th>
                             <th>Message</th>
                         </tr>
                     </thead>
@@ -189,11 +191,10 @@
             lastFetchTime = now;
 
             try {
-                const response = await fetch('/api/v1/logs');
-                const data = await response.text();
+                const data = await window.energyApi.getLogs();
 
                 // If data is empty, return early
-                if (data === '') {
+                if (!data || data === '') {
                     return;
                 }
 
@@ -205,16 +206,53 @@
 
                 const log = processedData.split('\n').map((line, index) => {
                     try {
-                        const [timestamp, elapsedTime, level, core, module, ...messageParts] =
-                            line.replaceAll('[', '').replaceAll('\r', '').split('] ');
-                        const message = messageParts.join('] ');
+                        // Parse new log format: [2025-08-11T19:42:51.252Z] [689 ms] [INFO   ] [Core 1] [src/main.cpp:setup] Message
+                        const parts = line.replaceAll('[', '').replaceAll('\r', '').split('] ');
+                        
+                        if (parts.length < 6) {
+                            // Fallback for malformed lines
+                            return {
+                                row: index + 1,
+                                timestamp: '',
+                                elapsedTime: '',
+                                level: '',
+                                core: '',
+                                file: '',
+                                functionName: '',
+                                message: line.trim()
+                            };
+                        }
+
+                        const timestamp = parts[0];
+                        const elapsedTime = parts[1];
+                        const level = parts[2].trim();
+                        const core = parts[3].replace('Core ', '');
+                        
+                        // Parse file:function from parts[4]
+                        const moduleInfo = parts[4];
+                        let file = '';
+                        let functionName = '';
+                        
+                        if (moduleInfo.includes(':')) {
+                            const moduleParts = moduleInfo.split(':');
+                            file = moduleParts[0];
+                            functionName = moduleParts[1];
+                        } else {
+                            file = moduleInfo;
+                            functionName = '';
+                        }
+                        
+                        // Rejoin remaining parts as message
+                        const message = parts.slice(5).join('] ');
+                        
                         return {
                             row: index + 1,
                             timestamp,
                             elapsedTime,
-                            level: level.trim(),
-                            core: core.replace('Core ', ''),
-                            module,
+                            level,
+                            core,
+                            file,
+                            functionName,
                             message
                         };
                     } catch (error) {
@@ -224,30 +262,33 @@
                             elapsedTime: '',
                             level: '',
                             core: '',
-                            module: '',
-                            message: ''
+                            file: '',
+                            functionName: '',
+                            message: line.trim() || ''
                         };
                     }
                 }).reverse();
 
-                if (log[0].message === '') log.shift();
-                if (log[log.length - 1].message === '') log.pop();
+                // Remove empty entries
+                while (log.length > 0 && log[0].message === '') log.shift();
+                while (log.length > 0 && log[log.length - 1].message === '') log.pop();
 
                 const logBody = document.getElementById('log-body');
                 logBody.innerHTML = ''; // Clear existing logs
 
                 // Use DocumentFragment for better performance
                 const fragment = document.createDocumentFragment();
-                log.forEach(log => {
+                log.forEach(logEntry => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                    <td>${log.row}</td>
-                    <td>${log.timestamp}</td>
-                    <td>${log.elapsedTime}</td>
-                    <td><span class="log-level log-level-${log.level}">${log.level}</span></td>
-                    <td>${log.core}</td>
-                    <td>${log.module}</td>
-                    <td>${log.message}</td>
+                    <td>${logEntry.row}</td>
+                    <td>${logEntry.timestamp}</td>
+                    <td>${logEntry.elapsedTime}</td>
+                    <td><span class="log-level log-level-${logEntry.level}">${logEntry.level}</span></td>
+                    <td>${logEntry.core}</td>
+                    <td>${logEntry.file}</td>
+                    <td>${logEntry.functionName}</td>
+                    <td>${logEntry.message}</td>
                 `;
                     fragment.appendChild(row);
                 });
@@ -313,12 +354,19 @@
 
         document.getElementById('download-csv').addEventListener('click', function () {
             const csvContent = ["data:text/csv;charset=utf-8,"];
-            csvContent.push("Row,Timestamp,Elapsed,Level,Core,Module,Message");
+            csvContent.push("Row,Timestamp,Elapsed,Level,Core,File,Function,Message");
 
             const rows = document.querySelectorAll('.log-table tr:not(:first-child)');
             rows.forEach(function (row) {
                 const rowData = Array.from(row.querySelectorAll('td'))
-                    .map(cell => cell.textContent.trim())
+                    .map(cell => {
+                        const text = cell.textContent.trim();
+                        // Escape commas and quotes for proper CSV format
+                        if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+                            return `"${text.replace(/"/g, '""')}"`;
+                        }
+                        return text;
+                    })
                     .join(",");
                 csvContent.push(rowData);
             });
