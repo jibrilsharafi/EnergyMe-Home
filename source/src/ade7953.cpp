@@ -707,7 +707,7 @@ namespace Ade7953
             return;
         }
 
-        ChannelData channelData;
+        ChannelData channelData; // Default constructor initializes to default values
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             setChannelData(channelData, i);
         }
@@ -1992,7 +1992,7 @@ namespace Ade7953
             LOG_DEBUG("Append mode failed, trying to create file with write mode to establish directory structure");
             file = LittleFS.open(filepath, FILE_WRITE);
             if (!file) {
-                LOG_ERROR("Failed to open CSV file %s for writing", filepath);
+                LOG_ERROR("Failed to open CSV file %s for writing", filepath); // FIXME: always this error
                 return;
             }
             // Close and reopen in append mode
