@@ -6,7 +6,8 @@ class EnergyMeAPI {
     constructor() {
         this.baseUrl = '';  // Same origin
         this.defaultHeaders = {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Connection': 'close'  // Prevent keep-alive to reduce ESP32 load
         };
     }
 

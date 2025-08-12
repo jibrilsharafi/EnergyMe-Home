@@ -1493,7 +1493,7 @@ namespace Mqtt
 
         if (_publishMessage(_mqttTopicCrash, crashMessage)) {
             _publishMqtt.crash = false;
-            // CrashMonitor::clearCoreDump(); /// FIXME: eventually delete
+            // CrashMonitor::clearCoreDump(); /// FIXME: eventually delete when full data is able to be sent
             statistics.mqttMessagesPublished++;
             LOG_DEBUG("Crash data published to %s", _mqttTopicCrash);
             return true;

@@ -59,26 +59,24 @@
     </div>
 
     <div class="section-box">
-        <h2>General configuration</h2>
-        <form id="generalConfigurationForm">
-            <div>
-                <h3>Cloud services</h3>
-                <p><i>Cloud services are used to send data to the cloud. This is useful for monitoring the device
-                        remotely and get the latest firmware updates.</i></p>
-                <input type="checkbox" id="cloudServices" class="config-input">
-                <label for="cloudServices">Enable cloud services</label>
-            </div>
-            <div>
-                <h3>LED brightness TODO: not anymore via general configuration</h3>
-                <p><i>LED brightness is used to adjust the brightness of the status LED on the device. Keeping a small
-                        amount of brightness is recommended.</i></p>
-                <input type="range" id="ledBrightness" class="config-input slider" min="0" max="255"
-                    oninput="updateBrightnessValue()">
-                <span id="ledBrightnessValue">50%</span>
-            </div> <br>
-            <button class="buttonForm" onclick="setGeneralConfiguration()" id="setGeneralConfigurationButton">⚙️ Set
-                configuration</button>
-        </form>
+        <h2>Cloud Services</h2>
+        <p><i>Cloud services are used to send data to the cloud. This is useful for monitoring the device
+                remotely and get the latest firmware updates.</i></p>
+        <input type="checkbox" id="cloudServices" class="config-input">
+        <label for="cloudServices">Enable cloud services</label>
+        <br><br>
+        <button class="buttonForm" onclick="setCloudServices()" id="setCloudServicesButton">☁️ Set cloud services</button>
+    </div>
+
+    <div class="section-box">
+        <h2>LED Brightness</h2>
+        <p><i>LED brightness is used to adjust the brightness of the status LED on the device. Keeping a small
+                amount of brightness is recommended.</i></p>
+        <input type="range" id="ledBrightness" class="config-input slider" min="0" max="100"
+            oninput="updateBrightnessValue()">
+        <span id="ledBrightnessValue">50%</span>
+        <br><br>
+        <button class="buttonForm" onclick="setLedBrightness()" id="setLedBrightnessButton">💡 Set brightness</button>
     </div>
 
     <div class="section-box">
@@ -110,9 +108,9 @@
                 device with your own IoT platform.
                 <br>
                 <br>
-                The payload content will be the same one returned by the REST API endpoint <a href="/rest/meter"
+                The payload content will be the same one returned by the REST API endpoint <a href="/api/v1/ade7953/meter-values"
                     target="_blank">meter</a>
-                (<a href="/swagger-ui#/Meter/get_rest_meter" target="_blank">swagger</a>).
+                (<a href="/swagger-ui#/ADE7953/get_api_v1_ade7953_meter_values" target="_blank">swagger</a>).
             </i></p>
         <input type="checkbox" id="customMqttEnabled" class="config-input">
         <label for="customMqttEnabled">Enable custom MQTT</label>
@@ -235,20 +233,8 @@
     </div>
 
     <div class="section-box">
-        <h2>Restart Device</h2>
-        <p><i>You already know that restarting a device magically fixes most issues. I will only take a few seconds.</i></p>
-        <button class="buttonForm" onclick="restart()" id="restart">🔄 Restart</button>
-    </div>
-
-    <div class="section-box">
         <h2>Energy Management</h2>
         <p><i>Manage energy counters for all channels. Changes will clear historical daily energy data.</i></p>
-
-        <div class="warning-box"
-            style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
-            ⚠️ Warning: Modifying energy values will permanently erase all historical daily energy data. This action
-            cannot be undone.
-        </div>
 
         <div id="energyChannels">
             <!-- Energy channels will be populated here -->
@@ -260,6 +246,12 @@
             onmouseover="this.style.backgroundColor='#c82333'" onmouseout="this.style.backgroundColor='#dc3545'">🗑️
             Reset
             All to Zero</button>
+    </div>
+
+    <div class="section-box">
+        <h2>Restart Device</h2>
+        <p><i>You already know that restarting a device magically fixes most issues. It will take 10 seconds.</i></p>
+        <button class="buttonForm" onclick="restart()" id="restart">🔄 Restart</button>
     </div>
 
     <div class="section-box">
@@ -290,9 +282,9 @@
         <button class="buttonForm" onclick="factoryReset()" id="factoryReset">🏭 Reset</button>
     </div>
 
+    <script src="/js/api-client.js"></script>
     <script>
-        var logLevels = ["Debug", "Info", "Warning", "Error", "Fatal"];
-        var generalConfig;
+        var logLevels = ["Verbose", "Debug", "Info", "Warning", "Error", "Fatal"];
         var customMqttConfig;
         var influxDbConfig;
         var energyData = {};
@@ -302,33 +294,42 @@
             var printLogLevel = document.getElementById("printLogLevel");
             var saveLogLevel = document.getElementById("saveLogLevel");
 
-            for (var i = 0; i < logLevels.length; i++) {
-                var opt = document.createElement("option");
-                opt.value = logLevels[i];
-                opt.innerHTML = logLevels[i];
+            // Clear existing options
+            printLogLevel.innerHTML = "";
+            saveLogLevel.innerHTML = "";
 
-                printLogLevel.appendChild(opt.cloneNode(true));
+            for (var i = 0; i < logLevels.length; i++) {
+            var opt = document.createElement("option");
+            opt.value = logLevels[i];
+            opt.innerHTML = logLevels[i];
+
+            printLogLevel.appendChild(opt.cloneNode(true));
+            // Exclude "Verbose" from saveLogLevel
+            if (logLevels[i] !== "Verbose") {
                 saveLogLevel.appendChild(opt.cloneNode(true));
+            }
             }
         }
 
         function restart() {
             var restartButton = document.getElementById("restart");
-            restartButton.innerHTML = "Restarting...";
+            restartButton.innerHTML = "Restarting. You will be redirected to the home page in some seconds.";
             restartButton.disabled = true;
 
-            authAPI.post("/rest/restart")
+            energyApi.restartSystem()
                 .then(response => {
                     setTimeout(function () {
                         window.location.href = "/";
-                    }, 7000);
+                    }, 10000);
                 })
                 .catch(error => {
                     alert("Error restarting device. Response: " + error.message);
-                    restartButton.innerHTML = "Restart";
+                    restartButton.innerHTML = "🔄 Restart";
                     restartButton.disabled = false;
                 });
-        } function disconnectWifi() {
+        } 
+        
+        function disconnectWifi() {
             var confirm = window.confirm("Are you sure you want to disconnect from WiFi? You will lose access to the device until you reconnect it to WiFi.");
             if (!confirm) {
                 return;
@@ -336,14 +337,16 @@
             document.getElementById("disconnect").innerHTML = "Disconnecting...";
             document.getElementById("disconnect").disabled = true;
 
-            authAPI.post("/rest/reset-wifi")
+            energyApi.resetWifi()
                 .then(response => {
                     alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1");
                 })
                 .catch(error => {
                     alert("Error disconnecting from WiFi. Response: " + error.message);
                 });
-        } function factoryReset() {
+        } 
+        
+        function factoryReset() {
             var confirm = window.confirm("Are you sure you want to reset the device to factory settings? All configurations and data will be lost.");
             if (!confirm) {
                 return;
@@ -351,7 +354,7 @@
             document.getElementById("factoryReset").innerHTML = "Waiting for response...";
             document.getElementById("factoryReset").disabled = true;
 
-            authAPI.post("/rest/factory-reset")
+            energyApi.factoryReset()
                 .then(response => {
                     document.getElementById("factoryReset").innerHTML = "Reset successful! You will be redirected to the home page in 15 seconds.";
                     setTimeout(function () {
@@ -361,36 +364,36 @@
                 .catch(error => {
                     alert("Error resetting to factory settings. Response: " + error.message);
                 });
-        } function setLogLevel() {
+        } 
+        
+        function setLogLevel() {
             document.getElementById("setLogLevel").innerHTML = "Setting...";
             document.getElementById("setLogLevel").disabled = true;
 
             var printLogLevel = document.getElementById("printLogLevel").value.toUpperCase();
             var saveLogLevel = document.getElementById("saveLogLevel").value.toUpperCase();
 
-            // Convert log level names to integers
-            var logLevelMap = {
-                "VERBOSE": 0,
-                "DEBUG": 1,
-                "INFO": 2,
-                "WARNING": 3,
-                "ERROR": 4,
-                "FATAL": 5
-            };
+            // API expects string values like "VERBOSE", "DEBUG", etc.
+            var validLevels = ["VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL"];
 
-            var printLevel = logLevelMap[printLogLevel];
-            var saveLevel = logLevelMap[saveLogLevel];
+            // Validate that the levels are valid
+            if (!validLevels.includes(printLogLevel) || !validLevels.includes(saveLogLevel)) {
+                alert("Invalid log level selected");
+                document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
+                document.getElementById("setLogLevel").disabled = false;
+                return;
+            }
 
-            // Set print log level first
-            authAPI.post(`/rest/set-log-level?level=${printLevel}&type=print`)
-                .then(response => {
-                    // Set save log level second
-                    return authAPI.post(`/rest/set-log-level?level=${saveLevel}&type=save`);
-                })
+            console.log("Setting log levels:", { print: printLogLevel, save: saveLogLevel });
+
+            energyApi.setLogLevels({
+                print: printLogLevel,
+                save: saveLogLevel
+            })
                 .then(response => {
                     document.getElementById("setLogLevel").innerHTML = "Set success!";
                     setTimeout(function () {
-                        document.getElementById("setLogLevel").innerHTML = "Set logging level";
+                        document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
                         document.getElementById("setLogLevel").disabled = false;
                     }, 3000);
                 })
@@ -398,28 +401,35 @@
                     alert("Error setting log level. Response: " + error.message);
                     document.getElementById("setLogLevel").innerHTML = "Set failed!";
                     setTimeout(function () {
-                        document.getElementById("setLogLevel").innerHTML = "Set logging level";
+                        document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
                         document.getElementById("setLogLevel").disabled = false;
                     }, 3000);
                 });
-        } function getLogLevel() {
-            authAPI.get("/rest/get-log-level")
+        }
+        
+        function getLogLevel() {
+            energyApi.getLogLevels()
                 .then(data => {
-                    var printLogLevel = data.print.toLowerCase().replace(/\b[a-z]/g, function (letter) {
-                        return letter.toUpperCase();
-                    });
-                    var saveLogLevel = data.save.toLowerCase().replace(/\b[a-z]/g, function (letter) {
-                        return letter.toUpperCase();
-                    });
+                    // API returns string values like "VERBOSE", "DEBUG", etc.
+                    // Convert to dropdown format (first letter uppercase, rest lowercase)
+                    function formatLevelForDropdown(level) {
+                        if (!level) return "Debug";
+                        return level.charAt(0).toUpperCase() + level.slice(1).toLowerCase();
+                    }
+                    
+                    var printLogLevel = formatLevelForDropdown(data.print);
+                    var saveLogLevel = formatLevelForDropdown(data.save);
 
                     populateDropdown();
                     document.getElementById("printLogLevel").value = printLogLevel;
                     document.getElementById("saveLogLevel").value = saveLogLevel;
                 })
                 .catch(error => {
-                    console.log("Error getting print log level. Response: " + error.message);
+                    console.log("Error getting log levels. Response: " + error.message);
                 });
-        } function clearLogs() {
+        } 
+        
+        function clearLogs() {
             var confirm = window.confirm("Are you sure you want to clear the log?");
             if (!confirm) {
                 return;
@@ -427,118 +437,140 @@
             document.getElementById("clearLogs").innerHTML = "Clearing...";
             document.getElementById("clearLogs").disabled = true;
 
-            authAPI.post("/rest/clear-log")
+            energyApi.clearLogs()
                 .then(response => {
                     document.getElementById("clearLogs").innerHTML = "Clear success";
                     setTimeout(function () {
-                        document.getElementById("clearLogs").innerHTML = "Clear log";
+                        document.getElementById("clearLogs").innerHTML = "🗑️ Clear log";
                         document.getElementById("clearLogs").disabled = false;
                     }, 3000);
                 })
                 .catch(error => {
                     alert("Error clearing log. Response: " + error.message);
                     setTimeout(function () {
-                        document.getElementById("clearLogs").innerHTML = "Clear log";
+                        document.getElementById("clearLogs").innerHTML = "🗑️ Clear log";
                         document.getElementById("clearLogs").disabled = false;
                     }, 3000);
                 });
-        } function getGeneralConfiguration() {
-            authAPI.get("/rest/get-general-configuration")
+        }
+
+        function getCloudServices() {
+            energyApi.getMqttCloudServices()
                 .then(data => {
-                    generalConfig = data;
-                    document.getElementById("cloudServices").checked = generalConfig.isCloudServicesEnabled;
-                    document.getElementById("ledBrightness").value = generalConfig.ledBrightness;
-                    updateBrightnessValue();
+                    document.getElementById("cloudServices").checked = data.enabled;
                 })
                 .catch(error => {
-                    console.log("Error getting general configuration. Response: " + error.message);
+                    console.log("Error getting cloud services status. Response: " + error.message);
                 });
         }
 
-        function setGeneralConfiguration() {
-            document.getElementById("setGeneralConfigurationButton").innerHTML = "Setting...";
-            document.getElementById("setGeneralConfigurationButton").disabled = true;
+        function setCloudServices() {
+            document.getElementById("setCloudServicesButton").innerHTML = "Setting...";
+            document.getElementById("setCloudServicesButton").disabled = true;
 
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("POST", "/rest/set-general-configuration", true);
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        document.getElementById("setGeneralConfigurationButton").innerHTML = "Set success!";
-                        setTimeout(function () {
-                            document.getElementById("setGeneralConfigurationButton").innerHTML = "Set configuration";
-                            document.getElementById("setGeneralConfigurationButton").disabled = false;
-                        }, 3000);
-                    } else {
-                        alert("Error setting general configuration. Response: " + this.responseText);
-                        document.getElementById("setGeneralConfigurationButton").innerHTML = "Set failed!";
-                        setTimeout(function () {
-                            document.getElementById("setGeneralConfigurationButton").innerHTML = "Set configuration";
-                            document.getElementById("setGeneralConfigurationButton").disabled = false;
-                        }, 3000);
+            // First check secrets status
+            energyApi.getSystemSecrets()
+                .then(secretsResponse => {
+                    const isEnabled = document.getElementById("cloudServices").checked;
+                    
+                    // If no secrets but cloud services is checked, prevent that
+                    if (!secretsResponse.hasSecrets && isEnabled) {
+                        alert("Cannot enable cloud services: This firmware build does not include secrets.");
+                        document.getElementById("cloudServices").checked = false;
+                        throw new Error("No secrets available");
                     }
-                }
-            };
 
-            // Get has_secrets status before sending configuration
-            var checkSecretsXhttp = new XMLHttpRequest();
-            checkSecretsXhttp.open("GET", "/rest/get-has-secrets", false); // Synchronous request
-            checkSecretsXhttp.send();
+                    // Send the configuration
+                    return energyApi.setMqttCloudServices(isEnabled);
+                })
+                .then(data => {
+                    document.getElementById("setCloudServicesButton").innerHTML = "Set success!";
+                    setTimeout(function () {
+                        document.getElementById("setCloudServicesButton").innerHTML = "☁️ Set cloud services";
+                        document.getElementById("setCloudServicesButton").disabled = false;
+                    }, 3000);
+                })
+                .catch(error => {
+                    if (error.message !== "No secrets available") {
+                        alert("Error setting cloud services. Response: " + error.message);
+                    }
+                    document.getElementById("setCloudServicesButton").innerHTML = "Set failed!";
+                    setTimeout(function () {
+                        document.getElementById("setCloudServicesButton").innerHTML = "☁️ Set cloud services";
+                        document.getElementById("setCloudServicesButton").disabled = false;
+                    }, 3000);
+                });
+        }
 
-            if (checkSecretsXhttp.status === 200) {
-                var secretsResponse = JSON.parse(checkSecretsXhttp.responseText);
-                // If no secrets but cloud services is checked, prevent that
-                if (!secretsResponse.has_secrets && document.getElementById("cloudServices").checked) {
-                    alert("Cannot enable cloud services: This firmware build does not include secrets.");
-                    document.getElementById("cloudServices").checked = false;
-                }
-            }
+        function getLedBrightness() {
+            energyApi.getLedBrightness()
+                .then(data => {
+                    // Assuming API returns brightness as 0-100 range
+                    document.getElementById("ledBrightness").value = data.brightness;
+                    updateBrightnessValue();
+                })
+                .catch(error => {
+                    console.log("Error getting LED brightness. Response: " + error.message);
+                });
+        }
 
-            generalConfig.isCloudServicesEnabled = document.getElementById("cloudServices").checked;
-            generalConfig.ledBrightness = parseInt(document.getElementById("ledBrightness").value);
+        function setLedBrightness() {
+            document.getElementById("setLedBrightnessButton").innerHTML = "Setting...";
+            document.getElementById("setLedBrightnessButton").disabled = true;
 
-            xhttp.send(JSON.stringify(generalConfig));
+            const brightness = parseInt(document.getElementById("ledBrightness").value);
+
+            energyApi.setLedBrightness(brightness)
+                .then(data => {
+                    document.getElementById("setLedBrightnessButton").innerHTML = "Set success!";
+                    setTimeout(function () {
+                        document.getElementById("setLedBrightnessButton").innerHTML = "💡 Set brightness";
+                        document.getElementById("setLedBrightnessButton").disabled = false;
+                    }, 3000);
+                })
+                .catch(error => {
+                    alert("Error setting LED brightness. Response: " + error.message);
+                    document.getElementById("setLedBrightnessButton").innerHTML = "Set failed!";
+                    setTimeout(function () {
+                        document.getElementById("setLedBrightnessButton").innerHTML = "💡 Set brightness";
+                        document.getElementById("setLedBrightnessButton").disabled = false;
+                    }, 3000);
+                });
         }
 
         function updateBrightnessValue() {
             var slider = document.getElementById("ledBrightness");
             var output = document.getElementById("ledBrightnessValue");
-            var percentage = Math.round((slider.value / 255) * 100);
+            var percentage = parseInt(slider.value);
             slider.style.setProperty('--slider-value', percentage + '%');
             slider.title = percentage + "%";
             output.innerHTML = percentage + "%";
         }
 
         function getCustomMqttConfiguration() {
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("GET", "/rest/get-custom-mqtt-configuration", true);
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        customMqttConfig = JSON.parse(this.responseText);
+            energyApi.getCustomMqttConfig()
+                .then(data => {
+                    customMqttConfig = data;
 
-                        document.getElementById("customMqttEnabled").checked = customMqttConfig.enabled;
-                        document.getElementById("customMqttServer").value = customMqttConfig.server;
-                        document.getElementById("customMqttPort").value = customMqttConfig.port;
-                        document.getElementById("customMqttClientId").value = customMqttConfig.clientid;
-                        document.getElementById("customMqttTopic").value = customMqttConfig.topic;
-                        document.getElementById("customMqttFrequency").value = customMqttConfig.frequency;
-                        document.getElementById("customMqttUseCredentials").checked = customMqttConfig.useCredentials;
-                        document.getElementById("customMqttUsername").value = customMqttConfig.username;
-                        document.getElementById("customMqttPassword").value = customMqttConfig.password;
+                    document.getElementById("customMqttEnabled").checked = customMqttConfig.enabled;
+                    document.getElementById("customMqttServer").value = customMqttConfig.server;
+                    document.getElementById("customMqttPort").value = customMqttConfig.port;
+                    document.getElementById("customMqttClientId").value = customMqttConfig.clientid;
+                    document.getElementById("customMqttTopic").value = customMqttConfig.topic;
+                    document.getElementById("customMqttFrequency").value = customMqttConfig.frequency;
+                    document.getElementById("customMqttUseCredentials").checked = customMqttConfig.useCredentials;
+                    document.getElementById("customMqttUsername").value = customMqttConfig.username;
+                    document.getElementById("customMqttPassword").value = customMqttConfig.password;
 
-                        // Update status with appropriate icon and colors
-                        updateStatusDisplay(customMqttConfig.lastConnectionStatus,
-                            customMqttConfig.lastConnectionAttemptTimestamp,
-                            customMqttConfig.enabled);
-
-                    } else {
-                        console.log("Error getting custom MQTT configuration. Response: " + this.responseText);
-                        updateStatusDisplay("Error loading status", "", false);
-                    }
-                }
-            };
-            xhttp.send();
+                    // Update status with appropriate icon and colors
+                    updateStatusDisplay(customMqttConfig.lastConnectionStatus,
+                        customMqttConfig.lastConnectionAttemptTimestamp,
+                        customMqttConfig.enabled);
+                })
+                .catch(error => {
+                    console.log("Error getting custom MQTT configuration. Response: " + error.message);
+                    updateStatusDisplay("Error loading status", "", false);
+                });
         }
 
         function updateStatusDisplay(status, timestamp, isEnabled) {
@@ -606,68 +638,58 @@
                 "lastConnectionAttemptTimestamp": currentTimestamp
             };
 
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("POST", "/rest/set-custom-mqtt-configuration", true);
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set success!";
-                        setTimeout(getCustomMqttConfiguration, 1000);
-                        setTimeout(function () {
-                            document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
-                            document.getElementById("setCustomMqttConfigurationButton").disabled = false;
-                        }, 3000);
-                    } else {
-                        alert("Error setting custom MQTT configuration. Response: " + this.responseText);
-                        document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set failed!";
-                        setTimeout(function () {
-                            document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
-                            document.getElementById("setCustomMqttConfigurationButton").disabled = false;
-                        }, 3000);
-                    }
-                }
-            };
-            xhttp.send(JSON.stringify(newCustomMqttConfig));
+            energyApi.setCustomMqttConfig(newCustomMqttConfig)
+                .then(data => {
+                    document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set success!";
+                    setTimeout(getCustomMqttConfiguration, 1000);
+                    setTimeout(function () {
+                        document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
+                        document.getElementById("setCustomMqttConfigurationButton").disabled = false;
+                    }, 3000);
+                })
+                .catch(error => {
+                    alert("Error setting custom MQTT configuration. Response: " + error.message);
+                    document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set failed!";
+                    setTimeout(function () {
+                        document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
+                        document.getElementById("setCustomMqttConfigurationButton").disabled = false;
+                    }, 3000);
+                });
 
             // Call to refresh the custom MQTT configuration after setting it
             setTimeout(getCustomMqttConfiguration, 1000);
         }
 
         function checkHasSecrets() {
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("GET", "/rest/get-has-secrets", true);
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        var response = JSON.parse(this.responseText);
+            energyApi.getSystemSecrets()
+                .then(response => {
+                    // If no secrets available, disable cloud services option
+                    if (!response.hasSecrets) {
+                        var cloudServicesCheckbox = document.getElementById("cloudServices");
+                        cloudServicesCheckbox.disabled = true;
+                        cloudServicesCheckbox.checked = false;
 
-                        // If no secrets available, disable cloud services option
-                        if (!response.has_secrets) {
-                            var cloudServicesCheckbox = document.getElementById("cloudServices");
-                            cloudServicesCheckbox.disabled = true;
-                            cloudServicesCheckbox.checked = false;
+                        // Create warning message if it doesn't exist
+                        if (!document.getElementById("cloud-services-warning")) {
+                            var warningDiv = document.createElement("div");
+                            warningDiv.id = "cloud-services-warning";
+                            warningDiv.className = "warning-box";
+                            warningDiv.style.backgroundColor = "#fff3cd";
+                            warningDiv.style.color = "#856404";
+                            warningDiv.style.padding = "10px";
+                            warningDiv.style.borderRadius = "5px";
+                            warningDiv.style.marginTop = "10px";
+                            warningDiv.innerHTML = "⚠️ Cloud services require secrets to be included in the firmware. This build doesn't include secrets.";
 
-                            // Create warning message if it doesn't exist
-                            if (!document.getElementById("cloud-services-warning")) {
-                                var warningDiv = document.createElement("div");
-                                warningDiv.id = "cloud-services-warning";
-                                warningDiv.className = "warning-box";
-                                warningDiv.style.backgroundColor = "#fff3cd";
-                                warningDiv.style.color = "#856404";
-                                warningDiv.style.padding = "10px";
-                                warningDiv.style.borderRadius = "5px";
-                                warningDiv.style.marginTop = "10px";
-                                warningDiv.innerHTML = "⚠️ Cloud services require secrets to be included in the firmware. This build doesn't include secrets.";
-
-                                // Insert after the cloud services label
-                                var labelElement = document.querySelector("label[for='cloudServices']");
-                                labelElement.parentNode.insertBefore(warningDiv, labelElement.nextSibling);
-                            }
+                            // Insert after the cloud services label
+                            var labelElement = document.querySelector("label[for='cloudServices']");
+                            labelElement.parentNode.insertBefore(warningDiv, labelElement.nextSibling);
                         }
                     }
-                }
-            };
-            xhttp.send();
+                })
+                .catch(error => {
+                    console.log("Error checking secrets status:", error.message);
+                });
         }
 
         function updateInfluxDbStatusDisplay(status, timestamp, isEnabled) {
@@ -729,39 +751,33 @@
         }
 
         function getInfluxDbConfiguration() {
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("GET", "/rest/get-influxdb-configuration", true);
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        influxDbConfig = JSON.parse(this.responseText);
+            energyApi.getInfluxDbConfig()
+                .then(data => {
+                    influxDbConfig = data;
 
-                        document.getElementById("influxDbEnabled").checked = influxDbConfig.enabled;
-                        document.getElementById("influxDbServer").value = influxDbConfig.server;
-                        document.getElementById("influxDbPort").value = influxDbConfig.port;
-                        document.getElementById("influxDbVersion").value = influxDbConfig.version;
-                        document.getElementById("influxDbDatabase").value = influxDbConfig.database;
-                        document.getElementById("influxDbUsername").value = influxDbConfig.username;
-                        document.getElementById("influxDbPassword").value = influxDbConfig.password;
-                        document.getElementById("influxDbOrganization").value = influxDbConfig.organization;
-                        document.getElementById("influxDbBucket").value = influxDbConfig.bucket;
-                        document.getElementById("influxDbToken").value = influxDbConfig.token;
-                        document.getElementById("influxDbMeasurement").value = influxDbConfig.measurement;
-                        document.getElementById("influxDbFrequency").value = influxDbConfig.frequency;
-                        document.getElementById("influxDbUseSSL").checked = influxDbConfig.useSSL;
+                    document.getElementById("influxDbEnabled").checked = influxDbConfig.enabled;
+                    document.getElementById("influxDbServer").value = influxDbConfig.server;
+                    document.getElementById("influxDbPort").value = influxDbConfig.port;
+                    document.getElementById("influxDbVersion").value = influxDbConfig.version;
+                    document.getElementById("influxDbDatabase").value = influxDbConfig.database;
+                    document.getElementById("influxDbUsername").value = influxDbConfig.username;
+                    document.getElementById("influxDbPassword").value = influxDbConfig.password;
+                    document.getElementById("influxDbOrganization").value = influxDbConfig.organization;
+                    document.getElementById("influxDbBucket").value = influxDbConfig.bucket;
+                    document.getElementById("influxDbToken").value = influxDbConfig.token;
+                    document.getElementById("influxDbMeasurement").value = influxDbConfig.measurement;
+                    document.getElementById("influxDbFrequency").value = influxDbConfig.frequency;
+                    document.getElementById("influxDbUseSSL").checked = influxDbConfig.useSSL;
 
-                        toggleInfluxDbVersionSettings();
-                        updateInfluxDbStatusDisplay(influxDbConfig.lastConnectionStatus,
-                            influxDbConfig.lastConnectionAttemptTimestamp,
-                            influxDbConfig.enabled);
-
-                    } else {
-                        console.log("Error getting InfluxDB configuration. Response: " + this.responseText);
-                        updateInfluxDbStatusDisplay("Error loading status", "", false);
-                    }
-                }
-            };
-            xhttp.send();
+                    toggleInfluxDbVersionSettings();
+                    updateInfluxDbStatusDisplay(influxDbConfig.lastConnectionStatus,
+                        influxDbConfig.lastConnectionAttemptTimestamp,
+                        influxDbConfig.enabled);
+                })
+                .catch(error => {
+                    console.log("Error getting InfluxDB configuration. Response: " + error.message);
+                    updateInfluxDbStatusDisplay("Error loading status", "", false);
+                });
         }
 
         function setInfluxDbConfiguration() {
@@ -789,48 +805,43 @@
                 "lastConnectionAttemptTimestamp": currentTimestamp
             };
 
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("POST", "/rest/set-influxdb-configuration", true);
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set success!";
-                        setTimeout(getInfluxDbConfiguration, 1000);
-                        setTimeout(function () {
-                            document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
-                            document.getElementById("setInfluxDbConfigurationButton").disabled = false;
-                        }, 3000);
-                    } else {
-                        alert("Error setting InfluxDB configuration. Response: " + this.responseText);
-                        document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set failed!";
-                        setTimeout(function () {
-                            document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
-                            document.getElementById("setInfluxDbConfigurationButton").disabled = false;
-                        }, 3000);
-                    }
-                }
-            };
-            xhttp.send(JSON.stringify(newInfluxDbConfig));
+            energyApi.setInfluxDbConfig(newInfluxDbConfig)
+                .then(data => {
+                    document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set success!";
+                    setTimeout(getInfluxDbConfiguration, 1000);
+                    setTimeout(function () {
+                        document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
+                        document.getElementById("setInfluxDbConfigurationButton").disabled = false;
+                    }, 3000);
+                })
+                .catch(error => {
+                    alert("Error setting InfluxDB configuration. Response: " + error.message);
+                    document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set failed!";
+                    setTimeout(function () {
+                        document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
+                        document.getElementById("setInfluxDbConfigurationButton").disabled = false;
+                    }, 3000);
+                });
 
             // Call to refresh the InfluxDB configuration after setting it
             setTimeout(getInfluxDbConfiguration, 1000);
         }
 
         function loadChannelData() {
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("GET", "/rest/get-channel", true);
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        channelData = JSON.parse(this.responseText);
-                        createEnergyChannelInputs();
-                        loadEnergyValues();
-                    } else {
-                        console.log("Error getting channel data. Response: " + this.responseText);
-                    }
-                }
-            };
-            xhttp.send();
+            return energyApi.getChannelConfig()
+                .then(data => {
+                    channelData = data;
+                    createEnergyChannelInputs();
+                    // Add a delay before loading energy values to prevent overwhelming ESP32
+                    return new Promise(resolve => setTimeout(resolve, 300));
+                })
+                .then(() => {
+                    return loadEnergyValues();
+                })
+                .catch(error => {
+                    console.log("Error getting channel data. Response: " + error.message);
+                    throw error; // Re-throw to handle in calling function
+                });
         }
 
         function createEnergyChannelInputs() {
@@ -841,36 +852,84 @@
                 const channel = channelData[channelIndex];
                 if (channel.active) {
                     const channelDiv = document.createElement("div");
-                    channelDiv.style.marginBottom = "20px";
-                    channelDiv.style.border = "1px solid #ddd";
-                    channelDiv.style.borderRadius = "5px";
-                    channelDiv.style.backgroundColor = "#f9f9f9";
+                    channelDiv.style.cssText = `
+                        margin-bottom: 24px;
+                        border: 1px solid #e1e5e9;
+                        border-radius: 12px;
+                        background: linear-gradient(145deg, #ffffff, #f8f9fa);
+                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+                        padding: 20px;
+                        transition: all 0.2s ease;
+                    `;
+
+                    // Add hover effect
+                    channelDiv.addEventListener('mouseenter', function() {
+                        this.style.transform = 'translateY(-2px)';
+                        this.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08)';
+                    });
+                    channelDiv.addEventListener('mouseleave', function() {
+                        this.style.transform = 'translateY(0)';
+                        this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06)';
+                    });
 
                     channelDiv.innerHTML = `
-                            <h4>Channel ${channelIndex}: ${channel.label}</h4>
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
-                                <div>
-                                    <label for="activeEnergyImported_${channelIndex}">Active Energy Imported (Wh):</label>
-                                    <input type="number" step="0.001" id="activeEnergyImported_${channelIndex}" class="config-input" placeholder="0.000">
-                                </div>
-                                <div>
-                                    <label for="activeEnergyExported_${channelIndex}">Active Energy Exported (Wh):</label>
-                                    <input type="number" step="0.001" id="activeEnergyExported_${channelIndex}" class="config-input" placeholder="0.000">
-                                </div>
-                                <div>
-                                    <label for="reactiveEnergyImported_${channelIndex}">Reactive Energy Imported (VArh):</label>
-                                    <input type="number" step="0.001" id="reactiveEnergyImported_${channelIndex}" class="config-input" placeholder="0.000">
-                                </div>
-                                <div>
-                                    <label for="reactiveEnergyExported_${channelIndex}">Reactive Energy Exported (VArh):</label>
-                                    <input type="number" step="0.001" id="reactiveEnergyExported_${channelIndex}" class="config-input" placeholder="0.000">
-                                </div>
-                                <div>
-                                    <label for="apparentEnergy_${channelIndex}">Apparent Energy (VAh):</label>
-                                    <input type="number" step="0.001" id="apparentEnergy_${channelIndex}" class="config-input" placeholder="0.000">
-                                </div>
+                        <div style="margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e9ecef;">
+                            <h4 style="margin: 0; color: #2c3e50; font-size: 1.1em; font-weight: 600; display: flex; align-items: center;">
+                                <span style="display: inline-block; width: 8px; height: 8px; background: linear-gradient(45deg, #007bff, #0056b3); border-radius: 50%; margin-right: 8px;"></span>
+                                Channel ${channelIndex}: ${channel.label}
+                            </h4>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+                            <div style="display: flex; flex-direction: column;">
+                                <label for="activeEnergyImported_${channelIndex}" style="color: #495057; font-weight: 500; margin-bottom: 6px; font-size: 0.9em;">
+                                    <span style="color: #28a745;">⚡</span> Active Energy Imported (Wh)
+                                </label>
+                                <input type="number" step="0.001" id="activeEnergyImported_${channelIndex}" class="config-input" placeholder="0.000" 
+                                       style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
                             </div>
-                        `;
+                            <div style="display: flex; flex-direction: column;">
+                                <label for="activeEnergyExported_${channelIndex}" style="color: #495057; font-weight: 500; margin-bottom: 6px; font-size: 0.9em;">
+                                    <span style="color: #ffc107;">⚡</span> Active Energy Exported (Wh)
+                                </label>
+                                <input type="number" step="0.001" id="activeEnergyExported_${channelIndex}" class="config-input" placeholder="0.000"
+                                       style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
+                            </div>
+                            <div style="display: flex; flex-direction: column;">
+                                <label for="reactiveEnergyImported_${channelIndex}" style="color: #495057; font-weight: 500; margin-bottom: 6px; font-size: 0.9em;">
+                                    <span style="color: #17a2b8;">🔄</span> Reactive Energy Imported (VArh)
+                                </label>
+                                <input type="number" step="0.001" id="reactiveEnergyImported_${channelIndex}" class="config-input" placeholder="0.000"
+                                       style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
+                            </div>
+                            <div style="display: flex; flex-direction: column;">
+                                <label for="reactiveEnergyExported_${channelIndex}" style="color: #495057; font-weight: 500; margin-bottom: 6px; font-size: 0.9em;">
+                                    <span style="color: #fd7e14;">🔄</span> Reactive Energy Exported (VArh)
+                                </label>
+                                <input type="number" step="0.001" id="reactiveEnergyExported_${channelIndex}" class="config-input" placeholder="0.000"
+                                       style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
+                            </div>
+                            <div style="display: flex; flex-direction: column;">
+                                <label for="apparentEnergy_${channelIndex}" style="color: #495057; font-weight: 500; margin-bottom: 6px; font-size: 0.9em;">
+                                    <span style="color: #6f42c1;">⚙️</span> Apparent Energy (VAh)
+                                </label>
+                                <input type="number" step="0.001" id="apparentEnergy_${channelIndex}" class="config-input" placeholder="0.000"
+                                       style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
+                            </div>
+                        </div>
+                    `;
+
+                    // Add focus effects to inputs
+                    const inputs = channelDiv.querySelectorAll('input');
+                    inputs.forEach(input => {
+                        input.addEventListener('focus', function() {
+                            this.style.borderColor = '#007bff';
+                            this.style.boxShadow = '0 0 0 2px rgba(0, 123, 255, 0.25)';
+                        });
+                        input.addEventListener('blur', function() {
+                            this.style.borderColor = '#ced4da';
+                            this.style.boxShadow = 'none';
+                        });
+                    });
 
                     container.appendChild(channelDiv);
                 }
@@ -881,46 +940,44 @@
             document.getElementById("loadEnergyButton").innerHTML = "Loading...";
             document.getElementById("loadEnergyButton").disabled = true;
 
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("GET", "/rest/get-energy", true);
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        energyData = JSON.parse(this.responseText);
+            return energyApi.getMeterValues()
+                .then(data => {
+                    energyData = data;
 
-                        // Populate the form with current values
-                        for (let channelIndex in energyData) {
-                            const channel = energyData[channelIndex];
+                    // Populate the form with current values
+                    // API format: array of objects with index and data
+                    energyData.forEach(channel => {
+                        const channelIndex = channel.index;
+                        const channelData = channel.data;
 
-                            const activeImportedEl = document.getElementById(`activeEnergyImported_${channelIndex}`);
-                            if (activeImportedEl) activeImportedEl.value = channel.activeEnergyImported || 0;
+                        const activeImportedEl = document.getElementById(`activeEnergyImported_${channelIndex}`);
+                        if (activeImportedEl) activeImportedEl.value = channelData.activeEnergyImported || 0;
 
-                            const activeExportedEl = document.getElementById(`activeEnergyExported_${channelIndex}`);
-                            if (activeExportedEl) activeExportedEl.value = channel.activeEnergyExported || 0;
+                        const activeExportedEl = document.getElementById(`activeEnergyExported_${channelIndex}`);
+                        if (activeExportedEl) activeExportedEl.value = channelData.activeEnergyExported || 0;
 
-                            const reactiveImportedEl = document.getElementById(`reactiveEnergyImported_${channelIndex}`);
-                            if (reactiveImportedEl) reactiveImportedEl.value = channel.reactiveEnergyImported || 0;
+                        const reactiveImportedEl = document.getElementById(`reactiveEnergyImported_${channelIndex}`);
+                        if (reactiveImportedEl) reactiveImportedEl.value = channelData.reactiveEnergyImported || 0;
 
-                            const reactiveExportedEl = document.getElementById(`reactiveEnergyExported_${channelIndex}`);
-                            if (reactiveExportedEl) reactiveExportedEl.value = channel.reactiveEnergyExported || 0;
+                        const reactiveExportedEl = document.getElementById(`reactiveEnergyExported_${channelIndex}`);
+                        if (reactiveExportedEl) reactiveExportedEl.value = channelData.reactiveEnergyExported || 0;
 
-                            const apparentEl = document.getElementById(`apparentEnergy_${channelIndex}`);
-                            if (apparentEl) apparentEl.value = channel.apparentEnergy || 0;
-                        }
+                        const apparentEl = document.getElementById(`apparentEnergy_${channelIndex}`);
+                        if (apparentEl) apparentEl.value = channelData.apparentEnergy || 0;
+                    });
 
-                        document.getElementById("loadEnergyButton").innerHTML = "✓ Values Loaded";
-                    } else {
-                        alert("Error loading energy values. Response: " + this.responseText);
-                        document.getElementById("loadEnergyButton").innerHTML = "❌ Load Failed";
-                    }
-
+                    document.getElementById("loadEnergyButton").innerHTML = "✓ Values Loaded";
+                })
+                .catch(error => {
+                    alert("Error loading energy values. Response: " + error.message);
+                    document.getElementById("loadEnergyButton").innerHTML = "❌ Load Failed";
+                })
+                .finally(() => {
                     setTimeout(function () {
                         document.getElementById("loadEnergyButton").innerHTML = "🔄 Load Current Values";
                         document.getElementById("loadEnergyButton").disabled = false;
                     }, 3000);
-                }
-            };
-            xhttp.send();
+                });
         }
 
         function setEnergyValues() {
@@ -967,24 +1024,34 @@
                 }
             }
 
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("POST", "/rest/set-energy", true);
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        document.getElementById("setEnergyButton").innerHTML = "✓ Values Set";
-                    } else {
-                        alert("Error setting energy values. Response: " + this.responseText);
-                        document.getElementById("setEnergyButton").innerHTML = "❌ Set Failed";
-                    }
+            // Send all energy updates in parallel
+            const updatePromises = [];
+            for (let channelIndex in energyPayload) {
+                const channel = energyPayload[channelIndex];
+                updatePromises.push(
+                    energyApi.setEnergyValues(
+                        parseInt(channelIndex),
+                        channel.activeEnergyImported || 0,
+                        channel.reactiveEnergyImported || 0,
+                        channel.apparentEnergy || 0
+                    )
+                );
+            }
 
+            Promise.all(updatePromises)
+                .then(results => {
+                    document.getElementById("setEnergyButton").innerHTML = "✓ Values Set";
+                })
+                .catch(error => {
+                    alert("Error setting energy values. Response: " + error.message);
+                    document.getElementById("setEnergyButton").innerHTML = "❌ Set Failed";
+                })
+                .finally(() => {
                     setTimeout(function () {
                         document.getElementById("setEnergyButton").innerHTML = "Set Energy Values";
                         document.getElementById("setEnergyButton").disabled = false;
                     }, 3000);
-                }
-            };
-            xhttp.send(JSON.stringify(energyPayload));
+                });
         }
 
         function resetAllEnergy() {
@@ -996,50 +1063,78 @@
             document.getElementById("resetAllEnergyButton").innerHTML = "Resetting...";
             document.getElementById("resetAllEnergyButton").disabled = true;
 
-            var xhttp = new XMLHttpRequest();
-            xhttp.open("POST", "/rest/reset-energy", true);
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        document.getElementById("resetAllEnergyButton").innerHTML = "✓ Reset Complete";
-                        // Clear all input fields
-                        for (let channelIndex in channelData) {
-                            const channel = channelData[channelIndex];
-                            if (channel.active) {
-                                const inputs = [
-                                    `activeEnergyImported_${channelIndex}`,
-                                    `activeEnergyExported_${channelIndex}`,
-                                    `reactiveEnergyImported_${channelIndex}`,
-                                    `reactiveEnergyExported_${channelIndex}`,
-                                    `apparentEnergy_${channelIndex}`
-                                ];
-                                inputs.forEach(id => {
-                                    const el = document.getElementById(id);
-                                    if (el) el.value = "0.000";
-                                });
-                            }
+            energyApi.resetEnergyValues()
+                .then(data => {
+                    document.getElementById("resetAllEnergyButton").innerHTML = "✓ Reset Complete";
+                    // Clear all input fields
+                    for (let channelIndex in channelData) {
+                        const channel = channelData[channelIndex];
+                        if (channel.active) {
+                            const inputs = [
+                                `activeEnergyImported_${channelIndex}`,
+                                `activeEnergyExported_${channelIndex}`,
+                                `reactiveEnergyImported_${channelIndex}`,
+                                `reactiveEnergyExported_${channelIndex}`,
+                                `apparentEnergy_${channelIndex}`
+                            ];
+                            inputs.forEach(id => {
+                                const el = document.getElementById(id);
+                                if (el) el.value = "0.000";
+                            });
                         }
-                    } else {
-                        alert("Error resetting energy values. Response: " + this.responseText);
-                        document.getElementById("resetAllEnergyButton").innerHTML = "❌ Reset Failed";
                     }
-
+                })
+                .catch(error => {
+                    alert("Error resetting energy values. Response: " + error.message);
+                    document.getElementById("resetAllEnergyButton").innerHTML = "❌ Reset Failed";
+                })
+                .finally(() => {
                     setTimeout(function () {
                         document.getElementById("resetAllEnergyButton").innerHTML = "Reset All to Zero";
                         document.getElementById("resetAllEnergyButton").disabled = false;
                     }, 3000);
-                }
-            };
-            xhttp.send();
+                });
+        }
+
+        // Sequential API loading to prevent overwhelming the ESP32
+        async function loadConfigurationData() {
+            const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            const DELAY_BETWEEN_REQUESTS = 100;
+            
+            try {
+                console.log("Loading configuration data sequentially...");
+                
+                await getCloudServices();
+                await delay(DELAY_BETWEEN_REQUESTS);
+                
+                await getLedBrightness();
+                await delay(DELAY_BETWEEN_REQUESTS);
+                
+                await getLogLevel();
+                await delay(DELAY_BETWEEN_REQUESTS);
+                
+                await getCustomMqttConfiguration();
+                await delay(DELAY_BETWEEN_REQUESTS);
+                
+                await getInfluxDbConfiguration();
+                await delay(DELAY_BETWEEN_REQUESTS);
+                
+                await checkHasSecrets();
+                await delay(DELAY_BETWEEN_REQUESTS);
+                
+                await loadChannelData();
+                
+                console.log("Configuration data loaded successfully");
+                
+            } catch (error) {
+                console.error("Error loading configuration data:", error);
+                alert("Error loading configuration data. Please refresh the page.");
+            }
         }
 
         document.addEventListener("DOMContentLoaded", function () {
-            getGeneralConfiguration();
-            getLogLevel();
-            getCustomMqttConfiguration();
-            getInfluxDbConfiguration();
-            checkHasSecrets();
-            loadChannelData();
+            // Load configuration data sequentially to prevent ESP32 overload
+            loadConfigurationData();
 
             // Add event listener for version change
             document.getElementById("influxDbVersion").addEventListener("change", toggleInfluxDbVersionSettings);

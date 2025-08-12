@@ -37,7 +37,7 @@
 #define ADE7953_HOURLY_CSV_SAVE_TASK_PRIORITY 1 // The priority for the hourly CSV save task
 
 // ENERGY_SAVING
-#define SAVE_ENERGY_INTERVAL (5 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory
+#define SAVE_ENERGY_INTERVAL (15 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory
 #define ENERGY_CSV_PREFIX "/energy"
 #define DAILY_ENERGY_CSV_HEADER "timestamp,channel,active_imported,active_exported"
 #define DAILY_ENERGY_CSV_DIGITS 0 // Since the energy is in Wh, it is useless to go below 1 Wh, and we also save in space usage

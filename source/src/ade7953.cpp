@@ -2296,7 +2296,7 @@ namespace Ade7953
         } else if (activeEnergy < 0) { // Increment exported
             _meterValues[channelIndex].activeEnergyExported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
         } else { // No load active energy detected
-            LOG_DEBUG(
+            LOG_VERBOSE(
                 "%s (%d): No load active energy reading. Setting active power and power factor to 0",
                 _channelData[channelIndex].label,
                 channelIndex
@@ -2310,7 +2310,7 @@ namespace Ade7953
         } else if (reactiveEnergy < 0) { // Increment exported reactive energy
             _meterValues[channelIndex].reactiveEnergyExported += abs(_meterValues[channelIndex].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
         } else { // No load reactive energy detected
-            LOG_DEBUG(
+            LOG_VERBOSE(
                 "%s (%d): No load reactive energy reading. Setting reactive power to 0",
                 _channelData[channelIndex].label,
                 channelIndex
@@ -2321,7 +2321,7 @@ namespace Ade7953
         if (apparentEnergy != 0) {
             _meterValues[channelIndex].apparentEnergy += _meterValues[channelIndex].apparentPower * deltaHoursFromLastEnergyIncrement; // VA * h = VAh
         } else {
-            LOG_DEBUG(
+            LOG_VERBOSE(
                 "%s (%d): No load apparent energy reading. Setting apparent power and current to 0",
                 _channelData[channelIndex].label,
                 channelIndex

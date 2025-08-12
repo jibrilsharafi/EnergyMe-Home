@@ -1184,7 +1184,11 @@ namespace CustomServer
         server.on("/api/v1/system/secrets", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             JsonDocument doc;
-            doc["hasSecrets"] = HAS_SECRETS;
+            #ifdef HAS_SECRETS // Like this it returns true or false, otherwise it returns 1 or 0
+            doc["hasSecrets"] = true;
+            #else
+            doc["hasSecrets"] = false;
+            #endif
             _sendJsonResponse(request, doc); });
     }
 
