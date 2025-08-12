@@ -100,8 +100,8 @@
     <div id="update" class="section-box">
         <h2>Update</h2>
         <p>Upload a new firmware to the device (only <i>.bin</i> files are allowed)</p>
-        <form method='POST' action='/do-update' enctype='multipart/form-data' onsubmit="return formSubmitted(event)">
-            <input type='file' id='file' name='update' accept='.bin' required
+        <form method='POST' action='/api/v1/ota/upload' enctype='multipart/form-data' onsubmit="return formSubmitted(event)">
+            <input type='file' id='file' name='firmware' accept='.bin' required
                 title="Select the firmware .bin file to upload">
             <input type='submit' id='submit' value='🚀 Update' title="Click to start the firmware update process">
         </form>
@@ -128,16 +128,6 @@
         <p id="no-update" class="light-grey-box">Latest version installed</p>
     </div>
 
-    <div id="update-status" class="section-box">
-        <h2>Last update status</h2>
-        <div id="status-details" style="display: none;">
-            <p><span class='list-key'>Status:</span><span id='status' class='list-value'></span></p>
-            <p><span class='list-key' id="reason-key">Reason:</span><span id='reason' class='list-value'></span></p>
-            <p><span class='list-key'>Updated:</span><span id='timestamp' class='list-value'></span></p>
-        </div>
-        <p id="no-status" class="light-grey-box">No update status info available</p>
-    </div>
-
     <div id="rollback" class="section-box">
         <h2>Firmware Rollback</h2>
         <p>You can revert to the previous firmware version stored in the other partition. This is useful if the current
@@ -151,6 +141,7 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
+    <script src="/js/api-client.js"></script>
     <script>
         var file_size = 341760; // Default to ESP32 firmware size to avoid division by zero
         const UPDATE_PROGRESS_INTERVAL = 500;
@@ -172,14 +163,13 @@
         }
 
         function updateProgress() {
-            if (!document.getElementById('loading-overlay').style.display === 'flex') {
+            if (document.getElementById('loading-overlay').style.display !== 'flex') {
                 return; // Stop if overlay is hidden
             }
 
-            fetch('/rest/update-status')
-                .then(response => response.json())
+            energyApi.getOtaStatus()
                 .then(data => {
-                    const percentage = Math.min(Math.floor((data.progress / file_size) * 100) || 0, 100);
+                    const percentage = Math.min(Math.floor(data.progressPercent || 0), 100);
                     const circle = document.querySelector('.progress-circle');
                     const percentText = document.querySelector('.percent-text');
                     const circumference = 2 * Math.PI * 90; // radius is 90
@@ -191,7 +181,7 @@
                     // Update percentage text
                     percentText.textContent = `${percentage}%`;
 
-                    if (percentage < 100) {
+                    if (percentage < 100 && data.status === 'running') {
                         setTimeout(updateProgress, UPDATE_PROGRESS_INTERVAL);
                     }
                 })
@@ -220,23 +210,16 @@
             var file = fileInput.files[0];
 
             function proceedWithUpdate(md5) {
-                fetch('/set-md5?md5=' + md5)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (response.ok) {
-                            console.log('MD5 hash set successfully');
-                        } else {
-                            console.error('Failed to set MD5 hash:', data.reason);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error setting MD5 hash:', error);
-                    });
+                var formData = new FormData();
+                formData.append('firmware', file);
 
-                var formData = new FormData(event.target);
-                var url = '/do-update';
+                // Set up headers
+                var headers = {};
+                if (md5) {
+                    headers['X-MD5'] = md5;
+                }
 
-                // Inside your fetch .then() callback, before making the update request:
+                // Update progress overlay
                 document.getElementById('loading-overlay').innerHTML = `
                     <div class="loading-content">
                         <svg class="progress-ring" width="200" height="200">
@@ -261,45 +244,45 @@
                         <p id="loading-message"></p>
                     </div>`;
 
-                // Start progress tracking
-                updateProgress();
-
                 document.getElementById('loading-overlay').style.display = 'flex';
                 document.getElementById('loading-message').innerHTML = getLoadingMessage();
 
-                fetch(url, {
+                // Start progress tracking
+                setTimeout(updateProgress, 1000);
+
+                fetch('/api/v1/ota/upload', {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: headers
                 })
                     .then(response => response.json())
                     .then(data => {
                         document.getElementById('loading-overlay').style.display = 'none';
                         resultMessageBox.style.display = 'block';
 
-                        if (data.status === 'success') {
+                        if (data.success || data.message) {
                             resultMessageBox.style.backgroundColor = '#d4edda';
                             resultMessageBox.style.color = '#155724';
-                            resultMessageBox.innerHTML = 'Update successful! Redirecting in 5 seconds...';
+                            resultMessageBox.innerHTML = 'Update successful! The device will restart. Redirecting in 5 seconds...';
 
                             document.getElementById("submit").value = "Update successful";
                             document.getElementById("submit").style.backgroundColor = '#28a74550';
 
                             setTimeout(function () {
                                 window.location.href = '/';
-                            }, 7000);
+                            }, 5000);
                         } else {
                             resultMessageBox.style.backgroundColor = '#f8d7da';
                             resultMessageBox.style.color = '#721c24';
-                            resultMessageBox.innerHTML = 'Update failed: ' + data.reason;
+                            resultMessageBox.innerHTML = 'Update failed: ' + (data.error || data.message || 'Unknown error');
 
                             document.getElementById("submit").value = "Update failed";
                             document.getElementById("submit").style.backgroundColor = '#dc354550';
 
                             setTimeout(function () {
-                                document.getElementById("submit").value = "Update";
+                                document.getElementById("submit").value = "🚀 Update";
                                 document.getElementById("submit").disabled = false;
                                 document.getElementById("submit").style.backgroundColor = previousColor;
-
                                 resultMessageBox.style.display = 'none';
                             }, 5000);
                         }
@@ -311,15 +294,15 @@
                         resultMessageBox.style.backgroundColor = '#f8d7da';
                         resultMessageBox.style.color = '#721c24';
                         resultMessageBox.innerHTML = 'Update failed: ' + error.message;
+                        resultMessageBox.style.display = 'block';
 
                         document.getElementById("submit").value = "Update failed";
                         document.getElementById("submit").style.backgroundColor = '#dc354550';
 
                         setTimeout(function () {
-                            document.getElementById("submit").value = "Update";
+                            document.getElementById("submit").value = "🚀 Update";
                             document.getElementById("submit").disabled = false;
                             document.getElementById("submit").style.backgroundColor = previousColor;
-
                             resultMessageBox.style.display = 'none';
                         }, 5000);
                     });
@@ -348,100 +331,65 @@
         }
 
         function getDeviceInfo() {
-            var request = new XMLHttpRequest();
-            request.open('GET', '/rest/device-info', true);
-            request.onload = function () {
-                if (request.status == 200) {
-                    var data = JSON.parse(request.responseText);
-                    document.getElementById("current-firmware-version").innerHTML = data.firmware.buildVersion;
-                    document.getElementById("current-firmware-date").innerHTML = data.firmware.buildDate;
-                } else {
-                    console.log("Error getting device info");
-                }
-            };
-            request.send();
-        }
-
-        function getFirmwareUpdateInfo() {
-            // First try to fetch from GitHub API
-            fetch('https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases/latest')
-                .then(response => response.json())
+            energyApi.getSystemInfo()
                 .then(data => {
-                    try {
-                        // Process GitHub API response
-                        const firmwareInfo = {
-                            buildVersion: data.tag_name,
-                            buildDate: new Date(data.published_at).toISOString().split('T')[0],
-                            changelog: data.html_url
-                        };
-
-                        // Find the binary asset
-                        if (data.assets && data.assets.length > 0) {
-                            const binAsset = data.assets.find(asset => asset.name.endsWith('.bin'));
-                            if (binAsset) {
-                                firmwareInfo.url = binAsset.browser_download_url;
-                            }
-                        }
-
-                        // Update UI with GitHub data
-                        updateFirmwareInfoUI(firmwareInfo);
-
-                        // Store this info locally for easier access
-                        saveFirmwareInfoLocally(firmwareInfo);
-                    } catch (error) {
-                        console.error('Error processing GitHub response:', error);
-                        // Fall back to local file if GitHub processing fails
-                        fallbackToLocalFirmwareInfo();
+                    // Extract firmware info from the system info response
+                    const firmwareInfo = data.static?.firmware || data.firmware;
+                    if (firmwareInfo) {
+                        document.getElementById("current-firmware-version").innerHTML = firmwareInfo.buildVersion || 'N/A';
+                        document.getElementById("current-firmware-date").innerHTML = firmwareInfo.buildDate || 'N/A';
                     }
                 })
                 .catch(error => {
-                    console.error('Error fetching from GitHub:', error);
-                    fallbackToLocalFirmwareInfo();
+                    console.error("Error getting device info:", error);
                 });
         }
 
-        function fallbackToLocalFirmwareInfo() {
-            // Use the original approach to get firmware info from local file
-            fetch('/rest/firmware-update-info')
-                .then(response => response.json())
+        function getFirmwareUpdateInfo() {
+            // Use the unified API via the API client
+            energyApi.getFirmwareUpdateInfo()
                 .then(data => {
                     updateFirmwareInfoUI(data);
                 })
                 .catch(error => {
-                    console.error('Error fetching local firmware info:', error);
+                    console.error('Error fetching firmware info:', error);
                     document.getElementById("update-details").style.display = "none";
                     document.getElementById("no-update").style.display = "block";
                 });
-        }
-
-        function updateFirmwareInfoUI(data) {
-            if (!data || Object.keys(data).length === 0) {
+        }        function updateFirmwareInfoUI(data) {
+            if (!data || (!data.availableVersion && data.isLatest)) {
                 document.getElementById("update-details").style.display = "none";
                 document.getElementById("no-update").style.display = "block";
                 return;
             }
 
-            document.getElementById("update-version").innerHTML = data.buildVersion || 'N/A';
-            document.getElementById("update-date").innerHTML = data.buildDate || 'N/A';
+            document.getElementById("update-version").innerHTML = data.availableVersion || 'N/A';
+            document.getElementById("update-date").innerHTML = data.releaseDate || data.buildDate || 'N/A';
 
-            if (data.url) {
-                document.getElementById("update-url").href = data.url;
+            if (data.updateUrl) {
+                document.getElementById("update-url").href = data.updateUrl;
+                document.getElementById("update-url").parentElement.style.display = "block";
             } else {
                 document.getElementById("update-url").parentElement.style.display = "none";
             }
 
-            if (data.changelog) {
-                document.getElementById("update-changelog").href = data.changelog;
+            if (data.changelogUrl) {
+                document.getElementById("update-changelog").href = data.changelogUrl;
+                document.getElementById("update-changelog").parentElement.style.display = "block";
             } else {
                 document.getElementById("update-changelog").parentElement.style.display = "none";
             }
 
             document.getElementById("update-md5").innerHTML = data.md5 || 'Not available';
-            document.getElementById("update-details").style.display = "block";
-            document.getElementById("no-update").style.display = "none";
 
-            // Check if current version is up to date
-            checkIfLatestVersion(data.buildVersion);
+            // Show/hide update sections based on isLatest flag
+            if (data.isLatest) {
+                document.getElementById("update-details").style.display = "none";
+                document.getElementById("no-update").style.display = "block";
+            } else {
+                document.getElementById("update-details").style.display = "block";
+                document.getElementById("no-update").style.display = "none";
+            }
         }
 
         function saveFirmwareInfoLocally(firmwareInfo) {
@@ -451,142 +399,34 @@
             }
         }
 
-        function checkIfLatestVersion(latestVersion) {
-            // Get current version from the page
-            const currentVersion = document.getElementById("current-firmware-version").innerHTML;
-
-            if (!currentVersion || !latestVersion) return;
-
-            // Parse versions (assuming semantic versioning format x.y.z)
-            const parseVersion = (versionStr) => {
-                const parts = versionStr.split('.');
-                return {
-                    major: parseInt(parts[0]) || 0,
-                    minor: parseInt(parts[1]) || 0,
-                    patch: parseInt(parts[2]) || 0
-                };
-            };
-
-            const current = parseVersion(currentVersion);
-            const latest = parseVersion(latestVersion);
-
-            // Compare versions
-            const needsUpdate =
-                latest.major > current.major ||
-                (latest.major === current.major && latest.minor > current.minor) ||
-                (latest.major === current.major && latest.minor === current.minor && latest.patch > current.patch);
-
-            // Update UI based on version comparison
-            if (needsUpdate) {
-                document.getElementById("no-update").style.display = "none";
-            } else {
-                document.getElementById("update-details").style.display = "none";
-                document.getElementById("no-update").style.display = "block";
-            }
-
-            // Update the is-latest-firmware-installed endpoint result in localStorage
-            localStorage.setItem('isLatestFirmware', !needsUpdate);
-        }
-
-        function getRandomHappyDay() {
-            const happyDays = [
-                "That was such a happy day",
-                "That was a day full of joy",
-                "Oh man, that was a happy day",
-                "That was a day to remember",
-                "I wish every day I could update the firmware",
-                "That was a day full of 1's and 0's",
-                "That was a day full of binary",
-                "That was a day full of 0x01 and 0x00",
-                "That was a day full of energy (get the pun?)",
-                "What an electrifying day"
-            ];
-
-            return happyDays[Math.floor(Math.random() * happyDays.length)];
-        }
-
-        function getRandomSadDay() {
-            const sadDays = [
-                "Why did the update fail that day?!?",
-                "Oh no! I really wanted to update the firmware that day"
-            ];
-
-            return sadDays[Math.floor(Math.random() * sadDays.length)];
-        }
-
-        function getFirmwareUpdateStatus() {
-            var request = new XMLHttpRequest();
-            request.open('GET', '/rest/firmware-update-status', true);
-            request.onload = function () {
-                if (request.status == 200) {
-                    var data = JSON.parse(request.responseText);
-                    if (Object.keys(data).length != 0) {
-
-                        var status = data.status.toUpperCase();
-                        var statusElement = document.getElementById("status");
-                        statusElement.innerHTML = status;
-                        if (status == "FAILED") {
-                            statusElement.style.color = "red";
-                            document.getElementById("reason").innerHTML = data.reason;
-                            document.getElementById("timestamp").innerHTML = data.timestamp + " | " + getRandomSadDay();
-                        } else if (status == "SUCCESS") {
-                            statusElement.style.color = "green";
-                            document.getElementById("reason-key").style.display = "none";
-                            document.getElementById("reason").style.display = "none";
-                            document.getElementById("timestamp").innerHTML = data.timestamp + " | " + getRandomHappyDay();
-                        }
-
-                        document.getElementById("status-details").style.display = "block";
-                        document.getElementById("no-status").style.display = "none";
-                    }
-                } else {
-                    console.log("Error getting firmware update status");
-                }
-            };
-            request.send();
-        }
-
         function doRollback() {
             if (!confirm("Are you sure you want to rollback to the previous firmware version? The device will restart.")) {
                 return;
             }
 
-            fetch('/rest/update-rollback', { method: 'POST' })
-                .then(response => {
-                    const isSuccess = response.status === 200;
-                    return response.json().then(data => ({ ...data, isSuccess }));
-                })
+            energyApi.rollbackFirmware()
                 .then(data => {
                     document.getElementById('loading-overlay').style.display = 'none';
                     const resultMessageBox = document.getElementById('result-message');
                     resultMessageBox.style.display = 'block';
+                    resultMessageBox.style.backgroundColor = '#d4edda';
+                    resultMessageBox.style.color = '#155724';
+                    resultMessageBox.innerHTML = 'Rollback initiated successfully! The device will restart shortly.';
 
-                    if (data.isSuccess) {
-                        resultMessageBox.style.backgroundColor = '#d4edda';
-                        resultMessageBox.style.color = '#155724';
-                        resultMessageBox.innerHTML = 'Rollback initiated! The device will restart. Please wait 5 seconds...';
-
-                        setTimeout(function () {
-                            window.location.href = '/';
-                        }, 5000);
-                    } else {
-                        resultMessageBox.style.backgroundColor = '#f8d7da';
-                        resultMessageBox.style.color = '#721c24';
-                        resultMessageBox.innerHTML = 'Rollback failed: ' + data.reason;
-
-                        setTimeout(() => {
-                            resultMessageBox.style.display = 'none';
-                        }, 5000);
-                    }
+                    // Reload page after delay to see the rollback result
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 5000);
                 })
                 .catch(error => {
+                    console.error('Rollback failed:', error);
                     document.getElementById('loading-overlay').style.display = 'none';
                     const resultMessageBox = document.getElementById('result-message');
+                    resultMessageBox.style.display = 'block';
                     resultMessageBox.style.backgroundColor = '#f8d7da';
                     resultMessageBox.style.color = '#721c24';
                     resultMessageBox.innerHTML = 'Rollback failed: ' + error.message;
-                    resultMessageBox.style.display = 'block';
-
+                    
                     setTimeout(() => {
                         resultMessageBox.style.display = 'none';
                     }, 5000);
@@ -596,7 +436,6 @@
         document.addEventListener("DOMContentLoaded", function () {
             getDeviceInfo();
             getFirmwareUpdateInfo();
-            getFirmwareUpdateStatus();
         });
     </script>
 </body>

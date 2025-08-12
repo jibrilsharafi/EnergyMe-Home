@@ -80,6 +80,7 @@ namespace CustomServer
     static void _serveOtaUploadEndpoint();
     static void _serveOtaStatusEndpoint();
     static void _serveOtaRollbackEndpoint();
+    static int _compareVersions(const char* current, const char* available);
     static void _serveFirmwareStatusEndpoint();
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request);
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
@@ -390,9 +391,9 @@ namespace CustomServer
 
         _otaTimeoutTaskShouldRun = true;
         
-        // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
         uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(OTA_TIMEOUT));
         
+        // If everything goes well, we will never reach here
         if (notificationValue == 0 && _otaTimeoutTaskShouldRun) {
             // Timeout occurred and task wasn't stopped - force reboot
             LOG_ERROR("OTA timeout exceeded (%d seconds), forcing system restart", OTA_TIMEOUT / 1000);
@@ -465,7 +466,7 @@ namespace CustomServer
 
         if (!client.connect("127.0.0.1", WEBSERVER_PORT))
         {
-            LOG_INFO("Health check: Cannot connect to local web server");
+            LOG_WARNING("Health check failed: Cannot connect to local web server");
             return false;
         }
 
@@ -495,11 +496,12 @@ namespace CustomServer
 
                     if (statusCode == HTTP_CODE_OK)
                     {
+                        LOG_DEBUG("Health check passed: HTTP OK");
                         return true;
                     }
                     else
                     {
-                        LOG_WARNING("Health check: HTTP status code %d", statusCode);
+                        LOG_WARNING("Health check failed: HTTP status code %d", statusCode);
                         return false;
                     }
                 }
@@ -508,7 +510,7 @@ namespace CustomServer
         }
 
         client.stop();
-        LOG_WARNING("Health check: HTTP request timeout");
+        LOG_WARNING("Health check failed: HTTP request timeout");
         return false;
     }
 
@@ -1016,9 +1018,91 @@ namespace CustomServer
         });
     }
 
+    static bool _fetchGitHubReleaseInfo(JsonDocument &doc)
+    {
+        HTTPClient http;
+        http.begin(GITHUB_API_RELEASES_URL);
+        http.addHeader("User-Agent", "EnergyMe-Home-ESP32");
+        http.addHeader("Accept", "application/vnd.github.v3+json");
+        
+        int httpCode = http.GET();
+        if (httpCode != HTTP_CODE_OK) {
+            LOG_ERROR("GitHub API request failed with code: %d", httpCode);
+            http.end();
+            return false;
+        }
+        
+        // Parse GitHub API response
+        String response = http.getString();
+        http.end();
+        
+        JsonDocument githubDoc;
+        DeserializationError error = deserializeJson(githubDoc, response);
+        if (error) {
+            LOG_ERROR("Failed to parse GitHub API response: %s", error.c_str());
+            return false;
+        }
+        
+        // Extract release information
+        if (!githubDoc["tag_name"].is<const char*>()) {
+            LOG_ERROR("Invalid GitHub API response: missing tag_name");
+            return false;
+        }
+        
+        const char* tagName = githubDoc["tag_name"];
+        const char* releaseDate = githubDoc["published_at"].as<const char*>();
+        const char* changelog = githubDoc["html_url"].as<const char*>();
+        
+        // Find .bin asset
+        JsonArray assets = githubDoc["assets"];
+        const char* downloadUrl = nullptr;
+        const char* md5Hash = nullptr;
+        
+        for (JsonObject asset : assets) {
+            const char* name = asset["name"];
+            if (name && strstr(name, ".bin") != nullptr) {
+                downloadUrl = asset["browser_download_url"];
+                break;
+            }
+        }
+        
+        // Set response fields
+        doc["availableVersion"] = tagName;
+        if (releaseDate) doc["releaseDate"] = releaseDate;
+        if (downloadUrl) doc["updateUrl"] = downloadUrl;
+        if (changelog) doc["changelogUrl"] = changelog;
+        if (md5Hash) doc["md5"] = md5Hash;
+        
+        // Compare versions to determine if update is available
+        doc["isLatest"] = _compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
+        
+        LOG_DEBUG("GitHub release info fetched: version=%s, isLatest=%s", 
+                 tagName, doc["isLatest"].as<bool>() ? "true" : "false");
+        
+        return true;
+    }
+
+    static int _compareVersions(const char* current, const char* available)
+    {
+        // Parse version strings (assuming semantic versioning: x.y.z)
+        int currentMajor = 0, currentMinor = 0, currentPatch = 0;
+        int availableMajor = 0, availableMinor = 0, availablePatch = 0;
+        
+        // Remove 'v' prefix if present
+        const char* currentStr = (current[0] == 'v') ? current + 1 : current;
+        const char* availableStr = (available[0] == 'v') ? available + 1 : available;
+        
+        sscanf(currentStr, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
+        sscanf(availableStr, "%d.%d.%d", &availableMajor, &availableMinor, &availablePatch);
+        
+        // Compare versions
+        if (currentMajor != availableMajor) return currentMajor - availableMajor;
+        if (currentMinor != availableMinor) return currentMinor - availableMinor;
+        return currentPatch - availablePatch;
+    }
+
     static void _serveFirmwareStatusEndpoint()
     {
-
         // Get firmware update information
         server.on("/api/v1/firmware/update-info", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
@@ -1029,22 +1113,25 @@ namespace CustomServer
             doc["buildDate"] = FIRMWARE_BUILD_DATE;
             doc["buildTime"] = FIRMWARE_BUILD_TIME;
             
-            // Get available update info from MQTT configuration
+            #ifdef HAS_SECRETS
+            // Get available update info from MQTT configuration when secrets are available
             char availableVersion[VERSION_BUFFER_SIZE];
             char updateUrl[URL_BUFFER_SIZE];
             
-            #ifdef HAS_SECRETS
             Mqtt::getFirmwareUpdateVersion(availableVersion, sizeof(availableVersion));
             if (strlen(availableVersion) > 0) doc["availableVersion"] = availableVersion;
 
             Mqtt::getFirmwareUpdateUrl(updateUrl, sizeof(updateUrl));
             if (strlen(updateUrl) > 0) doc["updateUrl"] = updateUrl;
-            #endif
             
-            #ifdef HAS_SECRETS
             doc["isLatest"] = Mqtt::isLatestFirmwareInstalled();
             #else
-            doc["isLatest"] = true; // No updates available without secrets
+            // Fetch from GitHub API when no secrets are available
+            if (!_fetchGitHubReleaseInfo(doc)) {
+                // If GitHub fetch fails, just return current version info
+                doc["isLatest"] = true; // Assume latest if we can't check
+                LOG_WARNING("Failed to fetch GitHub release info, assuming current version is latest");
+            }
             #endif
 
             _sendJsonResponse(request, doc);

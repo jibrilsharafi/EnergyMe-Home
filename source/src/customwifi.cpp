@@ -402,12 +402,15 @@ namespace CustomWifi
 
   static bool _testConnectivity()
   {
-    if (!isFullyConnected()) return false;
+    if (!isFullyConnected()) {
+      LOG_DEBUG("Connectivity test failed: not fully connected");
+      return false;
+    }
 
     // Check if we have a valid gateway IP
     IPAddress gateway = WiFi.gatewayIP();
     if (gateway == IPAddress(0, 0, 0, 0)) {
-      LOG_WARNING("No gateway IP available - connectivity issue detected");
+      LOG_WARNING("Connectivity test failed: no gateway IP available");
       statistics.wifiConnectionError++;
       return false;
     }
@@ -416,15 +419,48 @@ namespace CustomWifi
     IPAddress dns1 = WiFi.dnsIP(0);
     IPAddress dns2 = WiFi.dnsIP(1);
     if (dns1 == IPAddress(0, 0, 0, 0) && dns2 == IPAddress(0, 0, 0, 0)) {
-      LOG_WARNING("No DNS servers available - connectivity issue detected");
+      LOG_WARNING("Connectivity test failed: no DNS servers available");
       statistics.wifiConnectionError++;
       return false;
     }
 
-    LOG_DEBUG("Connectivity test passed - Gateway: %s, DNS: %s", 
-              gateway.toString().c_str(), 
-              dns1.toString().c_str());
-    return true;
+    // Try a simple HTTP request to test actual internet connectivity
+    WiFiClient client;
+    client.setTimeout(CONNECTIVITY_TEST_TIMEOUT_MS);
+    
+    if (!client.connect(CONNECTIVITY_TEST_HOST, CONNECTIVITY_TEST_PORT)) {
+      LOG_WARNING("Connectivity test failed: cannot connect to %s", CONNECTIVITY_TEST_HOST);
+      statistics.wifiConnectionError++;
+      return false;
+    }
+    
+    client.print("HEAD / HTTP/1.1\r\nHost: ");
+    client.print(CONNECTIVITY_TEST_HOST);
+    client.print("\r\nConnection: close\r\n\r\n");
+    
+    // Wait for response
+    uint64_t startTime = millis64();
+    while (client.connected() && (millis64() - startTime) < CONNECTIVITY_TEST_TIMEOUT_MS) {
+      if (client.available()) {
+        String response = client.readStringUntil('\n');
+        client.stop();
+        if (response.startsWith("HTTP/1.1")) {
+          LOG_DEBUG("Connectivity test passed - Gateway: %s, DNS: %s, Host tested: %s:%d", 
+                    gateway.toString().c_str(), 
+                    dns1.toString().c_str(),
+                    CONNECTIVITY_TEST_HOST,
+                    CONNECTIVITY_TEST_PORT);
+          return true;
+        }
+        break;
+      }
+      delay(10);
+    }
+    
+    client.stop();
+    LOG_WARNING("Connectivity test failed: no valid HTTP response from %s", CONNECTIVITY_TEST_HOST);
+    statistics.wifiConnectionError++;
+    return false;
   }
 
   static void _forceReconnectInternal()

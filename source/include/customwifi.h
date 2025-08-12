@@ -29,6 +29,11 @@
 #define WIFI_CONNECTIVITY_TEST_INTERVAL (60 * 1000) // Test actual network connectivity every minute
 #define WIFI_FORCE_RECONNECT_DELAY (2 * 1000)      // Delay after forcing reconnection
 
+// Connectivity test parameters
+#define CONNECTIVITY_TEST_TIMEOUT_MS 3000           // Timeout for connectivity tests
+#define CONNECTIVITY_TEST_HOST "google.com"         // Host to test connectivity against
+#define CONNECTIVITY_TEST_PORT 80                   // Port for connectivity test
+
 #define MDNS_HOSTNAME "energyme"
 #define MDNS_QUERY_TIMEOUT (5 * 1000)
 

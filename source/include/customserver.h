@@ -7,6 +7,7 @@
 #include <AdvancedLogger.h>
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
+#include <HTTPClient.h>
 #include <Update.h>
 #include "esp_ota_ops.h"
 
@@ -38,7 +39,7 @@
 #define HEALTH_CHECK_TASK_NAME "health_check_task"
 #define HEALTH_CHECK_TASK_STACK_SIZE (4 * 1024)
 #define HEALTH_CHECK_TASK_PRIORITY 1
-#define HEALTH_CHECK_INTERVAL_MS (60 * 1000)
+#define HEALTH_CHECK_INTERVAL_MS (30 * 1000)
 #define HEALTH_CHECK_TIMEOUT_MS (5 * 1000)
 #define HEALTH_CHECK_MAX_FAILURES 3 // Maximum consecutive failures before restart
 

@@ -294,7 +294,7 @@ namespace Ade7953
         // Clean up resources (where the data will also be saved)
         _cleanup();
         
-        LOG_INFO("ADE7953 stopped successfully");
+        LOG_DEBUG("ADE7953 stopped successfully");
     }
 
     // Register operations

@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "12"
-#define FIRMWARE_BUILD_VERSION_PATCH "11"
+#define FIRMWARE_BUILD_VERSION_PATCH "12"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -17,6 +17,7 @@
 #define FULL_PRODUCT_NAME "EnergyMe - Home"
 #define PRODUCT_DESCRIPTION "An open-source energy monitoring system for home use, capable of monitoring up to 17 circuits."
 #define GITHUB_URL "https://github.com/jibrilsharafi/EnergyMe-Home"
+#define GITHUB_API_RELEASES_URL "https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases/latest"
 #define AUTHOR "Jibril Sharafi"
 #define AUTHOR_EMAIL "jibril.sharafi@gmail.com"
 
