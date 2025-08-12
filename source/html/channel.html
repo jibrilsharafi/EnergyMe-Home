@@ -36,49 +36,47 @@
         <div class="channel-columns"></div>
     </div>
 </body>
+<script src="/js/api-client.js"></script>
 <script>
-    
     var channelData = {};
-    var calibrationData = {};
-    var intervals = {};
-    var lastSetChannelTime = 0;
-    const FETCH_THROTTLE = 1000;
-    var pendingUpdates = {};
-    var activeRequests = new Set();
-    var updateQueue = [];
-    var isProcessingQueue = false;
+    var powerUpdateInterval = null;
+    const FETCH_THROTTLE = 2000; // Increased for better stability
+    var updateQueue = {};
+    var isProcessingUpdate = false;
 
-    function fetchData(endpoint) {
-        if (activeRequests.has(endpoint)) {
-            return Promise.reject('Request already in progress');
+    // Initialize the page
+    async function initializePage() {
+        try {
+            document.getElementById('updateStatus').textContent = 'Loading...';
+            
+            // Load channel config only
+            const channelResponse = await energyApi.getChannelConfig();
+            channelData = channelResponse;
+            
+            createChannelBoxes();
+            document.getElementById('updateStatus').textContent = '';
+        } catch (error) {
+            console.error('Error initializing page:', error);
+            document.getElementById('updateStatus').textContent = 'Error loading data: ' + error.message;
         }
-
-        activeRequests.add(endpoint);
-        return fetch(`/rest/${endpoint}`)
-            .then(response => response.json())
-            .finally(() => activeRequests.delete(endpoint));
     }
 
-    Promise.all([fetchData('get-calibration'), fetchData('get-channel')])
-        .then(([calibrationResponse, channelResponse]) => {
-            calibrationData = calibrationResponse;
-            channelData = channelResponse;
-            createChannelBoxes();
-        })
-        .catch(error => console.error('Error:', error));
+    // Initialize when page loads
+    document.addEventListener('DOMContentLoaded', initializePage);
 
     function createChannelBoxes() {
         const container = document.querySelector('.channel-columns');
         container.innerHTML = ''; // Clear existing content
 
+        if (!channelData || Object.keys(channelData).length === 0) {
+            container.innerHTML = '<p>No channel data available</p>';
+            return;
+        }
+
         Object.entries(channelData).forEach(([index, channel]) => {
             const box = document.createElement('div');
             box.className = 'section-box';
             box.style.textAlign = 'center';
-
-            const calibrationOptions = Object.keys(calibrationData)
-                .map(key => `<option value="${key}" ${key === channel.calibrationLabel ? 'selected' : ''}>${key}</option>`)
-                .join('');
 
             const phaseOptions = [1, 2, 3]
                 .map(phase => `<option value="${phase}" ${phase === channel.phase ? 'selected' : ''}>${phase}</option>`)
@@ -90,36 +88,30 @@
             const activeChecked = isChannel0 ? 'checked' : (channel.active ? 'checked' : '');
 
             box.innerHTML = `
+                <h3>Channel ${index}</h3>
                 <label>
                     Label:
-                    <input type="text" value="${channel.label}" id="label${index}" onchange="updateChannel(${index})">
-                </label>
-                <div style="height: 10px;"></div>
-                <label>
-                    Calibration:
-                    <select id="calibration${index}" onchange="updateChannel(${index})">
-                        ${calibrationOptions}
-                    </select>
+                    <input type="text" value="${channel.label || ''}" id="label${index}" onchange="queueChannelUpdate(${index})">
                 </label>
                 <div style="height: 10px;"></div>
                 <label>
                     Phase:
-                    <select id="phase${index}" onchange="updateChannel(${index})">
+                    <select id="phase${index}" onchange="queueChannelUpdate(${index})">
                         ${phaseOptions}
                     </select>
                 </label>
                 <div style="height: 10px;"></div>
                 <label>
-                    <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="updateChannel(${index})">
+                    <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="queueChannelUpdate(${index})">
                     Reverse
                 </label>
                 <div style="height: 10px;"></div>
                 <label>
-                    <input type="checkbox" ${activeChecked} id="active${index}" onchange="updateChannel(${index})" ${activeCheckboxDisabled}>
+                    <input type="checkbox" ${activeChecked} id="active${index}" onchange="queueChannelUpdate(${index})" ${activeCheckboxDisabled}>
                     Active ${isChannel0 ? '(Main voltage - cannot be disabled)' : ''}
                 </label>
                 <div style="height: 10px;"></div>
-                <span id="power${index}"></span>
+                <span id="power${index}" style="font-weight: bold; color: #333;"></span>
             `;
             container.appendChild(box);
 
@@ -127,38 +119,75 @@
                 startPowerUpdate(index);
             }
         });
+
+        // Start global power updates if we have any active channels
+        startGlobalPowerUpdates();
     }
 
-    function startPowerUpdate(index) {
-        if (intervals[index]) {
-            clearInterval(intervals[index]);
+    function startGlobalPowerUpdates() {
+        // Stop any existing interval
+        if (powerUpdateInterval) {
+            clearInterval(powerUpdateInterval);
         }
 
-        const updatePower = () => {
-            // Only fetch if no active request for this index
-            if (!activeRequests.has(`active-power-${index}`)) {
-                activeRequests.add(`active-power-${index}`);
-                fetchData(`active-power?index=${index}`)
-                    .then(dataActivePower => {
-                        document.getElementById(`power${index}`).innerHTML = `${dataActivePower.value.toFixed(1)} W`;
-                    })
-                    .finally(() => {
-                        activeRequests.delete(`active-power-${index}`);
-                    });
+        const updateAllPowerValues = async () => {
+            try {
+                const meterValuesArray = await energyApi.getMeterValues();
+                
+                // Update all active channels at once
+                meterValuesArray.forEach(channelMeterData => {
+                    const index = channelMeterData.index;
+                    const powerElement = document.getElementById(`power${index}`);
+                    
+                    if (powerElement && channelMeterData.data && channelMeterData.data.activePower !== undefined) {
+                        powerElement.innerHTML = `${channelMeterData.data.activePower.toFixed(1)} W`;
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error fetching power values:', error);
+                // Show error only on active channels
+                Object.keys(channelData).forEach(index => {
+                    if (channelData[index].active) {
+                        const powerElement = document.getElementById(`power${index}`);
+                        if (powerElement) {
+                            powerElement.innerHTML = 'Error';
+                        }
+                    }
+                });
             }
         };
 
-        updatePower(); // Initial update
-        intervals[index] = setInterval(updatePower, FETCH_THROTTLE);
+        // Initial update
+        updateAllPowerValues();
+        
+        // Set up interval for regular updates
+        powerUpdateInterval = setInterval(updateAllPowerValues, FETCH_THROTTLE);
+    }
+
+    function stopGlobalPowerUpdates() {
+        if (powerUpdateInterval) {
+            clearInterval(powerUpdateInterval);
+            powerUpdateInterval = null;
+        }
+    }
+
+    function startPowerUpdate(index) {
+        // Individual channel power updates are now handled by the global update
+        // Just ensure the power display is visible for this channel
+        const powerElement = document.getElementById(`power${index}`);
+        if (powerElement && channelData[index] && channelData[index].active) {
+            powerElement.innerHTML = 'Loading...';
+        }
     }
 
     function stopPowerUpdate(index) {
-        if (intervals[index]) {
-            clearInterval(intervals[index]);
-            document.getElementById(`power${index}`).innerHTML = '';
-            delete intervals[index];
+        // Clear individual channel power display
+        const powerElement = document.getElementById(`power${index}`);
+        if (powerElement) {
+            powerElement.innerHTML = '';
         }
-    }    function updateChannel(index) {
+    }    function queueChannelUpdate(index) {
         // Prevent channel 0 from being disabled
         if (index == 0) {
             const activeCheckbox = document.getElementById(`active${index}`);
@@ -170,163 +199,82 @@
         }
 
         const channelUpdate = {
-            index: index,
+            index: parseInt(index),
             label: document.getElementById(`label${index}`).value,
-            calibrationLabel: document.getElementById(`calibration${index}`).value,
             reverse: document.getElementById(`reverse${index}`).checked,
             phase: parseInt(document.getElementById(`phase${index}`).value),
-            active: document.getElementById(`active${index}`).checked,
-            timestamp: Date.now()
+            active: document.getElementById(`active${index}`).checked
         };
 
-        // Add to queue
-        updateQueue.push(channelUpdate);
+        // Store in queue - this will overwrite any previous update for this channel
+        updateQueue[index] = channelUpdate;
         
-        // Update active status for UI responsiveness
+        // Update UI responsiveness immediately
         if (channelUpdate.active) {
             startPowerUpdate(index);
         } else {
             stopPowerUpdate(index);
         }
 
-        // Process queue if not already processing
-        if (!isProcessingQueue) {
-            processUpdateQueue();
+        // Restart global power updates to include/exclude this channel
+        startGlobalPowerUpdates();
+
+        // Process updates after a short delay (debouncing)
+        if (!isProcessingUpdate) {
+            isProcessingUpdate = true;
+            setTimeout(processChannelUpdates, 500);
         }
     }
 
-    function processUpdateQueue() {
-        if (updateQueue.length === 0 || isProcessingQueue) {
+    async function processChannelUpdates() {
+        if (Object.keys(updateQueue).length === 0) {
+            isProcessingUpdate = false;
             return;
         }
 
-        isProcessingQueue = true;
-
-        // Get the most recent update for each channel
-        const latestUpdates = {};
-        updateQueue.forEach(update => {
-            if (!latestUpdates[update.index] || latestUpdates[update.index].timestamp < update.timestamp) {
-                latestUpdates[update.index] = update;
+        try {
+            document.getElementById('updateStatus').textContent = 'Updating channels...';
+            
+            // Send all queued updates
+            const updates = Object.values(updateQueue);
+            updateQueue = {}; // Clear queue
+            
+            for (const update of updates) {
+                await energyApi.setChannelConfig(update);
             }
-        });
-
-        // Clear the queue since we're processing all updates
-        updateQueue = [];
-
-        // Send the most recent update for each channel
-        const channelsToUpdate = Object.keys(latestUpdates);
-        if (channelsToUpdate.length > 0) {
-            sendChannelUpdates(latestUpdates);
-        } else {
-            isProcessingQueue = false;
+            
+            document.getElementById('updateStatus').textContent = 'Channels updated successfully';
+            setTimeout(() => {
+                document.getElementById('updateStatus').textContent = '';
+            }, 2000);
+            
+        } catch (error) {
+            console.error('Error updating channels:', error);
+            
+            if (error.message.includes('Channel 0 cannot be disabled')) {
+                document.getElementById('updateStatus').textContent = 'Channel 0 cannot be disabled';
+                alert('Channel 0 is the main voltage channel and cannot be disabled.');
+                // Reset channel 0 to active in UI
+                const activeCheckbox = document.getElementById('active0');
+                if (activeCheckbox) {
+                    activeCheckbox.checked = true;
+                }
+            } else {
+                document.getElementById('updateStatus').textContent = 'Error: ' + error.message;
+                alert('Error updating channels: ' + error.message);
+            }
+            
+            setTimeout(() => {
+                document.getElementById('updateStatus').textContent = '';
+            }, 5000);
         }
-    }    function sendChannelUpdates(latestUpdates) {
-        const now = Date.now();
         
-        // Show status
-        document.getElementById('updateStatus').textContent = 'Updating channels...';
+        isProcessingUpdate = false;
         
-        // Check rate limiting
-        if (now - lastSetChannelTime < FETCH_THROTTLE) {
-            setTimeout(() => sendChannelUpdates(latestUpdates), FETCH_THROTTLE - (now - lastSetChannelTime));
-            return;
+        // If there are new updates in queue, process them
+        if (Object.keys(updateQueue).length > 0) {
+            setTimeout(processChannelUpdates, 500);
         }
-
-        if (activeRequests.has('set-channel')) {
-            // If request is already active, retry after a delay
-            setTimeout(() => sendChannelUpdates(latestUpdates), FETCH_THROTTLE);
-            return;
-        }
-
-        lastSetChannelTime = now;
-        activeRequests.add('set-channel');
-
-        // Convert to the format expected by the backend
-        const channelData = {};
-        Object.values(latestUpdates).forEach(update => {
-            channelData[update.index] = {
-                label: update.label,
-                calibrationLabel: update.calibrationLabel,
-                reverse: update.reverse,
-                phase: update.phase,
-                active: update.active
-            };
-        });
-
-        fetch('/rest/set-channel', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(channelData)
-        })
-            .then(response => {
-                if (!response.ok) {
-                    return response.json().then(data => {
-                        throw new Error(data.error || data.message || `HTTP ${response.status}`);
-                    });
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Success:', data);
-                document.getElementById('updateStatus').textContent = 'Channels updated successfully';
-                setTimeout(() => {
-                    document.getElementById('updateStatus').textContent = '';
-                }, 2000);
-                
-                // Mark processing as complete
-                isProcessingQueue = false;
-                
-                // Process any new updates that came in while we were processing
-                if (updateQueue.length > 0) {
-                    setTimeout(processUpdateQueue, 100);
-                }
-            })
-            .catch((error) => {
-                console.error('Error:', error);
-                
-                // Show user-friendly error message
-                if (error.message.includes('Rate limited')) {
-                    console.log('Request was rate limited, will retry...');
-                    document.getElementById('updateStatus').textContent = 'Rate limited, retrying...';
-                    // Retry after the suggested delay
-                    setTimeout(() => sendChannelUpdates(latestUpdates), 1000);
-                } else if (error.message.includes('Channel 0 cannot be disabled')) {
-                    document.getElementById('updateStatus').textContent = 'Channel 0 cannot be disabled';
-                    alert('Channel 0 is the main voltage channel and cannot be disabled.');
-                    // Reset channel 0 to active in UI
-                    const activeCheckbox = document.getElementById('active0');
-                    if (activeCheckbox) {
-                        activeCheckbox.checked = true;
-                    }
-                    isProcessingQueue = false;
-                    setTimeout(() => {
-                        document.getElementById('updateStatus').textContent = '';
-                    }, 3000);
-                } else {
-                    document.getElementById('updateStatus').textContent = 'Error: ' + error.message;
-                    alert('Error updating channel: ' + error.message);
-                    isProcessingQueue = false;
-                    setTimeout(() => {
-                        document.getElementById('updateStatus').textContent = '';
-                    }, 5000);
-                }
-                
-                // Process any new updates that came in while we were processing
-                if (updateQueue.length > 0) {
-                    setTimeout(processUpdateQueue, 1000);
-                }
-            })
-            .finally(() => {
-                activeRequests.delete('set-channel');
-            });
-    }// Periodically process any queued updates
-    setInterval(() => {
-        if (updateQueue.length > 0 && !isProcessingQueue) {
-            processUpdateQueue();
-        }
-    }, FETCH_THROTTLE);
-</script>
+    }</script>
 
 </html>

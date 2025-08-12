@@ -100,7 +100,7 @@ public:
                         request->url().c_str(), 
                         response->code());
         } else if (response) {
-            LOG_DEBUG("Request from %s completed successfully: %s %s -> HTTP %d",
+            LOG_VERBOSE("Request from %s completed successfully: %s %s -> HTTP %d",
                         request->client()->remoteIP().toString().c_str(),
                         request->methodToString(),
                         request->url().c_str(),
