@@ -318,8 +318,13 @@
             }
 
             try {
-                document.getElementById('saveButton').textContent = 'Saving...';
-                document.getElementById('saveButton').disabled = true;
+                // Block the button and show saving status
+                const saveButton = document.getElementById('saveButton');
+                saveButton.textContent = '💾 Saving...';
+                saveButton.disabled = true;
+                
+                document.getElementById('updateStatus').textContent = 'Saving calibration...';
+                document.getElementById('updateStatus').style.color = '#666';
 
                 const currentRating = parseInt(document.getElementById('currentRating').value);
                 const voltageOutput = parseFloat(document.getElementById('voltageOutput').value);
@@ -343,26 +348,35 @@
                 // Update local data
                 channelData[selectedChannelIndex].ctSpecification = channelUpdate.ctSpecification;
 
-                document.getElementById('calibrationStatus').innerHTML = `
-                    <div class="status-indicator status-good">
-                        ✅ Calibration saved successfully!
-                    </div>
-                `;
-
+                // Show success status
+                document.getElementById('updateStatus').textContent = 'Calibration saved successfully!';
+                document.getElementById('updateStatus').style.color = '#28a745';
+                
+                saveButton.textContent = '✅ Saved';
+                
+                // Clear status and restore button after 3 seconds
                 setTimeout(() => {
-                    document.getElementById('calibrationStatus').innerHTML = '';
+                    document.getElementById('updateStatus').textContent = '';
+                    saveButton.textContent = '💾 Save';
+                    saveButton.disabled = false;
                 }, 3000);
 
             } catch (error) {
                 console.error('Error saving calibration:', error);
-                document.getElementById('calibrationStatus').innerHTML = `
-                    <div class="status-indicator status-error">
-                        ❌ Error saving calibration: ${error.message}
-                    </div>
-                `;
-            } finally {
-                document.getElementById('saveButton').textContent = '💾 Save';
-                document.getElementById('saveButton').disabled = false;
+                
+                // Show error status
+                document.getElementById('updateStatus').textContent = 'Error saving calibration: ' + error.message;
+                document.getElementById('updateStatus').style.color = '#dc3545';
+                
+                const saveButton = document.getElementById('saveButton');
+                saveButton.textContent = '❌ Error';
+                
+                // Clear status and restore button after 5 seconds for errors
+                setTimeout(() => {
+                    document.getElementById('updateStatus').textContent = '';
+                    saveButton.textContent = '💾 Save';
+                    saveButton.disabled = false;
+                }, 5000);
             }
         }
 

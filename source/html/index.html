@@ -64,128 +64,14 @@
             color: #808080;
         }
         
-        /* Button Operation Notification Styles */
-        .button-operation-notification {
-            max-width: 600px;
-            margin: 15px auto;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            padding: 16px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-            animation: slideIn 0.5s ease-out;
-            color: white;
-        }
-
-        .button-operation-notification.show {
-            display: block !important;
-        }
-
-        .notification-content {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .notification-icon {
-            font-size: 24px;
-            animation: pulse 2s infinite;
-        }
-
-        .notification-text {
-            flex-grow: 1;
-        }
-
-        .notification-text #notification-title {
-            font-weight: bold;
-            font-size: 16px;
-            margin-bottom: 5px;
-        }
-
-        .notification-text #notification-message {
-            font-size: 14px;
-            opacity: 0.9;
-        }
-
-        .notification-actions {
-            display: flex;
-            gap: 10px;
-        }
-
-        .clear-btn {
-            background: rgba(255, 255, 255, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .clear-btn:hover {
-            background: rgba(255, 255, 255, 0.3);
-            transform: translateY(-1px);
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-        }
-
         /* Responsive design */
         @media (max-width: 768px) {
-            .button-operation-notification {
-                margin: 10px;
-                padding: 12px;
-            }
-            
-            .notification-content {
-                flex-direction: column;
-                text-align: center;
-                gap: 10px;
-            }
-            
-            .notification-actions {
-                justify-content: center;
-            }
         }
     </style>
 </head>
 
 <body>    <div class="header">EnergyMe</div>
     <div class="subheader">Home</div>
-    
-    <!-- Button Operation Notification -->
-    <div id="button-operation-notification" class="button-operation-notification" style="display: none;">
-        <div class="notification-content">
-            <div class="notification-icon">
-                <i id="notification-icon" class="fas fa-info-circle"></i>
-            </div>
-            <div class="notification-text">
-                <div id="notification-title">Recent Device Activity</div>
-                <div id="notification-message">No recent button operations</div>
-            </div>
-            <div class="notification-actions">
-                <button id="clear-operation-btn" class="clear-btn" onclick="clearButtonOperation()">
-                    <i class="fas fa-times"></i> Clear
-                </button>
-            </div>
-        </div>
-    </div>
     
     <div class="buttonNavigation-container">
         <a class="buttonNavigation" type="inner" href="/info">💡 Info</a>
@@ -611,81 +497,11 @@
         }
     }    plotCharts();
     fetchFirmwareUpdateInfo();
-    checkButtonOperation(); // Check for button operations on page load
 
     setInterval(function () {
         getMeterData();
         updateMeterData();
     }, 1000);
-
-    // Button Operation Notification Functions
-    async function checkButtonOperation() {
-        try {
-            const data = await energyApi.get('system/button-operation');
-            
-            if (data.operationName && data.operationName !== "None") {
-                showButtonOperationNotification(data.operationName, data.operationTimestampFormatted);
-            } else {
-                hideButtonOperationNotification();
-            }
-        } catch (error) {
-            console.error('Error checking button operation:', error);
-            hideButtonOperationNotification();
-        }
-    }    function showButtonOperationNotification(operationName, timestamp) {
-        const notification = document.getElementById('button-operation-notification');
-        const iconElement = document.getElementById('notification-icon');
-        const titleElement = document.getElementById('notification-title');
-        const messageElement = document.getElementById('notification-message');
-        
-        // Set operation-specific icon and styling
-        let icon = 'fas fa-info-circle';
-        let iconColor = '#4CAF50';
-        
-        switch(operationName) {
-            case 'Restart':
-                icon = 'fas fa-redo-alt';
-                iconColor = '#2196F3';
-                break;
-            case 'Password Reset':
-                icon = 'fas fa-key';
-                iconColor = '#FF9800';
-                break;
-            case 'WiFi Reset':
-                icon = 'fas fa-wifi';
-                iconColor = '#9C27B0';
-                break;
-            case 'Factory Reset':
-                icon = 'fas fa-exclamation-triangle';
-                iconColor = '#F44336';
-                break;
-        }
-        
-        iconElement.className = icon;
-        iconElement.style.color = iconColor;
-        titleElement.textContent = 'Recent Device Activity';
-        messageElement.textContent = `${operationName} was performed at ${timestamp}`;
-        
-        notification.style.display = 'block';
-        notification.classList.add('show');
-    }
-
-    function hideButtonOperationNotification() {
-        const notification = document.getElementById('button-operation-notification');
-        notification.style.display = 'none';
-        notification.classList.remove('show');
-    }
-
-    async function clearButtonOperation() {
-        try {
-            await energyApi.post('system/button-operation/clear');
-            hideButtonOperationNotification();
-            console.log('Button operation cleared successfully');
-        } catch (error) {
-            console.error('Error clearing button operation:', error);
-            alert('Error clearing button operation. Please try again.');
-        }
-    }
 
 </script>
 

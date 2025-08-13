@@ -235,12 +235,12 @@
         try {
             document.getElementById('updateStatus').textContent = 'Updating channels...';
             
-            // Send all queued updates
+            // Send all queued updates using PATCH for partial updates
             const updates = Object.values(updateQueue);
             updateQueue = {}; // Clear queue
             
             for (const update of updates) {
-                await energyApi.setChannelConfig(update);
+                await energyApi.patchChannelConfig(update.index, update);
             }
             
             document.getElementById('updateStatus').textContent = 'Channels updated successfully';

@@ -885,23 +885,24 @@ namespace Ade7953
     // Data output
     // ===========
 
-    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint8_t channelIndex) {
+    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint8_t channelIndex) { // Around 250 bytes per channel of meter values
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %u", channelIndex);
             return;
         }
 
-        jsonDocument["voltage"] = _meterValues[channelIndex].voltage;
-        jsonDocument["current"] = _meterValues[channelIndex].current;
-        jsonDocument["activePower"] = _meterValues[channelIndex].activePower;
-        jsonDocument["apparentPower"] = _meterValues[channelIndex].apparentPower;
-        jsonDocument["reactivePower"] = _meterValues[channelIndex].reactivePower;
-        jsonDocument["powerFactor"] = _meterValues[channelIndex].powerFactor;
-        jsonDocument["activeEnergyImported"] = _meterValues[channelIndex].activeEnergyImported;
-        jsonDocument["activeEnergyExported"] = _meterValues[channelIndex].activeEnergyExported;
-        jsonDocument["reactiveEnergyImported"] = _meterValues[channelIndex].reactiveEnergyImported;
-        jsonDocument["reactiveEnergyExported"] = _meterValues[channelIndex].reactiveEnergyExported;
-        jsonDocument["apparentEnergy"] = _meterValues[channelIndex].apparentEnergy;
+        // Reduce the decimals since we don't have or need too much precision, and we save on space
+        jsonDocument["voltage"] = roundToDecimals(_meterValues[channelIndex].voltage, VOLTAGE_DECIMALS);
+        jsonDocument["current"] = roundToDecimals(_meterValues[channelIndex].current, CURRENT_DECIMALS);
+        jsonDocument["activePower"] = roundToDecimals(_meterValues[channelIndex].activePower, POWER_DECIMALS);
+        jsonDocument["apparentPower"] = roundToDecimals(_meterValues[channelIndex].apparentPower, POWER_DECIMALS);
+        jsonDocument["reactivePower"] = roundToDecimals(_meterValues[channelIndex].reactivePower, POWER_DECIMALS);
+        jsonDocument["powerFactor"] = roundToDecimals(_meterValues[channelIndex].powerFactor, POWER_FACTOR_DECIMALS);
+        jsonDocument["activeEnergyImported"] = roundToDecimals(_meterValues[channelIndex].activeEnergyImported, ENERGY_DECIMALS);
+        jsonDocument["activeEnergyExported"] = roundToDecimals(_meterValues[channelIndex].activeEnergyExported, ENERGY_DECIMALS);
+        jsonDocument["reactiveEnergyImported"] = roundToDecimals(_meterValues[channelIndex].reactiveEnergyImported, ENERGY_DECIMALS);
+        jsonDocument["reactiveEnergyExported"] = roundToDecimals(_meterValues[channelIndex].reactiveEnergyExported, ENERGY_DECIMALS);
+        jsonDocument["apparentEnergy"] = roundToDecimals(_meterValues[channelIndex].apparentEnergy, ENERGY_DECIMALS);
     }
 
 
@@ -1974,35 +1975,26 @@ namespace Ade7953
         char filename[NAME_BUFFER_SIZE];
         CustomTime::getDateIso(filename, sizeof(filename));
 
-        // We must start the path with "/...."
         char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
         snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, filename);
         
-        // Ensure the energy directory structure exists by creating the file path
-        // In LittleFS, directories are created implicitly when files are created
-        // If this is the first time, we may need to ensure the path exists
+        // Ensure the energy directory exists (LittleFS requires explicit directory creation)
+        if (!LittleFS.exists(ENERGY_CSV_PREFIX)) {
+            if (!LittleFS.mkdir(ENERGY_CSV_PREFIX)) {
+                LOG_ERROR("Failed to create energy directory %s", ENERGY_CSV_PREFIX);
+                return;
+            }
+            LOG_DEBUG("Created energy directory %s", ENERGY_CSV_PREFIX);
+        }
         
         // Check if file exists to determine if we need to write header
         bool fileExists = LittleFS.exists(filepath);
 
-        // Open file in append mode (this will create the directory path if needed)
+        // Open file in appropriate mode
         File file = LittleFS.open(filepath, FILE_APPEND);
         if (!file) {
-            // If opening failed, try creating the file in write mode first to establish the directory structure
-            LOG_DEBUG("Append mode failed, trying to create file with write mode to establish directory structure");
-            file = LittleFS.open(filepath, FILE_WRITE);
-            if (!file) {
-                LOG_ERROR("Failed to open CSV file %s for writing", filepath); // FIXME: always this error
-                return;
-            }
-            // Close and reopen in append mode
-            file.close();
-            file = LittleFS.open(filepath, FILE_APPEND);
-            if (!file) {
-                LOG_ERROR("Failed to reopen CSV file %s in append mode", filepath);
-                return;
-            }
-            fileExists = false; // We just created it, so it needs a header
+            LOG_ERROR("Failed to open CSV file %s for writing", filepath);
+            return;
         }        // Write header if this is a new file
         if (!fileExists) {
             file.println(DAILY_ENERGY_CSV_HEADER);

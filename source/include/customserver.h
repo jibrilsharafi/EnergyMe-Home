@@ -37,7 +37,7 @@
 
 // Health check task
 #define HEALTH_CHECK_TASK_NAME "health_check_task"
-#define HEALTH_CHECK_TASK_STACK_SIZE (4 * 1024)
+#define HEALTH_CHECK_TASK_STACK_SIZE (6 * 1024)
 #define HEALTH_CHECK_TASK_PRIORITY 1
 #define HEALTH_CHECK_INTERVAL_MS (30 * 1000)
 #define HEALTH_CHECK_TIMEOUT_MS (5 * 1000)
@@ -52,7 +52,7 @@
 #define MIN_PASSWORD_LENGTH 4
 
 // API Request Synchronization
-#define API_MUTEX_TIMEOUT_MS (5 * 1000) // Time to wait for API mutex for non-GET operations before giving up
+#define API_MUTEX_TIMEOUT_MS (2 * 1000) // Time to wait for API mutex for non-GET operations before giving up. Long timeouts cause wdt crash (like in async tcp)
 
 // Buffer sizes
 #define HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE 256 // Only needed for health check HTTP response to own server

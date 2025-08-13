@@ -43,7 +43,7 @@ namespace CustomLog
         _isUdpInitialized = true;
 
         LOG_DEBUG("UDP logging configured - destination: %s:%d, PSRAM buffer: %zu bytes",
-                    _udpDestinationIp.toString().c_str(), UDP_LOG_PORT, LOG_BUFFER_SIZE);
+                    _udpDestinationIp.toString().c_str(), UDP_LOG_PORT, LOG_QUEUE_SIZE);
 
         // Start async task
         _startTask();
@@ -84,7 +84,7 @@ namespace CustomLog
         if (_udpLogQueueStorage != nullptr) return true;
 
         // Allocate queue storage in PSRAM
-        uint32_t queueLength = LOG_BUFFER_SIZE / sizeof(LogEntry);
+        uint32_t queueLength = LOG_QUEUE_SIZE / sizeof(LogEntry);
         size_t realQueueSize = queueLength * sizeof(LogEntry);
         _udpLogQueueStorage = (uint8_t*)heap_caps_malloc(realQueueSize, MALLOC_CAP_SPIRAM);
         

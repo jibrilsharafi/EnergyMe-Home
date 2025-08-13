@@ -12,14 +12,7 @@ namespace ButtonHandler
     static volatile bool _buttonPressed = false;
     static ButtonPressType _currentPressType = ButtonPressType::NONE;
     static bool _operationInProgress = false;
-    static char _operationName[STATUS_BUFFER_SIZE] = "";
-    static uint64_t _operationTimestamp = ZERO_START_TIME;
 
-    // Getter public methods
-    ButtonPressType getCurrentPressType() {return _currentPressType;};
-    bool isOperationInProgress() {return _operationInProgress;};
-    void getOperationName(char* buffer, size_t bufferSize) {snprintf(buffer, bufferSize, "%s", _operationName);};
-    uint64_t getOperationTimestamp() {return _operationTimestamp;};
 
     // Private function declarations
     static void _buttonISR();
@@ -220,8 +213,6 @@ namespace ButtonHandler
     static void _handleRestart()
     {
         LOG_INFO("Restart initiated via button");
-        snprintf(_operationName, sizeof(_operationName), "Restart");
-        _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
 
         Led::setCyan(Led::PRIO_URGENT);
@@ -235,8 +226,6 @@ namespace ButtonHandler
     static void _handlePasswordReset()
     {
         LOG_INFO("Password reset to default initiated via button");
-        snprintf(_operationName, sizeof(_operationName), "Password Reset");
-        _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
 
         Led::setYellow(Led::PRIO_URGENT);
@@ -262,8 +251,6 @@ namespace ButtonHandler
     static void _handleWifiReset()
     {
         LOG_INFO("WiFi reset initiated via button");
-        snprintf(_operationName, sizeof(_operationName), "WiFi Reset");
-        _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
 
         Led::setOrange(Led::PRIO_URGENT);
@@ -277,20 +264,12 @@ namespace ButtonHandler
     static void _handleFactoryReset()
     {
         LOG_INFO("Factory reset initiated via button");
-        snprintf(_operationName, sizeof(_operationName), "Factory Reset");
-        _operationTimestamp = CustomTime::getUnixTime();
         _operationInProgress = true;
 
         setRestartSystem("Factory reset via button", true);
 
         _operationInProgress = false;
         _currentPressType = ButtonPressType::NONE;
-    }
-
-    void clearCurrentOperationName()
-    {
-        snprintf(_operationName, sizeof(_operationName), "%s", "");
-        _operationTimestamp = ZERO_START_TIME;
     }
 
     TaskInfo getTaskInfo()

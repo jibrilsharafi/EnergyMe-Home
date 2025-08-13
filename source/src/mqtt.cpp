@@ -52,9 +52,9 @@ namespace Mqtt
     static char _firmwareUpdateUrl[URL_BUFFER_SIZE];
     static char _firmwareUpdateVersion[VERSION_BUFFER_SIZE];
     
-    // Certificates storage (decrypted)
-    static char _awsIotCoreCert[CERTIFICATE_BUFFER_SIZE];
-    static char _awsIotCorePrivateKey[CERTIFICATE_BUFFER_SIZE];
+    // Certificates storage (decrypted) - allocated in PSRAM
+    static char *_awsIotCoreCert = nullptr;
+    static char *_awsIotCorePrivateKey = nullptr;
     
     // Topic buffers
     static char _mqttTopicMeter[MQTT_TOPIC_BUFFER_SIZE];
@@ -215,6 +215,25 @@ namespace Mqtt
         _initializeLogQueue();
         _initializeMeterQueue();
 
+        // Allocate certificate buffers in PSRAM
+        if (_awsIotCoreCert == nullptr) {
+            _awsIotCoreCert = (char*)ps_malloc(CERTIFICATE_BUFFER_SIZE);
+            if (_awsIotCoreCert == nullptr) {
+                LOG_ERROR("Failed to allocate certificate buffer in PSRAM");
+            } else {
+                memset(_awsIotCoreCert, 0, CERTIFICATE_BUFFER_SIZE);
+            }
+        }
+        
+        if (_awsIotCorePrivateKey == nullptr) {
+            _awsIotCorePrivateKey = (char*)ps_malloc(CERTIFICATE_BUFFER_SIZE);
+            if (_awsIotCorePrivateKey == nullptr) {
+                LOG_ERROR("Failed to allocate private key buffer in PSRAM");
+            } else {
+                memset(_awsIotCorePrivateKey, 0, CERTIFICATE_BUFFER_SIZE);
+            }
+        }
+
         if (_cloudServicesEnabled) _startTask();
         else LOG_DEBUG("Cloud services are disabled, MQTT task will not start");
         
@@ -246,9 +265,18 @@ namespace Mqtt
             _configMutex = nullptr;
         }
 
-        // Zeroize decrypted material
-        memset(_awsIotCoreCert, 0, sizeof(_awsIotCoreCert));
-        memset(_awsIotCorePrivateKey, 0, sizeof(_awsIotCorePrivateKey));
+        // Zeroize and free certificate buffers
+        if (_awsIotCoreCert != nullptr) {
+            memset(_awsIotCoreCert, 0, CERTIFICATE_BUFFER_SIZE);
+            free(_awsIotCoreCert);
+            _awsIotCoreCert = nullptr;
+        }
+        
+        if (_awsIotCorePrivateKey != nullptr) {
+            memset(_awsIotCorePrivateKey, 0, CERTIFICATE_BUFFER_SIZE);
+            free(_awsIotCorePrivateKey);
+            _awsIotCorePrivateKey = nullptr;
+        }
         
         LOG_INFO("MQTT client stopped");
     }
@@ -594,7 +622,7 @@ namespace Mqtt
             return;
         }
 
-        _clientMqtt.setBufferSize(JSON_MQTT_BUFFER_SIZE);
+        _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
         _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
 
         _nextMqttConnectionAttemptMillis = 0;
@@ -747,16 +775,21 @@ namespace Mqtt
 
     static void _subscribeCallback(const char* topic, byte *payload, uint32_t length) // TODO: maybe make it simpler with one simple command topic
     {
-        char message[MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE];
+        // Allocate message buffer in PSRAM to save stack memory
+        char *message = (char*)ps_malloc(MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE);
+        if (!message) {
+            LOG_ERROR("Failed to allocate subscribe message buffer in PSRAM");
+            return;
+        }
         
         // Ensure we don't exceed buffer bounds
-        uint32_t maxLength = sizeof(message) - 1; // Reserve space for null terminator
+        uint32_t maxLength = MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE - 1; // Reserve space for null terminator
         if (length > maxLength) {
             LOG_WARNING("MQTT message from topic %s too large (%u bytes), truncating to %u", topic, length, maxLength);
             length = maxLength;
         }
         
-        snprintf(message, sizeof(message), "%.*s", (int)length, (char*)payload);
+        snprintf(message, MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE, "%.*s", (int)length, (char*)payload);
 
         LOG_DEBUG("Received MQTT message from %s", topic);
 
@@ -767,6 +800,9 @@ namespace Mqtt
         else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_SET_SEND_POWER_DATA)) _handleSetSendPowerDataMessage(message);
         else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING)) _handleEnableDebugLoggingMessage(message);
         else LOG_WARNING("Unknown MQTT topic received: %s", topic);
+        
+        // Clean up PSRAM allocation
+        free(message);
     }
 
     static void _handleFirmwareUpdateMessage(const char* message)
@@ -949,13 +985,19 @@ namespace Mqtt
         systemStaticInfoToJson(systemStaticInfo, jsonDocumentSystemStatic);
         jsonDocument["data"] = jsonDocumentSystemStatic;
 
-        char staticMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(jsonDocument, staticMessage, sizeof(staticMessage));
+        char *staticMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
+        if (!staticMessage) {
+            LOG_ERROR("Failed to allocate static message buffer in PSRAM");
+            return;
+        }
+        
+        safeSerializeJson(jsonDocument, staticMessage, JSON_MQTT_BUFFER_SIZE);
 
         if (_publishMessage(_mqttTopicSystemStatic, staticMessage, true)) { // retain static info since it is idempotent
             _publishMqtt.systemStatic = false; 
         }
-
+        
+        free(staticMessage);
         LOG_DEBUG("System static info published to MQTT");
     }
 
@@ -969,14 +1011,20 @@ namespace Mqtt
         systemDynamicInfoToJson(systemDynamicInfo, jsonDocumentSystemDynamic);
         jsonDocument["data"] = jsonDocumentSystemDynamic;
 
-        char dynamicMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(jsonDocument, dynamicMessage, sizeof(dynamicMessage));
+        char *dynamicMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
+        if (!dynamicMessage) {
+            LOG_ERROR("Failed to allocate dynamic message buffer in PSRAM");
+            return;
+        }
+        
+        safeSerializeJson(jsonDocument, dynamicMessage, JSON_MQTT_BUFFER_SIZE);
 
         if (_publishMessage(_mqttTopicSystemDynamic, dynamicMessage)) {
             _publishMqtt.systemDynamic = false;
             _lastMillisSystemDynamicPublished = millis64();
         }
-
+        
+        free(dynamicMessage);
         LOG_DEBUG("System dynamic info published to MQTT");
     }
 
@@ -990,13 +1038,19 @@ namespace Mqtt
             jsonDocument["data"][i] = jsonChannelData;
         }
 
-        char channelMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(jsonDocument, channelMessage, sizeof(channelMessage));
+        char *channelMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
+        if (!channelMessage) {
+            LOG_ERROR("Failed to allocate channel message buffer in PSRAM");
+            return;
+        }
+        
+        safeSerializeJson(jsonDocument, channelMessage, JSON_MQTT_BUFFER_SIZE);
      
         if (_publishMessage(_mqttTopicChannel, channelMessage, true)) {
             _publishMqtt.channel = false; // retain channel info since it is idempotent
         }
-
+        
+        free(channelMessage);
         LOG_DEBUG("Channel data published to MQTT");
     }
 
@@ -1008,14 +1062,20 @@ namespace Mqtt
         statisticsToJson(statistics, jsonDocumentStatistics);
         jsonDocument["statistics"] = jsonDocumentStatistics;
 
-        char statisticsMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(jsonDocument, statisticsMessage, sizeof(statisticsMessage));
+        char *statisticsMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
+        if (!statisticsMessage) {
+            LOG_ERROR("Failed to allocate statistics message buffer in PSRAM");
+            return;
+        }
+        
+        safeSerializeJson(jsonDocument, statisticsMessage, JSON_MQTT_BUFFER_SIZE);
 
         if (_publishMessage(_mqttTopicStatistics, statisticsMessage)) {
             _publishMqtt.statistics = false;
             _lastMillisStatisticsPublished = millis64();
         }
-
+        
+        free(statisticsMessage);
         LOG_DEBUG("Statistics published to MQTT");
     }
 
@@ -1043,10 +1103,16 @@ namespace Mqtt
         jsonDocument["function"] = entry.function;
         jsonDocument["message"] = entry.message;
 
-        char logMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(jsonDocument, logMessage, sizeof(logMessage));
+        char *logMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
+        if (!logMessage) {
+            LOG_ERROR("Failed to allocate log message buffer in PSRAM");
+            return;
+        }
+        
+        safeSerializeJson(jsonDocument, logMessage, JSON_MQTT_BUFFER_SIZE);
 
         _publishMessage(logTopic, logMessage);
+        free(logMessage);
     }
 
     static bool _publishProvisioningRequest() {
@@ -1056,10 +1122,17 @@ namespace Mqtt
         jsonDocument["sketchMD5"] = ESP.getSketchMD5();
         jsonDocument["chipId"] = ESP.getEfuseMac();
 
-        char provisioningRequestMessage[JSON_MQTT_BUFFER_SIZE];
-        safeSerializeJson(jsonDocument, provisioningRequestMessage, sizeof(provisioningRequestMessage));
+        char *provisioningRequestMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
+        if (!provisioningRequestMessage) {
+            LOG_ERROR("Failed to allocate provisioning request message buffer in PSRAM");
+            return false;
+        }
+        
+        safeSerializeJson(jsonDocument, provisioningRequestMessage, JSON_MQTT_BUFFER_SIZE);
 
-        return _publishMessage(_mqttTopicProvisioningRequest, provisioningRequestMessage);
+        bool result = _publishMessage(_mqttTopicProvisioningRequest, provisioningRequestMessage);
+        free(provisioningRequestMessage);
+        return result;
     }
 
     static void _checkPublishMqtt() {
@@ -1105,6 +1178,12 @@ namespace Mqtt
     static bool _setupMqttWithDeviceCertificates() {
         if (!_setCertificatesFromPreferences()) {
             LOG_ERROR("Failed to set certificates");
+            return false;
+        }
+
+        // Check if certificate buffers are allocated
+        if (_awsIotCoreCert == nullptr || _awsIotCorePrivateKey == nullptr) {
+            LOG_ERROR("Certificate buffers not allocated");
             return false;
         }
 
@@ -1180,12 +1259,18 @@ namespace Mqtt
     }
 
     static bool _setCertificatesFromPreferences() {
+        // Check if certificate buffers are allocated
+        if (_awsIotCoreCert == nullptr || _awsIotCorePrivateKey == nullptr) {
+            LOG_ERROR("Certificate buffers not allocated");
+            return false;
+        }
+        
         // Ensure the certificates are clean
-        memset(_awsIotCoreCert, 0, sizeof(_awsIotCoreCert));
-        memset(_awsIotCorePrivateKey, 0, sizeof(_awsIotCorePrivateKey));
+        memset(_awsIotCoreCert, 0, CERTIFICATE_BUFFER_SIZE);
+        memset(_awsIotCorePrivateKey, 0, CERTIFICATE_BUFFER_SIZE);
 
-        _readEncryptedPreferences(PREFS_KEY_CERTIFICATE, preshared_encryption_key, _awsIotCoreCert, sizeof(_awsIotCoreCert));
-        _readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, preshared_encryption_key, _awsIotCorePrivateKey, sizeof(_awsIotCorePrivateKey));
+        _readEncryptedPreferences(PREFS_KEY_CERTIFICATE, preshared_encryption_key, _awsIotCoreCert, CERTIFICATE_BUFFER_SIZE);
+        _readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, preshared_encryption_key, _awsIotCorePrivateKey, CERTIFICATE_BUFFER_SIZE);
 
         // Ensure the certs are valid by looking for the PEM header
         if (
@@ -1386,31 +1471,48 @@ namespace Mqtt
                 powerArray.add(payloadMeter.powerFactor);
                 entriesAdded++;
 
-                if (measureJson(jsonDocument) > JSON_MQTT_BUFFER_SIZE * 0.95) {
-                    LOG_DEBUG("Meter data JSON size exceeds 95%% of buffer, will publish batch and continue");
+                if (measureJson(jsonDocument) > MQTT_PAYLOAD_LIMIT * 0.95) {
+                    LOG_DEBUG("Meter data JSON size exceeds 95%% of MQTT payload limit, will publish batch and continue");
                     break; // Stop adding new entries if the buffer is nearly full
                 }
             }
         }
 
-        char meterMessage[JSON_MQTT_BUFFER_SIZE];
+        char *meterMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
+        if (!meterMessage) {
+            LOG_ERROR("Failed to allocate meter message buffer in PSRAM");
+            return false;
+        }
+        
         LOG_DEBUG("Serializing meter JSON with %u entries | Size: %u bytes | Queue entries added: %u | Remaining in queue: %u", 
                   jsonDocument.size(), measureJson(jsonDocument), entriesAdded, uxQueueMessagesWaiting(_meterQueue));
         
-        if (!safeSerializeJson(jsonDocument, meterMessage, sizeof(meterMessage))) {
+        if (!safeSerializeJson(jsonDocument, meterMessage, JSON_MQTT_BUFFER_SIZE)) {
             LOG_ERROR("Failed to serialize meter JSON");
+            free(meterMessage);
+            return false;
+        }
+        
+        // Ensure the serialized message fits within MQTT payload limits
+        size_t messageLength = strlen(meterMessage);
+        if (messageLength > MQTT_PAYLOAD_LIMIT) {
+            LOG_ERROR("Serialized meter JSON (%zu bytes) exceeds MQTT payload limit (%d bytes)", messageLength, MQTT_PAYLOAD_LIMIT);
+            free(meterMessage);
             return false;
         }
 
+        bool result = false;
         if (_publishMessage(_mqttTopicMeter, meterMessage)) {
             statistics.mqttMessagesPublished++;
             LOG_DEBUG("Meter data batch published to %s", _mqttTopicMeter);
-            return true;
+            result = true;
         } else {
             LOG_ERROR("Failed to publish meter data batch");
             statistics.mqttMessagesPublishedError++;
-            return false;
         }
+        
+        free(meterMessage);
+        return result;
     }
 
     static bool _publishMeterJson() {
@@ -1485,23 +1587,33 @@ namespace Mqtt
         //     }
         // }
 
-        char crashMessage[JSON_MQTT_BUFFER_SIZE];
-        if (!safeSerializeJson(jsonDocument, crashMessage, sizeof(crashMessage))) {
+        char *crashMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
+        if (!crashMessage) {
+            LOG_ERROR("Failed to allocate crash message buffer in PSRAM");
+            return false;
+        }
+        
+        if (!safeSerializeJson(jsonDocument, crashMessage, JSON_MQTT_BUFFER_SIZE)) {
             LOG_ERROR("Failed to serialize crash JSON");
+            free(crashMessage);
             return false;
         }
 
+        bool result = false;
         if (_publishMessage(_mqttTopicCrash, crashMessage)) {
             _publishMqtt.crash = false;
             // CrashMonitor::clearCoreDump(); /// FIXME: eventually delete when full data is able to be sent
             statistics.mqttMessagesPublished++;
             LOG_DEBUG("Crash data published to %s", _mqttTopicCrash);
-            return true;
+            result = true;
         } else {
             LOG_ERROR("Failed to publish crash data");
             statistics.mqttMessagesPublishedError++;
-            return false;
+            result = false;
         }
+        
+        free(crashMessage);
+        return result;
     }
 
 
@@ -1528,18 +1640,26 @@ namespace Mqtt
             return;
         }
 
-        char encryptedData[CERTIFICATE_BUFFER_SIZE];
-        memset(encryptedData, 0, sizeof(encryptedData)); // Clear before setting
-        preferences.getString(preferenceKey, encryptedData, sizeof(encryptedData));
+        char *encryptedData = (char*)ps_malloc(CERTIFICATE_BUFFER_SIZE);
+        if (!encryptedData) {
+            LOG_ERROR("Failed to allocate encrypted data buffer in PSRAM");
+            preferences.end();
+            return;
+        }
+        
+        memset(encryptedData, 0, CERTIFICATE_BUFFER_SIZE); // Clear before setting
+        preferences.getString(preferenceKey, encryptedData, CERTIFICATE_BUFFER_SIZE);
         preferences.end();
 
         if (strlen(encryptedData) == 0) {
             LOG_DEBUG("No encrypted data found for key %s", preferenceKey);
+            free(encryptedData);
             return;
         }
 
         // Use GCM decrypt with SHA256(preshared||DEVICE_ID)
         _decryptData(encryptedData, presharedEncryptionKey, decryptedData, decryptedDataSize);
+        free(encryptedData);
     }
 
     static bool _isDeviceCertificatesPresent() {
@@ -1591,13 +1711,20 @@ namespace Mqtt
         }
 
         // Base64 decode
-        uint8_t decoded[CERTIFICATE_BUFFER_SIZE];
+        uint8_t *decoded = (uint8_t*)ps_malloc(CERTIFICATE_BUFFER_SIZE);
+        if (!decoded) {
+            LOG_ERROR("Failed to allocate decoded buffer in PSRAM");
+            if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
+            return;
+        }
+        
         size_t decodedLen = 0;
-        int ret = mbedtls_base64_decode(decoded, sizeof(decoded), &decodedLen,
+        int ret = mbedtls_base64_decode(decoded, CERTIFICATE_BUFFER_SIZE, &decodedLen,
                                         reinterpret_cast<const unsigned char*>(encryptedDataBase64), inputLength);
         if (ret != 0 || decodedLen < (12 + 16)) { // must at least contain IV + TAG
             if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
             LOG_ERROR("Failed to decode base64 or data too short (%u)", (unsigned)decodedLen);
+            free(decoded);
             return;
         }
 
@@ -1617,6 +1744,7 @@ namespace Mqtt
             if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
             mbedtls_gcm_free(&gcm);
             memset(key, 0, sizeof(key));
+            free(decoded);
             LOG_ERROR("Failed to set AES-GCM key");
             return;
         }
@@ -1635,6 +1763,7 @@ namespace Mqtt
 
         if (dec != 0) {
             if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
+            free(decoded);
             LOG_ERROR("AES-GCM auth decrypt failed (%d)", dec);
             return;
         }
@@ -1642,9 +1771,9 @@ namespace Mqtt
         // Ensure null termination (certificate is ASCII PEM)
         if (ctLen >= decryptedDataSize) ctLen = decryptedDataSize - 1;
         decryptedData[ctLen] = '\0';
-
         // Clear sensitive buffers
-        memset(decoded, 0, sizeof(decoded));
+        memset(decoded, 0, CERTIFICATE_BUFFER_SIZE);
+        free(decoded);
 
         LOG_DEBUG("Decrypted data successfully");
     }

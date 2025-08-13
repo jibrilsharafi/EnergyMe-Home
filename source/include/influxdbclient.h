@@ -29,7 +29,7 @@
 
 // Task configuration
 #define INFLUXDB_TASK_NAME "influxdb_task"
-#define INFLUXDB_TASK_STACK_SIZE (8 * 1024)
+#define INFLUXDB_TASK_STACK_SIZE (4 * 1024)  // Reduced from 8KB since buffers moved to PSRAM
 #define INFLUXDB_TASK_PRIORITY 1
 #define INFLUXDB_TASK_CHECK_INTERVAL 500 // Cannot send InfluxDB messages faster than this
 
@@ -61,8 +61,8 @@
 // Buffer sizes for various fields
 #define TOKEN_BUFFER_SIZE 64
 #define AUTH_HEADER_BUFFER_SIZE 256
-#define LINE_PROTOCOL_BUFFER_SIZE 512
-#define PAYLOAD_BUFFER_SIZE (4 * 1024)
+#define LINE_PROTOCOL_BUFFER_SIZE 1024
+#define PAYLOAD_BUFFER_SIZE (64 * 1024)  // Use PSRAM for larger buffer (64KB)
 
 struct InfluxDbConfiguration {
     bool enabled;

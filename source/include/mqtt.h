@@ -23,18 +23,19 @@
 #include "utils.h"
 
 #define MQTT_TASK_NAME "mqtt_task"
-#define MQTT_TASK_STACK_SIZE (16 * 1024)
+#define MQTT_TASK_STACK_SIZE (8 * 1024)          // Reduced from 16KB since buffers moved to PSRAM
 #define MQTT_TASK_PRIORITY 3
 
-#define MQTT_LOG_QUEUE_SIZE (750 * 1024) // Generous log size (in bytes) thanks to PSRAM
-#define MQTT_METER_QUEUE_SIZE (500 * 1024) // Size in bytes to allocate to PSRAM
+#define MQTT_LOG_QUEUE_SIZE (64 * 1024) // Generous log size (in bytes) thanks to PSRAM
+#define MQTT_METER_QUEUE_SIZE (32 * 1024) // Size in bytes to allocate to PSRAM
 #define MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD 0.10 // Threshold for publishing
 #define MQTT_METER_MAX_BATCHES 10 // Number of consecutive batches to publish before stopping to avoid infinite loop
 #define QUEUE_WAIT_TIMEOUT 100 // Amount of milliseconds to wait if the queue is full or busy
 
-#define JSON_MQTT_BUFFER_SIZE (4 * 1024)     // For MQTT JSON payloads
-#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (6 * 1024) // For MQTT subscribe messages (reduced from 1KB)
-#define CERTIFICATE_BUFFER_SIZE (4 * 1024)
+// MQTT buffer sizes - all moved to PSRAM for better memory utilization
+#define JSON_MQTT_BUFFER_SIZE (16 * 1024)    // PSRAM buffer for building JSON payloads before transmission
+#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (2 * 1024) // PSRAM buffer for MQTT subscribe messages (reduced for efficiency)
+#define CERTIFICATE_BUFFER_SIZE (8 * 1024)   // PSRAM buffer for certificate storage (was 4KB)
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
 
@@ -62,7 +63,7 @@
 #define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_CLAIMING_INTERVAL (1 * 1000) // Interval between two MQTT claiming checks
-#define MQTT_PAYLOAD_LIMIT (4 * 1024) // Increase the base limit of 256 bytes. Increasing this over 32768 bytes will lead to unstable connections
+#define MQTT_PAYLOAD_LIMIT (4 * 1024) // MQTT transmission buffer size - increasing over 32KB leads to unstable connections
 
 #define MQTT_INITIAL_RETRY_INTERVAL (5 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds

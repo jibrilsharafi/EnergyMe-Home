@@ -173,6 +173,13 @@
 #define VALIDATE_GRID_FREQUENCY_MIN 45.0f
 #define VALIDATE_GRID_FREQUENCY_MAX 65.0f
 
+// Rounding values
+#define VOLTAGE_DECIMALS 1
+#define CURRENT_DECIMALS 3
+#define POWER_DECIMALS 1
+#define POWER_FACTOR_DECIMALS 3
+#define ENERGY_DECIMALS 1
+
 // Guardrails and thresholds
 #define MAXIMUM_POWER_FACTOR_CLAMP 1.05f // Values above 1 but below this are still accepted (rounding errors and similar)
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used

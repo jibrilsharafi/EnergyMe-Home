@@ -29,16 +29,16 @@
 
 // Custom MQTT task constants
 #define CUSTOM_MQTT_TASK_NAME "custom_mqtt_task"
-#define CUSTOM_MQTT_TASK_STACK_SIZE (8 * 1024)
+#define CUSTOM_MQTT_TASK_STACK_SIZE (4 * 1024)  // Reduced from 10KB since payload moved to PSRAM
 #define CUSTOM_MQTT_TASK_PRIORITY 1
-#define CUSTOM_MQTT_TASK_CHECK_INTERVAL 500 // Cannot send mqtt messages faster than this
+#define CUSTOM_MQTT_TASK_CHECK_INTERVAL 1000 // Cannot send mqtt messages faster than this (reducing it crashes the system)
 
 // Reconnection strategy constants
 #define MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL (5 * 1000)
 #define MQTT_CUSTOM_MAX_RECONNECT_INTERVAL (5 * 60 * 1000)
 #define MQTT_CUSTOM_RECONNECT_MULTIPLIER 2
 #define MQTT_CUSTOM_MAX_RECONNECT_ATTEMPTS 10
-#define MQTT_CUSTOM_PAYLOAD_LIMIT (6 * 1024) // Experimentally, a full payload of 17 channels reaches about 5.5 kB
+#define MQTT_CUSTOM_PAYLOAD_LIMIT (32 * 1024)  // Use PSRAM for larger buffer (32KB)
 #define MQTT_CUSTOM_MAX_FAILED_MESSAGE_PUBLISH_ATTEMPTS 10
 
 // Preferences keys for persistent storage

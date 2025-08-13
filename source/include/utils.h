@@ -37,7 +37,7 @@
 #define TASK_RESTART_PRIORITY 5
 
 #define TASK_MAINTENANCE_NAME "maintenance_task"
-#define TASK_MAINTENANCE_STACK_SIZE (6 * 1024)
+#define TASK_MAINTENANCE_STACK_SIZE (6 * 1024)     // Reduced from 6KB since large structs moved to PSRAM
 #define TASK_MAINTENANCE_PRIORITY 3
 #define MAINTENANCE_CHECK_INTERVAL (60 * 1000) // Interval to check main parameters, to avoid overloading the loop
 
@@ -69,6 +69,10 @@ inline bool isChannelValid(uint8_t channel) {return channel < CHANNEL_COUNT;}
 
 // Mathematical utilities
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier);
+inline float roundToDecimals(float value, uint8_t decimals = 3) {
+    float factor = powf(10.0f, decimals);
+    return (long)(value * factor + 0.5f) / factor;
+}
 
 // Device identification
 void getDeviceId(char* deviceId, size_t maxLength);
@@ -120,13 +124,9 @@ bool endsWith(const char* s, const char* suffix);
 
 // Mutex utilities
 inline bool acquireMutex(SemaphoreHandle_t* mutex, uint64_t timeout) {
-    if (mutex && xSemaphoreTake(*mutex, pdMS_TO_TICKS(timeout)) != pdTRUE) {
-        return false;
-    } else {
-        return true;
-    }
+    return mutex && *mutex && xSemaphoreTake(*mutex, pdMS_TO_TICKS(timeout)) == pdTRUE;
 }
 
 inline void releaseMutex(SemaphoreHandle_t* mutex) {
-    if (mutex) xSemaphoreGive(*mutex);
+    if (mutex && *mutex) xSemaphoreGive(*mutex);
 }

@@ -80,6 +80,11 @@ namespace CustomMqtt
         LOG_DEBUG("Stopping Custom MQTT client...");
         _stopTask();
         
+        // Disconnect and cleanup network client
+        if (_customClientMqtt.connected()) {
+            _customClientMqtt.disconnect();
+        }
+        
         // Clean up mutex
         if (_configMutex != nullptr) {
             vSemaphoreDelete(_configMutex);
@@ -101,7 +106,7 @@ namespace CustomMqtt
         if (!_isSetupDone) begin();
 
         // Acquire mutex with timeout
-        if (_configMutex == nullptr || xSemaphoreTake(_configMutex, pdMS_TO_TICKS(CONFIG_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
             LOG_ERROR("Failed to acquire configuration mutex for setConfiguration");
             return false;
         }
@@ -123,7 +128,7 @@ namespace CustomMqtt
         if (_customMqttConfiguration.enabled) _startTask();
 
         // Release mutex
-        xSemaphoreGive(_configMutex);
+        releaseMutex(&_configMutex);
 
         LOG_DEBUG("Custom MQTT configuration set");
         return true;
@@ -416,6 +421,11 @@ namespace CustomMqtt
     {
         LOG_DEBUG("Attempt to connect to Custom MQTT (attempt %d)...", _currentMqttConnectionAttempt + 1);
 
+        // Ensure clean connection state
+        if (_customClientMqtt.connected()) {
+            _customClientMqtt.disconnect();
+        }
+
         // If the clientid is empty, use the default one
         char clientId[NAME_BUFFER_SIZE];
         snprintf(clientId, sizeof(clientId), "%s", _customMqttConfiguration.clientid);
@@ -493,13 +503,24 @@ namespace CustomMqtt
             return;
         }
         
-        char meterMessage[MQTT_CUSTOM_PAYLOAD_LIMIT];
-        if (!safeSerializeJson(jsonDocument, meterMessage, sizeof(meterMessage))) {
+        // Allocate message buffer in PSRAM for better memory utilization
+        char *meterMessage = (char*)ps_malloc(MQTT_CUSTOM_PAYLOAD_LIMIT);
+        if (!meterMessage) {
+            LOG_ERROR("Failed to allocate meter message buffer in PSRAM");
+            return;
+        }
+        
+        bool serializeSuccess = safeSerializeJson(jsonDocument, meterMessage, MQTT_CUSTOM_PAYLOAD_LIMIT);
+        if (!serializeSuccess) {
             LOG_WARNING("Failed to serialize meter data to JSON");
+            free(meterMessage);
             return;
         }
 
-        if (_publishMessage(_customMqttConfiguration.topic, meterMessage)) LOG_DEBUG("Meter data published to Custom MQTT");
+        bool publishSuccess = _publishMessage(_customMqttConfiguration.topic, meterMessage);
+        free(meterMessage);
+        
+        if (publishSuccess) LOG_DEBUG("Meter data published to Custom MQTT");
         else LOG_WARNING("Failed to publish meter data to Custom MQTT");
     }
 

@@ -201,10 +201,16 @@ namespace CrashMonitor
         
         if (!elfOffsetFound && offset == 0) {
             // Search for ELF header in the first 1KB of the partition
-            uint8_t searchBuffer[1024];
-            esp_err_t err = esp_partition_read(pt, 0, searchBuffer, sizeof(searchBuffer));
+            uint8_t *searchBuffer = (uint8_t*)ps_malloc(1024);
+            if (!searchBuffer) {
+                LOG_ERROR("Failed to allocate search buffer in PSRAM");
+                *bytesRead = 0;
+                return false;
+            }
+            
+            esp_err_t err = esp_partition_read(pt, 0, searchBuffer, 1024);
             if (err == ESP_OK) {
-                for (size_t i = 0; i < sizeof(searchBuffer) - 4; i++) {
+                for (size_t i = 0; i < 1024 - 4; i++) {
                     if (searchBuffer[i] == 0x7f && searchBuffer[i+1] == 'E' && 
                         searchBuffer[i+2] == 'L' && searchBuffer[i+3] == 'F') {
                         elfOffset = i;
@@ -214,6 +220,8 @@ namespace CrashMonitor
                     }
                 }
             }
+            
+            free(searchBuffer);
             
             if (!elfOffsetFound) {
                 LOG_ERROR("Could not find ELF header in core dump partition");
@@ -285,7 +293,7 @@ namespace CrashMonitor
                     _crashCount, _consecutiveCrashCount);
         
         // Get core dump summary
-        esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)malloc(sizeof(esp_core_dump_summary_t));
+        esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)ps_malloc(sizeof(esp_core_dump_summary_t));
         if (summary) {
             esp_err_t err = esp_core_dump_get_summary(summary);
             if (err == ESP_OK) {                
@@ -355,7 +363,7 @@ namespace CrashMonitor
             }
 
             // Get detailed crash summary if available
-            esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)malloc(sizeof(esp_core_dump_summary_t));
+            esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)ps_malloc(sizeof(esp_core_dump_summary_t));
             if (summary) {
                 esp_err_t err = esp_core_dump_get_summary(summary);
                 if (err == ESP_OK) {
@@ -412,7 +420,7 @@ namespace CrashMonitor
         size_t rawTotalSize = getCoreDumpSize();
         
         // Allocate buffer for the chunk to get the actual size after processing
-        uint8_t* buffer = (uint8_t*)malloc(chunkSize);
+        uint8_t* buffer = (uint8_t*)ps_malloc(chunkSize);
         if (!buffer) {
             doc["error"] = "Failed to allocate buffer";
             return false;
@@ -458,7 +466,7 @@ namespace CrashMonitor
                 // First call to get required buffer size
                 int32_t ret = mbedtls_base64_encode(NULL, 0, &base64Length, buffer, bytesRead);
                 if (ret == MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) {
-                    uint8_t* base64Buffer = (uint8_t*)malloc(base64Length + 1); // +1 for null terminator
+                    uint8_t* base64Buffer = (uint8_t*)ps_malloc(base64Length + 1); // +1 for null terminator
                     if (base64Buffer) {
                         size_t actualLength = 0;
                         ret = mbedtls_base64_encode(base64Buffer, base64Length, &actualLength, buffer, bytesRead);

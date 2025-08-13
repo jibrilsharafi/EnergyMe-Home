@@ -557,137 +557,148 @@ static void _restartSystem(bool factoryReset) {
 
 void printDeviceStatusStatic()
 {
-    SystemStaticInfo info;
-    populateSystemStaticInfo(info);
+    SystemStaticInfo *info = (SystemStaticInfo*)ps_malloc(sizeof(SystemStaticInfo));
+    if (!info) {
+        LOG_ERROR("Failed to allocate SystemStaticInfo in PSRAM");
+        return;
+    }
+    
+    populateSystemStaticInfo(*info);
 
     LOG_DEBUG("--- Static System Info ---");
-    LOG_DEBUG("Product: %s (%s)", info.fullProductName, info.productName);
-    LOG_DEBUG("Company: %s | Author: %s", info.companyName, info.author);
-    LOG_DEBUG("Firmware: %s | Build: %s %s", info.buildVersion, info.buildDate, info.buildTime);
-    LOG_DEBUG("Sketch MD5: %s | Partition app name: %s", info.sketchMD5, info.partitionAppName);
-    LOG_DEBUG("Flash: %lu bytes, %lu Hz | PSRAM: %lu bytes", info.flashChipSizeBytes, info.flashChipSpeedHz, info.psramSizeBytes);
-    LOG_DEBUG("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", info.chipModel, info.chipRevision, info.chipCores, info.chipId, info.cpuFrequencyMHz);
-    LOG_DEBUG("SDK: %s | Core: %s", info.sdkVersion, info.coreVersion);
-    LOG_DEBUG("Device ID: %s", info.deviceId);
-    LOG_DEBUG("Monitoring: %lu crashes (%lu consecutive), %lu resets (%lu consecutive) | Last reset: %s", info.crashCount, info.consecutiveCrashCount, info.resetCount, info.consecutiveResetCount, info.lastResetReasonString);
+    LOG_DEBUG("Product: %s (%s)", info->fullProductName, info->productName);
+    LOG_DEBUG("Company: %s | Author: %s", info->companyName, info->author);
+    LOG_DEBUG("Firmware: %s | Build: %s %s", info->buildVersion, info->buildDate, info->buildTime);
+    LOG_DEBUG("Sketch MD5: %s | Partition app name: %s", info->sketchMD5, info->partitionAppName);
+    LOG_DEBUG("Flash: %lu bytes, %lu Hz | PSRAM: %lu bytes", info->flashChipSizeBytes, info->flashChipSpeedHz, info->psramSizeBytes);
+    LOG_DEBUG("Chip: %s, rev %u, cores %u, id 0x%llx, CPU: %lu MHz", info->chipModel, info->chipRevision, info->chipCores, info->chipId, info->cpuFrequencyMHz);
+    LOG_DEBUG("SDK: %s | Core: %s", info->sdkVersion, info->coreVersion);
+    LOG_DEBUG("Device ID: %s", info->deviceId);
+    LOG_DEBUG("Monitoring: %lu crashes (%lu consecutive), %lu resets (%lu consecutive) | Last reset: %s", info->crashCount, info->consecutiveCrashCount, info->resetCount, info->consecutiveResetCount, info->lastResetReasonString);
 
+    free(info);
     LOG_DEBUG("------------------------");
 }
 
 void printDeviceStatusDynamic()
 {
-    SystemDynamicInfo info;
-    populateSystemDynamicInfo(info);
+    SystemDynamicInfo *info = (SystemDynamicInfo*)ps_malloc(sizeof(SystemDynamicInfo));
+    if (!info) {
+        LOG_ERROR("Failed to allocate SystemDynamicInfo in PSRAM");
+        return;
+    }
+    
+    populateSystemDynamicInfo(*info);
 
     LOG_DEBUG("--- Dynamic System Info ---");
     LOG_DEBUG(
         "Uptime: %llu s (%llu ms) | Timestamp: %s | Temperature: %.2f C", 
-        info.uptimeSeconds, info.uptimeMilliseconds, info.currentTimestampIso, info.temperatureCelsius
+        info->uptimeSeconds, info->uptimeMilliseconds, info->currentTimestampIso, info->temperatureCelsius
     );
 
     LOG_DEBUG("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc",  
-        info.heapTotalBytes, 
-        info.heapFreeBytes, info.heapFreePercentage, 
-        info.heapUsedBytes, info.heapUsedPercentage, 
-        info.heapMinFreeBytes, info.heapMaxAllocBytes
+        info->heapTotalBytes, 
+        info->heapFreeBytes, info->heapFreePercentage, 
+        info->heapUsedBytes, info->heapUsedPercentage, 
+        info->heapMinFreeBytes, info->heapMaxAllocBytes
     );
-    if (info.psramFreeBytes > 0 || info.psramUsedBytes > 0) {
+    if (info->psramFreeBytes > 0 || info->psramUsedBytes > 0) {
         LOG_DEBUG("PSRAM: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
- 
-            info.psramTotalBytes,
-            info.psramFreeBytes, info.psramFreePercentage, 
-            info.psramUsedBytes, info.psramUsedPercentage, 
-            info.psramMinFreeBytes, info.psramMaxAllocBytes
+            info->psramTotalBytes,
+            info->psramFreeBytes, info->psramFreePercentage, 
+            info->psramUsedBytes, info->psramUsedPercentage, 
+            info->psramMinFreeBytes, info->psramMaxAllocBytes
         );
     }
     LOG_DEBUG("LittleFS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%)",  
-        info.littlefsTotalBytes, 
-        info.littlefsFreeBytes, info.littlefsFreePercentage, 
-        info.littlefsUsedBytes, info.littlefsUsedPercentage
+        info->littlefsTotalBytes, 
+        info->littlefsFreeBytes, info->littlefsFreePercentage, 
+        info->littlefsUsedBytes, info->littlefsUsedPercentage
     );
     LOG_DEBUG("NVS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %u namespaces",  
-        info.totalUsableEntries, info.availableEntries, info.availableEntriesPercentage, 
-        info.usedEntries, info.usedEntriesPercentage, info.namespaceCount
+        info->totalUsableEntries, info->availableEntries, info->availableEntriesPercentage, 
+        info->usedEntries, info->usedEntriesPercentage, info->namespaceCount
     );
 
-    if (info.wifiConnected) {
-        LOG_DEBUG("WiFi: Connected to '%s' (BSSID: %s) | RSSI %ld dBm | MAC %s", info.wifiSsid, info.wifiBssid, info.wifiRssi, info.wifiMacAddress);
-        LOG_DEBUG("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", info.wifiLocalIp, info.wifiGatewayIp, info.wifiDnsIp, info.wifiSubnetMask);
+    if (info->wifiConnected) {
+        LOG_DEBUG("WiFi: Connected to '%s' (BSSID: %s) | RSSI %ld dBm | MAC %s", info->wifiSsid, info->wifiBssid, info->wifiRssi, info->wifiMacAddress);
+        LOG_DEBUG("WiFi: IP %s | Gateway %s | DNS %s | Subnet %s", info->wifiLocalIp, info->wifiGatewayIp, info->wifiDnsIp, info->wifiSubnetMask);
     } else {
-        LOG_DEBUG("WiFi: Disconnected | MAC %s", info.wifiMacAddress);
+        LOG_DEBUG("WiFi: Disconnected | MAC %s", info->wifiMacAddress);
     }
 
     LOG_DEBUG("Tasks - MQTT: %lu total, %lu minimum free (%.2f%%)",
-        info.mqttTaskInfo.allocatedStack, 
-        info.mqttTaskInfo.minimumFreeStack, 
-        info.mqttTaskInfo.freePercentage
+        info->mqttTaskInfo.allocatedStack, 
+        info->mqttTaskInfo.minimumFreeStack, 
+        info->mqttTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - Custom MQTT: %lu total, %lu minimum free (%.2f%%)",
-        info.customMqttTaskInfo.allocatedStack, 
-        info.customMqttTaskInfo.minimumFreeStack, 
-        info.customMqttTaskInfo.freePercentage
+        info->customMqttTaskInfo.allocatedStack, 
+        info->customMqttTaskInfo.minimumFreeStack, 
+        info->customMqttTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - Custom Server Health Check: %lu total, %lu minimum free (%.2f%%)",
-        info.customServerHealthCheckTaskInfo.allocatedStack, 
-        info.customServerHealthCheckTaskInfo.minimumFreeStack, 
-        info.customServerHealthCheckTaskInfo.freePercentage
+        info->customServerHealthCheckTaskInfo.allocatedStack, 
+        info->customServerHealthCheckTaskInfo.minimumFreeStack, 
+        info->customServerHealthCheckTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - Custom Server OTA Timeout: %lu total, %lu minimum free (%.2f%%)",
-        info.customServerOtaTimeoutTaskInfo.allocatedStack, 
-        info.customServerOtaTimeoutTaskInfo.minimumFreeStack, 
-        info.customServerOtaTimeoutTaskInfo.freePercentage
+        info->customServerOtaTimeoutTaskInfo.allocatedStack, 
+        info->customServerOtaTimeoutTaskInfo.minimumFreeStack, 
+        info->customServerOtaTimeoutTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - LED: %lu total, %lu minimum free (%.2f%%)",
-        info.ledTaskInfo.allocatedStack, 
-        info.ledTaskInfo.minimumFreeStack, 
-        info.ledTaskInfo.freePercentage
+        info->ledTaskInfo.allocatedStack, 
+        info->ledTaskInfo.minimumFreeStack, 
+        info->ledTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - InfluxDB: %lu total, %lu minimum free (%.2f%%)",
-        info.influxDbTaskInfo.allocatedStack, 
-        info.influxDbTaskInfo.minimumFreeStack, 
-        info.influxDbTaskInfo.freePercentage
+        info->influxDbTaskInfo.allocatedStack, 
+        info->influxDbTaskInfo.minimumFreeStack, 
+        info->influxDbTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - Crash Monitor: %lu total, %lu minimum free (%.2f%%)",
-        info.crashMonitorTaskInfo.allocatedStack, 
-        info.crashMonitorTaskInfo.minimumFreeStack, 
-        info.crashMonitorTaskInfo.freePercentage
+        info->crashMonitorTaskInfo.allocatedStack, 
+        info->crashMonitorTaskInfo.minimumFreeStack, 
+        info->crashMonitorTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - Button Handler: %lu total, %lu minimum free (%.2f%%)",
-        info.buttonHandlerTaskInfo.allocatedStack, 
-        info.buttonHandlerTaskInfo.minimumFreeStack, 
-        info.buttonHandlerTaskInfo.freePercentage
+        info->buttonHandlerTaskInfo.allocatedStack, 
+        info->buttonHandlerTaskInfo.minimumFreeStack, 
+        info->buttonHandlerTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - UDP Log: %lu total, %lu minimum free (%.2f%%)",
-        info.udpLogTaskInfo.allocatedStack, 
-        info.udpLogTaskInfo.minimumFreeStack, 
-        info.udpLogTaskInfo.freePercentage
+        info->udpLogTaskInfo.allocatedStack, 
+        info->udpLogTaskInfo.minimumFreeStack, 
+        info->udpLogTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - Custom WiFi: %lu total, %lu minimum free (%.2f%%)",
-        info.customWifiTaskInfo.allocatedStack, 
-        info.customWifiTaskInfo.minimumFreeStack, 
-        info.customWifiTaskInfo.freePercentage
+        info->customWifiTaskInfo.allocatedStack, 
+        info->customWifiTaskInfo.minimumFreeStack, 
+        info->customWifiTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - ADE7953 Meter Reading: %lu total, %lu minimum free (%.2f%%)",
-        info.ade7953MeterReadingTaskInfo.allocatedStack, 
-        info.ade7953MeterReadingTaskInfo.minimumFreeStack, 
-        info.ade7953MeterReadingTaskInfo.freePercentage
+        info->ade7953MeterReadingTaskInfo.allocatedStack, 
+        info->ade7953MeterReadingTaskInfo.minimumFreeStack, 
+        info->ade7953MeterReadingTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - ADE7953 Energy Save: %lu total, %lu minimum free (%.2f%%)",
-        info.ade7953EnergySaveTaskInfo.allocatedStack, 
-        info.ade7953EnergySaveTaskInfo.minimumFreeStack, 
-        info.ade7953EnergySaveTaskInfo.freePercentage
+        info->ade7953EnergySaveTaskInfo.allocatedStack, 
+        info->ade7953EnergySaveTaskInfo.minimumFreeStack, 
+        info->ade7953EnergySaveTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - ADE7953 Hourly CSV: %lu total, %lu minimum free (%.2f%%)",
-        info.ade7953HourlyCsvTaskInfo.allocatedStack, 
-        info.ade7953HourlyCsvTaskInfo.minimumFreeStack, 
-        info.ade7953HourlyCsvTaskInfo.freePercentage
+        info->ade7953HourlyCsvTaskInfo.allocatedStack, 
+        info->ade7953HourlyCsvTaskInfo.minimumFreeStack, 
+        info->ade7953HourlyCsvTaskInfo.freePercentage
     );
     LOG_DEBUG("Tasks - Maintenance: %lu total, %lu minimum free (%.2f%%)",
-        info.maintenanceTaskInfo.allocatedStack, 
-        info.maintenanceTaskInfo.minimumFreeStack, 
-        info.maintenanceTaskInfo.freePercentage
+        info->maintenanceTaskInfo.allocatedStack, 
+        info->maintenanceTaskInfo.minimumFreeStack, 
+        info->maintenanceTaskInfo.freePercentage
     );
 
+    free(info);
     LOG_DEBUG("-------------------------");
 }
 

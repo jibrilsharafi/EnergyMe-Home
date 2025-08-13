@@ -290,6 +290,11 @@
         var energyData = {};
         var channelData = {};
 
+        // Auto-reload intervals
+        var customMqttAutoReloadInterval = null;
+        var influxDbAutoReloadInterval = null;
+        const AUTO_RELOAD_INTERVAL_MS = 5000; // 5 seconds
+
         function populateDropdown() {
             var printLogLevel = document.getElementById("printLogLevel");
             var saveLogLevel = document.getElementById("saveLogLevel");
@@ -548,6 +553,7 @@
         }
 
         function getCustomMqttConfiguration() {
+            // Load configuration
             energyApi.getCustomMqttConfig()
                 .then(data => {
                     customMqttConfig = data;
@@ -562,15 +568,51 @@
                     document.getElementById("customMqttUsername").value = customMqttConfig.username;
                     document.getElementById("customMqttPassword").value = customMqttConfig.password;
 
-                    // Update status with appropriate icon and colors
-                    updateStatusDisplay(customMqttConfig.lastConnectionStatus,
-                        customMqttConfig.lastConnectionAttemptTimestamp,
-                        customMqttConfig.enabled);
+                    // Load status separately
+                    loadCustomMqttStatus();
+
+                    // Start or stop auto-reload based on enabled status
+                    if (customMqttConfig.enabled) {
+                        startCustomMqttAutoReload();
+                    } else {
+                        stopCustomMqttAutoReload();
+                    }
                 })
                 .catch(error => {
                     console.log("Error getting custom MQTT configuration. Response: " + error.message);
+                    updateStatusDisplay("Error loading configuration", "", false);
+                    stopCustomMqttAutoReload();
+                });
+        }
+
+        function loadCustomMqttStatus() {
+            energyApi.get('custom-mqtt/status')
+                .then(data => {
+                    // Update status display with the latest status information
+                    updateStatusDisplay(data.status, data.statusTimestamp, customMqttConfig.enabled);
+                })
+                .catch(error => {
+                    console.log("Error getting custom MQTT status. Response: " + error.message);
                     updateStatusDisplay("Error loading status", "", false);
                 });
+        }
+
+        function startCustomMqttAutoReload() {
+            if (customMqttAutoReloadInterval) {
+                clearInterval(customMqttAutoReloadInterval);
+            }
+            customMqttAutoReloadInterval = setInterval(() => {
+                if (customMqttConfig && customMqttConfig.enabled) {
+                    loadCustomMqttStatus();
+                }
+            }, AUTO_RELOAD_INTERVAL_MS);
+        }
+
+        function stopCustomMqttAutoReload() {
+            if (customMqttAutoReloadInterval) {
+                clearInterval(customMqttAutoReloadInterval);
+                customMqttAutoReloadInterval = null;
+            }
         }
 
         function updateStatusDisplay(status, timestamp, isEnabled) {
@@ -641,7 +683,9 @@
             energyApi.setCustomMqttConfig(newCustomMqttConfig)
                 .then(data => {
                     document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set success!";
-                    setTimeout(getCustomMqttConfiguration, 1000);
+                    setTimeout(() => {
+                        getCustomMqttConfiguration(); // This will reload config and restart auto-reload if needed
+                    }, 2000); // Wait 2 seconds for the device to process the new config
                     setTimeout(function () {
                         document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
                         document.getElementById("setCustomMqttConfigurationButton").disabled = false;
@@ -770,14 +814,52 @@
                     document.getElementById("influxDbUseSSL").checked = influxDbConfig.useSSL;
 
                     toggleInfluxDbVersionSettings();
-                    updateInfluxDbStatusDisplay(influxDbConfig.lastConnectionStatus,
-                        influxDbConfig.lastConnectionAttemptTimestamp,
-                        influxDbConfig.enabled);
+
+                    // Load status separately
+                    loadInfluxDbStatus();
+
+                    // Start or stop auto-reload based on enabled status
+                    if (influxDbConfig.enabled) {
+                        startInfluxDbAutoReload();
+                    } else {
+                        stopInfluxDbAutoReload();
+                    }
                 })
                 .catch(error => {
                     console.log("Error getting InfluxDB configuration. Response: " + error.message);
+                    updateInfluxDbStatusDisplay("Error loading configuration", "", false);
+                    stopInfluxDbAutoReload();
+                });
+        }
+
+        function loadInfluxDbStatus() {
+            energyApi.get('influxdb/status')
+                .then(data => {
+                    // Update status display with the latest status information
+                    updateInfluxDbStatusDisplay(data.status, data.statusTimestamp, influxDbConfig.enabled);
+                })
+                .catch(error => {
+                    console.log("Error getting InfluxDB status. Response: " + error.message);
                     updateInfluxDbStatusDisplay("Error loading status", "", false);
                 });
+        }
+
+        function startInfluxDbAutoReload() {
+            if (influxDbAutoReloadInterval) {
+                clearInterval(influxDbAutoReloadInterval);
+            }
+            influxDbAutoReloadInterval = setInterval(() => {
+                if (influxDbConfig && influxDbConfig.enabled) {
+                    loadInfluxDbStatus();
+                }
+            }, AUTO_RELOAD_INTERVAL_MS);
+        }
+
+        function stopInfluxDbAutoReload() {
+            if (influxDbAutoReloadInterval) {
+                clearInterval(influxDbAutoReloadInterval);
+                influxDbAutoReloadInterval = null;
+            }
         }
 
         function setInfluxDbConfiguration() {
@@ -808,7 +890,9 @@
             energyApi.setInfluxDbConfig(newInfluxDbConfig)
                 .then(data => {
                     document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set success!";
-                    setTimeout(getInfluxDbConfiguration, 1000);
+                    setTimeout(() => {
+                        getInfluxDbConfiguration(); // This will reload config and restart auto-reload if needed
+                    }, 2000); // Wait 2 seconds for the device to process the new config
                     setTimeout(function () {
                         document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
                         document.getElementById("setInfluxDbConfigurationButton").disabled = false;
@@ -1131,6 +1215,15 @@
                 alert("Error loading configuration data. Please refresh the page.");
             }
         }
+
+        // Cleanup function to stop all auto-reload intervals
+        function stopAllAutoReload() {
+            stopCustomMqttAutoReload();
+            stopInfluxDbAutoReload();
+        }
+
+        // Stop auto-reload when page is unloaded
+        window.addEventListener('beforeunload', stopAllAutoReload);
 
         document.addEventListener("DOMContentLoaded", function () {
             // Load configuration data sequentially to prevent ESP32 overload

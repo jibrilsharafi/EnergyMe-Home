@@ -26,11 +26,10 @@
 #define WIFI_RECONNECT_DELAY_BASE (5 * 1000)        // Base delay for exponential backoff
 #define WIFI_STABLE_CONNECTION_DURATION (5 * 60 * 1000)    // Duration of uninterrupted WiFi connection to reset the reconnection counter
 #define WIFI_PERIODIC_CHECK_INTERVAL (30 * 1000)    // Interval to check WiFi connection status (does not need to be too frequent since we have an event-based system)
-#define WIFI_CONNECTIVITY_TEST_INTERVAL (60 * 1000) // Test actual network connectivity every minute
 #define WIFI_FORCE_RECONNECT_DELAY (2 * 1000)      // Delay after forcing reconnection
 
 // Connectivity test parameters
-#define CONNECTIVITY_TEST_TIMEOUT_MS 3000           // Timeout for connectivity tests
+#define CONNECTIVITY_TEST_TIMEOUT_MS (3 * 1000)           // Timeout for connectivity tests
 #define CONNECTIVITY_TEST_HOST "google.com"         // Host to test connectivity against
 #define CONNECTIVITY_TEST_PORT 80                   // Port for connectivity test
 

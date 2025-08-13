@@ -7,7 +7,6 @@ namespace CustomWifi
   static TaskHandle_t _wifiTaskHandle = NULL;
   static uint64_t _lastReconnectAttempt = 0;
   static int32_t _reconnectAttempts = 0; // Increased every disconnection, reset on stable (few minutes) connection
-  static uint64_t _lastConnectivityTest = 0;
 
   // WiFi event notification values for task communication
   static const uint32_t WIFI_EVENT_CONNECTED = 1;
@@ -304,20 +303,14 @@ namespace CustomWifi
       {
         // Timeout occurred - perform periodic health check
         if (_taskShouldRun && isFullyConnected())
-        {
-          // Perform connectivity test periodically
-          uint64_t currentTime = millis64();
-          if (currentTime - _lastConnectivityTest >= WIFI_CONNECTIVITY_TEST_INTERVAL) {
-            _lastConnectivityTest = currentTime;
-            
-            if (!_testConnectivity()) {
-              LOG_WARNING("Connectivity test failed - forcing reconnection");
-              _forceReconnectInternal();
-            }
+        {   
+          if (!_testConnectivity()) {
+            LOG_WARNING("Connectivity test failed - forcing reconnection");
+            _forceReconnectInternal();
           }
-          
+        
           // Reset failure counter on sustained connection
-          if (_reconnectAttempts > 0 && currentTime - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
+          if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
           {
             LOG_DEBUG("WiFi connection stable - resetting counters");
             _reconnectAttempts = 0;

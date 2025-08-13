@@ -106,7 +106,7 @@ namespace InfluxDbClient
         if (!_isSetupDone) begin();
 
         // Acquire mutex with timeout
-        if (_configMutex == nullptr || xSemaphoreTake(_configMutex, pdMS_TO_TICKS(CONFIG_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
             LOG_ERROR("Failed to acquire configuration mutex for setConfiguration");
             return false;
         }
@@ -129,7 +129,7 @@ namespace InfluxDbClient
         if (_influxDbConfiguration.enabled) _startTask();
 
         // Release mutex
-        xSemaphoreGive(_configMutex);
+        releaseMutex(&_configMutex);
 
         LOG_DEBUG("InfluxDB configuration set");
         return true;
@@ -490,7 +490,15 @@ namespace InfluxDbClient
         http.addHeader("Authorization", _authHeader);
         http.addHeader("Content-Type", "text/plain");
 
-        char payload[PAYLOAD_BUFFER_SIZE] = "";
+        // Allocate payload buffer in PSRAM for better memory utilization
+        char *payload = (char*)ps_malloc(PAYLOAD_BUFFER_SIZE);
+        if (!payload) {
+            LOG_ERROR("Failed to allocate payload buffer in PSRAM");
+            http.end();
+            return;
+        }
+        memset(payload, 0, PAYLOAD_BUFFER_SIZE);
+        
         char *ptr = payload;
         size_t remaining = PAYLOAD_BUFFER_SIZE;
         bool bufferFull = false;
@@ -514,17 +522,29 @@ namespace InfluxDbClient
                 }
                 
                 // Add realtime line protocol
-                char realtimeLineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
-                _formatLineProtocol(i, label, meterValues, realtimeLineProtocol, sizeof(realtimeLineProtocol), false);
+                char *realtimeLineProtocol = (char*)ps_malloc(LINE_PROTOCOL_BUFFER_SIZE);
+                if (!realtimeLineProtocol) {
+                    LOG_ERROR("Failed to allocate realtime line protocol buffer in PSRAM");
+                    bufferFull = true;
+                    break;
+                }
+                _formatLineProtocol(i, label, meterValues, realtimeLineProtocol, LINE_PROTOCOL_BUFFER_SIZE, false);
                 int written = snprintf(ptr, remaining, "%s", realtimeLineProtocol);
+                free(realtimeLineProtocol);
                 if (written >= remaining) { bufferFull = true; break; }
                 ptr += written;
                 remaining -= written;
                 
                 // Add energy line protocol
-                char energyLineProtocol[LINE_PROTOCOL_BUFFER_SIZE];
-                _formatLineProtocol(i, label, meterValues, energyLineProtocol, sizeof(energyLineProtocol), true);
+                char *energyLineProtocol = (char*)ps_malloc(LINE_PROTOCOL_BUFFER_SIZE);
+                if (!energyLineProtocol) {
+                    LOG_ERROR("Failed to allocate energy line protocol buffer in PSRAM");
+                    bufferFull = true;
+                    break;
+                }
+                _formatLineProtocol(i, label, meterValues, energyLineProtocol, LINE_PROTOCOL_BUFFER_SIZE, true);
                 written = snprintf(ptr, remaining, "\n%s", energyLineProtocol);
+                free(energyLineProtocol);
 
                 if (written >= remaining) { bufferFull = true; break; }
                 ptr += written;
@@ -537,6 +557,7 @@ namespace InfluxDbClient
         if (ptr == payload)
         {
             LOG_DEBUG("No data to send to InfluxDB");
+            free(payload);
             http.end();
             return;
         }
@@ -559,6 +580,7 @@ namespace InfluxDbClient
             if (httpCode == HTTP_CODE_UNAUTHORIZED || httpCode == HTTP_CODE_FORBIDDEN) {
                 LOG_ERROR("InfluxDB send failed due to authorization error (%d). Disabling InfluxDB.", httpCode);
                 _disable();
+                free(payload);
                 http.end();
                 return;
             }
@@ -567,6 +589,7 @@ namespace InfluxDbClient
             if (_currentSendAttempt >= INFLUXDB_MAX_CONSECUTIVE_FAILURES) {
                 LOG_ERROR("InfluxDB send failed %u consecutive times. Disabling InfluxDB.", _currentSendAttempt);
                 _disable();
+                free(payload);
                 http.end();
                 return;
             }
@@ -582,6 +605,7 @@ namespace InfluxDbClient
         }
         
         _statusTimestampUnix = CustomTime::getUnixTime();
+        free(payload);
         http.end();
     }
 

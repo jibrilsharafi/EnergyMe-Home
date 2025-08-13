@@ -1018,7 +1018,7 @@ namespace CustomServer
         });
     }
 
-    static bool _fetchGitHubReleaseInfo(JsonDocument &doc)
+    static bool _fetchGitHubReleaseInfo(JsonDocument &doc) // Used only if no secrets are compiled
     {
         HTTPClient http;
         http.begin(GITHUB_API_RELEASES_URL);
@@ -1664,7 +1664,6 @@ namespace CustomServer
 
         server.on("/api/v1/custom-mqtt/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            
             JsonDocument doc;
             
             // Add runtime status information
@@ -1759,7 +1758,6 @@ namespace CustomServer
         // Get InfluxDB status
         server.on("/api/v1/influxdb/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            
             JsonDocument doc;
             
             // Add runtime status information

@@ -160,6 +160,13 @@ class EnergyMeAPI {
     }
 
     /**
+     * Patch channel configuration (partial update)
+     */
+    async patchChannelConfig(index, channelData) {
+        return this.patch(`ade7953/channel?index=${index}`, channelData);
+    }
+
+    /**
      * Get log levels
      */
     async getLogLevels() {
