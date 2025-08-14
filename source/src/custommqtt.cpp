@@ -39,6 +39,7 @@ namespace CustomMqtt
     // MQTT operations
     static bool _connectMqtt();
     static void _publishMeter();
+    static bool _publishMeterStreaming(JsonDocument &jsonDocument);
     static bool _publishMessage(const char *topic, const char *message);
     
     // JSON validation
@@ -60,18 +61,12 @@ namespace CustomMqtt
     {
         LOG_DEBUG("Setting up Custom MQTT client...");
         
-        // Create configuration mutex
-        if (_configMutex == nullptr) {
-            _configMutex = xSemaphoreCreateMutex();
-            if (_configMutex == nullptr) {
-                LOG_ERROR("Failed to create configuration mutex");
-                return;
-            }
-        }
+        if (!createMutexIfNeeded(&_configMutex)) return;
         
-        _isSetupDone = true; // Must set before since we have checks on the setup later
-        _customClientMqtt.setBufferSize(MQTT_CUSTOM_PAYLOAD_LIMIT);
+        _isSetupDone = true; // Must set before since we have checks on the setup later        
+        _customClientMqtt.setBufferSize(STREAM_UTILS_PACKET_SIZE);
         _setConfigurationFromPreferences(); // Here we load and set the config. The setConfig will handle starting the task if enabled
+        
         LOG_DEBUG("Custom MQTT client setup complete");
     }
 
@@ -97,13 +92,19 @@ namespace CustomMqtt
 
     void getConfiguration(CustomMqttConfiguration &config)
     {
-        if (!_isSetupDone) begin();
+        if (!_isSetupDone) {
+            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
+            return;
+        }
         config = _customMqttConfiguration;
     }
 
     bool setConfiguration(const CustomMqttConfiguration &config)
     {
-        if (!_isSetupDone) begin();
+        if (!_isSetupDone) {
+            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
+            return false;
+        }
 
         // Acquire mutex with timeout
         if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
@@ -138,7 +139,10 @@ namespace CustomMqtt
     {
         LOG_DEBUG("Resetting Custom MQTT configuration to default");
         
-        if (!_isSetupDone) begin();
+        if (!_isSetupDone) {
+            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
+            return;
+        }
 
         CustomMqttConfiguration defaultConfig;
         setConfiguration(defaultConfig);
@@ -148,13 +152,19 @@ namespace CustomMqtt
 
     void getConfigurationAsJson(JsonDocument &jsonDocument) 
     {
-        if (!_isSetupDone) begin();
+        if (!_isSetupDone) {
+            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
+            return;
+        }
         configurationToJson(_customMqttConfiguration, jsonDocument);
     }
 
     bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial)
     {
-        if (!_isSetupDone) begin();
+        if (!_isSetupDone) {
+            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
+            return false;
+        }
 
         CustomMqttConfiguration config;
         config = _customMqttConfiguration; // Start with current configuration (yeah I know it's cumbersome)
@@ -168,7 +178,10 @@ namespace CustomMqtt
 
     void configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument)
     {
-        if (!_isSetupDone) begin();
+        if (!_isSetupDone) {
+            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
+            return;
+        }
 
         jsonDocument["enabled"] = config.enabled;
         jsonDocument["server"] = config.server;
@@ -185,7 +198,10 @@ namespace CustomMqtt
 
     bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config, bool partial)
     {
-        if (!_isSetupDone) begin();
+        if (!_isSetupDone) {
+            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
+            return false;
+        }
 
         if (!_validateJsonConfiguration(jsonDocument, partial))
         {
@@ -226,7 +242,10 @@ namespace CustomMqtt
 
     void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize)
     {
-        if (!_isSetupDone) begin();
+        if (!_isSetupDone) {
+            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
+            return;
+        }
 
         if (statusBuffer && statusSize > 0) snprintf(statusBuffer, statusSize, "%s", _status);
         if (timestampBuffer && timestampSize > 0) CustomTime::timestampIsoFromUnix(_statusTimestampUnix, timestampBuffer, timestampSize);
@@ -502,26 +521,95 @@ namespace CustomMqtt
             LOG_DEBUG("No meter data available for publishing to Custom MQTT");
             return;
         }
+
+        // Measure JSON size first for timing comparison
+        size_t jsonSize = measureJson(jsonDocument);
+        LOG_DEBUG("JSON document size: %zu bytes", jsonSize);
+
+        uint64_t startTime = millis64();
         
-        // Allocate message buffer in PSRAM for better memory utilization
-        char *meterMessage = (char*)ps_malloc(MQTT_CUSTOM_PAYLOAD_LIMIT);
-        if (!meterMessage) {
-            LOG_ERROR("Failed to allocate meter message buffer in PSRAM");
-            return;
-        }
+        bool publishSuccess = _publishMeterStreaming(jsonDocument);
         
-        bool serializeSuccess = safeSerializeJson(jsonDocument, meterMessage, MQTT_CUSTOM_PAYLOAD_LIMIT);
-        if (!serializeSuccess) {
-            LOG_WARNING("Failed to serialize meter data to JSON");
-            free(meterMessage);
-            return;
+        uint64_t endTime = millis64();
+        uint64_t duration = endTime - startTime;
+        
+        LOG_DEBUG("Streaming publish completed in %llu ms for %zu bytes (%.2f bytes/ms)", 
+                  duration, jsonSize, jsonSize > 0 ? (float)jsonSize / (float)duration : 0.0f);
+        
+        if (publishSuccess) LOG_DEBUG("Meter data published to Custom MQTT via streaming");
+        else LOG_WARNING("Failed to publish meter data to Custom MQTT via streaming");
+    }
+
+    static bool _publishMeterStreaming(JsonDocument &jsonDocument)
+    {
+        statistics.customMqttMessagesPublishedError++; // Pre-increment, will decrement on success
+        _currentFailedMessagePublishAttempt++;
+
+        if (_currentFailedMessagePublishAttempt > MQTT_CUSTOM_MAX_FAILED_MESSAGE_PUBLISH_ATTEMPTS) {
+            LOG_ERROR("Too many failed message publish attempts (%d). Disabling Custom MQTT.", _currentFailedMessagePublishAttempt);
+            _disable();
+            return false;
         }
 
-        bool publishSuccess = _publishMessage(_customMqttConfiguration.topic, meterMessage);
-        free(meterMessage);
+        if (!CustomWifi::isFullyConnected()) {
+            LOG_WARNING("Custom MQTT not connected to WiFi. Skipping streaming publish");
+            return false;
+        }
+
+        if (!_customClientMqtt.connected()) {
+            LOG_WARNING("Custom MQTT client not connected. State: %s. Skipping streaming publish", 
+                       _getMqttStateReason(_customClientMqtt.state()));
+            return false;
+        }
+
+        const char* topic = _customMqttConfiguration.topic;
+        if (strlen(topic) == 0) {
+            LOG_WARNING("Empty topic. Skipping streaming publish");
+            return false;
+        }
+
+        // Calculate the JSON payload size
+        size_t payloadLength = measureJson(jsonDocument);
+        if (payloadLength == 0) {
+            LOG_WARNING("Empty JSON payload. Skipping streaming publish");
+            return false;
+        }
+
+        LOG_DEBUG("Starting streaming publish to topic '%s' with payload size %zu bytes", topic, payloadLength);
+
+        // Begin publish with the calculated payload size
+        if (!_customClientMqtt.beginPublish(topic, payloadLength, false)) {
+            LOG_WARNING("Failed to begin streaming publish. MQTT client state: %s", 
+                       _getMqttStateReason(_customClientMqtt.state()));
+            return false;
+        }
+
+        // Stream JSON directly to the MQTT client
+        BufferingPrint bufferedCustomMqttClient(_customClientMqtt, STREAM_UTILS_PACKET_SIZE);
+        size_t bytesWritten = serializeJson(jsonDocument, bufferedCustomMqttClient);
+        bufferedCustomMqttClient.flush();
         
-        if (publishSuccess) LOG_DEBUG("Meter data published to Custom MQTT");
-        else LOG_WARNING("Failed to publish meter data to Custom MQTT");
+        // End the publish
+        if (_customClientMqtt.endPublish() != 1) {
+            LOG_WARNING("Failed to end streaming publish. MQTT client state: %s", 
+                       _getMqttStateReason(_customClientMqtt.state()));
+            return false;
+        }
+
+        // Verify that we wrote the expected number of bytes
+        if (bytesWritten != payloadLength) {
+            LOG_WARNING("Streaming publish size mismatch: expected %zu bytes, wrote %zu bytes", 
+                       payloadLength, bytesWritten);
+            return false;
+        }
+
+        // Success - reset counters and update statistics
+        statistics.customMqttMessagesPublishedError--; // Decrement the pre-incremented error count
+        _currentFailedMessagePublishAttempt = 0;
+        statistics.customMqttMessagesPublished++;
+        
+        LOG_DEBUG("Streaming publish successful: %zu bytes written to topic '%s'", bytesWritten, topic);
+        return true;
     }
 
     static bool _publishMessage(const char *topic, const char *message)

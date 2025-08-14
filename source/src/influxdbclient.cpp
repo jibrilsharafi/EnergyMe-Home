@@ -304,6 +304,8 @@ namespace InfluxDbClient
                     if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) { // Enough time has passed since last send
                         if (currentTime >= _nextSendAttemptMillis) { // Enough time has passed since last attempt (in case of failures)
                             
+                            // TODO: to really do things well, we should implement a queue method.. But maybe later
+
                             // Copy variables to ensure non-concurrency with configuration (and thus no need to acquire mutex in send data)
                             char url[sizeof(_fullUrl)];
                             char authHeader[sizeof(_authHeader)];

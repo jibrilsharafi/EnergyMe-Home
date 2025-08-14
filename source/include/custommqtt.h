@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <PubSubClient.h>
 #include <Preferences.h>
+#include <StreamUtils.h>
 #include <WiFiClient.h>
 
 #include "ade7953.h"
@@ -21,7 +22,7 @@
 #define MQTT_CUSTOM_SERVER_DEFAULT "test.mosquitto.org"
 #define MQTT_CUSTOM_PORT_DEFAULT 1883
 #define MQTT_CUSTOM_CLIENTID_DEFAULT "energyme-home"
-#define MQTT_CUSTOM_TOPIC_DEFAULT "topic"
+#define MQTT_CUSTOM_TOPIC_DEFAULT "energyme"
 #define MQTT_CUSTOM_FREQUENCY_SECONDS_DEFAULT 15
 #define MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT false
 #define MQTT_CUSTOM_USERNAME_DEFAULT "username"
@@ -29,17 +30,17 @@
 
 // Custom MQTT task constants
 #define CUSTOM_MQTT_TASK_NAME "custom_mqtt_task"
-#define CUSTOM_MQTT_TASK_STACK_SIZE (4 * 1024)  // Reduced from 10KB since payload moved to PSRAM
+#define CUSTOM_MQTT_TASK_STACK_SIZE (8 * 1024) // Must be bigger than the payload limit
 #define CUSTOM_MQTT_TASK_PRIORITY 1
-#define CUSTOM_MQTT_TASK_CHECK_INTERVAL 1000 // Cannot send mqtt messages faster than this (reducing it crashes the system)
+#define CUSTOM_MQTT_TASK_CHECK_INTERVAL (1 * 1000) // Cannot send mqtt messages faster than this (reducing it crashes the system)
 
 // Reconnection strategy constants
 #define MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL (5 * 1000)
 #define MQTT_CUSTOM_MAX_RECONNECT_INTERVAL (5 * 60 * 1000)
 #define MQTT_CUSTOM_RECONNECT_MULTIPLIER 2
 #define MQTT_CUSTOM_MAX_RECONNECT_ATTEMPTS 10
-#define MQTT_CUSTOM_PAYLOAD_LIMIT (32 * 1024)  // Use PSRAM for larger buffer (32KB)
 #define MQTT_CUSTOM_MAX_FAILED_MESSAGE_PUBLISH_ATTEMPTS 10
+#define STREAM_UTILS_PACKET_SIZE 256
 
 // Preferences keys for persistent storage
 #define CUSTOM_MQTT_ENABLED_KEY "enabled"
