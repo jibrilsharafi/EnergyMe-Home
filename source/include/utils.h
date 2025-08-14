@@ -99,7 +99,16 @@ void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
 void startMaintenanceTask();
 void stopMaintenanceTask();
 
-// Task information
+// Task information utilities
+inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize)
+{
+    // Defensive check against corrupted or invalid task handles
+    if (taskHandle != NULL && eTaskGetState(taskHandle) != eInvalid) {
+        return TaskInfo(stackSize, uxTaskGetStackHighWaterMark(taskHandle));
+    } else {
+        return TaskInfo(); // Return empty/default TaskInfo if task is not running or invalid
+    }
+}
 TaskInfo getMaintenanceTaskInfo();
 
 // System restart and maintenance
@@ -123,7 +132,27 @@ const char* getContentTypeFromFilename(const char* filename);
 bool endsWith(const char* s, const char* suffix);
 
 // Mutex utilities
-inline bool acquireMutex(SemaphoreHandle_t* mutex, uint64_t timeout) {
+inline bool createMutexIfNeeded(SemaphoreHandle_t* mutex) {
+    if (!mutex) return false;
+    
+    if (*mutex == nullptr) {
+        *mutex = xSemaphoreCreateMutex();
+        if (*mutex == nullptr) {
+            LOG_ERROR("Failed to create mutex");
+            return false;
+        }
+    }
+    return true;
+}
+
+inline void deleteMutex(SemaphoreHandle_t* mutex) {
+    if (mutex && *mutex) {
+        vSemaphoreDelete(*mutex);
+        *mutex = nullptr;
+    }
+}
+
+inline bool acquireMutex(SemaphoreHandle_t* mutex, uint64_t timeout = CONFIG_MUTEX_TIMEOUT_MS) {
     return mutex && *mutex && xSemaphoreTake(*mutex, pdMS_TO_TICKS(timeout)) == pdTRUE;
 }
 

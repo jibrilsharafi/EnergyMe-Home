@@ -344,10 +344,6 @@ namespace Led
 
     TaskInfo getTaskInfo()
     {
-        if (_ledTaskHandle != nullptr) {
-            return TaskInfo(LED_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_ledTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_ledTaskHandle, LED_TASK_STACK_SIZE);
     }
 }

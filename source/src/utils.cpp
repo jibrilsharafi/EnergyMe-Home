@@ -9,6 +9,7 @@ static void _factoryReset();
 static void _restartTask(void* parameter);
 static void _restartSystem(bool factoryReset = false);
 static void _maintenanceTask(void* parameter);
+static bool _listLittleFsFilesRecursive(JsonDocument& doc, const char* dirname, uint8_t levels);
 
 // New system info functions
 void populateSystemStaticInfo(SystemStaticInfo& info) {
@@ -483,11 +484,7 @@ void stopMaintenanceTask() {
 
 TaskInfo getMaintenanceTaskInfo()
 {
-    if (_maintenanceTaskHandle != NULL) {
-        return TaskInfo(TASK_MAINTENANCE_STACK_SIZE, uxTaskGetStackHighWaterMark(_maintenanceTaskHandle));
-    } else {
-        return TaskInfo(); // Return empty/default TaskInfo if task is not running
-    }
+    return getTaskInfoSafely(_maintenanceTaskHandle, TASK_MAINTENANCE_STACK_SIZE);
 }
 
 // Task function that handles delayed restart. No need for complex handling here, just a simple delay and restart.
@@ -936,9 +933,19 @@ uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval,
 // === LittleFS FILE OPERATIONS ===
 
 bool listLittleFsFiles(JsonDocument& doc) {
-    File root = LittleFS.open("/");
+    return _listLittleFsFilesRecursive(doc, "/", 0);
+}
+
+static bool _listLittleFsFilesRecursive(JsonDocument& doc, const char* dirname, uint8_t levels) {
+    File root = LittleFS.open(dirname);
     if (!root) {
-        LOG_ERROR("Failed to open LittleFS root directory");
+        LOG_ERROR("Failed to open LittleFS directory: %s", dirname);
+        return false;
+    }
+    
+    if (!root.isDirectory()) {
+        LOG_ERROR("Path is not a directory: %s", dirname);
+        root.close();
         return false;
     }
 
@@ -947,14 +954,20 @@ bool listLittleFsFiles(JsonDocument& doc) {
     
     while (file && loops < MAX_LOOP_ITERATIONS) {
         loops++;
-        const char* filename = file.path();
+        const char* filepath = file.path();
 
-        // Remove first char which is always a slash 
-        // (useful to remove so later in the get content we can directly use the filename)
-        if (filename[0] == '/') filename++; // Skip the leading slash
-        
-        // Add file with its size to the JSON document
-        doc[filename] = file.size();
+        if (file.isDirectory()) {
+            // Recursively list subdirectory contents (limit depth to prevent infinite recursion)
+            if (levels < 5) {
+                _listLittleFsFilesRecursive(doc, filepath, levels + 1);
+            }
+        } else {
+            // Remove leading slash for consistency
+            if (filepath[0] == '/') filepath++;
+            
+            // Add file with its size to the JSON document
+            doc[filepath] = file.size();
+        }
         
         file = root.openNextFile();
     }

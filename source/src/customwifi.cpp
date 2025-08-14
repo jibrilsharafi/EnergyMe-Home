@@ -533,10 +533,6 @@ namespace CustomWifi
 
   TaskInfo getTaskInfo()
   {
-    if (_wifiTaskHandle != NULL) {
-      return TaskInfo(WIFI_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_wifiTaskHandle));
-    } else {
-      return TaskInfo(); // Return empty/default TaskInfo if task is not running
-    }
+    return getTaskInfoSafely(_wifiTaskHandle, WIFI_TASK_STACK_SIZE);
   }
 }

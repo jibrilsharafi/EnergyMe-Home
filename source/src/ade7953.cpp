@@ -1698,7 +1698,7 @@ namespace Ade7953
         char defaultLabel[NAME_BUFFER_SIZE];
         snprintf(defaultLabel, sizeof(defaultLabel), DEFAULT_CHANNEL_LABEL_FORMAT, channelIndex);
         preferences.getString(key, channelData.label, sizeof(channelData.label));
-        if (strlen(channelData.label) == 0) {
+        if (strlen(channelData.label) == 0) { // TODO: change all strlen to strnlen
             snprintf(channelData.label, sizeof(channelData.label), "%s", defaultLabel);
         }
 

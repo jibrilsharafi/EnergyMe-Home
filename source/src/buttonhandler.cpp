@@ -274,10 +274,6 @@ namespace ButtonHandler
 
     TaskInfo getTaskInfo()
     {
-        if (_buttonTaskHandle != NULL) {
-            return TaskInfo(BUTTON_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_buttonTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_buttonTaskHandle, BUTTON_TASK_STACK_SIZE);
     }
 }

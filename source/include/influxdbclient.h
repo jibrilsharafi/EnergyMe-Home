@@ -29,7 +29,7 @@
 
 // Task configuration
 #define INFLUXDB_TASK_NAME "influxdb_task"
-#define INFLUXDB_TASK_STACK_SIZE (4 * 1024)  // Reduced from 8KB since buffers moved to PSRAM
+#define INFLUXDB_TASK_STACK_SIZE (6 * 1024)  // Reduced from 8KB since buffers moved to PSRAM
 #define INFLUXDB_TASK_PRIORITY 1
 #define INFLUXDB_TASK_CHECK_INTERVAL 500 // Cannot send InfluxDB messages faster than this
 
@@ -56,10 +56,10 @@
 #define INFLUXDB_TOKEN_KEY "token"
 #define INFLUXDB_MEASUREMENT_KEY "measurement"
 #define INFLUXDB_FREQUENCY_KEY "frequency"
-#define INFLUXDB_USE_SSL_KEY "useSSL"
+#define INFLUXDB_USE_SSL_KEY "useSsl"
 
 // Buffer sizes for various fields
-#define TOKEN_BUFFER_SIZE 64
+#define TOKEN_BUFFER_SIZE 128
 #define AUTH_HEADER_BUFFER_SIZE 256
 #define LINE_PROTOCOL_BUFFER_SIZE 1024
 #define PAYLOAD_BUFFER_SIZE (64 * 1024)  // Use PSRAM for larger buffer (64KB)
@@ -77,14 +77,14 @@ struct InfluxDbConfiguration {
     char token[TOKEN_BUFFER_SIZE];
     char measurement[NAME_BUFFER_SIZE];
     int32_t frequencySeconds;
-    bool useSSL;
+    bool useSsl;
 
     InfluxDbConfiguration()
         : enabled(INFLUXDB_ENABLED_DEFAULT), 
           port(INFLUXDB_PORT_DEFAULT),
           version(INFLUXDB_VERSION_DEFAULT),
           frequencySeconds(INFLUXDB_FREQUENCY_DEFAULT),
-          useSSL(INFLUXDB_USE_SSL_DEFAULT) {
+          useSsl(INFLUXDB_USE_SSL_DEFAULT) {
       snprintf(server, sizeof(server), "%s", INFLUXDB_SERVER_DEFAULT);
       snprintf(database, sizeof(database), "%s", INFLUXDB_DATABASE_DEFAULT);
       snprintf(username, sizeof(username), "%s", INFLUXDB_USERNAME_DEFAULT);

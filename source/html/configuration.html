@@ -183,8 +183,8 @@
                 <option value="2">InfluxDB v2.x</option>
             </select>
             <br>
-            <input type="checkbox" id="influxDbUseSSL" class="config-input">
-            <label for="influxDbUseSSL">Use SSL (HTTPS)</label>
+            <input type="checkbox" id="influxDbUseSsl" class="config-input">
+            <label for="influxDbUseSsl">Use SSL (HTTPS)</label>
             <br>
             <div id="influxDbV1Settings">
                 <h4>InfluxDB v1.x Settings</h4>
@@ -747,6 +747,16 @@
             statusContainer.style.color = "";
             statusElement.style.fontWeight = "";
 
+            // TODO:
+            // When setting a configuration with invalid credentials, the result will be like this in the running status:
+
+            // {
+            // "status": "Disabled due to persistent failures",
+            // "statusTimestamp": "2025-08-14T10:32:19.000Z"
+            // }
+
+            // Now we just show disabled since the enabled key in the configuration is not true. How can we easily show the latest status in these cases? Maybe something time based? Or some better alternatives?
+            
             // If InfluxDB is disabled, show disabled status
             if (!isEnabled) {
                 statusElement.textContent = "Disabled";
@@ -761,7 +771,7 @@
             timestampElement.textContent = timestamp || "N/A";
 
             // Show/hide timestamp based on connection status
-            if (status === "Upload successful" || status === "Connection successful" || status === "Credentials valid") {
+            if (status === "Upload successful" || status === "Connection successful" || status === "Credentials valid" || status == "Data sent successfully") {
                 timestampContainer.style.display = "none"; // Hide timestamp for successful connections
                 statusIcon.innerHTML = "🟢"; // Green circle for successful
                 statusElement.style.color = "#2e7d32"; // Dark green
@@ -811,7 +821,7 @@
                     document.getElementById("influxDbToken").value = influxDbConfig.token;
                     document.getElementById("influxDbMeasurement").value = influxDbConfig.measurement;
                     document.getElementById("influxDbFrequency").value = influxDbConfig.frequency;
-                    document.getElementById("influxDbUseSSL").checked = influxDbConfig.useSSL;
+                    document.getElementById("influxDbUseSsl").checked = influxDbConfig.useSsl;
 
                     toggleInfluxDbVersionSettings();
 
@@ -882,7 +892,7 @@
                 "token": document.getElementById("influxDbToken").value,
                 "measurement": document.getElementById("influxDbMeasurement").value,
                 "frequency": Math.max(1, Math.min(3600, parseInt(document.getElementById("influxDbFrequency").value))),
-                "useSSL": document.getElementById("influxDbUseSSL").checked,
+                "useSsl": document.getElementById("influxDbUseSsl").checked,
                 "lastConnectionStatus": currentStatus,
                 "lastConnectionAttemptTimestamp": currentTimestamp
             };

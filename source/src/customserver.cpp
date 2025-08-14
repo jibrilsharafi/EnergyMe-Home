@@ -1933,19 +1933,11 @@ namespace CustomServer
 
     TaskInfo getHealthCheckTaskInfo()
     {
-        if (_healthCheckTaskHandle != NULL) {
-            return TaskInfo(HEALTH_CHECK_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_healthCheckTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_healthCheckTaskHandle, HEALTH_CHECK_TASK_STACK_SIZE);
     }
 
     TaskInfo getOtaTimeoutTaskInfo()
     {
-        if (_otaTimeoutTaskHandle != NULL) {
-            return TaskInfo(OTA_TIMEOUT_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_otaTimeoutTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_otaTimeoutTaskHandle, OTA_TIMEOUT_TASK_STACK_SIZE);
     }
 }

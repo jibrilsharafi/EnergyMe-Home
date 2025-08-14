@@ -606,10 +606,6 @@ namespace CustomMqtt
 
     TaskInfo getTaskInfo()
     {
-        if (_customMqttTaskHandle != nullptr) {
-            return TaskInfo(CUSTOM_MQTT_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_customMqttTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_customMqttTaskHandle, CUSTOM_MQTT_TASK_STACK_SIZE);
     }
 }

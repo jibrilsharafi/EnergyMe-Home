@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "12"
-#define FIRMWARE_BUILD_VERSION_PATCH "16"
+#define FIRMWARE_BUILD_VERSION_PATCH "17"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -67,9 +67,9 @@
 #define STATUS_BUFFER_SIZE 128          // Generic status messages (e.g., connection status, error messages)
 
 // Timeouts and intervals
-#define TASK_STOPPING_TIMEOUT (5 * 1000)
+#define TASK_STOPPING_TIMEOUT (3 * 1000)
 #define TASK_STOPPING_CHECK_INTERVAL 100
-#define CONFIG_MUTEX_TIMEOUT_MS (2 * 1000) // Generic timeout for configuration mutexes. Long timeouts cause wdt crash (like in async tcp)
+#define CONFIG_MUTEX_TIMEOUT_MS (1 * 1000) // Generic timeout for configuration mutexes. Long timeouts cause wdt crash (like in async tcp)
 
 // Channel configuration
 #define MULTIPLEXER_CHANNEL_COUNT 16

@@ -502,10 +502,6 @@ namespace CrashMonitor
 
     TaskInfo getTaskInfo()
     {
-        if (_crashResetTaskHandle != NULL) {
-            return TaskInfo(CRASH_RESET_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_crashResetTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_crashResetTaskHandle, CRASH_RESET_TASK_STACK_SIZE);
     }
 }

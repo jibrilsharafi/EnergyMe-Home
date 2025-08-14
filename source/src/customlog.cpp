@@ -224,10 +224,6 @@ namespace CustomLog
 
     TaskInfo getTaskInfo()
     {
-        if (_udpTaskHandle != NULL) {
-            return TaskInfo(UDP_LOG_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_udpTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_udpTaskHandle, UDP_LOG_TASK_STACK_SIZE);
     }
 }

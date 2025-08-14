@@ -396,11 +396,7 @@ namespace Mqtt
 
     TaskInfo getTaskInfo()
     {
-        if (_taskHandle != nullptr) {
-            return TaskInfo(MQTT_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_taskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_taskHandle, MQTT_TASK_STACK_SIZE);
     }
 
     // Private functions

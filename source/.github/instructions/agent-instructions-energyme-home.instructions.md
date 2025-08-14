@@ -104,6 +104,7 @@ Provide project context and coding guidelines that AI should follow when generat
     - **Printf formatting**: Use `%llu` for `uint64_t` values in logging and string formatting
 
 9. **FreeRTOS Task Management**:
+    - It is mandatory to use mutexes when getting or setting non-atomic variables. Always use getter and setter functions to ensure consistency
     - Use the standard task lifecycle pattern with task notifications for graceful shutdown
     - Always check task handles before operations to prevent race conditions
     - Implement timeout protection when stopping tasks to prevent system hangs
