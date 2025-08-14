@@ -6,7 +6,6 @@
 #include <WiFiUdp.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
-#include <esp_heap_caps.h>
 
 // Project includes
 #include "mqtt.h"

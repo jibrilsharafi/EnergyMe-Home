@@ -4,7 +4,7 @@
 
 #include "constants.h"
 
-struct Statistics {
+struct Statistics { // This will be global and we accept the very small race condition as we only do ++ or read the value (almost atomic?)
   uint64_t ade7953TotalInterrupts;
   uint64_t ade7953TotalHandledInterrupts;
   uint64_t ade7953ReadingCount;

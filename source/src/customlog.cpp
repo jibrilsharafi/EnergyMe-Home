@@ -65,7 +65,7 @@ namespace CustomLog
             
             // Free PSRAM buffer
             if (_udpLogQueueStorage != nullptr) {
-                heap_caps_free(_udpLogQueueStorage);
+                free(_udpLogQueueStorage);
                 _udpLogQueueStorage = nullptr;
             }
 
@@ -86,7 +86,7 @@ namespace CustomLog
         // Allocate queue storage in PSRAM
         uint32_t queueLength = LOG_QUEUE_SIZE / sizeof(LogEntry);
         size_t realQueueSize = queueLength * sizeof(LogEntry);
-        _udpLogQueueStorage = (uint8_t*)heap_caps_malloc(realQueueSize, MALLOC_CAP_SPIRAM);
+        _udpLogQueueStorage = (uint8_t*)ps_malloc(realQueueSize);
         
         if (_udpLogQueueStorage == nullptr) {
             Serial.printf("[ERROR] Failed to allocate PSRAM for UDP log queue (%d bytes) | Free PSRAM: %d bytes\n", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
@@ -97,7 +97,7 @@ namespace CustomLog
         _udpLogQueue = xQueueCreateStatic(queueLength, sizeof(LogEntry), _udpLogQueueStorage, &_udpLogQueueStruct);
         if (_udpLogQueue == nullptr) {
             Serial.printf("[ERROR] Failed to create UDP log queue\n");
-            heap_caps_free(_udpLogQueueStorage);
+            free(_udpLogQueueStorage);
             _udpLogQueueStorage = nullptr;
             return false;
         }

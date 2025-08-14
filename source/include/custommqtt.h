@@ -30,7 +30,7 @@
 
 // Custom MQTT task constants
 #define CUSTOM_MQTT_TASK_NAME "custom_mqtt_task"
-#define CUSTOM_MQTT_TASK_STACK_SIZE (8 * 1024) // Must be bigger than the payload limit
+#define CUSTOM_MQTT_TASK_STACK_SIZE (6 * 1024) // Must be bigger than the payload limit. In general never exceeded 4 kB usage
 #define CUSTOM_MQTT_TASK_PRIORITY 1
 #define CUSTOM_MQTT_TASK_CHECK_INTERVAL (1 * 1000) // Cannot send mqtt messages faster than this (reducing it crashes the system)
 
@@ -89,7 +89,7 @@ namespace CustomMqtt
     // Configuration management - direct struct operations
     bool getConfiguration(CustomMqttConfiguration &config);
     bool setConfiguration(const CustomMqttConfiguration &config);
-    void resetConfiguration();
+    bool resetConfiguration();
     
     // Configuration management - JSON operations
     bool getConfigurationAsJson(JsonDocument &jsonDocument);
@@ -98,7 +98,7 @@ namespace CustomMqtt
     bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config, bool partial = false);
 
     // Runtime status
-    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
+    bool getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
 
     // Task information
     TaskInfo getTaskInfo();

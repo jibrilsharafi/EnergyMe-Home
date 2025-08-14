@@ -249,13 +249,13 @@ namespace Mqtt
         _meterQueue = nullptr;
         
         if (_logQueueStorage != nullptr) {
-            heap_caps_free(_logQueueStorage);
+            free(_logQueueStorage);
             _logQueueStorage = nullptr;
             LOG_DEBUG("MQTT log queue PSRAM freed");
         }
         
         if (_meterQueueStorage != nullptr) {
-            heap_caps_free(_meterQueueStorage);
+            free(_meterQueueStorage);
             _meterQueueStorage = nullptr;
             LOG_DEBUG("MQTT meter queue PSRAM freed");
         }
@@ -414,7 +414,7 @@ namespace Mqtt
         // Allocate queue storage in PSRAM
         uint32_t queueLength = MQTT_LOG_QUEUE_SIZE / sizeof(LogEntry);
         size_t realQueueSize = queueLength * sizeof(LogEntry);
-        _logQueueStorage = (uint8_t*)heap_caps_malloc(realQueueSize, MALLOC_CAP_SPIRAM);
+        _logQueueStorage = (uint8_t*)ps_malloc(realQueueSize);
 
         if (_logQueueStorage == nullptr) {
             Serial.printf("[ERROR] Failed to allocate PSRAM for MQTT log queue (%d bytes)\n", realQueueSize);
@@ -424,7 +424,7 @@ namespace Mqtt
         _logQueue = xQueueCreateStatic(queueLength, sizeof(LogEntry), _logQueueStorage, &_logQueueStruct);
         if (_logQueue == nullptr) {
             Serial.println("[ERROR] Failed to create MQTT log queue");
-            heap_caps_free(_logQueueStorage);
+            free(_logQueueStorage);
             _logQueueStorage = nullptr;
             return false;
         }
@@ -440,7 +440,7 @@ namespace Mqtt
         // Allocate queue storage in PSRAM
         uint32_t queueLength = MQTT_METER_QUEUE_SIZE / sizeof(PayloadMeter);
         size_t realQueueSize = queueLength * sizeof(PayloadMeter);
-        _meterQueueStorage = (uint8_t*)heap_caps_malloc(realQueueSize, MALLOC_CAP_SPIRAM);
+        _meterQueueStorage = (uint8_t*)ps_malloc(realQueueSize);
 
         if (_meterQueueStorage == nullptr) {
             LOG_ERROR("Failed to allocate PSRAM for MQTT meter queue (%zu bytes)\n", realQueueSize);
@@ -450,7 +450,7 @@ namespace Mqtt
         _meterQueue = xQueueCreateStatic(queueLength, sizeof(PayloadMeter), _meterQueueStorage, &_meterQueueStruct);
         if (_meterQueue == nullptr) {
             LOG_ERROR("Failed to create MQTT meter queue\n");
-            heap_caps_free(_meterQueueStorage);
+            free(_meterQueueStorage);
             _meterQueueStorage = nullptr;
             return false;
         }

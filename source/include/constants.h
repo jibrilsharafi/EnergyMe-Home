@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "12"
-#define FIRMWARE_BUILD_VERSION_PATCH "19"
+#define FIRMWARE_BUILD_VERSION_PATCH "20"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -60,6 +60,7 @@
 #define MD5_BUFFER_SIZE 33              // 32 characters + null terminator
 #define USERNAME_BUFFER_SIZE 64         // For usernames (e.g., WiFi SSID, MQTT username)
 #define PASSWORD_BUFFER_SIZE 64         // For passwords (e.g., WiFi password, MQTT password)
+#define SHORT_STATUS_BUFFER_SIZE 64     // Generic short status messages. Smaller than status so we can use %s of SHORT_STATUS in STATUS
 #define NAME_BUFFER_SIZE 64             // For generic names (device, user, etc.)
 #define MQTT_TOPIC_BUFFER_SIZE 64       // For MQTT topics
 #define URL_BUFFER_SIZE 128             // For URLs

@@ -9,7 +9,7 @@ namespace InfluxDbClient
     static bool _isSetupDone = false;
     static uint8_t _currentSendAttempt = 0;
     static uint64_t _nextSendAttemptMillis = 0;
-    static InfluxDbConfiguration _influxDbConfiguration;
+    static InfluxDbConfiguration _configuration;
 
     // InfluxDB helper variables
     static char _fullUrl[FULL_URL_BUFFER_SIZE];
@@ -31,14 +31,14 @@ namespace InfluxDbClient
 
     // Configuration management
     static void _setConfigurationFromPreferences();
-    static void _saveConfigurationToPreferences();
+    static void _saveConfigurationToPreferences(const InfluxDbConfiguration &config);
     
     // InfluxDB helper functions
-    static void _setInfluxFullUrl();
-    static void _setInfluxHeader();
+    static void _setInfluxFullUrl(const InfluxDbConfiguration &config);
+    static void _setInfluxHeader(const InfluxDbConfiguration &config);
 
     // Data sending
-    static void _sendData(const char* url, const char* authHeader, const char* measurement);
+    static void _sendData(const InfluxDbConfiguration &config);
     static void _formatLineProtocol(
         const char *measurement,
         const char *deviceId,
@@ -57,7 +57,7 @@ namespace InfluxDbClient
     static void _influxDbTask(void* parameter);
     static void _startTask();
     static void _stopTask();
-    static void _disable(); // Needed for halting the functionality if we have too many failures
+    static void _disable(const char* reason);
 
     // Public API functions
     // =========================================================
@@ -70,8 +70,6 @@ namespace InfluxDbClient
         
         _isSetupDone = true; // Must set before since we have checks on the setup later
         _setConfigurationFromPreferences();
-        
-        _startTask();
 
         LOG_DEBUG("InfluxDB client setup complete");
     }
@@ -87,18 +85,21 @@ namespace InfluxDbClient
         LOG_INFO("InfluxDB client stopped");
     }
 
-    void getConfiguration(InfluxDbConfiguration &config)
+    bool getConfiguration(InfluxDbConfiguration &config)
     {
         if (!_isSetupDone) {
             LOG_WARNING("InfluxDB client is not set up yet, returning early");
-            return;
+            return false;
         }
         if (!acquireMutex(&_configMutex)) {
             LOG_ERROR("Failed to acquire configuration mutex for getConfiguration");
-            return;
+            return false;
         }
-        config = _influxDbConfiguration; // Full copy
+
+        config = _configuration; // Full copy
         releaseMutex(&_configMutex);
+
+        return true;
     }
 
     bool setConfiguration(const InfluxDbConfiguration &config)
@@ -110,60 +111,58 @@ namespace InfluxDbClient
             return false;
         }
 
+        _stopTask();
+
         if (!acquireMutex(&_configMutex)) {
             LOG_ERROR("Failed to acquire configuration mutex for setConfiguration");
             return false;
         }
-        _influxDbConfiguration = config; // Copy to the static configuration variable
-        
+        _configuration = config; // Copy to the static configuration variable
+        releaseMutex(&_configMutex);
+
         snprintf(_status, sizeof(_status), "Configuration updated");
         _statusTimestampUnix = CustomTime::getUnixTime();
 
+        // Reset counter to start fresh
         _nextSendAttemptMillis = 0; // Immediately attempt to send data
         _currentSendAttempt = 0;
 
-        _saveConfigurationToPreferences();
+        _saveConfigurationToPreferences(config);
+        _setInfluxFullUrl(config);
+        _setInfluxHeader(config);
 
-        _setInfluxFullUrl();
-        _setInfluxHeader();
-
-        releaseMutex(&_configMutex);
+        _startTask();
 
         LOG_DEBUG("InfluxDB configuration set");
         return true;
     }
 
-    void resetConfiguration() {
+    bool resetConfiguration() {
         LOG_DEBUG("Resetting InfluxDB configuration to default");
-        
-        if (!_isSetupDone) {
-            LOG_WARNING("InfluxDB client is not set up yet, returning early");
-            return;
-        }
 
         InfluxDbConfiguration defaultConfig;
-        setConfiguration(defaultConfig);
+        if (!setConfiguration(defaultConfig)) {
+            LOG_ERROR("Failed to reset InfluxDB configuration");
+            return false;
+        }
 
         LOG_INFO("InfluxDB configuration reset to default");
+        return true;
     }
 
-    void getConfigurationAsJson(JsonDocument &jsonDocument) {
-        if (!_isSetupDone) {
-            LOG_WARNING("InfluxDB client is not set up yet, returning early");
-            return;
-        }
+    bool getConfigurationAsJson(JsonDocument &jsonDocument) {
         InfluxDbConfiguration configuration;
-        getConfiguration(configuration); // Not using directly the local static variable to ensure we use the mutex protection
+        if (!getConfiguration(configuration)) { // Not using directly the local static variable to ensure we use the mutex protection
+            LOG_ERROR("Failed to get InfluxDB configuration");
+            return false;
+        }
+        
         configurationToJson(configuration, jsonDocument);
+        return true;
     }
 
     bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial)
     {
-        if (!_isSetupDone) {
-            LOG_WARNING("InfluxDB client is not set up yet, returning early");
-            return false;
-        }
-
         InfluxDbConfiguration config;
         getConfiguration(config);
         if (!configurationFromJson(jsonDocument, config, partial)) {
@@ -176,11 +175,6 @@ namespace InfluxDbClient
 
     void configurationToJson(InfluxDbConfiguration &config, JsonDocument &jsonDocument)
     {
-        if (!_isSetupDone) {
-            LOG_WARNING("InfluxDB client is not set up yet, returning early");
-            return;
-        }
-
         jsonDocument["enabled"] = config.enabled;
         jsonDocument["server"] = config.server;
         jsonDocument["port"] = config.port;
@@ -200,11 +194,6 @@ namespace InfluxDbClient
 
     bool configurationFromJson(JsonDocument &jsonDocument, InfluxDbConfiguration &config, bool partial)
     {
-        if (!_isSetupDone) {
-            LOG_WARNING("InfluxDB client is not set up yet, returning early");
-            return false;
-        }
-
         if (!_validateJsonConfiguration(jsonDocument, partial))
         {
             LOG_WARNING("Invalid JSON configuration");
@@ -250,19 +239,20 @@ namespace InfluxDbClient
         return true;
     }
 
-    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize)
+    bool getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize)
     {
         if (!_isSetupDone) {
             LOG_WARNING("InfluxDB client is not set up yet, returning early");
-            return;
+            return false;
         }
 
         if (statusBuffer && statusSize > 0) snprintf(statusBuffer, statusSize, "%s", _status);
         if (timestampBuffer && timestampSize > 0) CustomTime::timestampIsoFromUnix(_statusTimestampUnix, timestampBuffer, timestampSize);
+        return true;
     }
 
     // Private function implementations
-    // =========================================================
+    // ================================
 
     static void _startTask()
     {
@@ -295,37 +285,24 @@ namespace InfluxDbClient
         
         _taskShouldRun = true;
         uint64_t lastSendTime = 0;
+        InfluxDbConfiguration config;
 
         while (_taskShouldRun) {
-            if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) { // We are connected and time is synched (needed as InfluxDB requires timestamps)
-                if (_influxDbConfiguration.enabled) { // We have the InfluxDB enabled
+            getConfiguration(config);
+            if (config.enabled) { // We have the InfluxDB enabled
+                if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) { // We are connected and time is synched (needed as InfluxDB requires timestamps)
                     uint64_t currentTime = millis64();
-                    if ((currentTime - lastSendTime) >= (_influxDbConfiguration.frequencySeconds * 1000)) { // Enough time has passed since last send
+                    if ((currentTime - lastSendTime) >= (config.frequencySeconds * 1000)) { // Enough time has passed since last send
                         if (currentTime >= _nextSendAttemptMillis) { // Enough time has passed since last attempt (in case of failures)
                             
                             // TODO: to really do things well, we should implement a queue method.. But maybe later
-
-                            // Copy variables to ensure non-concurrency with configuration (and thus no need to acquire mutex in send data)
-                            char url[sizeof(_fullUrl)];
-                            char authHeader[sizeof(_authHeader)];
-                            char measurement[sizeof(_influxDbConfiguration.measurement)];
-
-                            if (!acquireMutex(&_configMutex)) {
-                                LOG_ERROR("Failed to acquire configuration mutex for InfluxDB send");
-                                continue;
-                            }
-                            snprintf(url, sizeof(url), "%s", _fullUrl);
-                            snprintf(authHeader, sizeof(authHeader), "%s", _authHeader);
-                            snprintf(measurement, sizeof(measurement), "%s", _influxDbConfiguration.measurement);
-                            releaseMutex(&_configMutex);
-
-                            _sendData(url, authHeader, measurement);
+                            _sendData(config);
 
                             lastSendTime = currentTime;
-                        } else {
-                            LOG_VERBOSE("Delaying InfluxDB send due to previous failures");
                         }
                     }
+                } else { // Not connected or time not synched
+                    LOG_DEBUG("Device is not connected or time is not synched. Skipping InfluxDB send.");
                 }
             }
 
@@ -377,7 +354,7 @@ namespace InfluxDbClient
         LOG_DEBUG("Successfully set InfluxDB configuration from Preferences");
     }
 
-    static void _saveConfigurationToPreferences()
+    static void _saveConfigurationToPreferences(const InfluxDbConfiguration &config)
     {
         LOG_DEBUG("Saving InfluxDB configuration to Preferences...");
 
@@ -387,19 +364,19 @@ namespace InfluxDbClient
             return;
         }
 
-        preferences.putBool(INFLUXDB_ENABLED_KEY, _influxDbConfiguration.enabled);
-        preferences.putString(INFLUXDB_SERVER_KEY, _influxDbConfiguration.server);
-        preferences.putUShort(INFLUXDB_PORT_KEY, _influxDbConfiguration.port);
-        preferences.putUChar(INFLUXDB_VERSION_KEY, _influxDbConfiguration.version);
-        preferences.putString(INFLUXDB_DATABASE_KEY, _influxDbConfiguration.database);
-        preferences.putString(INFLUXDB_USERNAME_KEY, _influxDbConfiguration.username);
-        preferences.putString(INFLUXDB_PASSWORD_KEY, _influxDbConfiguration.password);
-        preferences.putString(INFLUXDB_ORGANIZATION_KEY, _influxDbConfiguration.organization);
-        preferences.putString(INFLUXDB_BUCKET_KEY, _influxDbConfiguration.bucket);
-        preferences.putString(INFLUXDB_TOKEN_KEY, _influxDbConfiguration.token);
-        preferences.putString(INFLUXDB_MEASUREMENT_KEY, _influxDbConfiguration.measurement);
-        preferences.putInt(INFLUXDB_FREQUENCY_KEY, _influxDbConfiguration.frequencySeconds);
-        preferences.putBool(INFLUXDB_USE_SSL_KEY, _influxDbConfiguration.useSsl);
+        preferences.putBool(INFLUXDB_ENABLED_KEY, config.enabled);
+        preferences.putString(INFLUXDB_SERVER_KEY, config.server);
+        preferences.putUShort(INFLUXDB_PORT_KEY, config.port);
+        preferences.putUChar(INFLUXDB_VERSION_KEY, config.version);
+        preferences.putString(INFLUXDB_DATABASE_KEY, config.database);
+        preferences.putString(INFLUXDB_USERNAME_KEY, config.username);
+        preferences.putString(INFLUXDB_PASSWORD_KEY, config.password);
+        preferences.putString(INFLUXDB_ORGANIZATION_KEY, config.organization);
+        preferences.putString(INFLUXDB_BUCKET_KEY, config.bucket);
+        preferences.putString(INFLUXDB_TOKEN_KEY, config.token);
+        preferences.putString(INFLUXDB_MEASUREMENT_KEY, config.measurement);
+        preferences.putInt(INFLUXDB_FREQUENCY_KEY, config.frequencySeconds);
+        preferences.putBool(INFLUXDB_USE_SSL_KEY, config.useSsl);
 
         preferences.end();
 
@@ -458,78 +435,78 @@ namespace InfluxDbClient
         }
     }
 
-    static void _disable() {
-        LOG_DEBUG("Disabling InfluxDB due to persistent failures...");
+    static void _disable(const char* reason) {
+        if (!acquireMutex(&_configMutex)) return;
+        _configuration.enabled = false;
+        _saveConfigurationToPreferences(_configuration);
+        releaseMutex(&_configMutex);
 
-        InfluxDbConfiguration config;
-        getConfiguration(config);
-
-        config.enabled = false; // Disable InfluxDB
-        setConfiguration(config);
-
-        snprintf(_status, sizeof(_status), "Disabled due to persistent failures");
+        snprintf(_status, sizeof(_status), "Disabled due to: %s", reason);
         _statusTimestampUnix = CustomTime::getUnixTime();
 
-        LOG_DEBUG("InfluxDB disabled");
+        // Not calling _stopTask() here to avoid deadlock
+
+        LOG_WARNING("InfluxDB disabled due to: %s", reason);
     }
 
-    static void _setInfluxFullUrl() {
+    static void _setInfluxFullUrl(const InfluxDbConfiguration &config) {
         char baseUrl[URL_BUFFER_SIZE + 15]; // Extra space for "http(s)://", server, and port
 
         snprintf(baseUrl, sizeof(baseUrl), "http%s://%s:%u", 
-                _influxDbConfiguration.useSsl ? "s" : "", 
-                _influxDbConfiguration.server, 
-                _influxDbConfiguration.port);
+                config.useSsl ? "s" : "", 
+                config.server, 
+                config.port);
 
-        if (_influxDbConfiguration.version == 2)
+        if (config.version == 2)
         {
             snprintf(_fullUrl, sizeof(_fullUrl), "%s/api/v2/write?org=%s&bucket=%s",
                      baseUrl,
-                     _influxDbConfiguration.organization,
-                     _influxDbConfiguration.bucket);
+                     config.organization,
+                     config.bucket);
         }
-        else if (_influxDbConfiguration.version == 1)
+        else if (config.version == 1)
         {
             snprintf(_fullUrl, sizeof(_fullUrl), "%s/write?db=%s",
                      baseUrl,
-                     _influxDbConfiguration.database);
+                     config.database);
         } else {
-            LOG_ERROR("Unsupported InfluxDB version: %u", _influxDbConfiguration.version);
+            LOG_ERROR("Unsupported InfluxDB version: %u", config.version);
             return;
         }
 
         LOG_DEBUG("InfluxDB full URL set to: %s", _fullUrl);
     }
 
-    static void _setInfluxHeader() {
-        if (_influxDbConfiguration.version == 2)
+    static void _setInfluxHeader(const InfluxDbConfiguration &config)
+    {
+        if (config.version == 2)
         {
-            snprintf(_authHeader, sizeof(_authHeader), "Token %s", _influxDbConfiguration.token);
+            snprintf(_authHeader, sizeof(_authHeader), "Token %s", config.token);
         }
-        else if (_influxDbConfiguration.version == 1)
+        else if (config.version == 1)
         {
-            char credentials[sizeof(_influxDbConfiguration.username) + sizeof(_influxDbConfiguration.password) + 2];
-            snprintf(credentials, sizeof(credentials), "%s:%s", _influxDbConfiguration.username, _influxDbConfiguration.password);
+            char credentials[sizeof(config.username) + sizeof(config.password) + 2];
+            snprintf(credentials, sizeof(credentials), "%s:%s", config.username, config.password);
 
             String encodedCredentials = base64::encode((const uint8_t*)credentials, strnlen(credentials, sizeof(credentials)));
 
             snprintf(_authHeader, sizeof(_authHeader), "Basic %s", encodedCredentials.c_str());
         } else {
-            LOG_ERROR("Unsupported InfluxDB version for authorization header: %u", _influxDbConfiguration.version);
+            LOG_ERROR("Unsupported InfluxDB version for authorization header: %u", _configuration.version);
             return;
         }
 
         LOG_DEBUG("InfluxDB authorization header set");
     }
 
-    static void _sendData(const char* url, const char* authHeader, const char* measurement)
+    static void _sendData(const InfluxDbConfiguration &config)
     {
         HTTPClient http;
-        http.begin(url);
-        http.addHeader("Authorization", authHeader);
+        http.begin(_fullUrl);
+        http.addHeader("Authorization", _authHeader);
         http.addHeader("Content-Type", "text/plain");
 
-        // Allocate payload buffer in PSRAM for better memory utilization
+        // Allocate payload buffer and real time line protocol in PSRAM for better memory utilization
         char *payload = (char*)ps_malloc(PAYLOAD_BUFFER_SIZE);
         if (!payload) {
             LOG_ERROR("Failed to allocate payload buffer in PSRAM");
@@ -537,6 +514,15 @@ namespace InfluxDbClient
             return;
         }
         memset(payload, 0, PAYLOAD_BUFFER_SIZE);
+
+        char *lineProtocol = (char*)ps_malloc(LINE_PROTOCOL_BUFFER_SIZE);
+        if (!lineProtocol) {
+            LOG_ERROR("Failed to allocate realtime line protocol buffer in PSRAM");
+            free(payload);
+            http.end();
+            return;
+        }
+        memset(lineProtocol, 0, LINE_PROTOCOL_BUFFER_SIZE);
         
         char *ptr = payload;
         size_t remaining = PAYLOAD_BUFFER_SIZE;
@@ -555,56 +541,64 @@ namespace InfluxDbClient
                 // Add separator if not first entry
                 if (ptr != payload) {
                     int written = snprintf(ptr, remaining, "\n");
-                    if (written >= remaining) { bufferFull = true; break; }
+                    if (written < 0) {
+                        LOG_ERROR("snprintf failed while building payload");
+                        bufferFull = true;
+                        break;
+                    }
+                    if ((size_t)written >= remaining) {
+                        bufferFull = true;
+                        break;
+                    }
                     ptr += written;
                     remaining -= written;
                 }
-                
-                // Add realtime line protocol
-                char *realtimeLineProtocol = (char*)ps_malloc(LINE_PROTOCOL_BUFFER_SIZE);
-                if (!realtimeLineProtocol) {
-                    LOG_ERROR("Failed to allocate realtime line protocol buffer in PSRAM");
-                    bufferFull = true;
-                    break;
-                }
 
+                // Add realtime line protocol
                 _formatLineProtocol(
-                    measurement,
+                    config.measurement,
                     DEVICE_ID,
                     i,
                     label,
                     meterValues,
-                    realtimeLineProtocol,
+                    lineProtocol,
                     LINE_PROTOCOL_BUFFER_SIZE,
                     false
                 );
-                int written = snprintf(ptr, remaining, "%s", realtimeLineProtocol);
-                free(realtimeLineProtocol);
-                if (written >= remaining) { bufferFull = true; break; }
-                ptr += written;
-                remaining -= written;
-                
-                // Add energy line protocol
-                char *energyLineProtocol = (char*)ps_malloc(LINE_PROTOCOL_BUFFER_SIZE);
-                if (!energyLineProtocol) {
-                    LOG_ERROR("Failed to allocate energy line protocol buffer in PSRAM");
+                int written = snprintf(ptr, remaining, "%s", lineProtocol);
+                if (written < 0) {
+                    LOG_ERROR("snprintf failed while building payload");
                     bufferFull = true;
                     break;
                 }
+                if ((size_t)written >= remaining) {
+                    bufferFull = true;
+                    break;
+                }
+                ptr += written;
+                remaining -= written;
+                
                 _formatLineProtocol(
-                    measurement,
+                    config.measurement,
                     DEVICE_ID,
                     i,
                     label,
                     meterValues,
-                    energyLineProtocol,
+                    lineProtocol,
                     LINE_PROTOCOL_BUFFER_SIZE,
                     true
                 );
-                written = snprintf(ptr, remaining, "\n%s", energyLineProtocol);
-                free(energyLineProtocol);
+                written = snprintf(ptr, remaining, "\n%s", lineProtocol);
 
-                if (written >= remaining) { bufferFull = true; break; }
+                if (written < 0) {
+                    LOG_ERROR("snprintf failed while building payload");
+                    bufferFull = true;
+                    break;
+                }
+                if ((size_t)written >= remaining) {
+                    bufferFull = true;
+                    break;
+                }
                 ptr += written;
                 remaining -= written;
             }
@@ -616,12 +610,17 @@ namespace InfluxDbClient
         {
             LOG_DEBUG("No data to send to InfluxDB");
             free(payload);
+            free(lineProtocol);
             http.end();
             return;
         }
 
         int32_t httpCode = http.POST(payload);
+        char httpStatus[SHORT_STATUS_BUFFER_SIZE];
+        snprintf(httpStatus, sizeof(httpStatus), "%s", HTTPClient::errorToString(httpCode).c_str());
 
+        // While we could handle codes < 0 as particular errors, they are in the end normal errors and we should retry anyway
+        // The only case for us in which we need to disable immediately is on unauthorized or forbidden
         if (httpCode >= HTTP_CODE_OK && httpCode < HTTP_CODE_MULTIPLE_CHOICES)
         {
             LOG_DEBUG("Successfully sent data %zu bytes to InfluxDB (HTTP %d)", PAYLOAD_BUFFER_SIZE - remaining, httpCode);
@@ -636,9 +635,10 @@ namespace InfluxDbClient
 
             // Check for specific errors that warrant disabling InfluxDB
             if (httpCode == HTTP_CODE_UNAUTHORIZED || httpCode == HTTP_CODE_FORBIDDEN) {
-                LOG_ERROR("InfluxDB send failed due to authorization error (%d). Disabling InfluxDB.", httpCode);
-                _disable();
+                LOG_ERROR("InfluxDB send failed due to authorization error (%ld - %s). Disabling InfluxDB.", httpCode, httpStatus);
+                _disable("Authorization error");
                 free(payload);
+                free(lineProtocol);
                 http.end();
                 return;
             }
@@ -646,8 +646,9 @@ namespace InfluxDbClient
             // Check if we've exceeded the maximum number of failures
             if (_currentSendAttempt >= INFLUXDB_MAX_CONSECUTIVE_FAILURES) {
                 LOG_ERROR("InfluxDB send failed %u consecutive times. Disabling InfluxDB.", _currentSendAttempt);
-                _disable();
+                _disable("Max consecutive failures reached");
                 free(payload);
+                free(lineProtocol);
                 http.end();
                 return;
             }
@@ -656,14 +657,15 @@ namespace InfluxDbClient
             uint64_t backoffDelay = calculateExponentialBackoff(_currentSendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
             _nextSendAttemptMillis = millis64() + backoffDelay;
 
-            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %ld) - Attempt %u", httpCode, _currentSendAttempt);
+            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %ld - %s) - Attempt %u", httpCode, httpStatus, _currentSendAttempt);
             _statusTimestampUnix = CustomTime::getUnixTime();
-            
-            LOG_WARNING("Failed to send data to InfluxDB (HTTP %d). Next attempt in %llu ms", httpCode, _nextSendAttemptMillis - millis64());
+
+            LOG_WARNING("Failed to send data to InfluxDB (HTTP %ld - %s). Next attempt in %llu ms", httpCode, httpStatus, _nextSendAttemptMillis - millis64());
         }
         
         _statusTimestampUnix = CustomTime::getUnixTime();
         free(payload);
+        free(lineProtocol);
         http.end();
     }
 

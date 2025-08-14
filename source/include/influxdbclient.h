@@ -102,18 +102,18 @@ namespace InfluxDbClient
     void stop();
 
     // Manage configuration directly
-    void getConfiguration(InfluxDbConfiguration &config);
+    bool getConfiguration(InfluxDbConfiguration &config);
     bool setConfiguration(const InfluxDbConfiguration &config);
-    void resetConfiguration();
+    bool resetConfiguration();
     
     // Manage configuration from JSON
-    void getConfigurationAsJson(JsonDocument &jsonDocument);
+    bool getConfigurationAsJson(JsonDocument &jsonDocument);
     bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial = false);
     void configurationToJson(InfluxDbConfiguration &config, JsonDocument &jsonDocument);
     bool configurationFromJson(JsonDocument &jsonDocument, InfluxDbConfiguration &config, bool partial = false);
 
     // Get runtime status
-    void getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
+    bool getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
 
     // Task information
     TaskInfo getTaskInfo();
