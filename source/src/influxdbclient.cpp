@@ -81,7 +81,6 @@ namespace InfluxDbClient
         LOG_DEBUG("Stopping InfluxDB client...");
         _stopTask();
         
-        // Clean up mutex
         deleteMutex(&_configMutex);
         
         _isSetupDone = false;
@@ -166,7 +165,7 @@ namespace InfluxDbClient
         }
 
         InfluxDbConfiguration config;
-        getConfiguration(config); // Start with current configuration (yeah I know it's cumbersome)
+        getConfiguration(config);
         if (!configurationFromJson(jsonDocument, config, partial)) {
             LOG_ERROR("Failed to set configuration from JSON");
             return false;
@@ -625,7 +624,7 @@ namespace InfluxDbClient
 
         if (httpCode >= HTTP_CODE_OK && httpCode < HTTP_CODE_MULTIPLE_CHOICES)
         {
-            LOG_DEBUG("Successfully sent data to InfluxDB (HTTP %d)", httpCode);
+            LOG_DEBUG("Successfully sent data %zu bytes to InfluxDB (HTTP %d)", PAYLOAD_BUFFER_SIZE - remaining, httpCode);
             statistics.influxdbUploadCount++;
             snprintf(_status, sizeof(_status), "Data sent successfully");
             _currentSendAttempt = 0;

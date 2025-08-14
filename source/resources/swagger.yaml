@@ -714,6 +714,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomMqttConfiguration'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     put:
       summary: Update custom MQTT configuration (full update)
       description: Update the complete custom MQTT configuration. All required fields must be provided.

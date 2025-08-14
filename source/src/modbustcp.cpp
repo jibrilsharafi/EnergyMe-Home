@@ -4,10 +4,6 @@ namespace ModbusTcp
 {
     // Static state variables
     static ModbusServerTCPasync _mbServer;
-    #define START_REGISTERS_METER_VALUES 100 // Before this, data that is not related to energy values (like time)
-    #define LOWER_LIMIT_CHANNEL_REGISTERS 1000
-    #define STEP_CHANNEL_REGISTERS 100
-    #define UPPER_LIMIT_CHANNEL_REGISTERS (LOWER_LIMIT_CHANNEL_REGISTERS + (CHANNEL_COUNT) * STEP_CHANNEL_REGISTERS)
 
     // Private function declarations
     static uint16_t _getRegisterValue(uint32_t address);

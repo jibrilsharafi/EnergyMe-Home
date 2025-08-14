@@ -293,6 +293,10 @@ namespace Ade7953
         
         // Clean up resources (where the data will also be saved)
         _cleanup();
+
+        deleteMutex(&_spiMutex);
+        deleteMutex(&_spiOperationMutex);
+        deleteMutex(&_configMutex);
         
         LOG_DEBUG("ADE7953 stopped successfully");
     }
@@ -1104,7 +1108,7 @@ namespace Ade7953
     }
 
     void _cleanup() {
-        LOG_DEBUG("Cleaning up ADE7953 resources");
+        LOG_DEBUG("Cleaning up ADE7953 resources...");
         
         // Stop all tasks first
         _stopMeterReadingTask();
@@ -1114,25 +1118,8 @@ namespace Ade7953
         // Save final energy data if not already saved
         LOG_DEBUG("Saving final energy data during cleanup");
         _saveEnergyComplete();
-        
-        // Clean up SPI mutex
-        if (_spiMutex != NULL) {
-            vSemaphoreDelete(_spiMutex);
-            _spiMutex = NULL;
-            LOG_DEBUG("SPI mutex deleted");
-        }
 
-        if (_spiOperationMutex != NULL) {
-            vSemaphoreDelete(_spiOperationMutex);
-            _spiOperationMutex = NULL;
-            LOG_DEBUG("SPI operation mutex deleted");
-        }
-
-        if (_configMutex != NULL) {
-            vSemaphoreDelete(_configMutex);
-            _configMutex = NULL;
-            LOG_DEBUG("Config mutex deleted");
-        }
+        LOG_DEBUG("Cleaned up tasks and energy saved");
     }
 
     /**

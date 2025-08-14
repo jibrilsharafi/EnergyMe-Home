@@ -34,13 +34,12 @@ namespace CustomMqtt
 
     // Configuration management
     static void _setConfigurationFromPreferences();
-    static void _saveConfigurationToPreferences();
+    static void _saveConfigurationToPreferences(const CustomMqttConfiguration &config);
     
     // MQTT operations
-    static bool _connectMqtt();
-    static void _publishMeter();
-    static bool _publishMeterStreaming(JsonDocument &jsonDocument);
-    static bool _publishMessage(const char *topic, const char *message);
+    static bool _connectMqtt(const CustomMqttConfiguration &config);
+    static void _publishMeter(const char* topic);
+    static bool _publishMeterStreaming(JsonDocument &jsonDocument, const char* topic);
     
     // JSON validation
     static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial = false);
@@ -64,9 +63,12 @@ namespace CustomMqtt
         if (!createMutexIfNeeded(&_configMutex)) return;
         
         _isSetupDone = true; // Must set before since we have checks on the setup later        
-        _customClientMqtt.setBufferSize(STREAM_UTILS_PACKET_SIZE);
-        _setConfigurationFromPreferences(); // Here we load and set the config. The setConfig will handle starting the task if enabled
         
+        _customClientMqtt.setBufferSize(STREAM_UTILS_PACKET_SIZE);
+        _setConfigurationFromPreferences();
+        
+        _startTask();
+
         LOG_DEBUG("Custom MQTT client setup complete");
     }
 
@@ -75,28 +77,25 @@ namespace CustomMqtt
         LOG_DEBUG("Stopping Custom MQTT client...");
         _stopTask();
         
-        // Disconnect and cleanup network client
-        if (_customClientMqtt.connected()) {
-            _customClientMqtt.disconnect();
-        }
-        
-        // Clean up mutex
-        if (_configMutex != nullptr) {
-            vSemaphoreDelete(_configMutex);
-            _configMutex = nullptr;
-        }
+        deleteMutex(&_configMutex);
         
         _isSetupDone = false;
         LOG_INFO("Custom MQTT client stopped");
     }
 
-    void getConfiguration(CustomMqttConfiguration &config)
+    bool getConfiguration(CustomMqttConfiguration &config)
     {
         if (!_isSetupDone) {
             LOG_WARNING("CustomMQTT client is not set up yet, returning early");
-            return;
+            return false;
+        }
+        if (!acquireMutex(&_configMutex)) {
+            LOG_ERROR("Failed to acquire configuration mutex for getConfiguration");
+            return false;
         }
         config = _customMqttConfiguration;
+        releaseMutex(&_configMutex);
+        return true;
     }
 
     bool setConfiguration(const CustomMqttConfiguration &config)
@@ -106,16 +105,15 @@ namespace CustomMqtt
             return false;
         }
 
-        // Acquire mutex with timeout
-        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+        _stopTask();
+
+        if (!acquireMutex(&_configMutex)) {
             LOG_ERROR("Failed to acquire configuration mutex for setConfiguration");
             return false;
         }
-
-        _stopTask();
-
         _customMqttConfiguration = config; // Copy to the static configuration variable
-        
+        releaseMutex(&_configMutex);
+
         snprintf(_status, sizeof(_status), "Configuration updated");
         _statusTimestampUnix = CustomTime::getUnixTime();
 
@@ -124,12 +122,9 @@ namespace CustomMqtt
         _currentMqttConnectionAttempt = 0;
         _currentFailedMessagePublishAttempt = 0;
 
-        _saveConfigurationToPreferences();
+        _saveConfigurationToPreferences(config);
 
-        if (_customMqttConfiguration.enabled) _startTask();
-
-        // Release mutex
-        releaseMutex(&_configMutex);
+        _startTask();
 
         LOG_DEBUG("Custom MQTT configuration set");
         return true;
@@ -138,11 +133,6 @@ namespace CustomMqtt
     void resetConfiguration() 
     {
         LOG_DEBUG("Resetting Custom MQTT configuration to default");
-        
-        if (!_isSetupDone) {
-            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
-            return;
-        }
 
         CustomMqttConfiguration defaultConfig;
         setConfiguration(defaultConfig);
@@ -150,24 +140,20 @@ namespace CustomMqtt
         LOG_INFO("Custom MQTT configuration reset to default");
     }
 
-    void getConfigurationAsJson(JsonDocument &jsonDocument) 
+    bool getConfigurationAsJson(JsonDocument &jsonDocument) 
     {
-        if (!_isSetupDone) {
-            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
-            return;
-        }
-        configurationToJson(_customMqttConfiguration, jsonDocument);
+        CustomMqttConfiguration config;
+        if (!getConfiguration(config)) return false;
+        
+        configurationToJson(config, jsonDocument);
+        return true;
     }
 
     bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial)
     {
-        if (!_isSetupDone) {
-            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
-            return false;
-        }
-
         CustomMqttConfiguration config;
-        config = _customMqttConfiguration; // Start with current configuration (yeah I know it's cumbersome)
+        getConfiguration(config);
+
         if (!configurationFromJson(jsonDocument, config, partial)) {
             LOG_ERROR("Failed to set configuration from JSON");
             return false;
@@ -178,11 +164,6 @@ namespace CustomMqtt
 
     void configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument)
     {
-        if (!_isSetupDone) {
-            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
-            return;
-        }
-
         jsonDocument["enabled"] = config.enabled;
         jsonDocument["server"] = config.server;
         jsonDocument["port"] = config.port;
@@ -198,11 +179,6 @@ namespace CustomMqtt
 
     bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config, bool partial)
     {
-        if (!_isSetupDone) {
-            LOG_WARNING("CustomMQTT client is not set up yet, returning early");
-            return false;
-        }
-
         if (!_validateJsonConfiguration(jsonDocument, partial))
         {
             LOG_WARNING("Invalid JSON configuration");
@@ -261,11 +237,6 @@ namespace CustomMqtt
             return;
         }
 
-        LOG_DEBUG("Starting Custom MQTT task");
-
-        // Configure MQTT client before starting task
-        _customClientMqtt.setServer(_customMqttConfiguration.server, _customMqttConfiguration.port);
-        
         BaseType_t result = xTaskCreate(
             _customMqttTask,
             CUSTOM_MQTT_TASK_NAME,
@@ -274,6 +245,8 @@ namespace CustomMqtt
             CUSTOM_MQTT_TASK_PRIORITY,
             &_customMqttTaskHandle
         );
+
+        LOG_DEBUG("Custom MQTT task created");
 
         if (result != pdPASS) {
             LOG_ERROR("Failed to create Custom MQTT task");
@@ -289,10 +262,12 @@ namespace CustomMqtt
         
         _taskShouldRun = true;
         uint64_t lastPublishTime = 0;
+        CustomMqttConfiguration config;
 
         while (_taskShouldRun) {
-            if (CustomWifi::isFullyConnected()) { // We are connected
-                if (_customMqttConfiguration.enabled) { // We have the custom MQTT enabled
+            getConfiguration(config);
+            if (config.enabled) { // We have the custom MQTT enabled (atomic operation, no race condition)
+                if (CustomWifi::isFullyConnected()) { // We are connected (no need to check if time is synched)
                     if (_customClientMqtt.connected()) { // We are connected to MQTT
                         if (_currentMqttConnectionAttempt > 0) { // If we were having problems, reset the attempt counter since we are now connected
                             LOG_DEBUG("Custom MQTT reconnected successfully after %d attempts.", _currentMqttConnectionAttempt);
@@ -303,17 +278,18 @@ namespace CustomMqtt
 
                         uint64_t currentTime = millis64();
                         // Check if enough time has passed since last publish
-                        if ((currentTime - lastPublishTime) >= (_customMqttConfiguration.frequencySeconds * 1000)) {
-                            _publishMeter();
+                        if ((currentTime - lastPublishTime) >= (config.frequencySeconds * 1000)) { // (atomic operation, no race condition)
+                            _publishMeter(config.topic);
                             lastPublishTime = currentTime;
                         }
-                    } else {
-                        // Enough time has passed since last attempt (in case of failures) to retry connection
-                        if (millis64() >= _nextMqttConnectionAttemptMillis) {
+                    } else { // We are not connected to MQTT
+                        if (millis64() >= _nextMqttConnectionAttemptMillis) { // Enough time has passed since last attempt (in case of failures) to retry connection
                             LOG_DEBUG("Custom MQTT client not connected. Attempting to connect...");
-                            _connectMqtt();
+                            _connectMqtt(config);
                         }
                     }
+                } else { // We are not connected to WiFi
+                    LOG_DEBUG("Device is not connected to WiFi. Waiting for automatic connection...");
                 }
             }
 
@@ -362,7 +338,7 @@ namespace CustomMqtt
         LOG_DEBUG("Successfully set Custom MQTT configuration from Preferences");
     }
 
-    static void _saveConfigurationToPreferences()
+    static void _saveConfigurationToPreferences(const CustomMqttConfiguration &config)
     {
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false)) {
@@ -370,15 +346,15 @@ namespace CustomMqtt
             return;
         }
 
-        preferences.putBool(CUSTOM_MQTT_ENABLED_KEY, _customMqttConfiguration.enabled);
-        preferences.putString(CUSTOM_MQTT_SERVER_KEY, _customMqttConfiguration.server);
-        preferences.putUShort(CUSTOM_MQTT_PORT_KEY, _customMqttConfiguration.port);
-        preferences.putString(CUSTOM_MQTT_CLIENT_ID_KEY, _customMqttConfiguration.clientid);
-        preferences.putString(CUSTOM_MQTT_TOPIC_KEY, _customMqttConfiguration.topic);
-        preferences.putUInt(CUSTOM_MQTT_FREQUENCY_KEY, _customMqttConfiguration.frequencySeconds);
-        preferences.putBool(CUSTOM_MQTT_USE_CREDENTIALS_KEY, _customMqttConfiguration.useCredentials);
-        preferences.putString(CUSTOM_MQTT_USERNAME_KEY, _customMqttConfiguration.username);
-        preferences.putString(CUSTOM_MQTT_PASSWORD_KEY, _customMqttConfiguration.password);
+        preferences.putBool(CUSTOM_MQTT_ENABLED_KEY, config.enabled);
+        preferences.putString(CUSTOM_MQTT_SERVER_KEY, config.server);
+        preferences.putUShort(CUSTOM_MQTT_PORT_KEY, config.port);
+        preferences.putString(CUSTOM_MQTT_CLIENT_ID_KEY, config.clientid);
+        preferences.putString(CUSTOM_MQTT_TOPIC_KEY, config.topic);
+        preferences.putUInt(CUSTOM_MQTT_FREQUENCY_KEY, config.frequencySeconds);
+        preferences.putBool(CUSTOM_MQTT_USE_CREDENTIALS_KEY, config.useCredentials);
+        preferences.putString(CUSTOM_MQTT_USERNAME_KEY, config.username);
+        preferences.putString(CUSTOM_MQTT_PASSWORD_KEY, config.password);
 
         preferences.end();
 
@@ -395,13 +371,13 @@ namespace CustomMqtt
 
         if (partial) {
             // Partial validation - at least one valid field must be present
-            if (jsonDocument["enabled"].is<bool>()) return true;        
-            if (jsonDocument["server"].is<const char*>()) return true;        
-            if (jsonDocument["port"].is<uint16_t>()) return true;        
+            if (jsonDocument["enabled"].is<bool>())         return true;        
+            if (jsonDocument["server"].is<const char*>())   return true;        
+            if (jsonDocument["port"].is<uint16_t>())        return true;        
             if (jsonDocument["clientid"].is<const char*>()) return true;        
-            if (jsonDocument["topic"].is<const char*>()) return true;        
-            if (jsonDocument["frequency"].is<uint32_t>()) return true;        
-            if (jsonDocument["useCredentials"].is<bool>()) return true;        
+            if (jsonDocument["topic"].is<const char*>())    return true;        
+            if (jsonDocument["frequency"].is<uint32_t>())   return true;        
+            if (jsonDocument["useCredentials"].is<bool>())  return true;        
             if (jsonDocument["username"].is<const char*>()) return true;        
             if (jsonDocument["password"].is<const char*>()) return true;
 
@@ -409,66 +385,65 @@ namespace CustomMqtt
             return false;
         } else {
             // Full validation - all fields must be present and valid
-            if (!jsonDocument["enabled"].is<bool>()) { LOG_WARNING("enabled field is not a boolean"); return false; }
-            if (!jsonDocument["server"].is<const char*>()) { LOG_WARNING("server field is not a string"); return false; }
-            if (!jsonDocument["port"].is<uint16_t>()) { LOG_WARNING("port field is not an integer"); return false; }
-            if (!jsonDocument["clientid"].is<const char*>()) { LOG_WARNING("clientid field is not a string"); return false; }
-            if (!jsonDocument["topic"].is<const char*>()) { LOG_WARNING("topic field is not a string"); return false; }
-            if (!jsonDocument["frequency"].is<uint32_t>()) { LOG_WARNING("frequency field is not an integer"); return false; }
+            if (!jsonDocument["enabled"].is<bool>())        { LOG_WARNING("enabled field is not a boolean"); return false; }
+            if (!jsonDocument["server"].is<const char*>())  { LOG_WARNING("server field is not a string"); return false; }
+            if (!jsonDocument["port"].is<uint16_t>())       { LOG_WARNING("port field is not an integer"); return false; }
+            if (!jsonDocument["clientid"].is<const char*>()){ LOG_WARNING("clientid field is not a string"); return false; }
+            if (!jsonDocument["topic"].is<const char*>())   { LOG_WARNING("topic field is not a string"); return false; }
+            if (!jsonDocument["frequency"].is<uint32_t>())  { LOG_WARNING("frequency field is not an integer"); return false; }
             if (!jsonDocument["useCredentials"].is<bool>()) { LOG_WARNING("useCredentials field is not a boolean"); return false; }
-            if (!jsonDocument["username"].is<const char*>()) { LOG_WARNING("username field is not a string"); return false; }
-            if (!jsonDocument["password"].is<const char*>()) { LOG_WARNING("password field is not a string"); return false; }
+            if (!jsonDocument["username"].is<const char*>()){ LOG_WARNING("username field is not a string"); return false; }
+            if (!jsonDocument["password"].is<const char*>()){ LOG_WARNING("password field is not a string"); return false; }
 
             return true;
         }
     }
 
-    static void _disable() 
-    {
-        LOG_DEBUG("Disabling Custom MQTT due to persistent failures...");
-
+    static void _disable() {
+        if (!acquireMutex(&_configMutex)) return;
         _customMqttConfiguration.enabled = false;
-        setConfiguration(_customMqttConfiguration); // This will save the configuration and stop the task
+        _saveConfigurationToPreferences(_customMqttConfiguration);
+        releaseMutex(&_configMutex);
 
         snprintf(_status, sizeof(_status), "Disabled due to persistent failures");
         _statusTimestampUnix = CustomTime::getUnixTime();
 
-        LOG_DEBUG("Custom MQTT disabled");
+        // Not calling _stopTask() here to avoid deadlock
     }
 
-    static bool _connectMqtt()
+    static bool _connectMqtt(const CustomMqttConfiguration &config)
     {
         LOG_DEBUG("Attempt to connect to Custom MQTT (attempt %d)...", _currentMqttConnectionAttempt + 1);
 
         // Ensure clean connection state
-        if (_customClientMqtt.connected()) {
-            _customClientMqtt.disconnect();
-        }
+        if (_customClientMqtt.connected()) _customClientMqtt.disconnect();
 
         // If the clientid is empty, use the default one
         char clientId[NAME_BUFFER_SIZE];
-        snprintf(clientId, sizeof(clientId), "%s", _customMqttConfiguration.clientid);
-        if (strlen(_customMqttConfiguration.clientid) == 0) {
+        snprintf(clientId, sizeof(clientId), "%s", config.clientid);
+        if (strlen(config.clientid) == 0) {
             LOG_WARNING("Client ID is empty, using device client ID");
             snprintf(clientId, sizeof(clientId), "%s", DEVICE_ID);
         }
         
+        _customClientMqtt.setServer(config.server, config.port);
+
         bool res;
-        if (_customMqttConfiguration.useCredentials) {
+        if (config.useCredentials) {
             res = _customClientMqtt.connect(
                 clientId,
-                _customMqttConfiguration.username,
-                _customMqttConfiguration.password);
+                config.username,
+                config.password);
         } else {
             res = _customClientMqtt.connect(clientId);
         }
 
         if (res) {
             LOG_INFO("Connected to Custom MQTT | Server: %s, Port: %u, Client ID: %s, Topic: %s",
-                        _customMqttConfiguration.server,
-                        _customMqttConfiguration.port,
+                        config.server,
+                        config.port,
                         clientId,
-                        _customMqttConfiguration.topic);
+                        config.topic);
 
             _currentMqttConnectionAttempt = 0; // Reset attempt counter on successful connection
             snprintf(_status, sizeof(_status), "Connected");
@@ -511,7 +486,7 @@ namespace CustomMqtt
         }
     }
 
-    static void _publishMeter()
+    static void _publishMeter(const char* topic)
     {
         JsonDocument jsonDocument;
         Ade7953::fullMeterValuesToJson(jsonDocument);
@@ -522,25 +497,11 @@ namespace CustomMqtt
             return;
         }
 
-        // Measure JSON size first for timing comparison
-        size_t jsonSize = measureJson(jsonDocument);
-        LOG_DEBUG("JSON document size: %zu bytes", jsonSize);
-
-        uint64_t startTime = millis64();
-        
-        bool publishSuccess = _publishMeterStreaming(jsonDocument);
-        
-        uint64_t endTime = millis64();
-        uint64_t duration = endTime - startTime;
-        
-        LOG_DEBUG("Streaming publish completed in %llu ms for %zu bytes (%.2f bytes/ms)", 
-                  duration, jsonSize, jsonSize > 0 ? (float)jsonSize / (float)duration : 0.0f);
-        
-        if (publishSuccess) LOG_DEBUG("Meter data published to Custom MQTT via streaming");
+        if (_publishMeterStreaming(jsonDocument, topic)) LOG_DEBUG("Meter data published to Custom MQTT via streaming");
         else LOG_WARNING("Failed to publish meter data to Custom MQTT via streaming");
     }
 
-    static bool _publishMeterStreaming(JsonDocument &jsonDocument)
+    static bool _publishMeterStreaming(JsonDocument &jsonDocument, const char* topic)
     {
         statistics.customMqttMessagesPublishedError++; // Pre-increment, will decrement on success
         _currentFailedMessagePublishAttempt++;
@@ -551,18 +512,6 @@ namespace CustomMqtt
             return false;
         }
 
-        if (!CustomWifi::isFullyConnected()) {
-            LOG_WARNING("Custom MQTT not connected to WiFi. Skipping streaming publish");
-            return false;
-        }
-
-        if (!_customClientMqtt.connected()) {
-            LOG_WARNING("Custom MQTT client not connected. State: %s. Skipping streaming publish", 
-                       _getMqttStateReason(_customClientMqtt.state()));
-            return false;
-        }
-
-        const char* topic = _customMqttConfiguration.topic;
         if (strlen(topic) == 0) {
             LOG_WARNING("Empty topic. Skipping streaming publish");
             return false;
@@ -589,12 +538,7 @@ namespace CustomMqtt
         size_t bytesWritten = serializeJson(jsonDocument, bufferedCustomMqttClient);
         bufferedCustomMqttClient.flush();
         
-        // End the publish
-        if (_customClientMqtt.endPublish() != 1) {
-            LOG_WARNING("Failed to end streaming publish. MQTT client state: %s", 
-                       _getMqttStateReason(_customClientMqtt.state()));
-            return false;
-        }
+        _customClientMqtt.endPublish();
 
         // Verify that we wrote the expected number of bytes
         if (bytesWritten != payloadLength) {
@@ -609,55 +553,6 @@ namespace CustomMqtt
         statistics.customMqttMessagesPublished++;
         
         LOG_DEBUG("Streaming publish successful: %zu bytes written to topic '%s'", bytesWritten, topic);
-        return true;
-    }
-
-    static bool _publishMessage(const char *topic, const char *message)
-    {
-
-        statistics.customMqttMessagesPublishedError++; // I know it is weird (but we avoid repetition), but if later we reach the end, we decrement it
-        _currentFailedMessagePublishAttempt++;
-
-        if (_currentFailedMessagePublishAttempt > MQTT_CUSTOM_MAX_FAILED_MESSAGE_PUBLISH_ATTEMPTS) {
-            LOG_ERROR("Too many failed message publish attempts (%d). Disabling Custom MQTT.", _currentFailedMessagePublishAttempt);
-            _disable();
-            return false;
-        }
-
-        if (topic == nullptr || message == nullptr)
-        {
-            LOG_WARNING("Null pointer or message passed, meaning Custom MQTT not initialized yet");
-            return false;
-        }
-
-        if (!CustomWifi::isFullyConnected())
-        {
-            LOG_WARNING("Custom MQTT not connected to WiFi. Skipping publishing on %s", topic);
-            return false;
-        }
-
-        if (!_customClientMqtt.connected())
-        {
-            LOG_WARNING("Custom MQTT client not connected. State: %s. Skipping publishing on %s", _getMqttStateReason(_customClientMqtt.state()), topic);
-            return false;
-        }
-
-        if (strlen(topic) == 0 || strlen(message) == 0)
-        {
-            LOG_WARNING("Empty topic or message. Skipping publishing.");
-            return false;
-        }
-
-        if (!_customClientMqtt.publish(topic, message))
-        {
-            LOG_WARNING("Failed to publish message. Custom MQTT client state: %s", _getMqttStateReason(_customClientMqtt.state()));
-            return false;
-        }
-        
-        statistics.customMqttMessagesPublishedError--; // Because we increased before
-        _currentFailedMessagePublishAttempt = 0; // Reset failed message publish attempt counter on successful publish
-        statistics.customMqttMessagesPublished++;
-        LOG_DEBUG("Message published to %s (%d bytes)", topic, strlen(message));
         return true;
     }
 

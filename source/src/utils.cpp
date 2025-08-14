@@ -500,9 +500,6 @@ static void _restartTask(void* parameter) {
     // Only stop Ade7953 as we need to save the energy data. Everything else can just die abruptly
     Ade7953::stop();
 
-    // Wait for the specified delay to allow clean shutdown
-    delay(SYSTEM_RESTART_DELAY);
-    
     _restartSystem(factoryReset);
     
     // Task should never reach here, but clean up just in case
@@ -539,6 +536,8 @@ void setRestartSystem(const char* reason, bool factoryReset) {
 static void _restartSystem(bool factoryReset) {
     Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
     Led::setOrange(Led::PRIO_CRITICAL);
+
+    delay(SYSTEM_RESTART_DELAY); // Allow for logs to flush
 
     // Ensure the log file is properly saved and closed
     AdvancedLogger::end();

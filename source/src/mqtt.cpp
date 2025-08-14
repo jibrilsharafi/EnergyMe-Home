@@ -1385,7 +1385,7 @@ namespace Mqtt
             return false;
         }
 
-        if (!_clientMqtt.publish(topic, message, retain)) {
+        if (!_clientMqtt.publish(topic, message, retain)) { // TODO: use streamutils to publish data here
             LOG_ERROR("Failed to publish on %s (state %s)", topic, _getMqttStateReason(_clientMqtt.state()));
             statistics.mqttMessagesPublishedError++;
             return false;

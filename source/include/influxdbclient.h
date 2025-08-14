@@ -62,7 +62,7 @@
 #define TOKEN_BUFFER_SIZE 128
 #define AUTH_HEADER_BUFFER_SIZE 256
 #define LINE_PROTOCOL_BUFFER_SIZE 1024
-#define PAYLOAD_BUFFER_SIZE (64 * 1024)  // Use PSRAM for larger buffer (64KB)
+#define PAYLOAD_BUFFER_SIZE (16 * 1024)  // Use PSRAM for larger buffer (16KB). Full buffer with 17 channels is about 7kB
 
 struct InfluxDbConfiguration {
     bool enabled;

@@ -87,12 +87,12 @@ namespace CustomMqtt
     void stop();
 
     // Configuration management - direct struct operations
-    void getConfiguration(CustomMqttConfiguration &config);
+    bool getConfiguration(CustomMqttConfiguration &config);
     bool setConfiguration(const CustomMqttConfiguration &config);
     void resetConfiguration();
     
     // Configuration management - JSON operations
-    void getConfigurationAsJson(JsonDocument &jsonDocument);
+    bool getConfigurationAsJson(JsonDocument &jsonDocument);
     bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial = false);
     void configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument);
     bool configurationFromJson(JsonDocument &jsonDocument, CustomMqttConfiguration &config, bool partial = false);

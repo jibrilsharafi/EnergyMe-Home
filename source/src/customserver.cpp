@@ -1626,9 +1626,8 @@ namespace CustomServer
         server.on("/api/v1/custom-mqtt/config", HTTP_GET, [](AsyncWebServerRequest *request)
                   {            
             JsonDocument doc;
-            CustomMqtt::getConfigurationAsJson(doc);
-            
-            _sendJsonResponse(request, doc);
+            if (CustomMqtt::getConfigurationAsJson(doc)) _sendJsonResponse(request, doc);
+            else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to get Custom MQTT configuration");
         });
 
         static AsyncCallbackJsonWebHandler *setCustomMqttHandler = new AsyncCallbackJsonWebHandler(
