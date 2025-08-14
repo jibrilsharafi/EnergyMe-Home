@@ -134,13 +134,18 @@
             try {
                 const meterValuesArray = await energyApi.getMeterValues();
                 
-                // Update all active channels at once
+                // Update only active channels
                 meterValuesArray.forEach(channelMeterData => {
                     const index = channelMeterData.index;
                     const powerElement = document.getElementById(`power${index}`);
                     
-                    if (powerElement && channelMeterData.data && channelMeterData.data.activePower !== undefined) {
+                    // Only show power if channel is active
+                    if (powerElement && channelData[index] && channelData[index].active && 
+                        channelMeterData.data && channelMeterData.data.activePower !== undefined) {
                         powerElement.innerHTML = `${channelMeterData.data.activePower.toFixed(1)} W`;
+                    } else if (powerElement && channelData[index] && !channelData[index].active) {
+                        // Clear power display for inactive channels
+                        powerElement.innerHTML = '';
                     }
                 });
                 
@@ -205,6 +210,14 @@
             phase: parseInt(document.getElementById(`phase${index}`).value),
             active: document.getElementById(`active${index}`).checked
         };
+
+        // Update local channelData immediately for UI responsiveness
+        if (channelData[index]) {
+            channelData[index].active = channelUpdate.active;
+            channelData[index].label = channelUpdate.label;
+            channelData[index].reverse = channelUpdate.reverse;
+            channelData[index].phase = channelUpdate.phase;
+        }
 
         // Store in queue - this will overwrite any previous update for this channel
         updateQueue[index] = channelUpdate;

@@ -3,14 +3,15 @@
 
 #include <AdvancedLogger.h>
 #include <Arduino.h>
-#include <HTTPClient.h>
-#include <PubSubClient.h>
-#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
+#include <HTTPClient.h>
 #include <Preferences.h>
+#include <PubSubClient.h>
+#include <StreamUtils.h>
+#include <WiFiClientSecure.h>
+#include "mbedtls/base64.h"
 #include "mbedtls/gcm.h"
 #include "mbedtls/sha256.h"
-#include "mbedtls/base64.h"
 
 #include "ade7953.h"
 #include "binaries.h"
@@ -33,9 +34,9 @@
 #define QUEUE_WAIT_TIMEOUT 100 // Amount of milliseconds to wait if the queue is full or busy
 
 // MQTT buffer sizes - all moved to PSRAM for better memory utilization
-#define JSON_MQTT_BUFFER_SIZE (16 * 1024)    // PSRAM buffer for building JSON payloads before transmission
-#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (2 * 1024) // PSRAM buffer for MQTT subscribe messages (reduced for efficiency)
-#define CERTIFICATE_BUFFER_SIZE (8 * 1024)   // PSRAM buffer for certificate storage (was 4KB)
+#define MQTT_BUFFER_SIZE (5 * 1024) // Needs to be at least 4 kB for the certificates
+#define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (32 * 1024) // PSRAM buffer for MQTT subscribe messages (reduced for efficiency)
+#define CERTIFICATE_BUFFER_SIZE (16 * 1024)   // PSRAM buffer for certificate storage (was 4KB)
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
 
@@ -63,7 +64,8 @@
 #define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_CLAIMING_INTERVAL (1 * 1000) // Interval between two MQTT claiming checks
-#define MQTT_PAYLOAD_LIMIT (4 * 1024) // MQTT transmission buffer size - increasing over 32KB leads to unstable connections
+#define STREAM_UTILS_PACKET_SIZE 256 // Packet size for StreamUtils buffering
+#define AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT (128 * 1024) // Limit of AWS
 
 #define MQTT_INITIAL_RETRY_INTERVAL (5 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds

@@ -153,10 +153,11 @@ namespace Mqtt
     static bool _setupMqttWithDeviceCertificates();
     static bool _connectMqtt();
     static bool _claimProcess();
-    static bool _publishMessage(const char* topic, const char* message, bool retain = false);
+    static bool _publishJsonStreaming(JsonDocument &jsonDocument, const char* topic, bool retain = false);
 
     // Queue processing and streaming
     static void _processLogQueue();
+    static bool _publishMeterStreaming();
     static bool _publishMeterJson();
     static bool _publishCrashJson();
     
@@ -196,6 +197,12 @@ namespace Mqtt
                 return;
             }
         }
+
+        // Static and permanent config
+        _clientMqtt.setBufferSize(MQTT_BUFFER_SIZE);
+        _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
+        _clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
+        _clientMqtt.setCallback(_subscribeCallback);
 
         // Initialize RTC debug flags
         if (_debugFlagsRtc.signature != MAGIC_WORD_RTC) {
@@ -618,9 +625,6 @@ namespace Mqtt
             return;
         }
 
-        _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
-        _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
-
         _nextMqttConnectionAttemptMillis = 0;
         _mqttConnectionAttempt = 0;
         
@@ -964,7 +968,7 @@ namespace Mqtt
         }
         
         if (!_publishMeterJson()) {
-            LOG_ERROR("Failed to publish meter data via JSON");
+            LOG_ERROR("Failed to publish meter data via streaming");
             return;
         }
 
@@ -981,20 +985,12 @@ namespace Mqtt
         systemStaticInfoToJson(systemStaticInfo, jsonDocumentSystemStatic);
         jsonDocument["data"] = jsonDocumentSystemStatic;
 
-        char *staticMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
-        if (!staticMessage) {
-            LOG_ERROR("Failed to allocate static message buffer in PSRAM");
-            return;
-        }
-        
-        safeSerializeJson(jsonDocument, staticMessage, JSON_MQTT_BUFFER_SIZE);
-
-        if (_publishMessage(_mqttTopicSystemStatic, staticMessage, true)) { // retain static info since it is idempotent
+        if (_publishJsonStreaming(jsonDocument, _mqttTopicSystemStatic, true)) { // retain static info since it is idempotent
             _publishMqtt.systemStatic = false; 
+            LOG_DEBUG("System static info published to MQTT via streaming");
+        } else {
+            LOG_ERROR("Failed to publish system static info via streaming");
         }
-        
-        free(staticMessage);
-        LOG_DEBUG("System static info published to MQTT");
     }
 
     static void _publishSystemDynamic() {
@@ -1007,21 +1003,13 @@ namespace Mqtt
         systemDynamicInfoToJson(systemDynamicInfo, jsonDocumentSystemDynamic);
         jsonDocument["data"] = jsonDocumentSystemDynamic;
 
-        char *dynamicMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
-        if (!dynamicMessage) {
-            LOG_ERROR("Failed to allocate dynamic message buffer in PSRAM");
-            return;
-        }
-        
-        safeSerializeJson(jsonDocument, dynamicMessage, JSON_MQTT_BUFFER_SIZE);
-
-        if (_publishMessage(_mqttTopicSystemDynamic, dynamicMessage)) {
+        if (_publishJsonStreaming(jsonDocument, _mqttTopicSystemDynamic)) {
             _publishMqtt.systemDynamic = false;
             _lastMillisSystemDynamicPublished = millis64();
+            LOG_DEBUG("System dynamic info published to MQTT via streaming");
+        } else {
+            LOG_ERROR("Failed to publish system dynamic info via streaming");
         }
-        
-        free(dynamicMessage);
-        LOG_DEBUG("System dynamic info published to MQTT");
     }
 
     static void _publishChannel() {
@@ -1034,20 +1022,12 @@ namespace Mqtt
             jsonDocument["data"][i] = jsonChannelData;
         }
 
-        char *channelMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
-        if (!channelMessage) {
-            LOG_ERROR("Failed to allocate channel message buffer in PSRAM");
-            return;
+        if (_publishJsonStreaming(jsonDocument, _mqttTopicChannel, true)) { // retain channel info since it is idempotent
+            _publishMqtt.channel = false;
+            LOG_DEBUG("Channel data published to MQTT via streaming");
+        } else {
+            LOG_ERROR("Failed to publish channel data via streaming");
         }
-        
-        safeSerializeJson(jsonDocument, channelMessage, JSON_MQTT_BUFFER_SIZE);
-     
-        if (_publishMessage(_mqttTopicChannel, channelMessage, true)) {
-            _publishMqtt.channel = false; // retain channel info since it is idempotent
-        }
-        
-        free(channelMessage);
-        LOG_DEBUG("Channel data published to MQTT");
     }
 
     static void _publishStatistics() {
@@ -1058,26 +1038,18 @@ namespace Mqtt
         statisticsToJson(statistics, jsonDocumentStatistics);
         jsonDocument["statistics"] = jsonDocumentStatistics;
 
-        char *statisticsMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
-        if (!statisticsMessage) {
-            LOG_ERROR("Failed to allocate statistics message buffer in PSRAM");
-            return;
-        }
-        
-        safeSerializeJson(jsonDocument, statisticsMessage, JSON_MQTT_BUFFER_SIZE);
-
-        if (_publishMessage(_mqttTopicStatistics, statisticsMessage)) {
+        if (_publishJsonStreaming(jsonDocument, _mqttTopicStatistics)) {
             _publishMqtt.statistics = false;
             _lastMillisStatisticsPublished = millis64();
+            LOG_DEBUG("Statistics published to MQTT via streaming");
+        } else {
+            LOG_ERROR("Failed to publish statistics via streaming");
         }
-        
-        free(statisticsMessage);
-        LOG_DEBUG("Statistics published to MQTT");
     }
 
     static void _publishCrash() {
         if (!_publishCrashJson()) {
-            LOG_ERROR("Failed to publish crash data via JSON");
+            LOG_ERROR("Failed to publish crash data via streaming");
             return;
         }
 
@@ -1099,16 +1071,9 @@ namespace Mqtt
         jsonDocument["function"] = entry.function;
         jsonDocument["message"] = entry.message;
 
-        char *logMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
-        if (!logMessage) {
-            LOG_ERROR("Failed to allocate log message buffer in PSRAM");
-            return;
+        if (!_publishJsonStreaming(jsonDocument, logTopic)) {
+            LOG_ERROR("Failed to publish log entry via streaming");
         }
-        
-        safeSerializeJson(jsonDocument, logMessage, JSON_MQTT_BUFFER_SIZE);
-
-        _publishMessage(logTopic, logMessage);
-        free(logMessage);
     }
 
     static bool _publishProvisioningRequest() {
@@ -1118,17 +1083,7 @@ namespace Mqtt
         jsonDocument["sketchMD5"] = ESP.getSketchMD5();
         jsonDocument["chipId"] = ESP.getEfuseMac();
 
-        char *provisioningRequestMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
-        if (!provisioningRequestMessage) {
-            LOG_ERROR("Failed to allocate provisioning request message buffer in PSRAM");
-            return false;
-        }
-        
-        safeSerializeJson(jsonDocument, provisioningRequestMessage, JSON_MQTT_BUFFER_SIZE);
-
-        bool result = _publishMessage(_mqttTopicProvisioningRequest, provisioningRequestMessage);
-        free(provisioningRequestMessage);
-        return result;
+        return _publishJsonStreaming(jsonDocument, _mqttTopicProvisioningRequest);
     }
 
     static void _checkPublishMqtt() {
@@ -1193,11 +1148,6 @@ namespace Mqtt
         _net.setCACert(aws_iot_core_cert_ca);
         _net.setCertificate(_awsIotCoreCert);
         _net.setPrivateKey(_awsIotCorePrivateKey);
-
-        _clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
-        _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
-        _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
-        _clientMqtt.setCallback(_subscribeCallback);
 
         LOG_DEBUG("MQTT certificates setup complete");
         return true;
@@ -1290,14 +1240,9 @@ namespace Mqtt
     static bool _claimProcess() {
         LOG_DEBUG("Claiming certificates...");
 
-        _clientMqtt.setCallback(_subscribeCallback);
         _net.setCACert(aws_iot_core_cert_ca);
         _net.setCertificate(aws_iot_core_cert_certclaim);
         _net.setPrivateKey(aws_iot_core_cert_privateclaim);
-
-        _clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
-        _clientMqtt.setBufferSize(MQTT_PAYLOAD_LIMIT);
-        _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
 
         LOG_DEBUG("MQTT setup for claiming certificates complete");
 
@@ -1351,7 +1296,12 @@ namespace Mqtt
         uint64_t deadline = millis64() + MQTT_CLAIM_TIMEOUT;
 
         while (millis64() < deadline) {
-            _clientMqtt.loop();
+            if (!_clientMqtt.loop()) {
+                LOG_WARNING("MQTT loop failed");
+                break;
+            }
+
+            LOG_DEBUG("Waiting for provisioning response (%llu ms remaining)...", deadline - millis64());
 
             if (_isDeviceCertificatesPresent()) {
                 LOG_DEBUG("Certificates provisioning confirmed");
@@ -1368,31 +1318,51 @@ namespace Mqtt
             return true;
         }
 
-        LOG_WARNING("Provisioning response timeout. Will retry in %d ms.", MQTT_CLAIM_TIMEOUT);
+        LOG_WARNING("Provisioning response timeout. Will retry in %d ms.", MQTT_CLAIM_TIMEOUT); // FIXME: this does not really retry in 30 seconds but immediately
         return false;
     }
 
-    static bool _publishMessage(const char* topic, const char* message, bool retain) {
-        if (topic == nullptr || message == nullptr) {
-            LOG_WARNING("Null ptr, MQTT not initialized yet");
+    static bool _publishJsonStreaming(JsonDocument &jsonDocument, const char* topic, bool retain) {
+        if (topic == nullptr) {
+            LOG_WARNING("Null topic provided");
             statistics.mqttMessagesPublishedError++;
             return false;
         }
 
         if (!_clientMqtt.connected()) {
-            LOG_WARNING("MQTT not connected (%s). Skipping publish on %s", _getMqttStateReason(_clientMqtt.state()), topic);
+            LOG_WARNING("MQTT not connected (%s). Skipping streaming publish on %s", _getMqttStateReason(_clientMqtt.state()), topic);
             statistics.mqttMessagesPublishedError++;
             return false;
         }
 
-        if (!_clientMqtt.publish(topic, message, retain)) { // TODO: use streamutils to publish data here
-            LOG_ERROR("Failed to publish on %s (state %s)", topic, _getMqttStateReason(_clientMqtt.state()));
+        size_t payloadLength = measureJson(jsonDocument);
+        if (payloadLength == 0) {
+            LOG_WARNING("Empty JSON payload. Skipping streaming publish to %s", topic);
+            statistics.mqttMessagesPublishedError++;
+            return false;
+        }
+
+        LOG_DEBUG("Starting streaming publish to topic '%s' with payload size %zu bytes", topic, payloadLength);
+
+        if (!_clientMqtt.beginPublish(topic, payloadLength, retain)) {
+            LOG_WARNING("Failed to begin streaming publish to %s. MQTT client state: %s", topic, _getMqttStateReason(_clientMqtt.state()));
+            statistics.mqttMessagesPublishedError++;
+            return false;
+        }
+
+        BufferingPrint bufferedMqttClient(_clientMqtt, STREAM_UTILS_PACKET_SIZE);
+        size_t bytesWritten = serializeJson(jsonDocument, bufferedMqttClient);
+        bufferedMqttClient.flush();
+        _clientMqtt.endPublish();
+
+        if (bytesWritten != payloadLength) {
+            LOG_WARNING("Streaming publish size mismatch on %s: expected %zu bytes, wrote %zu bytes", topic, payloadLength, bytesWritten);
             statistics.mqttMessagesPublishedError++;
             return false;
         }
 
         statistics.mqttMessagesPublished++;
-        LOG_VERBOSE("Message published: %s", message); // Cannot be debug otherwise when remote debugging on MQTT is enabled, we get a loop
+        LOG_DEBUG("Streaming publish successful: %zu bytes written to topic '%s'", bytesWritten, topic);
         return true;
     }
 
@@ -1416,43 +1386,43 @@ namespace Mqtt
         }
     }
 
-    static bool _publishMeterBatch(JsonDocument& jsonDocument, bool includeStaticData) {
-        if (includeStaticData) {
-            // Add voltage data if available
-            MeterValues meterValuesZeroChannel;
-            Ade7953::getMeterValues(meterValuesZeroChannel, 0);
-            if (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
-                JsonObject voltageObj = jsonDocument.add<JsonObject>();
-                voltageObj["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
-                voltageObj["voltage"] = meterValuesZeroChannel.voltage;
-            }
+    static bool _publishMeterStreaming() {
+        JsonDocument jsonDocument;
+        
+        // Add voltage data if available
+        MeterValues meterValuesZeroChannel;
+        Ade7953::getMeterValues(meterValuesZeroChannel, 0);
+        if (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
+            JsonObject voltageObj = jsonDocument.add<JsonObject>();
+            voltageObj["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
+            voltageObj["voltage"] = meterValuesZeroChannel.voltage;
+        }
 
-            // Add channel energy data
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-                if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
-                    MeterValues meterValues;
-                    Ade7953::getMeterValues(meterValues, i);
+        // Add channel energy data
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
+                MeterValues meterValues;
+                Ade7953::getMeterValues(meterValues, i);
 
-                    if (meterValues.lastUnixTimeMilliseconds == 0) {
-                        LOG_DEBUG("Meter values for channel %d have zero unixTime, skipping...", i);
-                        continue;
-                    }
-
-                    JsonObject channelObj = jsonDocument.add<JsonObject>();
-                    channelObj["unixTime"] = meterValues.lastUnixTimeMilliseconds;
-                    channelObj["channel"] = i;
-                    channelObj["activeEnergyImported"] = meterValues.activeEnergyImported;
-                    channelObj["activeEnergyExported"] = meterValues.activeEnergyExported;
-                    channelObj["reactiveEnergyImported"] = meterValues.reactiveEnergyImported;
-                    channelObj["reactiveEnergyExported"] = meterValues.reactiveEnergyExported;
-                    channelObj["apparentEnergy"] = meterValues.apparentEnergy;
+                if (meterValues.lastUnixTimeMilliseconds == 0) {
+                    LOG_DEBUG("Meter values for channel %d have zero unixTime, skipping...", i);
+                    continue;
                 }
+
+                JsonObject channelObj = jsonDocument.add<JsonObject>();
+                channelObj["unixTime"] = meterValues.lastUnixTimeMilliseconds;
+                channelObj["channel"] = i;
+                channelObj["activeEnergyImported"] = meterValues.activeEnergyImported;
+                channelObj["activeEnergyExported"] = meterValues.activeEnergyExported;
+                channelObj["reactiveEnergyImported"] = meterValues.reactiveEnergyImported;
+                channelObj["reactiveEnergyExported"] = meterValues.reactiveEnergyExported;
+                channelObj["apparentEnergy"] = meterValues.apparentEnergy;
             }
         }
         
         // Add queue data if power data is enabled
         uint32_t entriesAdded = 0;
-        if (_sendPowerDataEnabled) {
+        if (_sendPowerDataEnabled && _initializeMeterQueue()) {
             PayloadMeter payloadMeter;
             uint32_t loops = 0;
             while ((uxQueueMessagesWaiting(_meterQueue) > 0) && loops < MAX_LOOP_ITERATIONS) {
@@ -1467,85 +1437,53 @@ namespace Mqtt
                 powerArray.add(payloadMeter.powerFactor);
                 entriesAdded++;
 
-                if (measureJson(jsonDocument) > MQTT_PAYLOAD_LIMIT * 0.95) {
-                    LOG_DEBUG("Meter data JSON size exceeds 95%% of MQTT payload limit, will publish batch and continue");
+                // Check if we're approaching memory limits (using psram automatically)
+                if (measureJson(jsonDocument) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * 0.95) {
+                    LOG_DEBUG("Meter data JSON size exceeds 95%% of AWS IoT Core MQTT payload limit, stopping queue processing");
                     break; // Stop adding new entries if the buffer is nearly full
                 }
             }
         }
 
-        char *meterMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
-        if (!meterMessage) {
-            LOG_ERROR("Failed to allocate meter message buffer in PSRAM");
-            return false;
-        }
-        
-        LOG_DEBUG("Serializing meter JSON with %u entries | Size: %u bytes | Queue entries added: %u | Remaining in queue: %u", 
-                  jsonDocument.size(), measureJson(jsonDocument), entriesAdded, uxQueueMessagesWaiting(_meterQueue));
-        
-        if (!safeSerializeJson(jsonDocument, meterMessage, JSON_MQTT_BUFFER_SIZE)) {
-            LOG_ERROR("Failed to serialize meter JSON");
-            free(meterMessage);
-            return false;
-        }
-        
-        // Ensure the serialized message fits within MQTT payload limits
-        size_t messageLength = strlen(meterMessage);
-        if (messageLength > MQTT_PAYLOAD_LIMIT) {
-            LOG_ERROR("Serialized meter JSON (%zu bytes) exceeds MQTT payload limit (%d bytes)", messageLength, MQTT_PAYLOAD_LIMIT);
-            free(meterMessage);
-            return false;
+        // Validate that we have actual data before publishing
+        if (jsonDocument.size() == 0) {
+            LOG_DEBUG("No meter data available for publishing");
+            return true; // Not an error, just no data
         }
 
-        bool result = false;
-        if (_publishMessage(_mqttTopicMeter, meterMessage)) {
-            statistics.mqttMessagesPublished++;
-            LOG_DEBUG("Meter data batch published to %s", _mqttTopicMeter);
-            result = true;
-        } else {
-            LOG_ERROR("Failed to publish meter data batch");
-            statistics.mqttMessagesPublishedError++;
-        }
+        LOG_DEBUG("Publishing meter JSON with %u entries | Size: %u bytes | Queue entries added: %u | Remaining in queue: %u", 
+                  jsonDocument.size(), measureJson(jsonDocument), entriesAdded, uxQueueMessagesWaiting(_meterQueue));
         
-        free(meterMessage);
-        return result;
+        return _publishJsonStreaming(jsonDocument, _mqttTopicMeter);
     }
 
     static bool _publishMeterJson() {
         if (!_initializeMeterQueue()) return false;
 
         bool overallSuccess = true;
-        bool isFirstBatch = true;
-        uint32_t batchCount = 0;
+        uint32_t publishCount = 0;
         
-        // Continue publishing batches until queue is empty or we hit max batches
-        while (uxQueueMessagesWaiting(_meterQueue) > 0 || isFirstBatch) {
-            JsonDocument jsonDocument;
-            
-            // Publish the batch (include static data only in first batch)
-            if (!_publishMeterBatch(jsonDocument, isFirstBatch)) {
+        // Keep publishing until queue is empty or we hit limits
+        do {
+            if (!_publishMeterStreaming()) {
                 overallSuccess = false;
                 break;
             }
             
-            batchCount++;
-            isFirstBatch = false;
+            publishCount++;
             
             // Safety check to prevent infinite loops
-            if (batchCount >= MQTT_METER_MAX_BATCHES) {
-                LOG_DEBUG("Maximum meter batch count reached, stopping to prevent infinite loop");
+            if (publishCount >= MQTT_METER_MAX_BATCHES) {
+                LOG_DEBUG("Maximum meter publish count reached, stopping to prevent infinite loop");
                 break;
             }
             
-            // If no queue items were processed in this batch, we're done
-            if (!_sendPowerDataEnabled || uxQueueMessagesWaiting(_meterQueue) == 0) {
-                break;
-            }
-        }
+            // Continue if we still have queue items and power data is enabled
+        } while (_sendPowerDataEnabled && uxQueueMessagesWaiting(_meterQueue) > 0);
         
         if (overallSuccess) {
             _publishMqtt.meter = false;
-            LOG_DEBUG("All meter data published successfully in %u batch(es)", batchCount);
+            LOG_DEBUG("All meter data published successfully in %u publish(es)", publishCount);
         }
         
         return overallSuccess;
@@ -1583,32 +1521,17 @@ namespace Mqtt
         //     }
         // }
 
-        char *crashMessage = (char*)ps_malloc(JSON_MQTT_BUFFER_SIZE);
-        if (!crashMessage) {
-            LOG_ERROR("Failed to allocate crash message buffer in PSRAM");
-            return false;
-        }
-        
-        if (!safeSerializeJson(jsonDocument, crashMessage, JSON_MQTT_BUFFER_SIZE)) {
-            LOG_ERROR("Failed to serialize crash JSON");
-            free(crashMessage);
-            return false;
-        }
-
         bool result = false;
-        if (_publishMessage(_mqttTopicCrash, crashMessage)) {
+        if (_publishJsonStreaming(jsonDocument, _mqttTopicCrash)) {
             _publishMqtt.crash = false;
             // CrashMonitor::clearCoreDump(); /// FIXME: eventually delete when full data is able to be sent
-            statistics.mqttMessagesPublished++;
-            LOG_DEBUG("Crash data published to %s", _mqttTopicCrash);
+            LOG_DEBUG("Crash data published to %s via streaming", _mqttTopicCrash);
             result = true;
         } else {
-            LOG_ERROR("Failed to publish crash data");
-            statistics.mqttMessagesPublishedError++;
+            LOG_ERROR("Failed to publish crash data via streaming");
             result = false;
         }
         
-        free(crashMessage);
         return result;
     }
 
