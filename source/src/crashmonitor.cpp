@@ -52,8 +52,10 @@ namespace CrashMonitor
             _crashCount++;
             _consecutiveCrashCount++;
             _checkAndPrintCoreDump();
-            Mqtt::requestCrashPublish();
         }
+
+        // Regardless if last crash was due to a reset or crash, send this data if available (maybe previously we didn't have time to send it to the cloud)
+        if (hasCoreDump()) Mqtt::requestCrashPublish();
 
         // Increment reset count (always)
         _resetCount++;
@@ -120,14 +122,15 @@ namespace CrashMonitor
     void _handleCounters() {
         if (_consecutiveCrashCount >= MAX_CRASH_COUNT || _consecutiveResetCount >= MAX_RESET_COUNT) {
             LOG_ERROR("The consecutive crash count limit (%d) or the reset count limit (%d) has been reached", MAX_CRASH_COUNT, MAX_RESET_COUNT);
+            
+            // Reset both counters before restart since we're either formatting or rolling back 
+            _consecutiveCrashCount = 0;
+            _consecutiveResetCount = 0;
 
             // If we can rollback, but most importantly, if we have not tried it yet (to avoid infinite rollback loops - IT CAN HAPPEN!)
             if (Update.canRollBack() && !_rollbackTried) {
                 LOG_WARNING("Rolling back to previous firmware version");
                 if (Update.rollBack()) {
-                    // Reset both counters before restart since we're trying a different firmware
-                    _consecutiveCrashCount = 0;
-                    _consecutiveResetCount = 0;
                     _rollbackTried = true; // Indicate rollback was attempted
 
                     // Immediate reset to avoid any further issues
@@ -339,8 +342,6 @@ namespace CrashMonitor
     }
 
     bool getCoreDumpInfoJson(JsonDocument& doc) {
-        doc.clear();
-
         // Basic crash information
         esp_reset_reason_t resetReason = esp_reset_reason();
         doc["resetReason"] = getResetReasonString(resetReason);
@@ -409,8 +410,6 @@ namespace CrashMonitor
     }
 
     bool getCoreDumpChunkJson(JsonDocument& doc, size_t offset, size_t chunkSize) {
-        doc.clear();
-
         if (!hasCoreDump()) {
             doc["error"] = "No core dump available";
             return false;

@@ -239,12 +239,12 @@ namespace CustomWifi
         switch (notificationValue)
         {
         case WIFI_EVENT_CONNECTED:
-          statistics.wifiConnection++;
           LOG_DEBUG("WiFi connected to: %s", WiFi.SSID().c_str());
           continue; // No further action needed
 
         case WIFI_EVENT_GOT_IP:
           LOG_DEBUG("WiFi got IP: %s", WiFi.localIP().toString().c_str());
+          statistics.wifiConnection++; // It is here we know the wifi connection went through (and the one which is called on reconnections)
           // Handle successful connection operations safely in task context
           _handleSuccessfulConnection();
           continue; // No further action needed

@@ -392,6 +392,13 @@ namespace Mqtt
             return;
         }
         
+        // Filter out logs from MQTT publishing functions to prevent infinite loops
+        if (strstr(entry.function, "_publishLog") != nullptr ||
+            strstr(entry.function, "_publishJsonStreaming") != nullptr
+        ) {
+            return; // Skip logs from MQTT publishing functions
+        }
+        
         xQueueSend(_logQueue, &entry, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT));
     }
 
@@ -915,13 +922,13 @@ namespace Mqtt
         if (jsonDocument["enable"].is<bool>())
         {
             if (jsonDocument["enable"].as<bool>()) {
-                int32_t durationMinutes = MQTT_DEBUG_LOGGING_DEFAULT_DURATION / (60 * 1000);
-                if (jsonDocument["duration_minutes"].is<int32_t>()) {
-                    durationMinutes = jsonDocument["duration_minutes"].as<int32_t>();
+                uint64_t durationMinutes = MQTT_DEBUG_LOGGING_DEFAULT_DURATION / (60 * 1000);
+                if (jsonDocument["duration_minutes"].is<uint64_t>()) {
+                    durationMinutes = jsonDocument["duration_minutes"].as<uint64_t>();
                 }
                 
-                int32_t durationMs = durationMinutes * 60 * 1000;
-                if (durationMs <= 0 || durationMs > MQTT_DEBUG_LOGGING_MAX_DURATION) {
+                uint64_t durationMs = durationMinutes * 60 * 1000;
+                if (durationMs > MQTT_DEBUG_LOGGING_MAX_DURATION || durationMs == 0) {
                     durationMs = MQTT_DEBUG_LOGGING_DEFAULT_DURATION;
                 }
                 
@@ -933,7 +940,7 @@ namespace Mqtt
                 _debugFlagsRtc.enableMqttDebugLogging = false;
                 _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
                 _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
-                _debugFlagsRtc.signature = 0;
+                _debugFlagsRtc.signature = MAGIC_WORD_RTC;
             }
         } else {
             char buffer[STATUS_BUFFER_SIZE];
@@ -946,23 +953,24 @@ namespace Mqtt
     // ====================
 
     static void _publishMeter() {
-        // Check if we have any data to publish
+        // Check if we have any da ta to publish
         MeterValues meterValuesZeroChannel;
         Ade7953::getMeterValues(meterValuesZeroChannel, 0);
         UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
         
         bool hasVoltageData = (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0);
-        bool hasQueueData = (queueSize > 0 && _sendPowerDataEnabled);
+        bool hasQueueData = (queueSize > 0 && _sendPowerDataEnabled); // Only consider queue if power data is enabled
         bool hasChannelData = false;
         
-        // Check if any channels have valid data
+        // Check if any channels have valid data (always include energy data)
         for (uint8_t i = 0; i < CHANNEL_COUNT && !hasChannelData; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 hasChannelData = true;
             }
         }
         
-        if (!hasVoltageData && !hasQueueData && !hasChannelData) {
+        // Always publish if we have voltage or channel energy data, queue data is optional
+        if (!hasVoltageData && !hasChannelData && !hasQueueData) {
             LOG_VERBOSE("No valid meter data to publish");
             return;
         }
@@ -1350,7 +1358,7 @@ namespace Mqtt
             return false;
         }
 
-        BufferingPrint bufferedMqttClient(_clientMqtt, STREAM_UTILS_PACKET_SIZE);
+        BufferingPrint bufferedMqttClient(_clientMqtt, STREAM_UTILS_MQTT_PACKET_SIZE);
         size_t bytesWritten = serializeJson(jsonDocument, bufferedMqttClient);
         bufferedMqttClient.flush();
         _clientMqtt.endPublish();
@@ -1389,7 +1397,7 @@ namespace Mqtt
     static bool _publishMeterStreaming() {
         JsonDocument jsonDocument;
         
-        // Add voltage data if available
+        // Always add voltage data if available (independent of sendPowerDataEnabled)
         MeterValues meterValuesZeroChannel;
         Ade7953::getMeterValues(meterValuesZeroChannel, 0);
         if (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
@@ -1398,7 +1406,7 @@ namespace Mqtt
             voltageObj["voltage"] = meterValuesZeroChannel.voltage;
         }
 
-        // Add channel energy data
+        // Always add channel energy data (independent of sendPowerDataEnabled)
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 MeterValues meterValues;
@@ -1420,7 +1428,7 @@ namespace Mqtt
             }
         }
         
-        // Add queue data if power data is enabled
+        // Only add power data points if sendPowerDataEnabled is true
         uint32_t entriesAdded = 0;
         if (_sendPowerDataEnabled && _initializeMeterQueue()) {
             PayloadMeter payloadMeter;
@@ -1460,79 +1468,84 @@ namespace Mqtt
     static bool _publishMeterJson() {
         if (!_initializeMeterQueue()) return false;
 
-        bool overallSuccess = true;
-        uint32_t publishCount = 0;
-        
-        // Keep publishing until queue is empty or we hit limits
-        do {
-            if (!_publishMeterStreaming()) {
-                overallSuccess = false;
-                break;
-            }
-            
-            publishCount++;
-            
-            // Safety check to prevent infinite loops
-            if (publishCount >= MQTT_METER_MAX_BATCHES) {
-                LOG_DEBUG("Maximum meter publish count reached, stopping to prevent infinite loop");
-                break;
-            }
-            
-            // Continue if we still have queue items and power data is enabled
-        } while (_sendPowerDataEnabled && uxQueueMessagesWaiting(_meterQueue) > 0);
-        
-        if (overallSuccess) {
+        // Single publish attempt - no loop to clear entire queue
+        if (_publishMeterStreaming()) {
             _publishMqtt.meter = false;
-            LOG_DEBUG("All meter data published successfully in %u publish(es)", publishCount);
+            LOG_DEBUG("Meter data published successfully");
+            return true;
+        } else {
+            LOG_ERROR("Failed to publish meter data");
+            return false;
         }
-        
-        return overallSuccess;
     }
 
     static bool _publishCrashJson() {
-        JsonDocument jsonDocument;
-        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        // Generate a unique crash ID for this crash event
+        uint64_t crashId = CustomTime::getUnixTimeMilliseconds();
+        
+        // First, publish crash info metadata
+        JsonDocument crashInfoDocument;
+        crashInfoDocument["unixTime"] = crashId; // Use same timestamp as crash ID
+        crashInfoDocument["crashId"] = crashId;
+        crashInfoDocument["messageType"] = "crashInfo";
+        
+        JsonDocument coreDumpInfo;
+        CrashMonitor::getCoreDumpInfoJson(coreDumpInfo);
+        crashInfoDocument["crashInfo"] = coreDumpInfo;
 
-        JsonDocument crashInfoJson;
-        CrashMonitor::getCoreDumpInfoJson(crashInfoJson);
-        jsonDocument["crashInfo"] = crashInfoJson;
+        if (!_publishJsonStreaming(crashInfoDocument, _mqttTopicCrash)) {
+            LOG_ERROR("Failed to publish crash info metadata");
+            return false;
+        }
+        LOG_DEBUG("Crash info metadata published successfully with crash ID: %llu", crashId);
 
-        // Add dump data if available
-        // size_t dumpDataSize = CrashMonitor::getCoreDumpSize();
-        // if (dumpDataSize > 0) {
-        //     // Read all dump data
-        //     uint8_t* dumpBuffer = (uint8_t*)malloc(dumpDataSize);
-        //     if (dumpBuffer != nullptr) {
-        //         size_t bytesRead = 0;
-        //         if (CrashMonitor::getCoreDumpChunk(dumpBuffer, 0, dumpDataSize, &bytesRead)) {
-        //             // Encode to base64
-        //             size_t base64Len = 0;
-        //             char* base64Buffer = (char*)malloc(dumpDataSize * 4 / 3 + 4);
-        //             if (base64Buffer != nullptr) {
-        //                 if (mbedtls_base64_encode((unsigned char*)base64Buffer, dumpDataSize * 4 / 3 + 4, 
-        //                                           &base64Len, dumpBuffer, bytesRead) == 0) {
-        //                     base64Buffer[base64Len] = '\0';
-        //                     jsonDocument["crashInfo"]["dumpData"] = base64Buffer;
-        //                 }
-        //                 free(base64Buffer);
-        //             }
-        //         }
-        //         free(dumpBuffer);
-        //     }
-        // }
+        // Then, send each core dump chunk as a separate message
+        size_t coreDumpSize = CrashMonitor::getCoreDumpSize();
+        LOG_DEBUG("Core dump size to send via MQTT: %zu bytes", coreDumpSize);
+        size_t offset = 0;
+        uint32_t chunkIndex = 0;
+        uint32_t totalChunks = (coreDumpSize + CORE_DUMP_CHUNK_SIZE - 1) / CORE_DUMP_CHUNK_SIZE; // Calculate total chunks
 
-        bool result = false;
-        if (_publishJsonStreaming(jsonDocument, _mqttTopicCrash)) {
-            _publishMqtt.crash = false;
-            // CrashMonitor::clearCoreDump(); /// FIXME: eventually delete when full data is able to be sent
-            LOG_DEBUG("Crash data published to %s via streaming", _mqttTopicCrash);
-            result = true;
-        } else {
-            LOG_ERROR("Failed to publish crash data via streaming");
-            result = false;
+        while (offset < coreDumpSize) {
+            size_t thisChunkSize = (coreDumpSize - offset) < CORE_DUMP_CHUNK_SIZE ? (coreDumpSize - offset) : CORE_DUMP_CHUNK_SIZE;
+
+            JsonDocument chunkDocument;
+            chunkDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+            chunkDocument["crashId"] = crashId; // Same crash ID for all chunks
+            chunkDocument["messageType"] = "crashChunk";
+            chunkDocument["chunkIndex"] = chunkIndex;
+            chunkDocument["totalChunks"] = totalChunks;
+            
+            JsonDocument jsonCoreDumpChunk;
+            if (!CrashMonitor::getCoreDumpChunkJson(jsonCoreDumpChunk, offset, thisChunkSize)) {
+                LOG_ERROR("Failed to get core dump chunk at offset %zu", offset);
+                return false;
+            }
+            
+            // Copy chunk data directly into the message
+            chunkDocument["chunk"] = jsonCoreDumpChunk;
+            
+            if (!_publishJsonStreaming(chunkDocument, _mqttTopicCrash)) {
+                LOG_ERROR("Failed to publish crash chunk %u/%u at offset %zu", chunkIndex + 1, totalChunks, offset);
+                return false;
+            }
+            
+            LOG_DEBUG("Published crash chunk %u/%u (crash ID: %llu, offset %zu, size %zu bytes)", chunkIndex + 1, totalChunks, crashId, offset, thisChunkSize);
+            
+            offset += thisChunkSize;
+            chunkIndex++;
+        }
+
+        _publishMqtt.crash = false;
+        
+        // Clear core dump after successful transmission
+        if (CrashMonitor::hasCoreDump()) {
+            // CrashMonitor::clearCoreDump();// FIXME: enable
+            LOG_INFO("Core dump cleared after successful MQTT transmission");
         }
         
-        return result;
+        LOG_DEBUG("All crash data published successfully: %u chunks sent for crash ID %llu", totalChunks, crashId);
+        return true;
     }
 
 

@@ -823,8 +823,6 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     Serial.println("[WARNING] Formatting LittleFS. This will take some time.");
     LittleFS.format();
 
-    CrashMonitor::clearConsecutiveCrashCount();
-
     // Removed ESP.restart() call since the factory reset can only be called from the restart task
 }
 

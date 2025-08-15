@@ -12,7 +12,7 @@
 #include "led.h"
 
 #define WIFI_TASK_NAME "wifi_task"
-#define WIFI_TASK_STACK_SIZE (8 * 1024)
+#define WIFI_TASK_STACK_SIZE (6 * 1024)
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"

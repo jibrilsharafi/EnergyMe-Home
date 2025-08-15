@@ -39,6 +39,7 @@
 #define CERTIFICATE_BUFFER_SIZE (16 * 1024)   // PSRAM buffer for certificate storage (was 4KB)
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
 #define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
+#define CORE_DUMP_CHUNK_SIZE (4 * 1024) // Do not exceed 4kB to avoid stability issues
 
 #ifdef ENV_PROD
 #define DEFAULT_CLOUD_SERVICES_ENABLED true // In prod, enable by default
@@ -64,14 +65,13 @@
 #define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_CLAIMING_INTERVAL (1 * 1000) // Interval between two MQTT claiming checks
-#define STREAM_UTILS_PACKET_SIZE 256 // Packet size for StreamUtils buffering
 #define AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT (128 * 1024) // Limit of AWS
 
 #define MQTT_INITIAL_RETRY_INTERVAL (5 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds
 #define MQTT_RETRY_MULTIPLIER 2 // Multiplier for exponential backoff
 
-#define MQTT_DEBUG_LOGGING_DEFAULT_DURATION (3 * 60 * 1000) 
+#define MQTT_DEBUG_LOGGING_DEFAULT_DURATION (3 * 60 * 1000)
 #define MQTT_DEBUG_LOGGING_MAX_DURATION (60 * 60 * 1000)
 
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"

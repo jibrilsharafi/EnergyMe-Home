@@ -64,7 +64,7 @@ namespace CustomMqtt
         
         _isSetupDone = true; // Must set before since we have checks on the setup later        
         
-        _mqttClient.setBufferSize(STREAM_UTILS_PACKET_SIZE); // Called only here since it won't be modified never later
+        _mqttClient.setBufferSize(STREAM_UTILS_MQTT_PACKET_SIZE); // Called only here since it won't be modified never later
         _setConfigurationFromPreferences(); // Task will be started from setConfiguration called here
 
         LOG_DEBUG("Custom MQTT client setup complete");
@@ -534,7 +534,7 @@ namespace CustomMqtt
             return false;
         }
 
-        BufferingPrint bufferedCustomMqttClient(_mqttClient, STREAM_UTILS_PACKET_SIZE);
+        BufferingPrint bufferedCustomMqttClient(_mqttClient, STREAM_UTILS_MQTT_PACKET_SIZE);
         size_t bytesWritten = serializeJson(jsonDocument, bufferedCustomMqttClient);
         bufferedCustomMqttClient.flush();
         _mqttClient.endPublish();

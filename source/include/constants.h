@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "12"
-#define FIRMWARE_BUILD_VERSION_PATCH "21"
+#define FIRMWARE_BUILD_VERSION_PATCH "22"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -66,6 +66,8 @@
 #define URL_BUFFER_SIZE 128             // For URLs
 #define FULL_URL_BUFFER_SIZE 256        // For URLs with query parameters and similars
 #define STATUS_BUFFER_SIZE 128          // Generic status messages (e.g., connection status, error messages)
+
+#define STREAM_UTILS_MQTT_PACKET_SIZE 256 // Buffering stream packets instead of sending byte per byte is way more efficient
 
 // Timeouts and intervals
 #define TASK_STOPPING_TIMEOUT (3 * 1000)
