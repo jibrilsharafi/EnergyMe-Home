@@ -40,7 +40,9 @@ namespace Ade7953
     static SemaphoreHandle_t _spiMutex = NULL; // To handle single SPI operations
     static SemaphoreHandle_t _spiOperationMutex = NULL; // To handle full SPI operations (like read with verification, which is 2 SPI operations)
     static SemaphoreHandle_t _ade7953InterruptSemaphore = NULL;
-    static SemaphoreHandle_t _configMutex = NULL; // For thread-safe configuration access
+    static SemaphoreHandle_t _configMutex = NULL;
+    static SemaphoreHandle_t _meterValuesMutex = NULL;
+    static SemaphoreHandle_t _channelDataMutex = NULL;
 
     // FreeRTOS task handles and control flags
     static TaskHandle_t _meterReadingTaskHandle = NULL;
@@ -75,7 +77,7 @@ namespace Ade7953
     static void _setDefaultParameters();
 
     // System management
-    static void _initializeSpiMutexes();
+    static void _initializeMutexes();
     static void _cleanup();
     static bool _verifyCommunication();
 
@@ -239,7 +241,7 @@ namespace Ade7953
     ) {
         LOG_DEBUG("Initializing Ade7953");
 
-        _initializeSpiMutexes();
+        _initializeMutexes();
         LOG_DEBUG("Initialized SPI mutexes");
       
         _setHardwarePins(ssPin, sckPin, misoPin, mosiPin, resetPin, interruptPin);
@@ -297,6 +299,8 @@ namespace Ade7953
         deleteMutex(&_spiMutex);
         deleteMutex(&_spiOperationMutex);
         deleteMutex(&_configMutex);
+        deleteMutex(&_meterValuesMutex);
+        deleteMutex(&_channelDataMutex);
         
         LOG_DEBUG("ADE7953 stopped successfully");
     }
@@ -316,16 +320,16 @@ namespace Ade7953
 
         // If we need to verify, ensure we are able to take the full SPI operation mutex
         if (isVerificationRequired) {
-            if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            if (!acquireMutex(&_spiOperationMutex, ADE7953_SPI_OPERATION_MUTEX_TIMEOUT_MS)) {
                 LOG_ERROR("Failed to acquire SPI operation mutex for read operation on register %ld (0x%04lX)", registerAddress, registerAddress);
                 return INVALID_SPI_READ_WRITE;
             }
         }
 
         // Acquire direct SPI mutex
-        if (_spiMutex == NULL || xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        if (!acquireMutex(&_spiMutex, ADE7953_SPI_MUTEX_TIMEOUT_MS)) {
             LOG_ERROR("Failed to acquire SPI mutex for read operation on register %ld (0x%04lX)", registerAddress, registerAddress);
-            if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
+            if (isVerificationRequired) releaseMutex(&_spiOperationMutex);
             return INVALID_SPI_READ_WRITE;
         }
 
@@ -347,7 +351,7 @@ namespace Ade7953
         // Signal the end of the SPI operation
         digitalWrite(_ssPin, HIGH);
 
-        xSemaphoreGive(_spiMutex); // Leave as soon as possible since no more direct SPI operations are needed
+        releaseMutex(&_spiMutex); // Leave as soon as possible since no more direct SPI operations are needed
 
         // Compose the long response from the byte array
         int32_t longResponse = 0;
@@ -370,7 +374,7 @@ namespace Ade7953
                 _recordFailure();
                 longResponse = INVALID_SPI_READ_WRITE; // Return an invalid value if verification fails
             }
-            xSemaphoreGive(_spiOperationMutex);
+            releaseMutex(&_spiOperationMutex);
         }
 
         LOG_VERBOSE(
@@ -394,16 +398,16 @@ namespace Ade7953
 
         // If we need to verify, ensure we are able to take the full SPI operation mutex
         if (isVerificationRequired) {
-            if (_spiOperationMutex == NULL || xSemaphoreTake(_spiOperationMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+            if (!acquireMutex(&_spiOperationMutex, ADE7953_SPI_OPERATION_MUTEX_TIMEOUT_MS)) {
                 LOG_ERROR("Failed to acquire SPI operation mutex for read operation on register %ld (0x%04lX)", registerAddress, registerAddress);
                 return;
             }
         }
 
         // Acquire direct SPI mutex
-        if (_spiMutex == NULL || xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(ADE7953_SPI_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        if (!acquireMutex(&_spiMutex, ADE7953_SPI_MUTEX_TIMEOUT_MS)) {
             LOG_ERROR("Failed to acquire SPI mutex for write operation on register %ld (0x%04lX)", registerAddress, registerAddress);
-            if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
+            if (isVerificationRequired) releaseMutex(&_spiOperationMutex);
             return;
         }
 
@@ -435,15 +439,15 @@ namespace Ade7953
         } else {
             LOG_ERROR("Invalid number of bits (%u) for register write operation on register %ld (0x%04lX)", nBits, registerAddress, registerAddress);
             digitalWrite(_ssPin, HIGH); // Ensure we release the SS pin
-            xSemaphoreGive(_spiMutex);
-            if (isVerificationRequired) xSemaphoreGive(_spiOperationMutex);
+            releaseMutex(&_spiMutex);
+            if (isVerificationRequired) releaseMutex(&_spiOperationMutex);
             return; // Return without writing
         }
 
         // Signal the end of the SPI operation
         digitalWrite(_ssPin, HIGH);
 
-        xSemaphoreGive(_spiMutex);
+        releaseMutex(&_spiMutex);
 
         // Verify the data if required by reading the dedicated ADE7953 register
         if (isVerificationRequired) {
@@ -451,7 +455,7 @@ namespace Ade7953
                 LOG_WARNING("Failed to verify last write communication for register %ld", registerAddress);
                 _recordFailure();
             }
-            xSemaphoreGive(_spiOperationMutex);
+            releaseMutex(&_spiOperationMutex);
         }
 
         // When writing a register, we inherently change the configuration and thus trigger a CRC change interrupt
@@ -498,7 +502,7 @@ namespace Ade7953
     }
 
     bool setConfiguration(const Ade7953Configuration &config) {
-        if (xSemaphoreTake(_configMutex, pdMS_TO_TICKS(CONFIG_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
             LOG_ERROR("Failed to acquire config mutex for setConfiguration");
             return false;
         }
@@ -508,7 +512,7 @@ namespace Ade7953
         
         _saveConfigurationToPreferences();
         
-        xSemaphoreGive(_configMutex);
+        releaseMutex(&_configMutex);
 
         LOG_DEBUG("Configuration set successfully");
         return true;
@@ -670,7 +674,10 @@ namespace Ade7953
             return;
         }
 
-        snprintf(buffer, bufferSize, "%s", _channelData[channelIndex].label);
+        ChannelData channelData;
+        getChannelData(channelData, channelIndex);
+
+        snprintf(buffer, bufferSize, "%s", channelData.label);
     }
 
     void getChannelData(ChannelData &channelData, uint8_t channelIndex) {
@@ -679,12 +686,23 @@ namespace Ade7953
             return;
         }
 
+        if (!acquireMutex(&_channelDataMutex)) {
+            LOG_ERROR("Failed to acquire mutex for channel data");
+            return;
+        }
+
         channelData = _channelData[channelIndex];
+        releaseMutex(&_channelDataMutex);
     }
 
     void setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
+            return;
+        }
+
+        if (!acquireMutex(&_channelDataMutex)) {
+            LOG_ERROR("Failed to acquire mutex for channel data");
             return;
         }
 
@@ -695,6 +713,8 @@ namespace Ade7953
         } else {
             _channelData[channelIndex] = channelData;
         }
+
+        releaseMutex(&_channelDataMutex);
 
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
@@ -727,14 +747,16 @@ namespace Ade7953
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
             return;
         }
-        
-        channelDataToJson(_channelData[channelIndex], jsonDocument);
+
+        ChannelData channelData;
+        getChannelData(channelData, channelIndex);
+        channelDataToJson(channelData, jsonDocument);
     }
 
     void getAllChannelDataAsJson(JsonDocument &jsonDocument) {
         for (uint8_t channelIndex = 0; channelIndex < CHANNEL_COUNT; channelIndex++) {
             JsonDocument channelDoc;
-            channelDataToJson(_channelData[channelIndex], channelDoc);
+            getChannelDataAsJson(channelDoc, channelIndex);
             jsonDocument[channelIndex] = channelDoc;
         }
     }
@@ -753,7 +775,7 @@ namespace Ade7953
         }
 
         ChannelData channelData;
-        channelData = _channelData[channelIndex];
+        getChannelData(channelData, channelIndex);
         
         if (!channelDataFromJson(jsonDocument, channelData, partial)) {
             LOG_ERROR("Failed to convert JSON to channel data");
@@ -769,7 +791,7 @@ namespace Ade7953
         jsonDocument["index"] = channelData.index;
         jsonDocument["active"] = channelData.active;
         jsonDocument["reverse"] = channelData.reverse;
-        jsonDocument["label"] = channelData.label;
+        jsonDocument["label"] = String(channelData.label); // FIXME: this is a temporary solution to be improved
         jsonDocument["phase"] = channelData.phase;
 
         jsonDocument["ctSpecification"]["currentRating"] = channelData.ctSpecification.currentRating;
@@ -821,6 +843,11 @@ namespace Ade7953
     // ======================
 
     void resetEnergyValues() {
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for meter values");
+            return;
+        }
+
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             _meterValues[i].activeEnergyImported = 0.0f;
             _meterValues[i].activeEnergyExported = 0.0f;
@@ -828,6 +855,8 @@ namespace Ade7953
             _meterValues[i].reactiveEnergyExported = 0.0f;
             _meterValues[i].apparentEnergy = 0.0f;
         }
+
+        releaseMutex(&_meterValuesMutex);
 
         // Clear energy preferences
         Preferences preferences;
@@ -874,11 +903,18 @@ namespace Ade7953
             return false;
         }
 
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for meter values");
+            return false;
+        }
+
         _meterValues[channelIndex].activeEnergyImported = activeEnergyImported;
         _meterValues[channelIndex].activeEnergyExported = activeEnergyExported;
         _meterValues[channelIndex].reactiveEnergyImported = reactiveEnergyImported;
         _meterValues[channelIndex].reactiveEnergyExported = reactiveEnergyExported;
         _meterValues[channelIndex].apparentEnergy = apparentEnergy;
+
+        releaseMutex(&_meterValuesMutex);
 
         _saveEnergyToPreferences(channelIndex);
         
@@ -895,18 +931,21 @@ namespace Ade7953
             return;
         }
 
+        MeterValues meterValues;
+        getMeterValues(meterValues, channelIndex); // We use it here to ensure non-concurrent access
+
         // Reduce the decimals since we don't have or need too much precision, and we save on space
-        jsonDocument["voltage"] = roundToDecimals(_meterValues[channelIndex].voltage, VOLTAGE_DECIMALS);
-        jsonDocument["current"] = roundToDecimals(_meterValues[channelIndex].current, CURRENT_DECIMALS);
-        jsonDocument["activePower"] = roundToDecimals(_meterValues[channelIndex].activePower, POWER_DECIMALS);
-        jsonDocument["apparentPower"] = roundToDecimals(_meterValues[channelIndex].apparentPower, POWER_DECIMALS);
-        jsonDocument["reactivePower"] = roundToDecimals(_meterValues[channelIndex].reactivePower, POWER_DECIMALS);
-        jsonDocument["powerFactor"] = roundToDecimals(_meterValues[channelIndex].powerFactor, POWER_FACTOR_DECIMALS);
-        jsonDocument["activeEnergyImported"] = roundToDecimals(_meterValues[channelIndex].activeEnergyImported, ENERGY_DECIMALS);
-        jsonDocument["activeEnergyExported"] = roundToDecimals(_meterValues[channelIndex].activeEnergyExported, ENERGY_DECIMALS);
-        jsonDocument["reactiveEnergyImported"] = roundToDecimals(_meterValues[channelIndex].reactiveEnergyImported, ENERGY_DECIMALS);
-        jsonDocument["reactiveEnergyExported"] = roundToDecimals(_meterValues[channelIndex].reactiveEnergyExported, ENERGY_DECIMALS);
-        jsonDocument["apparentEnergy"] = roundToDecimals(_meterValues[channelIndex].apparentEnergy, ENERGY_DECIMALS);
+        jsonDocument["voltage"] = roundToDecimals(meterValues.voltage, VOLTAGE_DECIMALS);
+        jsonDocument["current"] = roundToDecimals(meterValues.current, CURRENT_DECIMALS);
+        jsonDocument["activePower"] = roundToDecimals(meterValues.activePower, POWER_DECIMALS);
+        jsonDocument["apparentPower"] = roundToDecimals(meterValues.apparentPower, POWER_DECIMALS);
+        jsonDocument["reactivePower"] = roundToDecimals(meterValues.reactivePower, POWER_DECIMALS);
+        jsonDocument["powerFactor"] = roundToDecimals(meterValues.powerFactor, POWER_FACTOR_DECIMALS);
+        jsonDocument["activeEnergyImported"] = roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS);
+        jsonDocument["activeEnergyExported"] = roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS);
+        jsonDocument["reactiveEnergyImported"] = roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS);
+        jsonDocument["reactiveEnergyExported"] = roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS);
+        jsonDocument["apparentEnergy"] = roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS);
     }
 
 
@@ -914,10 +953,13 @@ namespace Ade7953
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             // Here we also ensure the channel has valid measurements since we have the "duty" to pass all the correct data
             if (isChannelActive(i) && hasChannelValidMeasurements(i)) {
+                ChannelData channelData;
+                getChannelData(channelData, i);
+
                 JsonObject _jsonChannel = jsonDocument.add<JsonObject>();
                 _jsonChannel["index"] = i;
-                _jsonChannel["label"] = _channelData[i].label;
-                _jsonChannel["phase"] = _channelData[i].phase;
+                _jsonChannel["label"] = channelData.label;
+                _jsonChannel["phase"] = channelData.phase;
 
                 JsonDocument jsonData;
                 singleMeterValuesToJson(jsonData, i);
@@ -932,7 +974,12 @@ namespace Ade7953
             return;
         }
 
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire meter values mutex");
+            return;
+        }
         meterValues = _meterValues[channelIndex];
+        releaseMutex(&_meterValuesMutex);
     }
 
     // Aggregated power calculations 
@@ -942,12 +989,17 @@ namespace Ade7953
         float sum = 0.0f;
         uint8_t activeChannelCount = 0;
 
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for meter values");
+            return 0.0f; // Return 0 if mutex acquisition fails
+        }
         for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 sum += _meterValues[i].activePower;
                 activeChannelCount++;
             }
         }
+        releaseMutex(&_meterValuesMutex);
         return activeChannelCount > 0 ? sum : 0.0f;
     }
 
@@ -955,12 +1007,17 @@ namespace Ade7953
         float sum = 0.0f;
         uint8_t activeChannelCount = 0;
 
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for meter values");
+            return 0.0f; // Return 0 if mutex acquisition fails
+        }
         for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 sum += _meterValues[i].reactivePower;
                 activeChannelCount++;
             }
         }
+        releaseMutex(&_meterValuesMutex);
         return activeChannelCount > 0 ? sum : 0.0f;
     }
 
@@ -968,12 +1025,17 @@ namespace Ade7953
         float sum = 0.0f;
         uint8_t activeChannelCount = 0;
 
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for meter values");
+            return 0.0f; // Return 0 if mutex acquisition fails
+        }
         for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
             if (isChannelActive(i)) {
                 sum += _meterValues[i].apparentPower;
                 activeChannelCount++;
             }
         }
+        releaseMutex(&_meterValuesMutex);
         return activeChannelCount > 0 ? sum : 0.0f;
     }
 
@@ -1072,39 +1134,48 @@ namespace Ade7953
     // System management
     // =================
 
-    void _initializeSpiMutexes()
+    void _initializeMutexes()
     {
-        _spiMutex = xSemaphoreCreateMutex();
-        if (_spiMutex == NULL)
-        {
+        if (!createMutexIfNeeded(&_spiMutex)) {
             LOG_ERROR("Failed to create SPI mutex");
             return;
         }
         LOG_DEBUG("SPI mutex created successfully");
 
-        
-        _spiOperationMutex = xSemaphoreCreateMutex();
-        if (_spiOperationMutex == NULL)
-        {
+        if (!createMutexIfNeeded(&_spiOperationMutex)) {
             LOG_ERROR("Failed to create SPI operation mutex");
-            vSemaphoreDelete(_spiMutex);
-            _spiMutex = NULL;
+            deleteMutex(&_spiMutex);
             return;
         }
         LOG_DEBUG("SPI operation mutex created successfully");
 
-        _configMutex = xSemaphoreCreateMutex();
-        if (_configMutex == NULL)
-        {
+        if (!createMutexIfNeeded(&_configMutex)) {
             LOG_ERROR("Failed to create config mutex");
-            vSemaphoreDelete(_spiMutex);
-            vSemaphoreDelete(_spiOperationMutex);
-            _spiMutex = NULL;
-            _spiOperationMutex = NULL;
+            deleteMutex(&_spiMutex);
+            deleteMutex(&_spiOperationMutex);
             return;
         }
-        
         LOG_DEBUG("Config mutex created successfully");
+
+        if (!createMutexIfNeeded(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to create meter values mutex");
+            deleteMutex(&_spiMutex);
+            deleteMutex(&_spiOperationMutex);
+            deleteMutex(&_meterValuesMutex);
+        }
+        LOG_DEBUG("Meter values mutex created successfully");
+
+        if (!createMutexIfNeeded(&_channelDataMutex)) {
+            LOG_ERROR("Failed to create channel data mutex");
+            deleteMutex(&_spiMutex);
+            deleteMutex(&_spiOperationMutex);
+            deleteMutex(&_meterValuesMutex);
+            deleteMutex(&_channelDataMutex);
+            return;
+        }
+        LOG_DEBUG("Channel data mutex created successfully");
+
+        LOG_DEBUG("All mutexes initialized successfully");
     }
 
     void _cleanup() {
@@ -1723,28 +1794,31 @@ namespace Ade7953
 
         char key[PREFERENCES_KEY_BUFFER_SIZE];
 
+        ChannelData channelData;
+        getChannelData(channelData, channelIndex);
+
         // Save channel data
         snprintf(key, sizeof(key), CHANNEL_ACTIVE_KEY, channelIndex);
-        preferences.putBool(key, _channelData[channelIndex].active);
+        preferences.putBool(key, channelData.active);
 
         snprintf(key, sizeof(key), CHANNEL_REVERSE_KEY, channelIndex);
-        preferences.putBool(key, _channelData[channelIndex].reverse);
+        preferences.putBool(key, channelData.reverse);
 
         snprintf(key, sizeof(key), CHANNEL_LABEL_KEY, channelIndex);
-        preferences.putString(key, _channelData[channelIndex].label);
+        preferences.putString(key, channelData.label);
 
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
-        preferences.putUChar(key, (uint8_t)(_channelData[channelIndex].phase));
+        preferences.putUChar(key, (uint8_t)(channelData.phase));
 
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
-        preferences.putFloat(key, _channelData[channelIndex].ctSpecification.currentRating);
+        preferences.putFloat(key, channelData.ctSpecification.currentRating);
 
         snprintf(key, sizeof(key), CHANNEL_CT_VOLTAGE_OUTPUT_KEY, channelIndex);
-        preferences.putFloat(key, _channelData[channelIndex].ctSpecification.voltageOutput);
+        preferences.putFloat(key, channelData.ctSpecification.voltageOutput);
 
         snprintf(key, sizeof(key), CHANNEL_CT_SCALING_FRACTION_KEY, channelIndex);
-        preferences.putFloat(key, _channelData[channelIndex].ctSpecification.scalingFraction);
+        preferences.putFloat(key, channelData.ctSpecification.scalingFraction);
 
         preferences.end();
 
@@ -1802,7 +1876,17 @@ namespace Ade7953
     }
 
     void _updateChannelData(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) {
+            LOG_WARNING("Invalid channel index: %lu", channelIndex);
+            return;
+        }
+
+        if (!acquireMutex(&_channelDataMutex)) { // We need to explicitly acquire the mutex since the _calculateLsbValues function modifies the pointer passed to it
+            LOG_ERROR("Failed to acquire mutex for channel data");
+            return;
+        }
         _calculateLsbValues(_channelData[channelIndex].ctSpecification);
+        releaseMutex(&_channelDataMutex);
 
         LOG_DEBUG("Successfully updated channel data for channel %lu", channelIndex);
     }
@@ -1876,6 +1960,11 @@ namespace Ade7953
         
         // Only place in which we read the energy from preferences, and set the _energyValues initially
 
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for energy values");
+            return;
+        }
+
         snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
         _meterValues[channelIndex].activeEnergyImported = preferences.getFloat(key, 0.0f);
         _energyValues[channelIndex].activeEnergyImported = _meterValues[channelIndex].activeEnergyImported;
@@ -1896,6 +1985,8 @@ namespace Ade7953
         _meterValues[channelIndex].apparentEnergy = preferences.getFloat(key, 0.0f);
         _energyValues[channelIndex].apparentEnergy = _meterValues[channelIndex].apparentEnergy;
 
+        releaseMutex(&_meterValuesMutex);
+
         preferences.end();
 
         _saveEnergyToPreferences(channelIndex, true); // Ensure we have the initial values saved always
@@ -1909,36 +2000,39 @@ namespace Ade7953
 
         char key[PREFERENCES_KEY_BUFFER_SIZE];
 
+        MeterValues meterValues;
+        getMeterValues(meterValues, channelIndex);
+
         // Hereafter we optimize the flash writes by only saving if the value has changed significantly
         // Meter values are the real-time values, while energy values are the last saved values
-        if ((_meterValues[channelIndex].activeEnergyImported - _energyValues[channelIndex].activeEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
+        if ((meterValues.activeEnergyImported - _energyValues[channelIndex].activeEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
-            preferences.putFloat(key, _meterValues[channelIndex].activeEnergyImported);
-            _energyValues[channelIndex].activeEnergyImported = _meterValues[channelIndex].activeEnergyImported;
+            preferences.putFloat(key, meterValues.activeEnergyImported);
+            _energyValues[channelIndex].activeEnergyImported = meterValues.activeEnergyImported;
         }
 
-        if ((_meterValues[channelIndex].activeEnergyExported - _energyValues[channelIndex].activeEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
+        if ((meterValues.activeEnergyExported - _energyValues[channelIndex].activeEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, channelIndex);
-            preferences.putFloat(key, _meterValues[channelIndex].activeEnergyExported);
-            _energyValues[channelIndex].activeEnergyExported = _meterValues[channelIndex].activeEnergyExported;
+            preferences.putFloat(key, meterValues.activeEnergyExported);
+            _energyValues[channelIndex].activeEnergyExported = meterValues.activeEnergyExported;
         }
 
-        if ((_meterValues[channelIndex].reactiveEnergyImported - _energyValues[channelIndex].reactiveEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
+        if ((meterValues.reactiveEnergyImported - _energyValues[channelIndex].reactiveEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, channelIndex);
-            preferences.putFloat(key, _meterValues[channelIndex].reactiveEnergyImported);
-            _energyValues[channelIndex].reactiveEnergyImported = _meterValues[channelIndex].reactiveEnergyImported;
+            preferences.putFloat(key, meterValues.reactiveEnergyImported);
+            _energyValues[channelIndex].reactiveEnergyImported = meterValues.reactiveEnergyImported;
         }
 
-        if ((_meterValues[channelIndex].reactiveEnergyExported - _energyValues[channelIndex].reactiveEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
+        if ((meterValues.reactiveEnergyExported - _energyValues[channelIndex].reactiveEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, channelIndex);
-            preferences.putFloat(key, _meterValues[channelIndex].reactiveEnergyExported);
-            _energyValues[channelIndex].reactiveEnergyExported = _meterValues[channelIndex].reactiveEnergyExported;
+            preferences.putFloat(key, meterValues.reactiveEnergyExported);
+            _energyValues[channelIndex].reactiveEnergyExported = meterValues.reactiveEnergyExported;
         }
 
-        if ((_meterValues[channelIndex].apparentEnergy - _energyValues[channelIndex].apparentEnergy > ENERGY_SAVE_THRESHOLD) || forceSave) {
+        if ((meterValues.apparentEnergy - _energyValues[channelIndex].apparentEnergy > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, channelIndex);
-            preferences.putFloat(key, _meterValues[channelIndex].apparentEnergy);
-            _energyValues[channelIndex].apparentEnergy = _meterValues[channelIndex].apparentEnergy;
+            preferences.putFloat(key, meterValues.apparentEnergy);
+            _energyValues[channelIndex].apparentEnergy = meterValues.apparentEnergy;
         }
 
         preferences.end();
@@ -1982,7 +2076,9 @@ namespace Ade7953
         if (!file) {
             LOG_ERROR("Failed to open CSV file %s for writing", filepath);
             return;
-        }        // Write header if this is a new file
+        }        
+        
+        // Write header if this is a new file
         if (!fileExists) {
             file.println(DAILY_ENERGY_CSV_HEADER);
             LOG_DEBUG("Created new CSV file %s with header", filename);
@@ -1993,18 +2089,21 @@ namespace Ade7953
             if (isChannelActive(i)) {
                 LOG_VERBOSE("Saving hourly energy data for channel %d: %s", i, _channelData[i].label);
 
+                MeterValues meterValues;
+                getMeterValues(meterValues, i);
+
                 // Only save data if (absolute) energy values are above threshold
                 if (
-                    _meterValues[i].activeEnergyImported > ENERGY_SAVE_THRESHOLD || 
-                    _meterValues[i].activeEnergyExported > ENERGY_SAVE_THRESHOLD
+                    meterValues.activeEnergyImported > ENERGY_SAVE_THRESHOLD ||
+                    meterValues.activeEnergyExported > ENERGY_SAVE_THRESHOLD
                 ) {
                     file.print(timestampRoundedHour);
                     file.print(",");
                     file.print(i);
                     file.print(",");
-                    file.print(_meterValues[i].activeEnergyImported, DAILY_ENERGY_CSV_DIGITS);
+                    file.print(meterValues.activeEnergyImported, DAILY_ENERGY_CSV_DIGITS);
                     file.print(",");
-                    file.print(_meterValues[i].activeEnergyExported, DAILY_ENERGY_CSV_DIGITS);
+                    file.print(meterValues.activeEnergyExported, DAILY_ENERGY_CSV_DIGITS);
                     file.println();
                 } else {
                     LOG_DEBUG("Skipping saving hourly energy data for channel %d: %s (values below threshold)", i, _channelData[i].label);
@@ -2075,12 +2174,15 @@ namespace Ade7953
         uint64_t millisRead = millis64();
         uint64_t deltaMillis = millisRead - _meterValues[channelIndex].lastMillis;
 
+        ChannelData channelData;
+        getChannelData(channelData, channelIndex);
+
         // We cannot put an higher limit here because if the channel happened to be disabled, then
         // enabled again, this would result in an infinite error.
         if (_meterValues[channelIndex].lastMillis != 0 && deltaMillis == 0) {
             LOG_WARNING(
                 "%s (%lu): delta millis (%llu) is invalid. Discarding reading", 
-                _channelData[channelIndex].label, channelIndex, deltaMillis
+                channelData.label, channelIndex, deltaMillis
             );
             _recordFailure();
             return false;
@@ -2098,9 +2200,9 @@ namespace Ade7953
         float reactiveEnergy = 0.0f;
         float apparentEnergy = 0.0f;
 
-        Phase basePhase = _channelData[0].phase;
+        Phase basePhase = _channelData[0].phase; // Not using channelData since it is only accessed here and it is an integer so very low probability of race condition
 
-        if (_channelData[channelIndex].phase == basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
+        if (channelData.phase == basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
             
             // These are the three most important (and only) values to read. All of the rest will be computed from these.
             // These are the most reliable since they are computed on the whole line cycle, thus they incorporate any harmonic.
@@ -2123,9 +2225,9 @@ namespace Ade7953
                 _interruptHandledChannelB = true;
             }
 
-            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.whLsb * (_channelData[channelIndex].reverse ? -1 : 1);
-            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.varhLsb * (_channelData[channelIndex].reverse ? -1 : 1);
-            apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * _channelData[channelIndex].ctSpecification.vahLsb;
+            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1 : 1);
+            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1 : 1);
+            apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb;
 
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
             // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
@@ -2177,19 +2279,19 @@ namespace Ade7953
             // reading instead of the one of the whole line cycle. As such, the power factor is the only reliable reading and it cannot 
             // provide information about the direction of the power.
 
-            if (_channelData[channelIndex].phase == _getLaggingPhase(basePhase)) {
+            if (channelData.phase == _getLaggingPhase(basePhase)) {
                 powerFactor = cos(acos(_powerFactorPhaseOne) - (2.0f * (float)PI / 3.0f));
-            } else if (_channelData[channelIndex].phase == _getLeadingPhase(basePhase)) {
+            } else if (channelData.phase == _getLeadingPhase(basePhase)) {
                 // I cannot prove why, but I am SURE the minus is needed if the phase is leading
                 powerFactor = - cos(acos(_powerFactorPhaseOne) + (2.0f * (float)PI / 3.0f));
             } else {
-                LOG_ERROR("Invalid phase %d for channel %d", _channelData[channelIndex].phase, channelIndex);
+                LOG_ERROR("Invalid phase %d for channel %d", channelData.phase, channelIndex);
                 _recordFailure();
                 return false;
             }
 
             // Read the current (RMS is absolute so no reverse is needed)
-            current = float(_readCurrentRms(ade7953Channel)) * _channelData[channelIndex].ctSpecification.aLsb;
+            current = float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb;
 
             // Compute power values
             activePower = current * voltage * abs(powerFactor);
@@ -2204,7 +2306,7 @@ namespace Ade7953
         if (abs(powerFactor) < MINIMUM_POWER_FACTOR) {
             LOG_VERBOSE(
                 "%s (%d): Power factor %.3f is below %.3f, setting all values to 0",
-                _channelData[channelIndex].label, 
+                channelData.label, 
                 channelIndex, 
                 powerFactor,
                 MINIMUM_POWER_FACTOR
@@ -2223,7 +2325,7 @@ namespace Ade7953
         if (abs(powerFactor) > VALIDATE_POWER_FACTOR_MAX && abs(powerFactor) < MAXIMUM_POWER_FACTOR_CLAMP) {
             LOG_VERBOSE(
                 "%s (%d): Power factor %.3f is above %.3f, clamping it", 
-                _channelData[channelIndex].label, 
+                channelData.label, 
                 channelIndex, 
                 powerFactor,
                 MAXIMUM_POWER_FACTOR_CLAMP
@@ -2242,12 +2344,18 @@ namespace Ade7953
             !_validatePowerFactor(powerFactor)
         ) {
             
-            LOG_WARNING("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", _channelData[channelIndex].label, channelIndex, activePower, current, reactivePower, apparentPower, powerFactor);
+            LOG_WARNING("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", channelData.label, channelIndex, activePower, current, reactivePower, apparentPower, powerFactor);
             _recordFailure();
             return false;
         }
         
         // Enough checks, now we can set the values
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for meter values");
+            _recordFailure();
+            return false;
+        }
+
         _meterValues[channelIndex].voltage = voltage;
         _meterValues[channelIndex].current = current;
         _meterValues[channelIndex].activePower = activePower;
@@ -2257,7 +2365,7 @@ namespace Ade7953
 
         // If the phase is not the phase of the main channel, set the energy not to 0 if the current
         // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation
-        if (_channelData[channelIndex].phase != basePhase && current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
+        if (channelData.phase != basePhase && current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
             activeEnergy = 1;
             reactiveEnergy = 1;
             apparentEnergy = 1;
@@ -2277,7 +2385,7 @@ namespace Ade7953
         } else { // No load active energy detected
             LOG_VERBOSE(
                 "%s (%d): No load active energy reading. Setting active power and power factor to 0",
-                _channelData[channelIndex].label,
+                channelData.label,
                 channelIndex
             );
             _meterValues[channelIndex].activePower = 0.0f;
@@ -2291,7 +2399,7 @@ namespace Ade7953
         } else { // No load reactive energy detected
             LOG_VERBOSE(
                 "%s (%d): No load reactive energy reading. Setting reactive power to 0",
-                _channelData[channelIndex].label,
+                channelData.label,
                 channelIndex
             );
             _meterValues[channelIndex].reactivePower = 0.0f;
@@ -2302,7 +2410,7 @@ namespace Ade7953
         } else {
             LOG_VERBOSE(
                 "%s (%d): No load apparent energy reading. Setting apparent power and current to 0",
-                _channelData[channelIndex].label,
+                channelData.label,
                 channelIndex
             );
             _meterValues[channelIndex].current = 0.0f;
@@ -2315,6 +2423,7 @@ namespace Ade7953
         statistics.ade7953ReadingCount++;
         _meterValues[channelIndex].lastMillis = millisRead;
         _meterValues[channelIndex].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
+        releaseMutex(&_meterValuesMutex);
         return true;
     }
 
@@ -2346,7 +2455,10 @@ namespace Ade7953
 
         LOG_VERBOSE("Adding meter data to payload for channel %u", channelIndex);
 
-        if (!CustomTime::isUnixTimeValid(_meterValues[channelIndex].lastUnixTimeMilliseconds)) {
+        MeterValues meterValues;
+        getMeterValues(meterValues, channelIndex);
+
+        if (!CustomTime::isUnixTimeValid(meterValues.lastUnixTimeMilliseconds)) {
             LOG_VERBOSE("Channel %d has invalid Unix time. Skipping payload addition", channelIndex);
             return;
         }
@@ -2354,9 +2466,9 @@ namespace Ade7953
         Mqtt::pushMeter(
             PayloadMeter(
                 channelIndex,
-                _meterValues[channelIndex].lastUnixTimeMilliseconds,
-                _meterValues[channelIndex].activePower,
-                _meterValues[channelIndex].powerFactor
+                meterValues.lastUnixTimeMilliseconds,
+                meterValues.activePower,
+                meterValues.powerFactor
             )
         );
         #endif
@@ -2802,21 +2914,27 @@ namespace Ade7953
     }
 
     void _printMeterValues(uint8_t channelIndex) {
+        MeterValues meterValues;
+        getMeterValues(meterValues, channelIndex);
+
+        ChannelData channelData;
+        getChannelData(channelData, channelIndex);
+
         LOG_DEBUG(
             "%s (%lu): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.1f%% || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
-            _channelData[channelIndex].label,
-            _channelData[channelIndex].index,
-            _meterValues[channelIndex].voltage,
-            _meterValues[channelIndex].current,
-            _meterValues[channelIndex].activePower,
-            _meterValues[channelIndex].reactivePower,
-            _meterValues[channelIndex].apparentPower,
-            _meterValues[channelIndex].powerFactor * 100.0f,
-            _meterValues[channelIndex].activeEnergyImported,
-            _meterValues[channelIndex].activeEnergyExported,
-            _meterValues[channelIndex].reactiveEnergyImported,
-            _meterValues[channelIndex].reactiveEnergyExported,
-            _meterValues[channelIndex].apparentEnergy
+            channelData.label,
+            channelData.index,
+            meterValues.voltage,
+            meterValues.current,
+            meterValues.activePower,
+            meterValues.reactivePower,
+            meterValues.apparentPower,
+            meterValues.powerFactor * 100.0f,
+            meterValues.activeEnergyImported,
+            meterValues.activeEnergyExported,
+            meterValues.reactiveEnergyImported,
+            meterValues.reactiveEnergyExported,
+            meterValues.apparentEnergy
         );
     }
 

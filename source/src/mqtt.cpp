@@ -12,9 +12,6 @@ namespace Mqtt
     static PubSubClient _clientMqtt(_net);
     static PublishMqtt _publishMqtt;
 
-    // Debug flags for sending debug logs
-    RTC_NOINIT_ATTR DebugFlagsRtc _debugFlagsRtc;
-
     // FreeRTOS queues
     static QueueHandle_t _logQueue = nullptr;
     static QueueHandle_t _meterQueue = nullptr;
@@ -47,6 +44,8 @@ namespace Mqtt
     // Configuration
     static bool _cloudServicesEnabled = DEFAULT_CLOUD_SERVICES_ENABLED;
     static bool _sendPowerDataEnabled = DEFAULT_SEND_POWER_DATA_ENABLED;
+    static uint8_t _mqttLogLevelInt = DEFAULT_MQTT_LOG_LEVEL_INT;
+    static LogLevel _mqttMinLogLevel = LogLevel::INFO;
 
     // Version for OTA information
     static char _firmwareUpdateUrl[URL_BUFFER_SIZE];
@@ -86,11 +85,14 @@ namespace Mqtt
     static void _saveConfigToPreferences();
     
     static void _setSendPowerDataEnabled(bool enabled);
+    static void _setMqttLogLevel(const char* logLevel);
+    static void _updateMqttMinLogLevel();
     static void _setFirmwareUpdateUrl(const char* url);
     static void _setFirmwareUpdateVersion(const char* version);
 
     static void _saveCloudServicesEnabledToPreferences(bool enabled);
     static void _saveSendPowerDataEnabledToPreferences(bool enabled);
+    static void _saveMqttLogLevelToPreferences(uint8_t logLevel);
     static void _saveFirmwareUpdateUrlToPreferences(const char* url);
     static void _saveFirmwareUpdateVersionToPreferences(const char* version);
         
@@ -117,21 +119,18 @@ namespace Mqtt
     // Subscription management
     static void _subscribeToTopics();
     static bool _subscribeToTopic(const char* topicSuffix);
-    static void _subscribeUpdateFirmware();
-    static void _subscribeRestart();
+    static void _subscribeCommand();
     static void _subscribeProvisioningResponse();
-    static void _subscribeEraseCertificates();
-    static void _subscribeSetSendPowerData();
-    static void _subscribeEnableDebugLogging();
     
     // Subscription callback handler
     static void _subscribeCallback(const char* topic, byte *payload, uint32_t length);
-    static void _handleFirmwareUpdateMessage(const char* message);
+    static void _handleCommandMessage(const char* message);
+    static void _handleFirmwareUpdateMessage(JsonDocument& dataDoc);
     static void _handleRestartMessage();
     static void _handleProvisioningResponseMessage(const char* message);
     static void _handleEraseCertificatesMessage();
-    static void _handleSetSendPowerDataMessage(const char* message);
-    static void _handleEnableDebugLoggingMessage(const char* message);
+    static void _handleSetSendPowerDataMessage(JsonDocument& dataDoc);
+    static void _handleSetMqttLogLevelMessage(JsonDocument& dataDoc);
     
     // Publishing functions
     static void _publishMeter();
@@ -188,14 +187,10 @@ namespace Mqtt
     void begin()
     {
         LOG_DEBUG("Setting up MQTT client...");
-        
-        // Create configuration mutex
-        if (_configMutex == nullptr) {
-            _configMutex = xSemaphoreCreateMutex();
-            if (_configMutex == nullptr) {
-                LOG_ERROR("Failed to create configuration mutex");
-                return;
-            }
+
+        if (!createMutexIfNeeded(&_configMutex)) {
+            LOG_ERROR("Failed to create configuration mutex");
+            return;
         }
 
         // Static and permanent config
@@ -203,19 +198,6 @@ namespace Mqtt
         _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
         _clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
         _clientMqtt.setCallback(_subscribeCallback);
-
-        // Initialize RTC debug flags
-        if (_debugFlagsRtc.signature != MAGIC_WORD_RTC) {
-            LOG_DEBUG("RTC magic word is invalid, resetting debug flags");
-            _debugFlagsRtc.enableMqttDebugLogging = false;
-            _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
-            _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
-            _debugFlagsRtc.signature = MAGIC_WORD_RTC;
-        } else if (_debugFlagsRtc.enableMqttDebugLogging) {
-            // If the RTC is valid, and before the restart we were logging with debug info, reset the clock and start again the debugging
-            LOG_DEBUG("RTC debug logging was enabled, restarting duration of %lu ms", _debugFlagsRtc.mqttDebugLoggingDurationMillis);
-            _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = _debugFlagsRtc.mqttDebugLoggingDurationMillis;
-        }
 
         _setupTopics();
         _loadConfigFromPreferences();
@@ -267,10 +249,7 @@ namespace Mqtt
             LOG_DEBUG("MQTT meter queue PSRAM freed");
         }
 
-        if (_configMutex != nullptr) {
-            vSemaphoreDelete(_configMutex);
-            _configMutex = nullptr;
-        }
+        deleteMutex(&_configMutex);
 
         // Zeroize and free certificate buffers
         if (_awsIotCoreCert != nullptr) {
@@ -387,8 +366,8 @@ namespace Mqtt
     {
         if (!_initializeLogQueue()) return;
 
-        if ((entry.level == LogLevel::DEBUG && (!_debugFlagsRtc.enableMqttDebugLogging && _debugFlagsRtc.signature == MAGIC_WORD_RTC)) || // DEBUG level and (real) debug logging disabled
-            (entry.level == LogLevel::VERBOSE)) { // Never send verbose logs via MQTT
+        // Fast log level filtering using precomputed minimum level
+        if (entry.level < _mqttMinLogLevel) {
             return;
         }
         
@@ -405,7 +384,7 @@ namespace Mqtt
     void pushMeter(const PayloadMeter& payload)
     {
         if (!_initializeMeterQueue()) return;
-        xQueueSend(_meterQueue, &payload, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT));
+        if (_sendPowerDataEnabled) xQueueSend(_meterQueue, &payload, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT)); // Only add to queue if we chose to send power data
     }
 
     TaskInfo getTaskInfo()
@@ -488,12 +467,15 @@ namespace Mqtt
 
         _cloudServicesEnabled = prefs.getBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, DEFAULT_CLOUD_SERVICES_ENABLED);
         _sendPowerDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, DEFAULT_SEND_POWER_DATA_ENABLED);
+        _mqttLogLevelInt = prefs.getUChar(MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY, DEFAULT_MQTT_LOG_LEVEL_INT);
+        _updateMqttMinLogLevel(); // Convert integer to LogLevel enum
         prefs.getString(MQTT_PREFERENCES_FW_UPDATE_URL_KEY, _firmwareUpdateUrl, sizeof(_firmwareUpdateUrl));
         prefs.getString(MQTT_PREFERENCES_FW_UPDATE_VERSION_KEY, _firmwareUpdateVersion, sizeof(_firmwareUpdateVersion));
-        
-        LOG_DEBUG("Cloud services enabled: %s, Send power data enabled: %s", 
+
+        LOG_DEBUG("Cloud services enabled: %s, Send power data enabled: %s, MQTT log level: %u",
                    _cloudServicesEnabled ? "true" : "false",
-                   _sendPowerDataEnabled ? "true" : "false");
+                   _sendPowerDataEnabled ? "true" : "false",
+                   _mqttLogLevelInt);
         LOG_DEBUG("Firmware update | URL: %s, Version: %s", 
                    _firmwareUpdateUrl,
                    _firmwareUpdateVersion);
@@ -509,6 +491,7 @@ namespace Mqtt
     {
         _saveCloudServicesEnabledToPreferences(_cloudServicesEnabled);
         _saveSendPowerDataEnabledToPreferences(_sendPowerDataEnabled);
+        _saveMqttLogLevelToPreferences(_mqttLogLevelInt);
         _saveFirmwareUpdateUrlToPreferences(_firmwareUpdateUrl);
         _saveFirmwareUpdateVersionToPreferences(_firmwareUpdateVersion);
         
@@ -520,6 +503,56 @@ namespace Mqtt
         _sendPowerDataEnabled = enabled;
         _saveSendPowerDataEnabledToPreferences(enabled);
         LOG_DEBUG("Set send power data enabled to %s", enabled ? "true" : "false");
+    }
+
+    static void _updateMqttMinLogLevel()
+    {
+        // Convert integer to LogLevel enum (0=VERBOSE, 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR, 5=FATAL)
+        switch (_mqttLogLevelInt) {
+            case 0: _mqttMinLogLevel = LogLevel::VERBOSE; break;
+            case 1: _mqttMinLogLevel = LogLevel::DEBUG; break;
+            case 2: _mqttMinLogLevel = LogLevel::INFO; break;
+            case 3: _mqttMinLogLevel = LogLevel::WARNING; break;
+            case 4: _mqttMinLogLevel = LogLevel::ERROR; break;
+            case 5: _mqttMinLogLevel = LogLevel::FATAL; break;
+            default: _mqttMinLogLevel = LogLevel::INFO; break; // Default fallback
+        }
+        LOG_DEBUG("Updated MQTT minimum log level to %u", _mqttLogLevelInt);
+    }
+
+    static void _setMqttLogLevel(const char* logLevel)
+    {
+        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            LOG_ERROR("Failed to acquire configuration mutex for setting MQTT log level");
+            return;
+        }
+
+        if (logLevel == nullptr) {
+            LOG_ERROR("Invalid MQTT log level provided");
+            releaseMutex(&_configMutex);
+            return;
+        }
+
+        // Convert string to integer
+        uint8_t levelInt = DEFAULT_MQTT_LOG_LEVEL_INT; // Default fallback
+        if (strcmp(logLevel, "VERBOSE") == 0) levelInt = 0;
+        else if (strcmp(logLevel, "DEBUG") == 0) levelInt = 1;
+        else if (strcmp(logLevel, "INFO") == 0) levelInt = 2;
+        else if (strcmp(logLevel, "WARNING") == 0) levelInt = 3;
+        else if (strcmp(logLevel, "ERROR") == 0) levelInt = 4;
+        else if (strcmp(logLevel, "FATAL") == 0) levelInt = 5;
+        else {
+            LOG_ERROR("Invalid log level: %s", logLevel);
+            releaseMutex(&_configMutex);
+            return;
+        }
+
+        _mqttLogLevelInt = levelInt;
+        _updateMqttMinLogLevel();
+        _saveMqttLogLevelToPreferences(_mqttLogLevelInt);
+        releaseMutex(&_configMutex);
+
+        LOG_DEBUG("MQTT log level set to %s (%d)", logLevel, _mqttLogLevelInt);
     }
     
     static void _setFirmwareUpdateVersion(const char* version) {
@@ -576,6 +609,18 @@ namespace Mqtt
         prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
         size_t bytesWritten = prefs.putBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, enabled);
         if (bytesWritten == 0) LOG_ERROR("Failed to save send power data enabled preference");
+        
+        prefs.end();
+    }
+
+    static void _saveMqttLogLevelToPreferences(uint8_t logLevel) {
+        Preferences prefs;
+
+        prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
+        size_t bytesWritten = prefs.putUChar(MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY, logLevel);
+        if (bytesWritten == 0) {
+            LOG_ERROR("Failed to save MQTT log level preference: %d", logLevel);
+        }
         
         prefs.end();
     }
@@ -660,15 +705,6 @@ namespace Mqtt
 
         while (_taskShouldRun)
         {
-            // Check if debug logs have expired
-            if (_debugFlagsRtc.enableMqttDebugLogging && millis64() > _debugFlagsRtc.mqttDebugLoggingEndTimeMillis) {
-                _debugFlagsRtc.enableMqttDebugLogging = false;
-                _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
-                _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
-                _debugFlagsRtc.signature = 0;
-                LOG_DEBUG("The MQTT debug period has ended");
-            }
-
             // Skip processing if WiFi is not connected
             if (CustomWifi::isFullyConnected()) {
                 switch (_currentState) {
@@ -747,12 +783,8 @@ namespace Mqtt
     static void _setTopicProvisioningRequest() { _constructMqttTopic(MQTT_TOPIC_PROVISIONING_REQUEST, _mqttTopicProvisioningRequest, sizeof(_mqttTopicProvisioningRequest)); }
 
     static void _subscribeToTopics() {
-        _subscribeUpdateFirmware();
-        _subscribeRestart();
+        _subscribeCommand();
         _subscribeProvisioningResponse();
-        _subscribeEraseCertificates();
-        _subscribeSetSendPowerData();
-        _subscribeEnableDebugLogging();
 
         LOG_DEBUG("Subscribed to topics");
     }
@@ -770,17 +802,13 @@ namespace Mqtt
         return true;
     }
 
-    static void _subscribeUpdateFirmware() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_FIRMWARE_UPDATE); }
-    static void _subscribeRestart() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_RESTART); }
+    static void _subscribeCommand() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_COMMAND); }
     static void _subscribeProvisioningResponse() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE); }
-    static void _subscribeEraseCertificates() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES); }
-    static void _subscribeSetSendPowerData() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_SET_SEND_POWER_DATA); }
-    static void _subscribeEnableDebugLogging() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING); }
 
     // Subscription callback handler
     // =============================
 
-    static void _subscribeCallback(const char* topic, byte *payload, uint32_t length) // TODO: maybe make it simpler with one simple command topic
+    static void _subscribeCallback(const char* topic, byte *payload, uint32_t length)
     {
         // Allocate message buffer in PSRAM to save stack memory
         char *message = (char*)ps_malloc(MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE);
@@ -800,29 +828,53 @@ namespace Mqtt
 
         LOG_DEBUG("Received MQTT message from %s", topic);
 
-        if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_FIRMWARE_UPDATE)) _handleFirmwareUpdateMessage(message);
-        else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_RESTART)) _handleRestartMessage();
+        if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_COMMAND)) _handleCommandMessage(message);
         else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE)) _handleProvisioningResponseMessage(message);
-        else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES)) _handleEraseCertificatesMessage();
-        else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_SET_SEND_POWER_DATA)) _handleSetSendPowerDataMessage(message);
-        else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING)) _handleEnableDebugLoggingMessage(message);
         else LOG_WARNING("Unknown MQTT topic received: %s", topic);
         
         // Clean up PSRAM allocation
         free(message);
     }
 
-    static void _handleFirmwareUpdateMessage(const char* message)
+    static void _handleCommandMessage(const char* message)
     {
-        // Expected JSON format: {"version": "1.0.0", "url": "https://example.com/firmware.bin"}
+        // Expected JSON format: {"command": "command_name", "data": {...}}
         JsonDocument jsonDocument;
         if (deserializeJson(jsonDocument, message)) {
-            LOG_ERROR("Failed to parse firmware update JSON message: %s", message);
+            LOG_ERROR("Failed to parse command JSON message: %s", message);
             return;
         }
 
-        if (jsonDocument["version"].is<const char*>()) _setFirmwareUpdateVersion(jsonDocument["version"].as<const char*>());
-        if (jsonDocument["url"].is<const char*>()) _setFirmwareUpdateUrl(jsonDocument["url"].as<const char*>());
+        if (!jsonDocument["command"].is<const char*>()) {
+            LOG_ERROR("Invalid command message: missing or invalid 'command' field");
+            return;
+        }
+
+        const char* command = jsonDocument["command"].as<const char*>();
+        JsonDocument dataDoc = jsonDocument["data"].as<JsonObject>();
+
+        LOG_DEBUG("Processing MQTT command: %s", command);
+
+        if (strcmp(command, "restart") == 0) {
+            _handleRestartMessage();
+        } else if (strcmp(command, "firmware_update") == 0) {
+            _handleFirmwareUpdateMessage(dataDoc);
+        } else if (strcmp(command, "erase_certificates") == 0) {
+            _handleEraseCertificatesMessage();
+        } else if (strcmp(command, "set_send_power_data") == 0) {
+            _handleSetSendPowerDataMessage(dataDoc);
+        } else if (strcmp(command, "set_mqtt_log_level") == 0) {
+            _handleSetMqttLogLevelMessage(dataDoc);
+        } else {
+            LOG_WARNING("Unknown command received: %s", command);
+        }
+    }
+
+    static void _handleFirmwareUpdateMessage(JsonDocument& dataDoc)
+    {
+        // Expected data format: {"version": "1.0.0", "url": "https://example.com/firmware.bin"}
+        if (dataDoc["version"].is<const char*>()) _setFirmwareUpdateVersion(dataDoc["version"].as<const char*>());
+        if (dataDoc["url"].is<const char*>()) _setFirmwareUpdateUrl(dataDoc["url"].as<const char*>());
     }
 
     static void _handleRestartMessage()
@@ -891,61 +943,38 @@ namespace Mqtt
         _setState(MqttState::IDLE);
     }
 
-    static void _handleSetSendPowerDataMessage(const char* message)
+    static void _handleSetSendPowerDataMessage(JsonDocument& dataDoc)
     {
-        // Expected JSON format: {"sendPowerData": true}
-        JsonDocument jsonDocument;
-        if (deserializeJson(jsonDocument, message)) {
-            LOG_ERROR("Failed to parse send power data JSON message: %s", message);
-            return;
-        }
-        
-        if (jsonDocument["sendPowerData"].is<bool>()) {
-            bool sendPowerData = jsonDocument["sendPowerData"].as<bool>();
+        // Expected data format: {"sendPowerData": true}
+        if (dataDoc["sendPowerData"].is<bool>()) {
+            bool sendPowerData = dataDoc["sendPowerData"].as<bool>();
             _setSendPowerDataEnabled(sendPowerData);
         } else {
             char buffer[STATUS_BUFFER_SIZE];
-            safeSerializeJson(jsonDocument, buffer, sizeof(buffer), true);
+            safeSerializeJson(dataDoc, buffer, sizeof(buffer), true);
             LOG_ERROR("Invalid send power data JSON message: %s", buffer);
         }
     }
 
-    static void _handleEnableDebugLoggingMessage(const char* message)
+    static void _handleSetMqttLogLevelMessage(JsonDocument& dataDoc)
     {
-        // Expected JSON format: {"enable": true, "duration_minutes": 10}
-        JsonDocument jsonDocument;
-        if (deserializeJson(jsonDocument, message)) {
-            LOG_ERROR("Failed to parse enable debug logging JSON message: %s", message);
-            return;
-        }
-
-        if (jsonDocument["enable"].is<bool>())
-        {
-            if (jsonDocument["enable"].as<bool>()) {
-                uint64_t durationMinutes = MQTT_DEBUG_LOGGING_DEFAULT_DURATION / (60 * 1000);
-                if (jsonDocument["duration_minutes"].is<uint64_t>()) {
-                    durationMinutes = jsonDocument["duration_minutes"].as<uint64_t>();
-                }
-                
-                uint64_t durationMs = durationMinutes * 60 * 1000;
-                if (durationMs > MQTT_DEBUG_LOGGING_MAX_DURATION || durationMs == 0) {
-                    durationMs = MQTT_DEBUG_LOGGING_DEFAULT_DURATION;
-                }
-                
-                _debugFlagsRtc.enableMqttDebugLogging = true;
-                _debugFlagsRtc.mqttDebugLoggingDurationMillis = durationMs;
-                _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = millis64() + durationMs;
-                _debugFlagsRtc.signature = MAGIC_WORD_RTC;
+        // Expected data format: {"level": "INFO"}
+        if (dataDoc["level"].is<const char*>()) {
+            const char* level = dataDoc["level"].as<const char*>();
+            
+            // Validate log level
+            if (strcmp(level, "VERBOSE") == 0 || strcmp(level, "DEBUG") == 0 || 
+                strcmp(level, "INFO") == 0 || strcmp(level, "WARNING") == 0 || 
+                strcmp(level, "ERROR") == 0 || strcmp(level, "FATAL") == 0) {
+                _setMqttLogLevel(level);
+                LOG_INFO("MQTT log level set to %s", level);
             } else {
-                _debugFlagsRtc.enableMqttDebugLogging = false;
-                _debugFlagsRtc.mqttDebugLoggingDurationMillis = 0;
-                _debugFlagsRtc.mqttDebugLoggingEndTimeMillis = 0;
-                _debugFlagsRtc.signature = MAGIC_WORD_RTC;
+                LOG_ERROR("Invalid log level: %s. Valid levels: VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL", level);
             }
         } else {
             char buffer[STATUS_BUFFER_SIZE];
-            safeSerializeJson(jsonDocument, buffer, sizeof(buffer), true);
-            LOG_ERROR("Invalid enable debug logging JSON message: %s", buffer);
+            safeSerializeJson(dataDoc, buffer, sizeof(buffer), true);
+            LOG_ERROR("Invalid set MQTT log level JSON message: %s", buffer);
         }
     }
 
@@ -1024,11 +1053,10 @@ namespace Mqtt
         JsonDocument jsonDocument;
         jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
         
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            JsonDocument jsonChannelData;
-            Ade7953::getChannelDataAsJson(jsonChannelData, i);
-            jsonDocument["data"][i] = jsonChannelData;
-        }
+        JsonDocument jsonDocumentChannelData;
+        Ade7953::getAllChannelDataAsJson(jsonDocumentChannelData);
+
+        jsonDocument["data"] = jsonDocumentChannelData;
 
         if (_publishJsonStreaming(jsonDocument, _mqttTopicChannel, true)) { // retain channel info since it is idempotent
             _publishMqtt.channel = false;
@@ -1326,7 +1354,7 @@ namespace Mqtt
             return true;
         }
 
-        LOG_WARNING("Provisioning response timeout. Will retry in %d ms.", MQTT_CLAIM_TIMEOUT); // FIXME: this does not really retry in 30 seconds but immediately
+        LOG_WARNING("Provisioning response timeout. Will retry later");
         return false;
     }
 
@@ -1540,7 +1568,9 @@ namespace Mqtt
         
         // Clear core dump after successful transmission
         if (CrashMonitor::hasCoreDump()) {
-            // CrashMonitor::clearCoreDump();// FIXME: enable
+            #ifndef ENV_DEV
+            CrashMonitor::clearCoreDump();
+            #endif
             LOG_INFO("Core dump cleared after successful MQTT transmission");
         }
         

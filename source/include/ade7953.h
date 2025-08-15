@@ -21,7 +21,8 @@
 
 // SPI
 #define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz
-#define ADE7953_SPI_MUTEX_TIMEOUT_MS 100 // Timeout for acquiring SPI mutex to prevent deadlocks
+#define ADE7953_SPI_MUTEX_TIMEOUT_MS 100
+#define ADE7953_SPI_OPERATION_MUTEX_TIMEOUT_MS 200 // Longer than normal SPI since this accounts also for validation
 
 // Tasks
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task" // The name of the ADE7953 task

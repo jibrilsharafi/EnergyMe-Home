@@ -213,7 +213,7 @@ namespace InfluxDbClient
             if (jsonDocument["bucket"].is<const char*>())       snprintf(config.bucket, sizeof(config.bucket), "%s", jsonDocument["bucket"].as<const char*>());
             if (jsonDocument["token"].is<const char*>())        snprintf(config.token, sizeof(config.token), "%s", jsonDocument["token"].as<const char*>());
             if (jsonDocument["measurement"].is<const char*>())  snprintf(config.measurement, sizeof(config.measurement), "%s", jsonDocument["measurement"].as<const char*>());
-            if (jsonDocument["frequency"].is<int32_t>())        config.frequencySeconds = jsonDocument["frequency"].as<int32_t>();
+            if (jsonDocument["frequency"].is<uint32_t>())        config.frequencySeconds = jsonDocument["frequency"].as<uint32_t>();
             if (jsonDocument["useSsl"].is<bool>())              config.useSsl = jsonDocument["useSsl"].as<bool>();
         } else {
             // Full update - set all fields
@@ -228,7 +228,7 @@ namespace InfluxDbClient
             snprintf(config.bucket, sizeof(config.bucket), "%s", jsonDocument["bucket"].as<const char*>());
             snprintf(config.token, sizeof(config.token), "%s", jsonDocument["token"].as<const char*>());
             snprintf(config.measurement, sizeof(config.measurement), "%s", jsonDocument["measurement"].as<const char*>());
-            config.frequencySeconds = jsonDocument["frequency"].as<int32_t>();
+            config.frequencySeconds = jsonDocument["frequency"].as<uint32_t>();
             config.useSsl = jsonDocument["useSsl"].as<bool>();
         }
         
@@ -338,7 +338,7 @@ namespace InfluxDbClient
             snprintf(config.bucket, sizeof(config.bucket), "%s", preferences.getString(INFLUXDB_BUCKET_KEY, INFLUXDB_BUCKET_DEFAULT).c_str());
             snprintf(config.token, sizeof(config.token), "%s", preferences.getString(INFLUXDB_TOKEN_KEY, INFLUXDB_TOKEN_DEFAULT).c_str());
             snprintf(config.measurement, sizeof(config.measurement), "%s", preferences.getString(INFLUXDB_MEASUREMENT_KEY, INFLUXDB_MEASUREMENT_DEFAULT).c_str());
-            config.frequencySeconds = preferences.getInt(INFLUXDB_FREQUENCY_KEY, INFLUXDB_FREQUENCY_DEFAULT);
+            config.frequencySeconds = preferences.getUInt(INFLUXDB_FREQUENCY_KEY, INFLUXDB_FREQUENCY_DEFAULT);
             config.useSsl = preferences.getBool(INFLUXDB_USE_SSL_KEY, INFLUXDB_USE_SSL_DEFAULT);
             
             snprintf(_status, sizeof(_status), "Configuration loaded from Preferences");
@@ -375,7 +375,7 @@ namespace InfluxDbClient
         preferences.putString(INFLUXDB_BUCKET_KEY, config.bucket);
         preferences.putString(INFLUXDB_TOKEN_KEY, config.token);
         preferences.putString(INFLUXDB_MEASUREMENT_KEY, config.measurement);
-        preferences.putInt(INFLUXDB_FREQUENCY_KEY, config.frequencySeconds);
+        preferences.putUInt(INFLUXDB_FREQUENCY_KEY, config.frequencySeconds);
         preferences.putBool(INFLUXDB_USE_SSL_KEY, config.useSsl);
 
         preferences.end();

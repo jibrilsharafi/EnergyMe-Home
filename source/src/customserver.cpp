@@ -55,7 +55,6 @@ namespace CustomServer
 
     // API request synchronization helpers
     static bool _acquireApiMutex(AsyncWebServerRequest *request);
-    static void _releaseApiMutex();
 
     // API endpoint groups
     static void _serveSystemEndpoints();
@@ -108,8 +107,7 @@ namespace CustomServer
         LOG_DEBUG("Setting up web server...");
 
         // Initialize API synchronization mutex
-        _apiMutex = xSemaphoreCreateMutex();
-        if (_apiMutex == NULL) {
+        if (!createMutexIfNeeded(&_apiMutex)) {
             LOG_ERROR("Failed to create API mutex");
             return;
         }
@@ -141,11 +139,7 @@ namespace CustomServer
         server.end();
 
         // Delete API mutex
-        if (_apiMutex != NULL) {
-            vSemaphoreDelete(_apiMutex);
-            _apiMutex = NULL;
-            LOG_DEBUG("API mutex deleted");
-        }
+        deleteMutex(&_apiMutex);
         
         LOG_INFO("Web server stopped");
     }
@@ -240,7 +234,7 @@ namespace CustomServer
         doc["message"] = message;
         _sendJsonResponse(request, doc, HTTP_CODE_OK);
 
-        _releaseApiMutex(); // Release mutex on error to avoid deadlocks
+        releaseMutex(&_apiMutex);
     }
 
     static void _sendErrorResponse(AsyncWebServerRequest *request, int32_t statusCode, const char *message)
@@ -250,19 +244,12 @@ namespace CustomServer
         doc["error"] = message;
         _sendJsonResponse(request, doc, statusCode);
 
-        _releaseApiMutex(); // Release mutex on error to avoid deadlocks
+        releaseMutex(&_apiMutex);
     }
 
     static bool _acquireApiMutex(AsyncWebServerRequest *request)
     {
-        if (_apiMutex == NULL) {
-            LOG_ERROR("API mutex not initialized");
-            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Server synchronization error");
-            return false;
-        }
-
-        BaseType_t result = xSemaphoreTake(_apiMutex, pdMS_TO_TICKS(API_MUTEX_TIMEOUT_MS));
-        if (result != pdTRUE) {
+        if (!acquireMutex(&_apiMutex, API_MUTEX_TIMEOUT_MS)) {
             LOG_WARNING("Failed to acquire API mutex within timeout");
             _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Server busy, please try again");
             return false;
@@ -270,14 +257,6 @@ namespace CustomServer
 
         LOG_DEBUG("API mutex acquired for request: %s", request->url().c_str());
         return true;
-    }
-
-    static void _releaseApiMutex()
-    {
-        if (_apiMutex != NULL) {
-            xSemaphoreGive(_apiMutex);
-            LOG_DEBUG("API mutex released");
-        }
     }
 
     // Helper function to parse log level strings

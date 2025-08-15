@@ -15,7 +15,7 @@
 #include "utils.h"
 
 // Constants for UDP logging
-#define DEFAULT_IS_UDP_LOGGING_ENABLED true
+#define DEFAULT_IS_UDP_LOGGING_ENABLED true // TODO: change this to directly use the ENV_DEV
 
 #define UDP_LOG_SERVERITY_FACILITY 16 // Standard syslog facility for local0.info
 #define UDP_LOG_PORT 514 // Standard syslog port

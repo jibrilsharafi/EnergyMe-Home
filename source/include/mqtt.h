@@ -47,6 +47,7 @@
 #define DEFAULT_CLOUD_SERVICES_ENABLED false // Leave manual connection
 #endif
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
+#define DEFAULT_MQTT_LOG_LEVEL_INT 2 // Default minimum log level for MQTT publishing (INFO = 2)
 
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
 #define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (15 * 60 * 1000) // The maximum interval between two system dynamic payloads
@@ -71,11 +72,9 @@
 #define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds
 #define MQTT_RETRY_MULTIPLIER 2 // Multiplier for exponential backoff
 
-#define MQTT_DEBUG_LOGGING_DEFAULT_DURATION (3 * 60 * 1000)
-#define MQTT_DEBUG_LOGGING_MAX_DURATION (60 * 60 * 1000)
-
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
+#define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
 #define MQTT_PREFERENCES_FW_UPDATE_URL_KEY "url"
 #define MQTT_PREFERENCES_FW_UPDATE_VERSION_KEY "version"
 
@@ -105,24 +104,12 @@
 #define MQTT_TOPIC_PROVISIONING_REQUEST "provisioning/request"
 
 // Subscribe topics
-#define MQTT_TOPIC_SUBSCRIBE_FIRMWARE_UPDATE "firmware-update"
-#define MQTT_TOPIC_SUBSCRIBE_RESTART "restart"
+#define MQTT_TOPIC_SUBSCRIBE_COMMAND "command"
 #define MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE "provisioning/response"
-#define MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES "erase-certificates"
-#define MQTT_TOPIC_SUBSCRIBE_SET_SEND_POWER_DATA "set-send-power-data"
-#define MQTT_TOPIC_SUBSCRIBE_ENABLE_DEBUG_LOGGING "enable-debug-logging"
 #define MQTT_TOPIC_SUBSCRIBE_QOS 1
 
 // AWS IoT Core endpoint
 #define AWS_IOT_CORE_PORT 8883
-
-struct DebugFlagsRtc {
-    bool enableMqttDebugLogging;
-    uint64_t mqttDebugLoggingDurationMillis;
-    uint64_t mqttDebugLoggingEndTimeMillis;
-    uint32_t signature;
-    // Since this struct will be used in an RTC_NOINIT_ATTR, we cannot initialize it in the constructor
-};
 
 struct PublishMqtt
 {

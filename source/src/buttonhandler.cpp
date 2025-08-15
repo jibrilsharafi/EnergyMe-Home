@@ -135,7 +135,7 @@ namespace ButtonHandler
                     // Button was pressed - start visual feedback
                     LOG_DEBUG("Button pressed");
 
-                    Led::setBrightness(max(Led::getBrightness(), (uint32_t)1));
+                    Led::setBrightness(max(Led::getBrightness(), (uint8_t)1));
                     Led::setWhite(Led::PRIO_URGENT);
                 }
             // Here it means it is still being pressed

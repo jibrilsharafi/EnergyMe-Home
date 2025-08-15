@@ -6,7 +6,7 @@ namespace Led
     static uint8_t _redPin = INVALID_PIN;
     static uint8_t _greenPin = INVALID_PIN;
     static uint8_t _bluePin = INVALID_PIN;
-    static uint32_t _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
+    static uint8_t _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
 
     // Task handles and queue
     static TaskHandle_t _ledTaskHandle = nullptr;
@@ -181,11 +181,11 @@ namespace Led
             return false;
         }
 
-        _brightness = preferences.getInt(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS_PERCENT);
+        _brightness = preferences.getUInt(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS_PERCENT);
         preferences.end();
 
         // Validate loaded value is within acceptable range
-        _brightness = min(max(_brightness, (uint32_t)0), (uint32_t)LED_MAX_BRIGHTNESS_PERCENT);
+        _brightness = min(max(_brightness, (uint8_t)0), (uint8_t)LED_MAX_BRIGHTNESS_PERCENT);
         return true;
     }
 
@@ -193,17 +193,17 @@ namespace Led
     {
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_LED, false)) { return; }
-        preferences.putInt(PREFERENCES_BRIGHTNESS_KEY, _brightness);
+        preferences.putUChar(PREFERENCES_BRIGHTNESS_KEY, _brightness);
         preferences.end();
     }
 
-    void setBrightness(uint32_t brightness)
+    void setBrightness(uint8_t brightness)
     {
-        _brightness = min(max(brightness, (uint32_t)0), (uint32_t)LED_MAX_BRIGHTNESS_PERCENT);
+        _brightness = min(max(brightness, (uint8_t)0), (uint8_t)LED_MAX_BRIGHTNESS_PERCENT);
         _saveConfiguration();
     }
 
-    uint32_t getBrightness() { return _brightness; }
+    uint8_t getBrightness() { return _brightness; }
 
     void setPattern(LedPattern pattern, Color color, LedPriority priority, uint64_t durationMs)
     {

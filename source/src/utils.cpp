@@ -497,8 +497,9 @@ static void _restartTask(void* parameter) {
         factoryReset ? "true" : "false"
     );
 
-    // Only stop Ade7953 as we need to save the energy data. Everything else can just die abruptly
+    // Only stop Ade7953 as we need to save the energy data and MQTT to avoid trying to send data while rebooting. Everything else can just die abruptly
     Ade7953::stop();
+    Mqtt::stop();
 
     _restartSystem(factoryReset);
     
@@ -527,6 +528,7 @@ void setRestartSystem(const char* reason, bool factoryReset) {
     if (result != pdPASS) {
         LOG_ERROR("Failed to create restart task, performing immediate operation");
         Ade7953::stop();
+        Mqtt::stop();
         _restartSystem(factoryReset);
     } else {
         LOG_DEBUG("Restart task created successfully");
@@ -534,7 +536,7 @@ void setRestartSystem(const char* reason, bool factoryReset) {
 }
 
 static void _restartSystem(bool factoryReset) {
-    Led::setBrightness(max(Led::getBrightness(), (uint32_t)1)); // Show a faint light even if it is off
+    Led::setBrightness(max(Led::getBrightness(), (uint8_t)1)); // Show a faint light even if it is off
     Led::setOrange(Led::PRIO_CRITICAL);
 
     delay(SYSTEM_RESTART_DELAY); // Allow for logs to flush
@@ -815,7 +817,7 @@ void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
 static void _factoryReset() { // No logger here it is likely destroyed already
     Serial.println("[WARNING] Factory reset requested");
 
-    Led::setBrightness(max(Led::getBrightness(), 1UL)); // Show a faint light even if it is off
+    Led::setBrightness(max(Led::getBrightness(), (uint8_t)1)); // Show a faint light even if it is off
     Led::blinkRedFast(Led::PRIO_CRITICAL);
 
     clearAllPreferences(false);

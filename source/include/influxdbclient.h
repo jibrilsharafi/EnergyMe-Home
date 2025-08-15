@@ -76,7 +76,7 @@ struct InfluxDbConfiguration {
     char bucket[SHORT_NAME_BUFFER_SIZE];
     char token[TOKEN_BUFFER_SIZE];
     char measurement[NAME_BUFFER_SIZE];
-    int32_t frequencySeconds;
+    uint32_t frequencySeconds;
     bool useSsl;
 
     InfluxDbConfiguration()
