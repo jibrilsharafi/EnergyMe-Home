@@ -8,6 +8,9 @@ body {
     align-items: center;
     justify-content: center;
     min-height: 100vh;
+    /* Mobile-first padding */
+    padding: 10px;
+    box-sizing: border-box;
 }
 
 :root {
@@ -16,4 +19,19 @@ body {
     --logo-dark-green: #03a09b;
     --green: #4CAF50;
     --blue: #2196F3;
+    
+    /* Mobile responsive breakpoints */
+    --mobile-max: 768px;
+    --tablet-max: 1024px;
+}
+
+/* Global mobile optimizations */
+* {
+    box-sizing: border-box;
+}
+
+/* Prevent horizontal scrolling on mobile */
+html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
 }

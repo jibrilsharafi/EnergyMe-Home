@@ -24,6 +24,90 @@
             width: 90%;
             box-sizing: border-box;
         }
+        
+        /* Mobile responsive styles */
+        @media screen and (max-width: 768px) {
+            .channel-columns {
+                grid-template-columns: 1fr;
+                gap: 15px;
+                padding: 0 10px;
+            }
+            
+            .channel-columns input[type="text"] {
+                width: 100%;
+                font-size: 16px; /* Prevents zoom on iOS */
+                padding: 12px;
+                margin: 8px 0;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                box-sizing: border-box;
+            }
+            
+            .channel-item {
+                width: 100%;
+                padding: 15px;
+                margin-bottom: 10px;
+                border: 1px solid #eee;
+                border-radius: 8px;
+                background-color: #f9f9f9;
+            }
+            
+            .channel-item h3 {
+                font-size: 1.2rem;
+                margin-bottom: 10px;
+            }
+            
+            .channel-item label {
+                display: block;
+                font-weight: bold;
+                margin-bottom: 5px;
+                font-size: 14px;
+            }
+            
+            .power-display {
+                font-size: 16px;
+                font-weight: bold;
+                color: #333;
+                margin: 8px 0;
+            }
+            
+            #updateStatus {
+                font-size: 14px;
+                margin: 10px 0;
+            }
+        }
+        
+        @media screen and (max-width: 480px) {
+            .channel-columns {
+                padding: 0 5px;
+                gap: 12px;
+            }
+            
+            .channel-item {
+                padding: 12px;
+            }
+            
+            .channel-item h3 {
+                font-size: 1.1rem;
+            }
+            
+            .channel-columns input[type="text"] {
+                font-size: 14px;
+                padding: 10px;
+            }
+            
+            .channel-item label {
+                font-size: 13px;
+            }
+            
+            .power-display {
+                font-size: 14px;
+            }
+            
+            #updateStatus {
+                font-size: 13px;
+            }
+        }
     </style>
 </head>
 

@@ -88,6 +88,25 @@
             color: #333;
         }
         
+        .chart-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        
+        .view-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .date-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
         .chart-total {
             font-size: 16px;
             color: #666;
@@ -211,11 +230,213 @@
             font-size: 14px;
         }
         
+        #consumption-chart {
+            position: relative;
+            width: 100%;
+            height: 400px; /* Fixed height for desktop */
+        }
+        
+        #consumption-chart canvas {
+            width: 100% !important;
+            height: 100% !important; /* Force canvas to fill container */
+        }
+        
         /* Responsive design */
         @media (max-width: 768px) {
+            .header {
+                font-size: 64px;
+                margin-bottom: 8px;
+            }
+            
+            .subheader {
+                font-size: 24px;
+                margin-bottom: 15px;
+            }
+            
+            .voltage-box {
+                font-size: 18px;
+                margin-bottom: 15px;
+            }
+            
+            .channels-box {
+                justify-content: center;
+            }
+            
+            .channel-box {
+                width: 45%;
+                margin-bottom: 15px;
+                padding: 8px;
+                min-width: 140px;
+            }
+            
+            .channel-label {
+                font-size: 18px;
+                margin-bottom: 4px;
+            }
+            
             .chart-header {
                 flex-direction: column;
-                gap: 10px;
+                gap: 15px;
+                margin-bottom: 10px;
+                padding: 0 5px;
+                align-items: stretch;
+            }
+            
+            .chart-header h3 {
+                font-size: 20px;
+                text-align: center;
+                margin-bottom: 0;
+            }
+            
+            .chart-controls {
+                align-items: center;
+                gap: 15px;
+            }
+            
+            .view-selector {
+                justify-content: center;
+                gap: 8px;
+                order: 1;
+            }
+            
+            .date-selector {
+                justify-content: center;
+                gap: 8px;
+                order: 2;
+            }
+            
+            /* Chart container responsive sizing */
+            #consumption-chart {
+                height: 300px; /* Fixed height for mobile */
+            }
+            
+            .view-toggle {
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+            
+            .nav-button {
+                padding: 6px 10px;
+                font-size: 14px;
+            }
+            
+            #date-picker,
+            #month-picker {
+                padding: 6px;
+                font-size: 13px;
+                width: 150px;
+            }
+            
+            #download-csv {
+                top: 5px;
+                right: 5px;
+                font-size: 12px;
+                padding: 4px;
+            }
+            
+            .chart-total {
+                text-align: center;
+                font-size: 14px;
+            }
+            
+            #pie-chart-canvas,
+            #total-pie-chart-canvas {
+                max-height: 300px !important;
+            }
+            
+            .tooltip-container .tooltip-text {
+                width: 200px;
+                margin-left: -100px;
+                font-size: 11px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header {
+                font-size: 48px;
+                margin-bottom: 5px;
+            }
+            
+            .subheader {
+                font-size: 20px;
+                margin-bottom: 12px;
+            }
+            
+            .voltage-box {
+                font-size: 16px;
+                margin-bottom: 12px;
+            }
+            
+            .channel-box {
+                width: 90%;
+                margin-bottom: 12px;
+                padding: 6px;
+                min-width: auto;
+            }
+            
+            .channel-label {
+                font-size: 16px;
+            }
+            
+            .chart-header h3 {
+                font-size: 18px;
+            }
+            
+            .chart-total {
+                font-size: 13px;
+            }
+            
+            .view-toggle {
+                padding: 5px 10px;
+                font-size: 12px;
+            }
+            
+            .nav-button {
+                padding: 5px 8px;
+                font-size: 13px;
+            }
+            
+            #date-picker,
+            #month-picker {
+                width: 130px;
+                font-size: 12px;
+            }
+            
+            /* Chart container for very small screens */
+            #consumption-chart {
+                height: 250px; /* Smaller height for small screens */
+            }
+            
+            .view-toggle {
+                padding: 5px 10px;
+                font-size: 12px;
+            }
+            
+            .nav-button {
+                padding: 5px 8px;
+                font-size: 13px;
+            }
+            
+            #date-picker,
+            #month-picker {
+                width: 130px;
+                font-size: 12px;
+                padding: 5px;
+            }
+            
+            .chart-total {
+                font-size: 13px;
+            }
+            
+            #pie-chart-canvas,
+            #total-pie-chart-canvas {
+                max-height: 250px !important;
+            }
+            
+            .tooltip-container .tooltip-text {
+                width: 160px;
+                margin-left: -80px;
+                font-size: 10px;
             }
         }
     </style>
@@ -239,7 +460,7 @@
     <div class="section-box">
         <div class="chart-header">
             <h3>Energy Consumption</h3>
-            <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div class="chart-controls">
                 <div class="view-selector">
                     <button id="daily-view" class="view-toggle active">Daily View</button>
                     <button id="monthly-view" class="view-toggle">Monthly View</button>
@@ -727,6 +948,9 @@
         
         // Create new chart
         const ctx = canvasElement.getContext('2d');
+        const isMobile = window.innerWidth <= 768;
+        const isSmallMobile = window.innerWidth <= 480;
+        
         consumptionChart = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -735,12 +959,18 @@
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false, // Allow container to control height
                 scales: {
                     x: {
                         stacked: true,
                         title: {
                             display: true,
                             text: viewType === 'daily' ? 'Hour' : 'Day'
+                        },
+                        ticks: {
+                            font: {
+                                size: isMobile ? 10 : 12
+                            }
                         }
                     },
                     y: {
@@ -748,13 +978,23 @@
                         title: {
                             display: true,
                             text: 'Energy (kWh)'
+                        },
+                        ticks: {
+                            font: {
+                                size: isMobile ? 10 : 12
+                            }
                         }
                     }
                 },
                 plugins: {
                     legend: {
                         display: true,
-                        position: 'top'
+                        position: 'top',
+                        labels: {
+                            font: {
+                                size: isMobile ? 10 : 12
+                            }
+                        }
                     },
                     tooltip: {
                         mode: 'index',

@@ -99,6 +99,108 @@
             align-items: center;
             margin-bottom: 10px;
         }
+        
+        /* Mobile responsive styles */
+        @media screen and (max-width: 768px) {
+            .search-input {
+                width: 100%;
+                margin-right: 0;
+                margin-bottom: 8px;
+                font-size: 16px; /* Prevents zoom on iOS */
+                padding: 10px;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+            
+            .auto-refresh-checkbox {
+                margin-bottom: 0;
+                align-self: flex-start;
+            }
+            
+            .table-container {
+                max-height: 60vh;
+                overflow-x: auto;
+            }
+            
+            .log-table {
+                font-size: 12px;
+                min-width: 600px; /* Ensure table doesn't get too cramped */
+            }
+            
+            .log-table th,
+            .log-table td {
+                padding: 4px;
+                white-space: nowrap;
+            }
+            
+            .log-level {
+                font-size: 10px;
+                padding: 1px 3px;
+            }
+            
+            /* Make certain columns more mobile-friendly */
+            .log-table th:first-child,
+            .log-table td:first-child {
+                min-width: 100px; /* Timestamp column */
+            }
+            
+            .log-table th:nth-child(2),
+            .log-table td:nth-child(2) {
+                min-width: 60px; /* Level column */
+            }
+            
+            .log-table th:last-child,
+            .log-table td:last-child {
+                min-width: 200px; /* Message column */
+                white-space: normal;
+                word-break: break-word;
+            }
+        }
+        
+        @media screen and (max-width: 480px) {
+            .search-input {
+                font-size: 14px;
+                padding: 8px;
+            }
+            
+            .table-container {
+                max-height: 50vh;
+            }
+            
+            .log-table {
+                font-size: 11px;
+                min-width: 500px;
+            }
+            
+            .log-table th,
+            .log-table td {
+                padding: 3px;
+            }
+            
+            .log-level {
+                font-size: 9px;
+                padding: 1px 2px;
+            }
+            
+            .log-table th:first-child,
+            .log-table td:first-child {
+                min-width: 80px;
+            }
+            
+            .log-table th:nth-child(2),
+            .log-table td:nth-child(2) {
+                min-width: 50px;
+            }
+            
+            .log-table th:last-child,
+            .log-table td:last-child {
+                min-width: 150px;
+            }
+        }
 
         .filter-buttons {
             display: flex;
