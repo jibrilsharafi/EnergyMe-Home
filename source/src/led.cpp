@@ -181,7 +181,7 @@ namespace Led
             return false;
         }
 
-        _brightness = preferences.getUInt(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS_PERCENT);
+        _brightness = preferences.getUChar(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS_PERCENT);
         preferences.end();
 
         // Validate loaded value is within acceptable range

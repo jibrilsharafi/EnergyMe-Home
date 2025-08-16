@@ -79,7 +79,10 @@ namespace CustomServer
     static void _serveOtaUploadEndpoint();
     static void _serveOtaStatusEndpoint();
     static void _serveOtaRollbackEndpoint();
+    #ifndef HAS_SECRETS
+    static bool _fetchGitHubReleaseInfo(JsonDocument &doc);
     static int _compareVersions(const char* current, const char* available);
+    #endif
     static void _serveFirmwareStatusEndpoint();
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request);
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
@@ -997,6 +1000,7 @@ namespace CustomServer
         });
     }
 
+    #ifndef HAS_SECRETS
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc) // Used only if no secrets are compiled
     {
         HTTPClient http;
@@ -1079,6 +1083,7 @@ namespace CustomServer
         if (currentMinor != availableMinor) return currentMinor - availableMinor;
         return currentPatch - availablePatch;
     }
+    #endif
 
     static void _serveFirmwareStatusEndpoint()
     {
@@ -1839,12 +1844,12 @@ namespace CustomServer
                 doc.set(json);
 
                 // Check if brightness field is provided and is a number
-                if (!doc["brightness"].is<uint32_t>()) {
+                if (!doc["brightness"].is<uint8_t>()) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid brightness parameter");
                     return;
                 }
 
-                uint32_t brightness = doc["brightness"].as<uint32_t>();
+                uint8_t brightness = doc["brightness"].as<uint8_t>();
 
                 // Validate brightness range
                 if (!Led::isBrightnessValid(brightness)) {
