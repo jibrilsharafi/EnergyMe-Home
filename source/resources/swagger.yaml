@@ -1538,7 +1538,7 @@ paths:
         - name: index
           in: query
           required: false
-          description: Channel index (0-16). If omitted, returns all channels.
+          description: Channel index (0-16). If omitted, returns all active channels.
           schema:
             type: integer
             minimum: 0

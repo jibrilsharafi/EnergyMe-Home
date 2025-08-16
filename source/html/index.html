@@ -54,6 +54,16 @@
             padding: 10px;
             text-align: center;
         }
+        
+        .channel-box.main-channel {
+            border: 3px solid #007bff;
+            background-color: #f8f9ff;
+        }
+        
+        .channel-box.other-channel {
+            border: 2px solid #ffc107;
+            background-color: #fffdf0;
+        }
 
         .channel-label {
             font-size: 24px;
@@ -78,10 +88,100 @@
             color: #333;
         }
         
+        .chart-total {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .chart-total .total-value {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .tooltip-container {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .tooltip-container .tooltip-text {
+            visibility: hidden;
+            width: 280px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 12px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -140px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .tooltip-container .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+        
+        .tooltip-container:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        .info-icon {
+            color: #666;
+            font-size: 14px;
+            margin-left: 4px;
+            cursor: help;
+        }
+        
         .date-selector {
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+        
+        .view-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .view-toggle {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .view-toggle.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        
+        .view-toggle:hover {
+            background: #e9ecef;
+        }
+        
+        .view-toggle.active:hover {
+            background: #0056b3;
         }
         
         .nav-button {
@@ -138,11 +238,18 @@
 
     <div class="section-box">
         <div class="chart-header">
-            <h3>Daily Energy Consumption</h3>
-            <div class="date-selector">
-                <input type="date" id="date-picker" />
-                <button id="prev-day" class="nav-button">◀</button>
-                <button id="next-day" class="nav-button">▶</button>
+            <h3>Energy Consumption</h3>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div class="view-selector">
+                    <button id="daily-view" class="view-toggle active">Daily View</button>
+                    <button id="monthly-view" class="view-toggle">Monthly View</button>
+                </div>
+                <div class="date-selector">
+                    <input type="date" id="date-picker" />
+                    <input type="month" id="month-picker" style="display: none;" />
+                    <button id="prev-period" class="nav-button">◀</button>
+                    <button id="next-period" class="nav-button">▶</button>
+                </div>
             </div>
         </div>
         <div id="consumption-chart" style="position: relative;">
@@ -156,10 +263,25 @@
 
     <div class="section-box">
         <div class="chart-header">
-            <h3>Daily Energy Distribution</h3>
+            <h3 id="pie-chart-title">Daily Energy Distribution</h3>
+        </div>
+        <div class="chart-total" id="pie-chart-total">
+            Total: <span class="total-value" id="pie-chart-total-value">0.0 kWh</span>
         </div>
         <div id="pie-chart">
             <canvas id="pie-chart-canvas"></canvas>
+        </div>
+    </div>
+
+    <div class="section-box">
+        <div class="chart-header">
+            <h3>Total Energy Distribution (Since Installation)</h3>
+        </div>
+        <div class="chart-total" id="total-pie-chart-total">
+            Lifetime Total: <span class="total-value" id="total-pie-chart-total-value">0.0 kWh</span>
+        </div>
+        <div id="total-pie-chart">
+            <canvas id="total-pie-chart-canvas"></canvas>
         </div>
     </div>
 
@@ -177,9 +299,13 @@
     var channelData = {};
     var meterData = {};
     var availableDates = [];
+    var availableMonths = [];
     var currentDate = null;
+    var currentMonth = null;
+    var currentView = 'daily'; // 'daily' or 'monthly'
     var consumptionChart = null;
     var pieChart = null;
+    var totalPieChart = null;
 
     // Initialize page
     async function initializePage() {
@@ -199,9 +325,12 @@
             // Set up date picker with most recent date
             if (availableDates.length > 0) {
                 currentDate = availableDates[availableDates.length - 1];
+                currentMonth = availableMonths[availableMonths.length - 1];
                 document.getElementById('date-picker').value = currentDate;
+                document.getElementById('month-picker').value = currentMonth;
                 updateNavigationButtons();
                 await loadAndDisplayCharts();
+                await updateTotalPieChart();
             } else {
                 showNoDataMessage();
             }
@@ -222,79 +351,222 @@
                 .filter(filename => filename.startsWith('energy/') && filename.endsWith('.csv'))
                 .map(filename => filename.replace('energy/', '').replace('.csv', ''))
                 .sort();
+            
+            // Extract unique months
+            availableMonths = [...new Set(availableDates.map(date => date.substring(0, 7)))].sort();
         } catch (error) {
             console.error('Error loading available dates:', error);
             availableDates = [];
+            availableMonths = [];
         }
     }
 
     function setupEventListeners() {
+        // View toggle buttons
+        document.getElementById('daily-view').addEventListener('click', () => {
+            switchView('daily');
+        });
+        
+        document.getElementById('monthly-view').addEventListener('click', () => {
+            switchView('monthly');
+        });
+        
         // Date picker change
         document.getElementById('date-picker').addEventListener('change', async (e) => {
             currentDate = e.target.value;
             updateNavigationButtons();
             await loadAndDisplayCharts();
         });
+        
+        // Month picker change
+        document.getElementById('month-picker').addEventListener('change', async (e) => {
+            currentMonth = e.target.value;
+            updateNavigationButtons();
+            await loadAndDisplayCharts();
+        });
 
         // Navigation buttons
-        document.getElementById('prev-day').addEventListener('click', async () => {
-            const currentIndex = availableDates.indexOf(currentDate);
-            if (currentIndex > 0) {
-                currentDate = availableDates[currentIndex - 1];
-                document.getElementById('date-picker').value = currentDate;
-                updateNavigationButtons();
-                await loadAndDisplayCharts();
+        document.getElementById('prev-period').addEventListener('click', async () => {
+            if (currentView === 'daily') {
+                const currentIndex = availableDates.indexOf(currentDate);
+                if (currentIndex > 0) {
+                    currentDate = availableDates[currentIndex - 1];
+                    document.getElementById('date-picker').value = currentDate;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
+            } else {
+                const currentIndex = availableMonths.indexOf(currentMonth);
+                if (currentIndex > 0) {
+                    currentMonth = availableMonths[currentIndex - 1];
+                    document.getElementById('month-picker').value = currentMonth;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
             }
         });
 
-        document.getElementById('next-day').addEventListener('click', async () => {
-            const currentIndex = availableDates.indexOf(currentDate);
-            if (currentIndex < availableDates.length - 1) {
-                currentDate = availableDates[currentIndex + 1];
-                document.getElementById('date-picker').value = currentDate;
-                updateNavigationButtons();
-                await loadAndDisplayCharts();
+        document.getElementById('next-period').addEventListener('click', async () => {
+            if (currentView === 'daily') {
+                const currentIndex = availableDates.indexOf(currentDate);
+                if (currentIndex < availableDates.length - 1) {
+                    currentDate = availableDates[currentIndex + 1];
+                    document.getElementById('date-picker').value = currentDate;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
+            } else {
+                const currentIndex = availableMonths.indexOf(currentMonth);
+                if (currentIndex < availableMonths.length - 1) {
+                    currentMonth = availableMonths[currentIndex + 1];
+                    document.getElementById('month-picker').value = currentMonth;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
             }
         });
+    }
+    
+    function switchView(view) {
+        currentView = view;
+        
+        // Update button states
+        document.getElementById('daily-view').classList.toggle('active', view === 'daily');
+        document.getElementById('monthly-view').classList.toggle('active', view === 'monthly');
+        
+        // Show/hide appropriate date pickers
+        document.getElementById('date-picker').style.display = view === 'daily' ? 'block' : 'none';
+        document.getElementById('month-picker').style.display = view === 'monthly' ? 'block' : 'none';
+        
+        // Update chart title
+        const title = view === 'daily' ? 'Daily Energy Distribution' : 'Monthly Energy Distribution';
+        document.getElementById('pie-chart-title').textContent = title;
+        
+        updateNavigationButtons();
+        loadAndDisplayCharts();
     }
 
     function updateNavigationButtons() {
-        const currentIndex = availableDates.indexOf(currentDate);
-        document.getElementById('prev-day').disabled = currentIndex <= 0;
-        document.getElementById('next-day').disabled = currentIndex >= availableDates.length - 1;
+        if (currentView === 'daily') {
+            const currentIndex = availableDates.indexOf(currentDate);
+            document.getElementById('prev-period').disabled = currentIndex <= 0;
+            document.getElementById('next-period').disabled = currentIndex >= availableDates.length - 1;
+        } else {
+            const currentIndex = availableMonths.indexOf(currentMonth);
+            document.getElementById('prev-period').disabled = currentIndex <= 0;
+            document.getElementById('next-period').disabled = currentIndex >= availableMonths.length - 1;
+        }
     }
 
     async function loadAndDisplayCharts() {
-        if (!currentDate) return;
+        if (currentView === 'daily' && !currentDate) return;
+        if (currentView === 'monthly' && !currentMonth) return;
 
         try {
             showLoadingMessage();
             
-            // Load energy data for the selected date
-            const filename = `energy/${currentDate}.csv`;
-            const csvData = await energyApi.getFileAsText(filename);
-            
-            // Parse CSV data
-            const energyData = parseCsvEnergyData(csvData);
-            
-            // Calculate hourly consumption and total consumption
-            const hourlyConsumption = calculateHourlyConsumption(energyData);
-            const totalConsumption = calculateTotalConsumption(energyData);
-            
-            // Restore chart canvases before updating
-            restoreChartCanvases();
-            
-            // Update charts
-            updateConsumptionChart(hourlyConsumption);
-            updatePieChart(totalConsumption);
-            
-            // Set up CSV download
-            setupCsvDownload(hourlyConsumption);
+            if (currentView === 'daily') {
+                await loadDailyCharts();
+            } else {
+                await loadMonthlyCharts();
+            }
             
         } catch (error) {
-            console.error('Error loading charts for date:', currentDate, error);
-            showErrorMessage(`Failed to load energy data for ${currentDate}`);
+            console.error('Error loading charts:', error);
+            const period = currentView === 'daily' ? currentDate : currentMonth;
+            showErrorMessage(`Failed to load energy data for ${period}`);
         }
+    }
+    
+    async function loadDailyCharts() {
+        // Get required UTC dates for the selected local date
+        const requiredDates = getRequiredDatesForLocal(currentDate);
+        
+        let allEnergyData = [];
+        
+        // Load data from all required UTC dates
+        for (const utcDate of requiredDates) {
+            if (availableDates.includes(utcDate)) {
+                try {
+                    const filename = `energy/${utcDate}.csv`;
+                    const csvData = await energyApi.getFileAsText(filename);
+                    const energyData = parseCsvEnergyData(csvData);
+                    allEnergyData = allEnergyData.concat(energyData);
+                } catch (error) {
+                    console.warn(`Failed to load data for UTC date ${utcDate}:`, error);
+                }
+            }
+        }
+        
+        if (allEnergyData.length === 0) {
+            throw new Error('No data available for selected date');
+        }
+        
+        // Filter data to local day (00:00 to 23:59 local time)
+        const localDayStart = new Date(currentDate + 'T00:00:00');
+        const localDayEnd = new Date(currentDate + 'T23:59:59');
+        
+        const filteredData = allEnergyData.filter(entry => {
+            const entryDate = new Date(entry.timestamp);
+            return entryDate >= localDayStart && entryDate <= localDayEnd;
+        });
+        
+        // Calculate hourly consumption and total consumption
+        const hourlyConsumption = calculateHourlyConsumption(filteredData);
+        const totalConsumption = calculateTotalConsumption(filteredData);
+        
+        // Restore chart canvases before updating
+        restoreChartCanvases();
+        
+        // Update charts
+        updateConsumptionChart(hourlyConsumption, 'daily');
+        updatePieChart(totalConsumption);
+        
+        // Set up CSV download
+        setupCsvDownload(hourlyConsumption, 'daily');
+    }
+    
+    async function loadMonthlyCharts() {
+        // Get all dates for the selected month
+        const monthDates = availableDates.filter(date => date.startsWith(currentMonth));
+        
+        if (monthDates.length === 0) {
+            throw new Error('No data available for selected month');
+        }
+        
+        // Load data for all days in the month
+        const monthlyData = {};
+        const dailyConsumptions = {};
+        
+        for (const date of monthDates) {
+            try {
+                const filename = `energy/${date}.csv`;
+                const csvData = await energyApi.getFileAsText(filename);
+                const energyData = parseCsvEnergyData(csvData);
+                const dailyConsumption = calculateTotalConsumption(energyData);
+                
+                const day = date.substring(8, 10); // Extract day from YYYY-MM-DD
+                dailyConsumptions[day] = dailyConsumption;
+                
+                // Add to monthly totals
+                Object.keys(dailyConsumption).forEach(channel => {
+                    if (!monthlyData[channel]) monthlyData[channel] = 0;
+                    monthlyData[channel] += dailyConsumption[channel];
+                });
+            } catch (error) {
+                console.warn(`Failed to load data for ${date}:`, error);
+            }
+        }
+        
+        // Restore chart canvases before updating
+        restoreChartCanvases();
+        
+        // Update charts
+        updateConsumptionChart(dailyConsumptions, 'monthly');
+        updatePieChart(monthlyData);
+        
+        // Set up CSV download
+        setupCsvDownload(dailyConsumptions, 'monthly');
     }
 
     function parseCsvEnergyData(csvText) {
@@ -318,13 +590,14 @@
     function calculateHourlyConsumption(energyData) {
         const hourlyData = {};
         
-        // Group data by hour and channel
+        // Group data by local hour and channel
         energyData.forEach(entry => {
-            const hour = entry.timestamp.substring(11, 13); // Extract hour from ISO timestamp
-            if (!hourlyData[hour]) {
-                hourlyData[hour] = {};
+            const localDate = new Date(entry.timestamp);
+            const localHour = localDate.getHours().toString().padStart(2, '0'); // Convert to local time
+            if (!hourlyData[localHour]) {
+                hourlyData[localHour] = {};
             }
-            hourlyData[hour][entry.channel] = entry.activeImported;
+            hourlyData[localHour][entry.channel] = entry.activeImported;
         });
         
         // Calculate consumption (difference from previous hour) for each channel
@@ -401,34 +674,36 @@
         return totalConsumption;
     }
 
-    function updateConsumptionChart(hourlyConsumption) {
-        const hours = Object.keys(hourlyConsumption).sort();
+    function updateConsumptionChart(consumptionData, viewType) {
+        const periods = Object.keys(consumptionData).sort();
         
         // Get all channels except 'Other' first, then add 'Other' at the end
         const allChannels = new Set();
-        hours.forEach(hour => {
-            Object.keys(hourlyConsumption[hour]).forEach(channel => {
+        periods.forEach(period => {
+            Object.keys(consumptionData[period]).forEach(channel => {
                 if (channel !== 'Other') allChannels.add(channel);
             });
         });
         const channels = [...allChannels].sort((a, b) => parseInt(a) - parseInt(b));
-        if (hours.some(hour => hourlyConsumption[hour]['Other'])) {
+        if (periods.some(period => consumptionData[period]['Other'])) {
             channels.push('Other');
         }
         
         // Create datasets
-        const datasets = channels.map((channel, i) => {
-            const label = channel === 'Other' ? 'Other' : getChannelLabel(channel);
-            const data = hours.map(hour => {
-                const value = hourlyConsumption[hour][channel] || 0;
+        const datasets = channels.map((channel) => {
+            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
+            const data = periods.map(period => {
+                const value = consumptionData[period][channel] || 0;
                 return value.toFixed(3);
             });
+            
+            const color = getChannelColor(channel);
             
             return {
                 label: label,
                 data: data,
-                backgroundColor: colors[i % colors.length],
-                borderColor: colors[i % colors.length].replace('0.8', '1'),
+                backgroundColor: color,
+                borderColor: color.replace('0.8', '1'),
                 borderWidth: 1
             };
         });
@@ -445,12 +720,17 @@
             return;
         }
         
+        // Format labels based on view type
+        const labels = viewType === 'daily' 
+            ? periods.map(hour => `${hour}:00`)
+            : periods.map(day => day);
+        
         // Create new chart
         const ctx = canvasElement.getContext('2d');
         consumptionChart = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: hours.map(hour => `${hour}:00`),
+                labels: labels,
                 datasets: datasets
             },
             options: {
@@ -460,7 +740,7 @@
                         stacked: true,
                         title: {
                             display: true,
-                            text: 'Hour'
+                            text: viewType === 'daily' ? 'Hour' : 'Day'
                         }
                     },
                     y: {
@@ -490,17 +770,22 @@
         const values = Object.values(totalConsumption);
         const total = values.reduce((sum, value) => sum + value, 0);
         
+        // Update the total display
+        document.getElementById('pie-chart-total-value').textContent = `${total.toFixed(1)} kWh`;
+        
         if (total === 0) {
             showNoPieChartData();
             return;
         }
         
-        // Create labels with percentages
+        // Create labels with percentages and consistent colors
         const labels = channels.map((channel, i) => {
-            const label = channel === 'Other' ? 'Other' : getChannelLabel(channel);
+            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
             const percentage = ((values[i] / total) * 100).toFixed(1);
             return `${label} (${percentage}%)`;
         });
+        
+        const backgroundColors = channels.map(channel => getChannelColor(channel));
         
         // Destroy existing chart
         if (pieChart) {
@@ -522,7 +807,7 @@
                 labels: labels,
                 datasets: [{
                     data: values,
-                    backgroundColor: colors.slice(0, channels.length),
+                    backgroundColor: backgroundColors,
                     borderWidth: 2,
                     borderColor: '#fff'
                 }]
@@ -538,10 +823,17 @@
                         callbacks: {
                             label: function(context) {
                                 const label = channels[context.dataIndex];
-                                const channelLabel = label === 'Other' ? 'Other' : getChannelLabel(label);
+                                const channelLabel = label === 'Other' ? 'Other (Untracked)' : getChannelLabel(label);
                                 const value = context.parsed.toFixed(2);
                                 const percentage = ((context.parsed / total) * 100).toFixed(1);
                                 return `${channelLabel}: ${value} kWh (${percentage}%)`;
+                            },
+                            afterLabel: function(context) {
+                                const label = channels[context.dataIndex];
+                                if (label === 'Other') {
+                                    return 'Total consumption minus monitored channels';
+                                }
+                                return '';
                             }
                         }
                     }
@@ -556,15 +848,55 @@
         return channel ? channel.label : `Channel ${channelIndex}`;
     }
 
-    function setupCsvDownload(hourlyConsumption) {
+    function getChannelColor(channelIndex) {
+        if (channelIndex === 'Other') {
+            // Always use the last color for "Other"
+            return colors[colors.length - 1];
+        }
+        
+        // Use channel index to consistently assign colors
+        const index = parseInt(channelIndex);
+        return colors[index % (colors.length - 1)]; // Reserve last color for "Other"
+    }
+
+    function convertUtcToLocalDate(utcDateString) {
+        // Convert UTC date to local date, handling timezone differences
+        const utcDate = new Date(utcDateString + 'T00:00:00Z');
+        const localDate = new Date(utcDate.getTime() - utcDate.getTimezoneOffset() * 60000);
+        return localDate.toISOString().substring(0, 10);
+    }
+
+    function getRequiredDatesForLocal(localDateString) {
+        // For a local date, determine which UTC dates we need to query
+        // This handles cases where local timezone spans multiple UTC days
+        const localDate = new Date(localDateString + 'T00:00:00');
+        const localDateEnd = new Date(localDateString + 'T23:59:59');
+        
+        // Convert to UTC to see what UTC dates we need
+        const utcStart = new Date(localDate.getTime() + localDate.getTimezoneOffset() * 60000);
+        const utcEnd = new Date(localDateEnd.getTime() + localDateEnd.getTimezoneOffset() * 60000);
+        
+        const requiredDates = [];
+        const startDate = utcStart.toISOString().substring(0, 10);
+        const endDate = utcEnd.toISOString().substring(0, 10);
+        
+        requiredDates.push(startDate);
+        if (startDate !== endDate) {
+            requiredDates.push(endDate);
+        }
+        
+        return requiredDates;
+    }
+
+    function setupCsvDownload(consumptionData, viewType) {
         const downloadBtn = document.getElementById('download-csv');
         downloadBtn.onclick = function() {
-            const hours = Object.keys(hourlyConsumption).sort();
+            const periods = Object.keys(consumptionData).sort();
             const channels = new Set();
             
             // Get all channels
-            hours.forEach(hour => {
-                Object.keys(hourlyConsumption[hour]).forEach(channel => {
+            periods.forEach(period => {
+                Object.keys(consumptionData[period]).forEach(channel => {
                     channels.add(channel);
                 });
             });
@@ -577,12 +909,14 @@
             
             // Create CSV content
             let csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += "Hour," + channelArray.map(ch => getChannelLabel(ch)).join(",") + "\n";
+            const periodLabel = viewType === 'daily' ? 'Hour' : 'Day';
+            csvContent += periodLabel + "," + channelArray.map(ch => getChannelLabel(ch)).join(",") + "\n";
             
-            hours.forEach(hour => {
-                const row = [hour + ":00"];
+            periods.forEach(period => {
+                const periodDisplay = viewType === 'daily' ? period + ":00" : period;
+                const row = [periodDisplay];
                 channelArray.forEach(channel => {
-                    row.push((hourlyConsumption[hour][channel] || 0).toFixed(3));
+                    row.push((consumptionData[period][channel] || 0).toFixed(3));
                 });
                 csvContent += row.join(",") + "\n";
             });
@@ -590,12 +924,128 @@
             // Download file
             const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");
+            const dateStr = viewType === 'daily' ? currentDate : currentMonth;
+            const filename = `energy_consumption_${viewType}_${dateStr}.csv`;
             link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `energy_consumption_${currentDate}.csv`);
+            link.setAttribute("download", filename);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
         };
+    }
+    
+    async function updateTotalPieChart() {
+        try {
+            // Get total energy from current meter values
+            const totalConsumption = {};
+            
+            meterData.forEach(channel => {
+                if (channel.index === 0) return; // Skip total channel
+                const totalEnergy = channel.data.activeEnergyImported / 1000; // Convert to kWh
+                if (totalEnergy > 0) {
+                    totalConsumption[channel.index] = totalEnergy;
+                }
+            });
+            
+            // Add "Other" consumption
+            const totalChannel = meterData.find(ch => ch.index === 0);
+            if (totalChannel) {
+                const totalHouseConsumption = totalChannel.data.activeEnergyImported / 1000;
+                let trackedConsumption = 0;
+                
+                Object.values(totalConsumption).forEach(consumption => {
+                    trackedConsumption += consumption;
+                });
+                
+                totalConsumption['Other'] = Math.max(0, totalHouseConsumption - trackedConsumption);
+            }
+            
+            // Update total pie chart
+            updateTotalPieChartDisplay(totalConsumption);
+            
+        } catch (error) {
+            console.error('Error updating total pie chart:', error);
+            document.getElementById("total-pie-chart").innerHTML = 
+                '<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ Failed to load total consumption data</div>';
+        }
+    }
+    
+    function updateTotalPieChartDisplay(totalConsumption) {
+        const channels = Object.keys(totalConsumption);
+        const values = Object.values(totalConsumption);
+        const total = values.reduce((sum, value) => sum + value, 0);
+        
+        // Update the total display
+        document.getElementById('total-pie-chart-total-value').textContent = `${total.toFixed(1)} kWh`;
+        
+        if (total === 0) {
+            document.getElementById("total-pie-chart").innerHTML = 
+                '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 No total consumption data available.</div>';
+            return;
+        }
+        
+        // Create labels with percentages and consistent colors
+        const labels = channels.map((channel, i) => {
+            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
+            const percentage = ((values[i] / total) * 100).toFixed(1);
+            return `${label} (${percentage}%)`;
+        });
+        
+        const backgroundColors = channels.map(channel => getChannelColor(channel));
+        
+        // Destroy existing chart
+        if (totalPieChart) {
+            totalPieChart.destroy();
+        }
+        
+        // Make sure canvas exists
+        const canvasElement = document.getElementById('total-pie-chart-canvas');
+        if (!canvasElement) {
+            console.error('Total pie chart canvas element not found');
+            return;
+        }
+        
+        // Create new chart
+        const ctx = canvasElement.getContext('2d');
+        totalPieChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: backgroundColors,
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = channels[context.dataIndex];
+                                const channelLabel = label === 'Other' ? 'Other (Untracked)' : getChannelLabel(label);
+                                const value = context.parsed.toFixed(1);
+                                const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                return `${channelLabel}: ${value} kWh (${percentage}%)`;
+                            },
+                            afterLabel: function(context) {
+                                const label = channels[context.dataIndex];
+                                if (label === 'Other') {
+                                    return 'Total consumption minus monitored channels';
+                                }
+                                return '';
+                            }
+                        }
+                    }
+                }
+            }
+        });
     }
 
     function updateMeterData() {
@@ -605,20 +1055,82 @@
 
         let powerDataHtml = '';
         let totalPower = 0;
+        let trackedPower = 0;
+        let shouldRebuildChannels = false;
         
+        // Check if we need to rebuild the entire channels section
+        const existingChannels = document.getElementById("channels").children.length;
+        const expectedChannels = meterData.length + 1; // +1 for "Other"
+        
+        if (existingChannels !== expectedChannels) {
+            shouldRebuildChannels = true;
+        }
+        
+        // First, add the main channel (channel 0) with special styling
+        const mainChannel = meterData.find(ch => ch.index === 0);
+        if (mainChannel) {
+            const mainPower = mainChannel.data.activePower.toFixed(0);
+            totalPower = parseFloat(mainPower);
+            
+            if (shouldRebuildChannels) {
+                powerDataHtml += '<div class="channel-box main-channel">';
+                powerDataHtml += '<div class="channel-label">' + mainChannel.label + ' (Total)</div>';
+                powerDataHtml += '<div class="channel-value" id="main-channel-value">' + mainPower + ' W</div>';
+                powerDataHtml += '</div>';
+            } else {
+                const mainValueElement = document.getElementById("main-channel-value");
+                if (mainValueElement) {
+                    mainValueElement.textContent = mainPower + ' W';
+                }
+            }
+        }
+        
+        // Then add all other channels (excluding channel 0)
         meterData.forEach((channel, index) => {
-            if (index === 0) return; // Skip total channel for power display
+            if (channel.index === 0) return; // Skip total channel, already added above
             
             const activePower = channel.data.activePower.toFixed(0);
-            totalPower += parseFloat(activePower);
+            trackedPower += parseFloat(activePower);
             
-            powerDataHtml += '<div class="channel-box">';
-            powerDataHtml += '<div class="channel-label">' + channel.label + '</div>';
-            powerDataHtml += '<div class="channel-value">' + activePower + ' W</div>';
-            powerDataHtml += '</div>';
+            if (shouldRebuildChannels) {
+                powerDataHtml += '<div class="channel-box">';
+                powerDataHtml += '<div class="channel-label">' + channel.label + '</div>';
+                powerDataHtml += '<div class="channel-value" id="channel-' + channel.index + '-value">' + activePower + ' W</div>';
+                powerDataHtml += '</div>';
+            } else {
+                const channelValueElement = document.getElementById("channel-" + channel.index + "-value");
+                if (channelValueElement) {
+                    channelValueElement.textContent = activePower + ' W';
+                }
+            }
         });
+        
+        // Finally, add or update the computed "Other" channel
+        const otherPower = Math.max(0, totalPower - trackedPower);
+        if (otherPower > 0 || totalPower > 0) { // Show Other channel if there's any power or if main channel exists
+            if (shouldRebuildChannels) {
+                powerDataHtml += '<div class="channel-box other-channel">';
+                powerDataHtml += '<div class="channel-label">';
+                powerDataHtml += '<span class="tooltip-container">';
+                powerDataHtml += 'Other';
+                powerDataHtml += '<i class="fas fa-info-circle info-icon"></i>';
+                powerDataHtml += '<span class="tooltip-text">Untracked consumption: Total house consumption minus sum of all monitored channels</span>';
+                powerDataHtml += '</span>';
+                powerDataHtml += '</div>';
+                powerDataHtml += '<div class="channel-value" id="other-channel-value">' + otherPower.toFixed(0) + ' W</div>';
+                powerDataHtml += '</div>';
+            } else {
+                const otherValueElement = document.getElementById("other-channel-value");
+                if (otherValueElement) {
+                    otherValueElement.textContent = otherPower.toFixed(0) + ' W';
+                }
+            }
+        }
 
-        document.getElementById("channels").innerHTML = powerDataHtml;
+        // Only rebuild the entire HTML if needed
+        if (shouldRebuildChannels) {
+            document.getElementById("channels").innerHTML = powerDataHtml;
+        }
     }
 
     function showLoadingMessage() {
@@ -654,6 +1166,9 @@
         // Restore pie chart canvas
         const pieChartDiv = document.getElementById("pie-chart");
         pieChartDiv.innerHTML = '<canvas id="pie-chart-canvas"></canvas>';
+        
+        // Note: Total pie chart is not restored here since it should only load once on page initialization
+        // and represents lifetime data that doesn't need to be redrawn during chart interactions
     }
 
     async function fetchFirmwareUpdateInfo() {
@@ -677,6 +1192,8 @@
             try {
                 meterData = await energyApi.getMeterValues();
                 updateMeterData();
+                // Note: Total pie chart is only updated on page load, not in real-time
+                // since it represents lifetime consumption which changes slowly
             } catch (error) {
                 console.error('Error updating meter data:', error);
             }
