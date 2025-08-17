@@ -725,12 +725,14 @@
         }
         
         // Filter data to local day (00:00 to 23:59 local time)
+        // Both UTC timestamps from CSV and local day boundaries get converted to the same local timezone by JavaScript
         const localDayStart = new Date(currentDate + 'T00:00:00');
-        const localDayEnd = new Date(currentDate + 'T23:59:59');
+        const localDayEnd = new Date(currentDate + 'T23:59:59.999');
         
         const filteredData = allEnergyData.filter(entry => {
-            const entryDate = new Date(entry.timestamp);
-            return entryDate >= localDayStart && entryDate <= localDayEnd;
+            // Convert UTC timestamp to local time Date object for comparison
+            const entryLocalDate = new Date(entry.timestamp);
+            return entryLocalDate >= localDayStart && entryLocalDate <= localDayEnd;
         });
         
         // Calculate hourly consumption and total consumption
@@ -810,34 +812,41 @@
     }
 
     function calculateHourlyConsumption(energyData) {
-        const hourlyData = {};
+        // Sort all data chronologically first
+        const sortedData = energyData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         
-        // Group data by local hour and channel
-        energyData.forEach(entry => {
-            const localDate = new Date(entry.timestamp);
-            const localHour = localDate.getHours().toString().padStart(2, '0'); // Convert to local time
-            if (!hourlyData[localHour]) {
-                hourlyData[localHour] = {};
+        // Group data by channel and create chronological sequences
+        const channelSequences = {};
+        sortedData.forEach(entry => {
+            if (!channelSequences[entry.channel]) {
+                channelSequences[entry.channel] = [];
             }
-            hourlyData[localHour][entry.channel] = entry.activeImported;
+            channelSequences[entry.channel].push({
+                timestamp: entry.timestamp,
+                energy: entry.activeImported,
+                localHour: new Date(entry.timestamp).getHours().toString().padStart(2, '0')
+            });
         });
         
-        // Calculate consumption (difference from previous hour) for each channel
-        const hours = Object.keys(hourlyData).sort();
+        // Calculate hourly consumption by finding differences between consecutive readings
         const consumption = {};
         
-        for (let i = 0; i < hours.length; i++) {
-            const hour = hours[i];
-            const prevHour = i > 0 ? hours[i - 1] : null;
+        Object.keys(channelSequences).forEach(channel => {
+            const sequence = channelSequences[channel];
             
-            consumption[hour] = {};
-            
-            Object.keys(hourlyData[hour]).forEach(channel => {
-                const currentEnergy = hourlyData[hour][channel];
-                const prevEnergy = prevHour ? (hourlyData[prevHour][channel] || 0) : 0;
-                consumption[hour][channel] = Math.max(0, (currentEnergy - prevEnergy) / 1000); // Convert Wh to kWh
-            });
-        }
+            for (let i = 1; i < sequence.length; i++) {
+                const current = sequence[i];
+                const previous = sequence[i - 1];
+                
+                const hourlyConsumption = Math.max(0, (current.energy - previous.energy) / 1000); // Convert Wh to kWh
+                
+                // Add to the hour when the consumption ended
+                if (!consumption[current.localHour]) {
+                    consumption[current.localHour] = {};
+                }
+                consumption[current.localHour][channel] = hourlyConsumption;
+            }
+        });
         
         // Add "Other" consumption (channel 0 minus sum of all other channels)
         Object.keys(consumption).forEach(hour => {
@@ -1100,22 +1109,17 @@
         return colors[index % (colors.length - 1)]; // Reserve last color for "Other"
     }
 
-    function convertUtcToLocalDate(utcDateString) {
-        // Convert UTC date to local date, handling timezone differences
-        const utcDate = new Date(utcDateString + 'T00:00:00Z');
-        const localDate = new Date(utcDate.getTime() - utcDate.getTimezoneOffset() * 60000);
-        return localDate.toISOString().substring(0, 10);
-    }
-
     function getRequiredDatesForLocal(localDateString) {
         // For a local date, determine which UTC dates we need to query
         // This handles cases where local timezone spans multiple UTC days
         const localDate = new Date(localDateString + 'T00:00:00');
         const localDateEnd = new Date(localDateString + 'T23:59:59');
         
-        // Convert to UTC to see what UTC dates we need
-        const utcStart = new Date(localDate.getTime() + localDate.getTimezoneOffset() * 60000);
-        const utcEnd = new Date(localDateEnd.getTime() + localDateEnd.getTimezoneOffset() * 60000);
+        // Convert local time to UTC to see what UTC dates we need
+        // getTimezoneOffset() returns offset in minutes (positive = west of UTC, negative = east of UTC)
+        // To convert local to UTC: subtract the offset
+        const utcStart = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000);
+        const utcEnd = new Date(localDateEnd.getTime() - localDateEnd.getTimezoneOffset() * 60000);
         
         const requiredDates = [];
         const startDate = utcStart.toISOString().substring(0, 10);
