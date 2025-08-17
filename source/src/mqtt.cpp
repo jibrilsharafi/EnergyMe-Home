@@ -67,6 +67,7 @@ namespace Mqtt
 
     // Task variables
     static TaskHandle_t _taskHandle = nullptr;
+    static bool _lastLoopToPublishData = false;
     static bool _taskShouldRun = false;
 
     // Thread safety
@@ -702,6 +703,7 @@ namespace Mqtt
         LOG_DEBUG("MQTT task started");
         
         _taskShouldRun = true;
+        _lastLoopToPublishData = false;
 
         while (_taskShouldRun)
         {
@@ -716,8 +718,17 @@ namespace Mqtt
                 }
             }
             
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
-            if (notificationValue > 0) { _taskShouldRun = false; break; }
+            // If we receive a signal to stop the task, we try to publish all the data and flushing the queues so we avoid losing data
+            if (_lastLoopToPublishData) {
+                _lastLoopToPublishData = false;
+                _taskShouldRun = false;
+            } else if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL)) > 0) { 
+                _lastLoopToPublishData = true; 
+                _publishMqtt.meter = true;
+                _publishMqtt.systemDynamic = true;
+                _publishMqtt.statistics = true;
+                break; 
+            }
         }
         
         _clientMqtt.disconnect();
@@ -982,12 +993,9 @@ namespace Mqtt
     // ====================
 
     static void _publishMeter() {
-        // Check if we have any da ta to publish
-        MeterValues meterValuesZeroChannel;
-        Ade7953::getMeterValues(meterValuesZeroChannel, 0);
+        // Check if we have any data to publish
         UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
-        
-        bool hasVoltageData = (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0);
+
         bool hasQueueData = (queueSize > 0 && _sendPowerDataEnabled); // Only consider queue if power data is enabled
         bool hasChannelData = false;
         
@@ -999,7 +1007,7 @@ namespace Mqtt
         }
         
         // Always publish if we have voltage or channel energy data, queue data is optional
-        if (!hasVoltageData && !hasChannelData && !hasQueueData) {
+        if (!hasChannelData && !hasQueueData) {
             LOG_VERBOSE("No valid meter data to publish");
             return;
         }
@@ -1232,6 +1240,12 @@ namespace Mqtt
                 }
             }
 
+            // If we exceed the maximum number of connection attempts, we restart the device
+            if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPTS) {
+                LOG_ERROR("Exceeded maximum MQTT connection attempts. Restarting device...");
+                setRestartSystem("Exceeded maximum MQTT connection attempts");
+            }
+
             uint64_t backoffDelay = calculateExponentialBackoff(_mqttConnectionAttempt, MQTT_INITIAL_RETRY_INTERVAL, MQTT_MAX_RETRY_INTERVAL, MQTT_RETRY_MULTIPLIER);
             _nextMqttConnectionAttemptMillis = millis64() + backoffDelay;
             LOG_WARNING("Failed to connect to MQTT (attempt %lu). Reason: %s. Next attempt in %llu ms", _mqttConnectionAttempt, _getMqttStateReason(currentState), backoffDelay);
@@ -1427,8 +1441,8 @@ namespace Mqtt
         
         // Always add voltage data if available (independent of sendPowerDataEnabled)
         MeterValues meterValuesZeroChannel;
-        Ade7953::getMeterValues(meterValuesZeroChannel, 0);
-        if (meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
+        
+        if (Ade7953::getMeterValues(meterValuesZeroChannel, 0) && meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
             JsonObject voltageObj = jsonDocument.add<JsonObject>();
             voltageObj["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
             voltageObj["voltage"] = meterValuesZeroChannel.voltage;
@@ -1438,21 +1452,20 @@ namespace Mqtt
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 MeterValues meterValues;
-                Ade7953::getMeterValues(meterValues, i);
 
-                if (meterValues.lastUnixTimeMilliseconds == 0) {
-                    LOG_DEBUG("Meter values for channel %d have zero unixTime, skipping...", i);
+                if (!Ade7953::getMeterValues(meterValues, i)) {
+                    LOG_DEBUG("Failed to get meter values for channel %d. Skipping for meter publishing", i);
                     continue;
                 }
-
+                
                 JsonObject channelObj = jsonDocument.add<JsonObject>();
                 channelObj["unixTime"] = meterValues.lastUnixTimeMilliseconds;
                 channelObj["channel"] = i;
-                channelObj["activeEnergyImported"] = meterValues.activeEnergyImported;
-                channelObj["activeEnergyExported"] = meterValues.activeEnergyExported;
-                channelObj["reactiveEnergyImported"] = meterValues.reactiveEnergyImported;
-                channelObj["reactiveEnergyExported"] = meterValues.reactiveEnergyExported;
-                channelObj["apparentEnergy"] = meterValues.apparentEnergy;
+                channelObj["activeEnergyImported"] = roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS);
+                channelObj["activeEnergyExported"] = roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS);
+                channelObj["reactiveEnergyImported"] = roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS);
+                channelObj["reactiveEnergyExported"] = roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS);
+                channelObj["apparentEnergy"] = roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS);
             }
         }
         
@@ -1469,8 +1482,8 @@ namespace Mqtt
                 JsonArray powerArray = jsonDocument.add<JsonArray>();
                 powerArray.add(payloadMeter.unixTimeMs);
                 powerArray.add(payloadMeter.channel);
-                powerArray.add(payloadMeter.activePower);
-                powerArray.add(payloadMeter.powerFactor);
+                powerArray.add(roundToDecimals(payloadMeter.activePower, POWER_DECIMALS));
+                powerArray.add(roundToDecimals(payloadMeter.powerFactor, POWER_FACTOR_DECIMALS));
                 entriesAdded++;
 
                 // Check if we're approaching memory limits (using psram automatically)

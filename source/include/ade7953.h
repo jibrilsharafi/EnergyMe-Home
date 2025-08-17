@@ -358,7 +358,7 @@ struct CtSpecification
 
 struct ChannelData
 {
-  int32_t index;
+  uint8_t index;
   bool active;
   bool reverse;
   char label[NAME_BUFFER_SIZE];
@@ -467,17 +467,17 @@ namespace Ade7953
     // Channel data management
     bool isChannelActive(uint8_t channelIndex);
     bool hasChannelValidMeasurements(uint8_t channelIndex);
-    void getChannelLabel(uint8_t channelIndex, char* buffer, size_t bufferSize);
-    void getChannelData(ChannelData &channelData, uint8_t channelIndex);
-    void setChannelData(const ChannelData &channelData, uint8_t channelIndex);
+    void getChannelLabel(uint8_t channelIndex, char* buffer, size_t bufferSize); // No need for bool return, fallback is the default constructor value if getChannelData failed
+    bool getChannelData(ChannelData &channelData, uint8_t channelIndex);
+    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex);
     void resetChannelData(uint8_t channelIndex);
 
     // Channel data management - JSON operations
-    void getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex);
-    void getAllChannelDataAsJson(JsonDocument &jsonDocument);
+    bool getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex);
+    bool getAllChannelDataAsJson(JsonDocument &jsonDocument);
     bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial = false);
     void channelDataToJson(const ChannelData &channelData, JsonDocument &jsonDocument);
-    bool channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);
+    void channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);
 
     // Energy data management
     void resetEnergyValues();
@@ -491,9 +491,9 @@ namespace Ade7953
     );
 
     // Data output
-    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint8_t channelIndex);
-    void fullMeterValuesToJson(JsonDocument &jsonDocument);
-    void getMeterValues(MeterValues &meterValues, uint8_t channelIndex);
+    bool singleMeterValuesToJson(JsonDocument &jsonDocument, uint8_t channelIndex);
+    bool fullMeterValuesToJson(JsonDocument &jsonDocument);
+    bool getMeterValues(MeterValues &meterValues, uint8_t channelIndex);
 
     // Aggregated power calculations 
     float getAggregatedActivePower(bool includeChannel0 = true);

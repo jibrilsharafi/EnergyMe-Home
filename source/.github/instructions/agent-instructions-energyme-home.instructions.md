@@ -125,8 +125,7 @@ Provide project context and coding guidelines that AI should follow when generat
               // Task work here
               
               // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-              uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(TASK_INTERVAL_MS));
-              if (notificationValue > 0) {
+              if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(TASK_INTERVAL_MS)) > 0) {
                   taskShouldRun = false;
                   break;
               }

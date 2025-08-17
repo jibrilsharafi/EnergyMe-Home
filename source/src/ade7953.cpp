@@ -344,7 +344,7 @@ namespace Ade7953
 
         // Create the array of bytes to read (one element per each 8 bits)
         uint8_t response[nBits / 8];
-        for (uint32_t i = 0; i < nBits / 8; i++) {
+        for (uint8_t i = 0; i < nBits / 8; i++) {
             response[i] = SPI.transfer((uint8_t)(READ_TRANSFER)); // Read the data byte by byte
         }
 
@@ -677,33 +677,34 @@ namespace Ade7953
         ChannelData channelData;
         getChannelData(channelData, channelIndex);
 
-        snprintf(buffer, bufferSize, "%s", channelData.label);
+        snprintf(buffer, bufferSize, "%s", channelData.label); // Fallback is the default constructor value if getChannelData failed
     }
 
-    void getChannelData(ChannelData &channelData, uint8_t channelIndex) {
+    bool getChannelData(ChannelData &channelData, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
-            return;
+            return false;
         }
 
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
-            return;
+            return false;
         }
 
         channelData = _channelData[channelIndex];
         releaseMutex(&_channelDataMutex);
+        return true;
     }
 
-    void setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
+    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
-            return;
+            return false;
         }
 
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
-            return;
+            return false;
         }
 
         // Protect channel 0 from being disabled
@@ -723,6 +724,7 @@ namespace Ade7953
         #endif
 
         LOG_DEBUG("Successfully set channel data for channel %lu", channelIndex);
+        return true;
     }
 
     void resetChannelData(uint8_t channelIndex) {
@@ -742,23 +744,33 @@ namespace Ade7953
     // Channel data management - JSON operations
     // =========================================
 
-    void getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex) {
+    bool getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
-            return;
+            return false;
         }
 
         ChannelData channelData;
-        getChannelData(channelData, channelIndex);
+        if (!getChannelData(channelData, channelIndex)) {
+            LOG_WARNING("Failed to get channel data as JSON for channel %lu", channelIndex);
+            return false;
+        }
         channelDataToJson(channelData, jsonDocument);
+        return true;
     }
 
-    void getAllChannelDataAsJson(JsonDocument &jsonDocument) {
+    bool getAllChannelDataAsJson(JsonDocument &jsonDocument) {
         for (uint8_t channelIndex = 0; channelIndex < CHANNEL_COUNT; channelIndex++) {
             JsonDocument channelDoc;
-            getChannelDataAsJson(channelDoc, channelIndex);
+            if (!getChannelDataAsJson(channelDoc, channelIndex)) {
+                LOG_WARNING("Failed to get channel data as JSON for channel %lu", channelIndex);
+                continue;
+            }
             jsonDocument[channelIndex] = channelDoc;
         }
+
+        if (!jsonDocument.isNull() && jsonDocument.size() > 0) return true;
+        else return false;
     }
 
     bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial) {
@@ -770,19 +782,22 @@ namespace Ade7953
         uint8_t channelIndex = jsonDocument["index"].as<uint8_t>();
         
         if (!isChannelValid(channelIndex)) {
-            LOG_WARNING("Invalid channel index: %lu. Skipping setting data", channelIndex);
+            LOG_WARNING("Invalid channel index: %u. Skipping setting data", channelIndex);
             return false;
         }
 
         ChannelData channelData;
-        getChannelData(channelData, channelIndex);
-        
-        if (!channelDataFromJson(jsonDocument, channelData, partial)) {
-            LOG_ERROR("Failed to convert JSON to channel data");
+        if (!getChannelData(channelData, channelIndex)) {
+            LOG_WARNING("Failed to get channel data from JSON for channel %u", channelIndex);
             return false;
         }
-        
-        setChannelData(channelData, channelIndex);
+
+        channelDataFromJson(jsonDocument, channelData, partial);
+
+        if (!setChannelData(channelData, channelIndex)) {
+            LOG_WARNING("Failed to set channel data from JSON for channel %u", channelIndex);
+            return false;
+        }
 
         return true;
     }
@@ -791,20 +806,20 @@ namespace Ade7953
         jsonDocument["index"] = channelData.index;
         jsonDocument["active"] = channelData.active;
         jsonDocument["reverse"] = channelData.reverse;
-        jsonDocument["label"] = String(channelData.label); // FIXME: this is a temporary solution to be improved
+        jsonDocument["label"] = JsonString(channelData.label); // Ensure it is not a dangling pointer
         jsonDocument["phase"] = channelData.phase;
 
         jsonDocument["ctSpecification"]["currentRating"] = channelData.ctSpecification.currentRating;
         jsonDocument["ctSpecification"]["voltageOutput"] = channelData.ctSpecification.voltageOutput;
         jsonDocument["ctSpecification"]["scalingFraction"] = channelData.ctSpecification.scalingFraction;
 
-        LOG_VERBOSE("Successfully converted channel data to JSON for channel %lu", channelData.index);
+        LOG_VERBOSE("Successfully converted channel data to JSON for channel %u", channelData.index);
     }
 
-    bool channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial) {
+    void channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial) {
         if (partial) {
             // Update only fields that are present in JSON
-            if (jsonDocument["index"].is<uint32_t>()) channelData.index = jsonDocument["index"].as<uint32_t>();
+            if (jsonDocument["index"].is<uint8_t>()) channelData.index = jsonDocument["index"].as<uint8_t>();
             if (jsonDocument["active"].is<bool>()) channelData.active = jsonDocument["active"].as<bool>();
             if (jsonDocument["reverse"].is<bool>()) channelData.reverse = jsonDocument["reverse"].as<bool>();
             if (jsonDocument["label"].is<const char*>()) {
@@ -834,9 +849,6 @@ namespace Ade7953
             channelData.ctSpecification.voltageOutput = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
             channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
         }
-
-        LOG_DEBUG("Successfully converted JSON to channel data for channel %lu%s", channelData.index, partial ? " (partial)" : "");
-        return true;
     }
 
     // Energy data management
@@ -925,14 +937,17 @@ namespace Ade7953
     // Data output
     // ===========
 
-    void singleMeterValuesToJson(JsonDocument &jsonDocument, uint8_t channelIndex) { // Around 250 bytes per channel of meter values
+    bool singleMeterValuesToJson(JsonDocument &jsonDocument, uint8_t channelIndex) { // Around 250 bytes per channel of meter values
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %u", channelIndex);
-            return;
+            return false;
         }
 
         MeterValues meterValues;
-        getMeterValues(meterValues, channelIndex); // We use it here to ensure non-concurrent access
+        if (!getMeterValues(meterValues, channelIndex)) { // We use it here to ensure non-concurrent access
+            LOG_WARNING("Failed to get meter values for channel %d", channelIndex);
+            return false;
+        }
 
         // Reduce the decimals since we don't have or need too much precision, and we save on space
         jsonDocument["voltage"] = roundToDecimals(meterValues.voltage, VOLTAGE_DECIMALS);
@@ -946,40 +961,52 @@ namespace Ade7953
         jsonDocument["reactiveEnergyImported"] = roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS);
         jsonDocument["reactiveEnergyExported"] = roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS);
         jsonDocument["apparentEnergy"] = roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS);
+
+        return true;
     }
 
 
-    void fullMeterValuesToJson(JsonDocument &jsonDocument) {
+    bool fullMeterValuesToJson(JsonDocument &jsonDocument) {
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             // Here we also ensure the channel has valid measurements since we have the "duty" to pass all the correct data
             if (isChannelActive(i) && hasChannelValidMeasurements(i)) {
                 ChannelData channelData;
-                getChannelData(channelData, i);
+                if (!getChannelData(channelData, i)) {
+                    LOG_WARNING("Failed to get channel data for channel %u", i);
+                    continue;
+                }
 
                 JsonObject _jsonChannel = jsonDocument.add<JsonObject>();
                 _jsonChannel["index"] = i;
-                _jsonChannel["label"] = channelData.label;
+                _jsonChannel["label"] = JsonString(channelData.label); // Ensure the string is not a dangling pointer
                 _jsonChannel["phase"] = channelData.phase;
 
                 JsonDocument jsonData;
-                singleMeterValuesToJson(jsonData, i);
+                if (!singleMeterValuesToJson(jsonData, i)) {
+                    LOG_WARNING("Failed to convert single meter values to JSON for channel %d", i);
+                    continue;
+                }
                 _jsonChannel["data"] = jsonData.as<JsonObject>();
             }
         }
+
+        if (!jsonDocument.isNull() && jsonDocument.size() > 0) return true;
+        else return false;
     }
 
-    void getMeterValues(MeterValues &meterValues, uint8_t channelIndex) {
+    bool getMeterValues(MeterValues &meterValues, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
-            return;
+            return false;
         }
 
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire meter values mutex");
-            return;
+            return false;
         }
         meterValues = _meterValues[channelIndex];
         releaseMutex(&_meterValuesMutex);
+        return true;
     }
 
     // Aggregated power calculations 
@@ -1245,7 +1272,7 @@ namespace Ade7953
 
     Ade7953InterruptType _handleInterrupt() 
     {    
-        uint32_t statusA = readRegister(RSTIRQSTATA_32, BIT_32, false);
+        int32_t statusA = readRegister(RSTIRQSTATA_32, BIT_32, false);
         // No need to read for channel B (only channel A has the relevant information for use)
 
         if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
@@ -1482,8 +1509,7 @@ namespace Ade7953
                 if (isChannelActive(i)) _saveEnergyToPreferences(i);
             }
 
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_ENERGY_INTERVAL));
-            if (notificationValue > 0) {
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_ENERGY_INTERVAL)) > 0) {
                 _energySaveTaskShouldRun = false;
                 break;
             }
@@ -1530,8 +1556,7 @@ namespace Ade7953
             LOG_DEBUG("Waiting for %llu ms until next hour to save the hourly energy", msUntilNextHour);
 
             // Wait for the calculated time or stop notification
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS((uint32_t)msUntilNextHour)); // Needs to be casted to uint32_t otherwise it will crash
-            if (notificationValue > 0) {
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS((uint32_t)msUntilNextHour)) > 0) { // Needs to be casted to uint32_t otherwise it will crash
                 _hourlyCsvSaveTaskShouldRun = false;
                 break;
             }
@@ -1795,7 +1820,10 @@ namespace Ade7953
         char key[PREFERENCES_KEY_BUFFER_SIZE];
 
         ChannelData channelData;
-        getChannelData(channelData, channelIndex);
+        if (!getChannelData(channelData, channelIndex)) {
+            LOG_WARNING("Failed to get channel data for channel %u", channelIndex);
+            return false;
+        }
 
         // Save channel data
         snprintf(key, sizeof(key), CHANNEL_ACTIVE_KEY, channelIndex);
@@ -2001,7 +2029,10 @@ namespace Ade7953
         char key[PREFERENCES_KEY_BUFFER_SIZE];
 
         MeterValues meterValues;
-        getMeterValues(meterValues, channelIndex);
+        if (!getMeterValues(meterValues, channelIndex)) {
+            LOG_WARNING("Failed to get meter values for channel %d. Skipping energy save", channelIndex);
+            return;
+        }
 
         // Hereafter we optimize the flash writes by only saving if the value has changed significantly
         // Meter values are the real-time values, while energy values are the last saved values
@@ -2090,7 +2121,10 @@ namespace Ade7953
                 LOG_VERBOSE("Saving hourly energy data for channel %d: %s", i, _channelData[i].label);
 
                 MeterValues meterValues;
-                getMeterValues(meterValues, i);
+                if (!getMeterValues(meterValues, i)) {
+                    LOG_WARNING("Failed to get meter values for channel %d. Skipping hourly energy save", i);
+                    continue;
+                }
 
                 // Only save data if (absolute) energy values are above threshold
                 if (
@@ -2175,7 +2209,11 @@ namespace Ade7953
         uint64_t deltaMillis = millisRead - _meterValues[channelIndex].lastMillis;
 
         ChannelData channelData;
-        getChannelData(channelData, channelIndex);
+        if (!getChannelData(channelData, channelIndex)) {
+            LOG_WARNING("Failed to get channel data for channel %u", channelIndex);
+            _recordFailure();
+            return false;
+        }
 
         // We cannot put an higher limit here because if the channel happened to be disabled, then
         // enabled again, this would result in an infinite error.
@@ -2214,20 +2252,22 @@ namespace Ade7953
             if (ade7953Channel == Ade7953Channel::A) {
                 if (_interruptHandledChannelA) {
                     LOG_DEBUG("Tried to handle CYCEND interrupt for channel A, but it was already handled");
-                    return false; // Already handled, no need to read again
+                    return false; // Already handled, cannot read again
                 }
-                _interruptHandledChannelA = true;
             } else {
                 if (_interruptHandledChannelB) {
                     LOG_DEBUG("Tried to handle CYCEND interrupt for channel B, but it was already handled");
-                    return false; // Already handled, no need to read again
+                    return false; // Already handled, cannot read again
                 }
-                _interruptHandledChannelB = true;
             }
 
             activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1 : 1);
             reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1 : 1);
             apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb;
+
+            // Set the handling just after reading the energy values, to ensure 100% consistency
+            if (ade7953Channel == Ade7953Channel::A) _interruptHandledChannelA = true;
+            else _interruptHandledChannelB = true;
 
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
             // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
@@ -2456,7 +2496,10 @@ namespace Ade7953
         LOG_VERBOSE("Adding meter data to payload for channel %u", channelIndex);
 
         MeterValues meterValues;
-        getMeterValues(meterValues, channelIndex);
+        if (!getMeterValues(meterValues, channelIndex)) {
+            LOG_WARNING("Failed to get meter values for channel %d. Skipping payload addition", channelIndex);
+            return;
+        }
 
         if (!CustomTime::isUnixTimeValid(meterValues.lastUnixTimeMilliseconds)) {
             LOG_VERBOSE("Channel %d has invalid Unix time. Skipping payload addition", channelIndex);
@@ -2733,9 +2776,7 @@ namespace Ade7953
         
         LOG_DEBUG("Recording failure for ADE7953 communication");
 
-        if (_failureCount == 0) {
-            _firstFailureTime = millis64();
-        }
+        if (_failureCount == 0) _firstFailureTime = millis64();
 
         _failureCount++;
         statistics.ade7953ReadingCountFailure++;
@@ -2755,7 +2796,7 @@ namespace Ade7953
 
         if (_failureCount >= ADE7953_MAX_FAILURES_BEFORE_RESTART) {
             
-            LOG_FATAL("Too many failures (%d) in ADE7953 communication or readings. Resetting device...", _failureCount);
+            LOG_FATAL("Too many failures (%d) in ADE7953 communication or readings. Resetting device", _failureCount);
             setRestartSystem("Too many failures in ADE7953 communication or readings");
 
             // Reset the failure count and first failure time to avoid infinite loop of setting the restart
@@ -2915,13 +2956,16 @@ namespace Ade7953
 
     void _printMeterValues(uint8_t channelIndex) {
         MeterValues meterValues;
-        getMeterValues(meterValues, channelIndex);
-
         ChannelData channelData;
-        getChannelData(channelData, channelIndex);
+        
+        if (!getMeterValues(meterValues, channelIndex) ||
+            !getChannelData(channelData, channelIndex)) 
+        {
+            return;
+        }
 
         LOG_DEBUG(
-            "%s (%lu): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.1f%% || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
+            "%s (%u): %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.1f%% || %.3f Wh <- | %.3f Wh -> | %.3f VARh <- | %.3f VARh -> | %.3f VAh", 
             channelData.label,
             channelData.index,
             meterValues.voltage,

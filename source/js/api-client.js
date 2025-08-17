@@ -9,15 +9,35 @@ class EnergyMeAPI {
             'Content-Type': 'application/json',
             'Connection': 'close'  // Prevent keep-alive to reduce ESP32 load
         };
+        this.getTimeoutMs = 3000;
+        this.otherTimeoutMs = 5000;
+    }
+
+    /**
+     * Internal fetch with timeout
+     */
+    async _fetchWithTimeout(url, config, timeoutMs) {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        config.signal = controller.signal;
+        try {
+            const response = await fetch(url, config);
+            clearTimeout(id);
+            return response;
+        } catch (error) {
+            clearTimeout(id);
+            throw error;
+        }
     }
 
     /**
      * Make an API call (digest auth handled automatically by browser)
      * @param {string} endpoint - API endpoint (with or without /api/v1/ prefix)
      * @param {Object} options - Fetch options
+     * @param {number} timeoutMs - Timeout in milliseconds
      * @returns {Promise<Response>} - Fetch response
      */
-    async apiCall(endpoint, options = {}) {
+    async apiCall(endpoint, options = {}, timeoutMs = this.otherTimeoutMs) {
         // Normalize endpoint to use /api/v1/ prefix if not already present
         let url = endpoint;
         if (!endpoint.startsWith('/api/v1/')) {
@@ -33,7 +53,7 @@ class EnergyMeAPI {
         };
 
         try {
-            const response = await fetch(url, config);
+            const response = await this._fetchWithTimeout(url, config, timeoutMs);
             
             // For digest auth, 401 means credentials are required (browser will prompt)
             if (response.status === 401) {
@@ -56,7 +76,7 @@ class EnergyMeAPI {
      */
     async get(endpoint, options = {}) {
         const { responseType = 'json' } = options;
-        const response = await this.apiCall(endpoint, { method: 'GET' });
+        const response = await this.apiCall(endpoint, { method: 'GET' }, this.getTimeoutMs);
         
         if (!response.ok) {
             throw new Error(`GET ${endpoint} failed: ${response.status}`);
@@ -85,7 +105,7 @@ class EnergyMeAPI {
             body: data ? JSON.stringify(data) : null
         };
 
-        const response = await this.apiCall(endpoint, options);
+        const response = await this.apiCall(endpoint, options, this.otherTimeoutMs);
         
         if (!response.ok) {
             const errorText = await response.text();
@@ -105,7 +125,7 @@ class EnergyMeAPI {
         const response = await this.apiCall(endpoint, {
             method: 'PUT',
             body: JSON.stringify(data)
-        });
+        }, this.otherTimeoutMs);
         
         if (!response.ok) {
             const errorText = await response.text();
@@ -125,7 +145,7 @@ class EnergyMeAPI {
         const response = await this.apiCall(endpoint, {
             method: 'PATCH',
             body: JSON.stringify(data)
-        });
+        }, this.otherTimeoutMs);
         
         if (!response.ok) {
             const errorText = await response.text();

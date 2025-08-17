@@ -170,6 +170,9 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
 }
 
 void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
+    // No need to use String for dandling pointer data since most of it here is
+    // coming from compiled static variables
+        
     // Product
     doc["product"]["companyName"] = info.companyName;
     doc["product"]["productName"] = info.productName;
@@ -260,13 +263,13 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     
     // Network
     doc["network"]["wifiConnected"] = info.wifiConnected;
-    doc["network"]["wifiSsid"] = info.wifiSsid;
-    doc["network"]["wifiMacAddress"] = info.wifiMacAddress;
-    doc["network"]["wifiLocalIp"] = info.wifiLocalIp;
-    doc["network"]["wifiGatewayIp"] = info.wifiGatewayIp;
-    doc["network"]["wifiSubnetMask"] = info.wifiSubnetMask;
-    doc["network"]["wifiDnsIp"] = info.wifiDnsIp;
-    doc["network"]["wifiBssid"] = info.wifiBssid;
+    doc["network"]["wifiSsid"] = JsonString(info.wifiSsid); // Ensure it is not a dangling pointer
+    doc["network"]["wifiMacAddress"] = JsonString(info.wifiMacAddress); // Ensure it is not a dangling pointer
+    doc["network"]["wifiLocalIp"] = JsonString(info.wifiLocalIp); // Ensure it is not a dangling pointer
+    doc["network"]["wifiGatewayIp"] = JsonString(info.wifiGatewayIp); // Ensure it is not a dangling pointer
+    doc["network"]["wifiSubnetMask"] = JsonString(info.wifiSubnetMask); // Ensure it is not a dangling pointer
+    doc["network"]["wifiDnsIp"] = JsonString(info.wifiDnsIp); // Ensure it is not a dangling pointer
+    doc["network"]["wifiBssid"] = JsonString(info.wifiBssid); // Ensure it is not a dangling pointer
     doc["network"]["wifiRssi"] = info.wifiRssi;
 
     // Tasks
@@ -415,8 +418,7 @@ static void _maintenanceTask(void* parameter) {
         LOG_DEBUG("Maintenance checks completed");
 
         // Wait for stop notification with timeout (blocking)
-        uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MAINTENANCE_CHECK_INTERVAL));
-        if (notificationValue > 0) {
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MAINTENANCE_CHECK_INTERVAL)) > 0) {
             _maintenanceTaskShouldRun = false;
             break;
         }
@@ -498,6 +500,8 @@ static void _restartTask(void* parameter) {
     );
 
     // Only stop Ade7953 as we need to save the energy data and MQTT to avoid trying to send data while rebooting. Everything else can just die abruptly
+    // Actually also stop the webserver to avoid requests on non-existent resources
+    CustomServer::stop();
     Ade7953::stop();
     Mqtt::stop();
 
@@ -527,6 +531,7 @@ void setRestartSystem(const char* reason, bool factoryReset) {
 
     if (result != pdPASS) {
         LOG_ERROR("Failed to create restart task, performing immediate operation");
+        CustomServer::stop();
         Ade7953::stop();
         Mqtt::stop();
         _restartSystem(factoryReset);
@@ -539,7 +544,7 @@ static void _restartSystem(bool factoryReset) {
     Led::setBrightness(max(Led::getBrightness(), (uint8_t)1)); // Show a faint light even if it is off
     Led::setOrange(Led::PRIO_CRITICAL);
 
-    delay(SYSTEM_RESTART_DELAY); // Allow for logs to flush
+    delay(SYSTEM_RESTART_DELAY); // Allow for logs to flush - TODO: remove with new version of AdvancedLogger which will flush automatically on end
 
     // Ensure the log file is properly saved and closed
     AdvancedLogger::end();

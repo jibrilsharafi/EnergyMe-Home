@@ -123,14 +123,26 @@ namespace ModbusTcp
         } else if (address >= START_REGISTERS_METER_VALUES && address < LOWER_LIMIT_CHANNEL_REGISTERS) {
             // Handle special registers for voltage and grid frequency
             // These are not channel-specific, so we handle them separately
-            MeterValues meterValuesZeroChannel;
-            Ade7953::getMeterValues(meterValuesZeroChannel, 0);
 
             switch (address)
             {   
                 // Voltage
-                case 100: return _getFloatBits(meterValuesZeroChannel.voltage, true);
-                case 101: return _getFloatBits(meterValuesZeroChannel.voltage, false);
+                case 100:   {
+                                MeterValues meterValuesZeroChannel;
+                                if (!Ade7953::getMeterValues(meterValuesZeroChannel, 0)) {
+                                    LOG_WARNING("Failed to get meter values for channel 0. Returning default 0");
+                                    return 0;
+                                }
+                                return _getFloatBits(meterValuesZeroChannel.voltage, true);
+                            }
+                case 101: {
+                                MeterValues meterValuesZeroChannel;
+                                if (!Ade7953::getMeterValues(meterValuesZeroChannel, 0)) {
+                                    LOG_WARNING("Failed to get meter values for channel 0. Returning default 0");
+                                    return 0;
+                                }
+                                return _getFloatBits(meterValuesZeroChannel.voltage, false);
+                            }
 
                 // Grid frequency
                 case 102: return _getFloatBits(Ade7953::getGridFrequency(), true);
@@ -168,7 +180,10 @@ namespace ModbusTcp
             int32_t offset = realAddress % STEP_CHANNEL_REGISTERS;
 
             MeterValues meterValues;
-            Ade7953::getMeterValues(meterValues, channel);
+            if (!Ade7953::getMeterValues(meterValues, channel)) {
+                LOG_WARNING("Failed to get meter values for channel %d. Returning default 0", channel);
+                return 0;
+            }
 
             switch (offset)
             {

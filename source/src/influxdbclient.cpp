@@ -179,13 +179,13 @@ namespace InfluxDbClient
         jsonDocument["server"] = config.server;
         jsonDocument["port"] = config.port;
         jsonDocument["version"] = config.version;
-        jsonDocument["database"] = config.database;
-        jsonDocument["username"] = config.username;
-        jsonDocument["password"] = config.password;
-        jsonDocument["organization"] = config.organization;
-        jsonDocument["bucket"] = config.bucket;
-        jsonDocument["token"] = config.token;
-        jsonDocument["measurement"] = config.measurement;
+        jsonDocument["database"] = JsonString(config.database); // Ensure it is not a dangling pointer
+        jsonDocument["username"] = JsonString(config.username); // Ensure it is not a dangling pointer
+        jsonDocument["password"] = JsonString(config.password); // Ensure it is not a dangling pointer
+        jsonDocument["organization"] = JsonString(config.organization); // Ensure it is not a dangling pointer
+        jsonDocument["bucket"] = JsonString(config.bucket); // Ensure it is not a dangling pointer
+        jsonDocument["token"] = JsonString(config.token); // Ensure it is not a dangling pointer
+        jsonDocument["measurement"] = JsonString(config.measurement); // Ensure it is not a dangling pointer
         jsonDocument["frequency"] = config.frequencySeconds;
         jsonDocument["useSsl"] = config.useSsl;
 
@@ -307,8 +307,7 @@ namespace InfluxDbClient
             }
 
             // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL));
-            if (notificationValue > 0) {
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(INFLUXDB_TASK_CHECK_INTERVAL)) > 0) {
                 _taskShouldRun = false;
                 break;
             }
@@ -533,8 +532,12 @@ namespace InfluxDbClient
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i))
             {
                 MeterValues meterValues;
-                Ade7953::getMeterValues(meterValues, i);
-                
+                if (!Ade7953::getMeterValues(meterValues, i))
+                {
+                    LOG_WARNING("Failed to get meter values for channel %d. Skipping sending InfluxDB data", i);
+                    continue;
+                }
+
                 char label[NAME_BUFFER_SIZE];
                 Ade7953::getChannelLabel(i, label, sizeof(label));
 

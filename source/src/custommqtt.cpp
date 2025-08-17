@@ -169,14 +169,14 @@ namespace CustomMqtt
     void configurationToJson(CustomMqttConfiguration &config, JsonDocument &jsonDocument)
     {
         jsonDocument["enabled"] = config.enabled;
-        jsonDocument["server"] = config.server;
+        jsonDocument["server"] = JsonString(config.server); // Ensure it is not a dangling pointer
         jsonDocument["port"] = config.port;
-        jsonDocument["clientid"] = config.clientid;
-        jsonDocument["topic"] = config.topic;
+        jsonDocument["clientid"] = JsonString(config.clientid); // Ensure it is not a dangling pointer
+        jsonDocument["topic"] = JsonString(config.topic); // Ensure it is not a dangling pointer
         jsonDocument["frequency"] = config.frequencySeconds;
         jsonDocument["useCredentials"] = config.useCredentials;
-        jsonDocument["username"] = config.username;
-        jsonDocument["password"] = config.password;
+        jsonDocument["username"] = JsonString(config.username); // Ensure it is not a dangling pointer
+        jsonDocument["password"] = JsonString(config.password); // Ensure it is not a dangling pointer
 
         LOG_DEBUG("Successfully converted configuration to JSON");
     }
@@ -300,8 +300,7 @@ namespace CustomMqtt
             }
 
             // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL));
-            if (notificationValue > 0) {
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL)) > 0) {
                 _taskShouldRun = false;
                 break;
             }

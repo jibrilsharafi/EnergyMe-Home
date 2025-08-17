@@ -420,8 +420,7 @@ namespace CustomServer
             }
 
             // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS));
-            if (notificationValue > 0)
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(HEALTH_CHECK_INTERVAL_MS)) > 0)
             {
                 _healthCheckTaskShouldRun = false;
                 break;
@@ -1384,14 +1383,14 @@ namespace CustomServer
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
                 } else {
                     uint8_t channelIndex = (uint8_t)(indexValue);
-                    Ade7953::getChannelDataAsJson(doc, channelIndex);
+                    if (Ade7953::getChannelDataAsJson(doc, channelIndex)) _sendJsonResponse(request, doc);
+                    else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching single channel data");
                 }
             } else {
                 // Get all channels data
-                Ade7953::getAllChannelDataAsJson(doc);
+                if (Ade7953::getAllChannelDataAsJson(doc)) _sendJsonResponse(request, doc);
+                else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching all channels data");
             }
-            
-            _sendJsonResponse(request, doc);
         });
 
         // Set single channel data (PUT/PATCH)
@@ -1534,15 +1533,14 @@ namespace CustomServer
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
                 } else {
                     uint8_t channelIndex = (uint8_t)(indexValue);
-                    Ade7953::singleMeterValuesToJson(doc, channelIndex);
+                    if (Ade7953::singleMeterValuesToJson(doc, channelIndex)) _sendJsonResponse(request, doc);
+                    else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching single meter values");
                 }
             } else {
                 // Get all meter values
-                Ade7953::fullMeterValuesToJson(doc);
+                if (Ade7953::fullMeterValuesToJson(doc)) _sendJsonResponse(request, doc);
+                else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching all meter values");
             }
-            
-            if (!doc.isNull()) _sendJsonResponse(request, doc);
-            else _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No meter values available");
         });
 
         // === GRID FREQUENCY ENDPOINT ===
@@ -1701,9 +1699,8 @@ namespace CustomServer
         server.on("/api/v1/influxdb/config", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             JsonDocument doc;
-            InfluxDbClient::getConfigurationAsJson(doc);
-
-            _sendJsonResponse(request, doc);
+            if (InfluxDbClient::getConfigurationAsJson(doc)) _sendJsonResponse(request, doc);
+            else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching InfluxDB configuration");
         });
 
         // Set InfluxDB configuration

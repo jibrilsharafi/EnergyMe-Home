@@ -527,6 +527,7 @@
     var consumptionChart = null;
     var pieChart = null;
     var totalPieChart = null;
+    var meterDataUpdateInProgress = false;
 
     // Initialize page
     async function initializePage() {
@@ -1429,13 +1430,22 @@
         
         // Set up real-time meter data updates
         setInterval(async () => {
+            // Skip if previous meter data update is still in progress
+            if (meterDataUpdateInProgress) {
+                console.log('Meter data update already in progress, skipping...');
+                return;
+            }
+
             try {
+                meterDataUpdateInProgress = true;
                 meterData = await energyApi.getMeterValues();
                 updateMeterData();
                 // Note: Total pie chart is only updated on page load, not in real-time
                 // since it represents lifetime consumption which changes slowly
             } catch (error) {
                 console.error('Error updating meter data:', error);
+            } finally {
+                meterDataUpdateInProgress = false;
             }
         }, 1000);
     });

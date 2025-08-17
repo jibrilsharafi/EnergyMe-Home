@@ -153,8 +153,7 @@ namespace Led
             _processPattern();
 
             // Wait for stop notification with timeout (blocking) - ensures proper yielding
-            uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(LED_TASK_DELAY_MS));
-            if (notificationValue > 0)
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(LED_TASK_DELAY_MS)) > 0)
             {
                 _ledTaskShouldRun = false;
                 break;

@@ -61,17 +61,14 @@
 #define MQTT_CLAIM_RETRY_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_CLAIM_TIMEOUT (30 * 1000) // Timeout for claiming certificates (in milliseconds)
 
-#define MQTT_INITIAL_RECONNECT_INTERVAL (5 * 1000) // Initial interval for MQTT reconnection attempts
-#define MQTT_MAX_RECONNECT_INTERVAL (5 * 60 * 1000) // Maximum interval for MQTT reconnection attempts
-#define MQTT_RECONNECT_MULTIPLIER 2 // Multiplier for exponential backoff
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_CLAIMING_INTERVAL (1 * 1000) // Interval between two MQTT claiming checks
 #define AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT (128 * 1024) // Limit of AWS
 
-#define MQTT_INITIAL_RETRY_INTERVAL (5 * 1000) // Base delay for exponential backoff in milliseconds
+#define MQTT_INITIAL_RETRY_INTERVAL (15 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds
 #define MQTT_RETRY_MULTIPLIER 2 // Multiplier for exponential backoff
-
+#define MQTT_MAX_CONNECTION_ATTEMPTS 10 // Maximum number of connection attempts before restarting the device. High since we don't want a reboot cycle
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 #define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
