@@ -48,6 +48,15 @@ namespace CustomTime {
         }
     }
 
+    // returns true when current UTC hour is 0
+    bool isNowHourZero() {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        struct tm utc_tm;
+        gmtime_r(&tv.tv_sec, &utc_tm);
+        return (utc_tm.tm_hour == 0);
+    }
+
     uint64_t getUnixTime() {
         struct timeval tv;
         gettimeofday(&tv, NULL);
@@ -152,7 +161,24 @@ namespace CustomTime {
         snprintf(buffer, bufferSize, DATE_ISO_FORMAT,
                 utc_tm.tm_year + 1900,
                 utc_tm.tm_mon + 1,
-                utc_tm.tm_mday);
+                utc_tm.tm_mday
+            );
+    }
+
+    void getDateIsoOffset(char *outBuf, size_t outBufLen, int offsetDays) {
+        time_t now;
+        time(&now);
+        now += (time_t)offsetDays * 86400; // offset in seconds
+
+        struct tm tm;
+        gmtime_r(&now, &tm); // UTC time
+
+        snprintf(
+            outBuf, outBufLen, DATE_ISO_FORMAT, 
+            tm.tm_year + 1900, 
+            tm.tm_mon + 1, 
+            tm.tm_mday
+        );
     }
 
     uint64_t getMillisecondsUntilNextHour() {

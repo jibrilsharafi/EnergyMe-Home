@@ -88,6 +88,10 @@ namespace CustomServer
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
                                    size_t index, uint8_t *data, size_t len, bool final);
     
+    // File upload handler
+    static void _handleFileUploadData(AsyncWebServerRequest *request, const String& filename, 
+                                    size_t index, uint8_t *data, size_t len, bool final);
+    
     // OTA helper functions
     static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename);
     static void _setupOtaMd5Verification(AsyncWebServerRequest *request);
@@ -947,6 +951,74 @@ namespace CustomServer
             LOG_DEBUG("OTA update finalization successful");
             Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
             // Note: timeout task will be stopped in _handleOtaUploadComplete
+        }
+    }
+
+    static void _handleFileUploadData(AsyncWebServerRequest *request, const String& filename, 
+                                    size_t index, uint8_t *data, size_t len, bool final)
+    {
+        static File uploadFile;
+        static String targetPath;
+        
+        if (!index) {
+            // First chunk - extract path from URL and create file
+            String url = request->url();
+            targetPath = url.substring(url.indexOf("/api/v1/files/") + 14); // Remove "/api/v1/files/" prefix
+            
+            if (targetPath.length() == 0) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File path cannot be empty");
+                return;
+            }
+            
+            // URL decode the filename to handle encoded slashes properly
+            targetPath.replace("%2F", "/");
+            targetPath.replace("%2f", "/");
+            
+            // Ensure filename starts with "/"
+            if (!targetPath.startsWith("/")) {
+                targetPath = "/" + targetPath;
+            }
+            
+            LOG_INFO("Starting file upload to: %s", targetPath.c_str());
+            
+            // Check available space
+            size_t freeSpace = LittleFS.totalBytes() - LittleFS.usedBytes();
+            if (freeSpace < 1024) { // Require at least 1KB free space
+                _sendErrorResponse(request, HTTP_CODE_INSUFFICIENT_STORAGE, "Insufficient storage space");
+                return;
+            }
+            
+            // Create file for writing
+            uploadFile = LittleFS.open(targetPath, FILE_WRITE);
+            if (!uploadFile) {
+                LOG_ERROR("Failed to create file for upload: %s", targetPath.c_str());
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to create file");
+                return;
+            }
+        }
+        
+        // Write data chunk
+        if (len && uploadFile) {
+            size_t written = uploadFile.write(data, len);
+            if (written != len) {
+                LOG_ERROR("Failed to write data chunk at index %zu", index);
+                uploadFile.close();
+                LittleFS.remove(targetPath); // Clean up partial file
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to write file data");
+                return;
+            }
+        }
+        
+        // Final chunk - complete the upload
+        if (final) {
+            if (uploadFile) {
+                uploadFile.close();
+                LOG_INFO("File upload completed successfully: %s (%zu bytes)", targetPath.c_str(), index + len);
+                _sendSuccessResponse(request, "File uploaded successfully");
+            } else {
+                LOG_ERROR("File upload failed: file handle not available");
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "File upload failed");
+            }
         }
     }
 
@@ -1906,8 +1978,57 @@ namespace CustomServer
             // Determine content type based on file extension
             const char* contentType = getContentTypeFromFilename(filename.c_str());
 
+            // Check if download is forced via query parameter
+            bool forceDownload = request->hasParam("download");
+
             // Serve the file directly from LittleFS with proper content type
-            request->send(LittleFS, filename, contentType);
+            request->send(LittleFS, filename, contentType, forceDownload);
+        });
+
+        // Upload file to LittleFS
+        server.on("/api/v1/files/*", HTTP_POST, 
+            [](AsyncWebServerRequest *request) {
+                // Final response is handled in _handleFileUploadData
+            },
+            [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+                _handleFileUploadData(request, filename, index, data, len, final);
+            }
+        );
+
+        // Delete file from LittleFS
+        server.on("/api/v1/files/*", HTTP_DELETE, [](AsyncWebServerRequest *request)
+                  {
+            String url = request->url();
+            String filename = url.substring(url.indexOf("/api/v1/files/") + 14); // Remove "/api/v1/files/" prefix
+            
+            if (filename.length() == 0) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File path cannot be empty");
+                return;
+            }
+            
+            // URL decode the filename to handle encoded slashes properly
+            filename.replace("%2F", "/");
+            filename.replace("%2f", "/");
+            
+            // Ensure filename starts with "/"
+            if (!filename.startsWith("/")) {
+                filename = "/" + filename;
+            }
+
+            // Check if file exists
+            if (!LittleFS.exists(filename)) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "File not found");
+                return;
+            }
+
+            // Attempt to delete the file
+            if (LittleFS.remove(filename)) {
+                LOG_INFO("File deleted successfully: %s", filename.c_str());
+                _sendSuccessResponse(request, "File deleted successfully");
+            } else {
+                LOG_ERROR("Failed to delete file: %s", filename.c_str());
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to delete file");
+            }
         });
     }
 

@@ -501,9 +501,9 @@ static void _restartTask(void* parameter) {
 
     // Only stop Ade7953 as we need to save the energy data and MQTT to avoid trying to send data while rebooting. Everything else can just die abruptly
     // Actually also stop the webserver to avoid requests on non-existent resources
+    Mqtt::stop();
     CustomServer::stop();
     Ade7953::stop();
-    Mqtt::stop();
 
     _restartSystem(factoryReset);
     
@@ -992,7 +992,7 @@ bool getLittleFsFileContent(const char* filepath, char* buffer, size_t bufferSiz
         return false;
     }
     
-    File file = LittleFS.open(filepath, "r");
+    File file = LittleFS.open(filepath, FILE_READ);
     if (!file) {
         LOG_ERROR("Failed to open file: %s", filepath);
         return false;
@@ -1033,9 +1033,134 @@ const char* getContentTypeFromFilename(const char* filename) {
     if (strcmp(extension, ".css") == 0) return "text/css";
     if (strcmp(extension, ".js") == 0) return "application/javascript";
     if (strcmp(extension, ".bin") == 0) return "application/octet-stream";
+    if (strcmp(extension, ".gz") == 0) return "application/gzip";
     
     return "application/octet-stream";
 }
+
+bool compressFile(const char* filepath) {
+    if (!filepath) {
+        LOG_ERROR("Invalid file path");
+        return false;
+    }
+
+    char sourcePath[NAME_BUFFER_SIZE];
+    char destinationPath[NAME_BUFFER_SIZE + 3];      // Plus .gz
+    char tempPath[NAME_BUFFER_SIZE + 7];      // Plus .gz.tmp
+
+    snprintf(sourcePath, sizeof(sourcePath), "%s", filepath);
+    snprintf(destinationPath, sizeof(destinationPath), "%s.gz", sourcePath);
+    snprintf(tempPath, sizeof(tempPath), "%s.gz.tmp", sourcePath);
+
+    if (!LittleFS.exists(sourcePath)) {
+        LOG_WARNING("No finished csv to compress: %s", sourcePath);
+        return false;
+    }
+
+    // Remove any existing .gz.tmp file before starting
+    if (LittleFS.exists(tempPath)) {
+        LOG_DEBUG("Found existing temp file %s. Removing it", tempPath);
+        if (!LittleFS.remove(tempPath)) {
+            LOG_ERROR("Failed to remove existing temp file: %s", tempPath);
+            return false;
+        }
+    }
+
+    // Remove any existing .gz file before renaming (atomic replace)
+    if (LittleFS.exists(destinationPath)) {
+        LOG_DEBUG("Found existing compressed file %s. Removing it", destinationPath);
+        if (!LittleFS.remove(destinationPath)) {
+            LOG_ERROR("Failed to remove existing compressed file: %s", destinationPath);
+            return false;
+        }
+    }
+
+    File srcFile = LittleFS.open(sourcePath, FILE_READ);
+    if (!srcFile) {
+        LOG_ERROR("Failed to open source file: %s", sourcePath);
+        return false;
+    }
+    size_t sourceSize = srcFile.size();
+
+    File tempFile = LittleFS.open(tempPath, FILE_WRITE);
+    if (!tempFile) {
+        LOG_ERROR("Failed to open temporary file: %s", tempPath);
+        srcFile.close();
+        return false;
+    }
+
+    size_t compressedSize = LZPacker::compress(&srcFile, sourceSize, &tempFile);
+    srcFile.close();
+    tempFile.close();
+    
+    if (compressedSize > 0) {
+        LOG_DEBUG("Compressed finished CSV %s (%zu bytes) -> %s (%zu bytes)", sourcePath, sourceSize, tempPath, compressedSize);
+
+        // Rename temp file to final .gz name
+        if (!LittleFS.rename(tempPath, destinationPath)) {
+            LOG_ERROR("Failed to rename temporary file %s to final %s", tempPath, destinationPath);
+            // Clean up temp file
+            LittleFS.remove(tempPath);
+            return false;
+        }
+
+        if (!LittleFS.remove(sourcePath)) {
+            LOG_WARNING("Could not delete original %s after compression", sourcePath);
+            return false; // Compression succeeded, but cleanup failed - treat as failure
+        }
+    } else {
+        LOG_ERROR("Failed to compress finished CSV %s", sourcePath);
+        // Clean up temp file if created
+        LittleFS.remove(tempPath);
+        return false;
+    }
+
+    LOG_DEBUG("Successfully compressed %s (%zu bytes) to %s (%zu bytes)", sourcePath, sourceSize, destinationPath, compressedSize);
+    return true;
+}
+
+void migrateCsvToGzip(const char* dirPath) {
+    LOG_DEBUG("Starting CSV -> gzip migration in %s", dirPath);
+
+    if (!LittleFS.exists(dirPath)) {
+        LOG_WARNING("Energy folder not present, nothing to migrate");
+        return;
+    }
+
+    File dir = LittleFS.open(dirPath);
+    if (!dir) {
+        LOG_WARNING("Cannot open dir %s", dirPath);
+        return;
+    }
+    dir.rewindDirectory();
+
+    File file = dir.openNextFile();
+    while (file) {
+        if (!file.isDirectory()) {
+            const char* path = file.name();
+            char fullPath[NAME_BUFFER_SIZE];
+            snprintf(fullPath, sizeof(fullPath), "%s/%s", dirPath, path);
+            if (endsWith(fullPath, ".csv")) {
+                file.close(); // Close file handle before attempting compression/deletion
+                LOG_DEBUG("Migrating %s -> %s.gz", fullPath, fullPath);
+                if (compressFile(fullPath)) {
+                    LOG_INFO("Compressed and removed original %s", fullPath);
+                } else {
+                    LOG_ERROR("Compression failed for %s", fullPath);
+                }
+            } else {
+                file.close(); // Close file handle if not processing
+            }
+        } else {
+            file.close(); // Close directory handle
+        }
+        file = dir.openNextFile();
+    }
+    dir.close();
+
+    LOG_DEBUG("CSV -> gzip migration finished");
+}
+
 
 bool endsWith(const char* s, const char* suffix) {
     size_t ls = strlen(s), lsf = strlen(suffix);

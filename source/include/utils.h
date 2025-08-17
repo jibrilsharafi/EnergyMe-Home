@@ -17,6 +17,7 @@
 #include <nvs.h> // For low-level NVS statistics
 #include <nvs_flash.h> // For erasing ALL the NVS
 #include <esp_ota_ops.h>
+#include <ESP32-targz.h>
 
 #include "binaries.h"
 #include "buttonhandler.h"
@@ -127,6 +128,8 @@ void clearAllPreferences(bool nuclearOption = false); // No real function passes
 bool listLittleFsFiles(JsonDocument& doc);
 bool getLittleFsFileContent(const char* filepath, char* buffer, size_t bufferSize);
 const char* getContentTypeFromFilename(const char* filename);
+bool compressFile(const char* filepath);
+void migrateCsvToGzip(const char* dirPath);
 
 // String utilities
 bool endsWith(const char* s, const char* suffix);

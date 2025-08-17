@@ -396,6 +396,14 @@ paths:
           schema:
             type: string
           example: "logger/log.txt"
+        - name: download
+          in: query
+          required: false
+          description: Force file to be downloaded as attachment instead of displayed inline
+          schema:
+            type: boolean
+            default: false
+          example: true
       responses:
         '200':
           description: File content returned successfully
@@ -419,6 +427,82 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: Upload file to LittleFS
+      description: |
+        Upload a file to the LittleFS filesystem.
+        
+        **Requirements:**
+        - File path is specified in the URL
+        - Supports chunked uploads for large files
+        - Minimum 1KB free space required
+        - Existing files will be overwritten
+      tags:
+        - Files
+      parameters:
+        - name: filepath
+          in: path
+          required: true
+          description: Target path for the file in LittleFS (without leading slash)
+          schema:
+            type: string
+          example: "config/settings.json"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: File content to upload
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: Raw file content
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '507':
+          description: Insufficient storage space
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Insufficient storage space"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete file from LittleFS
+      description: Remove a specific file from the LittleFS filesystem
+      tags:
+        - Files
+      parameters:
+        - name: filepath
+          in: path
+          required: true
+          description: Path to the file in LittleFS (without leading slash)
+          schema:
+            type: string
+          example: "logger/old_log.txt"
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   # Network Management endpoints
   /api/v1/network/wifi/reset:

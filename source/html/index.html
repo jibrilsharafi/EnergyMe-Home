@@ -507,6 +507,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 </body>
 
 <script>
@@ -528,6 +529,28 @@
     var pieChart = null;
     var totalPieChart = null;
     var meterDataUpdateInProgress = false;
+
+    // Function to decompress gzip data
+    async function decompressGzipFile(filename) {
+        try {
+            // Get the file as binary data
+            const response = await energyApi.apiCall(`files/${encodeURIComponent(filename)}`, { method: 'GET' });
+            if (!response.ok) {
+                throw new Error(`Failed to fetch ${filename}: ${response.status}`);
+            }
+            
+            // Get the response as array buffer
+            const gzipData = await response.arrayBuffer();
+            
+            // Decompress using pako
+            const decompressed = pako.inflate(new Uint8Array(gzipData), { to: 'string' });
+            
+            return decompressed;
+        } catch (error) {
+            console.error(`Error decompressing ${filename}:`, error);
+            throw error;
+        }
+    }
 
     // Initialize page
     async function initializePage() {
@@ -570,8 +593,8 @@
         try {
             const fileList = await energyApi.getFileList();
             availableDates = Object.keys(fileList)
-                .filter(filename => filename.startsWith('energy/') && filename.endsWith('.csv'))
-                .map(filename => filename.replace('energy/', '').replace('.csv', ''))
+                .filter(filename => filename.startsWith('energy/') && filename.endsWith('.csv.gz'))
+                .map(filename => filename.replace('energy/', '').replace('.csv.gz', ''))
                 .sort();
             
             // Extract unique months
@@ -710,8 +733,8 @@
         for (const utcDate of requiredDates) {
             if (availableDates.includes(utcDate)) {
                 try {
-                    const filename = `energy/${utcDate}.csv`;
-                    const csvData = await energyApi.getFileAsText(filename);
+                    const filename = `energy/${utcDate}.csv.gz`;
+                    const csvData = await decompressGzipFile(filename);
                     const energyData = parseCsvEnergyData(csvData);
                     allEnergyData = allEnergyData.concat(energyData);
                 } catch (error) {
@@ -764,8 +787,8 @@
         
         for (const date of monthDates) {
             try {
-                const filename = `energy/${date}.csv`;
-                const csvData = await energyApi.getFileAsText(filename);
+                const filename = `energy/${date}.csv.gz`;
+                const csvData = await decompressGzipFile(filename);
                 const energyData = parseCsvEnergyData(csvData);
                 const dailyConsumption = calculateTotalConsumption(energyData);
                 

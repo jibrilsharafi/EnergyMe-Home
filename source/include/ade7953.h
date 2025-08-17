@@ -25,17 +25,17 @@
 #define ADE7953_SPI_OPERATION_MUTEX_TIMEOUT_MS 200 // Longer than normal SPI since this accounts also for validation
 
 // Tasks
-#define ADE7953_METER_READING_TASK_NAME "ade7953_task" // The name of the ADE7953 task
-#define ADE7953_METER_READING_TASK_STACK_SIZE (6 * 1024) // The stack size for the ADE7953 task
-#define ADE7953_METER_READING_TASK_PRIORITY 5 // The priority for the ADE7953 task
+#define ADE7953_METER_READING_TASK_NAME "ade7953_task"
+#define ADE7953_METER_READING_TASK_STACK_SIZE (6 * 1024)
+#define ADE7953_METER_READING_TASK_PRIORITY 5
 
-#define ADE7953_ENERGY_SAVE_TASK_NAME "energy_save_task" // The name of the energy save task
-#define ADE7953_ENERGY_SAVE_TASK_STACK_SIZE (6 * 1024) // The stack size for the energy save task
-#define ADE7953_ENERGY_SAVE_TASK_PRIORITY 1 // The priority for the energy save task
+#define ADE7953_ENERGY_SAVE_TASK_NAME "energy_save_task"
+#define ADE7953_ENERGY_SAVE_TASK_STACK_SIZE (6 * 1024)
+#define ADE7953_ENERGY_SAVE_TASK_PRIORITY 1
 
-#define ADE7953_HOURLY_CSV_SAVE_TASK_NAME "hourly_csv_task" // The name of the hourly CSV save task
-#define ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE (6 * 1024) // The stack size for the hourly CSV save task
-#define ADE7953_HOURLY_CSV_SAVE_TASK_PRIORITY 1 // The priority for the hourly CSV save task
+#define ADE7953_HOURLY_CSV_SAVE_TASK_NAME "hourly_csv_task"
+#define ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE (12 * 1024) // Higher due to the compression functions
+#define ADE7953_HOURLY_CSV_SAVE_TASK_PRIORITY 1
 
 // ENERGY_SAVING
 #define SAVE_ENERGY_INTERVAL (15 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory

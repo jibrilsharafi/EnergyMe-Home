@@ -1549,6 +1549,19 @@ namespace Ade7953
     void _hourlyCsvSaveTask(void* parameter) {
         LOG_DEBUG("ADE7953 hourly CSV save task started");
 
+        // Weird workaround to avoid replacing current date csv: rename temporarily here, then re-rename it
+        char dateIso[TIMESTAMP_BUFFER_SIZE];
+        CustomTime::getDateIsoOffset(dateIso, sizeof(dateIso), -1);
+        char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
+        snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, dateIso);
+
+        char filepathTemporary[sizeof(filepath) + 4]; // Added space for prefix plus "/.csv" plus ".tmp"
+        snprintf(filepathTemporary, sizeof(filepathTemporary), "%s/%s.tmp", ENERGY_CSV_PREFIX, dateIso);
+
+        if (LittleFS.exists(filepath)) LittleFS.rename(filepath, filepathTemporary);
+        migrateCsvToGzip(ENERGY_CSV_PREFIX); // Needed since we may have skipped the conversion at midnight or similar
+        if (LittleFS.exists(filepathTemporary)) LittleFS.rename(filepathTemporary, filepath);
+
         _hourlyCsvSaveTaskShouldRun = true;
         while (_hourlyCsvSaveTaskShouldRun) {
             // Calculate milliseconds until next hour using CustomTime
@@ -1570,6 +1583,25 @@ namespace Ade7953
                     {
                         LOG_DEBUG("Time is close to the hour, saving hourly energy data");
                         _saveHourlyEnergyToCsv();
+
+                        // If this save corresponds to the first hour of the new day (HH == 00),
+                        // compress the previous day's CSV (yesterday).
+                        if (CustomTime::isNowHourZero()) {
+                            LOG_DEBUG("Timestamp is at hour 00: trigger compression of yesterday's CSV");
+
+                            // Create filename for yesterday's CSV file (UTC date)
+                            char dateIso[TIMESTAMP_BUFFER_SIZE];
+                            CustomTime::getDateIsoOffset(dateIso, sizeof(dateIso), -1);
+
+                            char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
+                            snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, dateIso);
+
+                            if (compressFile(filepath)) {
+                                LOG_DEBUG("Successfully compressed yesterday's CSV: %s", filepath);
+                            } else {
+                                LOG_ERROR("Failed to compress yesterday's CSV: %s", filepath);
+                            }
+                        }
                     }
                     else
                     {

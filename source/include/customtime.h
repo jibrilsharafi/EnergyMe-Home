@@ -32,12 +32,14 @@ namespace CustomTime {
     // This function is called frequently from other functions, ensuring that we check and sync time if needed
     bool isTimeSynched();
     bool isNowCloseToHour(uint64_t toleranceMillis = 60000);
+    bool isNowHourZero();
 
     uint64_t getUnixTime();
     uint64_t getUnixTimeMilliseconds();
     void getTimestampIso(char* buffer, size_t bufferSize);
     void getTimestampIsoRoundedToHour(char* buffer, size_t bufferSize);
     void getDateIso(char* buffer, size_t bufferSize);
+    void getDateIsoOffset(char *outBuf, size_t outBufLen, int offsetDays);
 
     uint64_t getMillisecondsUntilNextHour();
 
