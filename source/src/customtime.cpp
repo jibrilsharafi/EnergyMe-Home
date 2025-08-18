@@ -151,7 +151,7 @@ namespace CustomTime {
         strftime(buffer, bufferSize, DATE_FORMAT, &timeinfo);
     }
 
-    void getDateIso(char* buffer, size_t bufferSize) {
+    void getCurrentDateIso(char* buffer, size_t bufferSize) {
         struct timeval tv;
         gettimeofday(&tv, NULL);
         

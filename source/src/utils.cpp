@@ -501,14 +501,35 @@ static void _restartTask(void* parameter) {
 
     // Only stop Ade7953 as we need to save the energy data and MQTT to avoid trying to send data while rebooting. Everything else can just die abruptly
     // Actually also stop the webserver to avoid requests on non-existent resources
-    Mqtt::stop();
-    CustomServer::stop();
-    Ade7953::stop();
+    // We do this in an Async way so if for any reason the stopping takes too long or blocks forever, it won't block the restart
+    xTaskCreate([](void*) {
+        LOG_DEBUG("Stopping critical services before restart");
+        Mqtt::stop();
+        CustomServer::stop();
+        Ade7953::stop();
+        LOG_DEBUG("Critical services stopped");
+        vTaskDelete(NULL);
+    }, STOP_SERVICES_TASK_NAME, STOP_SERVICES_TASK_STACK_SIZE, NULL, STOP_SERVICES_TASK_PRIORITY, NULL);
 
     _restartSystem(factoryReset);
     
     // Task should never reach here, but clean up just in case
     vTaskDelete(NULL);
+}
+
+static void _restartSystem(bool factoryReset) {
+    Led::setBrightness(max(Led::getBrightness(), (uint8_t)1)); // Show a faint light even if it is off
+    Led::setOrange(Led::PRIO_CRITICAL);
+
+    delay(SYSTEM_RESTART_DELAY); // Allow for logs to flush - TODO: remove with new version of AdvancedLogger which will flush automatically on end
+
+    // Ensure the log file is properly saved and closed
+    AdvancedLogger::end();
+
+    LOG_INFO("Restarting system. Factory reset: %s", factoryReset ? "true" : "false");
+    if (factoryReset) {_factoryReset();}
+
+    ESP.restart();
 }
 
 void setRestartSystem(const char* reason, bool factoryReset) {
@@ -538,21 +559,6 @@ void setRestartSystem(const char* reason, bool factoryReset) {
     } else {
         LOG_DEBUG("Restart task created successfully");
     }
-}
-
-static void _restartSystem(bool factoryReset) {
-    Led::setBrightness(max(Led::getBrightness(), (uint8_t)1)); // Show a faint light even if it is off
-    Led::setOrange(Led::PRIO_CRITICAL);
-
-    delay(SYSTEM_RESTART_DELAY); // Allow for logs to flush - TODO: remove with new version of AdvancedLogger which will flush automatically on end
-
-    // Ensure the log file is properly saved and closed
-    AdvancedLogger::end();
-
-    LOG_INFO("Restarting system. Factory reset: %s", factoryReset ? "true" : "false");
-    if (factoryReset) {_factoryReset();}
-
-    ESP.restart();
 }
 
 // Print functions
@@ -1119,7 +1125,7 @@ bool compressFile(const char* filepath) {
     return true;
 }
 
-void migrateCsvToGzip(const char* dirPath) {
+void migrateCsvToGzip(const char* dirPath, const char* excludePrefix) {
     LOG_DEBUG("Starting CSV -> gzip migration in %s", dirPath);
 
     if (!LittleFS.exists(dirPath)) {
@@ -1140,6 +1146,14 @@ void migrateCsvToGzip(const char* dirPath) {
             const char* path = file.name();
             char fullPath[NAME_BUFFER_SIZE];
             snprintf(fullPath, sizeof(fullPath), "%s/%s", dirPath, path);
+
+            if (excludePrefix && startsWith(fullPath, excludePrefix)) {
+                LOG_DEBUG("Skipping file %s due to exclude prefix", fullPath);
+                file.close(); // Close file handle before continuing
+                file = dir.openNextFile();
+                continue;
+            }
+
             if (endsWith(fullPath, ".csv")) {
                 file.close(); // Close file handle before attempting compression/deletion
                 LOG_DEBUG("Migrating %s -> %s.gz", fullPath, fullPath);
@@ -1159,10 +1173,4 @@ void migrateCsvToGzip(const char* dirPath) {
     dir.close();
 
     LOG_DEBUG("CSV -> gzip migration finished");
-}
-
-
-bool endsWith(const char* s, const char* suffix) {
-    size_t ls = strlen(s), lsf = strlen(suffix);
-    return lsf <= ls && strcmp(s + ls - lsf, suffix) == 0;
 }

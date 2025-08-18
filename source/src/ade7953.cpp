@@ -1549,18 +1549,14 @@ namespace Ade7953
     void _hourlyCsvSaveTask(void* parameter) {
         LOG_DEBUG("ADE7953 hourly CSV save task started");
 
-        // Weird workaround to avoid replacing current date csv: rename temporarily here, then re-rename it
+        // Avoid compressing current day CSV (still need to append today's data)
         char dateIso[TIMESTAMP_BUFFER_SIZE];
-        CustomTime::getDateIsoOffset(dateIso, sizeof(dateIso), -1);
-        char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
-        snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, dateIso);
-
-        char filepathTemporary[sizeof(filepath) + 4]; // Added space for prefix plus "/.csv" plus ".tmp"
-        snprintf(filepathTemporary, sizeof(filepathTemporary), "%s/%s.tmp", ENERGY_CSV_PREFIX, dateIso);
-
-        if (LittleFS.exists(filepath)) LittleFS.rename(filepath, filepathTemporary);
-        migrateCsvToGzip(ENERGY_CSV_PREFIX); // Needed since we may have skipped the conversion at midnight or similar
-        if (LittleFS.exists(filepathTemporary)) LittleFS.rename(filepathTemporary, filepath);
+        CustomTime::getCurrentDateIso(dateIso, sizeof(dateIso));
+        char excludeFilepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 1]; // Added space for prefix plus "/"
+        snprintf(excludeFilepath, sizeof(excludeFilepath), "%s/%s", ENERGY_CSV_PREFIX, dateIso);
+        
+        LOG_DEBUG("Migrating the CSV files, excluding prefix of %s", excludeFilepath);
+        migrateCsvToGzip(ENERGY_CSV_PREFIX, excludeFilepath);
 
         _hourlyCsvSaveTaskShouldRun = true;
         while (_hourlyCsvSaveTaskShouldRun) {
@@ -1592,7 +1588,6 @@ namespace Ade7953
                             // Create filename for yesterday's CSV file (UTC date)
                             char dateIso[TIMESTAMP_BUFFER_SIZE];
                             CustomTime::getDateIsoOffset(dateIso, sizeof(dateIso), -1);
-
                             char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
                             snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, dateIso);
 
@@ -1813,7 +1808,7 @@ namespace Ade7953
         char defaultLabel[NAME_BUFFER_SIZE];
         snprintf(defaultLabel, sizeof(defaultLabel), DEFAULT_CHANNEL_LABEL_FORMAT, channelIndex);
         preferences.getString(key, channelData.label, sizeof(channelData.label));
-        if (strlen(channelData.label) == 0) { // TODO: change all strlen to strnlen
+        if (strlen(channelData.label) == 0) {
             snprintf(channelData.label, sizeof(channelData.label), "%s", defaultLabel);
         }
 
@@ -2117,7 +2112,7 @@ namespace Ade7953
         
         // Create filename for today's CSV file (UTC date)
         char filename[NAME_BUFFER_SIZE];
-        CustomTime::getDateIso(filename, sizeof(filename));
+        CustomTime::getCurrentDateIso(filename, sizeof(filename));
 
         char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
         snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, filename);

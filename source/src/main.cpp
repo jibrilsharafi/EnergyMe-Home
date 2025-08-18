@@ -159,12 +159,17 @@ void setup()
   printStatistics();
   printDeviceStatusDynamic();
   LOG_INFO("Setup done! Let's get this energetic party started!");
+
+  // Since in the loop there is nothing we care about, let's just kill the main task to gain some heap
+  delay(1000);
+  vTaskDelete(NULL);
 }
 
 void loop()
 {
-  // Oh yes, it took a int32_t time but finally we have a loop in which "nothing" happens
+  // Oh yes, it took a incredible amount of time but finally we have a loop in which "nothing" happens
   // This is because all of the tasks are running in their own FreeRTOS tasks
   // Much better than the old way of having everything in the main loop blocking
+  // This will never run, but we leave the delay for safety
   vTaskDelay(portMAX_DELAY);
 }

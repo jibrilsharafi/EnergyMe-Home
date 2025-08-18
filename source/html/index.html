@@ -531,7 +531,7 @@
     var meterDataUpdateInProgress = false;
 
     // Function to decompress gzip data
-    async function decompressGzipFile(filename) {
+    async function decompressGzipFile(filename) { // TODO: the chart starts at 03:00 instead of midnight because of timezone. Fix
         try {
             // Get the file as binary data
             const response = await energyApi.apiCall(`files/${encodeURIComponent(filename)}`, { method: 'GET' });
@@ -548,6 +548,33 @@
             return decompressed;
         } catch (error) {
             console.error(`Error decompressing ${filename}:`, error);
+            throw error;
+        }
+    }
+
+    // Function to load CSV data (compressed or uncompressed)
+    async function loadCsvData(date) {
+        try {
+            // First try to get file list to determine available format
+            const fileList = await energyApi.getFileList();
+            const csvFilename = `energy/${date}.csv`;
+            const gzFilename = `energy/${date}.csv.gz`;
+            
+            if (fileList[csvFilename] !== undefined) {
+                // Plain CSV file exists - load directly
+                const response = await energyApi.apiCall(`files/${encodeURIComponent(csvFilename)}`, { method: 'GET' });
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch ${csvFilename}: ${response.status}`);
+                }
+                return await response.text();
+            } else if (fileList[gzFilename] !== undefined) {
+                // Compressed file exists - decompress
+                return await decompressGzipFile(gzFilename);
+            } else {
+                throw new Error(`No CSV file found for date ${date}`);
+            }
+        } catch (error) {
+            console.error(`Error loading CSV data for ${date}:`, error);
             throw error;
         }
     }
@@ -593,8 +620,8 @@
         try {
             const fileList = await energyApi.getFileList();
             availableDates = Object.keys(fileList)
-                .filter(filename => filename.startsWith('energy/') && filename.endsWith('.csv.gz'))
-                .map(filename => filename.replace('energy/', '').replace('.csv.gz', ''))
+                .filter(filename => filename.startsWith('energy/') && (filename.endsWith('.csv.gz') || filename.endsWith('.csv')))
+                .map(filename => filename.replace('energy/', '').replace('.csv.gz', '').replace('.csv', ''))
                 .sort();
             
             // Extract unique months
@@ -733,8 +760,7 @@
         for (const utcDate of requiredDates) {
             if (availableDates.includes(utcDate)) {
                 try {
-                    const filename = `energy/${utcDate}.csv.gz`;
-                    const csvData = await decompressGzipFile(filename);
+                    const csvData = await loadCsvData(utcDate);
                     const energyData = parseCsvEnergyData(csvData);
                     allEnergyData = allEnergyData.concat(energyData);
                 } catch (error) {
@@ -747,15 +773,17 @@
             throw new Error('No data available for selected date');
         }
         
-        // Filter data to local day (00:00 to 23:59 local time)
-        // Both UTC timestamps from CSV and local day boundaries get converted to the same local timezone by JavaScript
+        // Filter data to include the full local day plus first hour of next day
+        // We need the next day's first reading to calculate consumption for hour 23:00
         const localDayStart = new Date(currentDate + 'T00:00:00');
-        const localDayEnd = new Date(currentDate + 'T23:59:59.999');
+        const nextDayStart = new Date(currentDate + 'T00:00:00');
+        nextDayStart.setDate(nextDayStart.getDate() + 1);
+        nextDayStart.setHours(1, 0, 0, 0); // Include up to 01:00 next day
         
         const filteredData = allEnergyData.filter(entry => {
-            // Convert UTC timestamp to local time Date object for comparison
+            // Parse the UTC timestamp from CSV and convert to local time for comparison
             const entryLocalDate = new Date(entry.timestamp);
-            return entryLocalDate >= localDayStart && entryLocalDate <= localDayEnd;
+            return entryLocalDate >= localDayStart && entryLocalDate < nextDayStart;
         });
         
         // Calculate hourly consumption and total consumption
@@ -787,8 +815,7 @@
         
         for (const date of monthDates) {
             try {
-                const filename = `energy/${date}.csv.gz`;
-                const csvData = await decompressGzipFile(filename);
+                const csvData = await loadCsvData(date);
                 const energyData = parseCsvEnergyData(csvData);
                 const dailyConsumption = calculateTotalConsumption(energyData);
                 
@@ -863,7 +890,7 @@
                 
                 const hourlyConsumption = Math.max(0, (current.energy - previous.energy) / 1000); // Convert Wh to kWh
                 
-                // Add to the hour when the consumption ended
+                // Assign consumption to the hour when it ended (current hour)
                 if (!consumption[current.localHour]) {
                     consumption[current.localHour] = {};
                 }
@@ -872,7 +899,12 @@
         });
         
         // Add "Other" consumption (channel 0 minus sum of all other channels)
+        // Only process hours 00-23 of the current day
         Object.keys(consumption).forEach(hour => {
+            // Skip hours outside the current day (e.g., hour "00" of next day)
+            const hourNum = parseInt(hour);
+            if (hourNum < 0 || hourNum > 23) return;
+            
             const totalConsumption = consumption[hour][0] || 0;
             let trackedConsumption = 0;
             
@@ -886,7 +918,16 @@
             delete consumption[hour]['0']; // Remove total channel from display
         });
         
-        return consumption;
+        // Filter out any hours outside 00-23 range before returning
+        const filteredConsumption = {};
+        Object.keys(consumption).forEach(hour => {
+            const hourNum = parseInt(hour);
+            if (hourNum >= 0 && hourNum <= 23) {
+                filteredConsumption[hour] = consumption[hour];
+            }
+        });
+        
+        return filteredConsumption;
     }
 
     function calculateTotalConsumption(energyData) {
@@ -1135,25 +1176,25 @@
     function getRequiredDatesForLocal(localDateString) {
         // For a local date, determine which UTC dates we need to query
         // This handles cases where local timezone spans multiple UTC days
+        // We also need data from the next day to calculate consumption for the last hour
         const localDate = new Date(localDateString + 'T00:00:00');
         const localDateEnd = new Date(localDateString + 'T23:59:59');
+        const nextDayStart = new Date(localDateString + 'T00:00:00');
+        nextDayStart.setDate(nextDayStart.getDate() + 1); // Add one day for next day's first reading
         
         // Convert local time to UTC to see what UTC dates we need
         // getTimezoneOffset() returns offset in minutes (positive = west of UTC, negative = east of UTC)
-        // To convert local to UTC: subtract the offset
-        const utcStart = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000);
-        const utcEnd = new Date(localDateEnd.getTime() - localDateEnd.getTimezoneOffset() * 60000);
+        // To convert local to UTC: add the offset (this compensates for the timezone difference)
+        const utcStart = new Date(localDate.getTime() + localDate.getTimezoneOffset() * 60000);
+        const utcEnd = new Date(localDateEnd.getTime() + localDateEnd.getTimezoneOffset() * 60000);
+        const utcNextDayStart = new Date(nextDayStart.getTime() + nextDayStart.getTimezoneOffset() * 60000);
         
-        const requiredDates = [];
-        const startDate = utcStart.toISOString().substring(0, 10);
-        const endDate = utcEnd.toISOString().substring(0, 10);
+        const requiredDates = new Set();
+        requiredDates.add(utcStart.toISOString().substring(0, 10));
+        requiredDates.add(utcEnd.toISOString().substring(0, 10));
+        requiredDates.add(utcNextDayStart.toISOString().substring(0, 10));
         
-        requiredDates.push(startDate);
-        if (startDate !== endDate) {
-            requiredDates.push(endDate);
-        }
-        
-        return requiredDates;
+        return Array.from(requiredDates);
     }
 
     function setupCsvDownload(consumptionData, viewType) {

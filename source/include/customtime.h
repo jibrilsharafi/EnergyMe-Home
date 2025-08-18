@@ -38,7 +38,7 @@ namespace CustomTime {
     uint64_t getUnixTimeMilliseconds();
     void getTimestampIso(char* buffer, size_t bufferSize);
     void getTimestampIsoRoundedToHour(char* buffer, size_t bufferSize);
-    void getDateIso(char* buffer, size_t bufferSize);
+    void getCurrentDateIso(char* buffer, size_t bufferSize);
     void getDateIsoOffset(char *outBuf, size_t outBufLen, int offsetDays);
 
     uint64_t getMillisecondsUntilNextHour();

@@ -979,11 +979,12 @@ namespace CustomServer
                 targetPath = "/" + targetPath;
             }
             
-            LOG_INFO("Starting file upload to: %s", targetPath.c_str());
+            LOG_DEBUG("Starting file upload to: %s", targetPath.c_str());
             
             // Check available space
             size_t freeSpace = LittleFS.totalBytes() - LittleFS.usedBytes();
-            if (freeSpace < 1024) { // Require at least 1KB free space
+            if (freeSpace < MINIMUM_FREE_LITTLEFS_SIZE) { // Require at least 1KB free space
+                LOG_WARNING("Insufficient storage space for file upload: %zu bytes free", freeSpace);
                 _sendErrorResponse(request, HTTP_CODE_INSUFFICIENT_STORAGE, "Insufficient storage space");
                 return;
             }

@@ -865,16 +865,6 @@
             statusContainer.style.color = "";
             statusElement.style.fontWeight = "";
 
-            // TODO:
-            // When setting a configuration with invalid credentials, the result will be like this in the running status:
-
-            // {
-            // "status": "Disabled due to persistent failures",
-            // "statusTimestamp": "2025-08-14T10:32:19.000Z"
-            // }
-
-            // Now we just show disabled since the enabled key in the configuration is not true. How can we easily show the latest status in these cases? Maybe something time based? Or some better alternatives?
-            
             // If InfluxDB is disabled, show disabled status
             if (!isEnabled) {
                 statusElement.textContent = "Disabled";

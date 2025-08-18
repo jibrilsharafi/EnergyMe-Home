@@ -46,8 +46,11 @@
 #define MINIMUM_FREE_HEAP_SIZE (1 * 1024) // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support
 #define MINIMUM_FREE_PSRAM_SIZE (10 * 1024) // Below this value (in bytes), the system will restart
 #define MINIMUM_FREE_LITTLEFS_SIZE (10 * 1024) // Below this value (in bytes), the system will clear the log
-#define SYSTEM_RESTART_DELAY (1 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations (like flushing logs)
+#define SYSTEM_RESTART_DELAY (3 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations (like flushing logs)
 #define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
+#define STOP_SERVICES_TASK_NAME "stop_services_task"
+#define STOP_SERVICES_TASK_STACK_SIZE (4 * 1024)
+#define STOP_SERVICES_TASK_PRIORITY 10
 
 // Restart infos
 #define FUNCTION_NAME_BUFFER_SIZE 32
@@ -129,10 +132,18 @@ bool listLittleFsFiles(JsonDocument& doc);
 bool getLittleFsFileContent(const char* filepath, char* buffer, size_t bufferSize);
 const char* getContentTypeFromFilename(const char* filename);
 bool compressFile(const char* filepath);
-void migrateCsvToGzip(const char* dirPath);
+void migrateCsvToGzip(const char* dirPath, const char* excludePrefix = nullptr); // Migrates CSV files to gzip, excluding files with the specified prefix (optional)
 
 // String utilities
-bool endsWith(const char* s, const char* suffix);
+inline bool endsWith(const char* s, const char* suffix) {
+    size_t ls = strlen(s), lsf = strlen(suffix);
+    return lsf <= ls && strcmp(s + ls - lsf, suffix) == 0;
+}
+
+inline bool startsWith(const char* s, const char* prefix) {
+    size_t ls = strlen(s), lsp = strlen(prefix);
+    return lsp <= ls && strncmp(s, prefix, lsp) == 0;
+}
 
 // Mutex utilities
 inline bool createMutexIfNeeded(SemaphoreHandle_t* mutex) {
