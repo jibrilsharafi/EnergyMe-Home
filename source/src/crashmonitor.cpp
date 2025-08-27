@@ -341,7 +341,7 @@ namespace CrashMonitor
         LOG_WARNING("=== End Crash Analysis ===");
     }
 
-    bool getCoreDumpInfoJson(JsonDocument& doc) {
+    bool getCoreDumpInfoJson(JsonDocument &doc) {
         // Basic crash information
         esp_reset_reason_t resetReason = esp_reset_reason();
         doc["resetReason"] = getResetReasonString(resetReason);
@@ -409,7 +409,7 @@ namespace CrashMonitor
         return true;
     }
 
-    bool getCoreDumpChunkJson(JsonDocument& doc, size_t offset, size_t chunkSize) {
+    bool getCoreDumpChunkJson(JsonDocument &doc, size_t offset, size_t chunkSize) {
         if (!hasCoreDump()) {
             doc["error"] = "No core dump available";
             return false;

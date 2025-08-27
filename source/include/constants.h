@@ -5,7 +5,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "00"
 #define FIRMWARE_BUILD_VERSION_MINOR "12"
-#define FIRMWARE_BUILD_VERSION_PATCH "30"
+#define FIRMWARE_BUILD_VERSION_PATCH "31"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -63,9 +63,9 @@
 #define PASSWORD_BUFFER_SIZE 64         // For passwords (e.g., WiFi password, MQTT password)
 #define SHORT_STATUS_BUFFER_SIZE 64     // Generic short status messages. Smaller than status so we can use %s of SHORT_STATUS in STATUS
 #define NAME_BUFFER_SIZE 64             // For generic names (device, user, etc.)
-#define MQTT_TOPIC_BUFFER_SIZE 64       // For MQTT topics
-#define URL_BUFFER_SIZE 128             // For URLs
-#define FULL_URL_BUFFER_SIZE 256        // For URLs with query parameters and similars
+#define MQTT_TOPIC_BUFFER_SIZE 128      // For MQTT topics
+#define URL_BUFFER_SIZE 256             // For URLs
+#define FULL_URL_BUFFER_SIZE 512        // For URLs with query parameters and similars
 #define STATUS_BUFFER_SIZE 128          // Generic status messages (e.g., connection status, error messages)
 
 #define STREAM_UTILS_MQTT_PACKET_SIZE 256 // Buffering stream packets instead of sending byte per byte is way more efficient

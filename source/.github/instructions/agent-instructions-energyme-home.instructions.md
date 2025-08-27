@@ -47,7 +47,11 @@ Provide project context and coding guidelines that AI should follow when generat
 
 6. **JSON and Configuration Management**:
     - Always validate JSON structure before accessing fields
-    - Use `JsonDocument` everywhere - automatically uses 2MB PSRAM on ESP32-S3
+    - Use `JsonDocument` everywhere with the SpiRamAllocator like so:
+      ```cpp
+      SpiRamAllocator allocator;
+      JsonDocument doc(&allocator);
+      ```
     - Pass streams directly to `deserializeJson()` for efficiency (e.g., `deserializeJson(doc, file)` or `deserializeJson(doc, http.getStream())`)
     - Initialize all configuration fields with sensible defaults
     - Log JSON parsing errors clearly

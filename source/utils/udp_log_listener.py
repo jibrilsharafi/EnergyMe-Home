@@ -24,6 +24,9 @@ Examples:
     python udp_log_listener.py --filter info            # Only show info and above
     python udp_log_listener.py --multicast 239.1.1.1    # Custom multicast group
     python udp_log_listener.py --no-auto-device-logs    # Disable auto device logging
+    python udp_log_listener.py --exclude-files src/ade7953.cpp          # Filter out all logs from ade7953.cpp
+    python udp_log_listener.py --exclude-functions _printMeterValues    # Filter out _printMeterValues function logs
+    python udp_log_listener.py --exclude-files src/ade7953.cpp src/utils.cpp --exclude-functions _printMeterValues printStatus  # Multiple filters
 
 Device-specific logging:
     The listener automatically creates separate log files for each device in the logs/
@@ -67,7 +70,7 @@ class Colors:
     FUNCTION = '\033[93m'   # Light yellow
 
 class LogFilter:
-    """Filter logs by level"""
+    """Filter logs by level, file/module, and function"""
     LEVELS = {
         'verbose': 0,
         'debug': 1,
@@ -77,12 +80,32 @@ class LogFilter:
         'fatal': 5
     }
     
-    def __init__(self, min_level: str = 'verbose'):
+    def __init__(self, min_level: str = 'verbose', exclude_files: list = None, exclude_functions: list = None):
         self.min_level_value = self.LEVELS.get(min_level.lower(), 0)
+        self.exclude_files = [f.lower() for f in (exclude_files or [])]
+        self.exclude_functions = [f.lower() for f in (exclude_functions or [])]
     
-    def should_show(self, level: str) -> bool:
+    def should_show(self, level: str, function: str = None) -> bool:
+        # Check log level first
         level_value = self.LEVELS.get(level.lower(), 0)
-        return level_value >= self.min_level_value
+        if level_value < self.min_level_value:
+            return False
+        
+        # Check function filtering if function is provided
+        if function and self.exclude_functions:
+            function_lower = function.lower()
+            for exclude_func in self.exclude_functions:
+                if exclude_func in function_lower:
+                    return False
+        
+        # Check file filtering if function contains file info
+        if function and self.exclude_files:
+            function_lower = function.lower()
+            for exclude_file in self.exclude_files:
+                if exclude_file in function_lower:
+                    return False
+        
+        return True
 
 class SyslogParser:
     """Parse syslog-formatted messages from EnergyMe-Home"""
@@ -190,6 +213,10 @@ class UDPLogListener:
             self.stats['start_time'] = time.time()
             
             print(f"Filter: {self.filter.min_level_value} and above")
+            if self.filter.exclude_files:
+                print(f"Excluding files: {', '.join(self.filter.exclude_files)}")
+            if self.filter.exclude_functions:
+                print(f"Excluding functions: {', '.join(self.filter.exclude_functions)}")
             if self.auto_device_logs:
                 print("Device-specific logging: enabled (auto-creates separate txt files per device)")
             else:
@@ -350,7 +377,7 @@ class UDPLogListener:
                     self._log_to_device_file(device_file, parsed, addr)
             
             # Apply filter for display
-            if not self.filter.should_show(parsed['level']):
+            if not self.filter.should_show(parsed['level'], parsed['function']):
                 self.stats['filtered_messages'] += 1
                 # Still log filtered messages to main file if enabled
                 if self.file_handle:
@@ -570,6 +597,18 @@ def main():
     )
     
     parser.add_argument(
+        '--exclude-files',
+        nargs='*',
+        help='Exclude log messages from specific files/modules (e.g., --exclude-files src/ade7953.cpp src/utils.cpp)'
+    )
+    
+    parser.add_argument(
+        '--exclude-functions',
+        nargs='*', 
+        help='Exclude log messages from specific functions (e.g., --exclude-functions _printMeterValues printStatus)'
+    )
+    
+    parser.add_argument(
         '--no-color',
         action='store_true',
         help='Disable colored output'
@@ -614,7 +653,7 @@ def main():
                 setattr(Colors, attr, '')
     
     # Create filter
-    log_filter = LogFilter(args.filter)
+    log_filter = LogFilter(args.filter, args.exclude_files, args.exclude_functions)
     
     # Determine multicast group
     multicast_group = None if args.unicast else args.multicast

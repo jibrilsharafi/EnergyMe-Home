@@ -9,6 +9,8 @@
 #include <PubSubClient.h>
 #include <StreamUtils.h>
 #include <WiFiClientSecure.h>
+#include "esp_https_ota.h"
+#include "esp_http_client.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/gcm.h"
 #include "mbedtls/sha256.h"
@@ -24,7 +26,7 @@
 #include "utils.h"
 
 #define MQTT_TASK_NAME "mqtt_task"
-#define MQTT_TASK_STACK_SIZE (8 * 1024)          // Reduced from 16KB since buffers moved to PSRAM
+#define MQTT_TASK_STACK_SIZE (7 * 1024) // Around 6 kB usage
 #define MQTT_TASK_PRIORITY 3
 
 #define MQTT_LOG_QUEUE_SIZE (64 * 1024) // Generous log size (in bytes) thanks to PSRAM
@@ -32,6 +34,14 @@
 #define MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD 0.10 // Threshold for publishing
 #define MQTT_METER_MAX_BATCHES 10 // Number of consecutive batches to publish before stopping to avoid infinite loop
 #define QUEUE_WAIT_TIMEOUT 100 // Amount of milliseconds to wait if the queue is full or busy
+
+// AWS IoT Jobs OTA constants
+#define OTA_TASK_NAME "ota_task"
+#define OTA_TASK_STACK_SIZE (12 * 1024) // Has to be big to allow for the presigned S3 URL to be handled
+#define OTA_TASK_PRIORITY 5
+#define OTA_STATUS_CHECK_INTERVAL (1 * 1000)
+#define OTA_HTTPS_BUFFER_SIZE_TX (2 * 1024)
+#define MQTT_OTA_TIMEOUT (60 * 1000)
 
 // MQTT buffer sizes - all moved to PSRAM for better memory utilization
 #define MQTT_BUFFER_SIZE (5 * 1024) // Needs to be at least 4 kB for the certificates
@@ -72,14 +82,13 @@
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 #define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
-#define MQTT_PREFERENCES_FW_UPDATE_URL_KEY "url"
-#define MQTT_PREFERENCES_FW_UPDATE_VERSION_KEY "version"
 
 // Cloud services
 // --------------------
-// Basic ingest functionality
+// Reserved topics
 #define AWS_TOPIC "$aws"
 #define MQTT_BASIC_INGEST AWS_TOPIC "/rules"
+#define MQTT_THINGS AWS_TOPIC "/things"
 
 // Certificates path
 #define PREFS_KEY_CERTIFICATE "certificate"
@@ -103,6 +112,7 @@
 // Subscribe topics
 #define MQTT_TOPIC_SUBSCRIBE_COMMAND "command"
 #define MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE "provisioning/response"
+#define MQTT_TOPIC_SUBSCRIBE_JOBS "jobs"
 #define MQTT_TOPIC_SUBSCRIBE_QOS 1
 
 // AWS IoT Core endpoint
@@ -116,6 +126,7 @@ struct PublishMqtt
   bool channel;
   bool statistics;
   bool crash;
+  bool requestOta;
 
   PublishMqtt() : 
     meter(false), // Need to fill queue first
@@ -123,7 +134,8 @@ struct PublishMqtt
     systemStatic(true), 
     channel(true), 
     statistics(true), 
-    crash(false) {} // May not be present
+    crash(false), // May not be present
+    requestOta(true) {} // Always require on connection
 };
 
 namespace Mqtt
@@ -134,11 +146,6 @@ namespace Mqtt
     // Cloud services methods
     void setCloudServicesEnabled(bool enabled);
     bool isCloudServicesEnabled();
-
-    // Firmware update methods
-    void getFirmwareUpdateVersion(char* buffer, size_t bufferSize);
-    void getFirmwareUpdateUrl(char* buffer, size_t bufferSize);
-    bool isLatestFirmwareInstalled();
     
     // Public methods for requesting MQTT publications
     void requestChannelPublish();
@@ -148,6 +155,7 @@ namespace Mqtt
     void pushLog(const LogEntry& entry);
     void pushMeter(const PayloadMeter& payload);
 
-    TaskInfo getTaskInfo();
+    TaskInfo getMqttTaskInfo();
+    TaskInfo getMqttOtaTaskInfo();
 }
 #endif

@@ -49,9 +49,9 @@ namespace CrashMonitor {
     void clearCoreDump();
 
     // Comprehensive crash info with backtrace
-    bool getCoreDumpInfoJson(JsonDocument& doc);
+    bool getCoreDumpInfoJson(JsonDocument &doc);
     // Core dump chunk as base64
-    bool getCoreDumpChunkJson(JsonDocument& doc, size_t offset, size_t chunkSize);
+    bool getCoreDumpChunkJson(JsonDocument &doc, size_t offset, size_t chunkSize);
 
     // Task information
     TaskInfo getTaskInfo();

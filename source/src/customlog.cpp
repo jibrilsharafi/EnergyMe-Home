@@ -17,6 +17,7 @@ namespace CustomLog
 
     static void _callbackMqtt(const LogEntry& entry);
     static void _callbackUdp(const LogEntry& entry);
+    static int _espLogVprintf(const char* format, va_list args);
 
     static bool _initializeQueue();
     static void _startTask();
@@ -35,6 +36,9 @@ namespace CustomLog
             LOG_ERROR("Failed to initialize UDP log queue");
             return;
         }
+
+        // Make all ESP logs also go to our logger
+        esp_log_set_vprintf(_espLogVprintf);
 
         // Initialize UDP destination IP from configuration
         _udpDestinationIp.fromString(DEFAULT_UDP_LOG_DESTINATION_IP);
@@ -77,6 +81,27 @@ namespace CustomLog
     {
         _callbackUdp(entry);
         _callbackMqtt(entry);
+    }
+
+    static int _espLogVprintf(const char* format, va_list args) {
+        // Create buffer for the formatted message
+        char buffer[LOG_CALLBACK_MESSAGE_SIZE];
+        int len = vsnprintf(buffer, sizeof(buffer), format, args);
+        
+        if (len > 0) {
+            // Remove newlines and clean up the message
+            if (buffer[len - 1] == '\n') {
+                buffer[len - 1] = '\0';
+            }
+            
+            // Map to ERROR for ESP error logs, WARNING for others
+            if (strstr(buffer, "E (") != nullptr) LOG_ERROR("[ESP-IDF] %s", buffer);
+            else if (strstr(buffer, "W (") != nullptr) LOG_WARNING("[ESP-IDF] %s", buffer);
+            else LOG_INFO("[ESP-IDF] %s", buffer);
+        }
+        
+        // Also print to serial for debugging
+        return vprintf(format, args);
     }
 
     static bool _initializeQueue() // Cannot use logger here to avoid recursion

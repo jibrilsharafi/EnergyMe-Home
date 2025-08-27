@@ -9,7 +9,7 @@ static void _factoryReset();
 static void _restartTask(void* parameter);
 static void _restartSystem(bool factoryReset = false);
 static void _maintenanceTask(void* parameter);
-static bool _listLittleFsFilesRecursive(JsonDocument& doc, const char* dirname, uint8_t levels);
+static bool _listLittleFsFilesRecursive(JsonDocument &doc, const char* dirname, uint8_t levels);
 
 // New system info functions
 void populateSystemStaticInfo(SystemStaticInfo& info) {
@@ -151,7 +151,8 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
 
     // Tasks
-    info.mqttTaskInfo = Mqtt::getTaskInfo();
+    info.mqttTaskInfo = Mqtt::getMqttTaskInfo();
+    info.mqttOtaTaskInfo = Mqtt::getMqttOtaTaskInfo();
     info.customMqttTaskInfo = CustomMqtt::getTaskInfo();
     info.customServerHealthCheckTaskInfo = CustomServer::getHealthCheckTaskInfo();
     info.customServerOtaTimeoutTaskInfo = CustomServer::getOtaTimeoutTaskInfo();
@@ -169,7 +170,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     LOG_DEBUG("Dynamic system info populated");
 }
 
-void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
+void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument &doc) {
     // No need to use String for dandling pointer data since most of it here is
     // coming from compiled static variables
         
@@ -219,7 +220,7 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc) {
     LOG_DEBUG("Static system info converted to JSON");
 }
 
-void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
+void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     // Time
     doc["time"]["uptimeMilliseconds"] = (uint64_t)info.uptimeMilliseconds;
     doc["time"]["uptimeSeconds"] = info.uptimeSeconds;
@@ -277,6 +278,11 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     doc["tasks"]["mqtt"]["minimumFreeStack"] = info.mqttTaskInfo.minimumFreeStack;
     doc["tasks"]["mqtt"]["freePercentage"] = info.mqttTaskInfo.freePercentage;
     doc["tasks"]["mqtt"]["usedPercentage"] = info.mqttTaskInfo.usedPercentage;
+
+    doc["tasks"]["mqttOta"]["allocatedStack"] = info.mqttOtaTaskInfo.allocatedStack;
+    doc["tasks"]["mqttOta"]["minimumFreeStack"] = info.mqttOtaTaskInfo.minimumFreeStack;
+    doc["tasks"]["mqttOta"]["freePercentage"] = info.mqttOtaTaskInfo.freePercentage;
+    doc["tasks"]["mqttOta"]["usedPercentage"] = info.mqttOtaTaskInfo.usedPercentage;
 
     doc["tasks"]["customMqtt"]["allocatedStack"] = info.customMqttTaskInfo.allocatedStack;
     doc["tasks"]["customMqtt"]["minimumFreeStack"] = info.customMqttTaskInfo.minimumFreeStack;
@@ -346,19 +352,19 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc) {
     LOG_DEBUG("Dynamic system info converted to JSON");
 }
 
-void getJsonDeviceStaticInfo(JsonDocument& doc) {
+void getJsonDeviceStaticInfo(JsonDocument &doc) {
     SystemStaticInfo info;
     populateSystemStaticInfo(info);
     systemStaticInfoToJson(info, doc);
 }
 
-void getJsonDeviceDynamicInfo(JsonDocument& doc) {
+void getJsonDeviceDynamicInfo(JsonDocument &doc) {
     SystemDynamicInfo info;
     populateSystemDynamicInfo(info);
     systemDynamicInfoToJson(info, doc);
 }
 
-bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError) {
+bool safeSerializeJson(JsonDocument &jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError) {
     // Validate inputs
     if (!buffer || bufferSize == 0) {
         LOG_WARNING("Invalid buffer parameters passed to safeSerializeJson");
@@ -393,7 +399,6 @@ static void _maintenanceTask(void* parameter) {
     _maintenanceTaskShouldRun = true;
     while (_maintenanceTaskShouldRun) {
         // Update and print statistics
-        updateStatistics();
         printStatistics();
         printDeviceStatusDynamic();
 
@@ -605,26 +610,26 @@ void printDeviceStatusDynamic()
         info->uptimeSeconds, info->uptimeMilliseconds, info->currentTimestampIso, info->temperatureCelsius
     );
 
-    LOG_DEBUG("Heap: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc",  
+    LOG_DEBUG("Heap: %lu total, %lu free (%.1f%%), %lu used (%.1f%%), %lu min free, %lu max alloc",  
         info->heapTotalBytes, 
         info->heapFreeBytes, info->heapFreePercentage, 
         info->heapUsedBytes, info->heapUsedPercentage, 
         info->heapMinFreeBytes, info->heapMaxAllocBytes
     );
     if (info->psramFreeBytes > 0 || info->psramUsedBytes > 0) {
-        LOG_DEBUG("PSRAM: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %lu min free, %lu max alloc", 
+        LOG_DEBUG("PSRAM: %lu total, %lu free (%.1f%%), %lu used (%.1f%%), %lu min free, %lu max alloc", 
             info->psramTotalBytes,
             info->psramFreeBytes, info->psramFreePercentage, 
             info->psramUsedBytes, info->psramUsedPercentage, 
             info->psramMinFreeBytes, info->psramMaxAllocBytes
         );
     }
-    LOG_DEBUG("LittleFS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%)",  
+    LOG_DEBUG("LittleFS: %lu total, %lu free (%.1f%%), %lu used (%.1f%%)",  
         info->littlefsTotalBytes, 
         info->littlefsFreeBytes, info->littlefsFreePercentage, 
         info->littlefsUsedBytes, info->littlefsUsedPercentage
     );
-    LOG_DEBUG("NVS: %lu total, %lu free (%.2f%%), %lu used (%.2f%%), %u namespaces",  
+    LOG_DEBUG("NVS: %lu total, %lu free (%.1f%%), %lu used (%.1f%%), %u namespaces",  
         info->totalUsableEntries, info->availableEntries, info->availableEntriesPercentage, 
         info->usedEntries, info->usedEntriesPercentage, info->namespaceCount
     );
@@ -636,72 +641,77 @@ void printDeviceStatusDynamic()
         LOG_DEBUG("WiFi: Disconnected | MAC %s", info->wifiMacAddress);
     }
 
-    LOG_DEBUG("Tasks - MQTT: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - MQTT: %lu total, %lu minimum free (%.1f%%)",
         info->mqttTaskInfo.allocatedStack, 
         info->mqttTaskInfo.minimumFreeStack, 
         info->mqttTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - Custom MQTT: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - MQTT OTA: %lu total, %lu minimum free (%.1f%%)",
+        info->mqttOtaTaskInfo.allocatedStack, 
+        info->mqttOtaTaskInfo.minimumFreeStack, 
+        info->mqttOtaTaskInfo.freePercentage
+    );
+    LOG_DEBUG("Tasks - Custom MQTT: %lu total, %lu minimum free (%.1f%%)",
         info->customMqttTaskInfo.allocatedStack, 
         info->customMqttTaskInfo.minimumFreeStack, 
         info->customMqttTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - Custom Server Health Check: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - Custom Server Health Check: %lu total, %lu minimum free (%.1f%%)",
         info->customServerHealthCheckTaskInfo.allocatedStack, 
         info->customServerHealthCheckTaskInfo.minimumFreeStack, 
         info->customServerHealthCheckTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - Custom Server OTA Timeout: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - Custom Server OTA Timeout: %lu total, %lu minimum free (%.1f%%)",
         info->customServerOtaTimeoutTaskInfo.allocatedStack, 
         info->customServerOtaTimeoutTaskInfo.minimumFreeStack, 
         info->customServerOtaTimeoutTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - LED: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - LED: %lu total, %lu minimum free (%.1f%%)",
         info->ledTaskInfo.allocatedStack, 
         info->ledTaskInfo.minimumFreeStack, 
         info->ledTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - InfluxDB: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - InfluxDB: %lu total, %lu minimum free (%.1f%%)",
         info->influxDbTaskInfo.allocatedStack, 
         info->influxDbTaskInfo.minimumFreeStack, 
         info->influxDbTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - Crash Monitor: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - Crash Monitor: %lu total, %lu minimum free (%.1f%%)",
         info->crashMonitorTaskInfo.allocatedStack, 
         info->crashMonitorTaskInfo.minimumFreeStack, 
         info->crashMonitorTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - Button Handler: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - Button Handler: %lu total, %lu minimum free (%.1f%%)",
         info->buttonHandlerTaskInfo.allocatedStack, 
         info->buttonHandlerTaskInfo.minimumFreeStack, 
         info->buttonHandlerTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - UDP Log: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - UDP Log: %lu total, %lu minimum free (%.1f%%)",
         info->udpLogTaskInfo.allocatedStack, 
         info->udpLogTaskInfo.minimumFreeStack, 
         info->udpLogTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - Custom WiFi: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - Custom WiFi: %lu total, %lu minimum free (%.1f%%)",
         info->customWifiTaskInfo.allocatedStack, 
         info->customWifiTaskInfo.minimumFreeStack, 
         info->customWifiTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - ADE7953 Meter Reading: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - ADE7953 Meter Reading: %lu total, %lu minimum free (%.1f%%)",
         info->ade7953MeterReadingTaskInfo.allocatedStack, 
         info->ade7953MeterReadingTaskInfo.minimumFreeStack, 
         info->ade7953MeterReadingTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - ADE7953 Energy Save: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - ADE7953 Energy Save: %lu total, %lu minimum free (%.1f%%)",
         info->ade7953EnergySaveTaskInfo.allocatedStack, 
         info->ade7953EnergySaveTaskInfo.minimumFreeStack, 
         info->ade7953EnergySaveTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - ADE7953 Hourly CSV: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - ADE7953 Hourly CSV: %lu total, %lu minimum free (%.1f%%)",
         info->ade7953HourlyCsvTaskInfo.allocatedStack, 
         info->ade7953HourlyCsvTaskInfo.minimumFreeStack, 
         info->ade7953HourlyCsvTaskInfo.freePercentage
     );
-    LOG_DEBUG("Tasks - Maintenance: %lu total, %lu minimum free (%.2f%%)",
+    LOG_DEBUG("Tasks - Maintenance: %lu total, %lu minimum free (%.1f%%)",
         info->maintenanceTaskInfo.allocatedStack, 
         info->maintenanceTaskInfo.minimumFreeStack, 
         info->maintenanceTaskInfo.freePercentage
@@ -725,6 +735,8 @@ void updateStatistics() {
 }
 
 void printStatistics() {
+    updateStatistics();
+
     LOG_DEBUG("--- Statistics ---");
     LOG_DEBUG("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu readings | %llu reading failures",  
         statistics.ade7953TotalInterrupts, 
@@ -777,7 +789,10 @@ void printStatistics() {
     LOG_DEBUG("-------------------");
 }
 
-void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument) {
+void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
+    // Update to have latest values
+    updateStatistics();
+
     // ADE7953 statistics
     jsonDocument["ade7953"]["totalInterrupts"] = statistics.ade7953TotalInterrupts;
     jsonDocument["ade7953"]["totalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;
@@ -942,11 +957,11 @@ uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval,
     
 // === LittleFS FILE OPERATIONS ===
 
-bool listLittleFsFiles(JsonDocument& doc) {
+bool listLittleFsFiles(JsonDocument &doc) {
     return _listLittleFsFilesRecursive(doc, "/", 0);
 }
 
-static bool _listLittleFsFilesRecursive(JsonDocument& doc, const char* dirname, uint8_t levels) {
+static bool _listLittleFsFilesRecursive(JsonDocument &doc, const char* dirname, uint8_t levels) {
     File root = LittleFS.open(dirname);
     if (!root) {
         LOG_ERROR("Failed to open LittleFS directory: %s", dirname);
@@ -1129,7 +1144,7 @@ void migrateCsvToGzip(const char* dirPath, const char* excludePrefix) {
     LOG_DEBUG("Starting CSV -> gzip migration in %s", dirPath);
 
     if (!LittleFS.exists(dirPath)) {
-        LOG_WARNING("Energy folder not present, nothing to migrate");
+        LOG_INFO("Energy folder not present, nothing to migrate");
         return;
     }
 

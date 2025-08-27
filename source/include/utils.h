@@ -38,9 +38,9 @@
 #define TASK_RESTART_PRIORITY 5
 
 #define TASK_MAINTENANCE_NAME "maintenance_task"
-#define TASK_MAINTENANCE_STACK_SIZE (6 * 1024)     // Reduced from 6KB since large structs moved to PSRAM
+#define TASK_MAINTENANCE_STACK_SIZE (5 * 1024)     // Maximum usage close to 5 kB
 #define TASK_MAINTENANCE_PRIORITY 3
-#define MAINTENANCE_CHECK_INTERVAL (60 * 1000) // Interval to check main parameters, to avoid overloading the loop
+#define MAINTENANCE_CHECK_INTERVAL (60 * 1000)
 
 // System restart thresholds
 #define MINIMUM_FREE_HEAP_SIZE (1 * 1024) // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support
@@ -59,6 +59,22 @@
 
 // First boot
 #define IS_FIRST_BOOT_DONE_KEY "first_boot"
+
+// Even though the ArduinoJson automatically allocates the JSON documents to PSRAM when the heap is exhausted,
+// it still leads to defragmentation here. Thus, to avoid this, we explicitly use a custom allocator.
+struct SpiRamAllocator : ArduinoJson::Allocator {
+  void* allocate(size_t size) override {
+    return ps_malloc(size);
+  }
+
+  void deallocate(void* pointer) override {
+    free(pointer);
+  }
+
+  void* reallocate(void* ptr, size_t new_size) override {
+    return ps_realloc(ptr, new_size);
+  }
+};
 
 // Time utilities (high precision 64-bit alternatives)
 // Come one, on this ESP32S3 and in 2025 can we still use 32bits millis
@@ -84,14 +100,14 @@ void getDeviceId(char* deviceId, size_t maxLength);
 // System information and monitoring
 void populateSystemStaticInfo(SystemStaticInfo& info);
 void populateSystemDynamicInfo(SystemDynamicInfo& info);
-void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument& doc);
-void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument& doc);
-void getJsonDeviceStaticInfo(JsonDocument& doc);
-void getJsonDeviceDynamicInfo(JsonDocument& doc);
+void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument &doc);
+void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc);
+void getJsonDeviceStaticInfo(JsonDocument &doc);
+void getJsonDeviceDynamicInfo(JsonDocument &doc);
 
 // Statistics management
 void updateStatistics();
-void statisticsToJson(Statistics& statistics, JsonDocument& jsonDocument);
+void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument);
 void printStatistics();
 
 // System status printing
@@ -119,7 +135,7 @@ TaskInfo getMaintenanceTaskInfo();
 void setRestartSystem(const char* reason, bool factoryReset = false);
 
 // JSON utilities
-bool safeSerializeJson(JsonDocument& jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
+bool safeSerializeJson(JsonDocument &jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
 
 // Preferences management
 bool isFirstBootDone();
@@ -128,7 +144,7 @@ void createAllNamespaces();
 void clearAllPreferences(bool nuclearOption = false); // No real function passes true to this function, but maybe it will be useful in the future
 
 // LittleFS file operations
-bool listLittleFsFiles(JsonDocument& doc);
+bool listLittleFsFiles(JsonDocument &doc);
 bool getLittleFsFileContent(const char* filepath, char* buffer, size_t bufferSize);
 const char* getContentTypeFromFilename(const char* filename);
 bool compressFile(const char* filepath);

@@ -183,6 +183,7 @@ struct SystemDynamicInfo {
     
     // Tasks
     TaskInfo mqttTaskInfo;
+    TaskInfo mqttOtaTaskInfo;
     TaskInfo customMqttTaskInfo;
     TaskInfo customServerHealthCheckTaskInfo;
     TaskInfo customServerOtaTimeoutTaskInfo;

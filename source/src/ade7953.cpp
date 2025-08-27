@@ -761,7 +761,8 @@ namespace Ade7953
 
     bool getAllChannelDataAsJson(JsonDocument &jsonDocument) {
         for (uint8_t channelIndex = 0; channelIndex < CHANNEL_COUNT; channelIndex++) {
-            JsonDocument channelDoc;
+            SpiRamAllocator allocator;
+            JsonDocument channelDoc(&allocator);
             if (!getChannelDataAsJson(channelDoc, channelIndex)) {
                 LOG_WARNING("Failed to get channel data as JSON for channel %lu", channelIndex);
                 continue;
@@ -981,7 +982,8 @@ namespace Ade7953
                 _jsonChannel["label"] = JsonString(channelData.label); // Ensure the string is not a dangling pointer
                 _jsonChannel["phase"] = channelData.phase;
 
-                JsonDocument jsonData;
+                SpiRamAllocator allocator;
+                JsonDocument jsonData(&allocator);
                 if (!singleMeterValuesToJson(jsonData, i)) {
                     LOG_WARNING("Failed to convert single meter values to JSON for channel %d", i);
                     continue;
@@ -1719,7 +1721,7 @@ namespace Ade7953
         LOG_DEBUG("Successfully applied configuration");
     }
 
-    bool _validateJsonConfiguration(const JsonDocument& jsonDocument, bool partial) {
+    bool _validateJsonConfiguration(const JsonDocument &jsonDocument, bool partial) {
         if (!jsonDocument.is<JsonObjectConst>()) {
             LOG_WARNING("JSON is not an object");
             return false;
@@ -2279,11 +2281,13 @@ namespace Ade7953
             if (ade7953Channel == Ade7953Channel::A) {
                 if (_interruptHandledChannelA) {
                     LOG_DEBUG("Tried to handle CYCEND interrupt for channel A, but it was already handled");
+                    _recordFailure();
                     return false; // Already handled, cannot read again
                 }
             } else {
                 if (_interruptHandledChannelB) {
                     LOG_DEBUG("Tried to handle CYCEND interrupt for channel B, but it was already handled");
+                    _recordFailure();
                     return false; // Already handled, cannot read again
                 }
             }

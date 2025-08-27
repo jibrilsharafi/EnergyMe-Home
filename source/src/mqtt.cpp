@@ -47,10 +47,6 @@ namespace Mqtt
     static uint8_t _mqttLogLevelInt = DEFAULT_MQTT_LOG_LEVEL_INT;
     static LogLevel _mqttMinLogLevel = LogLevel::INFO;
 
-    // Version for OTA information
-    static char _firmwareUpdateUrl[URL_BUFFER_SIZE];
-    static char _firmwareUpdateVersion[VERSION_BUFFER_SIZE];
-    
     // Certificates storage (decrypted) - allocated in PSRAM
     static char *_awsIotCoreCert = nullptr;
     static char *_awsIotCorePrivateKey = nullptr;
@@ -70,6 +66,11 @@ namespace Mqtt
     static bool _lastLoopToPublishData = false;
     static bool _taskShouldRun = false;
 
+    // AWS IoT Jobs OTA task (global to ensure they work and do not get dereferenced)
+    static char _otaCurrentUrl[URL_BUFFER_SIZE];
+    static char _otaCurrentJobId[NAME_BUFFER_SIZE];
+    static TaskHandle_t _otaTaskHandle = nullptr;
+
     // Thread safety
     static SemaphoreHandle_t _configMutex = nullptr;
 
@@ -88,14 +89,10 @@ namespace Mqtt
     static void _setSendPowerDataEnabled(bool enabled);
     static void _setMqttLogLevel(const char* logLevel);
     static void _updateMqttMinLogLevel();
-    static void _setFirmwareUpdateUrl(const char* url);
-    static void _setFirmwareUpdateVersion(const char* version);
 
     static void _saveCloudServicesEnabledToPreferences(bool enabled);
     static void _saveSendPowerDataEnabledToPreferences(bool enabled);
     static void _saveMqttLogLevelToPreferences(uint8_t logLevel);
-    static void _saveFirmwareUpdateUrlToPreferences(const char* url);
-    static void _saveFirmwareUpdateVersionToPreferences(const char* version);
         
     // Task management
     static void _startTask();
@@ -103,8 +100,9 @@ namespace Mqtt
     static void _mqttTask(void *parameter);
 
     // Topic management
-    static void _constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topic, size_t topicBufferSize);
-    static void _constructMqttTopic(const char* finalTopic, char* topic, size_t topicBufferSize);
+    static void _constructMqttTopicReservedThings(const char* finalTopic, char* topicBuffer, size_t topicBufferSize);
+    static void _constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topicBuffer, size_t topicBufferSize);
+    static void _constructMqttTopic(const char* finalTopic, char* topicBuffer, size_t topicBufferSize);
     static void _setupTopics();
 
     // Publish topics
@@ -122,17 +120,27 @@ namespace Mqtt
     static bool _subscribeToTopic(const char* topicSuffix);
     static void _subscribeCommand();
     static void _subscribeProvisioningResponse();
+    static void _subscribeAwsIotJobs();
     
     // Subscription callback handler
     static void _subscribeCallback(const char* topic, byte *payload, uint32_t length);
     static void _handleCommandMessage(const char* message);
-    static void _handleFirmwareUpdateMessage(JsonDocument& dataDoc);
+    static void _handleAwsIotJobMessage(const char* message, const char* topic);
     static void _handleRestartMessage();
     static void _handleProvisioningResponseMessage(const char* message);
     static void _handleEraseCertificatesMessage();
-    static void _handleSetSendPowerDataMessage(JsonDocument& dataDoc);
-    static void _handleSetMqttLogLevelMessage(JsonDocument& dataDoc);
+    static void _handleSetSendPowerDataMessage(JsonDocument &dataDoc);
+    static void _handleSetMqttLogLevelMessage(JsonDocument &dataDoc);
     
+    // AWS IoT Jobs OTA functions
+    static bool _validateAwsIotJobMessage(const char* message, const char* topic);
+    static void _handleJobListResponse(JsonDocument &doc);
+    static void _handleSingleJobExecution(JsonDocument &doc);
+    static void _publishOtaJobDetail(const char* jobId);
+    static void _otaTask(void* parameter);
+    static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event);
+    static bool _performOtaUpdate();
+
     // Publishing functions
     static void _publishMeter();
     static void _publishSystemStatic();
@@ -142,6 +150,7 @@ namespace Mqtt
     static void _publishCrash();
     static void _publishLog(const LogEntry& entry);
     static bool _publishProvisioningRequest();
+    static void _publishOtaJobsRequest();
     
     static void _checkPublishMqtt();
     static void _checkIfPublishMeterNeeded();
@@ -160,6 +169,7 @@ namespace Mqtt
     static bool _publishMeterStreaming();
     static bool _publishMeterJson();
     static bool _publishCrashJson();
+    static bool _publishOtaJobsRequestJson();
     
     // Certificate management
     static void _readEncryptedPreferences(const char* preference_key, const char* preshared_encryption_key, char* decryptedData, size_t decryptedDataSize);
@@ -204,6 +214,9 @@ namespace Mqtt
         _loadConfigFromPreferences();
         _initializeLogQueue();
         _initializeMeterQueue();
+
+    // Initialize OTA job ID buffer
+    memset(_otaCurrentJobId, 0, sizeof(_otaCurrentJobId));
 
         // Allocate certificate buffers in PSRAM
         if (_awsIotCoreCert == nullptr) {
@@ -301,59 +314,6 @@ namespace Mqtt
 
     bool isCloudServicesEnabled() { return _cloudServicesEnabled; }
 
-    // Firmware update methods
-    // =======================
-
-    void getFirmwareUpdateVersion(char* buffer, size_t bufferSize) {
-        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            LOG_ERROR("Failed to acquire configuration mutex for getFirmwareUpdateVersion");
-            snprintf(buffer, bufferSize, "%s", "");
-            return;
-        }
-        snprintf(buffer, bufferSize, "%s", _firmwareUpdateVersion);
-        releaseMutex(&_configMutex);
-    }
-
-    void getFirmwareUpdateUrl(char* buffer, size_t bufferSize) {
-        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            LOG_ERROR("Failed to acquire configuration mutex for getFirmwareUpdateUrl");
-            snprintf(buffer, bufferSize, "%s", "");
-            return;
-        }
-        snprintf(buffer, bufferSize, "%s", _firmwareUpdateUrl);
-        releaseMutex(&_configMutex);
-    }
-
-    bool isLatestFirmwareInstalled() {
-        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            LOG_ERROR("Failed to acquire configuration mutex for isLatestFirmwareInstalled");
-            return false; // Assume not installed if we can't access
-        }
-
-        if (strlen(_firmwareUpdateVersion) == 0 || strchr(_firmwareUpdateVersion, '.') == NULL) {
-            LOG_DEBUG("Latest firmware version is empty or in the wrong format");
-            releaseMutex(&_configMutex);
-            return true;
-        }
-
-        int32_t latestMajor, latestMinor, latestPatch;
-        sscanf(_firmwareUpdateVersion, "%ld.%ld.%ld", &latestMajor, &latestMinor, &latestPatch);
-
-        int32_t currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
-        int32_t currentMinor = atoi(FIRMWARE_BUILD_VERSION_MINOR);
-        int32_t currentPatch = atoi(FIRMWARE_BUILD_VERSION_PATCH);
-
-        if (latestMajor < currentMajor) return true; // Current major is higher (thus no need to check minor/patch)
-        if (latestMajor > currentMajor) return false; // Current major is lower (thus latest is newer)
-        if (latestMinor < currentMinor) return true; // Current minor is higher (thus no need to check patch)
-        if (latestMinor > currentMinor) return false; // Current minor is lower (thus latest is newer)
-        if (latestPatch < currentPatch) return true; // Current patch is higher
-        if (latestPatch > currentPatch) return false; // Current patch is lower (thus latest is newer)
-
-        releaseMutex(&_configMutex);
-        return true; // Versions are equal
-    }
-
     // Public methods for requesting MQTT publications
     // ===============================================
 
@@ -388,9 +348,14 @@ namespace Mqtt
         if (_sendPowerDataEnabled) xQueueSend(_meterQueue, &payload, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT)); // Only add to queue if we chose to send power data
     }
 
-    TaskInfo getTaskInfo()
+    TaskInfo getMqttTaskInfo()
     {
         return getTaskInfoSafely(_taskHandle, MQTT_TASK_STACK_SIZE);
+    }
+
+    TaskInfo getMqttOtaTaskInfo()
+    {
+        return getTaskInfoSafely(_otaTaskHandle, OTA_TASK_STACK_SIZE);
     }
 
     // Private functions
@@ -470,16 +435,11 @@ namespace Mqtt
         _sendPowerDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, DEFAULT_SEND_POWER_DATA_ENABLED);
         _mqttLogLevelInt = prefs.getUChar(MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY, DEFAULT_MQTT_LOG_LEVEL_INT);
         _updateMqttMinLogLevel(); // Convert integer to LogLevel enum
-        prefs.getString(MQTT_PREFERENCES_FW_UPDATE_URL_KEY, _firmwareUpdateUrl, sizeof(_firmwareUpdateUrl));
-        prefs.getString(MQTT_PREFERENCES_FW_UPDATE_VERSION_KEY, _firmwareUpdateVersion, sizeof(_firmwareUpdateVersion));
 
         LOG_DEBUG("Cloud services enabled: %s, Send power data enabled: %s, MQTT log level: %u",
                    _cloudServicesEnabled ? "true" : "false",
                    _sendPowerDataEnabled ? "true" : "false",
                    _mqttLogLevelInt);
-        LOG_DEBUG("Firmware update | URL: %s, Version: %s", 
-                   _firmwareUpdateUrl,
-                   _firmwareUpdateVersion);
 
         prefs.end();
         releaseMutex(&_configMutex);
@@ -493,8 +453,6 @@ namespace Mqtt
         _saveCloudServicesEnabledToPreferences(_cloudServicesEnabled);
         _saveSendPowerDataEnabledToPreferences(_sendPowerDataEnabled);
         _saveMqttLogLevelToPreferences(_mqttLogLevelInt);
-        _saveFirmwareUpdateUrlToPreferences(_firmwareUpdateUrl);
-        _saveFirmwareUpdateVersionToPreferences(_firmwareUpdateVersion);
         
         LOG_DEBUG("MQTT preferences saved");
     }
@@ -555,44 +513,6 @@ namespace Mqtt
 
         LOG_DEBUG("MQTT log level set to %s (%d)", logLevel, _mqttLogLevelInt);
     }
-    
-    static void _setFirmwareUpdateVersion(const char* version) {
-        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            LOG_ERROR("Failed to acquire configuration mutex for setting firmware update version");
-            return;
-        }
-
-        if (version == nullptr) {
-            LOG_ERROR("Invalid firmware update version provided");
-            releaseMutex(&_configMutex);
-            return;
-        }
-
-        snprintf(_firmwareUpdateVersion, sizeof(_firmwareUpdateVersion), "%s", version);
-        _saveFirmwareUpdateVersionToPreferences(_firmwareUpdateVersion);
-        releaseMutex(&_configMutex);
-
-        LOG_DEBUG("Firmware update version set to %s", _firmwareUpdateVersion);
-    }
-
-    static void _setFirmwareUpdateUrl(const char* url) {
-        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            LOG_ERROR("Failed to acquire configuration mutex for setting firmware update URL");
-            return;
-        }
-
-        if (url == nullptr) {
-            LOG_ERROR("Invalid firmware update URL provided");
-            releaseMutex(&_configMutex);
-            return;
-        }
-
-        snprintf(_firmwareUpdateUrl, sizeof(_firmwareUpdateUrl), "%s", url);
-        _saveFirmwareUpdateUrlToPreferences(_firmwareUpdateUrl);
-        releaseMutex(&_configMutex);
-
-        LOG_DEBUG("Firmware update URL set to %s", _firmwareUpdateUrl);
-    }
 
     static void _saveCloudServicesEnabledToPreferences(bool enabled) {
         Preferences prefs;
@@ -623,36 +543,6 @@ namespace Mqtt
             LOG_ERROR("Failed to save MQTT log level preference: %d", logLevel);
         }
         
-        prefs.end();
-    }
-
-    static void _saveFirmwareUpdateVersionToPreferences(const char* version) {
-        Preferences prefs;
-        
-        prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
-        size_t bytesWritten = prefs.putString(MQTT_PREFERENCES_FW_UPDATE_VERSION_KEY, version);
-        if (bytesWritten != strlen(version)) {
-            LOG_ERROR(
-                "Failed to save firmware update version preference (written %zu | expected %zu): %s",
-                bytesWritten, strlen(version), version
-            );
-        }
-
-        prefs.end();
-    }
-
-    static void _saveFirmwareUpdateUrlToPreferences(const char* url) {
-        Preferences prefs;
-
-        prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
-        size_t bytesWritten = prefs.putString(MQTT_PREFERENCES_FW_UPDATE_URL_KEY, url);
-        if (bytesWritten != strlen(url)) {
-            LOG_ERROR(
-                "Failed to save firmware update URL preference (written %zu | expected %zu): %s", 
-                bytesWritten, strlen(url), url
-            );
-        }
-
         prefs.end();
     }
 
@@ -740,10 +630,23 @@ namespace Mqtt
 
     // Topic management
     // ================
-
-    static void _constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topic, size_t topicBufferSize) {
+    static void _constructMqttTopicReservedThings(const char* finalTopic, char* topicBuffer, size_t topicBufferSize) {
+        // Example: $aws/things/588c81c47a5c/jobs/notify-next
         snprintf(
-            topic,
+            topicBuffer,
+            topicBufferSize,
+            "%s/%s/%s",
+            MQTT_THINGS,
+            DEVICE_ID,
+            finalTopic
+        );
+
+        LOG_DEBUG("Constructing MQTT reserved things topic for %s | %s", finalTopic, topicBuffer);
+    }
+
+    static void _constructMqttTopicWithRule(const char* ruleName, const char* finalTopic, char* topicBuffer, size_t topicBufferSize) {
+        snprintf(
+            topicBuffer,
             topicBufferSize,
             "%s/%s/%s/%s/%s/%s",
             MQTT_BASIC_INGEST,
@@ -754,12 +657,12 @@ namespace Mqtt
             finalTopic
         );
 
-        LOG_DEBUG("Constructing MQTT topic with rule for %s | %s", finalTopic, topic);
+        LOG_DEBUG("Constructing MQTT topic with rule for %s | %s", finalTopic, topicBuffer);
     }
 
-    static void _constructMqttTopic(const char* finalTopic, char* topic, size_t topicBufferSize) {
+    static void _constructMqttTopic(const char* finalTopic, char* topicBuffer, size_t topicBufferSize) {
         snprintf(
-            topic,
+            topicBuffer,
             topicBufferSize,
             "%s/%s/%s/%s",
             MQTT_TOPIC_1,
@@ -768,7 +671,7 @@ namespace Mqtt
             finalTopic
         );
 
-        LOG_DEBUG("Constructing MQTT topic for %s | %s", finalTopic, topic);
+        LOG_DEBUG("Constructing MQTT topic for %s | %s", finalTopic, topicBuffer);
     }
 
     static void _setupTopics() {
@@ -796,6 +699,7 @@ namespace Mqtt
     static void _subscribeToTopics() {
         _subscribeCommand();
         _subscribeProvisioningResponse();
+        _subscribeAwsIotJobs();
 
         LOG_DEBUG("Subscribed to topics");
     }
@@ -815,6 +719,38 @@ namespace Mqtt
 
     static void _subscribeCommand() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_COMMAND); }
     static void _subscribeProvisioningResponse() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE); }
+    
+    static void _subscribeAwsIotJobs() {
+        char jobNotifyTopic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings("jobs/notify-next", jobNotifyTopic, sizeof(jobNotifyTopic));
+        
+        char jobsAcceptedTopic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings("jobs/get/accepted", jobsAcceptedTopic, sizeof(jobsAcceptedTopic));
+
+        char jobAcceptedTopic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings("jobs/+/get/accepted", jobAcceptedTopic, sizeof(jobAcceptedTopic));
+
+        LOG_DEBUG("Attempting to subscribe to: %s", jobNotifyTopic);
+        if (_clientMqtt.subscribe(jobNotifyTopic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+            LOG_DEBUG("Subscribed to AWS IoT Jobs notify topic: %s", jobNotifyTopic);
+        } else {
+            LOG_WARNING("Failed to subscribe to AWS IoT Jobs notify topic: %s", jobNotifyTopic);
+        }
+        
+        LOG_DEBUG("Attempting to subscribe to: %s", jobsAcceptedTopic);
+        if (_clientMqtt.subscribe(jobsAcceptedTopic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+            LOG_DEBUG("Subscribed to AWS IoT Jobs accepted topic: %s", jobsAcceptedTopic);
+        } else {
+            LOG_WARNING("Failed to subscribe to AWS IoT Jobs accepted topic: %s", jobsAcceptedTopic);
+        }
+
+        LOG_DEBUG("Attempting to subscribe to: %s", jobAcceptedTopic);
+        if (_clientMqtt.subscribe(jobAcceptedTopic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+            LOG_DEBUG("Subscribed to AWS IoT Job accepted topic: %s", jobAcceptedTopic);
+        } else {
+            LOG_WARNING("Failed to subscribe to AWS IoT Job accepted topic: %s", jobAcceptedTopic);
+        }
+    }
 
     // Subscription callback handler
     // =============================
@@ -841,6 +777,7 @@ namespace Mqtt
 
         if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_COMMAND)) _handleCommandMessage(message);
         else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE)) _handleProvisioningResponseMessage(message);
+        else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_JOBS)) _handleAwsIotJobMessage(message, topic);
         else LOG_WARNING("Unknown MQTT topic received: %s", topic);
         
         // Clean up PSRAM allocation
@@ -850,42 +787,37 @@ namespace Mqtt
     static void _handleCommandMessage(const char* message)
     {
         // Expected JSON format: {"command": "command_name", "data": {...}}
-        JsonDocument jsonDocument;
-        if (deserializeJson(jsonDocument, message)) {
-            LOG_ERROR("Failed to parse command JSON message: %s", message);
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        DeserializationError error = deserializeJson(doc, message);
+        if (error) {
+            LOG_ERROR("Failed to parse command JSON message (%s): %s", error.c_str(), message);
             return;
         }
 
-        if (!jsonDocument["command"].is<const char*>()) {
+        if (!doc["command"].is<const char*>()) {
             LOG_ERROR("Invalid command message: missing or invalid 'command' field");
             return;
         }
 
-        const char* command = jsonDocument["command"].as<const char*>();
-        JsonDocument dataDoc = jsonDocument["data"].as<JsonObject>();
+        const char* command = doc["command"].as<const char*>();
+        SpiRamAllocator allocatorData;
+        JsonDocument docCommandMessage(&allocatorData);
+        docCommandMessage = doc["data"].as<JsonObject>();
 
         LOG_DEBUG("Processing MQTT command: %s", command);
 
         if (strcmp(command, "restart") == 0) {
             _handleRestartMessage();
-        } else if (strcmp(command, "firmware_update") == 0) {
-            _handleFirmwareUpdateMessage(dataDoc);
         } else if (strcmp(command, "erase_certificates") == 0) {
             _handleEraseCertificatesMessage();
         } else if (strcmp(command, "set_send_power_data") == 0) {
-            _handleSetSendPowerDataMessage(dataDoc);
+            _handleSetSendPowerDataMessage(docCommandMessage);
         } else if (strcmp(command, "set_mqtt_log_level") == 0) {
-            _handleSetMqttLogLevelMessage(dataDoc);
+            _handleSetMqttLogLevelMessage(docCommandMessage);
         } else {
             LOG_WARNING("Unknown command received: %s", command);
         }
-    }
-
-    static void _handleFirmwareUpdateMessage(JsonDocument& dataDoc)
-    {
-        // Expected data format: {"version": "1.0.0", "url": "https://example.com/firmware.bin"}
-        if (dataDoc["version"].is<const char*>()) _setFirmwareUpdateVersion(dataDoc["version"].as<const char*>());
-        if (dataDoc["url"].is<const char*>()) _setFirmwareUpdateUrl(dataDoc["url"].as<const char*>());
     }
 
     static void _handleRestartMessage()
@@ -896,24 +828,26 @@ namespace Mqtt
     static void _handleProvisioningResponseMessage(const char* message)
     {
         // Expected JSON format: {"status": "success", "encryptedCertificatePem": "...", "encryptedPrivateKey": "..."}
-        JsonDocument jsonDocument;
-        if (deserializeJson(jsonDocument, message)) {
-            LOG_ERROR("Failed to parse provisioning response JSON message");
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        DeserializationError error = deserializeJson(doc, message);
+        if (error) {
+            LOG_ERROR("Failed to parse provisioning response JSON message (%s): %s", error.c_str(), message);
             return;
         }
 
-        if (jsonDocument["status"] == "success")
+        if (doc["status"] == "success")
         {
             // Validate that certificate fields exist and are strings
-            if (!jsonDocument["encryptedCertificatePem"].is<const char*>() || 
-                !jsonDocument["encryptedPrivateKey"].is<const char*>()) 
+            if (!doc["encryptedCertificatePem"].is<const char*>() || 
+                !doc["encryptedPrivateKey"].is<const char*>()) 
             {
                 LOG_ERROR("Invalid provisioning response: missing or invalid certificate fields");
                 return;
             }
 
-            const char* certData = jsonDocument["encryptedCertificatePem"].as<const char*>();
-            const char* keyData = jsonDocument["encryptedPrivateKey"].as<const char*>();
+            const char* certData = doc["encryptedCertificatePem"].as<const char*>();
+            const char* keyData = doc["encryptedPrivateKey"].as<const char*>();
             
             size_t certLen = strlen(certData);
             size_t keyLen = strlen(keyData);
@@ -943,7 +877,7 @@ namespace Mqtt
             preferences.end();
         } else {
             char buffer[STATUS_BUFFER_SIZE];
-            safeSerializeJson(jsonDocument, buffer, sizeof(buffer), true);
+            safeSerializeJson(doc, buffer, sizeof(buffer), true);
             LOG_ERROR("Provisioning failed: %s", buffer);
         }
     }
@@ -954,7 +888,7 @@ namespace Mqtt
         _setState(MqttState::IDLE);
     }
 
-    static void _handleSetSendPowerDataMessage(JsonDocument& dataDoc)
+    static void _handleSetSendPowerDataMessage(JsonDocument &dataDoc)
     {
         // Expected data format: {"sendPowerData": true}
         if (dataDoc["sendPowerData"].is<bool>()) {
@@ -967,7 +901,7 @@ namespace Mqtt
         }
     }
 
-    static void _handleSetMqttLogLevelMessage(JsonDocument& dataDoc)
+    static void _handleSetMqttLogLevelMessage(JsonDocument &dataDoc)
     {
         // Expected data format: {"level": "INFO"}
         if (dataDoc["level"].is<const char*>()) {
@@ -987,6 +921,281 @@ namespace Mqtt
             safeSerializeJson(dataDoc, buffer, sizeof(buffer), true);
             LOG_ERROR("Invalid set MQTT log level JSON message: %s", buffer);
         }
+    }
+
+    // AWS IoT Jobs OTA functions
+    // ==========================
+
+    // Custom HTTPS OTA implementation
+    // =================================
+
+    static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event) {
+        switch (event->event_id) {
+            case HTTP_EVENT_ERROR:        LOG_DEBUG("OTA HTTPS Event Error"); break;
+            case HTTP_EVENT_ON_CONNECTED: LOG_DEBUG("OTA HTTPS Event On Connected"); break;
+            case HTTP_EVENT_HEADER_SENT:  LOG_DEBUG("OTA HTTPS Event Header Sent"); break;
+            case HTTP_EVENT_ON_HEADER:    LOG_DEBUG("OTA HTTPS Event On Header, key=%s, value=%s", event->header_key, event->header_value); break;
+            case HTTP_EVENT_ON_DATA:      break; // Null, we would have too many callbacks here
+            case HTTP_EVENT_ON_FINISH:    LOG_DEBUG("OTA HTTPS Event On Finish"); break;
+            case HTTP_EVENT_DISCONNECTED: LOG_DEBUG("OTA HTTPS Event Disconnected"); break;
+            case HTTP_EVENT_REDIRECT:     LOG_DEBUG("OTA HTTPS Event Redirect"); break;
+        }
+        return ESP_OK;
+    }
+
+    static bool _performOtaUpdate() { // TODO: improve process to ensure the response is actually sent after reboot
+        LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
+
+        WiFiClient testClient;
+        if (testClient.connect("energyme-home-firmware-updates.s3.eu-central-1.amazonaws.com", 443)) {
+            LOG_INFO("DNS resolution successful");
+            testClient.stop();
+        } else {
+            LOG_ERROR("DNS resolution failed");
+        }
+
+        esp_http_client_config_t _httpConfig = {
+            .url = _otaCurrentUrl,
+            .cert_pem = aws_iot_core_cert_ca, // Same as the one used to connect to AWS IoT Core via MQTT
+            .event_handler = _otaHttpEventHandler,
+            .buffer_size_tx = OTA_HTTPS_BUFFER_SIZE_TX, // Increase TX buffer to handle large presigned URLs
+            .skip_cert_common_name_check = false
+        };
+
+        esp_https_ota_config_t _otaConfig = {
+            .http_config = &_httpConfig,
+            .http_client_init_cb = nullptr,
+            .bulk_flash_erase = false,
+            .partial_http_download = false,
+            .max_http_request_size = 0
+        };
+
+        // Perform the OTA update
+        esp_err_t result = esp_https_ota(&_otaConfig);
+
+        if (result == ESP_OK) {
+            LOG_INFO("OTA update completed successfully");
+            return true;
+        } else {
+            LOG_ERROR("OTA update failed with error: %s (%d)", esp_err_to_name(result), result);
+            return false;
+        }
+    }
+    
+    static void _otaTask(void* parameter) {
+        LOG_DEBUG("OTA task started");
+
+        bool otaSuccess = _performOtaUpdate();
+
+        // Prepare the final status update topic
+        char partialTopic[MQTT_TOPIC_BUFFER_SIZE];
+        snprintf(partialTopic, sizeof(partialTopic), "jobs/%s/update", _otaCurrentJobId);
+
+        char fullTopic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings(partialTopic, fullTopic, sizeof(fullTopic));
+
+        // Prepare the final status payload
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+
+        if (otaSuccess) {
+            doc["status"] = "SUCCEEDED";
+            doc["statusDetails"]["reason"] = "success";
+            LOG_INFO("OTA update successful for job %s. Preparing to restart.", _otaCurrentJobId);
+            
+            // Publish success status
+            _publishJsonStreaming(doc, fullTopic);
+
+            setRestartSystem("OTA update successful");
+        } else {
+            doc["status"] = "FAILED";
+            doc["statusDetails"]["reason"] = "download_failed";
+            LOG_ERROR("OTA update failed for job %s.", _otaCurrentJobId);
+            
+            // Publish failure status
+            _publishJsonStreaming(doc, fullTopic);
+        }
+
+        // Clean up
+        _otaTaskHandle = nullptr;
+        vTaskDelete(nullptr);
+    }
+
+    static bool _validateAwsIotJobMessage(const char* message, const char* topic) {
+        // Example of JSON from AWS:
+        // Topic: jobs/<jobId>/get/accepted AND jobs/notify-next
+        // {
+        //     "timestamp": 1755593546,
+        //     "execution": {
+        //         "jobId": "energyme-home-deploy-00-12-31",
+        //         "status": "QUEUED",
+        //         "queuedAt": 1755593545,
+        //         "lastUpdatedAt": 1755593545,
+        //         "versionNumber": 1,
+        //         "executionNumber": 1,
+        //         "jobDocument": {
+        //             "operation": "ota_update",
+        //             "firmware": {
+        //                 "version": "00.12.31",
+        //                 "url": "XXX"
+        //             }
+        //         }
+        //     }
+        // }
+        // Topic: jobs/get/accepted
+        // {
+        //     "timestamp": 1755608479,
+        //     "inProgressJobs": [],
+        //     "queuedJobs": [
+        //             {
+        //                 "jobId": "energyme-home-ota-00_12_31-thing-588c81c47a00",
+        //                 "queuedAt": 1755607935,
+        //                 "lastUpdatedAt": 1755607935,
+        //                 "executionNumber": 1,
+        //                 "versionNumber": 1
+        //             }
+        //         ]
+        // }
+
+        if (!message) {
+            LOG_WARNING("Received null message in AWS IoT job handler");
+            return false;
+        }
+
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        DeserializationError error = deserializeJson(doc, message);
+        if (error) {
+            LOG_ERROR("Failed to parse AWS IoT job message JSON (%s): %s", error.c_str(), message);
+            return false;
+        }
+
+        if (endsWith(topic, "jobs/get/accepted")) {
+            // Ensure at least inProgressJobs or queuedJobs is present
+            if (!doc["inProgressJobs"].is<JsonArray>() && !doc["queuedJobs"].is<JsonArray>()) {
+                LOG_WARNING("Job list response is missing both inProgressJobs and queuedJobs, ignoring.");
+                return false;
+            }
+        } else if (endsWith(topic, "jobs/notify-next") || endsWith(topic, "/get/accepted")) {
+            // Single job execution response (notify-next OR specific job get accepted)
+            if (!doc["execution"].is<JsonObject>()) { LOG_DEBUG("Execution response missing 'execution' object, ignoring."); return false; } // An empty document is sent when the job queue is cleared, so null is expected
+            if (!doc["execution"]["jobId"].is<const char*>()) { LOG_WARNING("Execution response missing jobId, ignoring."); return false; }
+            if (!doc["execution"]["jobDocument"].is<JsonObject>()) { LOG_WARNING("Execution response missing jobDocument, ignoring."); return false; }
+            if (!doc["execution"]["jobDocument"]["operation"].is<const char*>()) { LOG_WARNING("Execution response missing operation, ignoring."); return false; }
+            if (!doc["execution"]["jobDocument"]["firmware"].is<JsonObject>()) { LOG_WARNING("Execution response missing firmware object, ignoring."); return false; }
+            if (!doc["execution"]["jobDocument"]["firmware"]["url"].is<const char*>()) { LOG_WARNING("Execution response missing firmware URL, ignoring."); return false; }
+        } else if (endsWith(topic, "/update/accepted") || endsWith(topic, "/update/rejected")) {
+            // Handle job update response topics (AWS IoT sends these automatically when we publish job status updates)
+            // These are confirmation messages that our job status updates were received - just acknowledge and ignore
+            LOG_DEBUG("Received job update confirmation from AWS IoT: %s", topic);
+            return false; // Don't process these further, just acknowledge receipt
+        } else {
+            LOG_WARNING("Unrecognized AWS IoT Jobs topic pattern: %s", topic);
+            return false;
+        }
+
+        // We managed to pass all checks
+        return true;
+    }
+
+    static void _handleJobListResponse(JsonDocument &doc) {
+        // Handle queued jobs first
+        if (doc["queuedJobs"].is<JsonArray>()) {
+            JsonArray queuedJobs = doc["queuedJobs"].as<JsonArray>();
+            LOG_DEBUG("Found %d queued job(s)", queuedJobs.size());
+            
+            for (JsonVariant job : queuedJobs) {
+                if (job["jobId"].is<const char*>()) {
+                    const char* jobId = job["jobId"].as<const char*>();
+                    LOG_INFO("Requesting details for queued job: %s", jobId);
+                    _publishOtaJobDetail(jobId);
+                    break; // Process only the first job to avoid overwhelming the device
+                }
+            }
+        }
+        
+        // Handle in-progress jobs
+        if (doc["inProgressJobs"].is<JsonArray>()) {
+            JsonArray inProgressJobs = doc["inProgressJobs"].as<JsonArray>();
+            LOG_DEBUG("Found %d in-progress job(s)", inProgressJobs.size());
+            
+            for (JsonVariant job : inProgressJobs) {
+                if (job["jobId"].is<const char*>()) {
+                    const char* jobId = job["jobId"].as<const char*>();
+                    LOG_INFO("Requesting details for in-progress job: %s", jobId);
+                    _publishOtaJobDetail(jobId);
+                    break; // Process only the first job
+                }
+            }
+        }
+    }
+
+    static void _handleSingleJobExecution(JsonDocument &doc) {
+        const char* jobId = doc["execution"]["jobId"].as<const char*>();
+        const char* operation = doc["execution"]["jobDocument"]["operation"].as<const char*>();
+        const char* url = doc["execution"]["jobDocument"]["firmware"]["url"].as<const char*>();
+
+        // Additional validation for operation type (validation function only checks existence)
+        if (strcmp(operation, "ota_update") != 0) {
+            LOG_WARNING("Job operation '%s' is not supported, rejecting job %s.", operation, jobId);
+
+            SpiRamAllocator allocator;
+            JsonDocument docReject(&allocator);
+            docReject["status"] = "REJECTED";
+            docReject["statusDetails"]["reason"] = "unsupported_operation";
+
+            char partialTopic[MQTT_TOPIC_BUFFER_SIZE];
+            snprintf(partialTopic, sizeof(partialTopic), "jobs/%s/update", jobId);
+
+            char fullTopic[MQTT_TOPIC_BUFFER_SIZE];
+            _constructMqttTopicReservedThings(partialTopic, fullTopic, sizeof(fullTopic));
+
+            _publishJsonStreaming(docReject, fullTopic);
+            return;
+        }
+
+        LOG_INFO("Received OTA Job '%s'. Firmware URL length: %d", jobId, strlen(url));
+
+        // 1. Acknowledge the job and set status to IN_PROGRESS
+        char partialTopic[MQTT_TOPIC_BUFFER_SIZE];
+        snprintf(partialTopic, sizeof(partialTopic), "jobs/%s/update", jobId);
+
+        char fullTopic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings(partialTopic, fullTopic, sizeof(fullTopic));
+
+        SpiRamAllocator allocator;
+        JsonDocument docStatus(&allocator);
+        docStatus["status"] = "IN_PROGRESS";
+        docStatus["statusDetails"]["reason"] = "downloading";
+        _publishJsonStreaming(docStatus, fullTopic);
+
+        // Save in the static variables to ensure we don't have any dangling pointers
+        snprintf(_otaCurrentUrl, sizeof(_otaCurrentUrl), "%s", url);
+        snprintf(_otaCurrentJobId, sizeof(_otaCurrentJobId), "%s", jobId);
+
+        xTaskCreate(
+            _otaTask, 
+            OTA_TASK_NAME, 
+            OTA_TASK_STACK_SIZE, 
+            nullptr,
+            OTA_TASK_PRIORITY, 
+            &_otaTaskHandle
+        );
+    }
+
+    static void _handleAwsIotJobMessage(const char* message, const char* topic) {
+        if (!_validateAwsIotJobMessage(message, topic)) return;
+
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        DeserializationError error = deserializeJson(doc, message);
+        if (error) {
+            LOG_ERROR("Failed to deserialize validated AWS IoT job message (%s)", error.c_str());
+            return;
+        }
+
+        if (endsWith(topic, "jobs/get/accepted")) _handleJobListResponse(doc);
+        else if (endsWith(topic, "jobs/notify-next") || strstr(topic, "/get/accepted") != nullptr) _handleSingleJobExecution(doc);
     }
 
     // Publishing functions
@@ -1013,7 +1222,7 @@ namespace Mqtt
         }
         
         if (!_publishMeterJson()) {
-            LOG_ERROR("Failed to publish meter data via streaming");
+            LOG_ERROR("Failed to publish meter data");
             return;
         }
 
@@ -1021,83 +1230,98 @@ namespace Mqtt
     }
     
     static void _publishSystemStatic() {
-        JsonDocument jsonDocument;
-        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
 
-        JsonDocument jsonDocumentSystemStatic;
+        JsonDocument docSystemStatic;
         SystemStaticInfo systemStaticInfo;
         populateSystemStaticInfo(systemStaticInfo);
-        systemStaticInfoToJson(systemStaticInfo, jsonDocumentSystemStatic);
-        jsonDocument["data"] = jsonDocumentSystemStatic;
+        systemStaticInfoToJson(systemStaticInfo, docSystemStatic);
+        doc["data"] = docSystemStatic;
 
-        if (_publishJsonStreaming(jsonDocument, _mqttTopicSystemStatic, true)) { // retain static info since it is idempotent
+        if (_publishJsonStreaming(doc, _mqttTopicSystemStatic, true)) { // retain static info since it is idempotent
             _publishMqtt.systemStatic = false; 
-            LOG_DEBUG("System static info published to MQTT via streaming");
+            LOG_DEBUG("System static info published to MQTT");
         } else {
-            LOG_ERROR("Failed to publish system static info via streaming");
+            LOG_ERROR("Failed to publish system static info");
         }
     }
 
     static void _publishSystemDynamic() {
-        JsonDocument jsonDocument;
-        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
 
-        JsonDocument jsonDocumentSystemDynamic;
+        JsonDocument docSystemDynamic;
         SystemDynamicInfo systemDynamicInfo;
         populateSystemDynamicInfo(systemDynamicInfo);
-        systemDynamicInfoToJson(systemDynamicInfo, jsonDocumentSystemDynamic);
-        jsonDocument["data"] = jsonDocumentSystemDynamic;
+        systemDynamicInfoToJson(systemDynamicInfo, docSystemDynamic);
+        doc["data"] = docSystemDynamic;
 
-        if (_publishJsonStreaming(jsonDocument, _mqttTopicSystemDynamic)) {
+        if (_publishJsonStreaming(doc, _mqttTopicSystemDynamic)) {
             _publishMqtt.systemDynamic = false;
             _lastMillisSystemDynamicPublished = millis64();
-            LOG_DEBUG("System dynamic info published to MQTT via streaming");
+            LOG_DEBUG("System dynamic info published to MQTT");
         } else {
-            LOG_ERROR("Failed to publish system dynamic info via streaming");
+            LOG_ERROR("Failed to publish system dynamic info");
         }
     }
 
     static void _publishChannel() {
-        JsonDocument jsonDocument;
-        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        
-        JsonDocument jsonDocumentChannelData;
-        Ade7953::getAllChannelDataAsJson(jsonDocumentChannelData);
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
 
-        jsonDocument["data"] = jsonDocumentChannelData;
+        SpiRamAllocator allocatorData;
+        JsonDocument docChannelData(&allocatorData);
+        Ade7953::getAllChannelDataAsJson(docChannelData);
 
-        if (_publishJsonStreaming(jsonDocument, _mqttTopicChannel, true)) { // retain channel info since it is idempotent
+        doc["data"] = docChannelData;
+
+        if (_publishJsonStreaming(doc, _mqttTopicChannel, true)) { // retain channel info since it is idempotent
             _publishMqtt.channel = false;
-            LOG_DEBUG("Channel data published to MQTT via streaming");
+            LOG_DEBUG("Channel data published to MQTT");
         } else {
-            LOG_ERROR("Failed to publish channel data via streaming");
+            LOG_ERROR("Failed to publish channel data");
         }
     }
 
     static void _publishStatistics() {
-        JsonDocument jsonDocument;
-        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        
-        JsonDocument jsonDocumentStatistics;
-        statisticsToJson(statistics, jsonDocumentStatistics);
-        jsonDocument["statistics"] = jsonDocumentStatistics;
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
 
-        if (_publishJsonStreaming(jsonDocument, _mqttTopicStatistics)) {
+        SpiRamAllocator allocatorStatistics;
+        JsonDocument docStatistics(&allocatorStatistics);
+        statisticsToJson(statistics, docStatistics);
+        doc["statistics"] = docStatistics;
+
+        if (_publishJsonStreaming(doc, _mqttTopicStatistics)) {
             _publishMqtt.statistics = false;
             _lastMillisStatisticsPublished = millis64();
-            LOG_DEBUG("Statistics published to MQTT via streaming");
+            LOG_DEBUG("Statistics published to MQTT");
         } else {
-            LOG_ERROR("Failed to publish statistics via streaming");
+            LOG_ERROR("Failed to publish statistics");
         }
     }
 
     static void _publishCrash() {
         if (!_publishCrashJson()) {
-            LOG_ERROR("Failed to publish crash data via streaming");
+            LOG_ERROR("Failed to publish crash data");
             return;
         }
 
         _publishMqtt.crash = false;
+    }
+
+    static void _publishOtaJobsRequest() {
+        if (!_publishOtaJobsRequestJson()) {
+            LOG_ERROR("Failed to publish OTA request");
+            return;
+        }
+
+        _publishMqtt.requestOta = false;
     }
 
     static void _publishLog(const LogEntry& entry)
@@ -1105,29 +1329,33 @@ namespace Mqtt
         char logTopic[sizeof(_mqttTopicLog) + 8 + 2]; // 8 is the maximum size of the log level string
         snprintf(logTopic, sizeof(logTopic), "%s/%s", _mqttTopicLog, AdvancedLogger::logLevelToStringLower(entry.level));
 
-        JsonDocument jsonDocument;
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
         char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
         AdvancedLogger::getTimestampIsoUtcFromUnixTimeMilliseconds(entry.unixTimeMilliseconds, timestamp, sizeof(timestamp));
-        jsonDocument["timestamp"] = timestamp;
-        jsonDocument["millis"] = entry.millis;
-        jsonDocument["core"] = entry.coreId;
-        jsonDocument["file"] = entry.file;
-        jsonDocument["function"] = entry.function;
-        jsonDocument["message"] = entry.message;
+        
+        doc["timestamp"] = timestamp;
+        doc["millis"] = entry.millis;
+        doc["core"] = entry.coreId;
+        doc["file"] = entry.file;
+        doc["function"] = entry.function;
+        doc["message"] = entry.message;
 
-        if (!_publishJsonStreaming(jsonDocument, logTopic)) {
+        if (!_publishJsonStreaming(doc, logTopic)) {
             LOG_ERROR("Failed to publish log entry via streaming");
         }
     }
 
     static bool _publishProvisioningRequest() {
-        JsonDocument jsonDocument;
-        jsonDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        jsonDocument["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
-        jsonDocument["sketchMD5"] = ESP.getSketchMD5();
-        jsonDocument["chipId"] = ESP.getEfuseMac();
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
 
-        return _publishJsonStreaming(jsonDocument, _mqttTopicProvisioningRequest);
+        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        doc["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
+        doc["sketchMD5"] = ESP.getSketchMD5();
+        doc["chipId"] = ESP.getEfuseMac();
+
+        return _publishJsonStreaming(doc, _mqttTopicProvisioningRequest);
     }
 
     static void _checkPublishMqtt() {
@@ -1137,6 +1365,7 @@ namespace Mqtt
         if (_publishMqtt.channel) {_publishChannel();}
         if (_publishMqtt.statistics) {_publishStatistics();}
         if (_publishMqtt.crash) {_publishCrash();}
+        if (_publishMqtt.requestOta) {_publishOtaJobsRequest();}
     }
 
     static void _checkIfPublishMeterNeeded() {
@@ -1216,6 +1445,7 @@ namespace Mqtt
             _publishMqtt.systemDynamic = true;
             _publishMqtt.statistics = true;
             _publishMqtt.channel = true;
+            _publishMqtt.requestOta = true;
 
             return true;
         } else {
@@ -1437,13 +1667,14 @@ namespace Mqtt
     }
 
     static bool _publishMeterStreaming() {
-        JsonDocument jsonDocument;
-        
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+
         // Always add voltage data if available (independent of sendPowerDataEnabled)
         MeterValues meterValuesZeroChannel;
         
         if (Ade7953::getMeterValues(meterValuesZeroChannel, 0) && meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
-            JsonObject voltageObj = jsonDocument.add<JsonObject>();
+            JsonObject voltageObj = doc.add<JsonObject>();
             voltageObj["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
             voltageObj["voltage"] = meterValuesZeroChannel.voltage;
         }
@@ -1458,7 +1689,7 @@ namespace Mqtt
                     continue;
                 }
                 
-                JsonObject channelObj = jsonDocument.add<JsonObject>();
+                JsonObject channelObj = doc.add<JsonObject>();
                 channelObj["unixTime"] = meterValues.lastUnixTimeMilliseconds;
                 channelObj["channel"] = i;
                 channelObj["activeEnergyImported"] = roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS);
@@ -1479,7 +1710,7 @@ namespace Mqtt
 
                 if (xQueueReceive(_meterQueue, &payloadMeter, 0) != pdTRUE) break;
 
-                JsonArray powerArray = jsonDocument.add<JsonArray>();
+                JsonArray powerArray = doc.add<JsonArray>();
                 powerArray.add(payloadMeter.unixTimeMs);
                 powerArray.add(payloadMeter.channel);
                 powerArray.add(roundToDecimals(payloadMeter.activePower, POWER_DECIMALS));
@@ -1487,7 +1718,7 @@ namespace Mqtt
                 entriesAdded++;
 
                 // Check if we're approaching memory limits (using psram automatically)
-                if (measureJson(jsonDocument) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * 0.95) {
+                if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * 0.95) {
                     LOG_DEBUG("Meter data JSON size exceeds 95%% of AWS IoT Core MQTT payload limit, stopping queue processing");
                     break; // Stop adding new entries if the buffer is nearly full
                 }
@@ -1495,15 +1726,15 @@ namespace Mqtt
         }
 
         // Validate that we have actual data before publishing
-        if (jsonDocument.size() == 0) {
+        if (doc.size() == 0) {
             LOG_DEBUG("No meter data available for publishing");
             return true; // Not an error, just no data
         }
 
         LOG_DEBUG("Publishing meter JSON with %u entries | Size: %u bytes | Queue entries added: %u | Remaining in queue: %u", 
-                  jsonDocument.size(), measureJson(jsonDocument), entriesAdded, uxQueueMessagesWaiting(_meterQueue));
+                  doc.size(), measureJson(doc), entriesAdded, uxQueueMessagesWaiting(_meterQueue));
         
-        return _publishJsonStreaming(jsonDocument, _mqttTopicMeter);
+        return _publishJsonStreaming(doc, _mqttTopicMeter);
     }
 
     static bool _publishMeterJson() {
@@ -1525,16 +1756,18 @@ namespace Mqtt
         uint64_t crashId = CustomTime::getUnixTimeMilliseconds();
         
         // First, publish crash info metadata
-        JsonDocument crashInfoDocument;
-        crashInfoDocument["unixTime"] = crashId; // Use same timestamp as crash ID
-        crashInfoDocument["crashId"] = crashId;
-        crashInfoDocument["messageType"] = "crashInfo";
+        SpiRamAllocator allocator;
+        JsonDocument docInfo(&allocator);
+        docInfo["unixTime"] = crashId; // Use same timestamp as crash ID
+        docInfo["crashId"] = crashId;
+        docInfo["messageType"] = "crashInfo";
         
-        JsonDocument coreDumpInfo;
-        CrashMonitor::getCoreDumpInfoJson(coreDumpInfo);
-        crashInfoDocument["crashInfo"] = coreDumpInfo;
+        SpiRamAllocator allocatorCrashInfo;
+        JsonDocument docCoreDump(&allocatorCrashInfo);
+        CrashMonitor::getCoreDumpInfoJson(docCoreDump);
+        docInfo["crashInfo"] = docCoreDump;
 
-        if (!_publishJsonStreaming(crashInfoDocument, _mqttTopicCrash)) {
+        if (!_publishJsonStreaming(docInfo, _mqttTopicCrash)) {
             LOG_ERROR("Failed to publish crash info metadata");
             return false;
         }
@@ -1550,23 +1783,25 @@ namespace Mqtt
         while (offset < coreDumpSize) {
             size_t thisChunkSize = (coreDumpSize - offset) < CORE_DUMP_CHUNK_SIZE ? (coreDumpSize - offset) : CORE_DUMP_CHUNK_SIZE;
 
-            JsonDocument chunkDocument;
-            chunkDocument["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-            chunkDocument["crashId"] = crashId; // Same crash ID for all chunks
-            chunkDocument["messageType"] = "crashChunk";
-            chunkDocument["chunkIndex"] = chunkIndex;
-            chunkDocument["totalChunks"] = totalChunks;
-            
-            JsonDocument jsonCoreDumpChunk;
-            if (!CrashMonitor::getCoreDumpChunkJson(jsonCoreDumpChunk, offset, thisChunkSize)) {
+            SpiRamAllocator allocatorChunk;
+            JsonDocument docChunk(&allocatorChunk);
+            docChunk["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+            docChunk["crashId"] = crashId; // Same crash ID for all chunks
+            docChunk["messageType"] = "crashChunk";
+            docChunk["chunkIndex"] = chunkIndex;
+            docChunk["totalChunks"] = totalChunks;
+
+            SpiRamAllocator allocatorCoreDumpChunk;
+            JsonDocument docJsonCoreDumpChunk(&allocatorCoreDumpChunk);
+            if (!CrashMonitor::getCoreDumpChunkJson(docJsonCoreDumpChunk, offset, thisChunkSize)) {
                 LOG_ERROR("Failed to get core dump chunk at offset %zu", offset);
                 return false;
             }
             
             // Copy chunk data directly into the message
-            chunkDocument["chunk"] = jsonCoreDumpChunk;
+            docChunk["chunk"] = docJsonCoreDumpChunk;
             
-            if (!_publishJsonStreaming(chunkDocument, _mqttTopicCrash)) {
+            if (!_publishJsonStreaming(docChunk, _mqttTopicCrash)) {
                 LOG_ERROR("Failed to publish crash chunk %u/%u at offset %zu", chunkIndex + 1, totalChunks, offset);
                 return false;
             }
@@ -1591,6 +1826,40 @@ namespace Mqtt
         return true;
     }
 
+    static bool _publishOtaJobsRequestJson() {
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator); // This could be empty, but we send the time anyway
+        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings("jobs/get", topic, sizeof(topic));
+
+        if (!_publishJsonStreaming(doc, topic)) {
+            LOG_ERROR("Failed to publish OTA request");
+            return false;
+        }
+
+        LOG_DEBUG("OTA request published successfully");
+        return true;
+    }
+
+    static void _publishOtaJobDetail(const char* jobId) {
+        char jobTopic[MQTT_TOPIC_BUFFER_SIZE];
+        snprintf(jobTopic, sizeof(jobTopic), "jobs/%s/get", jobId);
+
+        char fullTopic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings(jobTopic, fullTopic, sizeof(fullTopic));
+
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator); // This could be empty, but we send the time anyway
+        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        
+        if (_publishJsonStreaming(doc, fullTopic)) {
+            LOG_DEBUG("Requested job details for: %s", jobId);
+        } else {
+            LOG_ERROR("Failed to request job details for: %s", jobId);
+        }
+    }
 
     // Certificates management
     // =======================

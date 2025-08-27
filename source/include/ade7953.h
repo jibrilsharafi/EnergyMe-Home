@@ -26,15 +26,15 @@
 
 // Tasks
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task"
-#define ADE7953_METER_READING_TASK_STACK_SIZE (6 * 1024)
+#define ADE7953_METER_READING_TASK_STACK_SIZE (6 * 1024) // Fine, around 5 kB usage
 #define ADE7953_METER_READING_TASK_PRIORITY 5
 
 #define ADE7953_ENERGY_SAVE_TASK_NAME "energy_save_task"
-#define ADE7953_ENERGY_SAVE_TASK_STACK_SIZE (6 * 1024)
+#define ADE7953_ENERGY_SAVE_TASK_STACK_SIZE (5 * 1024) // Around 4.5 kB usage
 #define ADE7953_ENERGY_SAVE_TASK_PRIORITY 1
 
 #define ADE7953_HOURLY_CSV_SAVE_TASK_NAME "hourly_csv_task"
-#define ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE (12 * 1024) // Higher due to the compression functions
+#define ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE (6 * 1024) // No more than 5 kB. A bit larger for safety
 #define ADE7953_HOURLY_CSV_SAVE_TASK_PRIORITY 1
 
 // ENERGY_SAVING
@@ -182,10 +182,9 @@
 #define ENERGY_DECIMALS 1
 
 // Guardrails and thresholds
-#define MAXIMUM_POWER_FACTOR_CLAMP 1.05f // Values above 1 but below this are still accepted (rounding errors and similar)
+#define MAXIMUM_POWER_FACTOR_CLAMP 1.10f // Values above 1 but below this are still accepted (rounding errors and similar). I noticed I still had a lot of spurious readings with PF around 1.06-1.07 (mainly close to fridge activations, probably due to the compressor)
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_POWER_FACTOR 0.05f // Measuring such low power factors is virtually impossible with such CTs
-// #define MAX_CONSECUTIVE_ZEROS_BEFORE_LEGITIMATE 100 // Threshold to transition to a legitimate zero state for channel 0 - IS IT REALLY A GOOD METHOD?
 #define ADE7953_MIN_LINECYC 10UL // Below this the readings are unstable (200 ms)
 #define ADE7953_MAX_LINECYC 1000UL // Above this too much time passes (20 seconds)
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation

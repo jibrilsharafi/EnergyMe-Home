@@ -104,7 +104,7 @@ namespace CustomServer
     // HTTP method validation helper
     static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength = 0);
     static bool _isPartialUpdate(AsyncWebServerRequest *request);
-
+    
     // Public functions
     // ================
     // ================
@@ -236,7 +236,8 @@ namespace CustomServer
 
     static void _sendSuccessResponse(AsyncWebServerRequest *request, const char *message)
     {
-        JsonDocument doc;
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
         doc["success"] = true;
         doc["message"] = message;
         _sendJsonResponse(request, doc, HTTP_CODE_OK);
@@ -246,7 +247,8 @@ namespace CustomServer
 
     static void _sendErrorResponse(AsyncWebServerRequest *request, int32_t statusCode, const char *message)
     {
-        JsonDocument doc;
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
         doc["success"] = false;
         doc["error"] = message;
         _sendJsonResponse(request, doc, statusCode);
@@ -628,7 +630,8 @@ namespace CustomServer
                   {
             AsyncResponseStream *response = request->beginResponseStream("application/json");
             
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
             doc["status"] = "ok";
             doc["uptime"] = millis64();
             char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
@@ -653,7 +656,9 @@ namespace CustomServer
         server.on("/api/v1/auth/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             AsyncResponseStream *response = request->beginResponseStream("application/json");
-            JsonDocument doc;
+            
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             // Check if using default password
             char currentPassword[PASSWORD_BUFFER_SIZE];
@@ -678,7 +683,8 @@ namespace CustomServer
             {
                 if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_PASSWORD)) return;
 
-                JsonDocument doc;
+                SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
                 doc.set(json);
 
                 const char *currentPassword = doc["currentPassword"];
@@ -759,7 +765,9 @@ namespace CustomServer
         _stopOtaTimeoutTask();
         
         if (Update.hasError()) {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
             doc["success"] = false;
             doc["message"] = Update.errorString();
             _sendJsonResponse(request, doc);
@@ -772,7 +780,9 @@ namespace CustomServer
             // Schedule restart even on failure for system recovery
             setRestartSystem("Restart needed after failed firmware update for system recovery");
         } else {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            
             doc["success"] = true;
             doc["message"] = "Firmware update completed successfully";
             doc["md5"] = Update.md5String();
@@ -1027,7 +1037,8 @@ namespace CustomServer
     {
         server.on("/api/v1/ota/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             doc["status"] = Update.isRunning() ? "running" : "idle";
             doc["canRollback"] = Update.canRollBack();
@@ -1090,26 +1101,27 @@ namespace CustomServer
         // Parse GitHub API response
         String response = http.getString();
         http.end();
-        
-        JsonDocument githubDoc;
-        DeserializationError error = deserializeJson(githubDoc, response);
+
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        DeserializationError error = deserializeJson(doc, response);
         if (error) {
             LOG_ERROR("Failed to parse GitHub API response: %s", error.c_str());
             return false;
         }
         
         // Extract release information
-        if (!githubDoc["tag_name"].is<const char*>()) {
+        if (!doc["tag_name"].is<const char*>()) {
             LOG_ERROR("Invalid GitHub API response: missing tag_name");
             return false;
         }
         
-        const char* tagName = githubDoc["tag_name"];
-        const char* releaseDate = githubDoc["published_at"].as<const char*>();
-        const char* changelog = githubDoc["html_url"].as<const char*>();
+        const char* tagName = doc["tag_name"];
+        const char* releaseDate = doc["published_at"].as<const char*>();
+        const char* changelog = doc["html_url"].as<const char*>();
         
         // Find .bin asset
-        JsonArray assets = githubDoc["assets"];
+        JsonArray assets = doc["assets"];
         const char* downloadUrl = nullptr;
         const char* md5Hash = nullptr;
         
@@ -1162,7 +1174,8 @@ namespace CustomServer
         // Get firmware update information
         server.on("/api/v1/firmware/update-info", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             // Get current firmware info
             doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
@@ -1170,17 +1183,7 @@ namespace CustomServer
             doc["buildTime"] = FIRMWARE_BUILD_TIME;
             
             #ifdef HAS_SECRETS
-            // Get available update info from MQTT configuration when secrets are available
-            char availableVersion[VERSION_BUFFER_SIZE];
-            char updateUrl[URL_BUFFER_SIZE];
-            
-            Mqtt::getFirmwareUpdateVersion(availableVersion, sizeof(availableVersion));
-            if (strlen(availableVersion) > 0) doc["availableVersion"] = availableVersion;
-
-            Mqtt::getFirmwareUpdateUrl(updateUrl, sizeof(updateUrl));
-            if (strlen(updateUrl) > 0) doc["updateUrl"] = updateUrl;
-            
-            doc["isLatest"] = Mqtt::isLatestFirmwareInstalled();
+            doc["isLatest"] = true; // TODO: actually implement a notification system on the device (maybe..)
             #else
             // Fetch from GitHub API when no secrets are available
             if (!_fetchGitHubReleaseInfo(doc)) {
@@ -1200,23 +1203,27 @@ namespace CustomServer
         // System information
         server.on("/api/v1/system/info", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             // Get both static and dynamic info
-            JsonDocument staticDoc, dynamicDoc;
-            getJsonDeviceStaticInfo(staticDoc);
-            getJsonDeviceDynamicInfo(dynamicDoc);
+            SpiRamAllocator allocatorStatic, allocatorDynamic;
+            JsonDocument docStatic(&allocatorStatic);
+            JsonDocument docDynamic(&allocatorDynamic);
+            getJsonDeviceStaticInfo(docStatic);
+            getJsonDeviceDynamicInfo(docDynamic);
 
             // Combine into a single response
-            doc["static"] = staticDoc;
-            doc["dynamic"] = dynamicDoc;
+            doc["static"] = docStatic;
+            doc["dynamic"] = docDynamic;
             
             _sendJsonResponse(request, doc); });
 
         // Statistics
         server.on("/api/v1/system/statistics", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             statisticsToJson(statistics, doc);
             _sendJsonResponse(request, doc); });
 
@@ -1239,7 +1246,9 @@ namespace CustomServer
         // Check if secrets exist
         server.on("/api/v1/system/secrets", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
             #ifdef HAS_SECRETS // Like this it returns true or false, otherwise it returns 1 or 0
             doc["hasSecrets"] = true;
             #else
@@ -1266,7 +1275,9 @@ namespace CustomServer
         // Get log levels
         server.on("/api/v1/logs/level", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
             doc["print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
             doc["save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
             _sendJsonResponse(request, doc);
@@ -1280,7 +1291,8 @@ namespace CustomServer
                 bool isPartialUpdate = _isPartialUpdate(request);
                 if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL)) return;
 
-                JsonDocument doc;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
                 doc.set(json);
 
                 const char *printLevel = doc["print"].as<const char *>();
@@ -1364,7 +1376,9 @@ namespace CustomServer
         // Get ADE7953 configuration
         server.on("/api/v1/ade7953/config", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
             Ade7953::getConfigurationAsJson(doc);
             
             _sendJsonResponse(request, doc);
@@ -1378,7 +1392,8 @@ namespace CustomServer
                 bool isPartialUpdate = _isPartialUpdate(request);
                 if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_CONFIG)) return;
 
-                JsonDocument doc;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
                 doc.set(json);
 
                 if (Ade7953::setConfigurationFromJson(doc, isPartialUpdate))
@@ -1407,7 +1422,9 @@ namespace CustomServer
         // Get sample time
         server.on("/api/v1/ade7953/sample-time", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
             doc["sampleTime"] = Ade7953::getSampleTime();
             
             _sendJsonResponse(request, doc);
@@ -1420,7 +1437,8 @@ namespace CustomServer
             {
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_SAMPLE_TIME)) return;
 
-                JsonDocument doc;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
                 doc.set(json);
 
                 if (!doc["sampleTime"].is<uint64_t>()) {
@@ -1447,7 +1465,8 @@ namespace CustomServer
         // Get single channel data
         server.on("/api/v1/ade7953/channel", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             if (request->hasParam("index")) {
                 // Get single channel data
@@ -1474,7 +1493,8 @@ namespace CustomServer
                 bool isPartialUpdate = _isPartialUpdate(request);
                 if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA)) return;
 
-                JsonDocument doc;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
                 doc.set(json);
 
                 if (Ade7953::setChannelDataFromJson(doc, isPartialUpdate))
@@ -1545,7 +1565,9 @@ namespace CustomServer
 
             int32_t value = Ade7953::readRegister(address, bits, signedData);
             
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
             doc["address"] = address;
             doc["bits"] = bits;
             doc["signed"] = signedData;
@@ -1561,7 +1583,8 @@ namespace CustomServer
             {
             if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_REGISTER)) return;
 
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             doc.set(json);
 
             if (!doc["address"].is<int32_t>() || !doc["bits"].is<int32_t>() || !doc["value"].is<int32_t>()) {
@@ -1597,7 +1620,8 @@ namespace CustomServer
         // Get meter values (all channels or single channel with optional index parameter)
         server.on("/api/v1/ade7953/meter-values", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             if (request->hasParam("index")) {
                 // Get single channel meter values
@@ -1621,7 +1645,9 @@ namespace CustomServer
         // Get grid frequency
         server.on("/api/v1/ade7953/grid-frequency", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
             doc["gridFrequency"] = Ade7953::getGridFrequency();
             
             _sendJsonResponse(request, doc);
@@ -1646,7 +1672,8 @@ namespace CustomServer
             {
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_ENERGY)) return;
 
-                JsonDocument doc;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
                 doc.set(json);
 
                 if (!doc["channel"].is<uint8_t>()) {
@@ -1680,7 +1707,8 @@ namespace CustomServer
     {
         server.on("/api/v1/custom-mqtt/config", HTTP_GET, [](AsyncWebServerRequest *request)
                   {            
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             if (CustomMqtt::getConfigurationAsJson(doc)) _sendJsonResponse(request, doc);
             else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to get Custom MQTT configuration");
         });
@@ -1692,7 +1720,8 @@ namespace CustomServer
                 bool isPartialUpdate = _isPartialUpdate(request);
                 if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT)) return;
 
-                JsonDocument doc;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
                 doc.set(json);
 
                 if (CustomMqtt::setConfigurationFromJson(doc, isPartialUpdate))
@@ -1718,7 +1747,8 @@ namespace CustomServer
 
         server.on("/api/v1/custom-mqtt/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             // Add runtime status information
             char statusBuffer[STATUS_BUFFER_SIZE];
@@ -1733,7 +1763,9 @@ namespace CustomServer
         // Get cloud services status
         server.on("/api/v1/mqtt/cloud-services", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
             doc["enabled"] = Mqtt::isCloudServicesEnabled();
             
             _sendJsonResponse(request, doc);
@@ -1746,7 +1778,8 @@ namespace CustomServer
             {
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_MQTT_CLOUD_SERVICES)) return;
                 
-                JsonDocument doc;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
                 doc.set(json);
                 
                 // Validate JSON structure
@@ -1771,7 +1804,8 @@ namespace CustomServer
         // Get InfluxDB configuration
         server.on("/api/v1/influxdb/config", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             if (InfluxDbClient::getConfigurationAsJson(doc)) _sendJsonResponse(request, doc);
             else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching InfluxDB configuration");
         });
@@ -1784,7 +1818,8 @@ namespace CustomServer
                 bool isPartialUpdate = _isPartialUpdate(request);
                 if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_INFLUXDB)) return;
 
-                JsonDocument doc;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
                 doc.set(json);
 
                 if (InfluxDbClient::setConfigurationFromJson(doc, isPartialUpdate))
@@ -1811,7 +1846,8 @@ namespace CustomServer
         // Get InfluxDB status
         server.on("/api/v1/influxdb/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             // Add runtime status information
             char statusBuffer[STATUS_BUFFER_SIZE];
@@ -1830,7 +1866,8 @@ namespace CustomServer
         // Get crash information and analysis
         server.on("/api/v1/crash/info", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             if (CrashMonitor::getCoreDumpInfoJson(doc)) {
                 _sendJsonResponse(request, doc);
@@ -1867,7 +1904,8 @@ namespace CustomServer
                 return;
             }
 
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) {
                 _sendJsonResponse(request, doc);
@@ -1897,7 +1935,8 @@ namespace CustomServer
         // Get LED brightness
         server.on("/api/v1/led/brightness", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             doc["brightness"] = Led::getBrightness();
             doc["max_brightness"] = LED_MAX_BRIGHTNESS_PERCENT;
             _sendJsonResponse(request, doc);
@@ -1910,7 +1949,8 @@ namespace CustomServer
             {
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_LED_BRIGHTNESS)) return;
 
-                JsonDocument doc;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
                 doc.set(json);
 
                 // Check if brightness field is provided and is a number
@@ -1940,7 +1980,8 @@ namespace CustomServer
         // List files in LittleFS. The endpoint cannot be only "files" as it conflicts with the file serving endpoint (defined below)
         server.on("/api/v1/list-files", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            JsonDocument doc;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
             
             if (listLittleFsFiles(doc)) {
                 _sendJsonResponse(request, doc);
