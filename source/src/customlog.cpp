@@ -8,7 +8,7 @@ namespace CustomLog
     static uint8_t* _udpLogQueueStorage = nullptr;
     static WiFiUDP _udpClient;
     static IPAddress _udpDestinationIp;
-    static char _udpBuffer[UDP_LOG_BUFFER_SIZE];
+    static char *_udpBuffer = nullptr;  // UDP_LOG_BUFFER_SIZE (700 bytes) - allocated in PSRAM
     static bool _isUdpInitialized = false;
 
     // Task state
@@ -31,9 +31,22 @@ namespace CustomLog
             return;
         }
 
+        // Allocate PSRAM buffer for UDP messages
+        if (_udpBuffer == nullptr) {
+            _udpBuffer = (char*)ps_malloc(UDP_LOG_BUFFER_SIZE);
+            if (_udpBuffer == nullptr) {
+                LOG_ERROR("Failed to allocate PSRAM for UDP log buffer");
+                return;
+            }
+        }
+
         // Initialize queue if not already done
         if (!_initializeQueue()) {
             LOG_ERROR("Failed to initialize UDP log queue");
+            if (_udpBuffer != nullptr) {
+                free(_udpBuffer);
+                _udpBuffer = nullptr;
+            }
             return;
         }
 
@@ -63,7 +76,7 @@ namespace CustomLog
             LOG_DEBUG("UDP client stopped");
         }
         
-        // Clean up the queue and PSRAM buffer
+        // Clean up the queue and PSRAM buffers
         if (_udpLogQueueStorage != nullptr) {
             _udpLogQueue = nullptr;
             
@@ -75,6 +88,12 @@ namespace CustomLog
 
             LOG_DEBUG("UDP logging queue stopped, PSRAM freed");
         }
+        
+        // Free UDP message buffer
+        if (_udpBuffer != nullptr) {
+            free(_udpBuffer);
+            _udpBuffer = nullptr;
+        }
     }
 
     void callbackMultiple(const LogEntry& entry)
@@ -85,7 +104,7 @@ namespace CustomLog
 
     static int _espLogVprintf(const char* format, va_list args) {
         // Create buffer for the formatted message
-        char buffer[LOG_CALLBACK_MESSAGE_SIZE];
+        char buffer[LOG_ESPVPRINTF_CALLBACK_MESSAGE_SIZE];
         int len = vsnprintf(buffer, sizeof(buffer), format, args);
         
         if (len > 0) {
@@ -156,19 +175,18 @@ namespace CustomLog
             return;
         }
 
-        LOG_DEBUG("Starting UDP log task");
+        LOG_DEBUG("Starting UDP log task with %d bytes stack in internal RAM (performs UDP network operations)", UDP_LOG_TASK_STACK_SIZE);
+
         BaseType_t result = xTaskCreate(
             _udpTask,
             UDP_LOG_TASK_NAME,
             UDP_LOG_TASK_STACK_SIZE,
             NULL,
             UDP_LOG_TASK_PRIORITY,
-            &_udpTaskHandle
-        );
+            &_udpTaskHandle);
 
         if (result != pdPASS) {
             LOG_ERROR("Failed to create UDP log task");
-            _udpTaskHandle = NULL;
         }
     }
 
@@ -208,7 +226,7 @@ namespace CustomLog
             );
 
             // Format message
-            snprintf(_udpBuffer, sizeof(_udpBuffer),
+            snprintf(_udpBuffer, UDP_LOG_BUFFER_SIZE,
                 "<%d>%s %s[%llu]: [%s][Core%d] %s[%s]: %s",
                 UDP_LOG_SERVERITY_FACILITY,
                 timestamp,

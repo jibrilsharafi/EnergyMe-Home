@@ -42,10 +42,22 @@ namespace ButtonHandler
             return;
         }
 
-        // Create button handling task with higher stack size for safety
-        if (xTaskCreate(_buttonTask, BUTTON_TASK_NAME, BUTTON_TASK_STACK_SIZE, NULL, BUTTON_TASK_PRIORITY, &_buttonTaskHandle) != pdPASS)
+        // Create button handling task with internal RAM stack (performs Preferences operations)
+        LOG_DEBUG("Starting button task with %d bytes stack in internal RAM (performs Preferences operations)", BUTTON_TASK_STACK_SIZE);
+
+        BaseType_t result = xTaskCreate(
+            _buttonTask,
+            BUTTON_TASK_NAME,
+            BUTTON_TASK_STACK_SIZE,
+            NULL,
+            BUTTON_TASK_PRIORITY,
+            &_buttonTaskHandle);
+
+        if (result != pdPASS)
         {
             LOG_ERROR("Failed to create button task");
+            vSemaphoreDelete(_buttonSemaphore);
+            _buttonSemaphore = NULL;
             return;
         }
 

@@ -67,7 +67,7 @@ namespace Mqtt
     static bool _taskShouldRun = false;
 
     // AWS IoT Jobs OTA task (global to ensure they work and do not get dereferenced)
-    static char _otaCurrentUrl[URL_BUFFER_SIZE];
+    static char *_otaCurrentUrl = nullptr;  // URL_BUFFER_SIZE (256 bytes) - allocated in PSRAM
     static char _otaCurrentJobId[NAME_BUFFER_SIZE];
     static TaskHandle_t _otaTaskHandle = nullptr;
 
@@ -215,8 +215,17 @@ namespace Mqtt
         _initializeLogQueue();
         _initializeMeterQueue();
 
-    // Initialize OTA job ID buffer
-    memset(_otaCurrentJobId, 0, sizeof(_otaCurrentJobId));
+        // Initialize OTA buffers
+        if (_otaCurrentUrl == nullptr) {
+            _otaCurrentUrl = (char*)ps_malloc(URL_BUFFER_SIZE);
+            if (_otaCurrentUrl == nullptr) {
+                LOG_ERROR("Failed to allocate OTA URL buffer in PSRAM");
+            } else {
+                memset(_otaCurrentUrl, 0, URL_BUFFER_SIZE);
+            }
+        }
+        
+        memset(_otaCurrentJobId, 0, sizeof(_otaCurrentJobId));
 
         // Allocate certificate buffers in PSRAM
         if (_awsIotCoreCert == nullptr) {
@@ -276,6 +285,13 @@ namespace Mqtt
             memset(_awsIotCorePrivateKey, 0, CERTIFICATE_BUFFER_SIZE);
             free(_awsIotCorePrivateKey);
             _awsIotCorePrivateKey = nullptr;
+        }
+        
+        // Free OTA URL buffer
+        if (_otaCurrentUrl != nullptr) {
+            memset(_otaCurrentUrl, 0, URL_BUFFER_SIZE);
+            free(_otaCurrentUrl);
+            _otaCurrentUrl = nullptr;
         }
         
         LOG_INFO("MQTT client stopped");
@@ -571,14 +587,15 @@ namespace Mqtt
         _nextMqttConnectionAttemptMillis = 0;
         _mqttConnectionAttempt = 0;
         
+        LOG_DEBUG("Starting MQTT task with %d bytes stack in internal RAM (uses NVS)", MQTT_TASK_STACK_SIZE);
+
         BaseType_t result = xTaskCreate(
             _mqttTask,
             MQTT_TASK_NAME,
             MQTT_TASK_STACK_SIZE,
             nullptr,
             MQTT_TASK_PRIORITY,
-            &_taskHandle
-        );
+            &_taskHandle);
 
         if (result != pdPASS) {
             LOG_ERROR("Failed to create MQTT task");
@@ -586,7 +603,9 @@ namespace Mqtt
         }
     }
 
-    static void _stopTask() { stopTaskGracefully(&_taskHandle, "MQTT task"); }
+    static void _stopTask() { 
+        stopTaskGracefully(&_taskHandle, "MQTT task"); 
+    }
 
     static void _mqttTask(void *parameter)
     {
@@ -1173,14 +1192,19 @@ namespace Mqtt
         snprintf(_otaCurrentUrl, sizeof(_otaCurrentUrl), "%s", url);
         snprintf(_otaCurrentJobId, sizeof(_otaCurrentJobId), "%s", jobId);
 
-        xTaskCreate(
+        LOG_DEBUG("Starting OTA task with %d bytes stack in internal RAM (writes firmware to flash)", OTA_TASK_STACK_SIZE);
+
+        BaseType_t result = xTaskCreate(
             _otaTask, 
             OTA_TASK_NAME, 
             OTA_TASK_STACK_SIZE, 
             nullptr,
             OTA_TASK_PRIORITY, 
-            &_otaTaskHandle
-        );
+            &_otaTaskHandle);
+
+        if (result != pdPASS) {
+            LOG_ERROR("Failed to create OTA task");
+        }
     }
 
     static void _handleAwsIotJobMessage(const char* message, const char* topic) {

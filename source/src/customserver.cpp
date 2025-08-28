@@ -19,6 +19,8 @@ namespace CustomServer
     // OTA timeout task variables
     static TaskHandle_t _otaTimeoutTaskHandle = NULL;
     static bool _otaTimeoutTaskShouldRun = false;
+    static StaticTask_t _otaTimeoutTaskBuffer;
+    static StackType_t *_otaTimeoutTaskStackPointer;
 
     // API request synchronization
     static SemaphoreHandle_t _apiMutex = NULL;
@@ -334,7 +336,7 @@ namespace CustomServer
             return;
         }
 
-        LOG_DEBUG("Starting health check task");
+        LOG_DEBUG("Starting health check task with %d bytes stack in internal RAM (performs TCP network operations)", HEALTH_CHECK_TASK_STACK_SIZE);
         _consecutiveFailures = 0;
 
         BaseType_t result = xTaskCreate(
@@ -345,10 +347,14 @@ namespace CustomServer
             HEALTH_CHECK_TASK_PRIORITY,
             &_healthCheckTaskHandle);
 
-        if (result != pdPASS) { LOG_ERROR("Failed to create health check task"); }
+        if (result != pdPASS) { 
+            LOG_ERROR("Failed to create health check task"); 
+        }
     }
 
-    static void _stopHealthCheckTask() { stopTaskGracefully(&_healthCheckTaskHandle, "Health check task"); }
+    static void _stopHealthCheckTask() { 
+        stopTaskGracefully(&_healthCheckTaskHandle, "Health check task");
+    }
 
     static void _startOtaTimeoutTask()
     {
@@ -358,20 +364,40 @@ namespace CustomServer
             return;
         }
 
-        LOG_DEBUG("Starting OTA timeout task");
+        LOG_DEBUG("Starting OTA timeout task with %d bytes stack in PSRAM", OTA_TIMEOUT_TASK_STACK_SIZE);
 
-        BaseType_t result = xTaskCreate(
+        _otaTimeoutTaskStackPointer = (StackType_t *)ps_malloc(OTA_TIMEOUT_TASK_STACK_SIZE);
+        if (_otaTimeoutTaskStackPointer == NULL) {
+            LOG_ERROR("Failed to allocate stack for OTA timeout task from PSRAM");
+            return;
+        }
+
+        _otaTimeoutTaskHandle = xTaskCreateStatic(
             _otaTimeoutTask,
             OTA_TIMEOUT_TASK_NAME,
             OTA_TIMEOUT_TASK_STACK_SIZE,
             NULL,
             OTA_TIMEOUT_TASK_PRIORITY,
-            &_otaTimeoutTaskHandle);
+            _otaTimeoutTaskStackPointer,
+            &_otaTimeoutTaskBuffer);
 
-        if (result != pdPASS) { LOG_ERROR("Failed to create OTA timeout task"); }
+        if (!_otaTimeoutTaskHandle) { 
+            LOG_ERROR("Failed to create OTA timeout task"); 
+            free(_otaTimeoutTaskStackPointer);
+            _otaTimeoutTaskStackPointer = nullptr;
+        }
     }
 
-    static void _stopOtaTimeoutTask() { stopTaskGracefully(&_otaTimeoutTaskHandle, "OTA timeout task"); }
+    static void _stopOtaTimeoutTask() { 
+        stopTaskGracefully(&_otaTimeoutTaskHandle, "OTA timeout task"); 
+        
+        // Free PSRAM stack
+        if (_otaTimeoutTaskStackPointer != nullptr)
+        {
+            free(_otaTimeoutTaskStackPointer);
+            _otaTimeoutTaskStackPointer = nullptr;
+        }
+    }
 
     static void _otaTimeoutTask(void *parameter)
     {

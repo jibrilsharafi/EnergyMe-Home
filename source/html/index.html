@@ -531,7 +531,7 @@
     var meterDataUpdateInProgress = false;
 
     // Function to decompress gzip data
-    async function decompressGzipFile(filename) { // TODO: the chart starts at 03:00 instead of midnight because of timezone. Fix
+    async function decompressGzipFile(filename) {
         try {
             // Get the file as binary data
             const response = await energyApi.apiCall(`files/${encodeURIComponent(filename)}`, { method: 'GET' });

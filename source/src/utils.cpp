@@ -430,6 +430,7 @@ static void _maintenanceTask(void* parameter) {
     }
 
     LOG_DEBUG("Maintenance task stopping");
+    
     _maintenanceTaskHandle = NULL;
     vTaskDelete(NULL);
 }
@@ -440,7 +441,7 @@ void startMaintenanceTask() {
         return;
     }
     
-    LOG_DEBUG("Starting maintenance task");
+    LOG_DEBUG("Starting maintenance task with %d bytes stack in internal RAM (performs flash I/O operations)", TASK_MAINTENANCE_STACK_SIZE);
     
     BaseType_t result = xTaskCreate(
         _maintenanceTask,
@@ -448,8 +449,7 @@ void startMaintenanceTask() {
         TASK_MAINTENANCE_STACK_SIZE,
         NULL,
         TASK_MAINTENANCE_PRIORITY,
-        &_maintenanceTaskHandle
-    );
+        &_maintenanceTaskHandle);
     
     if (result != pdPASS) {
         LOG_ERROR("Failed to create maintenance task");
@@ -546,14 +546,15 @@ void setRestartSystem(const char* reason, bool factoryReset) {
     }
 
     // Create a task that will handle the delayed restart/factory reset and stop services safely
+    LOG_DEBUG("Starting restart task with %d bytes stack in internal RAM (performs flash I/O operations)", TASK_RESTART_STACK_SIZE);
+
     BaseType_t result = xTaskCreate(
         _restartTask,
         TASK_RESTART_NAME,
         TASK_RESTART_STACK_SIZE,
         (void*)(uintptr_t)factoryReset,
         TASK_RESTART_PRIORITY,
-        &_restartTaskHandle
-    );
+        &_restartTaskHandle);
 
     if (result != pdPASS) {
         LOG_ERROR("Failed to create restart task, performing immediate operation");

@@ -116,45 +116,89 @@ Provide project context and coding guidelines that AI should follow when generat
     - **For task shutdown notifications**: Use blocking `ulTaskNotifyTake(pdTRUE, timeout)` - it's as CPU-efficient as `vTaskDelay()` but provides immediate shutdown response
     - **Only use non-blocking pattern** if you need sub-second shutdown response or must do other work during delays
     - Have a single (private) function to start and stop tasks, while the public methods should be related to begin and stop
-    - Standard pattern:
+    - **PSRAM vs Internal RAM Task Allocation**:
+      - **Use PSRAM for tasks that DON'T do flash I/O** (WiFi, LED, Button Handler, Crash Monitor, ADE7953 meter reading)
+      - **Use INTERNAL RAM for tasks that DO flash I/O** (NVS/Preferences, LittleFS file operations, OTA operations)
+      - **Flash I/O operations include**: NVS/Preferences read/write, LittleFS file operations, OTA firmware writing, SPI flash operations
+      - **Why**: When flash cache is disabled during flash operations, PSRAM becomes inaccessible, causing crashes
+    - **PSRAM Task Pattern** (for non-flash I/O tasks):
       ```cpp
       TaskHandle_t taskHandle = NULL;
       bool taskShouldRun = false;
+      StaticTask_t _taskBuffer;
+      StackType_t *_taskStackPointer;
       
-      void myTask(void* parameter) {
-          LOG_DEBUG("Task X started");
-
-          taskShouldRun = true;
-          while (taskShouldRun) {
-              // Task work here
-              
-              // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
-              if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(TASK_INTERVAL_MS)) > 0) {
-                  taskShouldRun = false;
-                  break;
-              }
+      void _startTask() {
+          if (taskHandle != NULL) {
+              LOG_DEBUG("Task already running");
+              return;
           }
 
-          LOG_DEBUG("Task X stopping");
-          taskHandle = NULL;
-          vTaskDelete(NULL);
-      }
-      
-      void startTask() {
-          if (taskHandle == NULL) {
-              LOG_DEBUG("Starting task X");
-              xTaskCreate(myTask, X_TASK_NAME, X_TASK_STACK_SIZE, NULL, X_TASK_PRIORITY, &taskHandle);
-          } else {
-              LOG_DEBUG("Task X is already running");
+          LOG_DEBUG("Starting task with %d bytes stack in PSRAM", TASK_STACK_SIZE);
+
+          _taskStackPointer = (StackType_t *)ps_malloc(TASK_STACK_SIZE);
+          if (_taskStackPointer == NULL) {
+              LOG_ERROR("Failed to allocate stack for task from PSRAM");
+              return;
+          }
+
+          taskHandle = xTaskCreateStatic(
+              myTask,
+              TASK_NAME,
+              TASK_STACK_SIZE,
+              NULL,
+              TASK_PRIORITY,
+              _taskStackPointer,
+              &_taskBuffer);
+
+          if (!taskHandle) {
+              LOG_ERROR("Failed to create task");
+              free(_taskStackPointer);
+              _taskStackPointer = nullptr;
           }
       }
       
       void stopTask() {
-        // Anything else needed
-        stopTaskGracefully(&_XTaskHandle, "X task"); // Public function in utils.h
-        // Anything else needed
+        stopTaskGracefully(&taskHandle, "task name");
+        
+        // Free PSRAM stack if task was stopped externally
+        if (_taskStackPointer != nullptr)
+        {
+            free(_taskStackPointer);
+            _taskStackPointer = nullptr;
+        }
       }
       ```
+    - **Internal RAM Task Pattern** (for flash I/O tasks):
+      ```cpp
+      TaskHandle_t taskHandle = NULL;
+      bool taskShouldRun = false;
+      
+      void _startTask() {
+          if (taskHandle != NULL) {
+              LOG_DEBUG("Task already running");
+              return;
+          }
+
+          LOG_DEBUG("Starting task with %d bytes stack in internal RAM (uses flash I/O)", TASK_STACK_SIZE);
+
+          BaseType_t result = xTaskCreate(
+              myTask,
+              TASK_NAME,
+              TASK_STACK_SIZE,
+              NULL,
+              TASK_PRIORITY,
+              &taskHandle);
+
+          if (result != pdPASS) {
+              LOG_ERROR("Failed to create task");
+              taskHandle = NULL;
+          }
+      }
+      
+      void stopTask() {
+        stopTaskGracefully(&taskHandle, "task name");
+      }
       ```
 
 10. **Coding style**:

@@ -4,6 +4,8 @@ namespace CrashMonitor
 {
     // Static state variables
     static TaskHandle_t _crashResetTaskHandle = NULL;
+    static StaticTask_t _taskBuffer;
+    static StackType_t *_taskStackPointer;
 
     // Private function declarations
     static void _handleCounters();
@@ -67,15 +69,29 @@ namespace CrashMonitor
         );
         _handleCounters();
 
-        // Create task to handle the crash reset
-        xTaskCreate(
+        // Create task to handle the crash reset with PSRAM stack
+        LOG_DEBUG("Starting crash reset task with %d bytes stack in PSRAM", CRASH_RESET_TASK_STACK_SIZE);
+
+        _taskStackPointer = (StackType_t *)ps_malloc(CRASH_RESET_TASK_STACK_SIZE);
+        if (_taskStackPointer == NULL) {
+            LOG_ERROR("Failed to allocate stack for crash reset task from PSRAM");
+            return;
+        }
+
+        _crashResetTaskHandle = xTaskCreateStatic(
             _crashResetTask, 
             CRASH_RESET_TASK_NAME, 
             CRASH_RESET_TASK_STACK_SIZE, 
             NULL, 
             CRASH_RESET_TASK_PRIORITY, 
-            &_crashResetTaskHandle
-        );
+            _taskStackPointer,
+            &_taskBuffer);
+
+        if (!_crashResetTaskHandle) {
+            LOG_ERROR("Failed to create crash reset task");
+            free(_taskStackPointer);
+            _taskStackPointer = nullptr;
+        }
 
         LOG_DEBUG("Crash monitor setup done");
     }
@@ -92,6 +108,13 @@ namespace CrashMonitor
         }
         _consecutiveCrashCount = 0;
         _consecutiveResetCount = 0;
+
+        // Free PSRAM stack before task deletion
+        if (_taskStackPointer != nullptr)
+        {
+            free(_taskStackPointer);
+            _taskStackPointer = nullptr;
+        }
 
         _crashResetTaskHandle = nullptr;
         vTaskDelete(NULL);

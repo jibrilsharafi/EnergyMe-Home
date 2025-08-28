@@ -47,8 +47,12 @@ namespace Ade7953
     // FreeRTOS task handles and control flags
     static TaskHandle_t _meterReadingTaskHandle = NULL;
     static bool _meterReadingTaskShouldRun = false;
+    static StaticTask_t _meterReadingTaskBuffer;
+    static StackType_t *_meterReadingTaskStackPointer;
+    
     static TaskHandle_t _energySaveTaskHandle = NULL;
     static bool _energySaveTaskShouldRun = false;
+    
     static TaskHandle_t _hourlyCsvSaveTaskHandle = NULL;
     static bool _hourlyCsvSaveTaskShouldRun = false;
 
@@ -1383,19 +1387,27 @@ namespace Ade7953
         // Attach interrupt handler
         _attachInterruptHandler();
         
-        LOG_DEBUG("Starting ADE7953 meter reading task");
-        BaseType_t result = xTaskCreate(
+        LOG_DEBUG("Starting ADE7953 meter reading task with %d bytes stack in PSRAM", ADE7953_METER_READING_TASK_STACK_SIZE);
+
+        _meterReadingTaskStackPointer = (StackType_t *)ps_malloc(ADE7953_METER_READING_TASK_STACK_SIZE);
+        if (_meterReadingTaskStackPointer == NULL) {
+            LOG_ERROR("Failed to allocate stack for ADE7953 meter reading task from PSRAM");
+            return;
+        }
+
+        _meterReadingTaskHandle = xTaskCreateStatic(
             _meterReadingTask, 
             ADE7953_METER_READING_TASK_NAME, 
             ADE7953_METER_READING_TASK_STACK_SIZE, 
             nullptr, 
             ADE7953_METER_READING_TASK_PRIORITY, 
-            &_meterReadingTaskHandle
-        );
+            _meterReadingTaskStackPointer,
+            &_meterReadingTaskBuffer);
         
-        if (result != pdPASS) {
+        if (!_meterReadingTaskHandle) {
             LOG_ERROR("Failed to create ADE7953 meter reading task");
-            _meterReadingTaskHandle = NULL;
+            free(_meterReadingTaskStackPointer);
+            _meterReadingTaskStackPointer = nullptr;
         }
     }
 
@@ -1410,6 +1422,13 @@ namespace Ade7953
         if (_ade7953InterruptSemaphore != NULL) {
             vSemaphoreDelete(_ade7953InterruptSemaphore);
             _ade7953InterruptSemaphore = NULL;
+        }
+
+        // Free PSRAM stack
+        if (_meterReadingTaskStackPointer != nullptr)
+        {
+            free(_meterReadingTaskStackPointer);
+            _meterReadingTaskStackPointer = nullptr;
         }
     }
 
@@ -1482,15 +1501,15 @@ namespace Ade7953
             return;
         }
 
-        LOG_DEBUG("Starting ADE7953 energy save task");
+        LOG_DEBUG("Starting ADE7953 energy save task with %d bytes stack in internal RAM (uses NVS)", ADE7953_ENERGY_SAVE_TASK_STACK_SIZE);
+
         BaseType_t result = xTaskCreate(
             _energySaveTask,
             ADE7953_ENERGY_SAVE_TASK_NAME,
             ADE7953_ENERGY_SAVE_TASK_STACK_SIZE,
             nullptr,
             ADE7953_ENERGY_SAVE_TASK_PRIORITY,
-            &_energySaveTaskHandle
-        );
+            &_energySaveTaskHandle);
 
         if (result != pdPASS) {
             LOG_ERROR("Failed to create ADE7953 energy save task");
@@ -1528,15 +1547,15 @@ namespace Ade7953
             return;
         }
 
-        LOG_DEBUG("Starting ADE7953 hourly CSV save task");
+        LOG_DEBUG("Starting ADE7953 hourly CSV save task with %d bytes stack in internal RAM (uses LittleFS)", ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE);
+
         BaseType_t result = xTaskCreate(
             _hourlyCsvSaveTask,
             ADE7953_HOURLY_CSV_SAVE_TASK_NAME,
             ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE,
             nullptr,
             ADE7953_HOURLY_CSV_SAVE_TASK_PRIORITY,
-            &_hourlyCsvSaveTaskHandle
-        );
+            &_hourlyCsvSaveTaskHandle);
 
         if (result != pdPASS) {
             LOG_ERROR("Failed to create ADE7953 hourly CSV save task");

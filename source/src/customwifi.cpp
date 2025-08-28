@@ -2,9 +2,10 @@
 
 namespace CustomWifi
 {
-  // Static variables - minimal state
-  static WiFiManager _wifiManager;
+  // WiFi connection task variables
   static TaskHandle_t _wifiTaskHandle = NULL;
+  
+  // Counters
   static uint64_t _lastReconnectAttempt = 0;
   static int32_t _reconnectAttempts = 0; // Increased every disconnection, reset on stable (few minutes) connection
 
@@ -19,10 +20,11 @@ namespace CustomWifi
   static bool _taskShouldRun = false;
   static bool _eventsEnabled = false;
 
+
   // Private helper functions
   static void _onWiFiEvent(WiFiEvent_t event);
   static void _wifiConnectionTask(void *parameter);
-  static void _setupWiFiManager();
+  static void _setupWiFiManager(WiFiManager &wifiManager);
   static void _handleSuccessfulConnection();
   static bool _setupMdns();
   static void _cleanup();
@@ -48,9 +50,6 @@ namespace CustomWifi
     // Set WiFi mode explicitly and disable power saving to prevent handshake issues
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false); // Disable WiFi sleep to prevent handshake timeouts
-
-    // Setup WiFiManager with optimal settings
-    _setupWiFiManager();
 
     // Start WiFi connection task
     _startWifiTask();
@@ -93,27 +92,27 @@ namespace CustomWifi
     }
   }
 
-  static void _setupWiFiManager()
+  static void _setupWiFiManager(WiFiManager& wifiManager)
   {
     LOG_DEBUG("Setting up the WiFiManager...");
 
-    _wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SECONDS);
-    _wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SECONDS);
-    _wifiManager.setConnectRetries(WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS); // Let WiFiManager handle initial retries
+    wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SECONDS);
+    wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SECONDS);
+    wifiManager.setConnectRetries(WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS); // Let WiFiManager handle initial retries
     
     // Additional WiFi settings to improve handshake reliability
-    _wifiManager.setCleanConnect(true);    // Clean previous connection attempts
-    _wifiManager.setBreakAfterConfig(true); // Exit after successful config
-    _wifiManager.setRemoveDuplicateAPs(true); // Remove duplicate AP entries
+    wifiManager.setCleanConnect(true);    // Clean previous connection attempts
+    wifiManager.setBreakAfterConfig(true); // Exit after successful config
+    wifiManager.setRemoveDuplicateAPs(true); // Remove duplicate AP entries
 
         // Callback when portal starts
-    _wifiManager.setAPCallback([](WiFiManager *wm) {
+    wifiManager.setAPCallback([](WiFiManager *wm) {
                                 LOG_INFO("WiFi configuration portal started: %s", wm->getConfigPortalSSID().c_str());
                                 Led::blinkBlueFast(Led::PRIO_MEDIUM);
                               });
 
     // Callback when config is saved
-    _wifiManager.setSaveConfigCallback([]() {
+    wifiManager.setSaveConfigCallback([]() {
             LOG_INFO("WiFi credentials saved via portal - restarting...");
             Led::setPattern(
               LedPattern::BLINK_FAST,
@@ -181,7 +180,7 @@ namespace CustomWifi
     _lastReconnectAttempt = 0;
 
     _setupMdns();
-    printDeviceStatusDynamic();
+    // Note: printDeviceStatusDynamic() removed to avoid flash I/O from PSRAM task
 
     LOG_INFO("WiFi fully connected and operational");
   }
@@ -191,6 +190,18 @@ namespace CustomWifi
     LOG_DEBUG("WiFi task started");
     uint32_t notificationValue;
     _taskShouldRun = true;
+
+    // Create WiFiManager on heap to save stack space
+    WiFiManager* wifiManager = new WiFiManager();
+    if (!wifiManager) {
+      LOG_ERROR("Failed to allocate WiFiManager");
+      _taskShouldRun = false;
+      _cleanup();
+      _wifiTaskHandle = NULL;
+      vTaskDelete(NULL);
+      return;
+    }
+    _setupWiFiManager(*wifiManager);
 
     // Initial connection attempt
     Led::pulseBlue(Led::PRIO_MEDIUM);
@@ -202,16 +213,21 @@ namespace CustomWifi
     // Try initial connection with retries for handshake timeouts
     LOG_DEBUG("Attempt WiFi connection");
       
-    if (!_wifiManager.autoConnect(hostname)) { // TODO: actually handle this in such a way where we retry constantly, but without restarting the device. Closing the task has little utility
+    if (!wifiManager->autoConnect(hostname)) { // TODO: actually handle this in such a way where we retry constantly, but without restarting the device. Closing the task has little utility
       LOG_WARNING("WiFi connection failed, exiting wifi task");
       Led::blinkRedFast(Led::PRIO_URGENT);
       _taskShouldRun = false;
       setRestartSystem("Restart after WiFi connection failure");
       _cleanup();
+      delete wifiManager; // Clean up before exit
       _wifiTaskHandle = NULL;
       vTaskDelete(NULL);
       return;
     }
+
+    // Clean up WiFiManager after successful connection - no longer needed
+    delete wifiManager;
+    wifiManager = nullptr;
 
     Led::clearPattern(Led::PRIO_MEDIUM);
     
@@ -274,15 +290,26 @@ namespace CustomWifi
             {
               LOG_ERROR("Multiple reconnection failures - starting portal");
 
+              // Create WiFiManager on heap for portal operation
+              WiFiManager* portalManager = new WiFiManager();
+              if (!portalManager) {
+                LOG_ERROR("Failed to allocate WiFiManager for portal");
+                setRestartSystem("Restart after WiFiManager allocation failure");
+                break;
+              }
+              _setupWiFiManager(*portalManager);
+
               // Try WiFiManager portal
               // TODO: this eventually will need to be async or similar since we lose meter 
               // readings in the meanwhile (and infinite loop of portal - reboots)
-              if (!_wifiManager.startConfigPortal(hostname))
+              if (!portalManager->startConfigPortal(hostname))
               {
                 LOG_ERROR("Portal failed - restarting device");
                 Led::blinkRedFast(Led::PRIO_URGENT);
                 setRestartSystem("Restart after portal failure");
               }
+              // Clean up WiFiManager after portal operation
+              delete portalManager;
               // If portal succeeds, device will restart automatically
             }
           }
@@ -331,7 +358,14 @@ namespace CustomWifi
   {
     LOG_WARNING("Resetting WiFi credentials and restarting...");
     Led::blinkOrangeFast(Led::PRIO_CRITICAL);
-    _wifiManager.resetSettings();
+    
+    // Create WiFiManager on heap temporarily to reset settings
+    WiFiManager* wifiManager = new WiFiManager();
+    if (wifiManager) {
+      wifiManager->resetSettings();
+      delete wifiManager;
+    }
+    
     setRestartSystem("Restart after WiFi reset");
   }
 
@@ -476,23 +510,17 @@ namespace CustomWifi
 
   static void _startWifiTask()
   {
-    if (_wifiTaskHandle == NULL)
-    {
-      LOG_DEBUG("Starting WiFi task");
-      BaseType_t result = xTaskCreate(
+    if (_wifiTaskHandle) { LOG_DEBUG("WiFi task is already running"); return; }
+    LOG_DEBUG("Starting WiFi task with %d bytes stack in internal RAM (performs TCP network operations)", WIFI_TASK_STACK_SIZE);
+
+    BaseType_t result = xTaskCreate(
         _wifiConnectionTask,
         WIFI_TASK_NAME,
         WIFI_TASK_STACK_SIZE,
-        NULL,
+        nullptr,
         WIFI_TASK_PRIORITY,
         &_wifiTaskHandle);
-
-      if (result != pdPASS) { LOG_ERROR("Failed to create WiFi task"); }
-    }
-    else
-    {
-      LOG_DEBUG("WiFi task is already running");
-    }
+    if (result != pdPASS) { LOG_ERROR("Failed to create WiFi task"); }
   }
 
   static void _stopWifiTask()

@@ -11,9 +11,9 @@ namespace InfluxDbClient
     static uint64_t _nextSendAttemptMillis = 0;
     static InfluxDbConfiguration _configuration;
 
-    // InfluxDB helper variables
-    static char _fullUrl[FULL_URL_BUFFER_SIZE];
-    static char _authHeader[AUTH_HEADER_BUFFER_SIZE];
+    // InfluxDB helper variables (moved to PSRAM for memory optimization)
+    static char *_fullUrl = nullptr;     // FULL_URL_BUFFER_SIZE (512 bytes) - allocated in PSRAM
+    static char *_authHeader = nullptr;  // AUTH_HEADER_BUFFER_SIZE (256 bytes) - allocated in PSRAM
     
     // Runtime connection status - kept in memory only, not saved to preferences
     static char _status[STATUS_BUFFER_SIZE];
@@ -68,6 +68,27 @@ namespace InfluxDbClient
         
         if (!createMutexIfNeeded(&_configMutex)) return;
         
+        // Allocate PSRAM buffers for large strings
+        if (_fullUrl == nullptr) {
+            _fullUrl = (char*)ps_malloc(FULL_URL_BUFFER_SIZE);
+            if (_fullUrl == nullptr) {
+                LOG_ERROR("Failed to allocate PSRAM for InfluxDB full URL buffer");
+                return;
+            }
+        }
+        
+        if (_authHeader == nullptr) {
+            _authHeader = (char*)ps_malloc(AUTH_HEADER_BUFFER_SIZE);
+            if (_authHeader == nullptr) {
+                LOG_ERROR("Failed to allocate PSRAM for InfluxDB auth header buffer");
+                if (_fullUrl != nullptr) {
+                    free(_fullUrl);
+                    _fullUrl = nullptr;
+                }
+                return;
+            }
+        }
+        
         _isSetupDone = true; // Must set before since we have checks on the setup later
         _setConfigurationFromPreferences();
 
@@ -80,6 +101,17 @@ namespace InfluxDbClient
         _stopTask();
         
         deleteMutex(&_configMutex);
+        
+        // Free PSRAM buffers
+        if (_fullUrl != nullptr) {
+            free(_fullUrl);
+            _fullUrl = nullptr;
+        }
+        
+        if (_authHeader != nullptr) {
+            free(_authHeader);
+            _authHeader = nullptr;
+        }
         
         _isSetupDone = false;
         LOG_INFO("InfluxDB client stopped");
@@ -261,15 +293,15 @@ namespace InfluxDbClient
             return;
         }
 
-        LOG_DEBUG("Starting InfluxDB task");
+        LOG_DEBUG("Starting InfluxDB task with %d bytes stack in internal RAM (uses NVS)", INFLUXDB_TASK_STACK_SIZE);
+
         BaseType_t result = xTaskCreate(
             _influxDbTask,
             INFLUXDB_TASK_NAME,
             INFLUXDB_TASK_STACK_SIZE,
             nullptr,
             INFLUXDB_TASK_PRIORITY,
-            &_influxDbTaskHandle
-        );
+            &_influxDbTaskHandle);
 
         if (result != pdPASS) {
             LOG_ERROR("Failed to create InfluxDB task");
@@ -277,7 +309,9 @@ namespace InfluxDbClient
         }
     }
 
-    static void _stopTask() { stopTaskGracefully(&_influxDbTaskHandle, "InfluxDB task"); }
+    static void _stopTask() { 
+        stopTaskGracefully(&_influxDbTaskHandle, "InfluxDB task"); 
+    }
 
     static void _influxDbTask(void* parameter)
     {

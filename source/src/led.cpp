@@ -12,6 +12,8 @@ namespace Led
     static TaskHandle_t _ledTaskHandle = nullptr;
     static QueueHandle_t _ledQueue = nullptr;
     static bool _ledTaskShouldRun = false;
+    static StaticTask_t _taskBuffer;
+    static StackType_t *_taskStackPointer;
 
     // LED command structure for queue
     struct LedCommand
@@ -68,19 +70,33 @@ namespace Led
         _ledQueue = xQueueCreate(LED_QUEUE_SIZE, sizeof(LedCommand));
         if (_ledQueue == nullptr) { return; } // Failed to create queue
 
-        // Create LED task
-        BaseType_t result = xTaskCreate(
+        // Create LED task with PSRAM stack
+        LOG_DEBUG("Starting LED task with %d bytes stack in PSRAM", LED_TASK_STACK_SIZE);
+
+        _taskStackPointer = (StackType_t *)ps_malloc(LED_TASK_STACK_SIZE);
+        if (_taskStackPointer == NULL) {
+            LOG_ERROR("Failed to allocate stack for LED task from PSRAM");
+            vQueueDelete(_ledQueue);
+            _ledQueue = nullptr;
+            return;
+        }
+        
+        _ledTaskHandle = xTaskCreateStatic(
             _ledTask,
             LED_TASK_NAME,
             LED_TASK_STACK_SIZE,
             nullptr,
             LED_TASK_PRIORITY,
-            &_ledTaskHandle);
+            _taskStackPointer,
+            &_taskBuffer);
 
-        if (result != pdPASS)
+        if (!_ledTaskHandle)
         {
+            LOG_ERROR("Failed to create LED task");
             vQueueDelete(_ledQueue);
             _ledQueue = nullptr;
+            free(_taskStackPointer);
+            _taskStackPointer = nullptr;
             return; // Failed to create task
         }
 
@@ -96,6 +112,13 @@ namespace Led
         {
             vQueueDelete(_ledQueue);
             _ledQueue = nullptr;
+        }
+
+        // Free PSRAM stack
+        if (_taskStackPointer != nullptr)
+        {
+            free(_taskStackPointer);
+            _taskStackPointer = nullptr;
         }
 
         // Turn off LED

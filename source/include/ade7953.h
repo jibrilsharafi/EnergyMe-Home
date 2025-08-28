@@ -26,7 +26,7 @@
 
 // Tasks
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task"
-#define ADE7953_METER_READING_TASK_STACK_SIZE (6 * 1024) // Fine, around 5 kB usage
+#define ADE7953_METER_READING_TASK_STACK_SIZE (12 * 1024) // Fine, around 5 kB usage. Increased since we use PSRAM
 #define ADE7953_METER_READING_TASK_PRIORITY 5
 
 #define ADE7953_ENERGY_SAVE_TASK_NAME "energy_save_task"

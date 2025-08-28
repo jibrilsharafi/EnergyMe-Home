@@ -243,24 +243,27 @@ namespace CustomMqtt
             return;
         }
 
+        LOG_DEBUG("Starting Custom MQTT task with %d bytes stack in internal RAM (uses NVS)", CUSTOM_MQTT_TASK_STACK_SIZE);
+
         BaseType_t result = xTaskCreate(
             _customMqttTask,
             CUSTOM_MQTT_TASK_NAME,
             CUSTOM_MQTT_TASK_STACK_SIZE,
             nullptr,
             CUSTOM_MQTT_TASK_PRIORITY,
-            &_customMqttTaskHandle
-        );
-
-        LOG_DEBUG("Custom MQTT task created");
+            &_customMqttTaskHandle);
 
         if (result != pdPASS) {
             LOG_ERROR("Failed to create Custom MQTT task");
             _customMqttTaskHandle = nullptr;
+        } else {
+            LOG_DEBUG("Custom MQTT task created");
         }
     }
 
-    static void _stopTask() { stopTaskGracefully(&_customMqttTaskHandle, "Custom MQTT task"); }
+    static void _stopTask() { 
+        stopTaskGracefully(&_customMqttTaskHandle, "Custom MQTT task"); 
+    }
 
     static void _customMqttTask(void* parameter)
     {
