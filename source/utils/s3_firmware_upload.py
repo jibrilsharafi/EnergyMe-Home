@@ -32,8 +32,6 @@ from botocore.exceptions import ClientError, NoCredentialsError
 from dotenv import load_dotenv
 from tempfile import NamedTemporaryFile
 
-# TODO: Upload files to both version-specific folder and latest folder for easy access
-
 class FirmwareUploader:
     def __init__(self, bucket_name="energyme-home-firmware-updates", environment="esp32dev"):
         self.bucket_name = bucket_name

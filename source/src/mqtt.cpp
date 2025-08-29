@@ -190,6 +190,7 @@ namespace Mqtt
     // Utilities
     static const char* _getMqttStateReason(int32_t state);
     static const char* _getMqttStateMachineName(MqttState state);
+    bool extractHost(const char* url, char* buffer, size_t bufferSize);
 
     // Public API functions
     // ====================
@@ -987,11 +988,17 @@ namespace Mqtt
         LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
 
         WiFiClient testClient;
-        if (testClient.connect("energyme-home-firmware-updates.s3.eu-central-1.amazonaws.com", 443)) {
-            LOG_INFO("DNS resolution successful");
-            testClient.stop();
+        // Extract the DNS to test from the URL
+        char host[URL_BUFFER_SIZE]; // Small since we don't have all the presigned stuff
+        if (extractHost(_otaCurrentUrl, host, sizeof(host))) {
+            if (testClient.connect(host, 443)) { // Being HTTPS, the port is 443
+                LOG_DEBUG("DNS resolution successful");
+                testClient.stop();
+            } else {
+                LOG_WARNING("DNS resolution failed (URL: %.100s...). OTA may not work as expected.", _otaCurrentUrl);
+            }
         } else {
-            LOG_ERROR("DNS resolution failed");
+            LOG_WARNING("Failed to extract host (URL: %.100s). Could not test DNS resolution.", _otaCurrentUrl);
         }
 
         esp_http_client_config_t _httpConfig = {
@@ -2190,6 +2197,26 @@ namespace Mqtt
             case MqttState::CONNECTED: return "CONNECTED";
             default: return "Unknown";
         }
+    }
+
+    bool extractHost(const char* url, char* buffer, size_t bufferSize) {
+        if (!url || !buffer || bufferSize == 0) return false;
+
+        const char* start = strstr(url, "://");
+        if (!start) return false;
+        start += 3; // skip "://"
+
+        const char* end = strchr(start, '/');
+        if (!end) {
+            // No slash after host, take entire remaining string
+            end = url + strlen(url);
+        }
+
+        size_t length = end - start;
+        if (length + 1 > bufferSize) return false; // not enough space
+
+        snprintf(buffer, bufferSize, "%.*s", (int)length, start);
+        return true;
     }
 }
 #endif
