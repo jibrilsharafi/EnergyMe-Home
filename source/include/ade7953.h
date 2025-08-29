@@ -193,6 +193,14 @@
 #define ADE7953_MAX_FAILURES_BEFORE_RESTART 100
 #define ADE7953_FAILURE_RESET_TIMEOUT_MS (1 * 60 * 1000)
 
+// ADE7953 Critical Failure Detection (missed interrupts)
+#ifdef ENV_DEV
+#define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT (10 * 5) // 5x higher limit in dev environment
+#else
+#define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT 10
+#endif
+#define ADE7953_CRITICAL_FAILURE_RESET_TIMEOUT_MS (5 * 60 * 1000) // Reset counter after 5 minutes
+
 // Check for incorrect readings
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0f // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 #define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20f // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
