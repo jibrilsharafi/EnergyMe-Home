@@ -51,8 +51,6 @@ namespace Ade7953
     // FreeRTOS task handles and control flags
     static TaskHandle_t _meterReadingTaskHandle = NULL;
     static bool _meterReadingTaskShouldRun = false;
-    static StaticTask_t _meterReadingTaskBuffer;
-    static StackType_t *_meterReadingTaskStackPointer;
     
     static TaskHandle_t _energySaveTaskHandle = NULL;
     static bool _energySaveTaskShouldRun = false;
@@ -1399,27 +1397,19 @@ namespace Ade7953
         // Attach interrupt handler
         _attachInterruptHandler();
         
-        LOG_DEBUG("Starting ADE7953 meter reading task with %d bytes stack in PSRAM", ADE7953_METER_READING_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting ADE7953 meter reading task with %d bytes stack in internal RAM", ADE7953_METER_READING_TASK_STACK_SIZE);
 
-        _meterReadingTaskStackPointer = (StackType_t *)ps_malloc(ADE7953_METER_READING_TASK_STACK_SIZE);
-        if (_meterReadingTaskStackPointer == NULL) {
-            LOG_ERROR("Failed to allocate stack for ADE7953 meter reading task from PSRAM");
-            return;
-        }
-
-        _meterReadingTaskHandle = xTaskCreateStatic(
+        BaseType_t result = xTaskCreate(
             _meterReadingTask, 
             ADE7953_METER_READING_TASK_NAME, 
             ADE7953_METER_READING_TASK_STACK_SIZE, 
             nullptr, 
             ADE7953_METER_READING_TASK_PRIORITY, 
-            _meterReadingTaskStackPointer,
-            &_meterReadingTaskBuffer);
+            &_meterReadingTaskHandle);
         
-        if (!_meterReadingTaskHandle) {
+        if (result != pdPASS) {
             LOG_ERROR("Failed to create ADE7953 meter reading task");
-            free(_meterReadingTaskStackPointer);
-            _meterReadingTaskStackPointer = nullptr;
+            _meterReadingTaskHandle = NULL;
         }
     }
 
@@ -1434,13 +1424,6 @@ namespace Ade7953
         if (_ade7953InterruptSemaphore != NULL) {
             vSemaphoreDelete(_ade7953InterruptSemaphore);
             _ade7953InterruptSemaphore = NULL;
-        }
-
-        // Free PSRAM stack
-        if (_meterReadingTaskStackPointer != nullptr)
-        {
-            free(_meterReadingTaskStackPointer);
-            _meterReadingTaskStackPointer = nullptr;
         }
     }
 
