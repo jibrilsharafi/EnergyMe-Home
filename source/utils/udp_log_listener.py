@@ -112,10 +112,11 @@ class SyslogParser:
     
     # Regex pattern to match the new syslog format from ESP32
     # Format: <16>2025-08-08T18:36:33.275Z 588c81c47a98[9313286]: [DEBUG][Core1] src/utils.cpp[printDeviceStatusDynamic]: Message
+    # Also supports: <16>2025-08-29T09:28:46.204Z [112882]: [DEBUG][Core1] src/ade7953.cpp[_printMeterValues]: Message
     SYSLOG_PATTERN = re.compile(
         r'<(\d+)>'                                  # Priority
         r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+'  # Timestamp (ISO 8601)
-        r'([a-fA-F0-9]+)\[(\d+)\]:\s+'              # Device[millis]:
+        r'(?:([a-fA-F0-9]+))?\[(\d+)\]:\s+'         # Optional Device[millis]: or just [millis]:
         r'\[([^\]]+)\]'                             # [level]
         r'\[Core(\d+)\]\s+'                         # [CoreX]
         r'([^:]+):\s+'                              # function: (e.g., src/utils.cpp[printDeviceStatusDynamic])
@@ -131,10 +132,13 @@ class SyslogParser:
         
         priority, timestamp, device, millis, level, core, function, msg = match.groups()
         
+        # Handle optional device ID - use 'unknown' if not present
+        device_id = device.strip() if device else 'unknown'
+        
         return {
             'priority': int(priority),
             'timestamp': timestamp,
-            'device': device.strip(),
+            'device': device_id,
             'millis': int(millis),
             'level': level.lower(),
             'core': int(core),

@@ -1479,7 +1479,7 @@ namespace Ade7953
                 #ifdef ENV_DEV
                 LOG_DEBUG("No ADE7953 interrupt received within timeout, checking for stop notification");
                 #else
-                LOG_WARNING("No ADE7953 interrupt received within time expected, this indicates some problems.");
+                LOG_WARNING("No ADE7953 interrupt received within time expected, this indicates some problems."); // TODO [CRITICAL]: reboot after a while we get this errors
                 #endif
             }
             

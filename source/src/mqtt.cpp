@@ -67,7 +67,7 @@ namespace Mqtt
     static bool _taskShouldRun = false;
 
     // AWS IoT Jobs OTA task (global to ensure they work and do not get dereferenced)
-    static char *_otaCurrentUrl = nullptr;  // URL_BUFFER_SIZE (256 bytes) - allocated in PSRAM
+    static char *_otaCurrentUrl = nullptr;  // URL_BUFFER_SIZE - allocated in PSRAM
     static char _otaCurrentJobId[NAME_BUFFER_SIZE];
     static TaskHandle_t _otaTaskHandle = nullptr;
 
@@ -217,11 +217,11 @@ namespace Mqtt
 
         // Initialize OTA buffers
         if (_otaCurrentUrl == nullptr) {
-            _otaCurrentUrl = (char*)ps_malloc(URL_BUFFER_SIZE);
+            _otaCurrentUrl = (char*)ps_malloc(OTA_PRESIGNED_URL_BUFFER_SIZE);
             if (_otaCurrentUrl == nullptr) {
                 LOG_ERROR("Failed to allocate OTA URL buffer in PSRAM");
             } else {
-                memset(_otaCurrentUrl, 0, URL_BUFFER_SIZE);
+                memset(_otaCurrentUrl, 0, OTA_PRESIGNED_URL_BUFFER_SIZE);
             }
         }
         
@@ -289,7 +289,7 @@ namespace Mqtt
         
         // Free OTA URL buffer
         if (_otaCurrentUrl != nullptr) {
-            memset(_otaCurrentUrl, 0, URL_BUFFER_SIZE);
+            memset(_otaCurrentUrl, 0, OTA_PRESIGNED_URL_BUFFER_SIZE);
             free(_otaCurrentUrl);
             _otaCurrentUrl = nullptr;
         }
@@ -949,12 +949,33 @@ namespace Mqtt
     // =================================
 
     static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event) {
+        static size_t lastProgressBytes = 0;
+        static size_t totalBytesReceived = 0;
+        static size_t contentLength = 0;
+        
         switch (event->event_id) {
             case HTTP_EVENT_ERROR:        LOG_DEBUG("OTA HTTPS Event Error"); break;
             case HTTP_EVENT_ON_CONNECTED: LOG_DEBUG("OTA HTTPS Event On Connected"); break;
             case HTTP_EVENT_HEADER_SENT:  LOG_DEBUG("OTA HTTPS Event Header Sent"); break;
-            case HTTP_EVENT_ON_HEADER:    LOG_DEBUG("OTA HTTPS Event On Header, key=%s, value=%s", event->header_key, event->header_value); break;
-            case HTTP_EVENT_ON_DATA:      break; // Null, we would have too many callbacks here
+            case HTTP_EVENT_ON_HEADER:    
+                LOG_DEBUG("OTA HTTPS Event On Header, key=%s, value=%s", event->header_key, event->header_value);
+                // Capture content length from headers
+                if (strcmp(event->header_key, "Content-Length") == 0) {
+                    contentLength = atoi(event->header_value);
+                    LOG_DEBUG("OTA Content-Length: %zu bytes", contentLength);
+                    totalBytesReceived = 0; // Reset on new download
+                    lastProgressBytes = 0;
+                }
+                break;
+            case HTTP_EVENT_ON_DATA:      
+                // Track progress and log periodically
+                totalBytesReceived += event->data_len;
+                if (totalBytesReceived >= lastProgressBytes + MQTT_OTA_SIZE_REPORT_UPDATE || totalBytesReceived == event->data_len) {
+                    float progress = contentLength > 0 ? (float)totalBytesReceived / (float)contentLength * 100.0f : 0.0f;
+                    LOG_DEBUG("OTA MQTT progress: %.1f%% (%zu / %zu bytes)", progress, totalBytesReceived, contentLength);
+                    lastProgressBytes = totalBytesReceived;
+                }
+                break;
             case HTTP_EVENT_ON_FINISH:    LOG_DEBUG("OTA HTTPS Event On Finish"); break;
             case HTTP_EVENT_DISCONNECTED: LOG_DEBUG("OTA HTTPS Event Disconnected"); break;
             case HTTP_EVENT_REDIRECT:     LOG_DEBUG("OTA HTTPS Event Redirect"); break;
@@ -989,7 +1010,7 @@ namespace Mqtt
             .max_http_request_size = 0
         };
 
-        // Perform the OTA update
+        // Do the actual OTA (your existing code)
         esp_err_t result = esp_https_ota(&_otaConfig);
 
         if (result == ESP_OK) {
@@ -1189,7 +1210,7 @@ namespace Mqtt
         _publishJsonStreaming(docStatus, fullTopic);
 
         // Save in the static variables to ensure we don't have any dangling pointers
-        snprintf(_otaCurrentUrl, sizeof(_otaCurrentUrl), "%s", url);
+        snprintf(_otaCurrentUrl, OTA_PRESIGNED_URL_BUFFER_SIZE, "%s", url);
         snprintf(_otaCurrentJobId, sizeof(_otaCurrentJobId), "%s", jobId);
 
         LOG_DEBUG("Starting OTA task with %d bytes stack in internal RAM (writes firmware to flash)", OTA_TASK_STACK_SIZE);
@@ -1333,6 +1354,7 @@ namespace Mqtt
     static void _publishCrash() {
         if (!_publishCrashJson()) {
             LOG_ERROR("Failed to publish crash data");
+            _publishMqtt.crash = false; // Need this to avoid infinite loop (fail - retry)
             return;
         }
 

@@ -12,9 +12,9 @@ namespace InfluxDbClient
     static InfluxDbConfiguration _configuration;
 
     // InfluxDB helper variables (moved to PSRAM for memory optimization)
-    static char *_fullUrl = nullptr;     // FULL_URL_BUFFER_SIZE (512 bytes) - allocated in PSRAM
-    static char *_authHeader = nullptr;  // AUTH_HEADER_BUFFER_SIZE (256 bytes) - allocated in PSRAM
-    
+    static char *_fullUrl = nullptr;     // FULL_URL_BUFFER_SIZE - allocated in PSRAM
+    static char *_authHeader = nullptr;  // AUTH_HEADER_BUFFER_SIZE - allocated in PSRAM
+
     // Runtime connection status - kept in memory only, not saved to preferences
     static char _status[STATUS_BUFFER_SIZE];
     static uint64_t _statusTimestampUnix;
@@ -492,14 +492,14 @@ namespace InfluxDbClient
 
         if (config.version == 2)
         {
-            snprintf(_fullUrl, sizeof(_fullUrl), "%s/api/v2/write?org=%s&bucket=%s",
+            snprintf(_fullUrl, FULL_URL_BUFFER_SIZE, "%s/api/v2/write?org=%s&bucket=%s",
                      baseUrl,
                      config.organization,
                      config.bucket);
         }
         else if (config.version == 1)
         {
-            snprintf(_fullUrl, sizeof(_fullUrl), "%s/write?db=%s",
+            snprintf(_fullUrl, FULL_URL_BUFFER_SIZE, "%s/write?db=%s",
                      baseUrl,
                      config.database);
         } else {
@@ -514,7 +514,7 @@ namespace InfluxDbClient
     {
         if (config.version == 2)
         {
-            snprintf(_authHeader, sizeof(_authHeader), "Token %s", config.token);
+            snprintf(_authHeader, AUTH_HEADER_BUFFER_SIZE, "Token %s", config.token);
         }
         else if (config.version == 1)
         {
@@ -523,7 +523,7 @@ namespace InfluxDbClient
 
             String encodedCredentials = base64::encode((const uint8_t*)credentials, strnlen(credentials, sizeof(credentials)));
 
-            snprintf(_authHeader, sizeof(_authHeader), "Basic %s", encodedCredentials.c_str());
+            snprintf(_authHeader, AUTH_HEADER_BUFFER_SIZE, "Basic %s", encodedCredentials.c_str());
         } else {
             LOG_ERROR("Unsupported InfluxDB version for authorization header: %u", _configuration.version);
             return;
