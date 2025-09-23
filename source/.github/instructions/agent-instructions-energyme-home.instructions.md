@@ -7,15 +7,15 @@ Provide project context and coding guidelines that AI should follow when generat
     - Always be as concise as possible unless the user asks for more details.
     - Don't be condescending or overly verbose.
     - Always stick to the request, and avoid at all costs creating new files unless asked to. Proposals are accepted.
-    - Never ask to run `pio` or `platformio` commands as they won't work directly in the terminal. Assume the user will run them manually.
+    - When running `pio` or `platformio` commands, use the full path.
     - Never create markdown files or documentation unless explicitly requested.
 
 1. **Project Context**:
     - EnergyMe-Home is an open-source ESP32-based energy monitoring system using the Arduino framework with PlatformIO
     - Monitors up to 17 circuits (1 direct + 16 multiplexed) via ADE7953 energy meter IC
     - Primary interfaces: Web UI, MQTT, InfluxDB, Modbus TCP
-    - Uses LittleFS for configuration storage (JSON files)
-    - Most processing is handled by the ADE7953 IC - ESP32 mainly handles communication and data routing
+    - Uses Preferences for configuration storage and LittleFS for historical data (compressed CSV)
+    - Most processing is handled by the ADE7953 IC - ESP32S3 mainly handles communication and data routing
 
 2. **Coding Philosophy**:
     - **Favor simplicity over complexity** - this is not a performance-critical system
@@ -23,29 +23,64 @@ Provide project context and coding guidelines that AI should follow when generat
     - **Arduino/embedded conventions** - use standard Arduino libraries and patterns where possible
     - **Defensive programming** - validate inputs and handle errors gracefully, but don't over-engineer
 
-3. **Memory Management**:
-    - Prefer stack allocation over dynamic allocation (avoid `String`, use `char[]` buffers)
+3. **Core Programming Practices**:
+    **Memory Management:**
+    - Prefer stack allocation over dynamic allocation (avoid at all costs `String`, use `char[]` buffers)
     - IMPORTANT: use only `snprintf()` whenever possible (and never `sprintf()` or `strncpy()`), also for string concatenation
     - Use named constants for buffer sizes (e.g., `URL_BUFFER_SIZE`, `LINE_PROTOCOL_BUFFER_SIZE`)
     - Use `sizeof(buffer)` instead of hardcoded sizes in function calls
-    - Define buffer sizes as constants (in `constants.h`) for consistency
     - Only optimize memory usage in frequently called or critical functions (understand from context)
 
-4. **Error Handling**:
+    **Error Handling:**
     - Never use try-catch blocks - they are not supported in the Arduino framework
     - Log errors and warnings appropriately using the logger
     - Return early on invalid inputs (fail-fast principle)
     - Provide meaningful error messages for debugging
     - Don't crash the system - graceful degradation is preferred
 
-5. **Code Organization**:
+    **Code Organization:**
     - Use existing project patterns and conventions
     - Keep functions focused and reasonably sized
-    - Use constants from `constants.h` for configuration values
     - Follow existing naming conventions in the codebase
     - Add comments for business logic, not obvious code
 
-6. **JSON and Configuration Management**:
+4. **Constants and Configuration**:
+    - Define all constants in `constants.h` for global values or in respective file headers for module-specific values
+    - Use constants for buffer sizes, timeouts, pin assignments, and configuration defaults
+    - Group related constants with clear naming prefixes (e.g., `WIFI_`, `MQTT_`, `ADE7953_`)
+
+5. **Naming Conventions and Logging Guidelines**:
+    **Naming Conventions:**
+    - **Variables**: camelCase (e.g., `wifiConnected`, `energyMeterData`)
+    - **Functions**: camelCase (e.g., `getConfiguration()`, `startWifiTask()`)
+    - **Constants**: UPPER_SNAKE_CASE (e.g., `WIFI_TIMEOUT_MS`, `BUFFER_SIZE`)
+    - **Private functions and variables**: Prefix with underscore (e.g., `_validateConfiguration()`, `_handleWifiEvent()`, `_configMutex`)
+    - **Class/Namespace**: PascalCase (e.g., `CustomWifi`, `Ade7953`)
+
+    **Logging Guidelines:**
+    - Use the AdvancedLogger library for all logging
+    - Log levels: 
+    - **LOG_FATAL**: Unrecoverable errors, system crashes, immediate restart or factory reset needed
+    - **LOG_ERROR**: System failures, critical errors that affect functionality
+    - **LOG_WARN**: Recoverable issues, configuration problems, retry attempts
+    - **LOG_INFO**: Important system events (startup, connections, major state changes)
+    - **LOG_DEBUG**: Detailed flow information, useful for troubleshooting
+    - **LOG_VERBOSE**: Very detailed information (SPI communications, internal state changes)
+    - Use descriptive messages with context: `LOG_ERROR("WiFi connection failed after %d attempts", retryCount)`
+    - Do not include module or function names in log messages - the logger automatically includes this information
+
+6. **TODO and Code Comments Standards**:
+    - Use standardized comment tags for better code tracking and organization:
+      ```cpp
+      // TODO: Basic improvement or feature (orange)
+      // FIXME: Something broken that needs fixing (red)
+      // HACK: Temporary workaround that should be cleaned up (red italic)
+      // NOTE: Important information or explanation (blue)
+      ```
+    - Keep TODO descriptions concise but descriptive
+    - Remove TODO comments when the task is completed
+
+7. **JSON Management**:
     - Always validate JSON structure before accessing fields
     - Use `JsonDocument` everywhere with the SpiRamAllocator like so:
       ```cpp
@@ -60,7 +95,7 @@ Provide project context and coding guidelines that AI should follow when generat
     - **Deprecated methods**: Never use `containsKey()` - it's deprecated in ArduinoJson
     - **Null checks**: Only use `isNull()` at JSON document level to ensure non-empty JSON, not for individual fields
 
-    **Configuration Management Standard Pattern**:
+8. **Configuration Management Standard Pattern**:
     - **Configuration struct**: Always include constructor with default values using constants from `constants.h`
     - **Public API**: Standard functions for all configuration modules:
       ```cpp
@@ -87,27 +122,25 @@ Provide project context and coding guidelines that AI should follow when generat
       ```
       - `setConfiguration()` must acquire mutex with timeout before modifying shared state
       - `getConfiguration()` should also use mutex for consistency (though less critical)
+      - Unless absolutely necessary, always use getter and setter functions to ensure consistency and avoid race conditions
       - Always release mutex in all code paths (success and error cases)
       - Log timeout errors clearly for debugging
 
-7. **Data storage**:
+9. **Data storage**:
     - Use Preferences wherever possible for configuration storage
-    - Use LittleFS (to update in the future to LittleFS) for historical data storage
+    - Use LittleFS for historical data storage and logs (automatic with AdvancedLogger)
 
-8. **Timestamp and Time Handling**:
-    - **Data types**: Always use `uint64_t` for timestamps, millis, and time intervals to avoid rollover issues
-    - **Rollover prevention**: `uint32_t` rolls over every 49.7 days and hits 2038 problem; `uint64_t` prevents both
+10. **Timestamp and Time Handling**:
+    - **Data types**: Always use `uint64_t` for timestamps, millis, and time intervals to avoid rollover issues (`uint32_t` rolls over every 49.7 days and hits 2038 problem; `uint64_t` prevents both)
     - **Storage format**: Always store timestamps as Unix seconds (or milliseconds for time-critical data)
     - **Unix seconds**: Use for general events, configuration, logging, system events
     - **Unix milliseconds**: Use only for time-critical measurements (energy meter readings, precise timing)
     - **Return format**: Always return timestamps in UTC format unless explicitly required to be local
-    - **Display format**: Convert to local time only for user interface display
+    - **Display format**: Convert to local time only for user interface display (web UI)
     - **API format**: Use ISO 8601 UTC format (`YYYY-MM-DDTHH:MM:SS.sssZ`) for external APIs
-    - **Storage efficiency**: Numeric timestamps (8 bytes) vs formatted strings (20-25 bytes)
-    - **Time arithmetic**: Store as numbers to enable easy duration calculations and sorting
     - **Printf formatting**: Use `%llu` for `uint64_t` values in logging and string formatting
 
-9. **FreeRTOS Task Management**:
+11. **FreeRTOS Task Management Principles**:
     - It is mandatory to use mutexes when getting or setting non-atomic variables. Always use getter and setter functions to ensure consistency
     - Use the standard task lifecycle pattern with task notifications for graceful shutdown
     - Always check task handles before operations to prevent race conditions
@@ -116,6 +149,8 @@ Provide project context and coding guidelines that AI should follow when generat
     - **For task shutdown notifications**: Use blocking `ulTaskNotifyTake(pdTRUE, timeout)` - it's as CPU-efficient as `vTaskDelay()` but provides immediate shutdown response
     - **Only use non-blocking pattern** if you need sub-second shutdown response or must do other work during delays
     - Have a single (private) function to start and stop tasks, while the public methods should be related to begin and stop
+
+12. **FreeRTOS Task Implementation Patterns**:
     - **PSRAM vs Internal RAM Task Allocation**:
       - **Use PSRAM for tasks that DON'T do flash I/O** (WiFi, LED, Button Handler, Crash Monitor, ADE7953 meter reading)
       - **Use INTERNAL RAM for tasks that DO flash I/O** (NVS/Preferences, LittleFS file operations, OTA operations)
@@ -201,7 +236,7 @@ Provide project context and coding guidelines that AI should follow when generat
       }
       ```
 
-10. **Coding style**:
+13. **Coding style**:
     - For simple ifs with a single statement, use the one-line format:
       ```cpp
       if (!someBoolean) return;
