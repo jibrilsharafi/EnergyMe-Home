@@ -8,7 +8,7 @@ namespace CustomLog
     static uint8_t* _udpLogQueueStorage = nullptr;
     static WiFiUDP _udpClient;
     static IPAddress _udpDestinationIp;
-    static char *_udpBuffer = nullptr;  // UDP_LOG_BUFFER_SIZE (700 bytes) - allocated in PSRAM
+    static char *_udpBuffer = nullptr;  // UDP_LOG_BUFFER_SIZE - allocated in PSRAM
     static bool _isUdpInitialized = false;
 
     // Task state

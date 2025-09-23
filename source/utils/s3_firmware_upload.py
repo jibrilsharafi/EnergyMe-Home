@@ -32,7 +32,6 @@ from botocore.exceptions import ClientError, NoCredentialsError
 from dotenv import load_dotenv
 from tempfile import NamedTemporaryFile
 
-
 class FirmwareUploader:
     def __init__(self, bucket_name="energyme-home-firmware-updates", environment="esp32dev"):
         self.bucket_name = bucket_name
@@ -167,10 +166,39 @@ class FirmwareUploader:
         except FileNotFoundError:
             print(f"ERROR: File not found: {local_path}")
             return False
+
+    def upload_file_to_both_locations(self, local_path, version, filename):
+        """Upload a file to both version-specific and latest folders"""
+        version_key = f"{version}/{filename}"
+        latest_key = f"latest/{filename}"
+        
+        # Upload to version-specific folder
+        if not self.upload_file_to_s3(local_path, version_key):
+            return False
+        
+        # Upload to latest folder
+        if not self.upload_file_to_s3(local_path, latest_key):
+            return False
+        
+        return True
     
     def create_ota_json(self, version):
         """Create OTA update JSON document"""
         firmware_url = f"${{aws:iot:s3-presigned-url:https://{self.bucket_name}.s3.amazonaws.com/{version}/firmware.bin}}"
+        
+        ota_json = {
+            "operation": "ota_update",
+            "firmware": {
+                "version": version,
+                "url": firmware_url
+            }
+        }
+        
+        return ota_json
+
+    def create_latest_ota_json(self, version):
+        """Create OTA update JSON document for latest folder"""
+        firmware_url = f"${{aws:iot:s3-presigned-url:https://{self.bucket_name}.s3.amazonaws.com/latest/firmware.bin}}"
         
         ota_json = {
             "operation": "ota_update",
@@ -218,33 +246,45 @@ class FirmwareUploader:
         
         if dry_run:
             print("DRY RUN - No files will be uploaded")
-            s3_keys = [f"{version}/{name}" for name in build_files.keys()]
-            for key in s3_keys:
+            # Show version-specific uploads
+            version_keys = [f"{version}/{name}" for name in build_files.keys()]
+            for key in version_keys:
+                print(f"Would upload: s3://{self.bucket_name}/{key}")
+            
+            # Show latest folder uploads
+            latest_keys = [f"latest/{name}" for name in build_files.keys()]
+            for key in latest_keys:
                 print(f"Would upload: s3://{self.bucket_name}/{key}")
             
             ota_json = self.create_ota_json(version)
-            print(f"\nWould create OTA JSON:")
+            latest_ota_json = self.create_latest_ota_json(version)
+            print(f"\nWould create version-specific OTA JSON:")
             print(json.dumps(ota_json, indent=2))
             print(f"Would upload: s3://{self.bucket_name}/{version}/ota-job-document.json")
+            print(f"\nWould create latest OTA JSON:")
+            print(json.dumps(latest_ota_json, indent=2))
+            print(f"Would upload: s3://{self.bucket_name}/latest/ota-job-document.json")
             return True
         
-        # Upload files to S3
+        # Upload files to S3 (both version and latest folders)
         upload_success = True
         for name, local_path in build_files.items():
-            s3_key = f"{version}/{name}"
-            if not self.upload_file_to_s3(local_path, s3_key):
+            if not self.upload_file_to_both_locations(local_path, version, name):
                 upload_success = False
         
         if not upload_success:
             print("ERROR: Some files failed to upload")
             return False
         
-        # Create and display OTA JSON
+        # Create and display OTA JSON documents
         ota_json = self.create_ota_json(version)
-        print(f"\nOTA Update JSON Document:")
+        latest_ota_json = self.create_latest_ota_json(version)
+        print(f"\nVersion-specific OTA Update JSON Document:")
         print(json.dumps(ota_json, indent=2))
+        print(f"\nLatest OTA Update JSON Document:")
+        print(json.dumps(latest_ota_json, indent=2))
         
-        # Upload OTA JSON to S3
+        # Upload version-specific OTA JSON to S3
         ota_json_key = f"{version}/ota-job-document.json"
         try:
             # Save JSON to a temporary file for upload
@@ -252,19 +292,45 @@ class FirmwareUploader:
                 json.dump(ota_json, tmp_json, indent=2)
                 tmp_json_path = tmp_json.name
             if self.upload_file_to_s3(Path(tmp_json_path), ota_json_key):
-                print(f"\nOTA JSON uploaded to: s3://{self.bucket_name}/{ota_json_key}")
+                print(f"\nVersion-specific OTA JSON uploaded to: s3://{self.bucket_name}/{ota_json_key}")
             else:
-                print(f"ERROR: Failed to upload OTA JSON to S3")
+                print(f"ERROR: Failed to upload version-specific OTA JSON to S3")
+                upload_success = False
             os.remove(tmp_json_path)
         except Exception as e:
-            print(f"ERROR uploading OTA JSON: {e}")
+            print(f"ERROR uploading version-specific OTA JSON: {e}")
+            upload_success = False
+        
+        # Upload latest OTA JSON to S3
+        latest_ota_json_key = "latest/ota-job-document.json"
+        try:
+            # Save JSON to a temporary file for upload
+            with NamedTemporaryFile("w", delete=False) as tmp_json:
+                json.dump(latest_ota_json, tmp_json, indent=2)
+                tmp_json_path = tmp_json.name
+            if self.upload_file_to_s3(Path(tmp_json_path), latest_ota_json_key):
+                print(f"Latest OTA JSON uploaded to: s3://{self.bucket_name}/{latest_ota_json_key}")
+            else:
+                print(f"ERROR: Failed to upload latest OTA JSON to S3")
+                upload_success = False
+            os.remove(tmp_json_path)
+        except Exception as e:
+            print(f"ERROR uploading latest OTA JSON: {e}")
+            upload_success = False
+        
+        if not upload_success:
             return False
         
         print(f"\n✅ Successfully uploaded firmware version {version} to S3!")
-        print(f"S3 URLs:")
+        print(f"Version-specific S3 URLs:")
         for name in build_files.keys():
             print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{version}/{name}")
         print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{ota_json_key}")
+        
+        print(f"\nLatest S3 URLs:")
+        for name in build_files.keys():
+            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/latest/{name}")
+        print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{latest_ota_json_key}")
         
         return True
 

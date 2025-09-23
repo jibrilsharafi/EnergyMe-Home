@@ -42,6 +42,9 @@
 #define OTA_STATUS_CHECK_INTERVAL (1 * 1000)
 #define OTA_HTTPS_BUFFER_SIZE_TX (2 * 1024)
 #define MQTT_OTA_TIMEOUT (60 * 1000)
+#define MINIMUM_MQTT_OTA_ALLOCABLE_HEAP (40 * 1024)
+#define OTA_PRESIGNED_URL_BUFFER_SIZE (4 * 1024) // The presigned S3 URL can be very long
+#define MQTT_OTA_SIZE_REPORT_UPDATE (128 * 1024)
 
 // MQTT buffer sizes - all moved to PSRAM for better memory utilization
 #define MQTT_BUFFER_SIZE (5 * 1024) // Needs to be at least 4 kB for the certificates
@@ -73,7 +76,7 @@
 
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_CLAIMING_INTERVAL (1 * 1000) // Interval between two MQTT claiming checks
-#define AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT (128 * 1024) // Limit of AWS
+#define AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT (128 * 1024) // Limit of AWS. TODO: maybe this should be 5 kB since 5 kB increments count as multiple message, thus it has no advantage batching more than this?
 
 #define MQTT_INITIAL_RETRY_INTERVAL (15 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds

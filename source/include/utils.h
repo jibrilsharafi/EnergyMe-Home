@@ -189,3 +189,12 @@ inline bool acquireMutex(SemaphoreHandle_t* mutex, uint64_t timeout = CONFIG_MUT
 inline void releaseMutex(SemaphoreHandle_t* mutex) {
     if (mutex && *mutex) xSemaphoreGive(*mutex);
 }
+
+inline static void* ota_calloc_psram(size_t n, size_t size) {
+    // Use SPIRAM; still 8-bit addressable.
+    return heap_caps_calloc(n, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+}
+
+inline static void ota_free_psram(void* p) {
+    heap_caps_free(p);
+}

@@ -22,6 +22,10 @@ namespace Ade7953
     // Failure tracking
     static uint32_t _failureCount = 0;
     static uint64_t _firstFailureTime = 0;
+    
+    // Critical failure tracking (for missed interrupts)
+    static uint32_t _criticalFailureCount = 0;
+    static uint64_t _firstCriticalFailureTime = 0;
 
     // Operational flags
     static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
@@ -47,8 +51,6 @@ namespace Ade7953
     // FreeRTOS task handles and control flags
     static TaskHandle_t _meterReadingTaskHandle = NULL;
     static bool _meterReadingTaskShouldRun = false;
-    static StaticTask_t _meterReadingTaskBuffer;
-    static StackType_t *_meterReadingTaskStackPointer;
     
     static TaskHandle_t _energySaveTaskHandle = NULL;
     static bool _energySaveTaskShouldRun = false;
@@ -211,6 +213,8 @@ namespace Ade7953
     // Verification and validation functions
     static void _recordFailure();
     static void _checkForTooManyFailures();
+    static void _recordCriticalFailure();
+    static void _checkForTooManyCriticalFailures();
     static bool _verifyLastSpiCommunication(uint16_t expectedAddress, uint8_t expectedBits, int32_t expectedData, bool signedData, bool wasWrite);
     static bool _validateValue(float newValue, float min, float max);
     static bool _validateVoltage(float newValue);
@@ -1219,6 +1223,12 @@ namespace Ade7953
         _stopEnergySaveTask();
         _stopHourlyCsvSaveTask();
         
+        // Reset failure counters during cleanup
+        _failureCount = 0;
+        _firstFailureTime = 0;
+        _criticalFailureCount = 0;
+        _firstCriticalFailureTime = 0;
+        
         // Save final energy data if not already saved
         LOG_DEBUG("Saving final energy data during cleanup");
         _saveEnergyComplete();
@@ -1387,27 +1397,19 @@ namespace Ade7953
         // Attach interrupt handler
         _attachInterruptHandler();
         
-        LOG_DEBUG("Starting ADE7953 meter reading task with %d bytes stack in PSRAM", ADE7953_METER_READING_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting ADE7953 meter reading task with %d bytes stack in internal RAM", ADE7953_METER_READING_TASK_STACK_SIZE);
 
-        _meterReadingTaskStackPointer = (StackType_t *)ps_malloc(ADE7953_METER_READING_TASK_STACK_SIZE);
-        if (_meterReadingTaskStackPointer == NULL) {
-            LOG_ERROR("Failed to allocate stack for ADE7953 meter reading task from PSRAM");
-            return;
-        }
-
-        _meterReadingTaskHandle = xTaskCreateStatic(
+        BaseType_t result = xTaskCreate(
             _meterReadingTask, 
             ADE7953_METER_READING_TASK_NAME, 
             ADE7953_METER_READING_TASK_STACK_SIZE, 
             nullptr, 
             ADE7953_METER_READING_TASK_PRIORITY, 
-            _meterReadingTaskStackPointer,
-            &_meterReadingTaskBuffer);
+            &_meterReadingTaskHandle);
         
-        if (!_meterReadingTaskHandle) {
+        if (result != pdPASS) {
             LOG_ERROR("Failed to create ADE7953 meter reading task");
-            free(_meterReadingTaskStackPointer);
-            _meterReadingTaskStackPointer = nullptr;
+            _meterReadingTaskHandle = NULL;
         }
     }
 
@@ -1422,13 +1424,6 @@ namespace Ade7953
         if (_ade7953InterruptSemaphore != NULL) {
             vSemaphoreDelete(_ade7953InterruptSemaphore);
             _ade7953InterruptSemaphore = NULL;
-        }
-
-        // Free PSRAM stack
-        if (_meterReadingTaskStackPointer != nullptr)
-        {
-            free(_meterReadingTaskStackPointer);
-            _meterReadingTaskStackPointer = nullptr;
         }
     }
 
@@ -1476,6 +1471,7 @@ namespace Ade7953
                         break;
                 }
             } else {
+                _recordCriticalFailure();
                 #ifdef ENV_DEV
                 LOG_DEBUG("No ADE7953 interrupt received within timeout, checking for stop notification");
                 #else
@@ -2852,6 +2848,36 @@ namespace Ade7953
             // Reset the failure count and first failure time to avoid infinite loop of setting the restart
             _failureCount = 0;
             _firstFailureTime = 0;
+        }
+    }
+
+    void _recordCriticalFailure() {
+        LOG_DEBUG("Recording critical failure for ADE7953 missed interrupt");
+
+        if (_criticalFailureCount == 0) _firstCriticalFailureTime = millis64();
+
+        _criticalFailureCount++;
+        _checkForTooManyCriticalFailures();
+    }
+
+    void _checkForTooManyCriticalFailures() {
+        if (millis64() - _firstCriticalFailureTime > ADE7953_CRITICAL_FAILURE_RESET_TIMEOUT_MS && _criticalFailureCount > 0) {
+            LOG_DEBUG("Critical failure timeout exceeded (%llu ms). Resetting critical failure count (reached %lu)", 
+                millis64() - _firstCriticalFailureTime, _criticalFailureCount);
+            
+            _criticalFailureCount = 0;
+            _firstCriticalFailureTime = 0;
+            
+            return;
+        }
+
+        if (_criticalFailureCount >= ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT) {
+            LOG_FATAL("Too many critical failures (%lu) - missed ADE7953 interrupts. Rebooting device for recovery", _criticalFailureCount);
+            setRestartSystem("Too many missed ADE7953 interrupts - system recovery required");
+
+            // Reset the critical failure count and first failure time to avoid infinite loop of setting the restart
+            _criticalFailureCount = 0;
+            _firstCriticalFailureTime = 0;
         }
     }
 
