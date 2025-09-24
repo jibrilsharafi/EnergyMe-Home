@@ -1495,6 +1495,93 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/v1/ade7953/channels:
+    put:
+      summary: Update all channels configuration (bulk update)
+      description: Update the configuration for multiple channels at once. This is useful for backup/restore operations. All channels in the array will be updated with their complete configuration.
+      tags:
+        - ADE7953
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ChannelData'
+              minItems: 1
+              maxItems: 17
+              uniqueItems: true
+            example:
+              - index: 0
+                active: true
+                reverse: false
+                label: "General"
+                phase: 1
+                ctSpecification:
+                  currentRating: 50.0
+                  voltageOutput: 0.333
+                  scalingFraction: 0.0
+              - index: 1
+                active: true
+                reverse: false
+                label: "Luce prese"
+                phase: 1
+                ctSpecification:
+                  currentRating: 30.0
+                  voltageOutput: 0.333
+                  scalingFraction: 0.0
+              - index: 6
+                active: true
+                reverse: true
+                label: "Boiler"
+                phase: 1
+                ctSpecification:
+                  currentRating: 30.0
+                  voltageOutput: 0.333
+                  scalingFraction: 0.0
+      responses:
+        '200':
+          description: Channels configuration updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Channels updated successfully"
+        '400':
+          description: Bad request - invalid channel configuration or duplicate indices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_array:
+                  summary: Invalid request format
+                  value:
+                    success: false
+                    error: "Request body must be an array of channel configurations"
+                duplicate_index:
+                  summary: Duplicate channel indices
+                  value:
+                    success: false
+                    error: "Duplicate channel index: 1"
+                invalid_channel:
+                  summary: Invalid channel configuration
+                  value:
+                    success: false
+                    error: "Invalid channel configuration for channel 2"
+                too_many_channels:
+                  summary: Too many channels
+                  value:
+                    success: false
+                    error: "Too many channels in array (maximum: 17)"
+
   /api/v1/ade7953/channel/reset:
     post:
       summary: Reset channel configuration

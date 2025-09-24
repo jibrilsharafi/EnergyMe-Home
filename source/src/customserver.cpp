@@ -1519,6 +1519,39 @@ namespace CustomServer
             });
         server.addHandler(setChannelDataHandler);
 
+        // Set all channels data (PUT only - bulk update)
+        static AsyncCallbackJsonWebHandler *setAllChannelsDataHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ade7953/channels",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA * CHANNEL_COUNT)) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                // Validate that it's an array
+                if (!doc.is<JsonArrayConst>()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Request body must be an array of channel configurations");
+                    return;
+                }
+
+                // Update all channels - let setChannelDataFromJson handle all validation
+                SpiRamAllocator channelAllocator;
+                JsonDocument channelDoc(&channelAllocator);
+                for (JsonDocument channelDoc : doc.as<JsonArrayConst>()) {
+
+                    if (!Ade7953::setChannelDataFromJson(channelDoc, false)) {
+                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel configuration in array");
+                        return;
+                    }
+                }
+
+                LOG_INFO("Bulk updated %u ADE7953 channels via API", doc.size());
+                _sendSuccessResponse(request, "All channels updated successfully");
+            });
+        server.addHandler(setAllChannelsDataHandler);
+
         // Reset single channel data
         server.on("/api/v1/ade7953/channel/reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {

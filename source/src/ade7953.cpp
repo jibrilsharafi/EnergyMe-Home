@@ -869,6 +869,7 @@ namespace Ade7953
             return;
         }
 
+        // Set all energy values to 0 (safe since we acquired the mutex)
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             _meterValues[i].activeEnergyImported = 0.0f;
             _meterValues[i].activeEnergyExported = 0.0f;
@@ -886,14 +887,17 @@ namespace Ade7953
         preferences.end();
 
         // Remove all CSV energy files
-        File root = LittleFS.open("/");
+        File root = LittleFS.open(ENERGY_CSV_PREFIX "/"); // We already know all the historical energy files will be inside the ENERGY_CSV_PREFIX folder
         File file = root.openNextFile();
         while (file) {
-            char fileName[NAME_BUFFER_SIZE];
-            snprintf(fileName, sizeof(fileName), "%s", file.name());
-            if (strstr(fileName, ENERGY_CSV_PREFIX) && strstr(fileName, ".csv")) {
-                LittleFS.remove(fileName);
-                LOG_DEBUG("Removed energy CSV file: %s", fileName);
+            if (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv")) { // Remove the CSV files (current day is not compressed, thus only .csv)
+                char fullPathFile[NAME_BUFFER_SIZE]; // Since the file name would only be the name inside the ENERGY_CSV_PREFIX folder, we need to prepend the folder path
+                snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", ENERGY_CSV_PREFIX, file.name());
+                
+                // We now need to close the file before removing it, otherwise we get esp_littlefs: Failed to unlink path "/energy/2025-09-23.csv". Has open FD.
+                file.close();
+                LittleFS.remove(fullPathFile);
+                LOG_DEBUG("Removed energy CSV file: %s", fullPathFile);
             }
             file = root.openNextFile();
         }
