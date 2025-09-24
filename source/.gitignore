@@ -23,3 +23,7 @@ __pycache__/
 *.tmp
 *.temp
 tmp/
+
+# Python virtual environments
+venv/
+.venv/
