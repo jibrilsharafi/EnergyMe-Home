@@ -332,7 +332,7 @@ def main():
     
     # Load JSON registers
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    json_file_path = os.path.join(script_dir, "registers.json")
+    json_file_path = os.path.join(script_dir, "modbus_registers.json")
     registers = load_registers_from_json(json_file_path)
     
     if not registers:
