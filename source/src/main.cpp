@@ -61,7 +61,7 @@ void setup()
     LOG_INFO("First boot setup complete. Welcome aboard!");
   }
 
-  if (!LittleFS.begin(true)) // Ensure the partition name is "spiffs" in partitions.csv (even when using LittleFS)
+  if (!LittleFS.begin(true)) // Ensure the partition name is "spiffs" in partitions.csv (even when using LittleFS). Setting the partition label to "littlefs" caused issues
   {
     Serial.println("LittleFS initialization failed!");
     ESP.restart();

@@ -526,7 +526,7 @@ static void _restartSystem(bool factoryReset) {
     Led::setBrightness(max(Led::getBrightness(), (uint8_t)1)); // Show a faint light even if it is off
     Led::setOrange(Led::PRIO_CRITICAL);
 
-    delay(SYSTEM_RESTART_DELAY); // Allow for logs to flush - TODO: remove with new version of AdvancedLogger which will flush automatically on end
+    delay(SYSTEM_RESTART_DELAY); // Allow for logs to flush
 
     // Ensure the log file is properly saved and closed
     AdvancedLogger::end();

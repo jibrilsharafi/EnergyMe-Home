@@ -75,7 +75,6 @@ Provide project context and coding guidelines that AI should follow when generat
       // TODO: Basic improvement or feature (orange)
       // FIXME: Something broken that needs fixing (red)
       // HACK: Temporary workaround that should be cleaned up (red italic)
-      // NOTE: Important information or explanation (blue)
       ```
     - Keep TODO descriptions concise but descriptive
     - Remove TODO comments when the task is completed
