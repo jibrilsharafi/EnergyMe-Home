@@ -47,6 +47,7 @@ import sys
 import time
 import re
 import os
+import signal
 from datetime import datetime
 from typing import Optional, Dict, Any, TextIO
 
@@ -152,7 +153,7 @@ class UDPLogListener:
     
     def __init__(self, host: str = '0.0.0.0', port: int = 514, log_filter: Optional[LogFilter] = None, 
                  log_file: Optional[str] = None, log_format: str = 'structured', multicast_group: Optional[str] = None,
-                 auto_device_logs: bool = True):
+                 auto_device_logs: bool = True, debug: bool = False):
         self.host = host
         self.port = port
         self.filter = log_filter or LogFilter()
@@ -160,6 +161,7 @@ class UDPLogListener:
         self.log_format = log_format  # 'structured', 'raw', or 'json'
         self.multicast_group = multicast_group  # Multicast group IP
         self.auto_device_logs = auto_device_logs  # Enable automatic device-specific logging
+        self.debug = debug  # Enable debug output
         self.file_handle: Optional[TextIO] = None
         self.socket = None
         self.running = False
@@ -177,6 +179,9 @@ class UDPLogListener:
         
     def start(self):
         """Start the UDP listener"""
+        # Set up signal handler for graceful shutdown
+        signal.signal(signal.SIGINT, self._signal_handler)
+        
         try:
             # Open log file if specified
             if self.log_file:
@@ -196,14 +201,21 @@ class UDPLogListener:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             
+            # Set socket timeout to allow periodic checking for shutdown
+            self.socket.settimeout(1.0)
+            
             # Handle multicast setup
             if self.multicast_group:
-                # Bind to the multicast group
-                self.socket.bind(('', self.port))  # Bind to all interfaces for multicast
+                # On Windows, bind to INADDR_ANY and the specific port
+                self.socket.bind(('', self.port))
                 
                 # Join the multicast group
                 mreq = struct.pack("4sl", socket.inet_aton(self.multicast_group), socket.INADDR_ANY)
                 self.socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+                
+                # On Windows, also set multicast loopback and TTL
+                self.socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+                self.socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 32)
                 
                 print(f"{Colors.BOLD}EnergyMe-Home UDP Log Listener (Multicast){Colors.RESET}")
                 print(f"Listening on multicast group {self.multicast_group}:{self.port}")
@@ -225,7 +237,13 @@ class UDPLogListener:
                 print("Device-specific logging: enabled (auto-creates separate txt files per device)")
             else:
                 print("Device-specific logging: disabled")
+            if self.debug:
+                print("Debug mode: enabled")
             print(f"Press Ctrl+C to stop\n")
+            
+            if self.debug:
+                print(f"{Colors.DEBUG}Debug: Socket created and bound successfully{Colors.RESET}")
+                print(f"{Colors.DEBUG}Debug: Starting to listen for messages...{Colors.RESET}")
             
             # Write session header to log file
             if self.file_handle:
@@ -246,6 +264,11 @@ class UDPLogListener:
         finally:
             if self.file_handle:
                 self.file_handle.close()
+    
+    def _signal_handler(self, signum, frame):
+        """Handle Ctrl+C signal gracefully"""
+        print(f"\n{Colors.WARNING}Received interrupt signal, stopping...{Colors.RESET}")
+        self.running = False
     
     def _extract_device_id(self, device_string: str) -> str:
         """Extract the actual device ID (MAC address) from the device string"""
@@ -354,16 +377,31 @@ class UDPLogListener:
 
     def _listen_loop(self):
         """Main listening loop"""
+        message_count = 0
         while self.running:
             try:
                 data, addr = self.socket.recvfrom(1024)
                 message = data.decode('utf-8', errors='ignore')
+                message_count += 1
+                
+                if self.debug and message_count <= 5:
+                    print(f"{Colors.DEBUG}Debug: Received message #{message_count} from {addr}: {message[:100]}...{Colors.RESET}")
+                
                 self._handle_message(message, addr)
                 
+            except socket.timeout:
+                # Timeout is expected, just continue to check if we should stop
+                if self.debug and message_count == 0:
+                    print(f"{Colors.DEBUG}Debug: Socket timeout (no messages received yet)...{Colors.RESET}")
+                continue
             except KeyboardInterrupt:
+                print(f"\n{Colors.WARNING}KeyboardInterrupt caught in listen loop{Colors.RESET}")
                 break
             except Exception as e:
-                print(f"{Colors.ERROR}Error receiving data: {e}{Colors.RESET}")
+                if self.running:  # Only show error if we're still supposed to be running
+                    print(f"{Colors.ERROR}Error receiving data: {e}{Colors.RESET}")
+        
+        print(f"{Colors.INFO}Listen loop ended (received {message_count} messages total){Colors.RESET}")
     def _handle_message(self, message: str, addr: tuple):
         """Handle received message"""
         self.stats['total_messages'] += 1
@@ -643,6 +681,12 @@ def main():
         help='Disable automatic device-specific log files'
     )
     
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug output for troubleshooting'
+    )
+    
     args = parser.parse_args()
     
     # Auto-generate log filename if not specified but logging requested
@@ -666,7 +710,7 @@ def main():
     auto_device_logs = args.auto_device_logs and not args.no_auto_device_logs
     
     # Start listener
-    listener = UDPLogListener(args.host, args.port, log_filter, args.log_file, args.log_format, multicast_group, auto_device_logs)
+    listener = UDPLogListener(args.host, args.port, log_filter, args.log_file, args.log_format, multicast_group, auto_device_logs, args.debug)
     listener.start()
 
 if __name__ == '__main__':

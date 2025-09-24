@@ -38,24 +38,83 @@ class CrashDumpAnalyzer:
             self.session.auth = HTTPDigestAuth(username, password)
             print(f"🔐 Using digest authentication for user: {username}")
 
+    def _find_toolchain_addr2line(self) -> Optional[str]:
+        """Find the correct xtensa-esp32-elf-addr2line executable."""
+        import platform
+        import glob
+        
+        # Common PlatformIO toolchain locations (prioritize the one that worked)
+        platformio_paths = [
+            os.path.expanduser("~/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32s2-elf-addr2line*"),
+            os.path.expanduser("~/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32-elf-addr2line*"),
+            os.path.expanduser("~/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-addr2line*"),
+        ]
+        
+        # Try to find the tool
+        for pattern in platformio_paths:
+            matches = glob.glob(pattern)
+            if matches:
+                tool_path = matches[0]  # Take the first match
+                print(f"✅ Found toolchain: {tool_path}")
+                return tool_path
+        
+        # Fallback: try common system paths
+        if platform.system() == "Windows":
+            # Try Windows-specific paths
+            win_paths = [
+                "C:/Espressif/tools/xtensa-esp32-elf/*/xtensa-esp32-elf/bin/xtensa-esp32-elf-addr2line.exe",
+                "C:/Users/*/AppData/Local/Arduino15/packages/esp32/tools/xtensa-esp32-elf-gcc/*/bin/xtensa-esp32-elf-addr2line.exe"
+            ]
+            for pattern in win_paths:
+                matches = glob.glob(pattern)
+                if matches:
+                    return matches[0]
+        
+        print("⚠️  Could not find xtensa-esp32-elf-addr2line tool")
+        return None
+
     def _run_debug_command(self, debug_cmd: str) -> Optional[str]:
         """Run the debug command and return the output."""
         try:
             import subprocess
+            import platform
             
             print(f"🔍 Running debug command...")
             
-            # Prepare the command with ESP-IDF environment
-            esp_idf_cmd = f". $HOME/esp/esp-idf/export.sh && {debug_cmd}"
-            
-            # Run the command
-            result = subprocess.run(
-                esp_idf_cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                executable="/bin/zsh"  # Use zsh for macOS
-            )
+            # Handle different operating systems
+            if platform.system() == "Windows":
+                # On Windows, try to find and use the correct toolchain
+                if "xtensa-esp32-elf-addr2line" in debug_cmd:
+                    # Extract the command parts
+                    parts = debug_cmd.split()
+                    if len(parts) > 1:
+                        # Find the correct tool
+                        tool_path = self._find_toolchain_addr2line()
+                        if tool_path:
+                            # Replace the tool name with the full path
+                            parts[0] = f'"{tool_path}"'  # Quote the path in case of spaces
+                            debug_cmd = " ".join(parts)
+                        else:
+                            print("❌ Could not find addr2line tool")
+                            return None
+                
+                # Run the command directly on Windows
+                result = subprocess.run(
+                    debug_cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True
+                )
+            else:
+                # On Unix/Mac, use ESP-IDF environment
+                esp_idf_cmd = f". $HOME/esp/esp-idf/export.sh && {debug_cmd}"
+                result = subprocess.run(
+                    esp_idf_cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    executable="/bin/zsh"  # Use zsh for macOS
+                )
             
             if result.returncode == 0:
                 print("✅ Debug command completed successfully!")
@@ -196,10 +255,10 @@ class CrashDumpAnalyzer:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = os.path.join(dump_dir, f"crash_dump_{self.device_ip}_{timestamp}.txt")
             
-            with open(filename, 'w') as f:
+            with open(filename, 'w', encoding='utf-8') as f:
                 # Write header
                 f.write("="*80 + "\n")
-                f.write("🚨 ENERGYME-HOME CRASH DUMP ANALYSIS REPORT\n")
+                f.write("ENERGYME-HOME CRASH DUMP ANALYSIS REPORT\n")
                 f.write("="*80 + "\n")
                 f.write(f"Device IP: {self.device_ip}\n")
                 f.write(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -431,6 +490,7 @@ class CrashDumpAnalyzer:
         """Automatically run ESP-IDF core dump analysis with firmware verification."""
         try:
             import subprocess
+            import platform
             
             print(f"\n🔧 Running ESP-IDF core dump analysis...")
             
@@ -456,32 +516,79 @@ class CrashDumpAnalyzer:
             print("🔍 Verifying firmware SHA256 against device...")
             self.verify_firmware_sha256(crash_info, firmware_path)
             
-            # Prepare the command
-            esp_idf_cmd = f". $HOME/esp/esp-idf/export.sh && python -m esp_coredump info_corefile -c {filename} -t elf {firmware_path}"
-            
-            # Run the command
-            result = subprocess.run(
-                esp_idf_cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                executable="/bin/zsh"  # Use zsh for macOS
-            )
-            
-            if result.returncode == 0:
-                print("✅ ESP-IDF analysis completed successfully!")
-                print("\n" + "="*80)
-                print("📊 ESP-IDF CORE DUMP ANALYSIS OUTPUT:")
-                print("="*80)
-                print(result.stdout)
+            # Prepare the command based on operating system
+            if platform.system() == "Windows":
+                # On Windows, try to run esp_coredump directly
+                esp_coredump_cmd = f'python -m esp_coredump info_corefile -c "{filename}" -t elf "{firmware_path}"'
+                
+                # Try different approaches for Windows
+                commands_to_try = [
+                    esp_coredump_cmd,  # Direct command
+                    f'py -m esp_coredump info_corefile -c "{filename}" -t elf "{firmware_path}"',  # Python launcher
+                ]
+                
+                success = False
+                for cmd in commands_to_try:
+                    try:
+                        print(f"🔧 Trying command: {cmd}")
+                        result = subprocess.run(
+                            cmd,
+                            shell=True,
+                            capture_output=True,
+                            text=True,
+                            timeout=60  # 60 second timeout
+                        )
+                        
+                        if result.returncode == 0:
+                            print("✅ ESP-IDF analysis completed successfully!")
+                            print("\n" + "="*80)
+                            print("📊 ESP-IDF CORE DUMP ANALYSIS OUTPUT:")
+                            print("="*80)
+                            print(result.stdout)
+                            success = True
+                            break
+                        else:
+                            print(f"⚠️  Command failed with code {result.returncode}")
+                            if result.stderr:
+                                print(f"   Error: {result.stderr}")
+                    except subprocess.TimeoutExpired:
+                        print(f"⚠️  Command timed out")
+                    except Exception as e:
+                        print(f"⚠️  Command failed: {e}")
+                
+                if not success:
+                    print(f"❌ All ESP-IDF analysis attempts failed")
+                    print(f"💡 Try installing ESP-IDF tools or running manually:")
+                    print(f"   {esp_coredump_cmd}")
+                    return False
+                
                 return True
             else:
-                print(f"❌ ESP-IDF analysis failed with code {result.returncode}")
-                if result.stderr:
-                    print(f"Error: {result.stderr}")
-                print(f"\n💡 Try running manually:")
-                print(f"   {esp_idf_cmd}")
-                return False
+                # On Unix/Mac, use ESP-IDF environment
+                esp_idf_cmd = f". $HOME/esp/esp-idf/export.sh && python -m esp_coredump info_corefile -c {filename} -t elf {firmware_path}"
+                
+                result = subprocess.run(
+                    esp_idf_cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    executable="/bin/zsh"  # Use zsh for macOS
+                )
+                
+                if result.returncode == 0:
+                    print("✅ ESP-IDF analysis completed successfully!")
+                    print("\n" + "="*80)
+                    print("📊 ESP-IDF CORE DUMP ANALYSIS OUTPUT:")
+                    print("="*80)
+                    print(result.stdout)
+                    return True
+                else:
+                    print(f"❌ ESP-IDF analysis failed with code {result.returncode}")
+                    if result.stderr:
+                        print(f"Error: {result.stderr}")
+                    print(f"\n💡 Try running manually:")
+                    print(f"   {esp_idf_cmd}")
+                    return False
                 
         except Exception as e:
             print(f"❌ Error running ESP-IDF analysis: {e}")
