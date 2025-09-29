@@ -41,7 +41,7 @@ The software is written in C++ using the *PlatformIO* ecosystem and *Arduino 3.x
 
 - **ADE7953** driver with task-based meter reading, energy accumulation, and CSV logging
 - **Comprehensive Authentication System** with token-based security, HTTP-only cookies, password hashing, session management, and protected endpoints
-- **Advanced Crash Monitoring** system leveraging RTC memory of ESP32 with breadcrumb tracking and core dump analysis
+- **Advanced Crash Monitoring** system leveraging RTC memory of ESP32 with ESP32 core dump analysis
 - **Dual MQTT Clients** for both local brokers and AWS IoT Core integration with secure publishing
 - **InfluxDB Integration** for seamless time-series data storage with support for both v1.x and v2.x, SSL/TLS, buffering, and automatic retry logic
 - **Async Web Server** for real-time monitoring, historical data, firmware updates (with MD5 integrity check), and system configuration
