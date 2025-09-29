@@ -13,7 +13,7 @@ This document provides detailed hardware specifications and technical informatio
 
 **Key Components:**
 
-- **Main Microcontroller:** ESP32-S3 (dual-core, WiFi 2.4 GHz)
+- **Main Microcontroller:** ESP32-S3 (dual-core, WiFi 2.4 GHz, 16MB Flash, 2MB PSRAM)
 - **Energy Measurement IC:** Analog Devices ADE7953 (single-phase)
 - **Analog Multiplexer:** 74HC4067PW (16-channel)
 - **CT Inputs:** 17 total (1 direct + 16 multiplexed via 3.5mm jacks)
