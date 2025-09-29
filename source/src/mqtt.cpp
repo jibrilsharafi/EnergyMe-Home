@@ -1869,7 +1869,7 @@ namespace Mqtt
         
         // Clear core dump after successful transmission
         if (CrashMonitor::hasCoreDump()) {
-            #ifndef ENV_DEV
+            #ifndef ENV_DEV // In dev environment we keep the core dump for testing purposes, and eventually delete via API
             CrashMonitor::clearCoreDump();
             #endif
             LOG_INFO("Core dump cleared after successful MQTT transmission");
