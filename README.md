@@ -29,30 +29,42 @@ The project is published on *EasyEDA* for easy access to the PCB design files. Y
 
 ## Software
 
-The software is written in C++ using the *PlatformIO* ecosystem and *Arduino framework*. All source code is available in the [`source`](source) directory with build instructions provided by PlatformIO.
+The software is written in C++ using the *PlatformIO* ecosystem and *Arduino 3.x framework*. The firmware is built on a **modern task-based architecture using FreeRTOS** for maximum stability and performance. All source code is available in the [`source`](source) directory with comprehensive documentation.
 
-The main features of the software include:
+**Key Architecture Features:**
+- **FreeRTOS Task-Based Design**: All major operations run in dedicated tasks for improved stability and resource management
+- **Advanced Crash Recovery**: RTC memory-based crash monitoring with automatic firmware rollback
+- **Memory Optimization**: PSRAM utilization and intelligent heap management
+- **Task Monitoring**: Real-time stack usage and performance monitoring for all system tasks
 
-- **ADE7953** class for configuring and reading data from the IC
+**Core Software Features:**
+
+- **ADE7953** driver with task-based meter reading, energy accumulation, and CSV logging
 - **Comprehensive Authentication System** with token-based security, HTTP-only cookies, password hashing, session management, and protected endpoints
-- **Crash reporting** system leveraging the RTC memory of the ESP32 for enhanced debugging and stability
-- **Custom MQTT** for publishing data to an MQTT broker
+- **Advanced Crash Monitoring** system leveraging RTC memory of ESP32 with breadcrumb tracking and core dump analysis
+- **Dual MQTT Clients** for both local brokers and AWS IoT Core integration with secure publishing
 - **InfluxDB Integration** for seamless time-series data storage with support for both v1.x and v2.x, SSL/TLS, buffering, and automatic retry logic
-- **Web server** for real-time monitoring, historical data, firmware updates (with MD5 integrity check), and system configuration
-- **Captive Wi-Fi portal** for easy initial Wi-Fi configuration
-- **LED control** for visual status indication
-- **Modbus TCP server** for serving data to Modbus clients
-- **MQTT** support for cloud services and remote monitoring
-- **Multiplexer** for reading multiple circuits at once
-- **mDNS Support** for local network discovery
-- **Enhanced Stability Features** including crash monitoring, memory management, watchdog timers, and automatic firmware rollback
-- **Logging** system with multiple levels and web interface access
-- **Secure Firmware Updates** with MD5 hash verification
-- **Secrets Management** for secure credential handling
-- **Local Data Storage** with JSON configuration files
-- **Detailed Calibration Process** for measurement accuracy
+- **Async Web Server** for real-time monitoring, historical data, firmware updates (with MD5 integrity check), and system configuration
+- **Captive Wi-Fi Portal** for easy initial Wi-Fi configuration with connection monitoring
+- **Multi-Priority LED Control** for visual status indication with task-based management
+- **Modbus TCP Server** for serving data to industrial SCADA systems
+- **16-Channel Multiplexer** control for sequential circuit monitoring
+- **mDNS Support** for local network discovery (`energyme.local`)
+- **Enhanced Stability Features** including consecutive crash counting, memory management, and automatic recovery
+- **UDP Network Logging** with real-time log streaming
+- **Secure Firmware Updates** with MD5 hash verification and automatic rollback on failure
+- **Secrets Management** for secure credential handling (optional AWS IoT integration)
+- **Preferences-Based Storage** with organized namespaces for configuration data
+- **Comprehensive Calibration Tools** including web interface and direct ADE7953 register access
 
-Implementation details are documented in the source code headers and comments. Key components have dedicated header files with comprehensive documentation.
+**Performance & Reliability:**
+- Non-blocking operations with configurable update intervals
+- Stack usage monitoring for all FreeRTOS tasks
+- Automatic restart on low memory conditions
+- Core dump analysis for debugging crashes
+- Maintenance task for system health monitoring
+
+Detailed implementation information and API documentation are available in the [`source/README.md`](source/README.md).
 
 ## Integration
 
@@ -101,7 +113,7 @@ EnergyMe-Home features a comprehensive authentication system to secure access to
 ### Default Credentials
 
 - **Username**: `admin`
-- **Password**: `admin123`
+- **Password**: `energyme`
 
 **Important**: Change the default credentials immediately after first login for security.
 
