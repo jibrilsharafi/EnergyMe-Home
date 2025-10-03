@@ -13,18 +13,19 @@ This document provides detailed hardware specifications and technical informatio
 
 **Key Components:**
 
-- **Main Microcontroller:** ESP32-S3 (dual-core, WiFi 2.4 GHz, 16MB Flash, 2MB PSRAM)
-- **Energy Measurement IC:** Analog Devices ADE7953 (single-phase)
-- **Analog Multiplexer:** 74HC4067PW (16-channel)
-- **CT Inputs:** 17 total (1 direct + 16 multiplexed via 3.5mm jacks)
-- **Voltage Reference:** 1000:1 divider (1 MΩ / 1kΩ)
-- **Power Supply:** Onboard AC/DC converter (100-240 Vac to 3.3 Vdc, 1A max)
+- **Main Microcontroller:** ESP32-S3-WROOM-1-N16R2 (dual-core, WiFi 2.4 GHz, 16MB Flash, 2MB PSRAM)
+- **Energy Measurement IC:** Analog Devices ADE7953ACPZ-RL (single-phase, dual-channel)
+- **ADE7953 Crystal:** 3.58 MHz oscillator (S1C35800ZWJAC)
+- **Analog Multiplexer:** 74HC4067PW,118 (16-channel, TSSOP-24)
+- **CT Inputs:** 17× PJ-3133-5A 3.5mm stereo jacks (1 direct + 16 multiplexed)
+- **Voltage Divider:** 1000:1 ratio (1 MΩ / 1 kΩ) for AC mains reference
+- **Power Supply:** HLK-PM03 AC/DC module (100-240 VAC to 3.3 VDC, 1A max)
 
 ## Circuit Design Overview
 
 ### 1. Power Supply Unit
 
-Discrete AC/DC converter providing 3.3V DC from universal AC input (100-240 VAC, 50-60 Hz).
+HLK-PM03 AC/DC module providing 3.3V DC from universal AC input (100-240 VAC, 50-60 Hz). Includes 470µF bulk capacitor and protection components.
 
 ![Power Supply](https://image.easyeda.com/oshwhub/pullImage/fddd17b65fa04d2abfbcce1412394c06.png)
 
@@ -36,23 +37,24 @@ Central processing unit managing all digital logic, SPI communication with ADE79
 
 ### 3. Energy Measurement (ADE7953)
 
-High-precision energy metering IC with dual current channels:
+High-precision energy metering IC (ADE7953ACPZ-RL) with dual current channels, clocked by 3.58 MHz crystal:
 
 - **Channel A:** Direct CT input for main circuit monitoring
-- **Voltage Input:** AC mains reference via 1000:1 voltage divider
+- **Voltage Input:** AC mains reference via 1000:1 voltage divider (1 MΩ / 1 kΩ)
 - **Channel B:** Multiplexed input from 16 branch circuits
+- **Communication:** SPI interface to ESP32-S3
 
 ![ADE7953](https://image.easyeda.com/oshwhub/pullImage/7b4b21cd9ede44e0ab6cbf68409c70e8.png)
 
 ### 4. Analog Multiplexing
 
-Single 74HC4067PW multiplexer routes one of 16 CT signals to ADE7953 Channel B. ESP32-S3 controls select lines (S0-S3) for sequential measurement.
+74HC4067PW,118 multiplexer routes one of 16 CT signals to ADE7953 Channel B. ESP32-S3 controls select lines (S0-S3) for sequential measurement.
 
 ![Multiplexer](https://image.easyeda.com/oshwhub/pullImage/9f0c683d254a458f843b96fa37b7b6af.png)
 
 ### 5. CT Interface
 
-All 17 CT inputs use 3.5mm stereo jacks with direct connection through low-pass filters (1 kΩ / 33 nF). **Maximum CT output: 333 mV**.
+All 17 CT inputs use PJ-3133-5A 3.5mm stereo jacks with direct connection through low-pass filters (1 kΩ / 33 nF). **Maximum CT output: 333 mV**.
 
 ![CT Interface](https://image.easyeda.com/oshwhub/pullImage/c47671faf1c3473cab564f7056ce818e.png)
 
