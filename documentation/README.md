@@ -21,6 +21,21 @@ This document provides detailed hardware specifications and technical informatio
 - **Voltage Divider:** 1000:1 ratio (1 MΩ / 1 kΩ) for AC mains reference
 - **Power Supply:** HLK-PM03 AC/DC module (100-240 VAC to 3.3 VDC, 1A max)
 
+**ESP32-S3 Module Compatibility Notes:**
+
+The design uses ESP32-S3-WROOM-1-N16R2 with quad PSRAM (2MB). Other ESP32-S3 variants may work with `platformio.ini` and partition adjustments, but note:
+
+- **N16R8 (8MB Octal PSRAM)**: ⚠️ **Not compatible** - Octal PSRAM uses GPIOs 35, 36, 37 which conflict with ADE7953 SPI (MISO=35, SCK=36, IRQ=37)
+- **N16R0, N8R0, N4R0 (No PSRAM)**: May work but not recommended - PSRAM used for queues and JSON documents throughout the code
+- **N16R2, N8R2, N4R2 (2MB Quad PSRAM)**: Should work with partition table adjustments. Compiled firmware ~2MB (see [issue #21](https://github.com/jibrilsharafi/EnergyMe-Home/issues/21))
+
+**Future Hardware Revision Considerations:**
+
+For improved module compatibility in future revisions, consider relocating pins to avoid conflicts:
+- Avoid GPIOs 35, 36, 37 (used by octal PSRAM in N16R8/N8R8 modules)
+- Avoid GPIOs 45, 46 (documented issues with some ESP32-S3 modules)
+- Consider GPIO 47 as alternative to GPIO 45
+
 ## Circuit Design Overview
 
 ### 1. Power Supply Unit
