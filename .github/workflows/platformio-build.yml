@@ -2,9 +2,10 @@ name: PlatformIO Build
 # FIXME: ensure this build works properly
 on:
   push:
-    branches: [ dev, prod ]
+    branches: [ main, dev, prod ]
   pull_request:
-    branches: [ dev, prod ]
+    branches: [ main, dev, prod ]
+  workflow_dispatch:
 
 jobs:
   build:
