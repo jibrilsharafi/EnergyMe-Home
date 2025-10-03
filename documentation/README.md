@@ -9,7 +9,7 @@ This document provides detailed hardware specifications and technical informatio
 - **Hardware Revision:** v5
 - **PCB Layers:** 4 layers
 - **Board Dimensions:** 87 mm x 50 mm. Height with components around 15 mm
-- **Power Consumption:** ~100 mA typical (< 1W AC consumption)
+- **Power Consumption:** ~100 mA@3.3V typical (< 1W AC consumption)
 
 **Key Components:**
 
@@ -33,8 +33,7 @@ The design uses ESP32-S3-WROOM-1-N16R2 with quad PSRAM (2MB). Other ESP32-S3 var
 
 For improved module compatibility in future revisions, consider relocating pins to avoid conflicts:
 - Avoid GPIOs 35, 36, 37 (used by octal PSRAM in N16R8/N8R8 modules)
-- Avoid GPIOs 45, 46 (documented issues with some ESP32-S3 modules)
-- Consider GPIO 47 as alternative to GPIO 45
+- Consider GPIO 47 as an alternative to GPIO 45 (it is suggested to avoid pins 45 and 46)
 
 ## Circuit Design Overview
 
@@ -69,7 +68,7 @@ High-precision energy metering IC (ADE7953ACPZ-RL) with dual current channels, c
 
 ### 5. CT Interface
 
-All 17 CT inputs use PJ-3133-5A 3.5mm stereo jacks with direct connection through low-pass filters (1 kΩ / 33 nF). **Maximum CT output: 333 mV**.
+All 17 CT inputs use PJ-3133-5A 3.5mm stereo jacks with direct connection through low-pass filters (1 kΩ / 33 nF). **Maximum CT output: 333 mV**. No burden resistors are present on the board.
 
 ![CT Interface](https://image.easyeda.com/oshwhub/pullImage/c47671faf1c3473cab564f7056ce818e.png)
 
@@ -85,7 +84,7 @@ All 17 CT inputs use PJ-3133-5A 3.5mm stereo jacks with direct connection throug
 
 ⚠️ **ELECTRICAL SAFETY WARNING**
 
-This device interfaces with AC mains voltage. Construction and installation must only be performed by qualified individuals with proper electrical safety knowledge. Improper handling can result in serious injury or death.
+This device interfaces with AC mains voltage. Construction and installation must only be performed by qualified individuals with proper knowledge of electrical safety. Improper handling can result in serious injury or death.
 
 **Assembly Requirements:**
 
