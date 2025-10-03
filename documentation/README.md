@@ -9,7 +9,7 @@ This document provides detailed hardware specifications and technical informatio
 - **Hardware Revision:** v5
 - **PCB Layers:** 4 layers
 - **Board Dimensions:** 87 mm x 50 mm. Height with components around 15 mm
-- **Power Consumption:** ~100 mA@3.3V typical (< 1W AC consumption)
+- **Power Consumption:** ~100 mA @ 3.3V typical (< 1W AC consumption)
 
 **Key Components:**
 
@@ -32,6 +32,7 @@ The design uses ESP32-S3-WROOM-1-N16R2 with quad PSRAM (2MB). Other ESP32-S3 var
 **Future Hardware Revision Considerations:**
 
 For improved module compatibility in future revisions, consider relocating pins to avoid conflicts:
+
 - Avoid GPIOs 35, 36, 37 (used by octal PSRAM in N16R8/N8R8 modules)
 - Consider GPIO 47 as an alternative to GPIO 45 (it is suggested to avoid pins 45 and 46)
 
@@ -39,38 +40,80 @@ For improved module compatibility in future revisions, consider relocating pins 
 
 ### 1. Power Supply Unit
 
-HLK-PM03 AC/DC module providing 3.3V DC from universal AC input (100-240 VAC, 50-60 Hz). Includes 470µF bulk capacitor and protection components.
+*HLK-PM03* AC/DC module providing 3.3V DC from universal AC input (100-240 VAC, 50-60 Hz). Includes 470µF bulk capacitor and protection components (fuse, varistor, PCB slots).
 
-![Power Supply](https://image.easyeda.com/oshwhub/pullImage/fddd17b65fa04d2abfbcce1412394c06.png)
+![Power Supply](Schematics/Schematics_page_1.png)
 
 ### 2. Microcontroller (ESP32-S3)
 
-Central processing unit managing all digital logic, SPI communication with ADE7953, multiplexer control, and wireless connectivity.
+*ESP32-S3-WROOM-1-N16R2*: the central processing unit managing all digital logic, SPI communication with ADE7953, multiplexer control, LED control, and wireless connectivity.
 
-![ESP32-S3](https://image.easyeda.com/oshwhub/pullImage/dea4a95df7204d5f9eb930a6aa5e4354.png)
+![ESP32-S3](Schematics/Schematics_page_2.png)
 
 ### 3. Energy Measurement (ADE7953)
 
-High-precision energy metering IC (ADE7953ACPZ-RL) with dual current channels, clocked by 3.58 MHz crystal:
+High-precision 24-bit energy metering IC (*ADE7953ACPZ-RL*) with dual current channels, clocked by 3.58 MHz crystal:
 
 - **Channel A:** Direct CT input for main circuit monitoring
 - **Voltage Input:** AC mains reference via 1000:1 voltage divider (1 MΩ / 1 kΩ)
 - **Channel B:** Multiplexed input from 16 branch circuits
 - **Communication:** SPI interface to ESP32-S3
 
-![ADE7953](https://image.easyeda.com/oshwhub/pullImage/7b4b21cd9ede44e0ab6cbf68409c70e8.png)
+![ADE7953](Schematics/Schematics_page_3.png)
+
+![ADE7953 signal inputs](Schematics/Schematics_page_4.png)
 
 ### 4. Analog Multiplexing
 
-74HC4067PW,118 multiplexer routes one of 16 CT signals to ADE7953 Channel B. ESP32-S3 controls select lines (S0-S3) for sequential measurement.
+*74HC4067PW,118* multiplexer routes one of 16 CT signals to ADE7953 Channel B. ESP32-S3 controls select lines (S0-S3) for sequential measurement.
 
-![Multiplexer](https://image.easyeda.com/oshwhub/pullImage/9f0c683d254a458f843b96fa37b7b6af.png)
+![Multiplexer](Schematics/Schematics_page_2.png)
 
-### 5. CT Interface
+### 5. CT Interface & Other Inputs
 
 All 17 CT inputs use PJ-3133-5A 3.5mm stereo jacks with direct connection through low-pass filters (1 kΩ / 33 nF). **Maximum CT output: 333 mV**. No burden resistors are present on the board.
 
-![CT Interface](https://image.easyeda.com/oshwhub/pullImage/c47671faf1c3473cab564f7056ce818e.png)
+The line voltage is fed via a 2.54mm 2-pin screw terminal block, rated for 300V/3A.
+
+The programming header is a standard 2x5 2.54mm pin header, comprising of 3V3, GND, EN, IO0, TX, RX pins.
+
+Two more headers are available for expanding the CT inputs up to 17 total channels (the bare board has 8 channels).
+
+![CT Interface](Schematics/Schematics_page_5.png)
+
+## PCB Layout & Design
+
+The main board features a **4-layer PCB** design optimized for mixed-signal operation with careful attention to analog/digital separation and power distribution.
+
+**Layer Stack-up:**
+
+- **Layer 1 (Top):** Signal routing, components, ground stitching
+- **Layer 2:** Ground plane (continuous pour for low impedance)
+- **Layer 3:** Power plane (3.3V distribution)
+- **Layer 4 (Bottom):** Signal routing
+
+**Component Placement:**
+
+- **Power section** isolated on top-left side with HLK-PM03 AC/DC module (though no galvanic isolation is provided as the neutral line is connected to the board ground)
+- **ESP32-S3** positioned on the left side, leaving a slot under the the PCB antenna on the module to improve WiFi performance
+- **ADE7953** placed close to the ESP32-S3 to minimize SPI trace lengths
+- **Multiplexer** positioned close to the ADE7953 to reduce analog signal path lengths
+- **CT jacks** arranged in rows along board edges for easy access
+- **RGB LED** near the center for status indication
+- **Programming header** located at the center for easier access
+- **Expansion headers** near the CT jacks for additional channels
+
+**Manufacturing Specifications:**
+
+- Minimum trace width: 0.127mm
+- Minimum trace spacing: 0.127mm
+- Minimum via size: 0.25mm
+- Minimum via drill: 0.15mm
+- Surface finish: HASL or ENIG recommended
+- Solder mask: Required (typically green)
+- Silkscreen: Component designators and polarity markings
+
+![PCB Layout](Schematics/PCB%20-%20Main%20board.pdf)
 
 ## Design Files & Resources
 
@@ -96,16 +139,16 @@ This device interfaces with AC mains voltage. Construction and installation must
 
 **Bare PCB:**
 
-![Bare PCB](https://image.easyeda.com/oshwhub/pullImage/06165d5bc11443768b389e65da0b750a.jpg)
+![Bare PCB](<../resources/Bare PCB.jpg>)
 
 **Assembled Board:**
 
-![Assembled PCB](https://image.easyeda.com/oshwhub/pullImage/54320e42416844e980a43cc4ebc63200.jpg)
+![Assembled PCB](<../resources/PCB top view.jpg>)
 
 **Enclosure:**
 
-![Enclosure](https://image.easyeda.com/oshwhub/pullImage/08c4acf57e38402a88879df4a71796b8.jpg)
+![Enclosure](../resources/case.jpg)
 
 **Installation:**
 
-![Installation](https://image.easyeda.com/oshwhub/pullImage/8211ebaea22a4962865c3cb88da6bc68.jpg)
+![Installation](../resources/installed_2.jpg)
