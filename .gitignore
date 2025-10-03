@@ -36,3 +36,9 @@ secrets
 
 # Mac
 .DS_Store
+
+# VSCode
+.vscode/
+
+# Mypy
+.mypy_cache/
