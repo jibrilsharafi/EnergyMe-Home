@@ -1,9 +1,5 @@
 # Contributing to EnergyMe-Home
 
-Thanks for considering contributing to EnergyMe-Home! Your help makes this project better.
-
-## How to Contribute
-
 ### Reporting Bugs
 
 Found a bug? Open an issue on GitHub with:
