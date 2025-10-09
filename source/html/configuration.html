@@ -367,6 +367,28 @@
     </div>
 
     <div class="section-box">
+        <h2>Password Management</h2>
+        <p><i>Change your authentication password. Username cannot be changed (admin).</i></p>
+        
+        <label for="currentPassword">Current Password:</label>
+        <input type="password" id="currentPassword" class="config-input" placeholder="Enter current password">
+        
+        <label for="newPassword">New Password:</label>
+        <input type="password" id="newPassword" class="config-input" placeholder="Enter new password">
+        <div style="font-size: 12px; color: #666; margin: 5px 0;">Password must be between 4 and 64 characters</div>
+        
+        <label for="confirmPassword">Confirm New Password:</label>
+        <input type="password" id="confirmPassword" class="config-input" placeholder="Confirm new password">
+        
+        <div id="passwordMessage" style="display: none; padding: 10px; margin: 10px 0; border-radius: 5px;"></div>
+        
+        <button class="buttonForm" onclick="changePassword()" id="changePasswordButton">🔐 Change Password</button>
+        <button class="buttonForm" onclick="resetPassword()" id="resetPasswordButton" 
+            style="background-color: #ff9800; border-color: #ff9800; color: white; transition: background-color 0.3s ease;"
+            onmouseover="this.style.backgroundColor='#e68900'" onmouseout="this.style.backgroundColor='#ff9800'">🔄 Reset to Default</button>
+    </div>
+
+    <div class="section-box">
         <h2>Restart Device</h2>
         <p><i>You already know that restarting a device magically fixes most issues. It will take 10 seconds.</i></p>
         <button class="buttonForm" onclick="restart()" id="restart">🔄 Restart</button>
@@ -488,6 +510,97 @@
                     alert("Error resetting to factory settings. Response: " + error.message);
                 });
         } 
+        
+        function showPasswordMessage(message, isError) {
+            const messageDiv = document.getElementById('passwordMessage');
+            messageDiv.textContent = message;
+            messageDiv.style.display = 'block';
+            messageDiv.style.backgroundColor = isError ? '#ffebee' : '#e8f5e9';
+            messageDiv.style.color = isError ? '#d32f2f' : '#4CAF50';
+        }
+
+        function hidePasswordMessage() {
+            const messageDiv = document.getElementById('passwordMessage');
+            messageDiv.style.display = 'none';
+        }
+
+        function changePassword() {
+            hidePasswordMessage();
+            
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const changeBtn = document.getElementById('changePasswordButton');
+
+            // Validation
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                showPasswordMessage('Please fill in all fields', true);
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                showPasswordMessage('New passwords do not match', true);
+                return;
+            }
+
+            if (newPassword.length < 4) {
+                showPasswordMessage('Password must be at least 4 characters long', true);
+                return;
+            }
+
+            if (newPassword.length > 64) {
+                showPasswordMessage('Password must be at most 64 characters long', true);
+                return;
+            }
+
+            // Disable button during request
+            changeBtn.disabled = true;
+            changeBtn.textContent = 'Changing...';
+
+            energyApi.changePassword(currentPassword, newPassword)
+                .then(response => {
+                    showPasswordMessage('Password changed successfully!', false);
+                    // Clear form
+                    document.getElementById('currentPassword').value = '';
+                    document.getElementById('newPassword').value = '';
+                    document.getElementById('confirmPassword').value = '';
+                    changeBtn.textContent = '🔐 Change Password';
+                    changeBtn.disabled = false;
+                })
+                .catch(error => {
+                    showPasswordMessage('Failed to change password: ' + error.message, true);
+                    changeBtn.textContent = '🔐 Change Password';
+                    changeBtn.disabled = false;
+                });
+        }
+
+        function resetPassword() {
+            const confirmed = window.confirm('Are you sure you want to reset the password to default (energyme)? You will need to log in again.');
+            if (!confirmed) {
+                return;
+            }
+
+            hidePasswordMessage();
+            const resetBtn = document.getElementById('resetPasswordButton');
+            resetBtn.disabled = true;
+            resetBtn.textContent = 'Resetting...';
+
+            energyApi.resetPassword()
+                .then(response => {
+                    showPasswordMessage('Password reset to default successfully! Please log in with the default password.', false);
+                    resetBtn.textContent = '🔄 Reset to Default';
+                    resetBtn.disabled = false;
+                    // Redirect to home page after 3 seconds
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 3000);
+                })
+                .catch(error => {
+                    showPasswordMessage('Failed to reset password: ' + error.message, true);
+                    resetBtn.textContent = '🔄 Reset to Default';
+                    resetBtn.disabled = false;
+                });
+        }
         
         function setLogLevel() {
             document.getElementById("setLogLevel").innerHTML = "Setting...";
