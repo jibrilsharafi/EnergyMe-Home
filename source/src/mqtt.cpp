@@ -208,7 +208,7 @@ namespace Mqtt
         // Static and permanent config
         _clientMqtt.setBufferSize(MQTT_BUFFER_SIZE);
         _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
-        _clientMqtt.setServer(aws_iot_core_endpoint, AWS_IOT_CORE_PORT);
+        _clientMqtt.setServer(AWS_IOT_CORE_ENDPOINT, AWS_IOT_CORE_PORT);
         _clientMqtt.setCallback(_subscribeCallback);
 
         _setupTopics();
@@ -707,7 +707,7 @@ namespace Mqtt
         LOG_DEBUG("MQTT topics setup complete");
     }
 
-    static void _setTopicMeter() { _constructMqttTopicWithRule(aws_iot_core_rulemeter, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
+    static void _setTopicMeter() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_METER, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
     static void _setTopicSystemStatic() { _constructMqttTopic(MQTT_TOPIC_SYSTEM_STATIC, _mqttTopicSystemStatic, sizeof(_mqttTopicSystemStatic)); }
     static void _setTopicSystemDynamic() { _constructMqttTopic(MQTT_TOPIC_SYSTEM_DYNAMIC, _mqttTopicSystemDynamic, sizeof(_mqttTopicSystemDynamic)); }
     static void _setTopicChannel() { _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel, sizeof(_mqttTopicChannel)); }
@@ -1003,7 +1003,7 @@ namespace Mqtt
 
         esp_http_client_config_t _httpConfig = {
             .url = _otaCurrentUrl,
-            .cert_pem = aws_iot_core_cert_ca, // Same as the one used to connect to AWS IoT Core via MQTT
+            .cert_pem = AWS_IOT_CORE_CA_CERT, // Same as the one used to connect to AWS IoT Core via MQTT
             .event_handler = _otaHttpEventHandler,
             .buffer_size_tx = OTA_HTTPS_BUFFER_SIZE_TX, // Increase TX buffer to handle large presigned URLs
             .skip_cert_common_name_check = false
@@ -1471,7 +1471,7 @@ namespace Mqtt
             return false;
         }
 
-        _net.setCACert(aws_iot_core_cert_ca);
+        _net.setCACert(AWS_IOT_CORE_CA_CERT);
         _net.setCertificate(_awsIotCoreCert);
         _net.setPrivateKey(_awsIotCorePrivateKey);
 
@@ -1573,7 +1573,7 @@ namespace Mqtt
     static bool _claimProcess() {
         LOG_DEBUG("Claiming certificates...");
 
-        _net.setCACert(aws_iot_core_cert_ca);
+        _net.setCACert(AWS_IOT_CORE_CA_CERT);
         _net.setCertificate(aws_iot_core_cert_certclaim);
         _net.setPrivateKey(aws_iot_core_cert_privateclaim);
 

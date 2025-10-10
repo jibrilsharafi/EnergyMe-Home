@@ -31,18 +31,12 @@ extern const char favicon_svg[] asm("_binary_resources_favicon_svg_start");
 // AWS IoT Core secrets
 // --------------------------------------------------
 #ifdef HAS_SECRETS
-extern const char aws_iot_core_cert_ca[] asm("_binary_secrets_ca_pem_start");
 extern const char aws_iot_core_cert_certclaim[] asm("_binary_secrets_certclaim_pem_start");
 extern const char aws_iot_core_cert_privateclaim[] asm("_binary_secrets_privateclaim_pem_start");
 extern const char preshared_encryption_key[] asm("_binary_secrets_encryptionkey_txt_start");
-extern const char aws_iot_core_endpoint[] asm("_binary_secrets_endpoint_txt_start");
-extern const char aws_iot_core_rulemeter[] asm("_binary_secrets_rulemeter_txt_start");
 #else
 // Empty placeholders when secrets are not available
-extern const char aws_iot_core_cert_ca[];
 extern const char aws_iot_core_cert_certclaim[];
 extern const char aws_iot_core_cert_privateclaim[];
-extern const char aws_iot_core_endpoint[];
-extern const char aws_iot_core_rulemeter[];
 extern const char preshared_encryption_key[];
 #endif

@@ -16,6 +16,7 @@
 #include "mbedtls/sha256.h"
 
 #include "ade7953.h"
+#include "awsconfig.h"
 #include "binaries.h"
 #include "constants.h"
 #include "customtime.h"
