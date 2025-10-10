@@ -60,6 +60,10 @@
 // First boot
 #define IS_FIRST_BOOT_DONE_KEY "first_boot"
 
+// Stringify macro helper for BUILD_ENV_NAME - If you try to concatenate directly, it will crash the build
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+
 // Even though the ArduinoJson automatically allocates the JSON documents to PSRAM when the heap is exhausted,
 // it still leads to defragmentation here. Thus, to avoid this, we explicitly use a custom allocator.
 struct SpiRamAllocator : ArduinoJson::Allocator {

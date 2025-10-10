@@ -23,7 +23,7 @@
 #define CRASH_RESET_TASK_STACK_SIZE (6 * 1024) // PLEASE: never put below this as even a single log will exceed 1024 kB easily.. We don't need to optimize so much :)
 #define CRASH_RESET_TASK_PRIORITY 1 // This does not need to be high priority since it will only reset a counter and not do any heavy work
 
-#define ELF_LOCATION ".pio/build/esp32dev/firmware.elf" // Location of the ELF file for backtrace decoding (standard for PlatformIO)
+#define ELF_LOCATION ".pio/build/" TOSTRING(BUILD_ENV_NAME) "/firmware.elf" // Location of the ELF file for backtrace decoding
 #define BACKTRACE_DECODE_CMD "xtensa-esp32-elf-addr2line -pfC -e " ELF_LOCATION " %s" // Command to decode backtrace addresses, where the %s will be replaced with the addresses
 #define BACKTRACE_DECODE_CMD_SIZE 1024 // Size of the command buffer, should be enough for most backtraces
 
