@@ -14,7 +14,6 @@
     <script src="/js/api-client.js"></script>
 
     <title>EnergyMe</title>
-    <!-- TODO: add a popup if the user is still using the default password (use the endpoints /api/v1/auth/... in the swagger.yaml) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         .header {
@@ -1491,10 +1490,23 @@
         }
     }
 
+    // Check if user is using default password
+    async function checkDefaultPassword() {
+        try {
+            const authStatus = await energyApi.getAuthStatus();
+            if (authStatus.usingDefaultPassword) {
+                alert('⚠️ Security Warning: You are still using the default password!\n\nPlease change your password immediately in the Configuration page to secure your device.');
+            }
+        } catch (error) {
+            console.error('Error checking auth status:', error);
+        }
+    }
+
     // Initialize page when DOM is loaded
     document.addEventListener('DOMContentLoaded', async () => {
         await initializePage();
         await fetchFirmwareUpdateInfo();
+        await checkDefaultPassword();
         
         // Set up real-time meter data updates
         setInterval(async () => {

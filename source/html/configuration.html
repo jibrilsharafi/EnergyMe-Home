@@ -367,6 +367,12 @@
     </div>
 
     <div class="section-box">
+        <h2>Change Password</h2>
+        <p><i>Change your password to secure your device. Default credentials should be changed immediately after first login.</i></p>
+        <button class="buttonForm" onclick="changePassword()" id="changePasswordButton">🔑 Change Password</button>
+    </div>
+
+    <div class="section-box">
         <h2>Restart Device</h2>
         <p><i>You already know that restarting a device magically fixes most issues. It will take 10 seconds.</i></p>
         <button class="buttonForm" onclick="restart()" id="restart">🔄 Restart</button>
@@ -488,6 +494,48 @@
                     alert("Error resetting to factory settings. Response: " + error.message);
                 });
         } 
+        
+        function changePassword() {
+            const currentPassword = prompt("Enter your current password:");
+            if (!currentPassword) {
+                return; // User cancelled
+            }
+
+            const newPassword = prompt("Enter your new password:");
+            if (!newPassword) {
+                return; // User cancelled
+            }
+
+            const confirmPassword = prompt("Confirm your new password:");
+            if (!confirmPassword) {
+                return; // User cancelled
+            }
+
+            if (newPassword !== confirmPassword) {
+                alert("Error: New passwords do not match. Please try again.");
+                return;
+            }
+
+            if (newPassword.length < 8) {
+                alert("Error: Password must be at least 8 characters long.");
+                return;
+            }
+
+            document.getElementById("changePasswordButton").innerHTML = "Changing password...";
+            document.getElementById("changePasswordButton").disabled = true;
+
+            energyApi.changePassword(currentPassword, newPassword)
+                .then(response => {
+                    alert("Password changed successfully! Please use your new password on next login.");
+                    document.getElementById("changePasswordButton").innerHTML = "🔑 Change Password";
+                    document.getElementById("changePasswordButton").disabled = false;
+                })
+                .catch(error => {
+                    alert("Error changing password: " + error.message);
+                    document.getElementById("changePasswordButton").innerHTML = "🔑 Change Password";
+                    document.getElementById("changePasswordButton").disabled = false;
+                });
+        }
         
         function setLogLevel() {
             document.getElementById("setLogLevel").innerHTML = "Setting...";
