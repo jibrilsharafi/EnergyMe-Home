@@ -7,10 +7,11 @@ on:
     branches: [ development, main ]
 
 jobs:
-  # Job 1: Validation build with dummy secrets (runs for all events including PRs)
+  # Job 1: Validation build with dummy secrets (only runs on PRs to give a quicker feedback)
   build-check:
     runs-on: ubuntu-latest
     name: Build Check (Dummy Secrets)
+    if: github.event_name == 'pull_request'
 
     steps:
     - name: Checkout code
@@ -42,18 +43,17 @@ jobs:
         echo "dummy" > secrets/certclaim.pem
         echo "dummy" > secrets/encryptionkey.txt
 
-    - name: Build firmware (esp32dev)
+    - name: Build firmware (esp32s3-prod)
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for esp32dev with dummy secrets..."
-        pio run -e esp32dev
-        echo "✅ Build completed for esp32dev!"
+        echo "🏗️ Building firmware for esp32s3-prod with dummy secrets..."
+        pio run -e esp32s3-prod
+        echo "✅ Build completed for esp32s3-prod!"
 
-  # Job 2: Production build with real secrets (only runs on push to main/development)
+  # Job 2: Production build with real secrets (only runs on push to main/development to also provide the binary)
   build-with-secrets:
     runs-on: ubuntu-latest
     name: Build with Real Secrets (Private)
-    needs: build-check  # Only runs if build-check succeeds
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
 
     steps:
@@ -95,18 +95,18 @@ jobs:
         echo "$ENCRYPTION_KEY" > encryptionkey.txt
         echo "✅ Secrets injected successfully"
 
-    - name: Build firmware with real secrets (esp32dev)
+    - name: Build firmware with real secrets (esp32s3-prod)
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for esp32dev with REAL secrets..."
-        pio run -e esp32dev
-        echo "✅ Production build completed for esp32dev!"
+        echo "🏗️ Building firmware for esp32s3-prod with REAL secrets..."
+        pio run -e esp32s3-prod
+        echo "✅ Production build completed for esp32s3-prod!"
 
     - name: Upload private firmware artifact
       uses: actions/upload-artifact@v4
       with:
-        name: firmware-esp32dev-private-${{ github.sha }}
-        path: source/.pio/build/esp32dev/firmware.bin
+        name: firmware-esp32s3-prod-private-${{ github.sha }}
+        path: source/.pio/build/esp32s3-prod/firmware.bin
         retention-days: 30  # Keep for 30 days, adjust as needed
 
     - name: Cleanup secrets
@@ -122,6 +122,6 @@ jobs:
         echo "### 🎉 Build Successful!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "✅ Firmware built with real secrets" >> $GITHUB_STEP_SUMMARY
-        echo "📦 Artifact: \`firmware-esp32dev-private-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "📦 Artifact: \`firmware-esp32s3-prod-private-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
         echo "🔒 **This artifact is PRIVATE** - only accessible to repository members" >> $GITHUB_STEP_SUMMARY
         echo "⏱️ Retention: 30 days" >> $GITHUB_STEP_SUMMARY
