@@ -414,10 +414,17 @@ static void _maintenanceTask(void* parameter) {
             setRestartSystem("PSRAM memory has degraded below safe minimum");
         }
 
+        // If the log file exceeds maximum size, clear it
+        size_t logSize = getLogFileSize();
+        if (logSize >= MAXIMUM_LOG_FILE_SIZE) {
+            AdvancedLogger::clearLogKeepLatestXPercent(10);
+            LOG_INFO("Log cleared due to size limit (size: %zu bytes, limit: %d bytes)", logSize, MAXIMUM_LOG_FILE_SIZE);
+        }
+
         // Check LittleFS memory and clear log if needed
         if (LittleFS.totalBytes() - LittleFS.usedBytes() < MINIMUM_FREE_LITTLEFS_SIZE) {
-            AdvancedLogger::clearLog();
-            LOG_WARNING("Log cleared due to low memory");
+            AdvancedLogger::clearLog(); // Here we clear all for safety
+            LOG_WARNING("Log cleared due to low LittleFS memory");
         }
         
         LOG_DEBUG("Maintenance checks completed");
@@ -454,6 +461,23 @@ void startMaintenanceTask() {
     if (result != pdPASS) {
         LOG_ERROR("Failed to create maintenance task");
     }
+}
+
+size_t getLogFileSize() {
+    if (!LittleFS.exists(LOG_PATH)) {
+        return 0;
+    }
+    
+    File logFile = LittleFS.open(LOG_PATH, FILE_READ);
+    if (!logFile) {
+        LOG_WARNING("Failed to open log file to check size");
+        return 0;
+    }
+    
+    size_t size = logFile.size();
+    logFile.close();
+    
+    return size;
 }
 
 void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
