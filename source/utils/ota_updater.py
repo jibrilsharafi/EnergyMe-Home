@@ -328,8 +328,8 @@ class OTAUpdater:
             print(f"\n❌ Upload failed: {e}")
             return False
     
-    def full_update(self, bin_path=".pio/build/esp32dev/firmware.bin", 
-                   elf_path=".pio/build/esp32dev/firmware.elf",
+    def full_update(self, bin_path=".pio/build/esp32s3-dev/firmware.bin", 
+                   elf_path=".pio/build/esp32s3-dev/firmware.elf",
                    save_release=True):
         """Complete OTA update process with release management"""
         
@@ -429,9 +429,9 @@ def main():
     parser.add_argument('-H', '--host', default='energyme.local', help='Device IP address (e.g., 192.168.1.245). If not passed, it will use the default hostname energyme.local (WARNING: it will be slower and may cause problems)')
     parser.add_argument('-u', '--username', default='admin', help='Username (default: admin)')
     parser.add_argument('-p', '--password', default='energyme', help='Password (default: energyme)')
-    parser.add_argument('-b', '--bin', default='.pio/build/esp32dev/firmware.bin', 
+    parser.add_argument('-b', '--bin', default='.pio/build/esp32s3-dev/firmware.bin', 
                        help='Path to firmware .bin file')
-    parser.add_argument('-e', '--elf', default='.pio/build/esp32dev/firmware.elf', 
+    parser.add_argument('-e', '--elf', default='.pio/build/esp32s3-dev/firmware.elf', 
                        help='Path to firmware .elf file')
     parser.add_argument('--no-save', action='store_true', 
                        help='Skip saving release files')
