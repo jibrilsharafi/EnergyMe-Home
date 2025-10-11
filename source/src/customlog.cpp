@@ -159,7 +159,9 @@ namespace CustomLog
 
     static void _callbackUdp(const LogEntry& entry)
     {
-        if (!DEFAULT_IS_UDP_LOGGING_ENABLED) return;
+        #ifndef ENV_DEV // Only send UDP logs in development mode to avoid flooding network of production devices
+        return;
+        #endif
         if (entry.level == LogLevel::VERBOSE) return; // Never send verbose logs via UDP
         if (!_initializeQueue()) return; // Failed to initialize, drop this log
         
