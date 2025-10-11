@@ -481,19 +481,36 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-    delete:
+  /api/v1/delete-file:
+    post:
       summary: Delete file from LittleFS
-      description: Remove a specific file from the LittleFS filesystem
+      description: |
+        Remove a specific file from the LittleFS filesystem using a POST request with JSON body.
+        This endpoint uses POST instead of DELETE to avoid wildcard routing issues with the web server.
       tags:
         - Files
-      parameters:
-        - name: filepath
-          in: path
-          required: true
-          description: Path to the file in LittleFS (without leading slash)
-          schema:
-            type: string
-          example: "logger/old_log.txt"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: Path to the file in LittleFS (with or without leading slash)
+                  example: "/energy/2025-10-11.csv.gz"
+            examples:
+              with_leading_slash:
+                summary: Path with leading slash
+                value:
+                  path: "/energy/2025-10-11.csv.gz"
+              without_leading_slash:
+                summary: Path without leading slash
+                value:
+                  path: "energy/2025-10-11.csv.gz"
       responses:
         '200':
           $ref: '#/components/responses/Success'

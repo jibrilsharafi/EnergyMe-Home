@@ -2032,8 +2032,7 @@ namespace CustomServer
             }
         });
 
-        // Get specific file content
-        // Note: Using "/api/v1/files/*" pattern works with ESPAsyncWebServer wildcard matching
+        // GET - Download file from LittleFS
         server.on("/api/v1/files/*", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             String url = request->url();
@@ -2069,7 +2068,7 @@ namespace CustomServer
             request->send(LittleFS, filename, contentType, forceDownload);
         });
 
-        // Upload file to LittleFS
+        // POST - Upload file to LittleFS
         server.on("/api/v1/files/*", HTTP_POST, 
             [](AsyncWebServerRequest *request) {
                 // Final response is handled in _handleFileUploadData
@@ -2079,41 +2078,56 @@ namespace CustomServer
             }
         );
 
-        // Delete file from LittleFS
-        server.on("/api/v1/files/*", HTTP_DELETE, [](AsyncWebServerRequest *request)
-                  {
-            String url = request->url();
-            String filename = url.substring(url.indexOf("/api/v1/files/") + 14); // Remove "/api/v1/files/" prefix
-            
-            if (filename.length() == 0) {
-                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File path cannot be empty");
-                return;
-            }
-            
-            // URL decode the filename to handle encoded slashes properly
-            filename.replace("%2F", "/");
-            filename.replace("%2f", "/");
-            
-            // Ensure filename starts with "/"
-            if (!filename.startsWith("/")) {
-                filename = "/" + filename;
-            }
+        // DELETE - Remove file from LittleFS
+        // HACK: using POST with JSON body to avoid wildcard DELETE issues with AsyncWebServer, and also
+        // not using the same endpoint as the * would catch files/delete
+        static AsyncCallbackJsonWebHandler *deleteFileHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/delete-file",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT)) return;
 
-            // Check if file exists
-            if (!LittleFS.exists(filename)) {
-                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "File not found");
-                return;
-            }
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
 
-            // Attempt to delete the file
-            if (LittleFS.remove(filename)) {
-                LOG_INFO("File deleted successfully: %s", filename.c_str());
-                _sendSuccessResponse(request, "File deleted successfully");
-            } else {
-                LOG_ERROR("Failed to delete file: %s", filename.c_str());
-                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to delete file");
-            }
-        });
+                // Validate path field
+                if (!doc["path"].is<const char*>()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid 'path' field in JSON body");
+                    return;
+                }
+
+                String filename = doc["path"].as<const char*>();
+                
+                if (filename.length() == 0) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File path cannot be empty");
+                    return;
+                }
+                
+                // Ensure filename starts with "/"
+                if (!filename.startsWith("/")) {
+                    filename = "/" + filename;
+                }
+
+                // Check if file exists
+                if (!LittleFS.exists(filename)) {
+                    LOG_DEBUG("Tried to delete non-existent file: %s", filename.c_str());
+                    char buffer[NAME_BUFFER_SIZE];
+                    snprintf(buffer, sizeof(buffer), "File not found: %s", filename.c_str());
+                    _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, buffer);
+                    return;
+                }
+
+                // Attempt to delete the file
+                if (LittleFS.remove(filename)) {
+                    LOG_INFO("File deleted successfully: %s", filename.c_str());
+                    _sendSuccessResponse(request, "File deleted successfully");
+                } else {
+                    LOG_ERROR("Failed to delete file: %s", filename.c_str());
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to delete file");
+                }
+            });
+        server.addHandler(deleteFileHandler);
     }
 
     TaskInfo getHealthCheckTaskInfo()
