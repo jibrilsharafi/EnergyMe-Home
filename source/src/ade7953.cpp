@@ -1570,14 +1570,26 @@ namespace Ade7953
     void _hourlyCsvSaveTask(void* parameter) {
         LOG_DEBUG("ADE7953 hourly CSV save task started");
 
-        // Avoid compressing current day CSV (still need to append today's data)
-        char dateIso[TIMESTAMP_BUFFER_SIZE];
-        CustomTime::getCurrentDateIso(dateIso, sizeof(dateIso));
-        char excludeFilepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 1]; // Added space for prefix plus "/"
-        snprintf(excludeFilepath, sizeof(excludeFilepath), "%s/%s", ENERGY_CSV_PREFIX, dateIso);
-        
-        LOG_DEBUG("Migrating the CSV files, excluding prefix of %s", excludeFilepath);
-        migrateCsvToGzip(ENERGY_CSV_PREFIX, excludeFilepath);
+        // Wait INDEFINITELY for time sync before attempting migration as saving daily data does not 
+        // make sense without correct timestamps
+        while (!CustomTime::isTimeSynched()) {
+            LOG_DEBUG("Waiting for time sync to continue with CSV migration on startup");
+            delay(10000);
+        }
+
+        // Check again just to be sure..
+        if (!CustomTime::isTimeSynched()) {
+            LOG_WARNING("Time not synchronized after timeout, skipping CSV migration on startup");
+        } else {
+            // Avoid compressing current day CSV (still need to append today's data)
+            char dateIso[TIMESTAMP_BUFFER_SIZE];
+            CustomTime::getCurrentDateIso(dateIso, sizeof(dateIso));
+            char excludeFilepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 1]; // Added space for prefix plus "/"
+            snprintf(excludeFilepath, sizeof(excludeFilepath), "%s/%s", ENERGY_CSV_PREFIX, dateIso);
+            
+            LOG_DEBUG("Migrating the CSV files, excluding prefix of %s", excludeFilepath);
+            migrateCsvToGzip(ENERGY_CSV_PREFIX, excludeFilepath);
+        }
 
         _hourlyCsvSaveTaskShouldRun = true;
         while (_hourlyCsvSaveTaskShouldRun) {
