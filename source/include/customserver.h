@@ -28,7 +28,7 @@
 
 #define MINIMUM_FREE_HEAP_OTA (10 * 1024) // Minimum free heap required for OTA updates
 #define SIZE_REPORT_UPDATE_OTA (128 * 1024) // Print progress every X bytes during OTA update
-#define OTA_TIMEOUT (1 * 60 * 1000) // Maximum time allowed for OTA process
+#define OTA_TIMEOUT (3 * 60 * 1000) // Maximum time allowed for OTA process
 #define OTA_TIMEOUT_TASK_NAME "ota_timeout_task"
 #define OTA_TIMEOUT_TASK_STACK_SIZE (6 * 1024) // Strangely, this seemed to be starved with 4 kB
 #define OTA_TIMEOUT_TASK_PRIORITY 2

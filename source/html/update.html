@@ -219,7 +219,7 @@
     <script src="/js/api-client.js"></script>
     <script>
         var file_size = 341760; // Default to ESP32 firmware size to avoid division by zero
-        const UPDATE_PROGRESS_INTERVAL = 500;
+        const UPDATE_PROGRESS_INTERVAL = 2000; // Lower values than 2000ms may overload the device
 
         function getLoadingMessage() {
             return "Please wait, this operation usually takes 10-20 seconds.<br>In the meantime, did you know that...<br><br>" + getRandomFact();
@@ -323,7 +323,7 @@
                 document.getElementById('loading-message').innerHTML = getLoadingMessage();
 
                 // Start progress tracking
-                setTimeout(updateProgress, 1000);
+                setTimeout(updateProgress, 2000);
 
                 fetch('/api/v1/ota/upload', {
                     method: 'POST',

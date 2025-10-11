@@ -80,7 +80,7 @@ class OTAUpdater:
             print(f"⚠️ Error getting OTA status: {e}")
             return None
     
-    def monitor_ota_progress(self, poll_interval=1, max_wait=120):
+    def monitor_ota_progress(self, poll_interval=2, max_wait=120):
         """Monitor OTA upload progress with visual progress bar and speed"""
         print("📊 Monitoring OTA progress...")
         
