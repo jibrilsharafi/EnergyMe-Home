@@ -11,14 +11,17 @@ Usage:
     python3 utils/s3_firmware_upload.py [options]
 
 Requirements:
-    pip install boto3 python-dotenv
+    pip install boto3
 
-AWS Credentials:
-    Create a .env file in the project root with:
-    AWS_ACCESS_KEY_ID=your_access_key
-    AWS_SECRET_ACCESS_KEY=your_secret_key
-    AWS_SESSION_TOKEN=your_session_token  # Optional for temporary credentials
-    AWS_REGION=us-east-1  # Optional, defaults to us-east-1
+AWS Authentication:
+    Uses AWS SSO profiles configured in ~/.aws/config
+    
+    Setup:
+    1. Configure SSO: aws configure sso
+    2. Login: aws sso login --profile <profile-name>
+    3. Run script: python3 utils/s3_firmware_upload.py --profile <profile-name>
+    
+    Default profile is 'default' if not specified.
 """
 
 import os
@@ -28,66 +31,40 @@ import json
 import argparse
 from pathlib import Path
 import boto3
-from botocore.exceptions import ClientError, NoCredentialsError
-from dotenv import load_dotenv
+from botocore.exceptions import ClientError
 from tempfile import NamedTemporaryFile
 
 class FirmwareUploader:
-    def __init__(self, bucket_name="energyme-home-firmware-updates", environment="esp32s3-dev"):
+    def __init__(self, bucket_name="energyme-home-firmware-updates", environment="esp32s3-dev", profile_name="default"):
         self.bucket_name = bucket_name
         self.environment = environment
+        self.profile_name = profile_name
         self.project_root = Path(__file__).parent.parent
         self.build_dir = self.project_root / ".pio" / "build" / environment
         self.constants_file = self.project_root / "include" / "constants.h"
         
-        # Load environment variables from .env file
-        env_file = self.project_root / ".env"
-        if env_file.exists():
-            load_dotenv(env_file)
-            print(f"Loaded environment variables from: {env_file}")
-        else:
-            print(f"WARNING: .env file not found at {env_file}")
-            print("Please create a .env file with your AWS credentials:")
-            print("AWS_ACCESS_KEY_ID=your_access_key")
-            print("AWS_SECRET_ACCESS_KEY=your_secret_key")
-            print("AWS_SESSION_TOKEN=your_session_token  # Optional for temporary credentials")
-            print("AWS_REGION=us-east-1  # Optional")
-        
-        # Initialize S3 client with credentials from environment
+        # Initialize S3 client with AWS SSO profile
         try:
-            # Get AWS credentials from environment variables
-            aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
-            aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-            aws_session_token = os.getenv('AWS_SESSION_TOKEN')  # Optional for temporary credentials
-            aws_region = os.getenv('AWS_REGION', 'us-east-1')  # Default to us-east-1
+            print(f"Using AWS SSO profile: {self.profile_name}")
             
-            if not aws_access_key_id or not aws_secret_access_key:
-                raise NoCredentialsError()
+            # Create a session with the specified profile
+            session = boto3.Session(profile_name=self.profile_name)
             
-            # Create S3 client with explicit credentials
-            session_kwargs = {
-                'aws_access_key_id': aws_access_key_id,
-                'aws_secret_access_key': aws_secret_access_key,
-                'region_name': aws_region
-            }
+            # Get region from session or use default
+            aws_region = session.region_name or 'us-east-1'
             
-            # Add session token if available (for temporary credentials)
-            if aws_session_token:
-                session_kwargs['aws_session_token'] = aws_session_token
-                print("Using temporary AWS credentials (with session token)")
-            else:
-                print("Using permanent AWS credentials")
+            # Create S3 client using the session
+            self.s3_client = session.client('s3')
+            print(f"✅ AWS S3 client initialized for region: {aws_region}")
             
-            self.s3_client = boto3.client('s3', **session_kwargs)
-            print(f"AWS S3 client initialized for region: {aws_region}")
-            
-        except NoCredentialsError:
-            print("ERROR: AWS credentials not found in .env file.")
-            print("Please create a .env file in the project root with:")
-            print("AWS_ACCESS_KEY_ID=your_access_key")
-            print("AWS_SECRET_ACCESS_KEY=your_secret_key")
-            print("AWS_SESSION_TOKEN=your_session_token  # Optional for temporary credentials")
-            print("AWS_REGION=us-east-1  # Optional")
+        except Exception as e:
+            print(f"ERROR: Failed to initialize AWS S3 client with profile '{self.profile_name}'")
+            print(f"Error details: {e}")
+            print("\nPlease ensure:")
+            print("1. AWS CLI is installed")
+            print("2. You have configured AWS SSO: aws configure sso")
+            print("3. You are logged in: aws sso login --profile {profile_name}")
+            print(f"4. Profile '{self.profile_name}' exists in ~/.aws/config")
             sys.exit(1)
     
     def verify_s3_access(self):
@@ -149,6 +126,16 @@ class FirmwareUploader:
         
         return True, required_files
     
+    def get_versioned_filename(self, base_filename, version):
+        """Generate version-specific filename (e.g., energyme_home_0.12.40.bin)"""
+        name, ext = base_filename.rsplit('.', 1)
+        # Convert firmware.bin -> energyme_home_VERSION.bin
+        if name == 'firmware':
+            return f"energyme_home_{version}.{ext}"
+        # Convert partitions.bin -> energyme_home_partitions_VERSION.bin
+        else:
+            return f"energyme_home_{name}_{version}.{ext}"
+    
     def upload_file_to_s3(self, local_path, s3_key):
         """Upload a file to S3"""
         try:
@@ -167,10 +154,12 @@ class FirmwareUploader:
             print(f"ERROR: File not found: {local_path}")
             return False
 
-    def upload_file_to_both_locations(self, local_path, version, filename):
-        """Upload a file to both version-specific and latest folders"""
-        version_key = f"{version}/{filename}"
-        latest_key = f"latest/{filename}"
+    def upload_file_to_both_locations(self, local_path, version, base_filename):
+        """Upload a file to both version-specific and latest folders with versioned filenames"""
+        versioned_filename = self.get_versioned_filename(base_filename, version)
+        
+        version_key = f"{version}/{versioned_filename}"
+        latest_key = f"latest/{versioned_filename}"
         
         # Upload to version-specific folder
         if not self.upload_file_to_s3(local_path, version_key):
@@ -183,8 +172,9 @@ class FirmwareUploader:
         return True
     
     def create_ota_json(self, version):
-        """Create OTA update JSON document"""
-        firmware_url = f"${{aws:iot:s3-presigned-url:https://{self.bucket_name}.s3.amazonaws.com/{version}/firmware.bin}}"
+        """Create OTA update JSON document (version-specific)"""
+        versioned_firmware = self.get_versioned_filename('firmware.bin', version)
+        firmware_url = f"${{aws:iot:s3-presigned-url:https://{self.bucket_name}.s3.amazonaws.com/{version}/{versioned_firmware}}}"
         
         ota_json = {
             "operation": "ota_update",
@@ -197,8 +187,9 @@ class FirmwareUploader:
         return ota_json
 
     def create_latest_ota_json(self, version):
-        """Create OTA update JSON document for latest folder"""
-        firmware_url = f"${{aws:iot:s3-presigned-url:https://{self.bucket_name}.s3.amazonaws.com/latest/firmware.bin}}"
+        """Create OTA update JSON document for latest folder (CONSTANT FILENAME)"""
+        versioned_firmware = self.get_versioned_filename('firmware.bin', version)
+        firmware_url = f"${{aws:iot:s3-presigned-url:https://{self.bucket_name}.s3.amazonaws.com/latest/{versioned_firmware}}}"
         
         ota_json = {
             "operation": "ota_update",
@@ -247,21 +238,21 @@ class FirmwareUploader:
         if dry_run:
             print("DRY RUN - No files will be uploaded")
             # Show version-specific uploads
-            version_keys = [f"{version}/{name}" for name in build_files.keys()]
-            for key in version_keys:
-                print(f"Would upload: s3://{self.bucket_name}/{key}")
+            for name in build_files.keys():
+                versioned_name = self.get_versioned_filename(name, version)
+                print(f"Would upload: s3://{self.bucket_name}/{version}/{versioned_name}")
             
             # Show latest folder uploads
-            latest_keys = [f"latest/{name}" for name in build_files.keys()]
-            for key in latest_keys:
-                print(f"Would upload: s3://{self.bucket_name}/{key}")
+            for name in build_files.keys():
+                versioned_name = self.get_versioned_filename(name, version)
+                print(f"Would upload: s3://{self.bucket_name}/latest/{versioned_name}")
             
             ota_json = self.create_ota_json(version)
             latest_ota_json = self.create_latest_ota_json(version)
             print(f"\nWould create version-specific OTA JSON:")
             print(json.dumps(ota_json, indent=2))
             print(f"Would upload: s3://{self.bucket_name}/{version}/ota-job-document.json")
-            print(f"\nWould create latest OTA JSON:")
+            print(f"\nWould create latest OTA JSON (CONSTANT FILENAME):")
             print(json.dumps(latest_ota_json, indent=2))
             print(f"Would upload: s3://{self.bucket_name}/latest/ota-job-document.json")
             return True
@@ -324,12 +315,14 @@ class FirmwareUploader:
         print(f"\n✅ Successfully uploaded firmware version {version} to S3!")
         print(f"Version-specific S3 URLs:")
         for name in build_files.keys():
-            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{version}/{name}")
+            versioned_name = self.get_versioned_filename(name, version)
+            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{version}/{versioned_name}")
         print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{ota_json_key}")
         
         print(f"\nLatest S3 URLs:")
         for name in build_files.keys():
-            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/latest/{name}")
+            versioned_name = self.get_versioned_filename(name, version)
+            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/latest/{versioned_name}")
         print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{latest_ota_json_key}")
         
         return True
@@ -344,7 +337,8 @@ Examples:
   python3 utils/s3_firmware_upload.py                    # Upload with default settings
   python3 utils/s3_firmware_upload.py --dry-run          # Show what would be uploaded
   python3 utils/s3_firmware_upload.py --bucket my-bucket # Use custom bucket
-  python3 utils/s3_firmware_upload.py --env esp32s3-dev     # Use specific environment
+  python3 utils/s3_firmware_upload.py --env esp32s3-dev  # Use specific environment
+  python3 utils/s3_firmware_upload.py --profile my-sso   # Use specific AWS SSO profile
         """
     )
     
@@ -361,6 +355,12 @@ Examples:
     )
     
     parser.add_argument(
+        '--profile', '-p',
+        default='default',
+        help='AWS SSO profile name (default: default)'
+    )
+    
+    parser.add_argument(
         '--dry-run', '-n',
         action='store_true',
         help='Show what would be uploaded without actually uploading'
@@ -371,7 +371,8 @@ Examples:
     # Create uploader and run
     uploader = FirmwareUploader(
         bucket_name=args.bucket,
-        environment=args.environment
+        environment=args.environment,
+        profile_name=args.profile
     )
     
     success = uploader.upload_firmware(dry_run=args.dry_run)
