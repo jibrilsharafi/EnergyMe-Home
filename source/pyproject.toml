@@ -1,0 +1,12 @@
+[project]
+name = "energyme-home-utils"
+version = "0.1.0"
+description = "Utility scripts for EnergyMe-Home firmware development"
+requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.34.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+    "pymodbus>=3.6.0",
+    "urllib3>=2.0.0",
+]

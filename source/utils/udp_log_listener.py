@@ -80,13 +80,13 @@ class LogFilter:
         'error': 4,
         'fatal': 5
     }
-    
-    def __init__(self, min_level: str = 'verbose', exclude_files: list = None, exclude_functions: list = None):
+
+    def __init__(self, min_level: str = 'verbose', exclude_files: list | None = None, exclude_functions: list | None = None):
         self.min_level_value = self.LEVELS.get(min_level.lower(), 0)
         self.exclude_files = [f.lower() for f in (exclude_files or [])]
         self.exclude_functions = [f.lower() for f in (exclude_functions or [])]
     
-    def should_show(self, level: str, function: str = None) -> bool:
+    def should_show(self, level: str, function: str | None = None) -> bool:
         # Check log level first
         level_value = self.LEVELS.get(level.lower(), 0)
         if level_value < self.min_level_value:
@@ -377,10 +377,16 @@ class UDPLogListener:
 
     def _listen_loop(self):
         """Main listening loop"""
+        # Use a local reference to self.socket to satisfy static analyzers and avoid None attribute warnings
+        sock = self.socket
+        if sock is None:
+            print(f"{Colors.ERROR}Error: socket is not initialized, aborting listen loop{Colors.RESET}")
+            return
+
         message_count = 0
         while self.running:
             try:
-                data, addr = self.socket.recvfrom(1024)
+                data, addr = sock.recvfrom(1024)
                 message = data.decode('utf-8', errors='ignore')
                 message_count += 1
                 

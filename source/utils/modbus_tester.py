@@ -83,7 +83,7 @@ def load_registers_from_json(json_file_path: str) -> Dict[str, Dict[str, Any]]:
 
 def read_register(client: ModbusTcpClient, address: int, size: int, reg_type: str) -> Any:
     """Read a register and decode its value based on the type."""
-    result = client.read_holding_registers(address=address, count=size, slave=1)
+    result = client.read_holding_registers(address=address, count=size, device_id=1)
     if not result.isError():
         # Map string types to client's DATATYPE enum
         type_mapping = get_datatype_mapping(client)

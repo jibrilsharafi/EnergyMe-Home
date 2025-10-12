@@ -33,7 +33,7 @@ from dotenv import load_dotenv
 from tempfile import NamedTemporaryFile
 
 class FirmwareUploader:
-    def __init__(self, bucket_name="energyme-home-firmware-updates", environment="esp32dev"):
+    def __init__(self, bucket_name="energyme-home-firmware-updates", environment="esp32s3-dev"):
         self.bucket_name = bucket_name
         self.environment = environment
         self.project_root = Path(__file__).parent.parent
@@ -123,7 +123,7 @@ class FirmwareUploader:
         if not all([major_match, minor_match, patch_match]):
             raise ValueError("Could not parse version from constants.h")
         
-        version = f"{major_match.group(1)}.{minor_match.group(1)}.{patch_match.group(1)}"
+        version = f"{major_match.group(1)}.{minor_match.group(1)}.{patch_match.group(1)}" # type: ignore
         print(f"Parsed firmware version: {version}")
         return version
     
@@ -344,7 +344,7 @@ Examples:
   python3 utils/s3_firmware_upload.py                    # Upload with default settings
   python3 utils/s3_firmware_upload.py --dry-run          # Show what would be uploaded
   python3 utils/s3_firmware_upload.py --bucket my-bucket # Use custom bucket
-  python3 utils/s3_firmware_upload.py --env esp32dev     # Use specific environment
+  python3 utils/s3_firmware_upload.py --env esp32s3-dev     # Use specific environment
         """
     )
     
@@ -356,8 +356,8 @@ Examples:
     
     parser.add_argument(
         '--environment', '--env', '-e',
-        default='esp32dev',
-        help='PlatformIO environment (default: esp32dev)'
+        default='esp32s3-dev',
+        help='PlatformIO environment (default: esp32s3-dev)'
     )
     
     parser.add_argument(
