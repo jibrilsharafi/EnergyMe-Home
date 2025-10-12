@@ -19,9 +19,8 @@ import base64
 import requests
 from requests.auth import HTTPDigestAuth
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import os
-import tempfile
 import hashlib
 
 
@@ -31,7 +30,6 @@ class CrashDumpAnalyzer:
         self.base_url = f"http://{device_ip}"
         self.chunk_size = chunk_size
         self.session = requests.Session()
-        self.session.timeout = 30
         
         # Set up authentication if provided
         if username and password:
