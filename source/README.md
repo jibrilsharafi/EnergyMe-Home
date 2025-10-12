@@ -173,6 +173,8 @@ Monitored tasks: MQTT clients, web server, ADE7953 operations, crash monitor, LE
 **Performance:**
 
 - Update rates: Web (1s), MQTT (5-60s configurable), Modbus TCP (on demand), InfluxDB (batched, configurable)
+- **Modbus TCP**: ~200 polls/sec, ~5ms avg response, 100% reliability (1000 consecutive reads). All ~200 registers are readable in ~1s.
+- **REST API**: ~150ms avg response across 30+ endpoints, 100% success rate (300 requests)
 
 ## API & Integration
 
