@@ -1873,6 +1873,18 @@ namespace Mqtt
             chunkIndex++;
         }
 
+        // Publish a final message to indicate completion
+        SpiRamAllocator allocatorFinal;
+        JsonDocument docFinal(&allocatorFinal);
+        docFinal["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        docFinal["crashId"] = crashId;
+        docFinal["messageType"] = "crashComplete";
+
+        if (!_publishJsonStreaming(docFinal, _mqttTopicCrash)) {
+            LOG_ERROR("Failed to publish crash completion message");
+            return false;
+        }
+
         _publishMqtt.crash = false;
         
         // Clear core dump after successful transmission
