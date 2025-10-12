@@ -17,6 +17,8 @@
 #include <nvs.h> // For low-level NVS statistics
 #include <nvs_flash.h> // For erasing ALL the NVS
 #include <esp_ota_ops.h>
+#include "esp_efuse.h"
+#include "esp_efuse_table.h"
 #include <ESP32-targz.h>
 
 #include "binaries.h"
@@ -101,6 +103,7 @@ inline float roundToDecimals(float value, uint8_t decimals = 3) {
 
 // Device identification
 void getDeviceId(char* deviceId, size_t maxLength);
+bool readEfuseProvisioningData(EfuseProvisioningData& data);
 
 // System information and monitoring
 void populateSystemStaticInfo(SystemStaticInfo& info);

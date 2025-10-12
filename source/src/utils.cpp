@@ -962,6 +962,40 @@ void getDeviceId(char* deviceId, size_t maxLength) {
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
+bool readEfuseProvisioningData(EfuseProvisioningData& data) {
+    // Read 32 bytes from BLOCK_USR_DATA (USER_DATA eFuse block)
+    uint8_t efuseData[32];
+    
+    #include <esp_efuse.h>
+    
+    // Read the user data block
+    esp_err_t err = esp_efuse_read_field_blob(ESP_EFUSE_USER_DATA, efuseData, sizeof(efuseData) * 8);
+    
+    if (err != ESP_OK) {
+        LOG_DEBUG("Failed to read eFuse user data: %s", esp_err_to_name(err));
+        data.isProvisioned = false;
+        return false;
+    }
+    
+    // Check provisioning flag at byte 0
+    if (efuseData[0] != 0x01) {
+        LOG_DEBUG("Device not provisioned (flag: 0x%02X)", efuseData[0]);
+        data.isProvisioned = false;
+        return false;
+    }
+    
+    // Parse data structure (matching Python script format)
+    data.isProvisioned = true;
+    data.serial = *((uint32_t*)&efuseData[4]);           // Bytes 4-7: Serial (little-endian)
+    data.manufacturingDate = *((uint64_t*)&efuseData[8]); // Bytes 8-15: Manufacturing date (little-endian)
+    data.hardwareVersion = *((uint16_t*)&efuseData[16]);  // Bytes 16-17: Hardware version (little-endian)
+    
+    LOG_DEBUG("eFuse provisioning data read: serial=0x%08X, mfgDate=%llu, hwVer=%u", 
+              data.serial, data.manufacturingDate, data.hardwareVersion);
+    
+    return true;
+}
+
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier) {
     if (attempt == 0) return 0;
     
@@ -1175,7 +1209,7 @@ void migrateCsvToGzip(const char* dirPath, const char* excludePrefix) {
     LOG_DEBUG("Starting CSV -> gzip migration in %s", dirPath);
 
     if (!LittleFS.exists(dirPath)) {
-        LOG_INFO("Energy folder not present, nothing to migrate");
+        LOG_DEBUG("Energy folder not present, nothing to migrate");
         return;
     }
 

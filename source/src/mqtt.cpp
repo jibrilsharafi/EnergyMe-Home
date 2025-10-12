@@ -1408,6 +1408,14 @@ namespace Mqtt
         doc["sketchMD5"] = ESP.getSketchMD5();
         doc["chipId"] = ESP.getEfuseMac();
 
+        // Read eFuse provisioning data if available
+        EfuseProvisioningData efuseData;
+        if (readEfuseProvisioningData(efuseData)) {
+            doc["serialNumber"] = efuseData.serial;
+            doc["manufacturingDate"] = efuseData.manufacturingDate;
+            doc["hardwareVersion"] = efuseData.hardwareVersion;
+        }
+
         return _publishJsonStreaming(doc, _mqttTopicProvisioningRequest);
     }
 
