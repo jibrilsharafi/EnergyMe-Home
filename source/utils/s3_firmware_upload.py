@@ -136,6 +136,17 @@ class FirmwareUploader:
         else:
             return f"energyme_home_{name}_{version}.{ext}"
     
+    def get_s3_folder_path(self, version_or_latest):
+        """Get S3 folder path with environment prefix
+        
+        Args:
+            version_or_latest: Either a version string (e.g., "0.12.40") or "latest"
+        
+        Returns:
+            S3 folder path (e.g., "esp32s3-dev/0.12.40" or "esp32s3-dev/latest")
+        """
+        return f"{self.environment}/{version_or_latest}"
+    
     def upload_file_to_s3(self, local_path, s3_key):
         """Upload a file to S3"""
         try:
@@ -158,8 +169,8 @@ class FirmwareUploader:
         """Upload a file to both version-specific and latest folders with versioned filenames"""
         versioned_filename = self.get_versioned_filename(base_filename, version)
         
-        version_key = f"{version}/{versioned_filename}"
-        latest_key = f"latest/{versioned_filename}"
+        version_key = f"{self.get_s3_folder_path(version)}/{versioned_filename}"
+        latest_key = f"{self.get_s3_folder_path('latest')}/{versioned_filename}"
         
         # Upload to version-specific folder
         if not self.upload_file_to_s3(local_path, version_key):
@@ -174,7 +185,7 @@ class FirmwareUploader:
     def create_ota_json(self, version):
         """Create OTA update JSON document (version-specific)"""
         versioned_firmware = self.get_versioned_filename('firmware.bin', version)
-        firmware_url = f"${{aws:iot:s3-presigned-url:https://{self.bucket_name}.s3.amazonaws.com/{version}/{versioned_firmware}}}"
+        firmware_url = f"${{aws:iot:s3-presigned-url:https://{self.bucket_name}.s3.amazonaws.com/{self.get_s3_folder_path(version)}/{versioned_firmware}}}"
         
         ota_json = {
             "operation": "ota_update",
@@ -189,7 +200,7 @@ class FirmwareUploader:
     def create_latest_ota_json(self, version):
         """Create OTA update JSON document for latest folder (CONSTANT FILENAME)"""
         versioned_firmware = self.get_versioned_filename('firmware.bin', version)
-        firmware_url = f"${{aws:iot:s3-presigned-url:https://{self.bucket_name}.s3.amazonaws.com/latest/{versioned_firmware}}}"
+        firmware_url = f"${{aws:iot:s3-presigned-url:https://{self.bucket_name}.s3.amazonaws.com/{self.get_s3_folder_path('latest')}/{versioned_firmware}}}"
         
         ota_json = {
             "operation": "ota_update",
@@ -240,21 +251,21 @@ class FirmwareUploader:
             # Show version-specific uploads
             for name in build_files.keys():
                 versioned_name = self.get_versioned_filename(name, version)
-                print(f"Would upload: s3://{self.bucket_name}/{version}/{versioned_name}")
+                print(f"Would upload: s3://{self.bucket_name}/{self.get_s3_folder_path(version)}/{versioned_name}")
             
             # Show latest folder uploads
             for name in build_files.keys():
                 versioned_name = self.get_versioned_filename(name, version)
-                print(f"Would upload: s3://{self.bucket_name}/latest/{versioned_name}")
+                print(f"Would upload: s3://{self.bucket_name}/{self.get_s3_folder_path('latest')}/{versioned_name}")
             
             ota_json = self.create_ota_json(version)
             latest_ota_json = self.create_latest_ota_json(version)
             print(f"\nWould create version-specific OTA JSON:")
             print(json.dumps(ota_json, indent=2))
-            print(f"Would upload: s3://{self.bucket_name}/{version}/ota-job-document.json")
+            print(f"Would upload: s3://{self.bucket_name}/{self.get_s3_folder_path(version)}/ota-job-document.json")
             print(f"\nWould create latest OTA JSON (CONSTANT FILENAME):")
             print(json.dumps(latest_ota_json, indent=2))
-            print(f"Would upload: s3://{self.bucket_name}/latest/ota-job-document.json")
+            print(f"Would upload: s3://{self.bucket_name}/{self.get_s3_folder_path('latest')}/ota-job-document.json")
             return True
         
         # Upload files to S3 (both version and latest folders)
@@ -276,7 +287,7 @@ class FirmwareUploader:
         print(json.dumps(latest_ota_json, indent=2))
         
         # Upload version-specific OTA JSON to S3
-        ota_json_key = f"{version}/ota-job-document.json"
+        ota_json_key = f"{self.get_s3_folder_path(version)}/ota-job-document.json"
         try:
             # Save JSON to a temporary file for upload
             with NamedTemporaryFile("w", delete=False) as tmp_json:
@@ -293,7 +304,7 @@ class FirmwareUploader:
             upload_success = False
         
         # Upload latest OTA JSON to S3
-        latest_ota_json_key = "latest/ota-job-document.json"
+        latest_ota_json_key = f"{self.get_s3_folder_path('latest')}/ota-job-document.json"
         try:
             # Save JSON to a temporary file for upload
             with NamedTemporaryFile("w", delete=False) as tmp_json:
@@ -316,13 +327,13 @@ class FirmwareUploader:
         print(f"Version-specific S3 URLs:")
         for name in build_files.keys():
             versioned_name = self.get_versioned_filename(name, version)
-            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{version}/{versioned_name}")
+            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{self.get_s3_folder_path(version)}/{versioned_name}")
         print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{ota_json_key}")
         
         print(f"\nLatest S3 URLs:")
         for name in build_files.keys():
             versioned_name = self.get_versioned_filename(name, version)
-            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/latest/{versioned_name}")
+            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{self.get_s3_folder_path('latest')}/{versioned_name}")
         print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{latest_ota_json_key}")
         
         return True
