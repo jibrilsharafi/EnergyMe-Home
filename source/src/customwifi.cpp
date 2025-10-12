@@ -8,6 +8,7 @@ namespace CustomWifi
   // Counters
   static uint64_t _lastReconnectAttempt = 0;
   static int32_t _reconnectAttempts = 0; // Increased every disconnection, reset on stable (few minutes) connection
+  static uint64_t _lastWifiConnectedMillis = 0; // Timestamp when WiFi was last fully connected (for lwIP stabilization)
 
   // WiFi event notification values for task communication
   static const uint32_t WIFI_EVENT_CONNECTED = 1;
@@ -73,8 +74,14 @@ namespace CustomWifi
 
   bool isFullyConnected() // Also check IP to ensure full connectivity
   {
-    // Check if WiFi is connected and has an IP address
-    return WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0);
+    // Check if WiFi is connected and has an IP address (it can happen that WiFi is connected but no IP assigned)
+    if (!WiFi.isConnected() || WiFi.localIP() == IPAddress(0, 0, 0, 0)) return false;
+
+    // Ensure lwIP network stack has had time to stabilize after connection
+    // This prevents DNS/UDP crashes when services try to connect too quickly
+    if (_lastWifiConnectedMillis > 0 && (millis64() - _lastWifiConnectedMillis) < WIFI_LWIP_STABILIZATION_DELAY) return false;
+
+    return true;
   }
 
   bool testConnectivity()
@@ -261,6 +268,7 @@ namespace CustomWifi
         case WIFI_EVENT_GOT_IP:
           LOG_DEBUG("WiFi got IP: %s", WiFi.localIP().toString().c_str());
           statistics.wifiConnection++; // It is here we know the wifi connection went through (and the one which is called on reconnections)
+          _lastWifiConnectedMillis = millis64(); // Track connection time for lwIP stabilization
           // Handle successful connection operations safely in task context
           _handleSuccessfulConnection();
           continue; // No further action needed
@@ -273,6 +281,7 @@ namespace CustomWifi
           statistics.wifiConnectionError++;
           Led::blinkBlueSlow(Led::PRIO_MEDIUM);
           LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
+          _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
 
           // Wait a bit for auto-reconnect (enabled by default) to work
           delay(WIFI_DISCONNECT_DELAY);
