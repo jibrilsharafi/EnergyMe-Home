@@ -529,7 +529,7 @@ def auth_status() -> str:
     try:
         response = requests.get(f"{get_base_url()}/api/v1/auth/status", timeout=5, auth=get_auth())
 
-        if response.headers.get('content-type','').startswith('application/json'):
+        if response.headers.get('content-type', '').startswith('application/json'):
             body = response.json()
         else:
             body = response.text
