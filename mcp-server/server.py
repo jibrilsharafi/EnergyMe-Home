@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Optional
 import yaml
 import requests
+from requests.auth import HTTPDigestAuth
 from mcp.server import Server
 from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
 import mcp.server.stdio
@@ -439,7 +440,7 @@ def get_endpoint_info(path: str, method: str) -> str:
 def get_auth() -> Optional[tuple]:
     """Get authentication credentials if configured."""
     if API_USERNAME and API_PASSWORD:
-        return (API_USERNAME, API_PASSWORD)
+        return HTTPDigestAuth(API_USERNAME, API_PASSWORD)
     return None
 
 
