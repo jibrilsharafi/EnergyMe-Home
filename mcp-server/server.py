@@ -13,7 +13,7 @@ import yaml
 import requests
 from requests.auth import HTTPDigestAuth
 from mcp.server import Server
-from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
+from mcp.types import Tool, TextContent
 import mcp.server.stdio
 
 # Configuration
@@ -437,7 +437,7 @@ def get_endpoint_info(path: str, method: str) -> str:
 # Implementation Functions - Priority 3: Dynamic Information
 # ============================================================================
 
-def get_auth() -> Optional[tuple]:
+def get_auth() -> Optional[HTTPDigestAuth]:
     """Get authentication credentials if configured."""
     if API_USERNAME and API_PASSWORD:
         return HTTPDigestAuth(API_USERNAME, API_PASSWORD)
