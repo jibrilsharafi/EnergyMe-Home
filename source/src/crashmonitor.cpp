@@ -272,7 +272,7 @@ namespace CrashMonitor
         
         // === Phase 3: Auto-disable after stable operation ===
         if (_safeModeActive) {
-            LOG_INFO("Safe mode auto-disabled after %lu minutes; ADE7953 monitoring will re-enable on next restart", SAFE_MODE_DISABLE_TIMEOUT / (60 * 1000));
+            LOG_INFO("Safe mode auto-disabled after %lu minutes; safe mode will be disabled on next restart", SAFE_MODE_DISABLE_TIMEOUT / (60 * 1000));
             
             _safeModeActive = false;
             _quickRestartCount = 0;
