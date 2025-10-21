@@ -141,7 +141,7 @@ inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize)
 TaskInfo getMaintenanceTaskInfo();
 
 // System restart and maintenance
-void setRestartSystem(const char* reason, bool factoryReset = false);
+bool setRestartSystem(const char* reason, bool factoryReset = false);
 
 // JSON utilities
 bool safeSerializeJson(JsonDocument &jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);
