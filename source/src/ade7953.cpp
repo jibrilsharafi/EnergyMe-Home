@@ -2887,6 +2887,17 @@ namespace Ade7953
             return;
         }
 
+        // Progressive warning system
+        const uint32_t warningThreshold = ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT / 2;
+        const uint32_t almostThreshold = ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT - 5;
+        if (_criticalFailureCount == warningThreshold) { // Not >= since we want to log this only once
+            LOG_WARNING("Critical failures reaching concerning level (%lu/%lu) - missed ADE7953 interrupts", 
+                _criticalFailureCount, ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT);
+        } else if (_criticalFailureCount == almostThreshold) { // Not >= since we want to log this only once
+            LOG_WARNING("Critical failures approaching reboot threshold (%lu/%lu) - system stability at risk", 
+                _criticalFailureCount, ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT);
+        }
+
         if (_criticalFailureCount >= ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT) {
             LOG_FATAL("Too many critical failures (%lu) - missed ADE7953 interrupts. Rebooting device for recovery", _criticalFailureCount);
             setRestartSystem("Too many missed ADE7953 interrupts - system recovery required");
