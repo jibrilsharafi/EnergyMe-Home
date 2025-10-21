@@ -141,6 +141,23 @@ async def list_tools() -> list[Tool]:
                 "properties": {},
             },
         ),
+        # Diagnostics
+        Tool(
+            name="get_server_config",
+            description="Get basic MCP server configuration (base URL and whether credentials are set). Passwords are never returned.",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
+        Tool(
+            name="auth_status",
+            description="Check authentication status on the device (calls /api/v1/auth/status)",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
     ]
 
 
@@ -183,6 +200,13 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     
     elif name == "get_logs":
         return [TextContent(type="text", text=get_logs())]
+    
+    # Diagnostics
+    elif name == "get_server_config":
+        return [TextContent(type="text", text=get_server_config())]
+    
+    elif name == "auth_status":
+        return [TextContent(type="text", text=auth_status())]
     
     else:
         raise ValueError(f"Unknown tool: {name}")
@@ -451,6 +475,42 @@ def get_logs() -> str:
         else:
             return f"Error: HTTP {response.status_code}"
     
+    except requests.exceptions.RequestException as e:
+        return f"Error: {str(e)}"
+
+
+# ============================================================================
+# Diagnostics helpers
+# ============================================================================
+
+def get_server_config() -> str:
+    """Return basic server configuration state for troubleshooting."""
+    try:
+        info = {
+            "base_url": BASE_URL,
+            "has_username": bool(API_USERNAME),
+            "has_password": bool(API_PASSWORD),
+            "project_root": str(PROJECT_ROOT),
+            "swagger_path": str(SWAGGER_PATH),
+        }
+        return json.dumps(info, indent=2)
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def auth_status() -> str:
+    """Check authentication status endpoint on device."""
+    try:
+        response = requests.get(f"{BASE_URL}/api/v1/auth/status", timeout=5, auth=get_auth())
+        if response.headers.get('content-type','').startswith('application/json'):
+            body = response.json()
+        else:
+            body = response.text
+        result = {
+            "status_code": response.status_code,
+            "body": body,
+        }
+        return json.dumps(result, indent=2)
     except requests.exceptions.RequestException as e:
         return f"Error: {str(e)}"
 
