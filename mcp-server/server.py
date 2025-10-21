@@ -19,6 +19,8 @@ import mcp.server.stdio
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 SWAGGER_PATH = PROJECT_ROOT / "source" / "resources" / "swagger.yaml"
 BASE_URL = os.getenv("ENERGYME_BASE_URL", "http://192.168.2.75")
+API_USERNAME = os.getenv("ENERGYME_USERNAME", "")
+API_PASSWORD = os.getenv("ENERGYME_PASSWORD", "")
 
 # Initialize MCP server
 app = Server("energyme-home-mcp")
@@ -396,10 +398,17 @@ def get_endpoint_info(path: str, method: str) -> str:
 # Implementation Functions - Priority 3: Dynamic Information
 # ============================================================================
 
+def get_auth() -> Optional[tuple]:
+    """Get authentication credentials if configured."""
+    if API_USERNAME and API_PASSWORD:
+        return (API_USERNAME, API_PASSWORD)
+    return None
+
+
 def check_health() -> str:
     """Check device health."""
     try:
-        response = requests.get(f"{BASE_URL}/api/v1/health", timeout=5)
+        response = requests.get(f"{BASE_URL}/api/v1/health", timeout=5, auth=get_auth())
         
         result = {
             "online": response.status_code == 200,
@@ -421,7 +430,7 @@ def check_health() -> str:
 def get_system_info() -> str:
     """Get system information from device."""
     try:
-        response = requests.get(f"{BASE_URL}/api/v1/system/info", timeout=5)
+        response = requests.get(f"{BASE_URL}/api/v1/system/info", timeout=5, auth=get_auth())
         
         if response.status_code == 200:
             return json.dumps(response.json(), indent=2)
@@ -435,7 +444,7 @@ def get_system_info() -> str:
 def get_logs() -> str:
     """Get logs from device."""
     try:
-        response = requests.get(f"{BASE_URL}/api/v1/logs", timeout=10)
+        response = requests.get(f"{BASE_URL}/api/v1/logs", timeout=10, auth=get_auth())
         
         if response.status_code == 200:
             return json.dumps(response.json(), indent=2)

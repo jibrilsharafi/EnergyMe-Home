@@ -25,10 +25,49 @@ python server.py
 
 ### Configuration
 
-Set the device base URL (default: http://192.168.2.75):
+### Environment Variables
+
+- `ENERGYME_BASE_URL` - Device IP address (default: `http://192.168.2.75`)
+- `ENERGYME_USERNAME` - API username (optional, for authenticated endpoints)
+- `ENERGYME_PASSWORD` - API password (optional, for authenticated endpoints)
+
+### VS Code / Claude Desktop Configuration
+
+Add this to your MCP settings file:
+
+**Windows:** `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
+
+**Mac/Linux:** `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+
+```json
+{
+  "mcpServers": {
+    "energyme-home": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "C:\\Users\\jibri\\Documents\\GitHub\\EnergyMe-Home\\mcp-server",
+        "run",
+        "server.py"
+      ],
+      "env": {
+        "ENERGYME_BASE_URL": "http://192.168.2.75",
+        "ENERGYME_USERNAME": "your-username",
+        "ENERGYME_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+**Note:** Adjust the path in `--directory` to match your installation location.
+
+### Testing the Server
+
+You can test individual functions using the MCP inspector:
 
 ```bash
-export ENERGYME_BASE_URL=http://your-device-ip
+npx @modelcontextprotocol/inspector uv --directory . run server.py
 ```
 
 ## Available Tools
