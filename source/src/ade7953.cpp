@@ -2868,7 +2868,11 @@ namespace Ade7953
     }
 
     void _recordCriticalFailure() {
-        LOG_DEBUG("Recording critical failure for ADE7953 missed interrupt");
+        LOG_DEBUG("Recording critical failure for ADE7953 missed interrupt. Current RMS values: %ld voltage, %ld current (ch A) - %ld current (ch B)", 
+            _readVoltageRms(), 
+            _readCurrentRms(Ade7953Channel::A),
+            _readCurrentRms(Ade7953Channel::B)
+        );
 
         if (_criticalFailureCount == 0) _firstCriticalFailureTime = millis64();
 
