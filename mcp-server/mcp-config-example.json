@@ -1,16 +1,15 @@
 {
-  "mcpServers": {
-    "energyme-home": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "C:\\Users\\jibri\\Documents\\GitHub\\EnergyMe-Home\\mcp-server",
-        "run",
-        "server.py"
-      ],
-      "env": {
-        "ENERGYME_BASE_URL": "http://192.168.2.75"
-      }
-    }
+  "type": "stdio",
+  "command": "uv",
+  "args": [
+    "--directory",
+    "C:\\Users\\jibri\\Documents\\GitHub\\EnergyMe-Home\\mcp-server",
+    "run",
+    "server.py"
+  ],
+  "env": {
+    "ENERGYME_BASE_URL": "${input:energyme_base_url}",
+    "ENERGYME_USERNAME": "${input:energyme_username}",
+    "ENERGYME_PASSWORD": "${input:energyme_password}"
   }
 }

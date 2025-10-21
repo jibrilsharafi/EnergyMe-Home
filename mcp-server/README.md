@@ -28,35 +28,34 @@ python server.py
 ### Environment Variables
 
 - `ENERGYME_BASE_URL` - Device IP address (default: `http://192.168.2.75`)
-- `ENERGYME_USERNAME` - API username (optional, for authenticated endpoints)
-- `ENERGYME_PASSWORD` - API password (optional, for authenticated endpoints)
+- `ENERGYME_USERNAME` - API username
+- `ENERGYME_PASSWORD` - API password
 
 ### VS Code / Claude Desktop Configuration
 
 Add this to your MCP settings file:
 
-**Windows:** `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
-
-**Mac/Linux:** `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+**Windows:** `%APPDATA%\Code\User\mcp.json`
 
 ```json
 {
-  "mcpServers": {
-    "energyme-home": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "C:\\Users\\jibri\\Documents\\GitHub\\EnergyMe-Home\\mcp-server",
-        "run",
-        "server.py"
-      ],
-      "env": {
-        "ENERGYME_BASE_URL": "http://192.168.2.75",
-        "ENERGYME_USERNAME": "your-username",
-        "ENERGYME_PASSWORD": "your-password"
-      }
-    }
+ "servers": {
+  "EnergyMe Home": {
+   "type": "stdio",
+   "command": "uv",
+   "args": [
+    "--directory",
+    "C:\\Users\\YOUR-USER\\Documents\\GitHub\\EnergyMe-Home\\mcp-server",
+    "run",
+    "server.py"
+   ],
+   "env": {
+    "ENERGYME_BASE_URL": "${input:energyme_base_url}",
+    "ENERGYME_USERNAME": "${input:energyme_username}",
+    "ENERGYME_PASSWORD": "${input:energyme_password}"
+   }
   }
+ }
 }
 ```
 
