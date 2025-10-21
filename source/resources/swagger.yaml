@@ -360,7 +360,7 @@ paths:
                   message:
                     type: string
                     description: Human-readable message about safe mode status
-                    example: "Device in safe mode - ADE7953 disabled to prevent restart loops"
+                    example: "Device in safe mode - restart protection active to prevent loops"
                   action:
                     type: string
                     description: Recommended action to recover from safe mode
