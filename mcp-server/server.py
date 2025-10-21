@@ -486,10 +486,20 @@ def get_logs() -> str:
     try:
         response = requests.get(f"{get_base_url()}/api/v1/logs", timeout=10, auth=get_auth())
 
-        if response.status_code == 200:
-            return json.dumps(response.json(), indent=2)
-        else:
+        if response.status_code != 200:
             return f"Error: HTTP {response.status_code}"
+
+        content_type = response.headers.get('content-type', '')
+        # If the server returns JSON, pretty-print it. Otherwise return raw text.
+        if 'application/json' in content_type.lower():
+            try:
+                return json.dumps(response.json(), indent=2)
+            except ValueError:
+                # Malformed JSON — fall back to raw text
+                return response.text
+        else:
+            # Logs are typically plain text — return as-is
+            return response.text
 
     except requests.exceptions.RequestException as e:
         return f"Error: {str(e)}"
