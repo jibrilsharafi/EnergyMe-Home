@@ -18,9 +18,23 @@ import mcp.server.stdio
 # Configuration
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 SWAGGER_PATH = PROJECT_ROOT / "source" / "resources" / "swagger.yaml"
-BASE_URL = os.getenv("ENERGYME_BASE_URL", "http://192.168.2.75")
 API_USERNAME = os.getenv("ENERGYME_USERNAME", "")
 API_PASSWORD = os.getenv("ENERGYME_PASSWORD", "")
+
+
+def get_base_url() -> str:
+    """Read and normalize ENERGYME_BASE_URL from environment.
+
+    Ensures a URL scheme (http://) is present so callers don't need to.
+    """
+    raw = os.getenv("ENERGYME_BASE_URL", "http://192.168.2.75")
+    raw = raw.strip()
+    if not raw:
+        return "http://192.168.2.75"
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    # If user provided an IP or host without scheme, default to http
+    return "http://" + raw
 
 # Initialize MCP server
 app = Server("energyme-home-mcp")
@@ -432,12 +446,13 @@ def get_auth() -> Optional[tuple]:
 def check_health() -> str:
     """Check device health."""
     try:
-        response = requests.get(f"{BASE_URL}/api/v1/health", timeout=5, auth=get_auth())
+        base = get_base_url()
+        response = requests.get(f"{base}/api/v1/health", timeout=5, auth=get_auth())
         
         result = {
             "online": response.status_code == 200,
             "status_code": response.status_code,
-            "base_url": BASE_URL,
+            "base_url": base,
         }
         
         return json.dumps(result, indent=2)
@@ -446,7 +461,7 @@ def check_health() -> str:
         result = {
             "online": False,
             "error": str(e),
-            "base_url": BASE_URL,
+            "base_url": get_base_url(),
         }
         return json.dumps(result, indent=2)
 
@@ -454,13 +469,13 @@ def check_health() -> str:
 def get_system_info() -> str:
     """Get system information from device."""
     try:
-        response = requests.get(f"{BASE_URL}/api/v1/system/info", timeout=5, auth=get_auth())
-        
+        response = requests.get(f"{get_base_url()}/api/v1/system/info", timeout=5, auth=get_auth())
+
         if response.status_code == 200:
             return json.dumps(response.json(), indent=2)
         else:
             return f"Error: HTTP {response.status_code}"
-    
+
     except requests.exceptions.RequestException as e:
         return f"Error: {str(e)}"
 
@@ -468,13 +483,13 @@ def get_system_info() -> str:
 def get_logs() -> str:
     """Get logs from device."""
     try:
-        response = requests.get(f"{BASE_URL}/api/v1/logs", timeout=10, auth=get_auth())
-        
+        response = requests.get(f"{get_base_url()}/api/v1/logs", timeout=10, auth=get_auth())
+
         if response.status_code == 200:
             return json.dumps(response.json(), indent=2)
         else:
             return f"Error: HTTP {response.status_code}"
-    
+
     except requests.exceptions.RequestException as e:
         return f"Error: {str(e)}"
 
@@ -487,7 +502,7 @@ def get_server_config() -> str:
     """Return basic server configuration state for troubleshooting."""
     try:
         info = {
-            "base_url": BASE_URL,
+            "base_url": get_base_url(),
             "has_username": bool(API_USERNAME),
             "has_password": bool(API_PASSWORD),
             "project_root": str(PROJECT_ROOT),
@@ -501,7 +516,8 @@ def get_server_config() -> str:
 def auth_status() -> str:
     """Check authentication status endpoint on device."""
     try:
-        response = requests.get(f"{BASE_URL}/api/v1/auth/status", timeout=5, auth=get_auth())
+        response = requests.get(f"{get_base_url()}/api/v1/auth/status", timeout=5, auth=get_auth())
+
         if response.headers.get('content-type','').startswith('application/json'):
             body = response.json()
         else:
@@ -511,6 +527,7 @@ def auth_status() -> str:
             "body": body,
         }
         return json.dumps(result, indent=2)
+
     except requests.exceptions.RequestException as e:
         return f"Error: {str(e)}"
 
