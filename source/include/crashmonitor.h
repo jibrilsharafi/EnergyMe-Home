@@ -18,7 +18,7 @@
 #ifdef ENV_DEV
 #define MAX_CRASH_COUNT 10     // Higher limits in development
 #define MAX_RESET_COUNT 30
-#define MAX_QUICK_RESTARTS 20
+#define MAX_QUICK_RESTARTS 30
 #else
 #define MAX_CRASH_COUNT 3      // Production defaults
 #define MAX_RESET_COUNT 10

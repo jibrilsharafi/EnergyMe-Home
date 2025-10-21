@@ -1275,8 +1275,11 @@ namespace CustomServer
                   {
             if (!_validateRequest(request, "POST")) return;
 
-            _sendSuccessResponse(request, "System restart initiated");
-            setRestartSystem("System restart requested via API"); });
+            if (setRestartSystem("System restart requested via API")) {
+                _sendSuccessResponse(request, "System restart initiated");
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_LOCKED, "Failed to initiate restart. Another restart may already be in progress or restart is currently locked");
+            } });
 
         // Factory reset
         server.on("/api/v1/system/factory-reset", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -1296,8 +1299,8 @@ namespace CustomServer
             doc["canRestartNow"] = CrashMonitor::canRestartNow();
             doc["minimumUptimeRemainingMs"] = CrashMonitor::getMinimumUptimeRemaining();
             if (CrashMonitor::isInSafeMode()) {
-                doc["message"] = "Device in safe mode - ADE7953 disabled to prevent restart loops";
-                doc["action"] = "Perform OTA update to fix underlying issue";
+                doc["message"] = "Device in safe mode - restart protection active to prevent loops";
+                doc["action"] = "Wait for minimum uptime or perform OTA update to fix underlying issue";
             }
 
             _sendJsonResponse(request, doc); });
@@ -1309,7 +1312,7 @@ namespace CustomServer
 
             if (CrashMonitor::isInSafeMode()) {
                 CrashMonitor::clearSafeModeCounters();
-                _sendSuccessResponse(request, "Safe mode cleared. Device will restart to enable ADE7953.");
+                _sendSuccessResponse(request, "Safe mode cleared. Device will restart.");
                 setRestartSystem("Safe mode manually cleared via API");
             } else {
                 _sendSuccessResponse(request, "Device is not in safe mode");

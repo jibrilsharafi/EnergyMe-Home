@@ -115,14 +115,10 @@ namespace CrashMonitor
             if (_quickRestartCount >= MAX_QUICK_RESTARTS) {
                 _safeModeActive = true;
                 LOG_FATAL(
-                    "Too many quick restarts (%lu)! ENTERING SAFE MODE for %lu seconds. ADE7953 monitoring disabled; WiFi/OTA remain active for recovery",
-                    _quickRestartCount, SAFE_MODE_MIN_UPTIME / 1000
+                    "SAFE MODE ACTIVATED: %lu quick restarts detected (threshold: %lu). "
+                    "Restart attempts blocked for %lu min. All systems operational.",
+                    _quickRestartCount, (uint32_t)MAX_QUICK_RESTARTS, SAFE_MODE_MIN_UPTIME / (60 * 1000)
                 );
-                
-                // Calculate exponential backoff delay to give user time to react
-                uint32_t delayMs = min((uint32_t)(_quickRestartCount * 5000), (uint32_t)30000); // 5s per restart, max 30s
-                LOG_WARNING("Applying boot delay of %lu ms to prevent rapid restart loops", delayMs);
-                delay(delayMs);
             }
         } else {
             // Not a quick restart - reset quick restart counter (but keep crash/reset counters)
@@ -168,8 +164,8 @@ namespace CrashMonitor
         );
         
         if (_safeModeActive) {
-            LOG_WARNING("Safe mode active - ADE7953 disabled, minimum uptime: %lu sec; WiFi/OTA available for recovery; auto-clear after %lu min stable",
-                        SAFE_MODE_MIN_UPTIME / 1000, SAFE_MODE_DISABLE_TIMEOUT / (60 * 1000));
+            LOG_INFO("Safe mode monitoring started - restarts blocked for %lu min, auto-clears after %lu min stable",
+                        SAFE_MODE_MIN_UPTIME / (60 * 1000), SAFE_MODE_DISABLE_TIMEOUT / (60 * 1000));
             // Create safe mode monitoring task
             LOG_DEBUG("Starting safe mode task with %d bytes stack", CRASH_RESET_TASK_STACK_SIZE);
             

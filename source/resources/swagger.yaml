@@ -311,6 +311,15 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Success'
+        '423':
+          description: Restart locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Failed to initiate restart. Another restart may already be in progress or restart is currently locked"
 
   /api/v1/system/factory-reset:
     post:

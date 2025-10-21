@@ -79,6 +79,7 @@ void setup()
   LOG_INFO("Guess who's back, back again! EnergyMe - Home is starting up...");
   LOG_INFO("Build version: %s (MD5: %s) | Build date: %s %s | Device ID: %s", FIRMWARE_BUILD_VERSION, ESP.getSketchMD5().c_str(), FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
   
+  Led::setOrange(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up crash monitor...");
   CrashMonitor::begin();
   LOG_INFO("Crash monitor setup done");
@@ -98,26 +99,18 @@ void setup()
   ButtonHandler::begin(BUTTON_GPIO0_PIN);
   LOG_INFO("Button handler setup done");
 
-  // Check safe mode BEFORE starting ADE7953 to prevent restart loops
-  if (CrashMonitor::isInSafeMode()) {
-    LOG_FATAL(
-      "SAFE MODE: ADE7953 disabled due to crash loop. WiFi/Web/OTA active for recovery. "
-      "Auto-disables after %lu min stable operation", SAFE_MODE_DISABLE_TIMEOUT / (60 * 1000)
-    );
-  } else {
-    LOG_DEBUG("Setting up ADE7953...");
-    if (
-      Ade7953::begin(
-        ADE7953_SS_PIN,
-        ADE7953_SCK_PIN,
-        ADE7953_MISO_PIN,
-        ADE7953_MOSI_PIN,
-        ADE7953_RESET_PIN,
-        ADE7953_INTERRUPT_PIN
-      )
-    ) LOG_INFO("ADE7953 setup done");
-    else LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
-  }
+  LOG_DEBUG("Setting up ADE7953...");
+  if (
+    Ade7953::begin(
+      ADE7953_SS_PIN,
+      ADE7953_SCK_PIN,
+      ADE7953_MISO_PIN,
+      ADE7953_MOSI_PIN,
+      ADE7953_RESET_PIN,
+      ADE7953_INTERRUPT_PIN
+    )
+  ) LOG_INFO("ADE7953 setup done");
+  else LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
 
   Led::setBlue(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up WiFi...");
@@ -165,9 +158,9 @@ void setup()
   startMaintenanceTask();
   LOG_INFO("Maintenance task started");
 
-  // Visual indicator for safe mode
+  // Visual indicator for safe mode (restart protection active)
   if (CrashMonitor::isInSafeMode()) {
-    Led::setPurple(Led::PRIO_CRITICAL); // Purple = safe mode
+    Led::setPurple(Led::PRIO_CRITICAL); // Purple = safe mode (restart protection)
   } else {
     Led::setGreen(Led::PRIO_NORMAL);
   }

@@ -50,18 +50,17 @@ The system implements a hierarchical protection against restart loops to ensure 
 
 #### Tier 1: Safe Mode (Rapid Loop Protection)
 
-- **Trigger**: 5+ restarts within 60 seconds each
+- **Trigger**: 5+ restarts within 60 seconds each (20+ in dev mode)
 - **Action**:
-  - Disables ADE7953 monitoring (prevents hardware-related restart loops)
-  - Enforces 5-minute minimum uptime before allowing restarts
-  - Applies exponential backoff delays (5s increments, max 30s)
-  - **Keeps WiFi, OTA, and web interface active** for remote recovery
+  - Blocks all restart attempts for 5-minute minimum uptime
+  - **All systems remain operational**: WiFi, OTA, web interface, ADE7953, APIs
+  - Visual indicator: Purple LED
 - **Recovery**: Auto-clears after 30 minutes of stable operation or next restart > 60s uptime
-- **Use Case**: Phase-to-phase wiring causing ADE7953 interrupt failures
+- **Use Case**: Any rapid restart loop condition (software bugs, config issues, etc.)
 
 #### Tier 2: Rollback/Factory Reset (Persistent Failure Recovery)
 
-- **Trigger**: 3+ consecutive crashes OR 10+ consecutive resets
+- **Trigger**: 3+ consecutive crashes OR 10+ consecutive resets (10/30 in dev mode)
 - **Action**:
   1. Attempts firmware rollback (if available, once per boot cycle)
   2. Performs factory reset if rollback unavailable or failed
@@ -70,7 +69,7 @@ The system implements a hierarchical protection against restart loops to ensure 
 
 #### How They Work Together
 
-- Safe mode activates first for rapid loops (prevents OTA lockout)
+- Safe mode activates first for rapid loops (prevents OTA lockout, keeps device accessible)
 - Crash/reset tracking continues in background
 - If failures persist in safe mode → triggers rollback/factory reset
 - Independent counter management (timing-based vs stability-based)
