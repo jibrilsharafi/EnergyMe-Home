@@ -36,7 +36,7 @@ class OTAUpdater:
             minor_match = re.search(r'#define FIRMWARE_BUILD_VERSION_MINOR "(\d+)"', content)
             patch_match = re.search(r'#define FIRMWARE_BUILD_VERSION_PATCH "(\d+)"', content)
             
-            if not all([major_match, minor_match, patch_match]):
+            if not major_match or not minor_match or not patch_match:
                 raise ValueError("Could not parse version from constants.h")
                 
             version = f"{major_match.group(1)}.{minor_match.group(1)}.{patch_match.group(1)}"
@@ -70,14 +70,15 @@ class OTAUpdater:
             print(f"❌ Error calculating SHA256: {e}")
             return None
     
-    def get_ota_status(self):
+    def get_ota_status(self, silent=False):
         """Get current OTA status"""
         try:
             response = self.session.get(f"{self.base_url}/api/v1/ota/status", timeout=10)
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"⚠️ Error getting OTA status: {e}")
+            if not silent:
+                print(f"⚠️ Error getting OTA status: {e}")
             return None
     
     def monitor_ota_progress(self, poll_interval=2, max_wait=120):
@@ -89,9 +90,10 @@ class OTAUpdater:
         last_size = 0
         last_time = start_time
         upload_start_time = None
+        bar_length = 25  # Initialize bar_length at the start
         
         while time.time() - start_time < max_wait:
-            status = self.get_ota_status()
+            status = self.get_ota_status(silent=True)
             if not status:
                 time.sleep(poll_interval)
                 continue
@@ -139,7 +141,6 @@ class OTAUpdater:
                     eta_text = "--"
                 
                 # Create progress bar
-                bar_length = 25  # Slightly shorter to make room for speed
                 filled_length = int(bar_length * progress // 100)
                 bar = '█' * filled_length + '░' * (bar_length - filled_length)
                 
@@ -187,7 +188,7 @@ class OTAUpdater:
     
     def wait_for_device_reboot(self, max_wait=60, check_interval=2):
         """Wait for device to reboot and come back online"""
-        print("🔄 Device is rebooting", end='', flush=True)
+        print("\n🔄 Device is rebooting", end='', flush=True)
         
         # Wait for device to go offline (it should be quick)
         start_time = time.time()
@@ -210,7 +211,7 @@ class OTAUpdater:
                     print(" 🟢 Device is back online!")
                     return True
             except:
-                pass  # Still offline
+                pass  # Still offline, expected during reboot
             
             print(".", end='', flush=True)
             time.sleep(check_interval)
@@ -237,6 +238,7 @@ class OTAUpdater:
             print(f"💾 Saved: {bin_dest}")
             
             # Copy .elf file with version and SHA256
+            elf_filename = None
             if elf_path and os.path.exists(elf_path):
                 elf_filename = f"energyme_home_{version.replace('.', '_')}_{sha256_hash[:8]}.elf"
                 elf_dest = release_dir / elf_filename
@@ -261,7 +263,7 @@ class OTAUpdater:
                 }
             }
             
-            if elf_path and os.path.exists(elf_path):
+            if elf_filename is not None:
                 metadata["files"]["debug"] = {
                     "filename": elf_filename,
                     "sha256": sha256_hash,
@@ -328,9 +330,7 @@ class OTAUpdater:
             print(f"\n❌ Upload failed: {e}")
             return False
     
-    def full_update(self, bin_path=".pio/build/esp32s3-dev/firmware.bin", 
-                   elf_path=".pio/build/esp32s3-dev/firmware.elf",
-                   save_release=True):
+    def full_update(self, bin_path, elf_path, save_release=True):
         """Complete OTA update process with release management"""
         
         print("🚀 Starting EnergyMe-Home OTA Update")
@@ -429,16 +429,39 @@ def main():
     parser.add_argument('-H', '--host', default='energyme.local', help='Device IP address (e.g., 192.168.1.245). If not passed, it will use the default hostname energyme.local (WARNING: it will be slower and may cause problems)')
     parser.add_argument('-u', '--username', default='admin', help='Username (default: admin)')
     parser.add_argument('-p', '--password', default='energyme', help='Password (default: energyme)')
-    parser.add_argument('-b', '--bin', default='.pio/build/esp32s3-dev/firmware.bin', 
-                       help='Path to firmware .bin file')
-    parser.add_argument('-e', '--elf', default='.pio/build/esp32s3-dev/firmware.elf', 
-                       help='Path to firmware .elf file')
+    parser.add_argument('-env', '--environment', default='dev', 
+                       choices=['dev', 'dev-nosecrets', 'prod', 'prod-nosecrets'],
+                       help='Build environment (default: dev)')
+    parser.add_argument('-b', '--bin', 
+                       help='Path to firmware .bin file (overrides --environment)')
+    parser.add_argument('-e', '--elf', 
+                       help='Path to firmware .elf file (overrides --environment)')
     parser.add_argument('--no-save', action='store_true', 
                        help='Skip saving release files')
     parser.add_argument('--status-only', action='store_true', 
                        help='Only check OTA status')
     
     args = parser.parse_args()
+    
+    # Determine bin and elf paths based on environment if not explicitly provided
+    if not args.bin or not args.elf:
+        env_map = {
+            'dev': 'esp32s3-dev',
+            'dev-nosecrets': 'esp32s3-dev-nosecrets',
+            'prod': 'esp32s3-prod',
+            'prod-nosecrets': 'esp32s3-prod-nosecrets'
+        }
+        env_name = env_map[args.environment]
+        
+        if not args.bin:
+            args.bin = f'.pio/build/{env_name}/firmware.bin'
+        if not args.elf:
+            args.elf = f'.pio/build/{env_name}/firmware.elf'
+    
+    print(f"🔧 Environment: {args.environment}")
+    print(f"📦 Binary: {args.bin}")
+    print(f"🐛 Debug: {args.elf}")
+    print()
     
     updater = OTAUpdater(args.host, args.username, args.password)
     
