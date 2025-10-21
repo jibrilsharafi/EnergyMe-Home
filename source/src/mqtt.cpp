@@ -2150,7 +2150,22 @@ namespace Mqtt
             _setState(MqttState::CONNECTED);
             return;
         }
+        
+        // Wait for time sync before attempting connection to avoid LWIP lock conflicts
+        if (!CustomTime::isTimeSynched()) {
+            static uint64_t lastTimeSyncWarning = 0;
+            if (millis64() - lastTimeSyncWarning > 10000) {
+                LOG_DEBUG("Waiting for time sync before MQTT connection");
+                lastTimeSyncWarning = millis64();
+            }
+            delay(1000);
+            return;
+        }
+        
         if (millis64() >= _nextMqttConnectionAttemptMillis) {
+            // Small delay to allow LWIP/SNTP operations to complete
+            delay(100);
+            
             if (_connectMqtt() && _clientMqtt.connected()) { // Both connect and check immediately after
                 _setState(MqttState::CONNECTED);
             }
