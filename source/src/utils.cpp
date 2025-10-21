@@ -568,6 +568,27 @@ static void _restartSystem(bool factoryReset) {
 void setRestartSystem(const char* reason, bool factoryReset) {
     LOG_INFO("Restart required for reason: %s. Factory reset: %s", reason, factoryReset ? "true" : "false");
 
+    // Check if we can restart now (safe mode protection)
+    if (!CrashMonitor::canRestartNow()) {
+        uint32_t remainingMs = CrashMonitor::getMinimumUptimeRemaining();
+        uint32_t remainingSec = remainingMs / 1000;
+        
+        if (CrashMonitor::isInSafeMode()) {
+            LOG_FATAL(
+                "SAFE MODE: Restart blocked for %lu s to prevent infinite loops. "
+                "Reason: %s. WiFi/OTA active for remote recovery", 
+                remainingSec, reason
+            );
+        } else {
+            LOG_WARNING(
+                "Restart delayed: minimum uptime not reached (%lu s remaining to "
+                "prevent rapid restart loops)", 
+                remainingSec
+            );
+        }
+        return;
+    }
+
     if (_restartTaskHandle != NULL) {
         LOG_INFO("A restart is already scheduled. Keeping the existing one.");
         return; // Prevent overwriting an existing restart request

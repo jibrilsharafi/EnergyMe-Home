@@ -44,12 +44,42 @@ void loop() {
 
 ### Stability Features
 
-**Crash Monitor:**
+**Crash Monitor - Two-Tier Restart Protection:**
+
+The system implements a hierarchical protection against restart loops to ensure device remains accessible:
+
+#### Tier 1: Safe Mode (Rapid Loop Protection)
+
+- **Trigger**: 5+ restarts within 60 seconds each
+- **Action**:
+  - Disables ADE7953 monitoring (prevents hardware-related restart loops)
+  - Enforces 5-minute minimum uptime before allowing restarts
+  - Applies exponential backoff delays (5s increments, max 30s)
+  - **Keeps WiFi, OTA, and web interface active** for remote recovery
+- **Recovery**: Auto-clears after 30 minutes of stable operation or next restart > 60s uptime
+- **Use Case**: Phase-to-phase wiring causing ADE7953 interrupt failures
+
+#### Tier 2: Rollback/Factory Reset (Persistent Failure Recovery)
+
+- **Trigger**: 3+ consecutive crashes OR 10+ consecutive resets
+- **Action**:
+  1. Attempts firmware rollback (if available, once per boot cycle)
+  2. Performs factory reset if rollback unavailable or failed
+- **Recovery**: Counters reset after 180 seconds of stable operation
+- **Use Case**: Bad firmware updates or persistent hardware failures
+
+#### How They Work Together
+
+- Safe mode activates first for rapid loops (prevents OTA lockout)
+- Crash/reset tracking continues in background
+- If failures persist in safe mode → triggers rollback/factory reset
+- Independent counter management (timing-based vs stability-based)
+
+#### Additional Features
 
 - RTC memory persistence (survives reboots)
-- Consecutive crash/reset tracking
-- Automatic firmware rollback after 3 crashes or 10 resets, otherwise factory reset
-- ESP32 core dump support
+- ESP32 core dump support with backtrace decoding
+- Automatic MQTT crash reporting (if configured)
 
 **Memory Management:**
 

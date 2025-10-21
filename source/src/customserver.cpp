@@ -1286,6 +1286,35 @@ namespace CustomServer
             _sendSuccessResponse(request, "Factory reset initiated");
             setRestartSystem("Factory reset requested via API", true); });
 
+        // Safe mode info
+        server.on("/api/v1/system/safe-mode", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            doc["active"] = CrashMonitor::isInSafeMode();
+            doc["canRestartNow"] = CrashMonitor::canRestartNow();
+            doc["minimumUptimeRemainingMs"] = CrashMonitor::getMinimumUptimeRemaining();
+            if (CrashMonitor::isInSafeMode()) {
+                doc["message"] = "Device in safe mode - ADE7953 disabled to prevent restart loops";
+                doc["action"] = "Perform OTA update to fix underlying issue";
+            }
+
+            _sendJsonResponse(request, doc); });
+
+        // Clear safe mode
+        server.on("/api/v1/system/safe-mode/clear", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            if (CrashMonitor::isInSafeMode()) {
+                CrashMonitor::clearSafeModeCounters();
+                _sendSuccessResponse(request, "Safe mode cleared. Device will restart to enable ADE7953.");
+                setRestartSystem("Safe mode manually cleared via API");
+            } else {
+                _sendSuccessResponse(request, "Device is not in safe mode");
+            } });
+
         // Check if secrets exist
         server.on("/api/v1/system/secrets", HTTP_GET, [](AsyncWebServerRequest *request)
                   {

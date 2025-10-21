@@ -77,7 +77,7 @@ void setup()
   LOG_DEBUG("Callbacks for AdvancedLogger set up successfully");
 
   LOG_INFO("Guess who's back, back again! EnergyMe - Home is starting up...");
-  LOG_INFO("Build version: %s | Build date: %s %s | Device ID: %s", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
+  LOG_INFO("Build version: %s (MD5: %s) | Build date: %s %s | Device ID: %s", FIRMWARE_BUILD_VERSION, ESP.getSketchMD5().c_str(), FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
   
   LOG_DEBUG("Setting up crash monitor...");
   CrashMonitor::begin();
@@ -98,18 +98,25 @@ void setup()
   ButtonHandler::begin(BUTTON_GPIO0_PIN);
   LOG_INFO("Button handler setup done");
 
-  LOG_DEBUG("Setting up ADE7953...");
-  if (Ade7953::begin(
-      ADE7953_SS_PIN,
-      ADE7953_SCK_PIN,
-      ADE7953_MISO_PIN,
-      ADE7953_MOSI_PIN,
-      ADE7953_RESET_PIN,
-      ADE7953_INTERRUPT_PIN)
-    ) {
-      LOG_INFO("ADE7953 setup done");
+  // Check safe mode BEFORE starting ADE7953 to prevent restart loops
+  if (CrashMonitor::isInSafeMode()) {
+    LOG_FATAL(
+      "SAFE MODE: ADE7953 disabled due to crash loop. WiFi/Web/OTA active for recovery. "
+      "Auto-disables after %lu min stable operation", SAFE_MODE_DISABLE_TIMEOUT / (60 * 1000)
+    );
   } else {
-      LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
+    LOG_DEBUG("Setting up ADE7953...");
+    if (
+      Ade7953::begin(
+        ADE7953_SS_PIN,
+        ADE7953_SCK_PIN,
+        ADE7953_MISO_PIN,
+        ADE7953_MOSI_PIN,
+        ADE7953_RESET_PIN,
+        ADE7953_INTERRUPT_PIN
+      )
+    ) LOG_INFO("ADE7953 setup done");
+    else LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
   }
 
   Led::setBlue(Led::PRIO_NORMAL);
@@ -123,10 +130,10 @@ void setup()
     delay(1000);
   }
 
-  // Add UDP logging setup after WiFi
-  LOG_DEBUG("Setting up UDP logging...");
+  // Add custom logging setup after WiFi
+  LOG_DEBUG("Setting up custom logging...");
   CustomLog::begin();
-  LOG_INFO("UDP logging setup done");
+  LOG_INFO("Custom logging setup done");
 
   LOG_DEBUG("Syncing time...");
   if (CustomTime::begin()) LOG_INFO("Initial time sync successful");
@@ -158,7 +165,13 @@ void setup()
   startMaintenanceTask();
   LOG_INFO("Maintenance task started");
 
-  Led::setGreen(Led::PRIO_NORMAL);
+  // Visual indicator for safe mode
+  if (CrashMonitor::isInSafeMode()) {
+    Led::setPurple(Led::PRIO_CRITICAL); // Purple = safe mode
+  } else {
+    Led::setGreen(Led::PRIO_NORMAL);
+  }
+  
   printStatistics();
   printDeviceStatusDynamic();
   LOG_INFO("Setup done! Let's get this energetic party started!");

@@ -4,19 +4,29 @@ namespace CrashMonitor
 {
     // Static state variables
     static TaskHandle_t _crashResetTaskHandle = NULL;
+    static TaskHandle_t _safeModeTaskHandle = NULL;
 
     // Private function declarations
     static void _handleCounters();
     static void _crashResetTask(void *parameter);
+    static void _safeModeTask(void *parameter);
     static void _checkAndPrintCoreDump();
     static void _logCompleteCrashData();
 
+    // RTC memory variables (persist across restarts)
     RTC_NOINIT_ATTR uint32_t _magicWord = MAGIC_WORD_RTC; // Magic word to check RTC data validity
-    RTC_NOINIT_ATTR uint32_t _resetCount = 0; // Reset counter in RTC memory
-    RTC_NOINIT_ATTR uint32_t _crashCount = 0; // Crash counter in RTC memory
-    RTC_NOINIT_ATTR uint32_t _consecutiveCrashCount = 0; // Consecutive crash counter in RTC memory
-    RTC_NOINIT_ATTR uint32_t _consecutiveResetCount = 0; // Consecutive reset counter in RTC memory
-    RTC_NOINIT_ATTR bool _rollbackTried = false; // Flag to indicate if rollback was attempted
+    
+    // Tier 2: Crash/Reset tracking (long-term failure detection)
+    RTC_NOINIT_ATTR uint32_t _resetCount = 0; // Total resets since first boot
+    RTC_NOINIT_ATTR uint32_t _crashCount = 0; // Total crashes since first boot
+    RTC_NOINIT_ATTR uint32_t _consecutiveCrashCount = 0; // Consecutive crashes (resets after 180s stable)
+    RTC_NOINIT_ATTR uint32_t _consecutiveResetCount = 0; // Consecutive resets (resets after 180s stable)
+    RTC_NOINIT_ATTR bool _rollbackTried = false; // Rollback attempted flag (prevents infinite rollback loops)
+    
+    // Tier 1: Quick restart tracking (rapid loop detection for safe mode)
+    RTC_NOINIT_ATTR uint32_t _quickRestartCount = 0; // Number of quick consecutive restarts (resets when restart > 60s uptime)
+    RTC_NOINIT_ATTR uint64_t _lastBootTimestamp = 0; // Unix timestamp (ms) when last boot occurred
+    RTC_NOINIT_ATTR bool _safeModeActive = false; // Whether safe mode is currently active
 
     bool isLastResetDueToCrash() {
         // Only case in which it is not crash is when the reset reason is not
@@ -32,8 +42,47 @@ namespace CrashMonitor
         _consecutiveCrashCount = 0;
     }
 
+    bool isInSafeMode() {
+        return _safeModeActive;
+    }
+
+    bool canRestartNow() {
+        uint64_t uptime = millis64();
+        
+        // If in safe mode, require minimum safe mode uptime
+        if (_safeModeActive) return uptime >= SAFE_MODE_MIN_UPTIME;
+        
+        // Otherwise require minimum normal uptime
+        return uptime >= MIN_UPTIME_BEFORE_RESTART;
+    }
+
+    uint32_t getMinimumUptimeRemaining() {
+        uint64_t uptime = millis64();
+        uint64_t requiredUptime = _safeModeActive ? SAFE_MODE_MIN_UPTIME : MIN_UPTIME_BEFORE_RESTART;
+        
+        if (uptime >= requiredUptime) return 0;
+        return (uint32_t)(requiredUptime - uptime);
+    }
+
+    void clearSafeModeCounters() {
+        LOG_INFO("Manually clearing safe mode counters and state");
+        
+        _quickRestartCount = 0;
+        _safeModeActive = false;
+        _lastBootTimestamp = 0;
+        
+        // Notify safe mode task to exit if it's running
+        if (_safeModeTaskHandle != NULL) {
+            xTaskNotifyGive(_safeModeTaskHandle);
+            LOG_DEBUG("Notified safe mode task to exit");
+        }
+    }
+
     void begin() {
         LOG_DEBUG("Setting up crash monitor...");
+
+        // Get current Unix timestamp in milliseconds from RTC
+        uint64_t currentBootTimestamp = CustomTime::getUnixTimeMilliseconds();
 
         if (_magicWord != MAGIC_WORD_RTC) {
             LOG_DEBUG("RTC magic word is invalid, resetting crash counters");
@@ -43,7 +92,57 @@ namespace CrashMonitor
             _consecutiveCrashCount = 0;
             _consecutiveResetCount = 0;
             _rollbackTried = false;
+            _quickRestartCount = 0;
+            _lastBootTimestamp = 0;
+            _safeModeActive = false;
         }
+
+        // === SAFE MODE: First line of defense against rapid restart loops ===
+        // Quick restart detection: compare current boot time with last boot time
+        bool isQuickRestart = false;
+        uint64_t timeSinceLastBoot = 0;
+        
+        if (_lastBootTimestamp > 0 && currentBootTimestamp > _lastBootTimestamp) {
+            timeSinceLastBoot = currentBootTimestamp - _lastBootTimestamp;
+            isQuickRestart = (timeSinceLastBoot < QUICK_RESTART_THRESHOLD);
+        }
+        
+        if (isQuickRestart) {
+            _quickRestartCount++;
+            LOG_WARNING("Quick restart detected (#%lu): only %llu ms since last boot (threshold: %lu ms)", 
+                _quickRestartCount, timeSinceLastBoot, QUICK_RESTART_THRESHOLD);
+            
+            if (_quickRestartCount >= MAX_QUICK_RESTARTS) {
+                _safeModeActive = true;
+                LOG_FATAL(
+                    "Too many quick restarts (%lu)! ENTERING SAFE MODE for %lu seconds. ADE7953 monitoring disabled; WiFi/OTA remain active for recovery",
+                    _quickRestartCount, SAFE_MODE_MIN_UPTIME / 1000
+                );
+                
+                // Calculate exponential backoff delay to give user time to react
+                uint32_t delayMs = min((uint32_t)(_quickRestartCount * 5000), (uint32_t)30000); // 5s per restart, max 30s
+                LOG_WARNING("Applying boot delay of %lu ms to prevent rapid restart loops", delayMs);
+                delay(delayMs);
+            }
+        } else {
+            // Not a quick restart - reset quick restart counter (but keep crash/reset counters)
+            if (_quickRestartCount > 0) {
+                LOG_DEBUG("Stable boot detected (%llu ms since last boot), resetting quick restart counter (was %lu)", 
+                    timeSinceLastBoot, _quickRestartCount);
+                _quickRestartCount = 0;
+                // Note: We intentionally keep _consecutiveCrashCount and _consecutiveResetCount
+                // Those are reset by the separate _crashResetTask after COUNTERS_RESET_TIMEOUT
+            }
+            
+            // Exit safe mode if we had a stable restart (user fixed the issue)
+            if (_safeModeActive && timeSinceLastBoot >= SAFE_MODE_MIN_UPTIME) {
+                LOG_INFO("Exiting safe mode due to stable restart (%llu ms uptime)", timeSinceLastBoot);
+                _safeModeActive = false;
+            }
+        }
+        
+        // Store current boot timestamp for next boot comparison
+        _lastBootTimestamp = currentBootTimestamp;
 
         esp_core_dump_init();        
 
@@ -63,10 +162,33 @@ namespace CrashMonitor
         _resetCount++;
         _consecutiveResetCount++;
 
-        LOG_DEBUG(
-            "Crash count: %d (consecutive: %d), Reset count: %d (consecutive: %d)", 
-            _crashCount, _consecutiveCrashCount, _resetCount, _consecutiveResetCount
+        LOG_INFO(
+            "Boot tracking - Crashes: %d (%d consecutive), Resets: %d (%d consecutive), Quick restarts: %lu", 
+            _crashCount, _consecutiveCrashCount, _resetCount, _consecutiveResetCount, _quickRestartCount
         );
+        
+        if (_safeModeActive) {
+            LOG_WARNING("Safe mode active - ADE7953 disabled, minimum uptime: %lu sec; WiFi/OTA available for recovery; auto-clear after %lu min stable",
+                        SAFE_MODE_MIN_UPTIME / 1000, SAFE_MODE_DISABLE_TIMEOUT / (60 * 1000));
+            // Create safe mode monitoring task
+            LOG_DEBUG("Starting safe mode task with %d bytes stack", CRASH_RESET_TASK_STACK_SIZE);
+            
+            BaseType_t result = xTaskCreate(
+                _safeModeTask,
+                "safe_mode_task",
+                CRASH_RESET_TASK_STACK_SIZE,
+                NULL,
+                CRASH_RESET_TASK_PRIORITY,
+                &_safeModeTaskHandle);
+                
+            if (result != pdPASS) {
+                LOG_ERROR("Failed to create safe mode task");
+                _safeModeTaskHandle = NULL;
+            }
+        }
+        
+        // === ROLLBACK/FACTORY RESET: Last resort for persistent failures ===
+        // This handles the case where crashes/resets keep happening even after safe mode
         _handleCounters();
 
         // Create task to handle the crash reset
@@ -88,20 +210,79 @@ namespace CrashMonitor
         LOG_DEBUG("Crash monitor setup done");
     }
 
-    // Very simple task, no need for complex stuff
+    // Task that resets consecutive crash/reset counters after stable operation
     static void _crashResetTask(void *parameter)
     {
-        LOG_DEBUG("Starting crash reset task...");
+        LOG_DEBUG("Starting crash/reset counter task (will reset after %lu seconds of stable operation)", COUNTERS_RESET_TIMEOUT / 1000);
 
         delay(COUNTERS_RESET_TIMEOUT);
         
-        if (_consecutiveCrashCount > 0 || _consecutiveResetCount > 0){
-            LOG_DEBUG("Consecutive crash and reset counters reset to 0");
+        // After stable operation, reset the consecutive counters
+        bool hadCounters = _consecutiveCrashCount > 0 || _consecutiveResetCount > 0;
+        if (hadCounters) {
+            LOG_INFO("Stable operation achieved (%lu seconds), resetting consecutive crash/reset counters", COUNTERS_RESET_TIMEOUT / 1000);
+            LOG_DEBUG("Was: crashes=%d, resets=%d", _consecutiveCrashCount, _consecutiveResetCount);
         }
+        
         _consecutiveCrashCount = 0;
         _consecutiveResetCount = 0;
+        // Note: Don't reset _quickRestartCount here - it's managed separately based on restart timing
 
         _crashResetTaskHandle = nullptr;
+        vTaskDelete(NULL);
+    }
+
+    // Safe mode monitoring task - ensures minimum uptime and auto-recovery
+    static void _safeModeTask(void *parameter)
+    {
+        LOG_DEBUG("Starting safe mode monitoring task...");
+        
+        // === Phase 1: Enforce minimum uptime (restart protection) ===
+        LOG_INFO("Safe mode enforcing minimum uptime: %lu seconds", SAFE_MODE_MIN_UPTIME / 1000);
+        uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAFE_MODE_MIN_UPTIME));
+        
+        if (notificationValue > 0) {
+            // Task was stopped early (manual clear or system shutdown)
+            LOG_DEBUG("Safe mode task stopped before minimum uptime reached");
+            _safeModeTaskHandle = nullptr;
+            vTaskDelete(NULL);
+            return;
+        }
+        
+        LOG_INFO("Safe mode minimum uptime reached (%lu seconds) - restarts now allowed", SAFE_MODE_MIN_UPTIME / 1000);
+        
+        // === Phase 2: Monitor for auto-disable timeout ===
+        LOG_DEBUG("Monitoring for safe mode auto-disable (%lu minutes)", SAFE_MODE_DISABLE_TIMEOUT / (60 * 1000));
+        uint64_t safeModeStartTime = millis64();
+        
+        while (millis64() - safeModeStartTime < SAFE_MODE_DISABLE_TIMEOUT) {
+            // Wait 1 minute or until task stop notification
+            notificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(60 * 1000));
+            
+            if (notificationValue > 0) {
+                LOG_DEBUG("Safe mode manually disabled, exiting monitoring task");
+                _safeModeTaskHandle = nullptr;
+                vTaskDelete(NULL);
+                return;
+            }
+            
+            if (!_safeModeActive) {
+                LOG_DEBUG("Safe mode was externally disabled, exiting monitoring task");
+                _safeModeTaskHandle = nullptr;
+                vTaskDelete(NULL);
+                return;
+            }
+        }
+        
+        // === Phase 3: Auto-disable after stable operation ===
+        if (_safeModeActive) {
+            LOG_INFO("Safe mode auto-disabled after %lu minutes; ADE7953 monitoring will re-enable on next restart", SAFE_MODE_DISABLE_TIMEOUT / (60 * 1000));
+            
+            _safeModeActive = false;
+            _quickRestartCount = 0;
+        }
+
+        _safeModeTaskHandle = nullptr;
         vTaskDelete(NULL);
     }
 
@@ -128,28 +309,37 @@ namespace CrashMonitor
     }
 
     void _handleCounters() {
+        // This is the LAST RESORT - only triggered after safe mode failed to resolve the issue
+        // Safe mode should have already prevented most rapid restart loops
         if (_consecutiveCrashCount >= MAX_CRASH_COUNT || _consecutiveResetCount >= MAX_RESET_COUNT) {
-            LOG_ERROR("The consecutive crash count limit (%d) or the reset count limit (%d) has been reached", MAX_CRASH_COUNT, MAX_RESET_COUNT);
+            LOG_FATAL("Recovery mode triggered: crashes=%d, resets=%d", _consecutiveCrashCount, _consecutiveResetCount);
+            LOG_FATAL("Safe mode insufficient, attempting rollback/factory reset");
             
-            // Reset both counters before restart since we're either formatting or rolling back 
+            // Reset counters before recovery attempt to prevent infinite loops
             _consecutiveCrashCount = 0;
             _consecutiveResetCount = 0;
+            _quickRestartCount = 0; // Also clear quick restart counter
 
-            // If we can rollback, but most importantly, if we have not tried it yet (to avoid infinite rollback loops - IT CAN HAPPEN!)
+            // Try rollback first (if available and not already tried)
             if (Update.canRollBack() && !_rollbackTried) {
-                LOG_WARNING("Rolling back to previous firmware version");
+                LOG_WARNING("Attempting firmware rollback...");
                 if (Update.rollBack()) {
-                    _rollbackTried = true; // Indicate rollback was attempted
-
-                    // Immediate reset to avoid any further issues
-                    LOG_INFO("Rollback successful, restarting system");
-                    ESP.restart();
+                    _rollbackTried = true;
+                    LOG_INFO("Rollback successful, restarting");
+                    ESP.restart(); // Immediate restart, bypass safe mode checks
+                    return;
                 }
+                LOG_ERROR("Rollback failed: %s", Update.errorString());
+            } else if (_rollbackTried) {
+                LOG_WARNING("Rollback already attempted");
+            } else {
+                LOG_WARNING("No rollback partition available");
             }
 
-            // If we got here, it means the rollback could not be executed, so we try at least to format everything
-            LOG_FATAL("Could not rollback, performing factory reset");
-            setRestartSystem("Consecutive crash/reset count limit reached", true);
+            // Last resort: factory reset
+            LOG_FATAL("Initiating factory reset (last recovery option)");
+            _safeModeActive = false;
+            setRestartSystem("Persistent failures - factory reset required", true);
         }
     }
 
