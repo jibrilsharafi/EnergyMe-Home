@@ -3298,7 +3298,7 @@ namespace Ade7953
         _captureRequestedChannel = INVALID_CHANNEL;
         _captureChannel = INVALID_CHANNEL;
 
-        LOG_INFO("Serialized %u waveform samples to JSON for channel %u", _captureSampleCount, _captureChannel);
+        LOG_DEBUG("Serialized %u waveform samples to JSON for channel %u", _captureSampleCount, _captureChannel);
         return true;
     }
 }

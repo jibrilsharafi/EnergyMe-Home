@@ -94,6 +94,11 @@ inline uint64_t millis64() {
     return esp_timer_get_time() / 1000ULL;
 }
 
+// Same reason as above
+inline uint64_t micros64() {
+    return esp_timer_get_time();
+}
+
 // Validation utilities
 inline bool isChannelValid(uint8_t channel) {return channel < CHANNEL_COUNT;}
 
