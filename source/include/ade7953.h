@@ -82,6 +82,7 @@
 // The LSB per volt is therefore 9032007 / 350.4 = 25779
 // For embedded systems, multiplications are better than divisions, so we use a float constant which is VOLT_PER_LSB = 1 / 25779
 #define VOLT_PER_LSB 0.0000387922f
+#define VOLT_PER_LSB_INSTANTANEOUS 0.000076236f // Same calculations as above, but using 500mV as peak and 6500000 as full scale
 #define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet)
 #define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f 
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
@@ -93,7 +94,7 @@
 #define WAVEFORM_BUFFER_SIZE \
     ((size_t)(((float)WAVEFORM_CYCLES_TO_CAPTURE / (float)DEFAULT_FALLBACK_FREQUENCY) \
               * SAMPLING_RATE_INSTANTANEOUS_VALUES))
-#define WAVEFORM_CAPTURE_MAX_DURATION_MICROS 1000000 // Maximum time to actively capture the waveform
+#define WAVEFORM_CAPTURE_MAX_DURATION_MICROS (2 * 1000000 * WAVEFORM_CYCLES_TO_CAPTURE) / DEFAULT_FALLBACK_FREQUENCY // 2x margin
 
 // Configuration Preferences Keys
 #define CONFIG_SAMPLE_TIME_KEY "sample_time"

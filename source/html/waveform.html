@@ -196,10 +196,7 @@
 
                     <div class="control-row button-group">
                         <button id="armButton" class="buttonPrimary" onclick="armCapture()">
-                            📡 Arm Capture
-                        </button>
-                        <button id="refreshButton" class="buttonSecondary" onclick="refreshStatus()">
-                            🔄 Refresh Status
+                            📡 Capture
                         </button>
                         <button id="downloadButton" class="buttonSecondary" onclick="downloadData()" disabled>
                             💾 Download Data
@@ -518,21 +515,18 @@
             
             // microsDelta contains cumulative microseconds, last value is total duration
             const totalDurationUs = data.microsDelta[data.microsDelta.length - 1];
-            const durationMs = (totalDurationUs / 1000.0).toFixed(2);
+            const durationMs = (totalDurationUs / 1000.0).toFixed(1);
 
             // Calculate RMS (Root Mean Square) values
-            const voltageRms = Math.sqrt(voltageValues.reduce((sum, v) => sum + v * v, 0) / voltageValues.length).toFixed(2);
-            const peakVoltage = Math.max(...voltageValues.map(Math.abs)).toFixed(2);
+            const voltageRms = Math.sqrt(voltageValues.reduce((sum, v) => sum + v * v, 0) / voltageValues.length).toFixed(1);
+            const peakVoltage = Math.max(...voltageValues.map(Math.abs)).toFixed(1);
             
-            const currentRms = Math.sqrt(currentValues.reduce((sum, i) => sum + i * i, 0) / currentValues.length).toFixed(2);
-            const peakCurrent = Math.max(...currentValues.map(Math.abs)).toFixed(2);
+            const currentRms = Math.sqrt(currentValues.reduce((sum, i) => sum + i * i, 0) / currentValues.length).toFixed(3);
+            const peakCurrent = Math.max(...currentValues.map(Math.abs)).toFixed(3);
 
+            // Update UI
             document.getElementById('statSamples').textContent = data.sampleCount;
             document.getElementById('statDuration').textContent = `${durationMs} ms`;
-            document.getElementById('statAvgVoltage').textContent = `${voltageRms} V`;
-            document.getElementById('statPeakVoltage').textContent = `${peakVoltage} V`;
-            document.getElementById('statAvgCurrent').textContent = `${currentRms} A`;
-            document.getElementById('statPeakCurrent').textContent = `${peakCurrent} A`;
 
             document.getElementById('statsSection').style.display = 'block';
         }

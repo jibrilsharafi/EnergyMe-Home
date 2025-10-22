@@ -62,10 +62,10 @@ namespace Ade7953
     static bool _hourlyCsvSaveTaskShouldRun = false;
 
     // Waveform capture state and buffers
-    static volatile CaptureState _captureState = CaptureState::IDLE;
-    static volatile uint8_t _captureRequestedChannel = INVALID_CHANNEL;
+    static CaptureState _captureState = CaptureState::IDLE;
+    static uint8_t _captureRequestedChannel = INVALID_CHANNEL;
     static uint8_t _captureChannel = INVALID_CHANNEL;  // The channel being actively captured
-    static volatile uint16_t _captureSampleCount = 0;
+    static uint16_t _captureSampleCount = 0;
     static uint64_t _captureStartMicros = 0;  // Microseconds timestamp at capture start
     static int32_t* _voltageWaveformBuffer = nullptr;
     static int32_t* _currentWaveformBuffer = nullptr;
@@ -107,7 +107,7 @@ namespace Ade7953
     static void _detachInterruptHandler();
     static void IRAM_ATTR _isrHandler();
     static void _handleCycendInterrupt(uint64_t linecycUnix);
-    static void _handleWaveformSample();
+    static void _pollWaveformSamples();
     static void _handleCrcChangeInterrupt();
     static void _handleResetInterrupt();
     static void _handleOtherInterrupt();
@@ -1338,14 +1338,10 @@ namespace Ade7953
         // No need to read for channel B (only channel A has the relevant information for use)
 
         // Check in order of priority, but ONLY check interrupts that are actually enabled
-        // Note: WSMP is only enabled during active waveform capture
         
         // CYCEND is always enabled - check it first as it's the primary interrupt
         if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
             return Ade7953InterruptType::CYCEND;
-        } else if (statusA & (1 << IRQSTATA_WSMP_BIT)) {
-            // WSMP is time-critical during capture, but only enabled when needed
-            return Ade7953InterruptType::WSMP;
         } else if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
             return Ade7953InterruptType::RESET;
         } else if (statusA & (1 << IRQSTATA_CRC_BIT)) {
@@ -1407,17 +1403,15 @@ namespace Ade7953
             // We do this BEFORE processing the previous channel's data, right after the MUX is set
             // This ensures the analog frontend is settled and ready for the requested channel
             if (_captureState == CaptureState::ARMED && _currentChannel == _captureRequestedChannel) {
-                LOG_DEBUG("Matched requested channel %u. Starting waveform capture", _currentChannel);
+                LOG_DEBUG("Matched requested channel %u. Starting waveform capture via polling", _currentChannel);
                 
                 _captureChannel = _currentChannel;
                 _captureSampleCount = 0;
-                _captureStartMicros = micros64();  // Record start time in microseconds
+                _captureStartMicros = micros64();
                 _captureState = CaptureState::CAPTURING;
-
-                // Enable the high-frequency WSMP interrupt to start the fast capture
-                int32_t irqena = readRegister(IRQENA_32, BIT_32, false);
-                irqena |= (1 << IRQSTATA_WSMP_BIT);
-                writeRegister(IRQENA_32, BIT_32, irqena, false);
+                
+                // Immediately start polling for waveform samples
+                _pollWaveformSamples();
             }
             
             // Process current channel (if active)
@@ -1427,60 +1421,59 @@ namespace Ade7953
         // Check for channel 0 waveform capture separately (channel 0 doesn't go through multiplexer rotation)
         // Channel 0 is always active and processed on every CYCEND, so we check for armed state here
         if (_captureState == CaptureState::ARMED && _captureRequestedChannel == 0) {
-            LOG_DEBUG("Starting waveform capture for channel 0");
+            LOG_DEBUG("Starting waveform capture for channel 0 via polling");
             
             _captureChannel = 0;
             _captureSampleCount = 0;
             _captureStartMicros = micros64();
             _captureState = CaptureState::CAPTURING;
-
-            // Enable the high-frequency WSMP interrupt to start the fast capture
-            int32_t irqena = readRegister(IRQENA_32, BIT_32, false);
-            irqena |= (1 << IRQSTATA_WSMP_BIT);
-            writeRegister(IRQENA_32, BIT_32, irqena, false);
+            
+            // Immediately start polling for waveform samples
+            _pollWaveformSamples();
         }
         
         // Always process channel 0 as it is on a separate ADE7953 channel
         _processChannelReading(0, linecycUnix);
     }
 
-    void _handleWaveformSample() {
-        // Critical safety check: if we're not in CAPTURING state but WSMP interrupt fired,
-        // this means the interrupt wasn't properly disabled. Disable it now to prevent infinite interrupts.
-        if (_captureState != CaptureState::CAPTURING) {
-            LOG_WARNING("WSMP interrupt fired but capture state is not CAPTURING (%u). Disabling WSMP interrupt", static_cast<uint8_t>(_captureState));
-            int32_t irqena = readRegister(IRQENA_32, BIT_32, false);
-            irqena &= ~(1 << IRQSTATA_WSMP_BIT);
-            writeRegister(IRQENA_32, BIT_32, irqena, false);
-            return;
-        }
-
-        if (_captureSampleCount < WAVEFORM_BUFFER_SIZE) {
-            Ade7953Channel channel = (_captureChannel == 0) ? Ade7953Channel::A : Ade7953Channel::B;
+    void _pollWaveformSamples() {
+        // This function performs tight polling of instantaneous waveform registers
+        // Called from CYCEND interrupt context - we have the perfect zero-cross timing
+        // Poll as fast as possible for ~40ms (2 line cycles at 50Hz)
+        
+        Ade7953Channel channel = (_captureChannel == 0) ? Ade7953Channel::A : Ade7953Channel::B;
+        uint64_t lastSampleMicros = _captureStartMicros;
+        const uint64_t minIntervalMicros = 1000000 / SAMPLING_RATE_INSTANTANEOUS_VALUES; // ~143µs for 6.99kHz max
+        
+        uint32_t loops = 0;
+        while (_captureSampleCount < WAVEFORM_BUFFER_SIZE && loops < MAX_LOOP_ITERATIONS) {
+            loops++;
+            uint64_t currentMicros = micros64();
+            uint64_t elapsedMicros = currentMicros - _captureStartMicros;
             
-            // Use existing helper functions for cleaner code
+            // Stop if we've captured for max duration
+            if (elapsedMicros >= WAVEFORM_CAPTURE_MAX_DURATION_MICROS) {
+                break;
+            }
+            
+            // Rate limit to max 7kHz to avoid overwhelming SPI bus
+            uint64_t timeSinceLastSample = currentMicros - lastSampleMicros;
+            if (timeSinceLastSample < minIntervalMicros) {
+                continue; // Not enough time elapsed, skip this iteration
+            }
+            
+            // Read instantaneous values directly from registers
             _voltageWaveformBuffer[_captureSampleCount] = _readVoltageInstantaneous();
             _currentWaveformBuffer[_captureSampleCount] = _readCurrentInstantaneous(channel);
+            _microsWaveformBuffer[_captureSampleCount] = currentMicros - _captureStartMicros;
             
-            // Record microseconds delta from start
-            _microsWaveformBuffer[_captureSampleCount] = micros64() - _captureStartMicros;
-            
-            _captureSampleCount = _captureSampleCount + 1;
+            lastSampleMicros = currentMicros;
+            _captureSampleCount++;
         }
-
-        // Check if capture is complete
-        if (
-            _captureSampleCount >= WAVEFORM_BUFFER_SIZE || 
-            micros64() - _captureStartMicros >= WAVEFORM_CAPTURE_MAX_DURATION_MICROS
-        ) {
-            // Done! Disable the interrupt and update state.
-            int32_t irqena = readRegister(IRQENA_32, BIT_32, false);
-            irqena &= ~(1 << IRQSTATA_WSMP_BIT); // Clear the WSMP bit
-            writeRegister(IRQENA_32, BIT_32, irqena, false);
-
-            _captureState = CaptureState::COMPLETE;
-            LOG_INFO("Waveform capture complete for channel %u (%u samples)", _captureChannel, _captureSampleCount);
-        }
+        
+        _captureState = CaptureState::COMPLETE;
+        LOG_INFO("Waveform capture complete for channel %u (%u samples in %llu ms)", 
+            _captureChannel, _captureSampleCount, (micros64() - _captureStartMicros) / 1000);
     }
 
     void _handleCrcChangeInterrupt() {
@@ -1576,10 +1569,6 @@ namespace Ade7953
                 // Process based on interrupt type
                 switch (interruptType)
                 {
-                    case Ade7953InterruptType::WSMP:
-                        _handleWaveformSample();
-                        break;
-
                     case Ade7953InterruptType::CYCEND:
                         _handleCycendInterrupt(linecycUnix);
                         break;
@@ -3322,8 +3311,8 @@ namespace Ade7953
         
         // Populate the arrays with scaled values only (leaner JSON)
         for (uint16_t i = 0; i < _captureSampleCount; i++) {
-            // HACK: don't know why, but we need to multiply by two compared to the RMS measurements
-            voltageArray.add(roundToDecimals(float(_voltageWaveformBuffer[i]) * VOLT_PER_LSB * 2, VOLTAGE_DECIMALS));
+            voltageArray.add(roundToDecimals(float(_voltageWaveformBuffer[i]) * VOLT_PER_LSB_INSTANTANEOUS, VOLTAGE_DECIMALS));
+            // HACK: computing the actual value needed for the real current instantaneous values is long. Times 2 is close enough
             currentArray.add(roundToDecimals(float(_currentWaveformBuffer[i]) * _channelData[_captureChannel].ctSpecification.aLsb * 2, CURRENT_DECIMALS));
             microsArray.add(_microsWaveformBuffer[i]);
         }
