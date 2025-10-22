@@ -1948,6 +1948,150 @@ paths:
                 $ref: '#/components/schemas/SuccessResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+
+  /api/v1/ade7953/waveform/arm:
+    post:
+      summary: Arm waveform capture
+      description: |
+        Arms the waveform capture system to capture voltage and current samples for a specific channel.
+        The capture is non-blocking and will start when the specified channel becomes active in the multiplexer cycle.
+        Wait time varies from 200ms to 3+ seconds depending on channel position in the cycle.
+      tags:
+        - ADE7953
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - channelIndex
+              properties:
+                channelIndex:
+                  type: integer
+                  minimum: 0
+                  maximum: 16
+                  description: Channel index to capture waveform from
+                  example: 0
+      responses:
+        '200':
+          description: Waveform capture armed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "armed"
+                  channelIndex:
+                    type: integer
+                    example: 0
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Capture already in progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Capture already in progress"
+
+  /api/v1/ade7953/waveform/status:
+    get:
+      summary: Get waveform capture status
+      description: |
+        Returns the current state of the waveform capture system.
+        Use this endpoint to poll for completion after arming a capture.
+      tags:
+        - ADE7953
+      responses:
+        '200':
+          description: Current capture status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: string
+                    enum: [idle, armed, capturing, complete, error]
+                    description: |
+                      - idle: No capture in progress
+                      - armed: Waiting for channel to become active
+                      - capturing: Currently sampling waveform
+                      - complete: Capture finished, data ready
+                      - error: Capture failed
+                    example: "complete"
+
+  /api/v1/ade7953/waveform/data:
+    get:
+      summary: Get captured waveform data
+      description: |
+        Retrieves the captured waveform data including voltage, current, and microsecond timestamps.
+        Returns 404 if no complete capture is available.
+        Successfully fetching data resets the capture state to idle.
+      tags:
+        - ADE7953
+      responses:
+        '200':
+          description: Waveform data retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  channelIndex:
+                    type: integer
+                    description: Channel that was captured
+                    example: 0
+                  state:
+                    type: string
+                    example: "complete"
+                  captureTimestamp:
+                    type: integer
+                    format: int64
+                    description: Unix timestamp (seconds) when capture completed
+                    example: 1729612345
+                  sampleCount:
+                    type: integer
+                    description: Number of samples captured
+                    example: 300
+                  voltage:
+                    type: array
+                    description: Voltage samples in volts
+                    items:
+                      type: number
+                      format: float
+                    example: [230.5, 231.2, 230.8]
+                  current:
+                    type: array
+                    description: Current samples in amps
+                    items:
+                      type: number
+                      format: float
+                    example: [5.2, 5.3, 5.1]
+                  micros:
+                    type: array
+                    description: Microsecond deltas between samples
+                    items:
+                      type: integer
+                      format: int64
+                    example: [142, 143, 142]
+        '404':
+          description: No complete waveform data available
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "No waveform data available"
+
 tags:
   - name: System
     description: System management and information endpoints

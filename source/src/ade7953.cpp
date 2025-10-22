@@ -272,7 +272,7 @@ namespace Ade7953
         _microsWaveformBuffer = (uint64_t*)ps_malloc(WAVEFORM_BUFFER_SIZE * sizeof(uint64_t));
 
         if (!_voltageWaveformBuffer || !_currentWaveformBuffer || !_microsWaveformBuffer) {
-            LOG_FATAL("Failed to allocate waveform buffers from PSRAM");
+            LOG_ERROR("Failed to allocate waveform buffers from PSRAM");
             _captureState = CaptureState::ERROR;
             // Continue initialization - waveform capture just won't be available
         } else {
@@ -1439,7 +1439,7 @@ namespace Ade7953
             // Record microseconds delta from start
             _microsWaveformBuffer[_captureSampleCount] = micros64() - _captureStartMicros;
             
-            _captureSampleCount++;
+            _captureSampleCount = _captureSampleCount + 1;
         }
 
         // Check if capture is complete
@@ -3276,7 +3276,7 @@ namespace Ade7953
         // Add metadata to the root object
         jsonDocument["channelIndex"] = _captureChannel;
         jsonDocument["sampleCount"] = _captureSampleCount;
-        jsonDocument["sampleRateHz"] = 6990; // Approximate, from datasheet (WSMP interrupt rate)
+        jsonDocument["sampleRateHz"] = SAMPLING_RATE_INSTANTANEOUS_VALUES;
         jsonDocument["captureStartMicros"] = _captureStartMicros;
 
         // Create JSON arrays for voltage, current, and microseconds
