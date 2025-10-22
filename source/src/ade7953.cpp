@@ -3275,13 +3275,30 @@ namespace Ade7953
             return false;
         }
 
-        // Implementation will be completed in Commit 5
-        // For now, just reset the state and return true
+        // Add metadata to the root object
+        jsonDocument["channelIndex"] = _captureChannel;
+        jsonDocument["sampleCount"] = _captureSampleCount;
+        jsonDocument["sampleRateHz"] = 6990; // Approximate, from datasheet (WSMP interrupt rate)
+        jsonDocument["captureStartMicros"] = _captureStartMicros;
+
+        // Create JSON arrays for voltage, current, and microseconds
+        JsonArray voltageArray = jsonDocument["voltageLsb"].to<JsonArray>();
+        JsonArray currentArray = jsonDocument["currentLsb"].to<JsonArray>();
+        JsonArray microsArray = jsonDocument["microsDelta"].to<JsonArray>();
+        
+        // Populate the arrays
+        for (uint16_t i = 0; i < _captureSampleCount; i++) {
+            voltageArray.add(_voltageWaveformBuffer[i]);
+            currentArray.add(_currentWaveformBuffer[i]);
+            microsArray.add(_microsWaveformBuffer[i]);
+        }
+        
+        // Data has been "consumed" by serializing it. Reset for the next capture.
         _captureState = CaptureState::IDLE;
         _captureRequestedChannel = INVALID_CHANNEL;
         _captureChannel = INVALID_CHANNEL;
 
-        LOG_DEBUG("Waveform JSON serialization placeholder");
+        LOG_INFO("Serialized %u waveform samples to JSON for channel %u", _captureSampleCount, _captureChannel);
         return true;
     }
 }
