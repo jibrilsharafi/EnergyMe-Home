@@ -93,6 +93,7 @@
 #define WAVEFORM_BUFFER_SIZE \
     ((size_t)(((float)WAVEFORM_CYCLES_TO_CAPTURE / (float)DEFAULT_FALLBACK_FREQUENCY) \
               * SAMPLING_RATE_INSTANTANEOUS_VALUES))
+#define WAVEFORM_CAPTURE_MAX_DURATION_MICROS 1000000 // Maximum time to actively capture the waveform
 
 // Configuration Preferences Keys
 #define CONFIG_SAMPLE_TIME_KEY "sample_time"

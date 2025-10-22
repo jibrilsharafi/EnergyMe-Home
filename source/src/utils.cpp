@@ -538,12 +538,12 @@ static void _restartTask(void* parameter) {
     // We do this in an Async way so if for any reason the stopping takes too long or blocks forever, it won't block the restart
     xTaskCreate([](void*) {
         LOG_DEBUG("Stopping critical services before restart");
+        CustomServer::stop(); // Stop first customserver to avoid deadlocks with MQTT
+        Ade7953::stop();
+        ModbusTcp::stop();
         #ifdef HAS_SECRETS
         Mqtt::stop();
         #endif
-        CustomServer::stop();
-        Ade7953::stop();
-        ModbusTcp::stop();
         LOG_DEBUG("Critical services stopped");
         vTaskDelete(NULL);
     }, STOP_SERVICES_TASK_NAME, STOP_SERVICES_TASK_STACK_SIZE, NULL, STOP_SERVICES_TASK_PRIORITY, NULL);

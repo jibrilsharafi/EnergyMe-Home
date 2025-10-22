@@ -1469,7 +1469,10 @@ namespace Ade7953
         }
 
         // Check if capture is complete
-        if (_captureSampleCount >= WAVEFORM_BUFFER_SIZE) {
+        if (
+            _captureSampleCount >= WAVEFORM_BUFFER_SIZE || 
+            micros64() - _captureStartMicros >= WAVEFORM_CAPTURE_MAX_DURATION_MICROS
+        ) {
             // Done! Disable the interrupt and update state.
             int32_t irqena = readRegister(IRQENA_32, BIT_32, false);
             irqena &= ~(1 << IRQSTATA_WSMP_BIT); // Clear the WSMP bit
@@ -3319,8 +3322,9 @@ namespace Ade7953
         
         // Populate the arrays with scaled values only (leaner JSON)
         for (uint16_t i = 0; i < _captureSampleCount; i++) {
-            voltageArray.add(roundToDecimals(_voltageWaveformBuffer[i] * VOLT_PER_LSB, VOLTAGE_DECIMALS));
-            currentArray.add(roundToDecimals(_currentWaveformBuffer[i] * _channelData[_captureChannel].ctSpecification.aLsb, CURRENT_DECIMALS));
+            // HACK: don't know why, but we need to multiply by two compared to the RMS measurements
+            voltageArray.add(roundToDecimals(float(_voltageWaveformBuffer[i]) * VOLT_PER_LSB * 2, VOLTAGE_DECIMALS));
+            currentArray.add(roundToDecimals(float(_currentWaveformBuffer[i]) * _channelData[_captureChannel].ctSpecification.aLsb * 2, CURRENT_DECIMALS));
             microsArray.add(_microsWaveformBuffer[i]);
         }
         
