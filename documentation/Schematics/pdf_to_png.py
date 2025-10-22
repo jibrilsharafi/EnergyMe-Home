@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025 Jibril Sharafi
+
 """
 PDF to PNG Converter
 Extracts each page of a PDF file to individual PNG images.
