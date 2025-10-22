@@ -1432,11 +1432,9 @@ namespace Ade7953
         if (_captureSampleCount < WAVEFORM_BUFFER_SIZE) {
             Ade7953Channel channel = (_captureChannel == 0) ? Ade7953Channel::A : Ade7953Channel::B;
             
-            // Use fast, unverified reads during the capture loop for maximum performance
-            _voltageWaveformBuffer[_captureSampleCount] = readRegister(V_32, BIT_32, true, false);
-            _currentWaveformBuffer[_captureSampleCount] = readRegister(
-                (channel == Ade7953Channel::A) ? IA_32 : IB_32, BIT_32, true, false
-            );
+            // Use existing helper functions for cleaner code
+            _voltageWaveformBuffer[_captureSampleCount] = _readVoltageInstantaneous();
+            _currentWaveformBuffer[_captureSampleCount] = _readCurrentInstantaneous(channel);
             
             // Record microseconds delta from start
             _microsWaveformBuffer[_captureSampleCount] = micros64() - _captureStartMicros;
