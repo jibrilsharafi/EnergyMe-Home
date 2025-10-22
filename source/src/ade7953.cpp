@@ -3156,4 +3156,75 @@ namespace Ade7953
             return TaskInfo(); // Return empty/default TaskInfo if task is not running
         }
     }
+
+    // Waveform capture API
+    // ====================
+
+    bool startWaveformCapture(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) {
+            LOG_WARNING("Invalid channel index for waveform capture: %u", channelIndex);
+            return false;
+        }
+
+        // Check if buffers were allocated successfully at startup
+        if (_captureState == CaptureState::ERROR) {
+            LOG_ERROR("Cannot start capture, buffer allocation failed at startup");
+            return false;
+        }
+
+        // Check if another capture is already in progress or armed
+        if (_captureState != CaptureState::IDLE && _captureState != CaptureState::COMPLETE) {
+            LOG_WARNING("Cannot start capture, another capture is already in progress (state: %u)", static_cast<uint8_t>(_captureState));
+            return false;
+        }
+
+        _captureRequestedChannel = channelIndex;
+        _captureState = CaptureState::ARMED;
+        LOG_INFO("Waveform capture armed for channel %u", channelIndex);
+        return true;
+    }
+
+    CaptureState getWaveformCaptureStatus() {
+        return _captureState;
+    }
+
+    uint16_t getWaveformCaptureData(int32_t* vBuffer, int32_t* iBuffer, uint64_t* microsBuffer, uint16_t bufferSize) {
+        if (_captureState != CaptureState::COMPLETE) {
+            return 0; // No data ready
+        }
+
+        if (!vBuffer || !iBuffer || !microsBuffer) {
+            LOG_ERROR("Invalid buffer pointers provided to getWaveformCaptureData");
+            return 0;
+        }
+
+        uint16_t samplesToCopy = (bufferSize < _captureSampleCount) ? bufferSize : _captureSampleCount;
+        memcpy(vBuffer, _voltageWaveformBuffer, samplesToCopy * sizeof(int32_t));
+        memcpy(iBuffer, _currentWaveformBuffer, samplesToCopy * sizeof(int32_t));
+        memcpy(microsBuffer, _microsWaveformBuffer, samplesToCopy * sizeof(uint64_t));
+
+        // Reset state to allow for a new capture
+        _captureState = CaptureState::IDLE;
+        _captureRequestedChannel = INVALID_CHANNEL;
+        _captureChannel = INVALID_CHANNEL;
+
+        LOG_DEBUG("Retrieved %u waveform samples", samplesToCopy);
+        return samplesToCopy;
+    }
+
+    bool getWaveformCaptureAsJson(JsonDocument& jsonDocument) {
+        if (_captureState != CaptureState::COMPLETE) {
+            LOG_DEBUG("No waveform data ready for JSON serialization (state: %u)", static_cast<uint8_t>(_captureState));
+            return false;
+        }
+
+        // Implementation will be completed in Commit 5
+        // For now, just reset the state and return true
+        _captureState = CaptureState::IDLE;
+        _captureRequestedChannel = INVALID_CHANNEL;
+        _captureChannel = INVALID_CHANNEL;
+
+        LOG_DEBUG("Waveform JSON serialization placeholder");
+        return true;
+    }
 }
