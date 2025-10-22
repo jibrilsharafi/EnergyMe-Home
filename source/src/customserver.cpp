@@ -1909,13 +1909,8 @@ namespace CustomServer
                 return;
             }
 
-            SpiRamAllocator responseAllocator;
-            JsonDocument responseDoc(&responseAllocator);
-            responseDoc["status"] = "armed";
-            responseDoc["channelIndex"] = channelIndex;
-
             LOG_INFO("Waveform capture armed for channel %u via API", channelIndex);
-            _sendJsonResponse(request, responseDoc);
+            _sendSuccessResponse(request, "Waveform capture armed successfully");
         });
         server.addHandler(armWaveformCaptureHandler);
 
@@ -1933,20 +1928,18 @@ namespace CustomServer
                     break;
                 case Ade7953::CaptureState::ARMED:
                     doc["state"] = "armed";
-                    // TODO: Add channelIndex if we track requested channel in status
                     break;
                 case Ade7953::CaptureState::CAPTURING:
                     doc["state"] = "capturing";
-                    // TODO: Add channelIndex and sampleCount if tracked
                     break;
                 case Ade7953::CaptureState::COMPLETE:
                     doc["state"] = "complete";
-                    // TODO: Add channelIndex and sampleCount if tracked
                     break;
                 case Ade7953::CaptureState::ERROR:
                     doc["state"] = "error";
                     break;
             }
+            doc["channel"] = Ade7953::getWaveformCaptureChannel();
 
             _sendJsonResponse(request, doc);
         });

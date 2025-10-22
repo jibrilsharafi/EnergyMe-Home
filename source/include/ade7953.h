@@ -536,6 +536,7 @@ namespace Ade7953
 
     // Waveform capture API
     bool startWaveformCapture(uint8_t channelIndex);
+    uint8_t getWaveformCaptureChannel();
     CaptureState getWaveformCaptureStatus();
     uint16_t getWaveformCaptureData(int32_t* vBuffer, int32_t* iBuffer, uint64_t* microsBuffer, uint16_t bufferSize);
     bool getWaveformCaptureAsJson(JsonDocument& jsonDocument);

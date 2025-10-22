@@ -276,23 +276,16 @@
          */
         async function loadChannels() {
             try {
-                const config = await api.getChannelConfig();
+                const channels = await api.getChannelConfig();
                 const select = document.getElementById('channelSelect');
                 
-                // Always add channel 0
-                const option0 = document.createElement('option');
-                option0.value = '0';
-                option0.textContent = 'Channel 0 (Main)';
-                select.appendChild(option0);
-
-                // Add other enabled channels
-                if (config && config.channels) {
-                    config.channels.forEach((channel, index) => {
-                        if (channel.enabled) {
-                            const channelIndex = index + 1;
+                // API returns an array of channel objects
+                if (Array.isArray(channels)) {
+                    channels.forEach(channel => {
+                        if (channel && channel.active) {
                             const option = document.createElement('option');
-                            option.value = channelIndex;
-                            option.textContent = `Channel ${channelIndex} - ${channel.name}`;
+                            option.value = channel.index;
+                            option.textContent = `Channel ${channel.index}: ${channel.label || 'Unnamed'}`;
                             select.appendChild(option);
                         }
                     });
@@ -322,7 +315,7 @@
                     channelIndex: channelIndex
                 });
 
-                if (response.status === 'armed') {
+                if (response.success === true) {
                     showInfo(`Capture armed for channel ${channelIndex}. Waiting for next line cycle...`);
                     startStatusPolling();
                 } else {
