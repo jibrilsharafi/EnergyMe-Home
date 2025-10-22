@@ -1389,19 +1389,7 @@ namespace Ade7953
             // Next linecyc we skip since we changed channel
             _hasToSkipReading = true;
 
-            // Only for CYCEND interrupts, switch to next channel and set multiplexer
-            // This is because thanks to the linecyc approach, the data in the ADE7953 is "frozen"
-            // until the next linecyc interrupt is received, which is plenty of time to read the data
-            uint8_t previousChannel = _currentChannel; // Save the current channel before switching (but switch ASAP to ensure the ADE7953 reads the correct data)
-            _currentChannel = _findNextActiveChannel(_currentChannel);
-
-            // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
-            // 1 (since channel 0 does not pass through the multiplexer)
-            Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
-
-            // Check if we should trigger waveform capture for the NEXT channel (which is now active in the MUX)
-            // We do this BEFORE processing the previous channel's data, right after the MUX is set
-            // This ensures the analog frontend is settled and ready for the requested channel
+            // Since the data is frozen anyway, we can first retrieve the waveform, then the channel reading
             if (_captureState == CaptureState::ARMED && _currentChannel == _captureRequestedChannel) {
                 LOG_DEBUG("Matched requested channel %u. Starting waveform capture via polling", _currentChannel);
                 
@@ -1415,7 +1403,17 @@ namespace Ade7953
             }
             
             // Process current channel (if active)
-            if (previousChannel != INVALID_CHANNEL) _processChannelReading(previousChannel, linecycUnix);
+            if (_currentChannel != INVALID_CHANNEL) _processChannelReading(_currentChannel, linecycUnix);
+
+            // Thanks to the linecyc approach, the data in the ADE7953 is "frozen"
+            // until the next linecyc interrupt is received, which allows us to switch to the
+            // next channel after we've completely read what we need to read (and in any case, the
+            // next reading will be purged)
+            _currentChannel = _findNextActiveChannel(_currentChannel);
+
+            // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
+            // 1 (since channel 0 does not pass through the multiplexer)
+            Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
         }
         
         // Check for channel 0 waveform capture separately (channel 0 doesn't go through multiplexer rotation)
