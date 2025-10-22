@@ -1337,15 +1337,19 @@ namespace Ade7953
         int32_t statusA = readRegister(RSTIRQSTATA_32, BIT_32, false);
         // No need to read for channel B (only channel A has the relevant information for use)
 
-        // Check WSMP first since it's the most time-critical during waveform capture
-        if (statusA & (1 << IRQSTATA_WSMP_BIT)) {
+        // Check in order of priority, but ONLY check interrupts that are actually enabled
+        // Note: WSMP is only enabled during active waveform capture
+        
+        // CYCEND is always enabled - check it first as it's the primary interrupt
+        if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
+            return Ade7953InterruptType::CYCEND;
+        } else if (statusA & (1 << IRQSTATA_WSMP_BIT)) {
+            // WSMP is time-critical during capture, but only enabled when needed
             return Ade7953InterruptType::WSMP;
         } else if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
             return Ade7953InterruptType::RESET;
         } else if (statusA & (1 << IRQSTATA_CRC_BIT)) {
             return Ade7953InterruptType::CRC_CHANGE;
-        } else if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
-            return Ade7953InterruptType::CYCEND;
         } else {
             // Just log the unhandled status
             LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(statusA));
@@ -1414,8 +1418,6 @@ namespace Ade7953
                 int32_t irqena = readRegister(IRQENA_32, BIT_32, false);
                 irqena |= (1 << IRQSTATA_WSMP_BIT);
                 writeRegister(IRQENA_32, BIT_32, irqena, false);
-
-                LOG_VERBOSE("Enabled WSMP interrupt for waveform capture");
             }
             
             // Process current channel (if active)

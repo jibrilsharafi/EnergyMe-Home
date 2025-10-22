@@ -205,7 +205,7 @@
 #ifdef ENV_DEV
 #define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT (10 * 5) // 5x higher limit in dev environment
 #else
-#define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT 10
+#define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT 50  // This cannot be too low as if we keep missing an interrupt we would reboot every few seconds
 #endif
 #define ADE7953_CRITICAL_FAILURE_RESET_TIMEOUT_MS (5 * 60 * 1000) // Reset counter after 5 minutes
 
