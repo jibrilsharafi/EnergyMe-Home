@@ -79,4 +79,9 @@ Contributions are welcome! Please read the [contributing guidelines](CONTRIBUTIN
 
 ## License
 
-This project is licensed under the terms of the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
+This project contains both software and hardware components:
+
+- **Software**: Licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0)
+- **Hardware**: Licensed under the [CERN Open Hardware Licence Version 2 - Permissive](LICENSE-HARDWARE) (CERN-OHL-P-2.0)
+
+See the respective license files for full details.
