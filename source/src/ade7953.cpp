@@ -1603,6 +1603,9 @@ namespace Ade7953
                 #else
                 LOG_WARNING("No ADE7953 interrupt received within time expected, this indicates some problems.");
                 #endif
+
+                // Clear any interrupt flag to ensure we don't remain stuck
+                readRegister(RSTIRQSTATA_32, BIT_32, false);
             }
             
             // Check for stop notification (non-blocking) - this gives immediate shutdown response
