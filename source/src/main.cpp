@@ -1,7 +1,5 @@
-/*
-EnergyMe - Home
-Copyright (C) 2025 Jibril Sharafi
-*/
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
 
 #include <Arduino.h>
 #include <AdvancedLogger.h>

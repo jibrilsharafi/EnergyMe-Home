@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025 Jibril Sharafi
+
 #!/usr/bin/env python3
 """
 S3 Firmware Upload Script for EnergyMe-Home

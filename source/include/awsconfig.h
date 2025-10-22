@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #pragma once
 
 // Can be public. If the endpoint will change, it justn need to be updated here and an OTA deployed.

@@ -1,9 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #pragma once
 
 #include <AdvancedLogger.h>
 #include <Arduino.h>
 #include <Preferences.h>
-
+ 
 #include "constants.h"
 #include "utils.h"
 

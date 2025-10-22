@@ -1,5 +1,5 @@
-// The LED functionality uses a FreeRTOS task to handle patterns asynchronously
-// with support for different priorities and patterns.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
 
 #pragma once
 

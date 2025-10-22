@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #pragma once
 
 // Note: all the durations hereafter are in milliseconds unless specified otherwise

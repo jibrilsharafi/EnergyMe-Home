@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #include "utils.h"
 
 static TaskHandle_t _restartTaskHandle = NULL;

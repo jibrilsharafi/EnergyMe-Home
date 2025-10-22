@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+    Copyright (C) 2025 Jibril Sharafi */
+
 /**
  * EnergyMe API Client
  * Unified client for all API calls with consistent authentication and error handling

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #pragma once
 
 // Hardware revision: EnergyMe - Home v5 (02-12-2024)
