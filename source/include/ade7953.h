@@ -422,6 +422,15 @@ struct Ade7953Configuration
 
 namespace Ade7953
 {
+    // Waveform capture state machine
+    enum class CaptureState {
+        IDLE,       // Not capturing and not requested
+        ARMED,      // Requested, waiting for the correct channel to come up in the cycle
+        CAPTURING,  // High-frequency sampling is in progress
+        COMPLETE,   // Capture is finished and data is ready for retrieval
+        ERROR       // An error occurred (e.g., buffer allocation failed)
+    };
+
     // Core lifecycle management
     bool begin(
         uint8_t ssPin,
@@ -518,4 +527,10 @@ namespace Ade7953
     TaskInfo getMeterReadingTaskInfo();
     TaskInfo getEnergySaveTaskInfo();
     TaskInfo getHourlyCsvTaskInfo();
+
+    // Waveform capture API
+    bool startWaveformCapture(uint8_t channelIndex);
+    CaptureState getWaveformCaptureStatus();
+    uint16_t getWaveformCaptureData(int32_t* vBuffer, int32_t* iBuffer, uint64_t* microsBuffer, uint16_t bufferSize);
+    bool getWaveformCaptureAsJson(JsonDocument& jsonDocument);
 };

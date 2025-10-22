@@ -61,6 +61,16 @@ namespace Ade7953
     static TaskHandle_t _hourlyCsvSaveTaskHandle = NULL;
     static bool _hourlyCsvSaveTaskShouldRun = false;
 
+    // Waveform capture state and buffers
+    static volatile CaptureState _captureState = CaptureState::IDLE;
+    static volatile uint8_t _captureRequestedChannel = INVALID_CHANNEL;
+    static uint8_t _captureChannel = INVALID_CHANNEL;  // The channel being actively captured
+    static volatile uint16_t _captureSampleCount = 0;
+    static uint64_t _captureStartMicros = 0;  // Microseconds timestamp at capture start
+    static int32_t* _voltageWaveformBuffer = nullptr;
+    static int32_t* _currentWaveformBuffer = nullptr;
+    static uint64_t* _microsWaveformBuffer = nullptr;  // Microseconds delta from start for each sample
+
     // Configuration and data arrays
     static Ade7953Configuration _configuration;
     MeterValues _meterValues[CHANNEL_COUNT];
@@ -254,6 +264,19 @@ namespace Ade7953
 
         _initializeMutexes();
         LOG_DEBUG("Initialized SPI mutexes");
+
+        // Allocate PSRAM buffers for waveform capture
+        _voltageWaveformBuffer = (int32_t*)ps_malloc(WAVEFORM_BUFFER_SIZE * sizeof(int32_t));
+        _currentWaveformBuffer = (int32_t*)ps_malloc(WAVEFORM_BUFFER_SIZE * sizeof(int32_t));
+        _microsWaveformBuffer = (uint64_t*)ps_malloc(WAVEFORM_BUFFER_SIZE * sizeof(uint64_t));
+
+        if (!_voltageWaveformBuffer || !_currentWaveformBuffer || !_microsWaveformBuffer) {
+            LOG_FATAL("Failed to allocate waveform buffers from PSRAM");
+            _captureState = CaptureState::ERROR;
+            // Continue initialization - waveform capture just won't be available
+        } else {
+            LOG_DEBUG("Allocated waveform buffers in PSRAM (%u samples)", WAVEFORM_BUFFER_SIZE);
+        }
       
         _setHardwarePins(ssPin, sckPin, misoPin, mosiPin, resetPin, interruptPin);
         LOG_DEBUG("Successfully set up hardware pins");
@@ -1239,6 +1262,21 @@ namespace Ade7953
         // Save final energy data if not already saved
         LOG_DEBUG("Saving final energy data during cleanup");
         _saveEnergyComplete();
+
+        // Free waveform capture buffers
+        if (_voltageWaveformBuffer) {
+            free(_voltageWaveformBuffer);
+            _voltageWaveformBuffer = nullptr;
+        }
+        if (_currentWaveformBuffer) {
+            free(_currentWaveformBuffer);
+            _currentWaveformBuffer = nullptr;
+        }
+        if (_microsWaveformBuffer) {
+            free(_microsWaveformBuffer);
+            _microsWaveformBuffer = nullptr;
+        }
+        LOG_DEBUG("Cleaned up waveform capture buffers");
 
         LOG_DEBUG("Cleaned up tasks and energy saved");
     }
