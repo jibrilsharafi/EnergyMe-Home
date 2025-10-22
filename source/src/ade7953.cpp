@@ -3303,35 +3303,21 @@ namespace Ade7953
             return false;
         }
 
-        // Calculate LSB scaling factors for voltage and current
-        // Voltage LSB (same for all channels)
-        float maximumAdcChannelInputRms = MAXIMUM_ADC_CHANNEL_INPUT / sqrt(2.0f);
-        float voltageDivideRatio = 1.0f / (VOLTAGE_DIVIDER_R2 / (VOLTAGE_DIVIDER_R1 + VOLTAGE_DIVIDER_R2));
-        float fullScaleVoltageRms = maximumAdcChannelInputRms * voltageDivideRatio;
-        float vLsb = fullScaleVoltageRms / FULL_SCALE_LSB_FOR_RMS_VALUES;
-        
-        // Current LSB (channel-specific from CT specification)
-        float aLsb = _channelData[_captureChannel].ctSpecification.aLsb;
-
         // Add metadata to the root object
         jsonDocument["channelIndex"] = _captureChannel;
         jsonDocument["sampleCount"] = _captureSampleCount;
         jsonDocument["sampleRateHz"] = SAMPLING_RATE_INSTANTANEOUS_VALUES;
         jsonDocument["captureStartMicros"] = _captureStartMicros;
 
-        // Create JSON arrays for voltage, current, and microseconds (both raw LSB and scaled values)
+        // Create JSON arrays for voltage, current, and microseconds (only scaled values)
         JsonArray voltageArray = jsonDocument["voltage"].to<JsonArray>();
         JsonArray currentArray = jsonDocument["current"].to<JsonArray>();
-        JsonArray voltageLsbArray = jsonDocument["voltageLsb"].to<JsonArray>();
-        JsonArray currentLsbArray = jsonDocument["currentLsb"].to<JsonArray>();
         JsonArray microsArray = jsonDocument["microsDelta"].to<JsonArray>();
         
-        // Populate the arrays with both raw and scaled values
+        // Populate the arrays with scaled values only (leaner JSON)
         for (uint16_t i = 0; i < _captureSampleCount; i++) {
-            voltageLsbArray.add(_voltageWaveformBuffer[i]);
-            currentLsbArray.add(_currentWaveformBuffer[i]);
-            voltageArray.add(roundToDecimals(_voltageWaveformBuffer[i] * vLsb, VOLTAGE_DECIMALS));
-            currentArray.add(roundToDecimals(_currentWaveformBuffer[i] * aLsb, CURRENT_DECIMALS));
+            voltageArray.add(roundToDecimals(_voltageWaveformBuffer[i] * VOLT_PER_LSB, VOLTAGE_DECIMALS));
+            currentArray.add(roundToDecimals(_currentWaveformBuffer[i] * _channelData[_captureChannel].ctSpecification.aLsb, CURRENT_DECIMALS));
             microsArray.add(_microsWaveformBuffer[i]);
         }
         

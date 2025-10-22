@@ -234,7 +234,7 @@
                     <span id="statDuration" class="stat-value">-</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-label">Avg Voltage</span>
+                    <span class="stat-label">RMS Voltage</span>
                     <span id="statAvgVoltage" class="stat-value">-</span>
                 </div>
                 <div class="stat-item">
@@ -242,7 +242,7 @@
                     <span id="statPeakVoltage" class="stat-value">-</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-label">Avg Current</span>
+                    <span class="stat-label">RMS Current</span>
                     <span id="statAvgCurrent" class="stat-value">-</span>
                 </div>
                 <div class="stat-item">
@@ -411,11 +411,11 @@
          * Display waveform charts
          */
         function displayWaveform(data) {
-            // Convert LSB values to real units using scaling factors
-            const voltageValues = data.voltageLsb.map(lsb => lsb * data.voltageScalingFactor);
-            const currentValues = data.currentLsb.map(lsb => lsb * data.currentScalingFactor);
+            // Data already contains scaled values in V and A
+            const voltageValues = data.voltage;
+            const currentValues = data.current;
             
-            // Calculate time axis in milliseconds
+            // Calculate time axis in milliseconds from microseconds delta
             const timeMs = data.microsDelta.map((delta, index) => {
                 const sumDelta = data.microsDelta.slice(0, index + 1).reduce((a, b) => a + b, 0);
                 return sumDelta / 1000.0;
@@ -505,23 +505,25 @@
          * Calculate and display statistics
          */
         function calculateStats(data) {
-            const voltageValues = data.voltageLsb.map(lsb => lsb * data.voltageScalingFactor);
-            const currentValues = data.currentLsb.map(lsb => lsb * data.currentScalingFactor);
+            // Data already contains scaled values in V and A
+            const voltageValues = data.voltage;
+            const currentValues = data.current;
             
             const totalDurationUs = data.microsDelta.reduce((a, b) => a + b, 0);
             const durationMs = (totalDurationUs / 1000.0).toFixed(2);
 
-            const avgVoltage = (voltageValues.reduce((a, b) => a + b, 0) / voltageValues.length).toFixed(2);
+            // Calculate RMS (Root Mean Square) values
+            const voltageRms = Math.sqrt(voltageValues.reduce((sum, v) => sum + v * v, 0) / voltageValues.length).toFixed(2);
             const peakVoltage = Math.max(...voltageValues.map(Math.abs)).toFixed(2);
             
-            const avgCurrent = (currentValues.reduce((a, b) => a + b, 0) / currentValues.length).toFixed(2);
+            const currentRms = Math.sqrt(currentValues.reduce((sum, i) => sum + i * i, 0) / currentValues.length).toFixed(2);
             const peakCurrent = Math.max(...currentValues.map(Math.abs)).toFixed(2);
 
             document.getElementById('statSamples').textContent = data.sampleCount;
             document.getElementById('statDuration').textContent = `${durationMs} ms`;
-            document.getElementById('statAvgVoltage').textContent = `${avgVoltage} V`;
+            document.getElementById('statAvgVoltage').textContent = `${voltageRms} V`;
             document.getElementById('statPeakVoltage').textContent = `${peakVoltage} V`;
-            document.getElementById('statAvgCurrent').textContent = `${avgCurrent} A`;
+            document.getElementById('statAvgCurrent').textContent = `${currentRms} A`;
             document.getElementById('statPeakCurrent').textContent = `${peakCurrent} A`;
 
             document.getElementById('statsSection').style.display = 'block';
