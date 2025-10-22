@@ -101,12 +101,17 @@
 
         .chart-container {
             position: relative;
-            height: 400px;
+            height: 500px;
             margin-bottom: 20px;
             padding: 20px;
             background-color: white;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .chart-container.wide {
+            width: 100%;
+            height: 500px;
         }
 
         .stats-panel {
@@ -169,14 +174,12 @@
 <body>
     <div class="buttonNavigation-container">
         <a class="buttonNavigation" type="outer" href="/calibration">⚖️ Calibration</a>
-        <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
     </div>
 
-    <div class="container">
-        <h1>Waveform Capture</h1>
+    <h1>Waveform Capture</h1>
 
-        <section class="card">
-            <h2>Capture Control</h2>
+    <section class="section-box-wide">
+        <h2>Capture Control</h2>
             <div class="waveform-container">
                 <div class="control-panel">
                     <div class="control-row">
@@ -208,21 +211,14 @@
             </div>
         </section>
 
-        <section class="card" id="chartSection" style="display: none;">
-            <h2>Voltage Waveform</h2>
-            <div class="chart-container">
-                <canvas id="voltageChart"></canvas>
+        <section class="section-box-wide" id="chartSection" style="display: none;">
+            <h2>Voltage & Current Waveform</h2>
+            <div class="chart-container wide">
+                <canvas id="waveformChart"></canvas>
             </div>
         </section>
 
-        <section class="card" id="currentChartSection" style="display: none;">
-            <h2>Current Waveform</h2>
-            <div class="chart-container">
-                <canvas id="currentChart"></canvas>
-            </div>
-        </section>
-
-        <section class="card" id="statsSection" style="display: none;">
+        <section class="section-box-wide" id="statsSection" style="display: none;">
             <h2>Waveform Statistics</h2>
             <div class="stats-panel">
                 <div class="stat-item">
@@ -251,12 +247,11 @@
                 </div>
             </div>
         </section>
-    </div>
+    </section>
 
     <script>
         const api = new EnergyMeAPI();
-        let voltageChart = null;
-        let currentChart = null;
+        let waveformChart = null;
         let statusPollInterval = null;
         let currentWaveformData = null;
 
@@ -391,8 +386,8 @@
                 const data = await api.get('ade7953/waveform/data');
                 currentWaveformData = data;
                 
-                displayWaveform(data);
                 calculateStats(data);
+                displayWaveform(data);
                 showInfo('Waveform captured successfully!');
                 
                 document.getElementById('downloadButton').disabled = false;
@@ -408,54 +403,51 @@
         }
 
         /**
-         * Display waveform charts
+         * Display waveform chart with voltage and current
          */
         function displayWaveform(data) {
             // Data already contains scaled values in V and A
             const voltageValues = data.voltage;
             const currentValues = data.current;
             
-            // Calculate time axis in milliseconds from microseconds delta
-            const timeMs = data.microsDelta.map((delta, index) => {
-                const sumDelta = data.microsDelta.slice(0, index + 1).reduce((a, b) => a + b, 0);
-                return sumDelta / 1000.0;
-            });
+            // microsDelta already contains cumulative microseconds from backend
+            // Convert to milliseconds
+            const timeMs = data.microsDelta.map(micros => micros / 1000.0);
 
-            // Display voltage chart
-            displayChart('voltageChart', 'Voltage (V)', timeMs, voltageValues, 'rgb(75, 192, 192)');
-            document.getElementById('chartSection').style.display = 'block';
+            // Format time labels to 1 decimal place
+            const timeLabels = timeMs.map(t => t.toFixed(1));
 
-            // Display current chart
-            displayChart('currentChart', 'Current (A)', timeMs, currentValues, 'rgb(255, 99, 132)');
-            document.getElementById('currentChartSection').style.display = 'block';
-        }
-
-        /**
-         * Create or update a chart
-         */
-        function displayChart(canvasId, label, xData, yData, color) {
-            const ctx = document.getElementById(canvasId).getContext('2d');
-            
-            // Destroy existing chart
-            if (canvasId === 'voltageChart' && voltageChart) {
-                voltageChart.destroy();
-            } else if (canvasId === 'currentChart' && currentChart) {
-                currentChart.destroy();
+            // Destroy existing chart if any
+            if (waveformChart) {
+                waveformChart.destroy();
             }
 
-            const chart = new Chart(ctx, {
+            // Create combined waveform chart with dual Y-axes
+            const ctx = document.getElementById('waveformChart').getContext('2d');
+            waveformChart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: xData,
-                    datasets: [{
-                        label: label,
-                        data: yData,
-                        borderColor: color,
-                        backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        tension: 0.1
-                    }]
+                    labels: timeLabels,
+                    datasets: [
+                        {
+                            label: 'Voltage (V)',
+                            data: voltageValues,
+                            borderColor: 'rgb(75, 192, 192)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y-voltage'
+                        },
+                        {
+                            label: 'Current (A)',
+                            data: currentValues,
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y-current'
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
@@ -472,33 +464,48 @@
                     },
                     scales: {
                         x: {
-                            display: true,
                             title: {
                                 display: true,
                                 text: 'Time (ms)'
+                            },
+                            ticks: {
+                                callback: function(value, index) {
+                                    // Show every Nth label to avoid crowding
+                                    return index % Math.ceil(timeLabels.length / 20) === 0 ? this.getLabelForValue(value) : '';
+                                }
                             }
                         },
-                        y: {
-                            display: true,
+                        'y-voltage': {
+                            type: 'linear',
+                            position: 'left',
                             title: {
                                 display: true,
-                                text: label
+                                text: 'Voltage (V)'
+                            },
+                            grid: {
+                                color: 'rgba(75, 192, 192, 0.1)'
+                            }
+                        },
+                        'y-current': {
+                            type: 'linear',
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Current (A)'
+                            },
+                            grid: {
+                                drawOnChartArea: false
                             }
                         }
                     },
                     interaction: {
-                        mode: 'nearest',
-                        axis: 'x',
+                        mode: 'index',
                         intersect: false
                     }
                 }
             });
 
-            if (canvasId === 'voltageChart') {
-                voltageChart = chart;
-            } else if (canvasId === 'currentChart') {
-                currentChart = chart;
-            }
+            document.getElementById('chartSection').style.display = 'block';
         }
 
         /**
@@ -509,7 +516,8 @@
             const voltageValues = data.voltage;
             const currentValues = data.current;
             
-            const totalDurationUs = data.microsDelta.reduce((a, b) => a + b, 0);
+            // microsDelta contains cumulative microseconds, last value is total duration
+            const totalDurationUs = data.microsDelta[data.microsDelta.length - 1];
             const durationMs = (totalDurationUs / 1000.0).toFixed(2);
 
             // Calculate RMS (Root Mean Square) values
