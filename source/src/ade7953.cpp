@@ -1394,6 +1394,25 @@ namespace Ade7953
             // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
             // 1 (since channel 0 does not pass through the multiplexer)
             Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
+
+            // Check if we should trigger waveform capture for the NEXT channel (which is now active in the MUX)
+            // We do this BEFORE processing the previous channel's data, right after the MUX is set
+            // This ensures the analog frontend is settled and ready for the requested channel
+            if (_captureState == CaptureState::ARMED && _currentChannel == _captureRequestedChannel) {
+                LOG_DEBUG("Matched requested channel %u. Starting waveform capture", _currentChannel);
+                
+                _captureChannel = _currentChannel;
+                _captureSampleCount = 0;
+                _captureStartMicros = micros64();  // Record start time in microseconds
+                _captureState = CaptureState::CAPTURING;
+
+                // Enable the high-frequency WSMP interrupt to start the fast capture
+                int32_t irqena = readRegister(IRQENA_32, BIT_32, false);
+                irqena |= (1 << IRQSTATA_WSMP_BIT);
+                writeRegister(IRQENA_32, BIT_32, irqena, false);
+
+                LOG_VERBOSE("Enabled WSMP interrupt for waveform capture");
+            }
             
             // Process current channel (if active)
             if (previousChannel != INVALID_CHANNEL) _processChannelReading(previousChannel, linecycUnix);
