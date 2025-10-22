@@ -228,7 +228,7 @@
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">RMS Voltage</span>
-                    <span id="statAvgVoltage" class="stat-value">-</span>
+                    <span id="statRmsVoltage" class="stat-value">-</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">Peak Voltage</span>
@@ -236,7 +236,7 @@
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">RMS Current</span>
-                    <span id="statAvgCurrent" class="stat-value">-</span>
+                    <span id="statRmsCurrent" class="stat-value">-</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">Peak Current</span>
@@ -527,6 +527,10 @@
             // Update UI
             document.getElementById('statSamples').textContent = data.sampleCount;
             document.getElementById('statDuration').textContent = `${durationMs} ms`;
+            document.getElementById('statRmsVoltage').textContent = `${voltageRms} V`;
+            document.getElementById('statPeakVoltage').textContent = `${peakVoltage} V`;
+            document.getElementById('statRmsCurrent').textContent = `${currentRms} A`;
+            document.getElementById('statPeakCurrent').textContent = `${peakCurrent} A`;
 
             document.getElementById('statsSection').style.display = 'block';
         }
