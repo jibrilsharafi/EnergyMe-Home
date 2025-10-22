@@ -1424,12 +1424,36 @@ namespace Ade7953
             if (previousChannel != INVALID_CHANNEL) _processChannelReading(previousChannel, linecycUnix);
         }
         
+        // Check for channel 0 waveform capture separately (channel 0 doesn't go through multiplexer rotation)
+        // Channel 0 is always active and processed on every CYCEND, so we check for armed state here
+        if (_captureState == CaptureState::ARMED && _captureRequestedChannel == 0) {
+            LOG_DEBUG("Starting waveform capture for channel 0");
+            
+            _captureChannel = 0;
+            _captureSampleCount = 0;
+            _captureStartMicros = micros64();
+            _captureState = CaptureState::CAPTURING;
+
+            // Enable the high-frequency WSMP interrupt to start the fast capture
+            int32_t irqena = readRegister(IRQENA_32, BIT_32, false);
+            irqena |= (1 << IRQSTATA_WSMP_BIT);
+            writeRegister(IRQENA_32, BIT_32, irqena, false);
+        }
+        
         // Always process channel 0 as it is on a separate ADE7953 channel
         _processChannelReading(0, linecycUnix);
     }
 
     void _handleWaveformSample() {
-        if (_captureState != CaptureState::CAPTURING) return; // Safety check
+        // Critical safety check: if we're not in CAPTURING state but WSMP interrupt fired,
+        // this means the interrupt wasn't properly disabled. Disable it now to prevent infinite interrupts.
+        if (_captureState != CaptureState::CAPTURING) {
+            LOG_WARNING("WSMP interrupt fired but capture state is not CAPTURING (%u). Disabling WSMP interrupt", static_cast<uint8_t>(_captureState));
+            int32_t irqena = readRegister(IRQENA_32, BIT_32, false);
+            irqena &= ~(1 << IRQSTATA_WSMP_BIT);
+            writeRegister(IRQENA_32, BIT_32, irqena, false);
+            return;
+        }
 
         if (_captureSampleCount < WAVEFORM_BUFFER_SIZE) {
             Ade7953Channel channel = (_captureChannel == 0) ? Ade7953Channel::A : Ade7953Channel::B;
