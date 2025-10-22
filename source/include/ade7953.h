@@ -242,6 +242,7 @@
 // Enumeration for different types of ADE7953 interrupts
 enum class Ade7953InterruptType {
   CYCEND,         // Line cycle end - normal meter reading
+  WSMP,           // Waveform sample ready - high-speed capture
   RESET,          // Device reset detected
   CRC_CHANGE,     // CRC register change detected
   OTHER           // Other interrupts (SAG, etc.)

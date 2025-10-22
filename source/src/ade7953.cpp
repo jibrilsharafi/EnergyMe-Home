@@ -107,6 +107,7 @@ namespace Ade7953
     static void _detachInterruptHandler();
     static void IRAM_ATTR _isrHandler();
     static void _handleCycendInterrupt(uint64_t linecycUnix);
+    static void _handleWaveformSample();
     static void _handleCrcChangeInterrupt();
     static void _handleResetInterrupt();
     static void _handleOtherInterrupt();
@@ -1336,7 +1337,10 @@ namespace Ade7953
         int32_t statusA = readRegister(RSTIRQSTATA_32, BIT_32, false);
         // No need to read for channel B (only channel A has the relevant information for use)
 
-        if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
+        // Check WSMP first since it's the most time-critical during waveform capture
+        if (statusA & (1 << IRQSTATA_WSMP_BIT)) {
+            return Ade7953InterruptType::WSMP;
+        } else if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
             return Ade7953InterruptType::RESET;
         } else if (statusA & (1 << IRQSTATA_CRC_BIT)) {
             return Ade7953InterruptType::CRC_CHANGE;
@@ -1420,6 +1424,36 @@ namespace Ade7953
         
         // Always process channel 0 as it is on a separate ADE7953 channel
         _processChannelReading(0, linecycUnix);
+    }
+
+    void _handleWaveformSample() {
+        if (_captureState != CaptureState::CAPTURING) return; // Safety check
+
+        if (_captureSampleCount < WAVEFORM_BUFFER_SIZE) {
+            Ade7953Channel channel = (_captureChannel == 0) ? Ade7953Channel::A : Ade7953Channel::B;
+            
+            // Use fast, unverified reads during the capture loop for maximum performance
+            _voltageWaveformBuffer[_captureSampleCount] = readRegister(V_32, BIT_32, true, false);
+            _currentWaveformBuffer[_captureSampleCount] = readRegister(
+                (channel == Ade7953Channel::A) ? IA_32 : IB_32, BIT_32, true, false
+            );
+            
+            // Record microseconds delta from start
+            _microsWaveformBuffer[_captureSampleCount] = micros64() - _captureStartMicros;
+            
+            _captureSampleCount++;
+        }
+
+        // Check if capture is complete
+        if (_captureSampleCount >= WAVEFORM_BUFFER_SIZE) {
+            // Done! Disable the interrupt and update state.
+            int32_t irqena = readRegister(IRQENA_32, BIT_32, false);
+            irqena &= ~(1 << IRQSTATA_WSMP_BIT); // Clear the WSMP bit
+            writeRegister(IRQENA_32, BIT_32, irqena, false);
+
+            _captureState = CaptureState::COMPLETE;
+            LOG_INFO("Waveform capture complete for channel %u (%u samples)", _captureChannel, _captureSampleCount);
+        }
     }
 
     void _handleCrcChangeInterrupt() {
@@ -1515,6 +1549,10 @@ namespace Ade7953
                 // Process based on interrupt type
                 switch (interruptType)
                 {
+                    case Ade7953InterruptType::WSMP:
+                        _handleWaveformSample();
+                        break;
+
                     case Ade7953InterruptType::CYCEND:
                         _handleCycendInterrupt(linecycUnix);
                         break;
