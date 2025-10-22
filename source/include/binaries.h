@@ -26,6 +26,7 @@ extern const char info_html[] asm("_binary_html_info_html_start");
 extern const char log_html[] asm("_binary_html_log_html_start");
 extern const char swagger_ui_html[] asm("_binary_html_swagger_html_start");
 extern const char update_html[] asm("_binary_html_update_html_start");
+extern const char waveform_html[] asm("_binary_html_waveform_html_start");
 
 // Swagger UI
 extern const char swagger_yaml[] asm("_binary_resources_swagger_yaml_start");

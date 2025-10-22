@@ -1,0 +1,591 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Copyright (C) 2025 Jibril Sharafi -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+    <script src="/js/api-client.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+
+    <title>Waveform Capture</title>
+    <style>
+        .waveform-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .control-label {
+            font-weight: bold;
+            min-width: 120px;
+        }
+
+        .channel-select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            min-width: 200px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .status-idle {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .status-armed {
+            background-color: #ffc107;
+            color: black;
+        }
+
+        .status-capturing {
+            background-color: #17a2b8;
+            color: white;
+            animation: pulse 1s infinite;
+        }
+
+        .status-complete {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .status-error {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 20px;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .stats-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .error-message {
+            padding: 15px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            color: #721c24;
+            margin-top: 10px;
+        }
+
+        .info-message {
+            padding: 15px;
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            border-radius: 4px;
+            color: #0c5460;
+            margin-top: 10px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="outer" href="/calibration">⚖️ Calibration</a>
+        <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
+    </div>
+
+    <div class="container">
+        <h1>Waveform Capture</h1>
+
+        <section class="card">
+            <h2>Capture Control</h2>
+            <div class="waveform-container">
+                <div class="control-panel">
+                    <div class="control-row">
+                        <span class="control-label">Channel:</span>
+                        <select id="channelSelect" class="channel-select">
+                            <option value="">Select a channel...</option>
+                        </select>
+                    </div>
+
+                    <div class="control-row">
+                        <span class="control-label">Status:</span>
+                        <span id="statusIndicator" class="status-indicator status-idle">IDLE</span>
+                    </div>
+
+                    <div class="control-row button-group">
+                        <button id="armButton" class="buttonPrimary" onclick="armCapture()">
+                            📡 Arm Capture
+                        </button>
+                        <button id="refreshButton" class="buttonSecondary" onclick="refreshStatus()">
+                            🔄 Refresh Status
+                        </button>
+                        <button id="downloadButton" class="buttonSecondary" onclick="downloadData()" disabled>
+                            💾 Download Data
+                        </button>
+                    </div>
+                </div>
+
+                <div id="messageContainer"></div>
+            </div>
+        </section>
+
+        <section class="card" id="chartSection" style="display: none;">
+            <h2>Voltage Waveform</h2>
+            <div class="chart-container">
+                <canvas id="voltageChart"></canvas>
+            </div>
+        </section>
+
+        <section class="card" id="currentChartSection" style="display: none;">
+            <h2>Current Waveform</h2>
+            <div class="chart-container">
+                <canvas id="currentChart"></canvas>
+            </div>
+        </section>
+
+        <section class="card" id="statsSection" style="display: none;">
+            <h2>Waveform Statistics</h2>
+            <div class="stats-panel">
+                <div class="stat-item">
+                    <span class="stat-label">Samples</span>
+                    <span id="statSamples" class="stat-value">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Duration</span>
+                    <span id="statDuration" class="stat-value">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Avg Voltage</span>
+                    <span id="statAvgVoltage" class="stat-value">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Peak Voltage</span>
+                    <span id="statPeakVoltage" class="stat-value">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Avg Current</span>
+                    <span id="statAvgCurrent" class="stat-value">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Peak Current</span>
+                    <span id="statPeakCurrent" class="stat-value">-</span>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const api = new EnergyMeAPI();
+        let voltageChart = null;
+        let currentChart = null;
+        let statusPollInterval = null;
+        let currentWaveformData = null;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadChannels();
+            const status = await refreshStatus();
+            
+            // If status is complete on page load, auto-fetch the data
+            if (status === 'complete') {
+                await fetchWaveformData();
+            }
+        });
+
+        /**
+         * Load available channels from API
+         */
+        async function loadChannels() {
+            try {
+                const config = await api.getChannelConfig();
+                const select = document.getElementById('channelSelect');
+                
+                // Always add channel 0
+                const option0 = document.createElement('option');
+                option0.value = '0';
+                option0.textContent = 'Channel 0 (Main)';
+                select.appendChild(option0);
+
+                // Add other enabled channels
+                if (config && config.channels) {
+                    config.channels.forEach((channel, index) => {
+                        if (channel.enabled) {
+                            const channelIndex = index + 1;
+                            const option = document.createElement('option');
+                            option.value = channelIndex;
+                            option.textContent = `Channel ${channelIndex} - ${channel.name}`;
+                            select.appendChild(option);
+                        }
+                    });
+                }
+            } catch (error) {
+                showError('Failed to load channels: ' + error.message);
+            }
+        }
+
+        /**
+         * Arm waveform capture for selected channel
+         */
+        async function armCapture() {
+            const select = document.getElementById('channelSelect');
+            const channelIndex = parseInt(select.value);
+            
+            if (isNaN(channelIndex)) {
+                showError('Please select a channel first');
+                return;
+            }
+
+            clearMessage();
+            setLoading(true);
+
+            try {
+                const response = await api.post('ade7953/waveform/arm', {
+                    channelIndex: channelIndex
+                });
+
+                if (response.status === 'armed') {
+                    showInfo(`Capture armed for channel ${channelIndex}. Waiting for next line cycle...`);
+                    startStatusPolling();
+                } else {
+                    showError(response.message || 'Unexpected response from server');
+                }
+            } catch (error) {
+                if (error.message.includes('409')) {
+                    showError('Capture already in progress. Wait for it to complete or refresh status.');
+                } else {
+                    showError('Failed to arm capture: ' + error.message);
+                }
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        /**
+         * Poll capture status and auto-fetch data when complete
+         */
+        function startStatusPolling() {
+            stopStatusPolling();
+            statusPollInterval = setInterval(async () => {
+                const status = await refreshStatus();
+                if (status === 'complete') {
+                    stopStatusPolling();
+                    await fetchWaveformData();
+                } else if (status === 'error' || status === 'idle') {
+                    stopStatusPolling();
+                }
+            }, 500);
+        }
+
+        function stopStatusPolling() {
+            if (statusPollInterval) {
+                clearInterval(statusPollInterval);
+                statusPollInterval = null;
+            }
+        }
+
+        /**
+         * Refresh capture status
+         */
+        async function refreshStatus() {
+            try {
+                const response = await api.get('ade7953/waveform/status');
+                const status = response.state || 'unknown';
+                updateStatusIndicator(status);
+                return status;
+            } catch (error) {
+                console.error('Failed to get status:', error);
+                updateStatusIndicator('error');
+                return 'error';
+            }
+        }
+
+        /**
+         * Update status indicator UI
+         */
+        function updateStatusIndicator(status) {
+            const indicator = document.getElementById('statusIndicator');
+            indicator.className = 'status-indicator status-' + status;
+            indicator.textContent = status.toUpperCase();
+        }
+
+        /**
+         * Fetch and display waveform data
+         */
+        async function fetchWaveformData() {
+            setLoading(true);
+            clearMessage();
+
+            try {
+                const data = await api.get('ade7953/waveform/data');
+                currentWaveformData = data;
+                
+                displayWaveform(data);
+                calculateStats(data);
+                showInfo('Waveform captured successfully!');
+                
+                document.getElementById('downloadButton').disabled = false;
+            } catch (error) {
+                if (error.message.includes('404')) {
+                    showError('No waveform data available. Please arm capture first.');
+                } else {
+                    showError('Failed to fetch waveform data: ' + error.message);
+                }
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        /**
+         * Display waveform charts
+         */
+        function displayWaveform(data) {
+            // Convert LSB values to real units using scaling factors
+            const voltageValues = data.voltageLsb.map(lsb => lsb * data.voltageScalingFactor);
+            const currentValues = data.currentLsb.map(lsb => lsb * data.currentScalingFactor);
+            
+            // Calculate time axis in milliseconds
+            const timeMs = data.microsDelta.map((delta, index) => {
+                const sumDelta = data.microsDelta.slice(0, index + 1).reduce((a, b) => a + b, 0);
+                return sumDelta / 1000.0;
+            });
+
+            // Display voltage chart
+            displayChart('voltageChart', 'Voltage (V)', timeMs, voltageValues, 'rgb(75, 192, 192)');
+            document.getElementById('chartSection').style.display = 'block';
+
+            // Display current chart
+            displayChart('currentChart', 'Current (A)', timeMs, currentValues, 'rgb(255, 99, 132)');
+            document.getElementById('currentChartSection').style.display = 'block';
+        }
+
+        /**
+         * Create or update a chart
+         */
+        function displayChart(canvasId, label, xData, yData, color) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            
+            // Destroy existing chart
+            if (canvasId === 'voltageChart' && voltageChart) {
+                voltageChart.destroy();
+            } else if (canvasId === 'currentChart' && currentChart) {
+                currentChart.destroy();
+            }
+
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: xData,
+                    datasets: [{
+                        label: label,
+                        data: yData,
+                        borderColor: color,
+                        backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Time (ms)'
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: label
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+
+            if (canvasId === 'voltageChart') {
+                voltageChart = chart;
+            } else if (canvasId === 'currentChart') {
+                currentChart = chart;
+            }
+        }
+
+        /**
+         * Calculate and display statistics
+         */
+        function calculateStats(data) {
+            const voltageValues = data.voltageLsb.map(lsb => lsb * data.voltageScalingFactor);
+            const currentValues = data.currentLsb.map(lsb => lsb * data.currentScalingFactor);
+            
+            const totalDurationUs = data.microsDelta.reduce((a, b) => a + b, 0);
+            const durationMs = (totalDurationUs / 1000.0).toFixed(2);
+
+            const avgVoltage = (voltageValues.reduce((a, b) => a + b, 0) / voltageValues.length).toFixed(2);
+            const peakVoltage = Math.max(...voltageValues.map(Math.abs)).toFixed(2);
+            
+            const avgCurrent = (currentValues.reduce((a, b) => a + b, 0) / currentValues.length).toFixed(2);
+            const peakCurrent = Math.max(...currentValues.map(Math.abs)).toFixed(2);
+
+            document.getElementById('statSamples').textContent = data.sampleCount;
+            document.getElementById('statDuration').textContent = `${durationMs} ms`;
+            document.getElementById('statAvgVoltage').textContent = `${avgVoltage} V`;
+            document.getElementById('statPeakVoltage').textContent = `${peakVoltage} V`;
+            document.getElementById('statAvgCurrent').textContent = `${avgCurrent} A`;
+            document.getElementById('statPeakCurrent').textContent = `${peakCurrent} A`;
+
+            document.getElementById('statsSection').style.display = 'block';
+        }
+
+        /**
+         * Download waveform data as JSON
+         */
+        function downloadData() {
+            if (!currentWaveformData) {
+                showError('No waveform data to download');
+                return;
+            }
+
+            const dataStr = JSON.stringify(currentWaveformData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `waveform_ch${currentWaveformData.channelIndex}_${new Date().getTime()}.json`;
+            link.click();
+            
+            URL.revokeObjectURL(url);
+        }
+
+        /**
+         * UI Helper Functions
+         */
+        function setLoading(loading) {
+            const container = document.querySelector('.waveform-container');
+            if (loading) {
+                container.classList.add('loading');
+            } else {
+                container.classList.remove('loading');
+            }
+        }
+
+        function showError(message) {
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+
+        function showInfo(message) {
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `<div class="info-message">${message}</div>`;
+        }
+
+        function clearMessage() {
+            document.getElementById('messageContainer').innerHTML = '';
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopStatusPolling();
+        });
+    </script>
+</body>
+
+</html>
