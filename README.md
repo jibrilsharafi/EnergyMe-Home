@@ -36,6 +36,7 @@ The firmware is built with C++ using the *PlatformIO* ecosystem and *Arduino 3.x
 - **Crash Recovery**: Automatic recovery and firmware rollback on failures
 - **WiFi Setup**: Captive portal for configuration and mDNS support (`energyme.local`)
 - **OTA Updates**: Firmware updates with MD5 verification and rollback
+- **Waveform Analyzer**: Capture high-resolution voltage & current waveforms per channel from the web UI (`/waveform`) and download JSON for offline analysis. ![Waveform](resources/waveform.png)
 
 For detailed architecture, implementation details, and API documentation, see [`source/README.md`](source/README.md).
 

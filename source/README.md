@@ -94,6 +94,7 @@ The system implements a hierarchical protection against restart loops to ensure 
 - Dual channels: A (direct) and B (multiplexed)
 - Line cycle accumulation, no-load detection
 - Task-based non-blocking measurement loops
+ - Waveform Analyzer: on-demand high-resolution voltage & current captures per channel, accessible from the web UI (`/waveform`) with JSON export for offline analysis. ![Waveform](../resources/waveform.png)
 
 **Multiplexer:**
 
