@@ -89,8 +89,8 @@
 #define DEFAULT_FALLBACK_FREQUENCY 50 // Most of the world is 50 Hz
 
 // Waveform capture
-#define WAVEFORM_CYCLES_TO_CAPTURE 2    // Number of line cycles to capture
-#define SAMPLING_RATE_INSTANTANEOUS_VALUES 6990 // 6.99 kHz as given by datasheet
+#define WAVEFORM_CYCLES_TO_CAPTURE 4    // Number of line cycles to capture
+#define SAMPLING_RATE_INSTANTANEOUS_VALUES 6990 // 6.99 kHz (as given by datasheet) is the maximum rate of update of the instantaneous values
 #define WAVEFORM_BUFFER_SIZE \
     ((size_t)(((float)WAVEFORM_CYCLES_TO_CAPTURE / (float)DEFAULT_FALLBACK_FREQUENCY) \
               * SAMPLING_RATE_INSTANTANEOUS_VALUES))
