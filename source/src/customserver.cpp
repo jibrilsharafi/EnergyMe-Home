@@ -1909,7 +1909,7 @@ namespace CustomServer
                 return;
             }
 
-            LOG_INFO("Waveform capture armed for channel %u via API", channelIndex);
+            LOG_DEBUG("Waveform capture armed for channel %u via API", channelIndex);
             _sendSuccessResponse(request, "Waveform capture armed successfully");
         });
         server.addHandler(armWaveformCaptureHandler);
@@ -1941,6 +1941,9 @@ namespace CustomServer
             }
             doc["channel"] = Ade7953::getWaveformCaptureChannel();
 
+            LOG_DEBUG("Waveform capture status retrieved via API. Status for channel %u: %s",
+                      doc["channel"].as<uint8_t>(),
+                      doc["state"].as<const char *>());
             _sendJsonResponse(request, doc);
         });
 
@@ -1964,7 +1967,7 @@ namespace CustomServer
                 return;
             }
 
-            LOG_INFO("Waveform data retrieved via API");
+            LOG_DEBUG("Waveform data retrieved via API");
             _sendJsonResponse(request, doc);
         });
 

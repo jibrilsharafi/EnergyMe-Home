@@ -2051,15 +2051,15 @@ paths:
                   state:
                     type: string
                     example: "complete"
-                  captureTimestamp:
+                  captureStartUnixMillis:
                     type: integer
                     format: int64
-                    description: Unix timestamp (seconds) when capture completed
-                    example: 1729612345
+                    description: Unix timestamp in milliseconds when capture started
+                    example: 1729612345678
                   sampleCount:
                     type: integer
                     description: Number of samples captured
-                    example: 300
+                    example: 1200
                   voltage:
                     type: array
                     description: Voltage samples in volts
@@ -2074,13 +2074,13 @@ paths:
                       type: number
                       format: float
                     example: [5.2, 5.3, 5.1]
-                  micros:
+                  microsDelta:
                     type: array
-                    description: Microsecond deltas between samples
+                    description: Cumulative microseconds from capture start for each sample
                     items:
                       type: integer
                       format: int64
-                    example: [142, 143, 142]
+                    example: [20, 53, 87, 120]
         '404':
           description: No complete waveform data available
           content:
