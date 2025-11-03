@@ -15,6 +15,31 @@ EnergyMe-Home is an open-source energy monitoring system for home use, capable o
 
 Built for makers and DIY enthusiasts who want to track their home's energy consumption. The hardware uses ESP32-S3 and ADE7953 energy measurement IC, while the firmware is written in C++ with PlatformIO and Arduino framework. You can build and customize it yourself - all hardware designs and software are open-source.
 
+## Supported Electrical Systems
+
+EnergyMe-Home is compatible with various electrical systems worldwide:
+
+| System Type | Voltage | Configuration | Supported |
+|-------------|---------|---------------|-----------|
+| **Single Phase** | 230V | L + N | ✅ Europe, Asia, Africa, Oceania |
+| **Split Phase** | 120V/240V | L1 + L2 + N | ✅ North America residential |
+| **Split Phase** | 120V/240V | L1 + L2 (no N) | ✅ Old electrical systems |
+| **Three Phase** | 400V/230V | 3L + N | ❕ Europe commercial/industrial (derived voltages) |
+| **Three Phase** | 208V/120V | 3L + N | ❕ North America commercial (derived voltages) |
+
+**Current Transformers Supported:**
+
+- 333 mV output CTs (+- 500 mV absolute)
+- 3.5 mm jack connectors for easy plug-and-play
+
+**Monitoring Capacity:**
+
+- Up to **17 circuits** simultaneously
+- 1× main circuit (typically 50A CT), sampled at high frequency for accurate total energy measurement
+- 16× branch circuits (typically 30A CTs), multiplexed for individual monitoring
+
+⚠️ **Important**: Installation requires working with your main electrical panel. Always consult a qualified electrician if you're not experienced with electrical installations. The user is responsible for ensuring compliance with local electrical codes and regulations, and assumes all risks associated with the installation and use of this device.
+
 ## Hardware
 
 ![PCB](resources/PCB%20top%20view.jpg)
@@ -45,7 +70,7 @@ The firmware is built with C++ using the *PlatformIO* ecosystem and *Arduino 3.x
 - **Crash Recovery**: Automatic recovery and firmware rollback on failures
 - **WiFi Setup**: Captive portal for configuration and mDNS support (`energyme.local`)
 - **OTA Updates**: Firmware updates with MD5 verification and rollback
-- **Waveform Analyzer**: Capture high-resolution voltage & current waveforms per channel from the web UI (`/waveform`) and download JSON for offline analysis. ![Waveform](resources/waveform.png)
+- **Waveform Analyzer**: Capture high-resolution voltage & current waveforms per channel from the web UI
 
 For detailed architecture, implementation details, and API documentation, see [`source/README.md`](source/README.md).
 
