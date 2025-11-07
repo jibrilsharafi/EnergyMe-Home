@@ -2554,10 +2554,29 @@ namespace Ade7953
             !_validatePower(apparentPower) || 
             !_validatePowerFactor(powerFactor)
         ) {
-            
-            LOG_WARNING("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", channelData.label, channelIndex, activePower, current, reactivePower, apparentPower, powerFactor);
-            _recordFailure();
-            return false;
+            if (current >= MINIMUM_CURRENT_FOR_VALIDATION) {
+                // If the measurement is invalid AND we have enough current flowing (thus we should be reading correct values), then discard the reading
+                LOG_WARNING("%s (%d): Invalid reading (%.1fV, %.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", channelData.label, channelIndex, voltage, activePower, current, reactivePower, apparentPower, powerFactor);
+                _recordFailure();
+                return false;
+            } else {
+                // If the current is too low, we can assume the readings are not reliable and just set everything to 0
+                LOG_DEBUG(
+                    "%s (%d): Invalid reading with low current (%.3fA), setting all values to 0 to avoid invalid reading", 
+                    channelData.label, 
+                    channelIndex, 
+                    current
+                );
+                current = 0.0f;
+                activePower = 0.0f;
+                reactivePower = 0.0f;
+                apparentPower = 0.0f;
+                powerFactor = 0.0f;
+                activeEnergy = 0.0f;
+                reactiveEnergy = 0.0f;
+                apparentEnergy = 0.0f;
+            }
+
         }
         
         // Enough checks, now we can set the values
