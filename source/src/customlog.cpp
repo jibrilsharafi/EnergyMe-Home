@@ -10,7 +10,8 @@ namespace CustomLog
     static StaticQueue_t _udpLogQueueStruct;
     static uint8_t* _udpLogQueueStorage = nullptr;
     static WiFiUDP _udpClient;
-    static IPAddress _udpDestinationIp;
+    static IPAddress _udpDestination;
+    static SemaphoreHandle_t _udpDestinationMutex = nullptr;
     static char *_udpBuffer = nullptr;  // UDP_LOG_BUFFER_SIZE - allocated in PSRAM
     static bool _isUdpInitialized = false;
 
@@ -26,6 +27,10 @@ namespace CustomLog
     static void _startTask();
     static void _stopTask();
     static void _udpTask(void* parameter);
+    
+    // Preferences management
+    static bool _loadUdpDestinationFromPreferences();
+    static bool _saveUdpDestinationToPreferences();
 
     void begin()
     {
@@ -34,11 +39,18 @@ namespace CustomLog
             return;
         }
 
+        // Initialize mutex for UDP destination
+        if (!createMutexIfNeeded(&_udpDestinationMutex)) {
+            LOG_ERROR("Failed to create UDP destination mutex");
+            return;
+        }
+
         // Allocate PSRAM buffer for UDP messages
         if (_udpBuffer == nullptr) {
             _udpBuffer = (char*)ps_malloc(UDP_LOG_BUFFER_SIZE);
             if (_udpBuffer == nullptr) {
                 LOG_ERROR("Failed to allocate PSRAM for UDP log buffer");
+                deleteMutex(&_udpDestinationMutex);
                 return;
             }
         }
@@ -50,20 +62,25 @@ namespace CustomLog
                 free(_udpBuffer);
                 _udpBuffer = nullptr;
             }
+            deleteMutex(&_udpDestinationMutex);
             return;
         }
 
         // Make all ESP logs also go to our logger
         esp_log_set_vprintf(_espLogVprintf);
 
-        // Initialize UDP destination IP from configuration
-        _udpDestinationIp.fromString(DEFAULT_UDP_LOG_DESTINATION_IP);
+        // Load UDP destination from preferences or use default
+        if (!_loadUdpDestinationFromPreferences()) {
+            LOG_DEBUG("No saved UDP destination, using default multicast address");
+            _udpDestination.fromString(DEFAULT_UDP_LOG_DESTINATION_IP);
+            _saveUdpDestinationToPreferences();
+        }
         
         _udpClient.begin(UDP_LOG_PORT);
         _isUdpInitialized = true;
 
-        LOG_DEBUG("UDP logging configured - destination: %s:%d, PSRAM buffer: %zu bytes",
-                    _udpDestinationIp.toString().c_str(), UDP_LOG_PORT, LOG_QUEUE_SIZE);
+        LOG_DEBUG("UDP logging configured to %s:%d, PSRAM buffer: %zu bytes",
+                    _udpDestination.toString().c_str(), UDP_LOG_PORT, LOG_QUEUE_SIZE);
 
         // Start async task
         _startTask();
@@ -97,6 +114,9 @@ namespace CustomLog
             free(_udpBuffer);
             _udpBuffer = nullptr;
         }
+        
+        // Delete mutex
+        deleteMutex(&_udpDestinationMutex);
     }
 
     void callbackMultiple(const LogEntry& entry)
@@ -243,26 +263,33 @@ namespace CustomLog
                 entry.function,
                 entry.message);
             
-            if (!_udpClient.beginPacket(_udpDestinationIp, UDP_LOG_PORT)) {
-                // Put the log back in the queue (front of queue)
-                // if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
+            // Send to configured destination
+            if (!acquireMutex(&_udpDestinationMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+                delay(DELAY_SEND_UDP);
+                continue;
+            }
+            
+            if (!_udpClient.beginPacket(_udpDestination, UDP_LOG_PORT)) {
+                releaseMutex(&_udpDestinationMutex);
                 delay(DELAY_SEND_UDP);
                 continue;
             }
             
             size_t bytesWritten = _udpClient.write((const uint8_t*)_udpBuffer, strlen(_udpBuffer));
             if (bytesWritten == 0) {
-                // if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
-                _udpClient.endPacket(); // Clean up the packet
+                _udpClient.endPacket();
+                releaseMutex(&_udpDestinationMutex);
                 delay(DELAY_SEND_UDP);
                 continue;
             }
             
             if (!_udpClient.endPacket()) {
-                // if (_udpLogQueue) xQueueSendToFront(_udpLogQueue, &entry, 0);
+                releaseMutex(&_udpDestinationMutex);
                 delay(DELAY_SEND_UDP);
                 continue;
             }
+            
+            releaseMutex(&_udpDestinationMutex);
         }
 
         // Removed LOG_DEBUG here to avoid recursive logging
@@ -273,5 +300,108 @@ namespace CustomLog
     TaskInfo getTaskInfo()
     {
         return getTaskInfoSafely(_udpTaskHandle, UDP_LOG_TASK_STACK_SIZE);
+    }
+
+    // UDP Destination Management
+    // ============================
+    
+    static bool _loadUdpDestinationFromPreferences()
+    {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_UDP_LOG, true)) {
+            return false;
+        }
+
+        char ipStr[IP_ADDRESS_BUFFER_SIZE];
+        size_t len = prefs.getString(PREFERENCES_KEY_UDP_DESTINATION, ipStr, sizeof(ipStr));
+        prefs.end();
+
+        if (len == 0) {
+            return false;
+        }
+
+        if (!acquireMutex(&_udpDestinationMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            return false;
+        }
+
+        bool success = _udpDestination.fromString(ipStr);
+        releaseMutex(&_udpDestinationMutex);
+
+        if (success) {
+            LOG_DEBUG("Loaded UDP destination from preferences: %s", ipStr);
+        }
+        return success;
+    }
+
+    static bool _saveUdpDestinationToPreferences()
+    {
+        if (!acquireMutex(&_udpDestinationMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            LOG_ERROR("Failed to acquire mutex for saving UDP destination");
+            return false;
+        }
+
+        String ipStr = _udpDestination.toString();
+        releaseMutex(&_udpDestinationMutex);
+
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_UDP_LOG, false)) {
+            LOG_ERROR("Failed to open preferences for UDP destination");
+            return false;
+        }
+
+        bool success = prefs.putString(PREFERENCES_KEY_UDP_DESTINATION, ipStr.c_str()) > 0;
+        prefs.end();
+
+        if (success) {
+            LOG_DEBUG("Saved UDP destination to preferences: %s", ipStr.c_str());
+        }
+        return success;
+    }
+
+    bool getUdpDestination(char* ipAddress, size_t bufferSize)
+    {
+        if (!ipAddress || bufferSize < IP_ADDRESS_BUFFER_SIZE) {
+            LOG_ERROR("Invalid buffer for getting UDP destination");
+            return false;
+        }
+
+        if (!acquireMutex(&_udpDestinationMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            LOG_ERROR("Failed to acquire mutex for getting UDP destination");
+            return false;
+        }
+
+        strncpy(ipAddress, _udpDestination.toString().c_str(), bufferSize - 1);
+        ipAddress[bufferSize - 1] = '\0';
+
+        releaseMutex(&_udpDestinationMutex);
+        return true;
+    }
+
+    bool setUdpDestination(const char* ipAddress)
+    {
+        if (!ipAddress) {
+            LOG_ERROR("Invalid IP address provided");
+            return false;
+        }
+
+        IPAddress newIp;
+        if (!newIp.fromString(ipAddress)) {
+            LOG_ERROR("Invalid IP address format: %s", ipAddress);
+            return false;
+        }
+
+        if (!acquireMutex(&_udpDestinationMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            LOG_ERROR("Failed to acquire mutex for setting UDP destination");
+            return false;
+        }
+
+        _udpDestination = newIp;
+        releaseMutex(&_udpDestinationMutex);
+
+        bool saved = _saveUdpDestinationToPreferences();
+        if (saved) {
+            LOG_INFO("Updated UDP destination to: %s", ipAddress);
+        }
+        return saved;
     }
 }

@@ -879,6 +879,52 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
 
+  /api/v1/logs-udp-destination:
+    get:
+      summary: Get UDP log destination
+      description: Get the current IP address where UDP logs are sent
+      tags:
+        - Logging
+      responses:
+        '200':
+          description: Current UDP log destination
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  destination:
+                    type: string
+                    format: ipv4
+                    example: "239.255.255.250"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      summary: Set UDP log destination
+      description: Configure the IP address where UDP logs should be sent (supports both unicast and multicast addresses)
+      tags:
+        - Logging
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - destination
+              properties:
+                destination:
+                  type: string
+                  format: ipv4
+                  description: IP address for UDP log destination (e.g., "192.168.1.100" for unicast or "239.255.255.250" for multicast)
+            example:
+              destination: "192.168.1.100"
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   # Custom MQTT endpoints
   /api/v1/custom-mqtt/config:
     get:
