@@ -38,6 +38,7 @@ class ComputedProperties:
     current_thd: float
     voltage_shifted: np.ndarray  # Phase-shifted voltage for plotting
     phase_shift_degrees: float  # Applied phase shift
+    complete_cycles: int  # Number of complete cycles captured
 
 
 class EnergyMeterAPI:
@@ -127,7 +128,7 @@ class WaveformAnalyzer:
     @staticmethod
     def estimate_frequency(time: np.ndarray, signal: np.ndarray) -> float:
         """Estimate frequency using zero-crossing method"""
-        # Find zero crossings
+        # Find zero crossings (both positive and negative going)
         zero_crossings = np.where(np.diff(np.sign(signal)))[0]
         
         if len(zero_crossings) < 2:
@@ -140,6 +141,19 @@ class WaveformAnalyzer:
         # Full period is twice the half period
         frequency = 1.0 / (2 * avg_half_period) if avg_half_period > 0 else 0.0
         return float(frequency)
+    
+    @staticmethod
+    def count_complete_cycles(signal: np.ndarray) -> int:
+        """Count the number of complete cycles by counting positive-going zero crossings"""
+        # Detect zero crossings
+        sign_changes = np.diff(np.sign(signal))
+        
+        # Positive-going crossings: sign changes from negative to positive (sign_changes > 0)
+        positive_crossings = np.sum(sign_changes > 0)
+        
+        # Each positive crossing starts a new cycle, so N crossings = N-1 complete cycles
+        # (unless we have exactly the right number captured)
+        return max(0, int(positive_crossings) - 1)
     
     @staticmethod
     def compute_thd(signal: np.ndarray, fundamental_freq: float, sample_rate: float) -> float:
@@ -179,6 +193,9 @@ class WaveformAnalyzer:
         
         # Calculate phase shift needed
         phase_shift = cls.calculate_phase_shift(voltage_phase, current_phase)
+        
+        # Count complete cycles in the waveform
+        complete_cycles = cls.count_complete_cycles(voltage)
         
         # Apply phase shift if needed
         if voltage_phase != current_phase:
@@ -228,7 +245,8 @@ class WaveformAnalyzer:
             voltage_thd=float(v_thd),
             current_thd=float(i_thd),
             voltage_shifted=voltage_shifted,
-            phase_shift_degrees=float(phase_shift)
+            phase_shift_degrees=float(phase_shift),
+            complete_cycles=complete_cycles
         )
         
     @staticmethod
@@ -306,7 +324,8 @@ def plot_waveforms(waveform: WaveformData, computed: ComputedProperties,
     # Channel info
     channel_label = channel_config.get('label', f"Channel {waveform.channel_index}")
     phase_info = f" (Phase shift: {computed.phase_shift_degrees:.1f}°)" if computed.phase_shift_degrees != 0 else ""
-    fig.suptitle(f"{channel_label} - Waveform Analysis{phase_info}", fontsize=16, fontweight='bold')
+    cycle_info = f" - {computed.complete_cycles} complete cycles"
+    fig.suptitle(f"{channel_label} - Waveform Analysis{phase_info}{cycle_info}", fontsize=16, fontweight='bold')
     
     # 1. Voltage and Current waveforms
     ax1 = plt.subplot(3, 2, 1)
@@ -482,6 +501,10 @@ def main():
         print("\n" + "="*60)
         print("ANALYSIS RESULTS")
         print("="*60)
+        print(f"\nWaveform Quality:")
+        print(f"  Complete Cycles:  {computed.complete_cycles}")
+        print(f"  Sample Count:     {waveform.sample_count}")
+        print(f"  Frequency:        {computed.frequency:.2f} Hz")
         print(f"\nComputed Properties:")
         print(f"  Voltage RMS:      {computed.voltage_rms:.2f} V")
         print(f"  Current RMS:      {computed.current_rms:.3f} A")
@@ -489,7 +512,6 @@ def main():
         print(f"  Reactive Power:   {computed.reactive_power:.2f} VAR")
         print(f"  Apparent Power:   {computed.apparent_power:.2f} VA")
         print(f"  Power Factor:     {computed.power_factor:.3f}")
-        print(f"  Frequency:        {computed.frequency:.2f} Hz")
         print(f"  Voltage THD:      {computed.voltage_thd:.2f}%")
         print(f"  Current THD:      {computed.current_thd:.2f}%")
         if computed.phase_shift_degrees != 0:
