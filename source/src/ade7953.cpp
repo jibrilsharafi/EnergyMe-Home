@@ -77,6 +77,7 @@ namespace Ade7953
     MeterValues _meterValues[CHANNEL_COUNT];
     EnergyValues _energyValues[CHANNEL_COUNT]; // Store previous energy values for energy comparisons (optimize saving to flash)
     ChannelData _channelData[CHANNEL_COUNT];
+    static uint16_t _lineFrequency = DEFAULT_FALLBACK_FREQUENCY; // Line frequency (fixed 50 or 60 Hz value)
 
     // Private function declarations
     // =========================================================
@@ -223,7 +224,9 @@ namespace Ade7953
     static int32_t _readApparentEnergy(Ade7953Channel ade7953Channel);
     static int32_t _readPowerFactor(Ade7953Channel ade7953Channel);
     static int32_t _readAngle(Ade7953Channel ade7953Channel);
+    static float _readAngleRadians(Ade7953Channel ade7953Channel);
     static int32_t _readPeriod();
+    static float _readGridFrequency();
 
     // Verification and validation functions
     static void _recordFailure();
@@ -2488,8 +2491,8 @@ namespace Ade7953
                 }
             }
 
-            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1 : 1);
-            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1 : 1);
+            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1.0f : 1.0f);
+            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1.0f : 1.0f);
             apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb;
 
             // Set the handling just after reading the energy values, to ensure 100% consistency
@@ -2502,8 +2505,7 @@ namespace Ade7953
                 voltage = float(_readVoltageRms()) * VOLT_PER_LSB;
 
                 // Update grid frequency during channel 0 reading
-                int32_t period = _readPeriod();
-                float newGridFrequency = period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / float(period) : 0.0f;
+                float newGridFrequency = _readGridFrequency();
                 if (_validateGridFrequency(newGridFrequency)) _gridFrequency = newGridFrequency;
             } else {
                 voltage = _meterValues[0].voltage;
@@ -2531,39 +2533,39 @@ namespace Ade7953
             // Assume from channel 0
             voltage = _meterValues[0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
             
-            // Read wrong power factor due to the phase shift
-            float _powerFactorPhaseOne = float(_readPowerFactor(ade7953Channel)) * POWER_FACTOR_CONVERSION_FACTOR;
+            // Read the current (RMS is absolute so no reverse is needed)
+            current = float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb;
 
-            // Compute the correct power factor assuming 120 degrees phase shift in voltage (weak assumption as this is normally true)
-            // The idea is to:
-            // 1. Compute the angle between the voltage and the current with the arc cosine of the just read power factor
-            // 2. Add or subtract 120 degrees to the angle depending on the phase (phase is lagging 120 degrees, phase 3 is leading 120 degrees)
-            // 3. Compute the cosine of the new corrected angle to get the corrected power factor
-            // 4. Multiply by -1 if the channel is reversed (as normal)
-
-            // Note that the direction of the current (and consequently the power) cannot be determined (or at least, I couldn't manage to do it reliably). 
-            // This is because the only reliable reading is the power factor, while the angle only gives the angle difference of the current 
-            // reading instead of the one of the whole line cycle. As such, the power factor is the only reliable reading and it cannot 
-            // provide information about the direction of the power.
+            float angleDifference = _readAngleRadians(ade7953Channel);
+            float realAngleDifference = angleDifference;
 
             if (channelData.phase == _getLaggingPhase(basePhase)) {
-                powerFactor = cos(acos(_powerFactorPhaseOne) - (2.0f * (float)PI / 3.0f));
+                realAngleDifference = angleDifference - 2.0f * (float)PI / 3.0f;
+                powerFactor = cos(realAngleDifference);
             } else if (channelData.phase == _getLeadingPhase(basePhase)) {
-                // I cannot prove why, but I am SURE the minus is needed if the phase is leading
-                powerFactor = - cos(acos(_powerFactorPhaseOne) + (2.0f * (float)PI / 3.0f));
+                realAngleDifference = angleDifference + 2.0f * (float)PI / 3.0f;
+                powerFactor = cos(realAngleDifference);
             } else {
                 LOG_ERROR("Invalid phase %d for channel %d", channelData.phase, channelIndex);
                 _recordFailure();
                 return false;
             }
-
-            // Read the current (RMS is absolute so no reverse is needed)
-            current = float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb;
+            LOG_DEBUG(
+                "%s (%d): Angle difference: %.3f rad (%.1f deg), real %.3f rad (%.1f deg), Power factor: %.3f", 
+                channelData.label, 
+                channelIndex, 
+                angleDifference,
+                angleDifference * RAD_TO_DEG,
+                realAngleDifference,
+                realAngleDifference * RAD_TO_DEG,
+                powerFactor
+            ); // FIXME: temporary debug
+            // TODO: finish understanding how to properly identify negative power flow
 
             // Compute power values
-            activePower = current * voltage * abs(powerFactor);
+            activePower = current * voltage * abs(powerFactor) * (channelData.reverse ? -1.0f : 1.0f);
             apparentPower = current * voltage;
-            reactivePower = float(sqrt(pow(apparentPower, 2) - pow(activePower, 2))); // Small approximation leaving out distorted power
+            reactivePower = float(sqrt(pow(apparentPower, 2) - pow(activePower, 2))) * (powerFactor >= 0 ? 1.0f : -1.0f); // Small approximation leaving out distorted power
         }
 
         apparentPower = abs(apparentPower); // Apparent power must be positive
@@ -2934,20 +2936,20 @@ namespace Ade7953
     }
 
     void _updateSampleTime() {
-        int32_t period = _readPeriod();
-        float gridFrequency = period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / float(period) : 0.0f;
-        uint64_t gridFrequencyInt = DEFAULT_FALLBACK_FREQUENCY;
+        float gridFrequency = _readGridFrequency();
+        uint16_t _lineFrequency = DEFAULT_FALLBACK_FREQUENCY;
 
         if (
             _validateGridFrequency(gridFrequency) &&
-            fabs(gridFrequency - 60.0f) < 2.0f
-        ) gridFrequencyInt = 60; // If valid frequency and close to 60 Hz, set to 60 Hz
-        else gridFrequencyInt = DEFAULT_FALLBACK_FREQUENCY; // Otherwise, set to 50 Hz as most of the world uses this
+            fabs(gridFrequency - 60.0f) < 2.0f // Absolute difference less than 2 Hz
+        ) {
+            _lineFrequency = 60; // If valid frequency and close to 60 Hz, set to 60 Hz
+        }
 
-        uint64_t calculatedLinecyc = _sampleTime * gridFrequencyInt * 2 / 1000;
+        uint64_t calculatedLinecyc = _sampleTime * _lineFrequency * 2 / 1000;
         _setLinecyc((uint32_t)calculatedLinecyc);
 
-        LOG_DEBUG("Successfully updated sample time to %llu ms (%llu line cycles) with grid frequency %llu Hz", _sampleTime, calculatedLinecyc, gridFrequencyInt);
+        LOG_DEBUG("Successfully updated sample time to %llu ms (%llu line cycles) with grid frequency %u Hz", _sampleTime, calculatedLinecyc, _lineFrequency);
     }
 
     // ADE7953 register reading functions
@@ -2991,8 +2993,23 @@ namespace Ade7953
         else return readRegister(PFB_16, BIT_16, true);
     }
 
+    int32_t _readAngle(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(ANGLE_A_16, BIT_16, true);
+        else return readRegister(ANGLE_B_16, BIT_16, true);
+    }
+
+    float _readAngleRadians(Ade7953Channel ade7953Channel) {
+        int32_t angleRaw = _readAngle(ade7953Channel);
+        return (float(angleRaw) * 360.0f * DEG_TO_RAD * float(_lineFrequency) / GRID_FREQUENCY_CONVERSION_FACTOR); // Convert to radians
+    }
+
     int32_t _readPeriod() {
         return readRegister(PERIOD_16, BIT_16, false);
+    }
+
+    float _readGridFrequency() {
+        int32_t period = _readPeriod();
+        return period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / float(period) : float(DEFAULT_FALLBACK_FREQUENCY);
     }
 
     // Verification and validation functions
