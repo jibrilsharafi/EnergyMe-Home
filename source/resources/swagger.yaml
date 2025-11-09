@@ -2080,6 +2080,19 @@ paths:
         Retrieves the captured waveform data including voltage, current, and microsecond timestamps.
         Returns 404 if no complete capture is available.
         Successfully fetching data resets the capture state to idle.
+        
+        **Phase Information:**
+        - `voltagePhase`: Phase of the voltage reference (always from channel 0)
+        - `currentPhase`: Phase of the current being measured
+        - `phaseShiftDegrees`: Calculated phase shift to align voltage with current
+          - Positive values: voltage leads current (shift forward)
+          - Negative values: voltage lags current (shift backward)
+          - 0°: Both on same phase (no shift needed)
+        
+        Phase angles follow standard ABC sequence:
+        - Phase 1 (A): 0°
+        - Phase 2 (B): -120° (lags A by 120°)
+        - Phase 3 (C): +120° (leads A by 120°, or lags B by 120°)
       tags:
         - ADE7953
       responses:
@@ -2102,10 +2115,30 @@ paths:
                     format: int64
                     description: Unix timestamp in milliseconds when capture started
                     example: 1729612345678
+                  captureStartMicros:
+                    type: integer
+                    format: int64
+                    description: Microsecond timestamp at capture start (for relative timing)
+                    example: 1234567890
                   sampleCount:
                     type: integer
                     description: Number of samples captured
                     example: 1200
+                  voltagePhase:
+                    type: integer
+                    description: Phase number of voltage reference (1=A, 2=B, 3=C)
+                    example: 3
+                    enum: [1, 2, 3]
+                  currentPhase:
+                    type: integer
+                    description: Phase number of current measurement (1=A, 2=B, 3=C)
+                    example: 1
+                    enum: [1, 2, 3]
+                  phaseShiftDegrees:
+                    type: number
+                    format: float
+                    description: Phase shift in degrees to align voltage with current (negative=lag, positive=lead)
+                    example: -120.0
                   voltage:
                     type: array
                     description: Voltage samples in volts

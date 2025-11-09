@@ -242,6 +242,7 @@ namespace Ade7953
     static uint8_t _findNextActiveChannel(uint8_t currentChannel);
     static Phase _getLaggingPhase(Phase phase);
     static Phase _getLeadingPhase(Phase phase);
+    float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase);
     // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
     static const char *_irqstataBitName(uint32_t bit);
     void _printMeterValues(uint8_t channelIndex);
@@ -1517,11 +1518,10 @@ namespace Ade7953
         }
         
         uint64_t totalDurationMs = (micros64() - _captureStartMicros) / 1000;
-        float effectiveSampleRate = _captureSampleCount > 0 ? (_captureSampleCount * 1000.0f) / totalDurationMs : 0;
         
         _captureState = CaptureState::COMPLETE;
-        LOG_INFO("Waveform capture complete for channel %u: %u samples in %llu ms (%.0f Hz) with %u zero crossings", 
-            _captureChannel, _captureSampleCount, totalDurationMs, effectiveSampleRate, zeroCrossingCount);
+        LOG_INFO("Waveform capture complete for channel %u: %u samples in %llu ms with %u zero crossings", 
+            _captureChannel, _captureSampleCount, totalDurationMs, zeroCrossingCount);
     }
 
     void _handleCrcChangeInterrupt() {
@@ -3197,6 +3197,35 @@ namespace Ade7953
         }
     }
 
+    float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase) {
+        /**
+         * Calculate phase shift to align voltage waveform with current's phase reference.
+         * 
+         * Returns angle in degrees: positive = shift forward, negative = shift backward
+         * Formula: currentPhaseAngle - voltagePhaseAngle
+         */
+        
+        // Get phase angle for voltage
+        float voltageAngle = 0.0f;
+        switch (voltagePhase) {
+            case PHASE_1: voltageAngle = 0.0f; break;      // Phase A: 0°
+            case PHASE_2: voltageAngle = 120.0f; break;    // Phase B: 120°
+            case PHASE_3: voltageAngle = -120.0f; break;   // Phase C: -120°
+            default: return 0.0f;  // Invalid phase
+        }
+        
+        // Get phase angle for current
+        float currentAngle = 0.0f;
+        switch (currentPhase) {
+            case PHASE_1: currentAngle = 0.0f; break;      // Phase A: 0°
+            case PHASE_2: currentAngle = 120.0f; break;    // Phase B: 120°
+            case PHASE_3: currentAngle = -120.0f; break;   // Phase C: -120°
+            default: return 0.0f;  // Invalid phase
+        }
+        
+        return currentAngle - voltageAngle;
+    }
+
     const char* _irqstataBitName(uint32_t bit) {
         switch (bit) {
             case IRQSTATA_AEHFA_BIT:       return "AEHFA";
@@ -3360,6 +3389,15 @@ namespace Ade7953
         jsonDocument["sampleCount"] = _captureSampleCount;
         jsonDocument["captureStartUnixMillis"] = _captureStartUnixMillis;
         jsonDocument["captureStartMicros"] = _captureStartMicros;
+        
+        // Add phase information
+        Phase voltagePhase = _channelData[0].phase;  // Voltage reference is always channel 0
+        Phase currentPhase = _channelData[_captureChannel].phase;
+        float phaseShift = _calculatePhaseShift(voltagePhase, currentPhase);
+        
+        jsonDocument["voltagePhase"] = static_cast<uint32_t>(voltagePhase);
+        jsonDocument["currentPhase"] = static_cast<uint32_t>(currentPhase);
+        jsonDocument["phaseShiftDegrees"] = roundToDecimals(phaseShift, 0);
 
         // Create JSON arrays for voltage, current, and microseconds (only scaled values)
         JsonArray voltageArray = jsonDocument["voltage"].to<JsonArray>();

@@ -17,6 +17,9 @@ class WaveformData:
     voltage: List[float]
     current: List[float]
     micros_delta: List[int]
+    voltage_phase: int = 1  # Phase number (1, 2, 3)
+    current_phase: int = 1  # Phase number (1, 2, 3)
+    phase_shift_degrees: float = 0.0  # Pre-calculated phase shift from device
     
     @property
     def time_seconds(self) -> np.ndarray:
@@ -77,7 +80,10 @@ class EnergyMeterAPI:
             capture_start_unix_millis=data['captureStartUnixMillis'],
             voltage=data['voltage'],
             current=data['current'],
-            micros_delta=data['microsDelta']
+            micros_delta=data['microsDelta'],
+            voltage_phase=data.get('voltagePhase', 1),
+            current_phase=data.get('currentPhase', 1),
+            phase_shift_degrees=data.get('phaseShiftDegrees', 0.0)
         )
     
     def get_meter_values(self, channel_index: Optional[int] = None) -> Dict:
@@ -188,8 +194,11 @@ class WaveformAnalyzer:
         
         Args:
             waveform: WaveformData object with captured samples
-            voltage_phase: Voltage phase (1/2/3 or "A"/"B"/"C")
-            current_phase: Current phase (1/2/3 or "A"/"B"/"C")
+            voltage_phase: Voltage phase (1/2/3 or "A"/"B"/"C") - DEPRECATED, use waveform.voltage_phase
+            current_phase: Current phase (1/2/3 or "A"/"B"/"C") - DEPRECATED, use waveform.current_phase
+        
+        Note: Phase parameters are deprecated. The waveform object now contains
+              pre-calculated phase information from the device.
         """
         time = waveform.time_seconds
         voltage = np.array(waveform.voltage)
@@ -198,18 +207,19 @@ class WaveformAnalyzer:
         # Frequency estimation (do this first, before any phase shifts)
         frequency = cls.estimate_frequency(time, voltage)
         
-        # Calculate phase shift needed
-        phase_shift = cls.calculate_phase_shift(voltage_phase, current_phase)
+        # Use device-provided phase shift (more accurate than recalculating)
+        phase_shift = waveform.phase_shift_degrees
+        
         if phase_shift != 0:
-            print(f"Phase configuration: Voltage={voltage_phase}, Current={current_phase}")
-            print(f"Calculated phase shift: {phase_shift:.1f}°")
+            print(f"Phase configuration: Voltage=Phase {waveform.voltage_phase}, Current=Phase {waveform.current_phase}")
+            print(f"Device-calculated phase shift: {phase_shift:.1f}°")
         
         # Count complete cycles in the waveform
         complete_cycles = cls.count_complete_cycles(voltage)
         
         # Apply phase shift if needed
-        if voltage_phase != current_phase:
-            print(f"Applying phase shift: {phase_shift:.1f} degrees")
+        if phase_shift != 0:
+            print(f"Applying phase shift: {phase_shift:.1f}°")
             # Shift voltage to align with current phase
             voltage_shifted = cls.shift_signal_by_phase(voltage, time, frequency, phase_shift)
         else:
@@ -503,24 +513,21 @@ def main():
         channel_config = api.get_channel_config(args.channel)
         print(f"Channel: {channel_config.get('label', 'Unknown')}")
         print(f"Active: {channel_config.get('active', False)}")
-
-        # Get phase information
-        voltage_phase = api.get_channel_config(0).get('phase', 'A')  # Voltage reference from channel 0
-        current_phase = channel_config.get('phase', 'A')
-
-        print(f"Voltage Phase: {voltage_phase}, Current Phase: {current_phase}")
         
         # Capture waveform
         waveform = api.capture_waveform_blocking(args.channel, timeout=args.timeout)
         print(f"\nCaptured {waveform.sample_count} samples")
+        print(f"Voltage Phase: {waveform.voltage_phase}, Current Phase: {waveform.current_phase}")
+        if waveform.phase_shift_degrees != 0:
+            print(f"Phase shift: {waveform.phase_shift_degrees:.1f}°")
         
         # Get meter values for comparison
         print("\nFetching meter values...")
         meter_values = api.get_meter_values(args.channel)
         
-        # Analyze waveform
+        # Analyze waveform (phase info now comes from waveform object)
         print("\nAnalyzing waveform...")
-        computed = WaveformAnalyzer.analyze(waveform, voltage_phase, current_phase)
+        computed = WaveformAnalyzer.analyze(waveform)
 
         # Print results
         print("\n" + "="*60)
