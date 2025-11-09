@@ -165,23 +165,7 @@ namespace Ade7953
     static void _saveSampleTimeToPreferences();
 
     // ADE7953 register reading functions
-
-    static int32_t _readApparentPowerInstantaneous(Ade7953Channel ade7953Channel);
     /*
-    Reads the "instantaneous" active power.
-
-    "Instantaneous" because the active power is only defined as the dc component
-    of the instantaneous power signal, which is V_RMS * I_RMS - V_RMS * I_RMS * cos(2*omega*t). 
-    It is updated at 6.99 kHz.
-
-    @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
-    @return The active power in LSB.
-    */
-    static int32_t _readActivePowerInstantaneous(Ade7953Channel ade7953Channel);
-    static int32_t _readReactivePowerInstantaneous(Ade7953Channel ade7953Channel);
-    /*
-    Reads the actual instantaneous current. 
-
     This allows you see the actual sinusoidal waveform, so both positive and 
     negative values. At full scale (so 500 mV), the value returned is 9032007d.
 
@@ -222,7 +206,6 @@ namespace Ade7953
     static int32_t _readActiveEnergy(Ade7953Channel ade7953Channel);
     static int32_t _readReactiveEnergy(Ade7953Channel ade7953Channel);
     static int32_t _readApparentEnergy(Ade7953Channel ade7953Channel);
-    static int32_t _readPowerFactor(Ade7953Channel ade7953Channel);
     static int32_t _readAngle(Ade7953Channel ade7953Channel);
     static float _readAngleRadians(Ade7953Channel ade7953Channel);
     static int32_t _readPeriod();
@@ -2525,47 +2508,57 @@ namespace Ade7953
 
             current = voltage > 0.0f ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
         } else {
-            // TODO: understand if this can be improved using the energy registers
-            // Assume everything is the same as channel 0 except the current
+            // TODO: understand how to aggregate three-phase measurements
+            // We cannot use the energy registers as it would be too complicated (or impossible) to account both for the 120° shift and possible reverse currebt
+            // Assume the voltage is the same as channel 0 (in amplitude) but shifted 120°
             // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
             // It is easier just to ensure during installation that the CTs are installed correctly
             
             // Assume from channel 0
             voltage = _meterValues[0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
             
-            // Read the current (RMS is absolute so no reverse is needed)
+            // Read the current (RMS is absolute so no reverse is needed). No assumption here
             current = float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb;
 
+            // To get the power factor, we can read the angle difference between voltage and current (which is the time between the two zero-crossings)
             float angleDifference = _readAngleRadians(ade7953Channel);
+            // What we just read is the raw angle; we need to shift it by 120° depending if it is leading or lagging
             float realAngleDifference = angleDifference;
 
             if (channelData.phase == _getLaggingPhase(basePhase)) {
                 realAngleDifference = angleDifference - 2.0f * (float)PI / 3.0f;
-                powerFactor = cos(realAngleDifference);
             } else if (channelData.phase == _getLeadingPhase(basePhase)) {
                 realAngleDifference = angleDifference + 2.0f * (float)PI / 3.0f;
-                powerFactor = cos(realAngleDifference);
             } else {
                 LOG_ERROR("Invalid phase %d for channel %d", channelData.phase, channelIndex);
                 _recordFailure();
                 return false;
             }
+
+            // Finally, if the shifted angle is outside the -90 to 90 degrees range, it means the active power is negative
+            bool isActivePowerNegative = false;
+            if (realAngleDifference < -float(HALF_PI) || realAngleDifference > float(HALF_PI)) { // If the angle is outside the -90 to 90 degrees range, it means the active power is negative
+                realAngleDifference = realAngleDifference + (realAngleDifference > 0 ? -float(PI) : float(PI)); // Bring the angle to the -90 to 90 degrees range for power factor calculation
+                isActivePowerNegative = true;
+            }
+
+            powerFactor = cos(realAngleDifference) * (powerFactor >= 0 ? 1.0f : -1.0f); // Apply sign as the cosine is always positive in the -90 to 90 degrees range, but negative power values indicate capacitive (leading) load
+            // Since this is a tricky approximation, we print the debug info anyway
             LOG_DEBUG(
-                "%s (%d): Angle difference: %.3f rad (%.1f deg), real %.3f rad (%.1f deg), Power factor: %.3f", 
+                "%s (%d) (phase %d): Angle difference: %.1f° (from %.1f°), Power factor: %.1f%% %s",
                 channelData.label, 
                 channelIndex, 
-                angleDifference,
-                angleDifference * RAD_TO_DEG,
-                realAngleDifference,
+                channelData.phase,
                 realAngleDifference * RAD_TO_DEG,
-                powerFactor
-            ); // FIXME: temporary debug
-            // TODO: finish understanding how to properly identify negative power flow
+                angleDifference * RAD_TO_DEG,
+                powerFactor * 100.0f,
+                isActivePowerNegative ? "(negative power)" : ""
+            );
 
-            // Compute power values
-            activePower = current * voltage * abs(powerFactor) * (channelData.reverse ? -1.0f : 1.0f);
-            apparentPower = current * voltage;
-            reactivePower = float(sqrt(pow(apparentPower, 2) - pow(activePower, 2))) * (powerFactor >= 0 ? 1.0f : -1.0f); // Small approximation leaving out distorted power
+            // FINALLY: Compute power values
+            apparentPower = current * voltage; // S = Vrms * Irms
+            activePower = current * voltage * abs(powerFactor) * (channelData.reverse ? -1.0f : 1.0f) * (isActivePowerNegative ? -1.0f : 1.0f); // P = Vrms * Irms * PF
+            reactivePower = float(sqrt(pow(apparentPower, 2) - pow(activePower, 2))) * (channelData.reverse ? -1.0f : 1.0f) * (powerFactor >= 0 ? 1.0f : -1.0f); // Q = sqrt(S^2 - P^2) * sign(PF)
         }
 
         apparentPower = abs(apparentPower); // Apparent power must be positive
@@ -2988,11 +2981,6 @@ namespace Ade7953
         else return readRegister(APENERGYB_32, BIT_32, true);
     }
 
-    int32_t _readPowerFactor(Ade7953Channel ade7953Channel) {
-        if (ade7953Channel == Ade7953Channel::A) return readRegister(PFA_16, BIT_16, true);
-        else return readRegister(PFB_16, BIT_16, true);
-    }
-
     int32_t _readAngle(Ade7953Channel ade7953Channel) {
         if (ade7953Channel == Ade7953Channel::A) return readRegister(ANGLE_A_16, BIT_16, true);
         else return readRegister(ANGLE_B_16, BIT_16, true);
@@ -3186,16 +3174,19 @@ namespace Ade7953
         return INVALID_CHANNEL; // Invalid channel, no active channels found
     }
 
+    // Poor man's phase shift (doing with modulus didn't work properly,
+    // and in any case the phases will always be at most 3)
+
     Phase _getLaggingPhase(Phase phase) {
-        // Poor man's phase shift (doing with modulus didn't work properly,
-        // and in any case the phases will always be at most 3)
+        // Lagging means it is behind (yes it should be trivial but this costed me a lot of time..)
+        // So if it is phase 1, the lagging phase behind is phase 3
         switch (phase) {
             case PHASE_1:
-                return PHASE_2;
-            case PHASE_2:
                 return PHASE_3;
-            case PHASE_3:
+            case PHASE_2:
                 return PHASE_1;
+            case PHASE_3:
+                return PHASE_2;
             default:
                 return PHASE_1;
         }
@@ -3204,11 +3195,11 @@ namespace Ade7953
     Phase _getLeadingPhase(Phase phase) {
         switch (phase) {
             case PHASE_1:
-                return PHASE_3;
-            case PHASE_2:
-                return PHASE_1;
-            case PHASE_3:
                 return PHASE_2;
+            case PHASE_2:
+                return PHASE_3;
+            case PHASE_3:
+                return PHASE_1;
             default:
                 return PHASE_1;
         }
