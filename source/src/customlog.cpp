@@ -370,7 +370,7 @@ namespace CustomLog
             return false;
         }
 
-        strncpy(ipAddress, _udpDestination.toString().c_str(), bufferSize - 1);
+        snprintf(ipAddress, bufferSize, "%s", _udpDestination.toString().c_str());
         ipAddress[bufferSize - 1] = '\0';
 
         releaseMutex(&_udpDestinationMutex);
