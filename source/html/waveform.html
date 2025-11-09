@@ -509,11 +509,48 @@
             // Format time labels to 1 decimal place
             const timeLabels = timeMs.map(t => t.toFixed(1));
 
+            // Apply phase shift to voltage if needed (device provides the shift angle)
+            let shiftedVoltageValues = voltageValues;
+            const phaseShiftDegrees = data.phaseShiftDegrees || 0;
+            
+            if (phaseShiftDegrees !== 0) {
+                // Calculate total duration and frequency
+                const totalDurationUs = data.microsDelta[data.microsDelta.length - 1];
+                const durationSeconds = totalDurationUs / 1000000.0;
+                const numSamples = voltageValues.length;
+                const samplingFreq = (numSamples - 1) / durationSeconds;
+                
+                // Estimate grid frequency (50 Hz or 60 Hz)
+                const estimatedCycles = durationSeconds * 50; // Assume 50 Hz initially
+                const gridFreq = Math.abs(estimatedCycles - Math.round(estimatedCycles)) < 0.2 ? 50 : 60;
+                
+                // Calculate phase shift in samples
+                const degreesPerSample = 360 * gridFreq / samplingFreq;
+                const shiftSamples = Math.round(phaseShiftDegrees / degreesPerSample);
+                
+                // Shift voltage array
+                shiftedVoltageValues = new Array(voltageValues.length);
+                for (let i = 0; i < voltageValues.length; i++) {
+                    const shiftedIndex = i - shiftSamples;
+                    if (shiftedIndex >= 0 && shiftedIndex < voltageValues.length) {
+                        shiftedVoltageValues[i] = voltageValues[shiftedIndex];
+                    } else {
+                        shiftedVoltageValues[i] = null; // Outside valid range
+                    }
+                }
+            }
+
             // Create content container if it doesn't exist
             const contentContainer = document.getElementById('tabContentContainer');
+            
+            // Add phase information to title if shift is applied
+            const phaseInfo = phaseShiftDegrees !== 0 
+                ? ` (Voltage Phase ${data.voltagePhase} → Current Phase ${data.currentPhase}, shifted ${phaseShiftDegrees.toFixed(1)}°)`
+                : '';
+            
             contentContainer.innerHTML = `
                 <section class="section-box">
-                    <h2>Voltage & Current Waveform</h2>
+                    <h2>Voltage & Current Waveform${phaseInfo}</h2>
                     <div class="chart-wrapper">
                         <canvas id="waveformChart"></canvas>
                     </div>
@@ -592,30 +629,63 @@
 
             // Create combined waveform chart with dual Y-axes
             const ctx = document.getElementById('waveformChart').getContext('2d');
+            
+            // Build datasets array - always show original voltage, add shifted if different
+            const datasets = [];
+            
+            // Original voltage (lighter if shifted version exists)
+            if (phaseShiftDegrees !== 0) {
+                datasets.push({
+                    label: `Voltage Original (Phase ${data.voltagePhase})`,
+                    data: voltageValues,
+                    borderColor: 'rgba(75, 192, 192, 0.3)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.05)',
+                    borderWidth: 1,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    yAxisID: 'y-voltage'
+                });
+                
+                // Shifted voltage (main display)
+                datasets.push({
+                    label: `Voltage Shifted to Phase ${data.currentPhase} (${phaseShiftDegrees.toFixed(1)}°)`,
+                    data: shiftedVoltageValues,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    yAxisID: 'y-voltage',
+                    spanGaps: false
+                });
+            } else {
+                // No shift - just show voltage normally
+                datasets.push({
+                    label: 'Voltage (V)',
+                    data: voltageValues,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    yAxisID: 'y-voltage'
+                });
+            }
+            
+            // Current (always shown)
+            datasets.push({
+                label: 'Current (A)',
+                data: currentValues,
+                borderColor: 'rgb(255, 99, 132)',
+                backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                borderWidth: 2,
+                pointRadius: 0,
+                yAxisID: 'y-current'
+            });
+            
             waveformChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: timeLabels,
-                    datasets: [
-                        {
-                            label: 'Voltage (V)',
-                            data: voltageValues,
-                            borderColor: 'rgb(75, 192, 192)',
-                            backgroundColor: 'rgba(75, 192, 192, 0.1)',
-                            borderWidth: 2,
-                            pointRadius: 0,
-                            yAxisID: 'y-voltage'
-                        },
-                        {
-                            label: 'Current (A)',
-                            data: currentValues,
-                            borderColor: 'rgb(255, 99, 132)',
-                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
-                            borderWidth: 2,
-                            pointRadius: 0,
-                            yAxisID: 'y-current'
-                        }
-                    ]
+                    datasets: datasets
                 },
                 options: {
                     responsive: true,
