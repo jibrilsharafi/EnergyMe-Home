@@ -1438,34 +1438,90 @@ namespace Ade7953
     }
 
     void _pollWaveformSamples() {
-        // This function performs tight polling of instantaneous waveform registers
+        // This function performs tight polling of instantaneous waveform registers with zero-crossing detection
+        // to ensure capture of complete cycles only. We start on a positive-going voltage zero crossing and
+        // stop after detecting the Nth positive-going zero crossing.
         // Called from CYCEND interrupt context - we are sure we are in a "clean" state (no multiplexer switching)
-        // Poll as fast as possible with no artificial rate limiting - let SPI run at maximum speed
         
         Ade7953Channel ade7953Channel = (_captureChannel == 0) ? Ade7953Channel::A : Ade7953Channel::B;
         
+        // State machine for zero-crossing detection
+        enum class CapturePhase {
+            WAIT_FOR_START_CROSSING,  // Wait for initial positive-going zero crossing
+            CAPTURING,                 // Actively capturing samples
+        };
+        
+        CapturePhase phase = CapturePhase::WAIT_FOR_START_CROSSING;
+        int32_t previousVoltage = 0;
+        uint8_t zeroCrossingCount = 0;
+        const uint8_t targetCrossings = WAVEFORM_CYCLES_TO_CAPTURE; // Each positive crossing = 1 cycle start
+        
         uint32_t loops = 0;
-        while (_captureSampleCount < WAVEFORM_BUFFER_SIZE && loops < MAX_LOOP_ITERATIONS) {
+        uint32_t samplesBeforeStart = 0;
+        
+        while (loops < MAX_LOOP_ITERATIONS) {
             uint64_t currentMicros = micros64();
             loops++;
             
-            // Stop if we've captured for max duration
-            if (currentMicros - _captureStartMicros >= WAVEFORM_CAPTURE_MAX_DURATION_MICROS) break;
+            // Safety timeout
+            if (currentMicros - _captureStartMicros >= WAVEFORM_CAPTURE_MAX_DURATION_MICROS) {
+                LOG_WARNING("Waveform capture timeout after %llu ms, captured %u samples with %u zero crossings", 
+                    (currentMicros - _captureStartMicros) / 1000, _captureSampleCount, zeroCrossingCount);
+                break;
+            }
             
-            // Read instantaneous values directly from registers (no rate limiting)
-            _voltageWaveformBuffer[_captureSampleCount] = _readVoltageInstantaneous();
-            _currentWaveformBuffer[_captureSampleCount] = _readCurrentInstantaneous(ade7953Channel);
-            _microsWaveformBuffer[_captureSampleCount] = currentMicros - _captureStartMicros;
+            // Read instantaneous voltage
+            int32_t currentVoltage = _readVoltageInstantaneous();
             
-            _captureSampleCount++;
+            bool positiveZeroCrossing = (previousVoltage < 0 && currentVoltage >= 0);
+            
+            if (phase == CapturePhase::WAIT_FOR_START_CROSSING) {
+                samplesBeforeStart++;
+                
+                if (positiveZeroCrossing) {
+                    phase = CapturePhase::CAPTURING;
+                    zeroCrossingCount = 1; // First crossing detected
+                    _captureStartMicros = currentMicros; // Reset start time to actual capture start
+                    LOG_VERBOSE("Starting capture at positive zero crossing (after %u samples)", samplesBeforeStart);
+                }
+                
+                previousVoltage = currentVoltage;
+                continue; // Don't store samples until we start
+            }
+            
+            // CAPTURING phase - store samples
+            if (_captureSampleCount < WAVEFORM_BUFFER_SIZE) {
+                _voltageWaveformBuffer[_captureSampleCount] = currentVoltage;
+                _currentWaveformBuffer[_captureSampleCount] = _readCurrentInstantaneous(ade7953Channel);
+                _microsWaveformBuffer[_captureSampleCount] = currentMicros - _captureStartMicros;
+                _captureSampleCount++;
+            } else {
+                LOG_WARNING("Buffer full before completing cycles, stopping");
+                break;
+            }
+            
+            // Check for additional zero crossings during capture
+            if (positiveZeroCrossing) {
+                zeroCrossingCount++;
+                LOG_VERBOSE("Zero crossing %u detected at sample %u", zeroCrossingCount, _captureSampleCount);
+                
+                // Stop after capturing targetCrossings + 1 crossings
+                // (start crossing + N complete cycles = N+1 crossings total)
+                if (zeroCrossingCount >= targetCrossings + 1) {
+                    LOG_DEBUG("Captured %u complete cycles, stopping", WAVEFORM_CYCLES_TO_CAPTURE);
+                    break;
+                }
+            }
+            
+            previousVoltage = currentVoltage;
         }
         
         uint64_t totalDurationMs = (micros64() - _captureStartMicros) / 1000;
         float effectiveSampleRate = _captureSampleCount > 0 ? (_captureSampleCount * 1000.0f) / totalDurationMs : 0;
         
         _captureState = CaptureState::COMPLETE;
-        LOG_INFO("Waveform capture complete for channel %u: %u samples in %llu ms (%.0f Hz)", 
-            _captureChannel, _captureSampleCount, totalDurationMs, effectiveSampleRate);
+        LOG_INFO("Waveform capture complete for channel %u: %u samples in %llu ms (%.0f Hz) with %u zero crossings", 
+            _captureChannel, _captureSampleCount, totalDurationMs, effectiveSampleRate, zeroCrossingCount);
     }
 
     void _handleCrcChangeInterrupt() {
@@ -3228,7 +3284,7 @@ namespace Ade7953
     // ====================
 
     bool startWaveformCapture(uint8_t channelIndex) {
-        if (!isChannelValid(channelIndex)) {
+        if (!isChannelActive(channelIndex)) {
             LOG_WARNING("Invalid channel index for waveform capture: %u", channelIndex);
             return false;
         }
@@ -3260,12 +3316,17 @@ namespace Ade7953
     }
 
     uint16_t getWaveformCaptureData(int32_t* vBuffer, int32_t* iBuffer, uint64_t* microsBuffer, uint16_t bufferSize) {
+        if (!vBuffer || !iBuffer || !microsBuffer) {
+            LOG_ERROR("Invalid buffer pointers provided to getWaveformCaptureData");
+            return 0;
+        }
+
         if (_captureState != CaptureState::COMPLETE) {
             return 0; // No data ready
         }
 
-        if (!vBuffer || !iBuffer || !microsBuffer) {
-            LOG_ERROR("Invalid buffer pointers provided to getWaveformCaptureData");
+        if (_captureRequestedChannel == INVALID_CHANNEL || _captureChannel == INVALID_CHANNEL) {
+            LOG_ERROR("Invalid capture channel state (requested: %u, captured: %u)", _captureRequestedChannel, _captureChannel);
             return 0;
         }
 
@@ -3286,6 +3347,11 @@ namespace Ade7953
     bool getWaveformCaptureAsJson(JsonDocument& jsonDocument) {
         if (_captureState != CaptureState::COMPLETE) {
             LOG_DEBUG("No waveform data ready for JSON serialization (state: %u)", static_cast<uint8_t>(_captureState));
+            return false;
+        }
+
+        if (_captureRequestedChannel == INVALID_CHANNEL || _captureChannel == INVALID_CHANNEL) {
+            LOG_ERROR("Invalid capture channel state for JSON serialization (requested: %u, captured: %u)", _captureRequestedChannel, _captureChannel);
             return false;
         }
 

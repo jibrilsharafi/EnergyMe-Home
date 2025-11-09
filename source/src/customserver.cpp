@@ -1938,20 +1938,31 @@ namespace CustomServer
                 return;
             }
 
-            bool success = Ade7953::startWaveformCapture(channelIndex);
+            Ade7953::startWaveformCapture(channelIndex);
             
-            if (!success) {
-                Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
-                if (state == Ade7953::CaptureState::ERROR) {
-                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Waveform capture buffer allocation failed");
-                } else {
+            Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
+            switch (state) {
+                case Ade7953::CaptureState::IDLE:
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to arm waveform capture due to unknown error");
+                    break;
+                case Ade7953::CaptureState::ARMED:
+                    LOG_DEBUG("Waveform capture armed via API for channel %u", channelIndex);
+                    _sendSuccessResponse(request, "Waveform capture armed successfully");
+                    break;
+                case Ade7953::CaptureState::CAPTURING:
                     _sendErrorResponse(request, HTTP_CODE_CONFLICT, "Waveform capture already in progress");
-                }
-                return;
+                    break;
+                case Ade7953::CaptureState::COMPLETE:
+                    _sendErrorResponse(request, HTTP_CODE_CONFLICT, "Previous waveform capture complete. Please retrieve data before arming a new capture");
+                    break;
+                case Ade7953::CaptureState::ERROR:
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Waveform capture buffer allocation failed");
+                    break;
+                default:
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to arm waveform capture due to unknown error");
+                    break;
             }
-
-            LOG_DEBUG("Waveform capture armed for channel %u via API", channelIndex);
-            _sendSuccessResponse(request, "Waveform capture armed successfully");
+            return;
         });
         server.addHandler(armWaveformCaptureHandler);
 
