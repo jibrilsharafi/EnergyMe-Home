@@ -181,9 +181,16 @@ class WaveformAnalyzer:
         return thd
     
     @classmethod
-    def analyze(cls, waveform: WaveformData, voltage_phase: str = "A", 
-                current_phase: str = "A") -> ComputedProperties:
-        """Compute all electrical properties from waveform"""
+    def analyze(cls, waveform: WaveformData, voltage_phase = "A", 
+                current_phase = "A") -> ComputedProperties:
+        """
+        Compute all electrical properties from waveform
+        
+        Args:
+            waveform: WaveformData object with captured samples
+            voltage_phase: Voltage phase (1/2/3 or "A"/"B"/"C")
+            current_phase: Current phase (1/2/3 or "A"/"B"/"C")
+        """
         time = waveform.time_seconds
         voltage = np.array(waveform.voltage)
         current = np.array(waveform.current)
@@ -193,6 +200,9 @@ class WaveformAnalyzer:
         
         # Calculate phase shift needed
         phase_shift = cls.calculate_phase_shift(voltage_phase, current_phase)
+        if phase_shift != 0:
+            print(f"Phase configuration: Voltage={voltage_phase}, Current={current_phase}")
+            print(f"Calculated phase shift: {phase_shift:.1f}°")
         
         # Count complete cycles in the waveform
         complete_cycles = cls.count_complete_cycles(voltage)
@@ -288,28 +298,43 @@ class WaveformAnalyzer:
 
 
     @staticmethod
-    def calculate_phase_shift(voltage_phase: str, current_phase: str) -> float:
+    def calculate_phase_shift(voltage_phase, current_phase) -> float:
         """
         Calculate the phase shift needed to align voltage with current phase
         
         In a 3-phase system:
-        - Phase A is reference (0°)
-        - Phase B lags by 120° (-120°)
-        - Phase C leads by 120° (+120°)
+        - Phase 1 (A) is reference (0°)
+        - Phase 2 (B) lags by 120° (-120°)
+        - Phase 3 (C) leads by 120° (+120°)
+        
+        Args:
+            voltage_phase: Phase number (1, 2, 3) or letter ("A", "B", "C")
+            current_phase: Phase number (1, 2, 3) or letter ("A", "B", "C")
         
         Returns phase shift in degrees to apply to voltage
         """
+        # Normalize to integers (handle both string and int inputs)
+        def normalize_phase(phase) -> int:
+            if isinstance(phase, str):
+                phase_map = {"A": 1, "B": 2, "C": 3}
+                return phase_map.get(phase.upper(), 1)
+            return int(phase)
+        
+        voltage_phase_num = normalize_phase(voltage_phase)
+        current_phase_num = normalize_phase(current_phase)
+        
+        # Phase angles: Phase 1 = 0°, Phase 2 = -120°, Phase 3 = +120°
         phase_angles = {
-            "A": 0.0,
-            "B": -120.0,
-            "C": 120.0
+            1: 0.0,    # Phase A
+            2: -120.0,  # Phase B (lags A by 120°)
+            3: 120.0,   # Phase C (leads A by 120°)
         }
         
-        if voltage_phase not in phase_angles or current_phase not in phase_angles:
+        if voltage_phase_num not in phase_angles or current_phase_num not in phase_angles:
             return 0.0
         
         # Calculate shift needed: current_phase - voltage_phase
-        return phase_angles[current_phase] - phase_angles[voltage_phase]
+        return phase_angles[current_phase_num] - phase_angles[voltage_phase_num]
 
 def plot_waveforms(waveform: WaveformData, computed: ComputedProperties, 
                    meter_values: Dict, channel_config: Dict):
