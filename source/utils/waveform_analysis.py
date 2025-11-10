@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional
 import time
 import argparse
+import os
+
 
 
 @dataclass
@@ -47,7 +49,7 @@ class ComputedProperties:
 class EnergyMeterAPI:
     """Client for interacting with the energy meter API"""
     
-    def __init__(self, base_url: str, username: str = "admin", password: str = "energyme00"):
+    def __init__(self, base_url: str, username: str, password: str):
         self.base_url = base_url.rstrip('/')
         self.auth = HTTPDigestAuth(username, password)
         self.session = requests.Session()
@@ -246,10 +248,26 @@ class WaveformAnalyzer:
         # Apparent power
         apparent_power = v_rms * i_rms
         
-        # Reactive power
-        reactive_power = np.sqrt(max(0, apparent_power**2 - active_power**2))
-        if active_power < 0:
-            reactive_power = -reactive_power
+        # Reactive power - calculate based on phase relationship
+        # Q = V_rms * I_rms * sin(φ) where φ is the phase angle
+        reactive_power_magnitude = np.sqrt(max(0, apparent_power**2 - active_power**2))
+        
+        # Determine sign based on whether current leads or lags voltage
+        # Calculate phase angle from power factor: cos(φ) = P/S
+        if apparent_power > 0:
+            # Positive reactive power = inductive (current lags voltage)
+            # Negative reactive power = capacitive (current leads voltage)
+            # This is determined by the cross-correlation or phase angle
+            voltage_shifted_norm = (voltage_shifted - np.mean(voltage_shifted)) / (np.std(voltage_shifted) + 1e-10)
+            current_norm = (current - np.mean(current)) / (np.std(current) + 1e-10)
+            correlation = np.correlate(voltage_shifted_norm, current_norm, mode='same')
+            max_corr_idx = np.argmax(correlation)
+            center_idx = len(correlation) // 2
+            # If max correlation is before center, current leads (capacitive, negative Q)
+            # If max correlation is after center, current lags (inductive, positive Q)
+            reactive_power = reactive_power_magnitude if max_corr_idx >= center_idx else -reactive_power_magnitude
+        else:
+            reactive_power = 0.0
         
         # Power factor
         power_factor = active_power / apparent_power if apparent_power > 0 else 0.0
@@ -552,8 +570,14 @@ def main():
         # Plot results
         print("\nGenerating plots...")
         fig = plot_waveforms(waveform, computed, meter_values, channel_config)
-        plt.savefig(f'temp/waveform_analysis_ch{args.channel}.png', dpi=150, bbox_inches='tight')
-        print(f"Plot saved as 'temp/waveform_analysis_ch{args.channel}.png'")
+        
+        # Ensure output directory exists
+        output_dir = 'temp'
+        os.makedirs(output_dir, exist_ok=True)
+        output_file = f'{output_dir}/waveform_analysis_ch{args.channel}.png'
+        
+        plt.savefig(output_file, dpi=150, bbox_inches='tight')
+        print(f"Plot saved as '{output_file}'")
         plt.show()
         
     except Exception as e:
