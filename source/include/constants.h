@@ -46,11 +46,15 @@
 #define PREFERENCES_NAMESPACE_CERTIFICATES "certificates_ns"
 #define PREFERENCES_NAMESPACE_LED "led_ns"
 #define PREFERENCES_NAMESPACE_AUTH "auth_ns" 
+#define PREFERENCES_NAMESPACE_UDP_LOG "udp_log_ns"
 
 // Logger
 #define LOG_PATH "/log.txt"
 #define MAX_LOG_LINES 1000
 #define MAXIMUM_LOG_FILE_SIZE (200 * 1024)
+
+// UDP Log configuration
+#define PREFERENCES_KEY_UDP_DESTINATION "udp_dest"
 
 // Buffer Sizes for String Operations
 // =================================

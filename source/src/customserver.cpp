@@ -1446,6 +1446,47 @@ namespace CustomServer
             _sendSuccessResponse(request, "Logs cleared successfully");
             LOG_INFO("Logs cleared via API");
         });
+
+        // Get UDP log destination (cannot use logs/ as it interferes with the previous /logs endpoint)
+        server.on("/api/v1/logs-udp-destination", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            char ipAddress[IP_ADDRESS_BUFFER_SIZE];
+            
+            if (CustomLog::getUdpDestination(ipAddress, sizeof(ipAddress))) {
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc["destination"] = ipAddress;
+                _sendJsonResponse(request, doc);
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve UDP destination");
+            }
+        });
+
+        // Set UDP log destination
+        static AsyncCallbackJsonWebHandler *setUdpDestinationHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/logs-udp-destination",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_UDP_DESTINATIONS)) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                const char* destination = doc["destination"].as<const char*>();
+                if (!destination) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'destination' field");
+                    return;
+                }
+
+                if (CustomLog::setUdpDestination(destination)) {
+                    _sendSuccessResponse(request, "UDP destination updated successfully");
+                    LOG_INFO("UDP destination updated via API: %s", destination);
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid IP address format");
+                }
+            });
+        server.addHandler(setUdpDestinationHandler);
     }
 
     // === ADE7953 ENDPOINTS ===
@@ -1897,20 +1938,31 @@ namespace CustomServer
                 return;
             }
 
-            bool success = Ade7953::startWaveformCapture(channelIndex);
+            Ade7953::startWaveformCapture(channelIndex);
             
-            if (!success) {
-                Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
-                if (state == Ade7953::CaptureState::ERROR) {
-                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Waveform capture buffer allocation failed");
-                } else {
+            Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
+            switch (state) {
+                case Ade7953::CaptureState::IDLE:
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to arm waveform capture due to unknown error");
+                    break;
+                case Ade7953::CaptureState::ARMED:
+                    LOG_DEBUG("Waveform capture armed via API for channel %u", channelIndex);
+                    _sendSuccessResponse(request, "Waveform capture armed successfully");
+                    break;
+                case Ade7953::CaptureState::CAPTURING:
                     _sendErrorResponse(request, HTTP_CODE_CONFLICT, "Waveform capture already in progress");
-                }
-                return;
+                    break;
+                case Ade7953::CaptureState::COMPLETE:
+                    _sendErrorResponse(request, HTTP_CODE_CONFLICT, "Previous waveform capture complete. Please retrieve data before arming a new capture");
+                    break;
+                case Ade7953::CaptureState::ERROR:
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Waveform capture buffer allocation failed");
+                    break;
+                default:
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to arm waveform capture due to unknown error");
+                    break;
             }
-
-            LOG_DEBUG("Waveform capture armed for channel %u via API", channelIndex);
-            _sendSuccessResponse(request, "Waveform capture armed successfully");
+            return;
         });
         server.addHandler(armWaveformCaptureHandler);
 

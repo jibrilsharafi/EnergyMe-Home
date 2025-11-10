@@ -93,7 +93,7 @@
 #define SAMPLING_RATE_INSTANTANEOUS_VALUES 6990 // 6.99 kHz (as given by datasheet) is the maximum rate of update of the instantaneous values
 #define WAVEFORM_BUFFER_SIZE \
     ((size_t)(((float)WAVEFORM_CYCLES_TO_CAPTURE / (float)DEFAULT_FALLBACK_FREQUENCY) \
-              * SAMPLING_RATE_INSTANTANEOUS_VALUES))
+              * SAMPLING_RATE_INSTANTANEOUS_VALUES * 1.2f)) // 20% margin for sampling jitter
 #define WAVEFORM_CAPTURE_MAX_DURATION_MICROS (2 * 1000000 * WAVEFORM_CYCLES_TO_CAPTURE) / DEFAULT_FALLBACK_FREQUENCY // 2x margin
 
 // Configuration Preferences Keys

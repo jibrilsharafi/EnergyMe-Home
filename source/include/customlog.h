@@ -42,6 +42,10 @@ namespace CustomLog
     
     void callbackMultiple(const LogEntry& entry);
 
+    // UDP destination management
+    bool getUdpDestination(char* ipAddress, size_t bufferSize);
+    bool setUdpDestination(const char* ipAddress);
+
     // Task information
     TaskInfo getTaskInfo();
 }
