@@ -79,8 +79,10 @@ namespace CustomLog
         _udpClient.begin(UDP_LOG_PORT);
         _isUdpInitialized = true;
 
-        LOG_DEBUG("UDP logging configured to %s:%d, PSRAM buffer: %zu bytes",
-                    _udpDestination.toString().c_str(), UDP_LOG_PORT, LOG_QUEUE_SIZE);
+        LOG_DEBUG("UDP logging configured to %d.%d.%d.%d:%d, PSRAM buffer: %zu bytes",
+                _udpDestination[0], _udpDestination[1], 
+                _udpDestination[2], _udpDestination[3],
+                UDP_LOG_PORT, LOG_QUEUE_SIZE);
 
         // Start async task
         _startTask();

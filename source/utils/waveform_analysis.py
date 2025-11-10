@@ -1,3 +1,4 @@
+import os
 import requests
 from requests.auth import HTTPDigestAuth
 import numpy as np
@@ -47,7 +48,7 @@ class ComputedProperties:
 class EnergyMeterAPI:
     """Client for interacting with the energy meter API"""
     
-    def __init__(self, base_url: str, username: str = "admin", password: str = "energyme00"):
+    def __init__(self, base_url: str, username: str = "admin", password: str = "energyme"):
         self.base_url = base_url.rstrip('/')
         self.auth = HTTPDigestAuth(username, password)
         self.session = requests.Session()
@@ -247,9 +248,7 @@ class WaveformAnalyzer:
         apparent_power = v_rms * i_rms
         
         # Reactive power
-        reactive_power = np.sqrt(max(0, apparent_power**2 - active_power**2))
-        if active_power < 0:
-            reactive_power = -reactive_power
+        reactive_power = np.sqrt(max(0, apparent_power**2 - active_power**2)) # Approximation as to compute the sign requires the phase angle
         
         # Power factor
         power_factor = active_power / apparent_power if apparent_power > 0 else 0.0
@@ -494,7 +493,7 @@ def main():
                         help='Channel index to capture (0-16)')
     parser.add_argument('--username', type=str, default='admin',
                         help='Authentication username')
-    parser.add_argument('--password', type=str, default='energyme00',
+    parser.add_argument('--password', type=str, default='energyme',
                         help='Authentication password')
     parser.add_argument('--timeout', type=int, default=15,
                         help='Capture timeout in seconds')
@@ -551,9 +550,11 @@ def main():
         
         # Plot results
         print("\nGenerating plots...")
-        fig = plot_waveforms(waveform, computed, meter_values, channel_config)
-        plt.savefig(f'temp/waveform_analysis_ch{args.channel}.png', dpi=150, bbox_inches='tight')
-        print(f"Plot saved as 'temp/waveform_analysis_ch{args.channel}.png'")
+        plot_waveforms(waveform, computed, meter_values, channel_config)
+        save_folder = 'temp'
+        os.makedirs(save_folder, exist_ok=True)
+        plt.savefig(f'{save_folder}/waveform_analysis_ch{args.channel}.png', dpi=150, bbox_inches='tight')
+        print(f"Plot saved as '{save_folder}/waveform_analysis_ch{args.channel}.png'")
         plt.show()
         
     except Exception as e:
