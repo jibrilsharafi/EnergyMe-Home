@@ -2204,31 +2204,97 @@ namespace Ade7953
             return;
         }
 
+        // Migration: Try to read as double first (new format), if not found try reading as float (old format)
+        // This ensures backward compatibility when upgrading from float to double storage
+        bool needsMigration = false;
+
         snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
-        _meterValues[channelIndex].activeEnergyImported = preferences.getDouble(key, 0.0);
+        double doubleValue = preferences.getDouble(key, -1.0); // Use -1.0 as sentinel (energy can't be negative)
+        float floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d activeEnergyImported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            // Found as double (new format)
+            _meterValues[channelIndex].activeEnergyImported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            // Found as float (old format) - migrate
+            _meterValues[channelIndex].activeEnergyImported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d activeEnergyImported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            // Not found at all - use 0.0
+            _meterValues[channelIndex].activeEnergyImported = 0.0;
+        }
         _energyValues[channelIndex].activeEnergyImported = _meterValues[channelIndex].activeEnergyImported;
 
         snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, channelIndex);
-        _meterValues[channelIndex].activeEnergyExported = preferences.getDouble(key, 0.0);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d activeEnergyExported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].activeEnergyExported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].activeEnergyExported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d activeEnergyExported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].activeEnergyExported = 0.0;
+        }
         _energyValues[channelIndex].activeEnergyExported = _meterValues[channelIndex].activeEnergyExported;
 
         snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, channelIndex);
-        _meterValues[channelIndex].reactiveEnergyImported = preferences.getDouble(key, 0.0);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d reactiveEnergyImported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].reactiveEnergyImported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].reactiveEnergyImported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d reactiveEnergyImported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].reactiveEnergyImported = 0.0;
+        }
         _energyValues[channelIndex].reactiveEnergyImported = _meterValues[channelIndex].reactiveEnergyImported;
 
         snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, channelIndex);
-        _meterValues[channelIndex].reactiveEnergyExported = preferences.getDouble(key, 0.0);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d reactiveEnergyExported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].reactiveEnergyExported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].reactiveEnergyExported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d reactiveEnergyExported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].reactiveEnergyExported = 0.0;
+        }
         _energyValues[channelIndex].reactiveEnergyExported = _meterValues[channelIndex].reactiveEnergyExported;
 
         snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, channelIndex);
-        _meterValues[channelIndex].apparentEnergy = preferences.getDouble(key, 0.0);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d apparentEnergy: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].apparentEnergy = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].apparentEnergy = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d apparentEnergy migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].apparentEnergy = 0.0;
+        }
         _energyValues[channelIndex].apparentEnergy = _meterValues[channelIndex].apparentEnergy;
 
         releaseMutex(&_meterValuesMutex);
 
         preferences.end();
 
-        _saveEnergyToPreferences(channelIndex, true); // Ensure we have the initial values saved always
+        if (needsMigration) {
+            LOG_INFO("Migrated energy values from float to double for channel %lu", channelIndex);
+        }
+
+        _saveEnergyToPreferences(channelIndex, true); // Ensure we have the initial values saved always (and complete migration if needed)
 
         LOG_DEBUG("Successfully read energy from preferences for channel %lu", channelIndex);
     }
