@@ -190,6 +190,7 @@
 #define POWER_DECIMALS 1
 #define POWER_FACTOR_DECIMALS 3
 #define ENERGY_DECIMALS 1
+#define GRID_FREQUENCY_DECIMALS 3
 
 // Guardrails and thresholds
 #define MAXIMUM_POWER_FACTOR_CLAMP 1.10f // Values above 1 but below this are still accepted (rounding errors and similar). I noticed I still had a lot of spurious readings with PF around 1.06-1.07 (mainly close to fridge activations, probably due to the compressor)
@@ -511,11 +512,11 @@ namespace Ade7953
     void resetEnergyValues();
     bool setEnergyValues(
         uint8_t channelIndex,
-        float activeEnergyImported,
-        float activeEnergyExported,
-        float reactiveEnergyImported,
-        float reactiveEnergyExported,
-        float apparentEnergy
+        double activeEnergyImported,
+        double activeEnergyExported,
+        double reactiveEnergyImported,
+        double reactiveEnergyExported,
+        double apparentEnergy
     );
 
     // Data output

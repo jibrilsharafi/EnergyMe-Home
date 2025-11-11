@@ -925,11 +925,11 @@ namespace Ade7953
 
     bool setEnergyValues(
         uint8_t channelIndex,
-        float activeEnergyImported,
-        float activeEnergyExported,
-        float reactiveEnergyImported,
-        float reactiveEnergyExported,
-        float apparentEnergy
+        double activeEnergyImported,
+        double activeEnergyExported,
+        double reactiveEnergyImported,
+        double reactiveEnergyExported,
+        double apparentEnergy
     ) {
         if (!isChannelValid(channelIndex)) {
             LOG_ERROR("Invalid channel index %d", channelIndex);
@@ -2497,12 +2497,6 @@ namespace Ade7953
             // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
             // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
             // Use multiplication instead of division as it is faster in embedded systems
-            LOG_DEBUG("Ch %d: sampleTime=%.1fms, deltaMillis=%llums, ratio=%.2f", //FIXME: temporary debug log
-                channelIndex, 
-                float(_sampleTime), 
-                deltaMillis, 
-                float(deltaMillis) / float(_sampleTime)
-            );
             float deltaHoursSampleTime = float(_sampleTime) / 1000.0f / 3600.0f; // Convert milliseconds to hours | ENSURE THEY ARE FLOAT: YOU LOST A LOT OF TIME DEBUGGING THIS!!!
             activePower = deltaHoursSampleTime > 0.0f ? activeEnergy / deltaHoursSampleTime : 0.0f; // W
             reactivePower = deltaHoursSampleTime > 0.0f ? reactiveEnergy / deltaHoursSampleTime : 0.0f; // VAR
@@ -2996,7 +2990,7 @@ namespace Ade7953
 
     float _readAngleRadians(Ade7953Channel ade7953Channel) {
         int32_t angleRaw = _readAngle(ade7953Channel);
-        return (float(angleRaw) * 360.0f * DEG_TO_RAD * float(_lineFrequency) / GRID_FREQUENCY_CONVERSION_FACTOR); // Convert to radians
+        return (float(angleRaw) * 360.0f * float(DEG_TO_RAD) * float(_lineFrequency) / GRID_FREQUENCY_CONVERSION_FACTOR); // Convert to radians
     }
 
     int32_t _readPeriod() {
