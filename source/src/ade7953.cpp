@@ -2205,23 +2205,23 @@ namespace Ade7953
         }
 
         snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
-        _meterValues[channelIndex].activeEnergyImported = preferences.getFloat(key, 0.0f);
+        _meterValues[channelIndex].activeEnergyImported = preferences.getDouble(key, 0.0);
         _energyValues[channelIndex].activeEnergyImported = _meterValues[channelIndex].activeEnergyImported;
 
         snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, channelIndex);
-        _meterValues[channelIndex].activeEnergyExported = preferences.getFloat(key, 0.0f);
+        _meterValues[channelIndex].activeEnergyExported = preferences.getDouble(key, 0.0);
         _energyValues[channelIndex].activeEnergyExported = _meterValues[channelIndex].activeEnergyExported;
 
         snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, channelIndex);
-        _meterValues[channelIndex].reactiveEnergyImported = preferences.getFloat(key, 0.0f);
+        _meterValues[channelIndex].reactiveEnergyImported = preferences.getDouble(key, 0.0);
         _energyValues[channelIndex].reactiveEnergyImported = _meterValues[channelIndex].reactiveEnergyImported;
 
         snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, channelIndex);
-        _meterValues[channelIndex].reactiveEnergyExported = preferences.getFloat(key, 0.0f);
+        _meterValues[channelIndex].reactiveEnergyExported = preferences.getDouble(key, 0.0);
         _energyValues[channelIndex].reactiveEnergyExported = _meterValues[channelIndex].reactiveEnergyExported;
 
         snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, channelIndex);
-        _meterValues[channelIndex].apparentEnergy = preferences.getFloat(key, 0.0f);
+        _meterValues[channelIndex].apparentEnergy = preferences.getDouble(key, 0.0);
         _energyValues[channelIndex].apparentEnergy = _meterValues[channelIndex].apparentEnergy;
 
         releaseMutex(&_meterValuesMutex);
@@ -2249,31 +2249,31 @@ namespace Ade7953
         // Meter values are the real-time values, while energy values are the last saved values
         if ((meterValues.activeEnergyImported - _energyValues[channelIndex].activeEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.activeEnergyImported);
+            preferences.putDouble(key, meterValues.activeEnergyImported);
             _energyValues[channelIndex].activeEnergyImported = meterValues.activeEnergyImported;
         }
 
         if ((meterValues.activeEnergyExported - _energyValues[channelIndex].activeEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.activeEnergyExported);
+            preferences.putDouble(key, meterValues.activeEnergyExported);
             _energyValues[channelIndex].activeEnergyExported = meterValues.activeEnergyExported;
         }
 
         if ((meterValues.reactiveEnergyImported - _energyValues[channelIndex].reactiveEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.reactiveEnergyImported);
+            preferences.putDouble(key, meterValues.reactiveEnergyImported);
             _energyValues[channelIndex].reactiveEnergyImported = meterValues.reactiveEnergyImported;
         }
 
         if ((meterValues.reactiveEnergyExported - _energyValues[channelIndex].reactiveEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.reactiveEnergyExported);
+            preferences.putDouble(key, meterValues.reactiveEnergyExported);
             _energyValues[channelIndex].reactiveEnergyExported = meterValues.reactiveEnergyExported;
         }
 
         if ((meterValues.apparentEnergy - _energyValues[channelIndex].apparentEnergy > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.apparentEnergy);
+            preferences.putDouble(key, meterValues.apparentEnergy);
             _energyValues[channelIndex].apparentEnergy = meterValues.apparentEnergy;
         }
 
@@ -2497,6 +2497,12 @@ namespace Ade7953
             // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
             // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
             // Use multiplication instead of division as it is faster in embedded systems
+            LOG_DEBUG("Ch %d: sampleTime=%.1fms, deltaMillis=%llums, ratio=%.2f", //FIXME: temporary debug log
+                channelIndex, 
+                float(_sampleTime), 
+                deltaMillis, 
+                float(deltaMillis) / float(_sampleTime)
+            );
             float deltaHoursSampleTime = float(_sampleTime) / 1000.0f / 3600.0f; // Convert milliseconds to hours | ENSURE THEY ARE FLOAT: YOU LOST A LOT OF TIME DEBUGGING THIS!!!
             activePower = deltaHoursSampleTime > 0.0f ? activeEnergy / deltaHoursSampleTime : 0.0f; // W
             reactivePower = deltaHoursSampleTime > 0.0f ? reactiveEnergy / deltaHoursSampleTime : 0.0f; // VAR
@@ -2660,6 +2666,8 @@ namespace Ade7953
         // and instead use this feature to really discard zero-power readings.
         float deltaHoursFromLastEnergyIncrement = float(deltaMillis) / 1000.0f / 3600.0f; // Convert milliseconds to hours
         if (activeEnergy > 0) { // Increment imported
+            // NOTE: The line below is the reason the energy variables are double: with float, we cannot sum numbers like 96901.9688 + 0.0054
+            // thus on low powers (and high energy values) the increments would be lost
             _meterValues[channelIndex].activeEnergyImported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
         } else if (activeEnergy < 0) { // Increment exported
             _meterValues[channelIndex].activeEnergyExported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh

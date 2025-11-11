@@ -106,7 +106,11 @@ inline bool isChannelValid(uint8_t channel) {return channel < CHANNEL_COUNT;}
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier);
 inline float roundToDecimals(float value, uint8_t decimals = 3) {
     float factor = powf(10.0f, decimals);
-    return (long)(value * factor + 0.5f) / factor;
+    return roundf(value * factor) / factor;
+}
+inline float roundToDecimals(double value, uint8_t decimals = 3) {
+    double factor = pow(10.0, decimals);
+    return (float)(round(value * factor) / factor);
 }
 
 // Device identification

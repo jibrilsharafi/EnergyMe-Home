@@ -323,32 +323,32 @@ struct MeterValues
   float reactivePower;
   float apparentPower;
   float powerFactor;
-  float activeEnergyImported;
-  float activeEnergyExported;
-  float reactiveEnergyImported;
-  float reactiveEnergyExported;
-  float apparentEnergy;
+  double activeEnergyImported; // This made me go crazy - must be double instead of float to avoid precision issues over time with large energy values
+  double activeEnergyExported;
+  double reactiveEnergyImported;
+  double reactiveEnergyExported;
+  double apparentEnergy;
   uint64_t lastUnixTimeMilliseconds;
   uint64_t lastMillis; 
 
   MeterValues()
     : voltage(230.0), current(0.0f), activePower(0.0f), reactivePower(0.0f), apparentPower(0.0f), powerFactor(0.0f),
-      activeEnergyImported(0.0f), activeEnergyExported(0.0f), reactiveEnergyImported(0.0f), 
-      reactiveEnergyExported(0.0f), apparentEnergy(0.0f), lastUnixTimeMilliseconds(0), lastMillis(0) {}
+      activeEnergyImported(0.0), activeEnergyExported(0.0), reactiveEnergyImported(0.0), 
+      reactiveEnergyExported(0.0), apparentEnergy(0.0), lastUnixTimeMilliseconds(0), lastMillis(0) {}
 };
 
 struct EnergyValues // Simpler structure for optimizing energy saved to storage
 {
-  float activeEnergyImported;
-  float activeEnergyExported;
-  float reactiveEnergyImported;
-  float reactiveEnergyExported;
-  float apparentEnergy;
+  double activeEnergyImported;
+  double activeEnergyExported;
+  double reactiveEnergyImported;
+  double reactiveEnergyExported;
+  double apparentEnergy;
   uint64_t lastUnixTimeMilliseconds; // Last time the values were updated in milliseconds since epoch
 
   EnergyValues()
-    : activeEnergyImported(0.0f), activeEnergyExported(0.0f), reactiveEnergyImported(0.0f),
-      reactiveEnergyExported(0.0f), apparentEnergy(0.0f), lastUnixTimeMilliseconds(0) {}
+    : activeEnergyImported(0.0), activeEnergyExported(0.0), reactiveEnergyImported(0.0),
+      reactiveEnergyExported(0.0), apparentEnergy(0.0), lastUnixTimeMilliseconds(0) {}
 };
 
 struct CtSpecification
