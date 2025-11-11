@@ -127,9 +127,9 @@
 
 // Default configuration values
 #define DEFAULT_SAMPLE_TIME 200ULL // Will be converted to integer line cycles (so at 50Hz, 200ms = 10 cycles)
-#define DEFAULT_CONFIG_AV_GAIN 0x400000
-#define DEFAULT_CONFIG_AI_GAIN 0x400000
-#define DEFAULT_CONFIG_BI_GAIN 0x400000
+#define DEFAULT_CONFIG_AV_GAIN 4050000 // Actual "calibrated" value (compared to default 0x400000)
+#define DEFAULT_CONFIG_AI_GAIN 4300000 // Actual "calibrated" value (compared to default 0x400000)
+#define DEFAULT_CONFIG_BI_GAIN 4300000 // Actual "calibrated" value (compared to default 0x400000)
 #define DEFAULT_CONFIG_AIRMS_OS 0
 #define DEFAULT_CONFIG_BIRMS_OS 0
 #define DEFAULT_CONFIG_AW_GAIN 0x400000
