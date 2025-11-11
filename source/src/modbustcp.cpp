@@ -200,16 +200,17 @@ namespace ModbusTcp
                 case 7: return _getFloatBits(roundToDecimals(meterValues.apparentPower, POWER_DECIMALS), false);
                 case 8: return _getFloatBits(roundToDecimals(meterValues.powerFactor, POWER_FACTOR_DECIMALS), true);
                 case 9: return _getFloatBits(roundToDecimals(meterValues.powerFactor, POWER_FACTOR_DECIMALS), false);
-                case 10: return _getFloatBits((roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS)), true);
-                case 11: return _getFloatBits((roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS)), false);
-                case 12: return _getFloatBits((roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS)), true);
-                case 13: return _getFloatBits((roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS)), false);
-                case 14: return _getFloatBits((roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS)), true);
-                case 15: return _getFloatBits((roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS)), false);
-                case 16: return _getFloatBits((roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS)), true);
-                case 17: return _getFloatBits((roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS)), false);
-                case 18: return _getFloatBits((roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS)), true);
-                case 19: return _getFloatBits((roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS)), false);
+                // NOTE: We cannot send directly double values over Modbus (not standard), so we cast them to float after rounding, accepting to lose some precision
+                case 10: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS)), true);
+                case 11: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS)), false);
+                case 12: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS)), true);
+                case 13: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS)), false);
+                case 14: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS)), true);
+                case 15: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS)), false);
+                case 16: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS)), true);
+                case 17: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS)), false);
+                case 18: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS)), true);
+                case 19: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS)), false);
 
                 // Default case to handle unexpected addresses
                 default: return 0;
