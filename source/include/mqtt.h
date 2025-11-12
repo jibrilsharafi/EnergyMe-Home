@@ -33,8 +33,8 @@
 #define MQTT_TASK_STACK_SIZE (7 * 1024) // Around 6 kB usage
 #define MQTT_TASK_PRIORITY 3
 
-#define MQTT_LOG_QUEUE_SIZE (64 * 1024) // Generous log size (in bytes) thanks to PSRAM
-#define MQTT_METER_QUEUE_SIZE (32 * 1024) // Size in bytes to allocate to PSRAM
+#define MQTT_LOG_QUEUE_SIZE (256 * 1024) // Generous log size (in bytes) thanks to PSRAM
+#define MQTT_METER_QUEUE_SIZE (64 * 1024) // Size in bytes to allocate to PSRAM
 #define MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD 0.10 // Threshold for publishing
 #define MQTT_METER_MAX_BATCHES 10 // Number of consecutive batches to publish before stopping to avoid infinite loop
 #define QUEUE_WAIT_TIMEOUT 100 // Amount of milliseconds to wait if the queue is full or busy

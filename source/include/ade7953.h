@@ -127,9 +127,9 @@
 
 // Default configuration values
 #define DEFAULT_SAMPLE_TIME 200ULL // Will be converted to integer line cycles (so at 50Hz, 200ms = 10 cycles)
-#define DEFAULT_CONFIG_AV_GAIN 0x400000
-#define DEFAULT_CONFIG_AI_GAIN 0x400000
-#define DEFAULT_CONFIG_BI_GAIN 0x400000
+#define DEFAULT_CONFIG_AV_GAIN 4050000 // Actual "calibrated" value (compared to default 0x400000)
+#define DEFAULT_CONFIG_AI_GAIN 4300000 // Actual "calibrated" value (compared to default 0x400000)
+#define DEFAULT_CONFIG_BI_GAIN 4300000 // Actual "calibrated" value (compared to default 0x400000)
 #define DEFAULT_CONFIG_AIRMS_OS 0
 #define DEFAULT_CONFIG_BIRMS_OS 0
 #define DEFAULT_CONFIG_AW_GAIN 0x400000
@@ -190,6 +190,7 @@
 #define POWER_DECIMALS 1
 #define POWER_FACTOR_DECIMALS 3
 #define ENERGY_DECIMALS 1
+#define GRID_FREQUENCY_DECIMALS 3
 
 // Guardrails and thresholds
 #define MAXIMUM_POWER_FACTOR_CLAMP 1.10f // Values above 1 but below this are still accepted (rounding errors and similar). I noticed I still had a lot of spurious readings with PF around 1.06-1.07 (mainly close to fridge activations, probably due to the compressor)
@@ -323,32 +324,32 @@ struct MeterValues
   float reactivePower;
   float apparentPower;
   float powerFactor;
-  float activeEnergyImported;
-  float activeEnergyExported;
-  float reactiveEnergyImported;
-  float reactiveEnergyExported;
-  float apparentEnergy;
+  double activeEnergyImported; // This made me go crazy - must be double instead of float to avoid precision issues over time with large energy values
+  double activeEnergyExported;
+  double reactiveEnergyImported;
+  double reactiveEnergyExported;
+  double apparentEnergy;
   uint64_t lastUnixTimeMilliseconds;
   uint64_t lastMillis; 
 
   MeterValues()
     : voltage(230.0), current(0.0f), activePower(0.0f), reactivePower(0.0f), apparentPower(0.0f), powerFactor(0.0f),
-      activeEnergyImported(0.0f), activeEnergyExported(0.0f), reactiveEnergyImported(0.0f), 
-      reactiveEnergyExported(0.0f), apparentEnergy(0.0f), lastUnixTimeMilliseconds(0), lastMillis(0) {}
+      activeEnergyImported(0.0), activeEnergyExported(0.0), reactiveEnergyImported(0.0), 
+      reactiveEnergyExported(0.0), apparentEnergy(0.0), lastUnixTimeMilliseconds(0), lastMillis(0) {}
 };
 
 struct EnergyValues // Simpler structure for optimizing energy saved to storage
 {
-  float activeEnergyImported;
-  float activeEnergyExported;
-  float reactiveEnergyImported;
-  float reactiveEnergyExported;
-  float apparentEnergy;
+  double activeEnergyImported;
+  double activeEnergyExported;
+  double reactiveEnergyImported;
+  double reactiveEnergyExported;
+  double apparentEnergy;
   uint64_t lastUnixTimeMilliseconds; // Last time the values were updated in milliseconds since epoch
 
   EnergyValues()
-    : activeEnergyImported(0.0f), activeEnergyExported(0.0f), reactiveEnergyImported(0.0f),
-      reactiveEnergyExported(0.0f), apparentEnergy(0.0f), lastUnixTimeMilliseconds(0) {}
+    : activeEnergyImported(0.0), activeEnergyExported(0.0), reactiveEnergyImported(0.0),
+      reactiveEnergyExported(0.0), apparentEnergy(0.0), lastUnixTimeMilliseconds(0) {}
 };
 
 struct CtSpecification
@@ -511,11 +512,11 @@ namespace Ade7953
     void resetEnergyValues();
     bool setEnergyValues(
         uint8_t channelIndex,
-        float activeEnergyImported,
-        float activeEnergyExported,
-        float reactiveEnergyImported,
-        float reactiveEnergyExported,
-        float apparentEnergy
+        double activeEnergyImported,
+        double activeEnergyExported,
+        double reactiveEnergyImported,
+        double reactiveEnergyExported,
+        double apparentEnergy
     );
 
     // Data output

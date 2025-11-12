@@ -925,11 +925,11 @@ namespace Ade7953
 
     bool setEnergyValues(
         uint8_t channelIndex,
-        float activeEnergyImported,
-        float activeEnergyExported,
-        float reactiveEnergyImported,
-        float reactiveEnergyExported,
-        float apparentEnergy
+        double activeEnergyImported,
+        double activeEnergyExported,
+        double reactiveEnergyImported,
+        double reactiveEnergyExported,
+        double apparentEnergy
     ) {
         if (!isChannelValid(channelIndex)) {
             LOG_ERROR("Invalid channel index %d", channelIndex);
@@ -2204,31 +2204,97 @@ namespace Ade7953
             return;
         }
 
+        // Migration: Try to read as double first (new format), if not found try reading as float (old format)
+        // This ensures backward compatibility when upgrading from float to double storage
+        bool needsMigration = false;
+
         snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
-        _meterValues[channelIndex].activeEnergyImported = preferences.getFloat(key, 0.0f);
+        double doubleValue = preferences.getDouble(key, -1.0); // Use -1.0 as sentinel (energy can't be negative)
+        float floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d activeEnergyImported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            // Found as double (new format)
+            _meterValues[channelIndex].activeEnergyImported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            // Found as float (old format) - migrate
+            _meterValues[channelIndex].activeEnergyImported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d activeEnergyImported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            // Not found at all - use 0.0
+            _meterValues[channelIndex].activeEnergyImported = 0.0;
+        }
         _energyValues[channelIndex].activeEnergyImported = _meterValues[channelIndex].activeEnergyImported;
 
         snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, channelIndex);
-        _meterValues[channelIndex].activeEnergyExported = preferences.getFloat(key, 0.0f);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d activeEnergyExported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].activeEnergyExported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].activeEnergyExported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d activeEnergyExported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].activeEnergyExported = 0.0;
+        }
         _energyValues[channelIndex].activeEnergyExported = _meterValues[channelIndex].activeEnergyExported;
 
         snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, channelIndex);
-        _meterValues[channelIndex].reactiveEnergyImported = preferences.getFloat(key, 0.0f);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d reactiveEnergyImported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].reactiveEnergyImported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].reactiveEnergyImported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d reactiveEnergyImported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].reactiveEnergyImported = 0.0;
+        }
         _energyValues[channelIndex].reactiveEnergyImported = _meterValues[channelIndex].reactiveEnergyImported;
 
         snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, channelIndex);
-        _meterValues[channelIndex].reactiveEnergyExported = preferences.getFloat(key, 0.0f);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d reactiveEnergyExported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].reactiveEnergyExported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].reactiveEnergyExported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d reactiveEnergyExported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].reactiveEnergyExported = 0.0;
+        }
         _energyValues[channelIndex].reactiveEnergyExported = _meterValues[channelIndex].reactiveEnergyExported;
 
         snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, channelIndex);
-        _meterValues[channelIndex].apparentEnergy = preferences.getFloat(key, 0.0f);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d apparentEnergy: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].apparentEnergy = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].apparentEnergy = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d apparentEnergy migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].apparentEnergy = 0.0;
+        }
         _energyValues[channelIndex].apparentEnergy = _meterValues[channelIndex].apparentEnergy;
 
         releaseMutex(&_meterValuesMutex);
 
         preferences.end();
 
-        _saveEnergyToPreferences(channelIndex, true); // Ensure we have the initial values saved always
+        if (needsMigration) {
+            LOG_INFO("Migrated energy values from float to double for channel %lu", channelIndex);
+        }
+
+        _saveEnergyToPreferences(channelIndex, true); // Ensure we have the initial values saved always (and complete migration if needed)
 
         LOG_DEBUG("Successfully read energy from preferences for channel %lu", channelIndex);
     }
@@ -2249,31 +2315,31 @@ namespace Ade7953
         // Meter values are the real-time values, while energy values are the last saved values
         if ((meterValues.activeEnergyImported - _energyValues[channelIndex].activeEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.activeEnergyImported);
+            preferences.putDouble(key, meterValues.activeEnergyImported);
             _energyValues[channelIndex].activeEnergyImported = meterValues.activeEnergyImported;
         }
 
         if ((meterValues.activeEnergyExported - _energyValues[channelIndex].activeEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.activeEnergyExported);
+            preferences.putDouble(key, meterValues.activeEnergyExported);
             _energyValues[channelIndex].activeEnergyExported = meterValues.activeEnergyExported;
         }
 
         if ((meterValues.reactiveEnergyImported - _energyValues[channelIndex].reactiveEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.reactiveEnergyImported);
+            preferences.putDouble(key, meterValues.reactiveEnergyImported);
             _energyValues[channelIndex].reactiveEnergyImported = meterValues.reactiveEnergyImported;
         }
 
         if ((meterValues.reactiveEnergyExported - _energyValues[channelIndex].reactiveEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.reactiveEnergyExported);
+            preferences.putDouble(key, meterValues.reactiveEnergyExported);
             _energyValues[channelIndex].reactiveEnergyExported = meterValues.reactiveEnergyExported;
         }
 
         if ((meterValues.apparentEnergy - _energyValues[channelIndex].apparentEnergy > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.apparentEnergy);
+            preferences.putDouble(key, meterValues.apparentEnergy);
             _energyValues[channelIndex].apparentEnergy = meterValues.apparentEnergy;
         }
 
@@ -2660,6 +2726,8 @@ namespace Ade7953
         // and instead use this feature to really discard zero-power readings.
         float deltaHoursFromLastEnergyIncrement = float(deltaMillis) / 1000.0f / 3600.0f; // Convert milliseconds to hours
         if (activeEnergy > 0) { // Increment imported
+            // NOTE: The line below is the reason the energy variables are double: with float, we cannot sum numbers like 96901.9688 + 0.0054
+            // thus on low powers (and high energy values) the increments would be lost
             _meterValues[channelIndex].activeEnergyImported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
         } else if (activeEnergy < 0) { // Increment exported
             _meterValues[channelIndex].activeEnergyExported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
@@ -2988,7 +3056,7 @@ namespace Ade7953
 
     float _readAngleRadians(Ade7953Channel ade7953Channel) {
         int32_t angleRaw = _readAngle(ade7953Channel);
-        return (float(angleRaw) * 360.0f * DEG_TO_RAD * float(_lineFrequency) / GRID_FREQUENCY_CONVERSION_FACTOR); // Convert to radians
+        return (float(angleRaw) * 360.0f * float(DEG_TO_RAD) * float(_lineFrequency) / GRID_FREQUENCY_CONVERSION_FACTOR); // Convert to radians
     }
 
     int32_t _readPeriod() {

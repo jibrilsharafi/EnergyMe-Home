@@ -1835,11 +1835,11 @@ namespace CustomServer
                 }
 
                 uint8_t channel = doc["channel"].as<uint8_t>();
-                float activeEnergyImported = doc["activeEnergyImported"].as<float>();
-                float activeEnergyExported = doc["activeEnergyExported"].as<float>();
-                float reactiveEnergyImported = doc["reactiveEnergyImported"].as<float>();
-                float reactiveEnergyExported = doc["reactiveEnergyExported"].as<float>();
-                float apparentEnergy = doc["apparentEnergy"].as<float>();
+                double activeEnergyImported = doc["activeEnergyImported"].as<double>();
+                double activeEnergyExported = doc["activeEnergyExported"].as<double>();
+                double reactiveEnergyImported = doc["reactiveEnergyImported"].as<double>();
+                double reactiveEnergyExported = doc["reactiveEnergyExported"].as<double>();
+                double apparentEnergy = doc["apparentEnergy"].as<double>();
 
                 if (Ade7953::setEnergyValues(channel, activeEnergyImported, activeEnergyExported, 
                                            reactiveEnergyImported, reactiveEnergyExported, apparentEnergy))
