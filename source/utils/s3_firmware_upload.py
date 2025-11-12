@@ -92,6 +92,24 @@ class FirmwareUploader:
                 print(f"ERROR: Failed to access S3 bucket '{self.bucket_name}': {e}")
             return False
     
+    def check_version_exists(self, version):
+        """Check if a version-specific folder already exists in S3
+        
+        Returns:
+            True if the version folder exists and contains files, False otherwise
+        """
+        prefix = f"{self.get_s3_folder_path(version)}/"
+        try:
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=prefix,
+                MaxKeys=1
+            )
+            return response.get('KeyCount', 0) > 0
+        except ClientError as e:
+            print(f"WARN: Could not check if version exists: {e}")
+            return False
+    
     def parse_version_from_constants(self):
         """Parse firmware version from constants.h"""
         if not self.constants_file.exists():
@@ -333,6 +351,18 @@ class FirmwareUploader:
             except Exception as e:
                 print(f"ERROR parsing version: {e}")
                 return False
+        
+        # Check if version already exists in S3 and ask for confirmation
+        if not dry_run:
+            version_exists = self.check_version_exists(version)
+            if version_exists:
+                print(f"⚠️  WARNING: Version {version} already exists in S3!")
+                print(f"   Folder: s3://{self.bucket_name}/{self.get_s3_folder_path(version)}/")
+                response = input("\nDo you want to overwrite the existing version? [y/N]: ").strip().lower()
+                if response not in ['y', 'yes']:
+                    print("Upload cancelled by user")
+                    return False
+                print()
         
         # Display file sizes
         print("Build files to upload:")
