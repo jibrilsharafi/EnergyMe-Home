@@ -230,7 +230,7 @@ namespace CustomTime {
         bool needToRetry = !_isTimeSynched && (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_RETRY_IF_NOT_SYNCHED);
 
         if (isTimeToSync || needToRetry) {
-            if (!CustomWifi::isFullyConnected()) {
+            if (!CustomWifi::isFullyConnected(true)) {
                 LOG_DEBUG("Skipping time sync - WiFi not connected");
                 return;
             }
