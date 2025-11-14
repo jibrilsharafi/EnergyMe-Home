@@ -1701,6 +1701,12 @@ namespace Mqtt
             return false;
         }
 
+        if (!CustomWifi::isFullyConnected(true)) {
+            LOG_WARNING("WiFi not fully connected. Skipping streaming publish on %s", topic);
+            statistics.mqttMessagesPublishedError++;
+            return false;
+        }
+
         if (!_clientMqtt.connected()) {
             LOG_WARNING("MQTT not connected (%s). Skipping streaming publish on %s", _getMqttStateReason(_clientMqtt.state()), topic);
             statistics.mqttMessagesPublishedError++;
