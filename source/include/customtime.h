@@ -12,7 +12,7 @@
 
 #define NTP_SERVER_1 "pool.ntp.org"
 #define NTP_SERVER_2 "time.google.com"
-#define NTP_SERVER_3 "time.apple.com"
+#define NTP_SERVER_3 "216.239.35.0" // Last one with raw google IP to work if DNS fails
 
 #define TIME_SYNC_INTERVAL (60 * 60 * 1000)
 #define TIME_SYNC_RETRY_IF_NOT_SYNCHED (60 * 1000)
