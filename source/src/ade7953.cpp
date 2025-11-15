@@ -2575,7 +2575,7 @@ namespace Ade7953
             current = voltage > 0.0f ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
         } else {
             // TODO: understand how to aggregate three-phase measurements
-            // We cannot use the energy registers as it would be too complicated (or impossible) to account both for the 120° shift and possible reverse currebt
+            // We cannot use the energy registers as it would be too complicated (or impossible) to account both for the 120° shift and possible reverse current
             // Assume the voltage is the same as channel 0 (in amplitude) but shifted 120°
             // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
             // It is easier just to ensure during installation that the CTs are installed correctly
@@ -2608,7 +2608,7 @@ namespace Ade7953
                 isActivePowerNegative = true;
             }
 
-            powerFactor = cos(realAngleDifference) * (powerFactor >= 0 ? 1.0f : -1.0f); // Apply sign as the cosine is always positive in the -90 to 90 degrees range, but negative power values indicate capacitive (leading) load
+            powerFactor = cos(realAngleDifference) * (realAngleDifference >= 0 ? 1.0f : -1.0f); // Apply sign as the cosine is always positive in the -90 to 90 degrees range, but negative power values indicate capacitive (leading) load
             // Since this is a tricky approximation, we print the debug info anyway
             LOG_DEBUG(
                 "%s (%d) (phase %d): Angle difference: %.1f° (from %.1f°), Power factor: %.1f%% %s",
@@ -2998,7 +2998,7 @@ namespace Ade7953
 
     void _updateSampleTime() {
         float gridFrequency = _readGridFrequency();
-        uint16_t _lineFrequency = DEFAULT_FALLBACK_FREQUENCY;
+        _lineFrequency = DEFAULT_FALLBACK_FREQUENCY;
 
         if (
             _validateGridFrequency(gridFrequency) &&
