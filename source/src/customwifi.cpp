@@ -75,7 +75,7 @@ namespace CustomWifi
     }
   }
 
-  bool isFullyConnected() // Also check IP to ensure full connectivity
+  bool isFullyConnected(bool requireInternet) // NOTE: as this can be quite "heavy", use it only where actually needed 
   {
     // Check if WiFi is connected and has an IP address (it can happen that WiFi is connected but no IP assigned)
     if (!WiFi.isConnected() || WiFi.localIP() == IPAddress(0, 0, 0, 0)) return false;
@@ -84,6 +84,7 @@ namespace CustomWifi
     // This prevents DNS/UDP crashes when services try to connect too quickly
     if (_lastWifiConnectedMillis > 0 && (millis64() - _lastWifiConnectedMillis) < WIFI_LWIP_STABILIZATION_DELAY) return false;
 
+    if (requireInternet) return _testConnectivity();
     return true;
   }
 
@@ -441,8 +442,9 @@ namespace CustomWifi
 
   static bool _testConnectivity()
   {
-    if (!isFullyConnected()) {
-      LOG_DEBUG("Connectivity test failed: not fully connected");
+    // Check basic WiFi connectivity (without internet test to avoid recursion)
+    if (!WiFi.isConnected() || WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
+      LOG_DEBUG("Connectivity test failed early: WiFi not connected");
       return false;
     }
 
@@ -455,6 +457,7 @@ namespace CustomWifi
     }
 
     // Check if we have valid DNS servers
+    // This should be true even before DNS resolution
     IPAddress dns1 = WiFi.dnsIP(0);
     IPAddress dns2 = WiFi.dnsIP(1);
     if (dns1 == IPAddress(0, 0, 0, 0) && dns2 == IPAddress(0, 0, 0, 0)) {
@@ -463,43 +466,26 @@ namespace CustomWifi
       return false;
     }
 
-    // Try a simple HTTP request to test actual internet connectivity
+    // Simple TCP connect to Google Public DNS (8.8.8.8:53) - lightweight internet connectivity test
+    // Uses IP address to avoid DNS lookup, port 53 is rarely blocked by firewalls
     WiFiClient client;
     client.setTimeout(CONNECTIVITY_TEST_TIMEOUT_MS);
     
-    if (!client.connect(CONNECTIVITY_TEST_HOST, CONNECTIVITY_TEST_PORT)) {
-      LOG_WARNING("Connectivity test failed: cannot connect to %s", CONNECTIVITY_TEST_HOST);
+    if (!client.connect(CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT)) {
+      LOG_WARNING("Connectivity test failed: cannot reach %s:%d (no internet)", 
+                  CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT);
       statistics.wifiConnectionError++;
       return false;
     }
     
-    client.print("HEAD / HTTP/1.1\r\nHost: ");
-    client.print(CONNECTIVITY_TEST_HOST);
-    client.print("\r\nConnection: close\r\n\r\n");
-    
-    // Wait for response
-    uint64_t startTime = millis64();
-    while (client.connected() && (millis64() - startTime) < CONNECTIVITY_TEST_TIMEOUT_MS) {
-      if (client.available()) {
-        String response = client.readStringUntil('\n');
-        client.stop();
-        if (response.startsWith("HTTP/1.1")) {
-          LOG_DEBUG("Connectivity test passed - Gateway: %s, DNS: %s, Host tested: %s:%d", 
-                    gateway.toString().c_str(), 
-                    dns1.toString().c_str(),
-                    CONNECTIVITY_TEST_HOST,
-                    CONNECTIVITY_TEST_PORT);
-          return true;
-        }
-        break;
-      }
-      delay(10);
-    }
-    
+    // Connection successful - internet is reachable
     client.stop();
-    LOG_WARNING("Connectivity test failed: no valid HTTP response from %s", CONNECTIVITY_TEST_HOST);
-    statistics.wifiConnectionError++;
-    return false;
+    LOG_DEBUG("Connectivity test passed - Gateway: %s, DNS: %s, Internet: %s:%d reachable", 
+              gateway.toString().c_str(), 
+              dns1.toString().c_str(),
+              CONNECTIVITY_TEST_IP,
+              CONNECTIVITY_TEST_PORT);
+    return true;
   }
 
   static void _forceReconnectInternal()

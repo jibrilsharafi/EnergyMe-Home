@@ -7,6 +7,7 @@
 [![GitHub license](https://img.shields.io/github/license/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/blob/main/LICENSE)
 
 [<img src="resources/certification-mark-IT000025-wide.svg" alt="OSHWA Certified Open Source Hardware IT000025" height="40">](https://certification.oshwa.org/it000025.html)
+<a href="https://www.tindie.com/stores/energyme/?ref=offsite_badges&utm_source=sellers_jabrillo&utm_medium=badges&utm_campaign=badge_small"><img src="https://d2ss6ovg47m0r5.cloudfront.net/badges/tindie-smalls.png" alt="I sell on Tindie" height="35"></a>
 
 ![Homepage](resources/homepage.png)
 

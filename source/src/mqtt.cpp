@@ -388,7 +388,32 @@ namespace Mqtt
 
     bool _initializeLogQueue() // Cannot use logger here to avoid recursion
     {
+        static bool isInitializing = false; // Guard against re-entry during initialization
+        
         if (_logQueueStorage != nullptr) return true;
+        
+        // Prevent recursion if ESP-IDF logs during preferences access
+        if (isInitializing) {
+            Serial.printf("[WARNING] Re-entry detected in _initializeLogQueue, skipping to prevent recursion\n");
+            return false;
+        }
+        
+        isInitializing = true;
+
+        // Load MQTT log level from preferences before initializing queue
+        // Using read-only mode to minimize risk of triggering internal ESP-IDF logs
+        Preferences prefs;
+        if (prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            _mqttLogLevelInt = prefs.getUChar(MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY, DEFAULT_MQTT_LOG_LEVEL_INT);
+            prefs.end();
+            _updateMqttMinLogLevel(); // Convert integer to LogLevel enum
+            Serial.printf("[DEBUG] MQTT log level loaded from preferences: %u\n", _mqttLogLevelInt);
+        } else {
+            // Failed to open preferences, use default
+            Serial.printf("[WARNING] Failed to load MQTT log level from preferences, using default: %u\n", DEFAULT_MQTT_LOG_LEVEL_INT);
+            _mqttLogLevelInt = DEFAULT_MQTT_LOG_LEVEL_INT;
+            _updateMqttMinLogLevel();
+        }
 
         // Allocate queue storage in PSRAM
         uint32_t queueLength = MQTT_LOG_QUEUE_SIZE / sizeof(LogEntry);
@@ -397,6 +422,7 @@ namespace Mqtt
 
         if (_logQueueStorage == nullptr) {
             Serial.printf("[ERROR] Failed to allocate PSRAM for MQTT log queue (%d bytes)\n", realQueueSize);
+            isInitializing = false;
             return false;
         }
 
@@ -405,10 +431,12 @@ namespace Mqtt
             Serial.println("[ERROR] Failed to create MQTT log queue");
             free(_logQueueStorage);
             _logQueueStorage = nullptr;
+            isInitializing = false;
             return false;
         }
 
         Serial.printf("[DEBUG] MQTT log queue initialized with PSRAM buffer (%d bytes) | Free PSRAM: %d bytes\n", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        isInitializing = false;
         return true;
     }
 
@@ -496,7 +524,7 @@ namespace Mqtt
             case 5: _mqttMinLogLevel = LogLevel::FATAL; break;
             default: _mqttMinLogLevel = LogLevel::INFO; break; // Default fallback
         }
-        LOG_DEBUG("Updated MQTT minimum log level to %u", _mqttLogLevelInt);
+        Serial.printf("[DEBUG] Updated MQTT minimum log level to %u\n", _mqttLogLevelInt); // Cannot use LOG_DEBUG here to avoid recursion (this is called in _initializeLogQueue)
     }
 
     static void _setMqttLogLevel(const char* logLevel)
@@ -1669,6 +1697,12 @@ namespace Mqtt
     static bool _publishJsonStreaming(JsonDocument &jsonDocument, const char* topic, bool retain) {
         if (topic == nullptr) {
             LOG_WARNING("Null topic provided");
+            statistics.mqttMessagesPublishedError++;
+            return false;
+        }
+
+        if (!CustomWifi::isFullyConnected(true)) {
+            LOG_WARNING("WiFi not fully connected. Skipping streaming publish on %s", topic);
             statistics.mqttMessagesPublishedError++;
             return false;
         }

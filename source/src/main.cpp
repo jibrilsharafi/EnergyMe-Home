@@ -75,7 +75,19 @@ void setup()
   LOG_DEBUG("Callbacks for AdvancedLogger set up successfully");
 
   LOG_INFO("Guess who's back, back again! EnergyMe - Home is starting up...");
-  LOG_INFO("Build version: %s (MD5: %s) | Build date: %s %s | Device ID: %s", FIRMWARE_BUILD_VERSION, ESP.getSketchMD5().c_str(), FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
+  LOG_INFO(
+    "Build version: %s %s(MD5: %s) | Build date: %s %s | Device ID: %s", 
+    FIRMWARE_BUILD_VERSION,
+    #ifdef ENV_DEV 
+    "(dev) ",
+    #else
+    "",
+    #endif
+    ESP.getSketchMD5().c_str(), 
+    FIRMWARE_BUILD_DATE, 
+    FIRMWARE_BUILD_TIME, 
+    DEVICE_ID
+  );
   
   Led::setOrange(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up crash monitor...");

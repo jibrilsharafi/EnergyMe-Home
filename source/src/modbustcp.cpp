@@ -136,7 +136,7 @@ namespace ModbusTcp
                                     LOG_WARNING("Failed to get meter values for channel 0. Returning default 0");
                                     return 0;
                                 }
-                                return _getFloatBits(meterValuesZeroChannel.voltage, true);
+                                return _getFloatBits(roundToDecimals(meterValuesZeroChannel.voltage, VOLTAGE_DECIMALS), true);
                             }
                 case 101: {
                                 MeterValues meterValuesZeroChannel;
@@ -144,33 +144,33 @@ namespace ModbusTcp
                                     LOG_WARNING("Failed to get meter values for channel 0. Returning default 0");
                                     return 0;
                                 }
-                                return _getFloatBits(meterValuesZeroChannel.voltage, false);
+                                return _getFloatBits(roundToDecimals(meterValuesZeroChannel.voltage, VOLTAGE_DECIMALS), false);
                             }
 
                 // Grid frequency
-                case 102: return _getFloatBits(Ade7953::getGridFrequency(), true);
-                case 103: return _getFloatBits(Ade7953::getGridFrequency(), false);
+                case 102: return _getFloatBits(roundToDecimals(Ade7953::getGridFrequency(), GRID_FREQUENCY_DECIMALS), true);
+                case 103: return _getFloatBits(roundToDecimals(Ade7953::getGridFrequency(), GRID_FREQUENCY_DECIMALS), false);
 
                 // Aggregated values
                 // With channel 0
-                case 200: return _getFloatBits(Ade7953::getAggregatedActivePower(), true);
-                case 201: return _getFloatBits(Ade7953::getAggregatedActivePower(), false);
-                case 202: return _getFloatBits(Ade7953::getAggregatedReactivePower(), true);
-                case 203: return _getFloatBits(Ade7953::getAggregatedReactivePower(), false);
-                case 204: return _getFloatBits(Ade7953::getAggregatedApparentPower(), true);
-                case 205: return _getFloatBits(Ade7953::getAggregatedApparentPower(), false);
-                case 206: return _getFloatBits(Ade7953::getAggregatedPowerFactor(), true);
-                case 207: return _getFloatBits(Ade7953::getAggregatedPowerFactor(), false);
+                case 200: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePower(), POWER_DECIMALS), true);
+                case 201: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePower(), POWER_DECIMALS), false);
+                case 202: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePower(), POWER_DECIMALS), true);
+                case 203: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePower(), POWER_DECIMALS), false);
+                case 204: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPower(), POWER_DECIMALS), true);
+                case 205: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPower(), POWER_DECIMALS), false);
+                case 206: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactor(), POWER_FACTOR_DECIMALS), true);
+                case 207: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactor(), POWER_FACTOR_DECIMALS), false);
 
                 // Without channel 0
-                case 210: return _getFloatBits(Ade7953::getAggregatedActivePower(false), true);
-                case 211: return _getFloatBits(Ade7953::getAggregatedActivePower(false), false);
-                case 212: return _getFloatBits(Ade7953::getAggregatedReactivePower(false), true);
-                case 213: return _getFloatBits(Ade7953::getAggregatedReactivePower(false), false);
-                case 214: return _getFloatBits(Ade7953::getAggregatedApparentPower(false), true);
-                case 215: return _getFloatBits(Ade7953::getAggregatedApparentPower(false), false);
-                case 216: return _getFloatBits(Ade7953::getAggregatedPowerFactor(false), true);
-                case 217: return _getFloatBits(Ade7953::getAggregatedPowerFactor(false), false);
+                case 210: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePower(false), POWER_DECIMALS), true);
+                case 211: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePower(false), POWER_DECIMALS), false);
+                case 212: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePower(false), POWER_DECIMALS), true);
+                case 213: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePower(false), POWER_DECIMALS), false);
+                case 214: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPower(false), POWER_DECIMALS), true);
+                case 215: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPower(false), POWER_DECIMALS), false);
+                case 216: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactor(false), POWER_FACTOR_DECIMALS), true);
+                case 217: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactor(false), POWER_FACTOR_DECIMALS), false);
 
                 // Default case to handle unexpected addresses
                 default: return 0;
@@ -190,26 +190,27 @@ namespace ModbusTcp
 
             switch (offset)
             {
-                case 0: return _getFloatBits(meterValues.current, true);
-                case 1: return _getFloatBits(meterValues.current, false);
-                case 2: return _getFloatBits(meterValues.activePower, true);
-                case 3: return _getFloatBits(meterValues.activePower, false);
-                case 4: return _getFloatBits(meterValues.reactivePower, true);
-                case 5: return _getFloatBits(meterValues.reactivePower, false);
-                case 6: return _getFloatBits(meterValues.apparentPower, true);
-                case 7: return _getFloatBits(meterValues.apparentPower, false);
-                case 8: return _getFloatBits(meterValues.powerFactor, true);
-                case 9: return _getFloatBits(meterValues.powerFactor, false);
-                case 10: return _getFloatBits(meterValues.activeEnergyImported, true);
-                case 11: return _getFloatBits(meterValues.activeEnergyImported, false);
-                case 12: return _getFloatBits(meterValues.activeEnergyExported, true);
-                case 13: return _getFloatBits(meterValues.activeEnergyExported, false);
-                case 14: return _getFloatBits(meterValues.reactiveEnergyImported, true);
-                case 15: return _getFloatBits(meterValues.reactiveEnergyImported, false);
-                case 16: return _getFloatBits(meterValues.reactiveEnergyExported, true);
-                case 17: return _getFloatBits(meterValues.reactiveEnergyExported, false);
-                case 18: return _getFloatBits(meterValues.apparentEnergy, true);
-                case 19: return _getFloatBits(meterValues.apparentEnergy, false);
+                case 0: return _getFloatBits(roundToDecimals(meterValues.current, CURRENT_DECIMALS), true);
+                case 1: return _getFloatBits(roundToDecimals(meterValues.current, CURRENT_DECIMALS), false);
+                case 2: return _getFloatBits(roundToDecimals(meterValues.activePower, POWER_DECIMALS), true);
+                case 3: return _getFloatBits(roundToDecimals(meterValues.activePower, POWER_DECIMALS), false);
+                case 4: return _getFloatBits(roundToDecimals(meterValues.reactivePower, POWER_DECIMALS), true);
+                case 5: return _getFloatBits(roundToDecimals(meterValues.reactivePower, POWER_DECIMALS), false);
+                case 6: return _getFloatBits(roundToDecimals(meterValues.apparentPower, POWER_DECIMALS), true);
+                case 7: return _getFloatBits(roundToDecimals(meterValues.apparentPower, POWER_DECIMALS), false);
+                case 8: return _getFloatBits(roundToDecimals(meterValues.powerFactor, POWER_FACTOR_DECIMALS), true);
+                case 9: return _getFloatBits(roundToDecimals(meterValues.powerFactor, POWER_FACTOR_DECIMALS), false);
+                // NOTE: We cannot send directly double values over Modbus (not standard), so we cast them to float after rounding, accepting to lose some precision
+                case 10: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS)), true);
+                case 11: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS)), false);
+                case 12: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS)), true);
+                case 13: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS)), false);
+                case 14: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS)), true);
+                case 15: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS)), false);
+                case 16: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS)), true);
+                case 17: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS)), false);
+                case 18: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS)), true);
+                case 19: return _getFloatBits(static_cast<float>(roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS)), false);
 
                 // Default case to handle unexpected addresses
                 default: return 0;

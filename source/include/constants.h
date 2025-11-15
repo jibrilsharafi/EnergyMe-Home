@@ -8,7 +8,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "1"
 #define FIRMWARE_BUILD_VERSION_MINOR "0"
-#define FIRMWARE_BUILD_VERSION_PATCH "1"
+#define FIRMWARE_BUILD_VERSION_PATCH "2"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -46,11 +46,15 @@
 #define PREFERENCES_NAMESPACE_CERTIFICATES "certificates_ns"
 #define PREFERENCES_NAMESPACE_LED "led_ns"
 #define PREFERENCES_NAMESPACE_AUTH "auth_ns" 
+#define PREFERENCES_NAMESPACE_UDP_LOG "udp_log_ns"
 
 // Logger
 #define LOG_PATH "/log.txt"
 #define MAX_LOG_LINES 1000
 #define MAXIMUM_LOG_FILE_SIZE (200 * 1024)
+
+// UDP Log configuration
+#define PREFERENCES_KEY_UDP_DESTINATION "udp_dest"
 
 // Buffer Sizes for String Operations
 // =================================

@@ -17,6 +17,7 @@
 
 #include "constants.h"
 #include "crashmonitor.h"
+#include "customlog.h"
 #include "custommqtt.h"
 #include "mqtt.h"
 #include "influxdbclient.h"
@@ -63,6 +64,7 @@
 
 // Content length validations
 #define HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL 64
+#define HTTP_MAX_CONTENT_LENGTH_UDP_DESTINATIONS 256
 #define HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT 512
 #define HTTP_MAX_CONTENT_LENGTH_INFLUXDB 1024
 #define HTTP_MAX_CONTENT_LENGTH_LED_BRIGHTNESS 64

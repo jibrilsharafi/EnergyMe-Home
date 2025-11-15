@@ -22,7 +22,7 @@
 #define UDP_LOG_BUFFER_SIZE 1024 // Smaller buffer for UDP packets (not critical, but should be enough for most messages). Increased thanks to PSRAM
 #define DEFAULT_UDP_LOG_DESTINATION_IP "239.255.255.250" // Multicast IP for UDP logging
 
-#define LOG_QUEUE_SIZE (32 * 1024) // Callback queue size in bytes (length will be computed based on this). Can be set high thanks to PSRAM
+#define LOG_QUEUE_SIZE (512 * 1024) // Callback queue size in bytes (length will be computed based on this). Can be set high thanks to PSRAM
 #define LOG_CALLBACK_LEVEL_SIZE 8 // Size for log level (e.g., "info", "error")
 #define LOG_CALLBACK_FUNCTION_SIZE 16 // Size for function name
 #define LOG_ESPVPRINTF_CALLBACK_MESSAGE_SIZE 256 // Size for log message coming from ESP-IDF. They are small usually so 256 is enough
@@ -41,6 +41,10 @@ namespace CustomLog
     void stop();
     
     void callbackMultiple(const LogEntry& entry);
+
+    // UDP destination management
+    bool getUdpDestination(char* ipAddress, size_t bufferSize);
+    bool setUdpDestination(const char* ipAddress);
 
     // Task information
     TaskInfo getTaskInfo();

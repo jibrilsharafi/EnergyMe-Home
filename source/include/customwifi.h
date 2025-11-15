@@ -32,10 +32,10 @@
 #define WIFI_FORCE_RECONNECT_DELAY (2 * 1000)      // Delay after forcing reconnection
 #define WIFI_LWIP_STABILIZATION_DELAY (1 * 1000)    // Delay after WiFi connection to allow lwIP network stack to stabilize (prevents DNS/UDP crashes)
 
-// Connectivity test parameters
+// Connectivity test parameters - lightweight TCP connect to public DNS (no DNS lookup needed, rarely blocked)
 #define CONNECTIVITY_TEST_TIMEOUT_MS (3 * 1000)           // Timeout for connectivity tests
-#define CONNECTIVITY_TEST_HOST "google.com"         // Host to test connectivity against
-#define CONNECTIVITY_TEST_PORT 80                   // Port for connectivity test
+#define CONNECTIVITY_TEST_IP "8.8.8.8"  // Google Public DNS - stable, reliable, no DNS lookup needed
+#define CONNECTIVITY_TEST_PORT 53                   // DNS port - rarely blocked by firewalls
 
 #define MDNS_HOSTNAME "energyme"
 #define MDNS_QUERY_TIMEOUT (5 * 1000)
@@ -50,7 +50,7 @@ namespace CustomWifi
     bool begin();
     void stop();
     
-    bool isFullyConnected();
+    bool isFullyConnected(bool requireInternet = false);
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
 

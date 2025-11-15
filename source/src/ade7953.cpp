@@ -77,6 +77,7 @@ namespace Ade7953
     MeterValues _meterValues[CHANNEL_COUNT];
     EnergyValues _energyValues[CHANNEL_COUNT]; // Store previous energy values for energy comparisons (optimize saving to flash)
     ChannelData _channelData[CHANNEL_COUNT];
+    static uint16_t _lineFrequency = DEFAULT_FALLBACK_FREQUENCY; // Line frequency (fixed 50 or 60 Hz value)
 
     // Private function declarations
     // =========================================================
@@ -164,23 +165,7 @@ namespace Ade7953
     static void _saveSampleTimeToPreferences();
 
     // ADE7953 register reading functions
-
-    static int32_t _readApparentPowerInstantaneous(Ade7953Channel ade7953Channel);
     /*
-    Reads the "instantaneous" active power.
-
-    "Instantaneous" because the active power is only defined as the dc component
-    of the instantaneous power signal, which is V_RMS * I_RMS - V_RMS * I_RMS * cos(2*omega*t). 
-    It is updated at 6.99 kHz.
-
-    @param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
-    @return The active power in LSB.
-    */
-    static int32_t _readActivePowerInstantaneous(Ade7953Channel ade7953Channel);
-    static int32_t _readReactivePowerInstantaneous(Ade7953Channel ade7953Channel);
-    /*
-    Reads the actual instantaneous current. 
-
     This allows you see the actual sinusoidal waveform, so both positive and 
     negative values. At full scale (so 500 mV), the value returned is 9032007d.
 
@@ -221,9 +206,10 @@ namespace Ade7953
     static int32_t _readActiveEnergy(Ade7953Channel ade7953Channel);
     static int32_t _readReactiveEnergy(Ade7953Channel ade7953Channel);
     static int32_t _readApparentEnergy(Ade7953Channel ade7953Channel);
-    static int32_t _readPowerFactor(Ade7953Channel ade7953Channel);
     static int32_t _readAngle(Ade7953Channel ade7953Channel);
+    static float _readAngleRadians(Ade7953Channel ade7953Channel);
     static int32_t _readPeriod();
+    static float _readGridFrequency();
 
     // Verification and validation functions
     static void _recordFailure();
@@ -242,6 +228,7 @@ namespace Ade7953
     static uint8_t _findNextActiveChannel(uint8_t currentChannel);
     static Phase _getLaggingPhase(Phase phase);
     static Phase _getLeadingPhase(Phase phase);
+    float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase);
     // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
     static const char *_irqstataBitName(uint32_t bit);
     void _printMeterValues(uint8_t channelIndex);
@@ -938,11 +925,11 @@ namespace Ade7953
 
     bool setEnergyValues(
         uint8_t channelIndex,
-        float activeEnergyImported,
-        float activeEnergyExported,
-        float reactiveEnergyImported,
-        float reactiveEnergyExported,
-        float apparentEnergy
+        double activeEnergyImported,
+        double activeEnergyExported,
+        double reactiveEnergyImported,
+        double reactiveEnergyExported,
+        double apparentEnergy
     ) {
         if (!isChannelValid(channelIndex)) {
             LOG_ERROR("Invalid channel index %d", channelIndex);
@@ -1438,34 +1425,89 @@ namespace Ade7953
     }
 
     void _pollWaveformSamples() {
-        // This function performs tight polling of instantaneous waveform registers
+        // This function performs tight polling of instantaneous waveform registers with zero-crossing detection
+        // to ensure capture of complete cycles only. We start on a positive-going voltage zero crossing and
+        // stop after detecting the Nth positive-going zero crossing.
         // Called from CYCEND interrupt context - we are sure we are in a "clean" state (no multiplexer switching)
-        // Poll as fast as possible with no artificial rate limiting - let SPI run at maximum speed
         
         Ade7953Channel ade7953Channel = (_captureChannel == 0) ? Ade7953Channel::A : Ade7953Channel::B;
         
+        // State machine for zero-crossing detection
+        enum class CapturePhase {
+            WAIT_FOR_START_CROSSING,  // Wait for initial positive-going zero crossing
+            CAPTURING,                 // Actively capturing samples
+        };
+        
+        CapturePhase phase = CapturePhase::WAIT_FOR_START_CROSSING;
+        int32_t previousVoltage = 0;
+        uint8_t zeroCrossingCount = 0;
+        const uint8_t targetCrossings = WAVEFORM_CYCLES_TO_CAPTURE; // Each positive crossing = 1 cycle start
+        
         uint32_t loops = 0;
-        while (_captureSampleCount < WAVEFORM_BUFFER_SIZE && loops < MAX_LOOP_ITERATIONS) {
+        uint32_t samplesBeforeStart = 0;
+        
+        while (loops < MAX_LOOP_ITERATIONS) {
             uint64_t currentMicros = micros64();
             loops++;
             
-            // Stop if we've captured for max duration
-            if (currentMicros - _captureStartMicros >= WAVEFORM_CAPTURE_MAX_DURATION_MICROS) break;
+            // Safety timeout
+            if (currentMicros - _captureStartMicros >= WAVEFORM_CAPTURE_MAX_DURATION_MICROS) {
+                LOG_WARNING("Waveform capture timeout after %llu ms, captured %u samples with %u zero crossings", 
+                    (currentMicros - _captureStartMicros) / 1000, _captureSampleCount, zeroCrossingCount);
+                break;
+            }
             
-            // Read instantaneous values directly from registers (no rate limiting)
-            _voltageWaveformBuffer[_captureSampleCount] = _readVoltageInstantaneous();
-            _currentWaveformBuffer[_captureSampleCount] = _readCurrentInstantaneous(ade7953Channel);
-            _microsWaveformBuffer[_captureSampleCount] = currentMicros - _captureStartMicros;
+            // Read instantaneous voltage
+            int32_t currentVoltage = _readVoltageInstantaneous();
             
-            _captureSampleCount++;
+            bool positiveZeroCrossing = (previousVoltage < 0 && currentVoltage >= 0);
+            
+            if (phase == CapturePhase::WAIT_FOR_START_CROSSING) {
+                samplesBeforeStart++;
+                
+                if (positiveZeroCrossing) {
+                    phase = CapturePhase::CAPTURING;
+                    zeroCrossingCount = 1; // First crossing detected
+                    _captureStartMicros = currentMicros; // Reset start time to actual capture start
+                    LOG_VERBOSE("Starting capture at positive zero crossing (after %u samples)", samplesBeforeStart);
+                }
+                
+                previousVoltage = currentVoltage;
+                continue; // Don't store samples until we start
+            }
+            
+            // CAPTURING phase - store samples
+            if (_captureSampleCount < WAVEFORM_BUFFER_SIZE) {
+                _voltageWaveformBuffer[_captureSampleCount] = currentVoltage;
+                _currentWaveformBuffer[_captureSampleCount] = _readCurrentInstantaneous(ade7953Channel);
+                _microsWaveformBuffer[_captureSampleCount] = currentMicros - _captureStartMicros;
+                _captureSampleCount++;
+            } else {
+                LOG_WARNING("Buffer full before completing cycles, stopping");
+                break;
+            }
+            
+            // Check for additional zero crossings during capture
+            if (positiveZeroCrossing) {
+                zeroCrossingCount++;
+                LOG_VERBOSE("Zero crossing %u detected at sample %u", zeroCrossingCount, _captureSampleCount);
+                
+                // Stop after capturing targetCrossings + 1 crossings
+                // (start crossing + N complete cycles = N+1 crossings total)
+                if (zeroCrossingCount >= targetCrossings + 1) {
+                    LOG_DEBUG("Captured %u complete cycles, stopping", WAVEFORM_CYCLES_TO_CAPTURE);
+                    break;
+                }
+            }
+            
+            previousVoltage = currentVoltage;
         }
         
         uint64_t totalDurationMs = (micros64() - _captureStartMicros) / 1000;
-        float effectiveSampleRate = _captureSampleCount > 0 ? (_captureSampleCount * 1000.0f) / totalDurationMs : 0;
         
         _captureState = CaptureState::COMPLETE;
-        LOG_INFO("Waveform capture complete for channel %u: %u samples in %llu ms (%.0f Hz)", 
-            _captureChannel, _captureSampleCount, totalDurationMs, effectiveSampleRate);
+        LOG_INFO("Waveform capture complete for channel %u: %u samples in %llu ms with %u zero crossings", 
+            _captureChannel, _captureSampleCount, totalDurationMs, zeroCrossingCount);
     }
 
     void _handleCrcChangeInterrupt() {
@@ -2162,31 +2204,97 @@ namespace Ade7953
             return;
         }
 
+        // Migration: Try to read as double first (new format), if not found try reading as float (old format)
+        // This ensures backward compatibility when upgrading from float to double storage
+        bool needsMigration = false;
+
         snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
-        _meterValues[channelIndex].activeEnergyImported = preferences.getFloat(key, 0.0f);
+        double doubleValue = preferences.getDouble(key, -1.0); // Use -1.0 as sentinel (energy can't be negative)
+        float floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d activeEnergyImported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            // Found as double (new format)
+            _meterValues[channelIndex].activeEnergyImported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            // Found as float (old format) - migrate
+            _meterValues[channelIndex].activeEnergyImported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d activeEnergyImported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            // Not found at all - use 0.0
+            _meterValues[channelIndex].activeEnergyImported = 0.0;
+        }
         _energyValues[channelIndex].activeEnergyImported = _meterValues[channelIndex].activeEnergyImported;
 
         snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, channelIndex);
-        _meterValues[channelIndex].activeEnergyExported = preferences.getFloat(key, 0.0f);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d activeEnergyExported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].activeEnergyExported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].activeEnergyExported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d activeEnergyExported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].activeEnergyExported = 0.0;
+        }
         _energyValues[channelIndex].activeEnergyExported = _meterValues[channelIndex].activeEnergyExported;
 
         snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, channelIndex);
-        _meterValues[channelIndex].reactiveEnergyImported = preferences.getFloat(key, 0.0f);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d reactiveEnergyImported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].reactiveEnergyImported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].reactiveEnergyImported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d reactiveEnergyImported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].reactiveEnergyImported = 0.0;
+        }
         _energyValues[channelIndex].reactiveEnergyImported = _meterValues[channelIndex].reactiveEnergyImported;
 
         snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, channelIndex);
-        _meterValues[channelIndex].reactiveEnergyExported = preferences.getFloat(key, 0.0f);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d reactiveEnergyExported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].reactiveEnergyExported = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].reactiveEnergyExported = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d reactiveEnergyExported migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].reactiveEnergyExported = 0.0;
+        }
         _energyValues[channelIndex].reactiveEnergyExported = _meterValues[channelIndex].reactiveEnergyExported;
 
         snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, channelIndex);
-        _meterValues[channelIndex].apparentEnergy = preferences.getFloat(key, 0.0f);
+        doubleValue = preferences.getDouble(key, -1.0);
+        floatValue = preferences.getFloat(key, -1.0f);
+        LOG_DEBUG("Ch %d apparentEnergy: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
+        if (doubleValue >= 0.0) {
+            _meterValues[channelIndex].apparentEnergy = doubleValue;
+        } else if (floatValue >= 0.0f) {
+            _meterValues[channelIndex].apparentEnergy = static_cast<double>(floatValue);
+            needsMigration = true;
+            LOG_DEBUG("Ch %d apparentEnergy migrating from float %.4f to double", channelIndex, floatValue);
+        } else {
+            _meterValues[channelIndex].apparentEnergy = 0.0;
+        }
         _energyValues[channelIndex].apparentEnergy = _meterValues[channelIndex].apparentEnergy;
 
         releaseMutex(&_meterValuesMutex);
 
         preferences.end();
 
-        _saveEnergyToPreferences(channelIndex, true); // Ensure we have the initial values saved always
+        if (needsMigration) {
+            LOG_INFO("Migrated energy values from float to double for channel %lu", channelIndex);
+        }
+
+        _saveEnergyToPreferences(channelIndex, true); // Ensure we have the initial values saved always (and complete migration if needed)
 
         LOG_DEBUG("Successfully read energy from preferences for channel %lu", channelIndex);
     }
@@ -2207,31 +2315,31 @@ namespace Ade7953
         // Meter values are the real-time values, while energy values are the last saved values
         if ((meterValues.activeEnergyImported - _energyValues[channelIndex].activeEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.activeEnergyImported);
+            preferences.putDouble(key, meterValues.activeEnergyImported);
             _energyValues[channelIndex].activeEnergyImported = meterValues.activeEnergyImported;
         }
 
         if ((meterValues.activeEnergyExported - _energyValues[channelIndex].activeEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_ACTIVE_EXP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.activeEnergyExported);
+            preferences.putDouble(key, meterValues.activeEnergyExported);
             _energyValues[channelIndex].activeEnergyExported = meterValues.activeEnergyExported;
         }
 
         if ((meterValues.reactiveEnergyImported - _energyValues[channelIndex].reactiveEnergyImported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_REACTIVE_IMP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.reactiveEnergyImported);
+            preferences.putDouble(key, meterValues.reactiveEnergyImported);
             _energyValues[channelIndex].reactiveEnergyImported = meterValues.reactiveEnergyImported;
         }
 
         if ((meterValues.reactiveEnergyExported - _energyValues[channelIndex].reactiveEnergyExported > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_REACTIVE_EXP_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.reactiveEnergyExported);
+            preferences.putDouble(key, meterValues.reactiveEnergyExported);
             _energyValues[channelIndex].reactiveEnergyExported = meterValues.reactiveEnergyExported;
         }
 
         if ((meterValues.apparentEnergy - _energyValues[channelIndex].apparentEnergy > ENERGY_SAVE_THRESHOLD) || forceSave) {
             snprintf(key, sizeof(key), ENERGY_APPARENT_KEY, channelIndex);
-            preferences.putFloat(key, meterValues.apparentEnergy);
+            preferences.putDouble(key, meterValues.apparentEnergy);
             _energyValues[channelIndex].apparentEnergy = meterValues.apparentEnergy;
         }
 
@@ -2432,8 +2540,8 @@ namespace Ade7953
                 }
             }
 
-            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1 : 1);
-            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1 : 1);
+            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1.0f : 1.0f);
+            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1.0f : 1.0f);
             apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb;
 
             // Set the handling just after reading the energy values, to ensure 100% consistency
@@ -2446,8 +2554,7 @@ namespace Ade7953
                 voltage = float(_readVoltageRms()) * VOLT_PER_LSB;
 
                 // Update grid frequency during channel 0 reading
-                int32_t period = _readPeriod();
-                float newGridFrequency = period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / float(period) : 0.0f;
+                float newGridFrequency = _readGridFrequency();
                 if (_validateGridFrequency(newGridFrequency)) _gridFrequency = newGridFrequency;
             } else {
                 voltage = _meterValues[0].voltage;
@@ -2467,47 +2574,57 @@ namespace Ade7953
 
             current = voltage > 0.0f ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
         } else {
-            // TODO: understand if this can be improved using the energy registers
-            // Assume everything is the same as channel 0 except the current
+            // TODO: understand how to aggregate three-phase measurements
+            // We cannot use the energy registers as it would be too complicated (or impossible) to account both for the 120° shift and possible reverse current
+            // Assume the voltage is the same as channel 0 (in amplitude) but shifted 120°
             // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
             // It is easier just to ensure during installation that the CTs are installed correctly
             
             // Assume from channel 0
             voltage = _meterValues[0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
             
-            // Read wrong power factor due to the phase shift
-            float _powerFactorPhaseOne = float(_readPowerFactor(ade7953Channel)) * POWER_FACTOR_CONVERSION_FACTOR;
+            // Read the current (RMS is absolute so no reverse is needed). No assumption here
+            current = float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb;
 
-            // Compute the correct power factor assuming 120 degrees phase shift in voltage (weak assumption as this is normally true)
-            // The idea is to:
-            // 1. Compute the angle between the voltage and the current with the arc cosine of the just read power factor
-            // 2. Add or subtract 120 degrees to the angle depending on the phase (phase is lagging 120 degrees, phase 3 is leading 120 degrees)
-            // 3. Compute the cosine of the new corrected angle to get the corrected power factor
-            // 4. Multiply by -1 if the channel is reversed (as normal)
-
-            // Note that the direction of the current (and consequently the power) cannot be determined (or at least, I couldn't manage to do it reliably). 
-            // This is because the only reliable reading is the power factor, while the angle only gives the angle difference of the current 
-            // reading instead of the one of the whole line cycle. As such, the power factor is the only reliable reading and it cannot 
-            // provide information about the direction of the power.
+            // To get the power factor, we can read the angle difference between voltage and current (which is the time between the two zero-crossings)
+            float angleDifference = _readAngleRadians(ade7953Channel);
+            // What we just read is the raw angle; we need to shift it by 120° depending if it is leading or lagging
+            float realAngleDifference = angleDifference;
 
             if (channelData.phase == _getLaggingPhase(basePhase)) {
-                powerFactor = cos(acos(_powerFactorPhaseOne) - (2.0f * (float)PI / 3.0f));
+                realAngleDifference = angleDifference - 2.0f * (float)PI / 3.0f;
             } else if (channelData.phase == _getLeadingPhase(basePhase)) {
-                // I cannot prove why, but I am SURE the minus is needed if the phase is leading
-                powerFactor = - cos(acos(_powerFactorPhaseOne) + (2.0f * (float)PI / 3.0f));
+                realAngleDifference = angleDifference + 2.0f * (float)PI / 3.0f;
             } else {
                 LOG_ERROR("Invalid phase %d for channel %d", channelData.phase, channelIndex);
                 _recordFailure();
                 return false;
             }
 
-            // Read the current (RMS is absolute so no reverse is needed)
-            current = float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb;
+            // Finally, if the shifted angle is outside the -90 to 90 degrees range, it means the active power is negative
+            bool isActivePowerNegative = false;
+            if (realAngleDifference < -float(HALF_PI) || realAngleDifference > float(HALF_PI)) { // If the angle is outside the -90 to 90 degrees range, it means the active power is negative
+                realAngleDifference = realAngleDifference + (realAngleDifference > 0 ? -float(PI) : float(PI)); // Bring the angle to the -90 to 90 degrees range for power factor calculation
+                isActivePowerNegative = true;
+            }
 
-            // Compute power values
-            activePower = current * voltage * abs(powerFactor);
-            apparentPower = current * voltage;
-            reactivePower = float(sqrt(pow(apparentPower, 2) - pow(activePower, 2))); // Small approximation leaving out distorted power
+            powerFactor = cos(realAngleDifference) * (realAngleDifference >= 0 ? 1.0f : -1.0f); // Apply sign as the cosine is always positive in the -90 to 90 degrees range, but negative power values indicate capacitive (leading) load
+            // Since this is a tricky approximation, we print the debug info anyway
+            LOG_DEBUG(
+                "%s (%d) (phase %d): Angle difference: %.1f° (from %.1f°), Power factor: %.1f%% %s",
+                channelData.label, 
+                channelIndex, 
+                channelData.phase,
+                realAngleDifference * RAD_TO_DEG,
+                angleDifference * RAD_TO_DEG,
+                powerFactor * 100.0f,
+                isActivePowerNegative ? "(negative power)" : ""
+            );
+
+            // FINALLY: Compute power values
+            apparentPower = current * voltage; // S = Vrms * Irms
+            activePower = current * voltage * abs(powerFactor) * (channelData.reverse ? -1.0f : 1.0f) * (isActivePowerNegative ? -1.0f : 1.0f); // P = Vrms * Irms * PF
+            reactivePower = float(sqrt(pow(apparentPower, 2) - pow(activePower, 2))) * (channelData.reverse ? -1.0f : 1.0f) * (powerFactor >= 0 ? 1.0f : -1.0f); // Q = sqrt(S^2 - P^2) * sign(PF)
         }
 
         apparentPower = abs(apparentPower); // Apparent power must be positive
@@ -2554,10 +2671,29 @@ namespace Ade7953
             !_validatePower(apparentPower) || 
             !_validatePowerFactor(powerFactor)
         ) {
-            
-            LOG_WARNING("%s (%d): Invalid reading (%.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", channelData.label, channelIndex, activePower, current, reactivePower, apparentPower, powerFactor);
-            _recordFailure();
-            return false;
+            if (current >= MINIMUM_CURRENT_FOR_VALIDATION) {
+                // If the measurement is invalid AND we have enough current flowing (thus we should be reading correct values), then discard the reading
+                LOG_WARNING("%s (%d): Invalid reading (%.1fV, %.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", channelData.label, channelIndex, voltage, activePower, current, reactivePower, apparentPower, powerFactor);
+                _recordFailure();
+                return false;
+            } else {
+                // If the current is too low, we can assume the readings are not reliable and just set everything to 0
+                LOG_DEBUG(
+                    "%s (%d): Invalid reading with low current (%.3fA), setting all values to 0 to avoid invalid reading", 
+                    channelData.label, 
+                    channelIndex, 
+                    current
+                );
+                current = 0.0f;
+                activePower = 0.0f;
+                reactivePower = 0.0f;
+                apparentPower = 0.0f;
+                powerFactor = 0.0f;
+                activeEnergy = 0.0f;
+                reactiveEnergy = 0.0f;
+                apparentEnergy = 0.0f;
+            }
+
         }
         
         // Enough checks, now we can set the values
@@ -2590,6 +2726,8 @@ namespace Ade7953
         // and instead use this feature to really discard zero-power readings.
         float deltaHoursFromLastEnergyIncrement = float(deltaMillis) / 1000.0f / 3600.0f; // Convert milliseconds to hours
         if (activeEnergy > 0) { // Increment imported
+            // NOTE: The line below is the reason the energy variables are double: with float, we cannot sum numbers like 96901.9688 + 0.0054
+            // thus on low powers (and high energy values) the increments would be lost
             _meterValues[channelIndex].activeEnergyImported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
         } else if (activeEnergy < 0) { // Increment exported
             _meterValues[channelIndex].activeEnergyExported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
@@ -2859,20 +2997,20 @@ namespace Ade7953
     }
 
     void _updateSampleTime() {
-        int32_t period = _readPeriod();
-        float gridFrequency = period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / float(period) : 0.0f;
-        uint64_t gridFrequencyInt = DEFAULT_FALLBACK_FREQUENCY;
+        float gridFrequency = _readGridFrequency();
+        _lineFrequency = DEFAULT_FALLBACK_FREQUENCY;
 
         if (
             _validateGridFrequency(gridFrequency) &&
-            fabs(gridFrequency - 60.0f) < 2.0f
-        ) gridFrequencyInt = 60; // If valid frequency and close to 60 Hz, set to 60 Hz
-        else gridFrequencyInt = DEFAULT_FALLBACK_FREQUENCY; // Otherwise, set to 50 Hz as most of the world uses this
+            fabs(gridFrequency - 60.0f) < 2.0f // Absolute difference less than 2 Hz
+        ) {
+            _lineFrequency = 60; // If valid frequency and close to 60 Hz, set to 60 Hz
+        }
 
-        uint64_t calculatedLinecyc = _sampleTime * gridFrequencyInt * 2 / 1000;
+        uint64_t calculatedLinecyc = _sampleTime * _lineFrequency * 2 / 1000;
         _setLinecyc((uint32_t)calculatedLinecyc);
 
-        LOG_DEBUG("Successfully updated sample time to %llu ms (%llu line cycles) with grid frequency %llu Hz", _sampleTime, calculatedLinecyc, gridFrequencyInt);
+        LOG_DEBUG("Successfully updated sample time to %llu ms (%llu line cycles) with grid frequency %u Hz", _sampleTime, calculatedLinecyc, _lineFrequency);
     }
 
     // ADE7953 register reading functions
@@ -2911,13 +3049,23 @@ namespace Ade7953
         else return readRegister(APENERGYB_32, BIT_32, true);
     }
 
-    int32_t _readPowerFactor(Ade7953Channel ade7953Channel) {
-        if (ade7953Channel == Ade7953Channel::A) return readRegister(PFA_16, BIT_16, true);
-        else return readRegister(PFB_16, BIT_16, true);
+    int32_t _readAngle(Ade7953Channel ade7953Channel) {
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(ANGLE_A_16, BIT_16, true);
+        else return readRegister(ANGLE_B_16, BIT_16, true);
+    }
+
+    float _readAngleRadians(Ade7953Channel ade7953Channel) {
+        int32_t angleRaw = _readAngle(ade7953Channel);
+        return (float(angleRaw) * 360.0f * float(DEG_TO_RAD) * float(_lineFrequency) / GRID_FREQUENCY_CONVERSION_FACTOR); // Convert to radians
     }
 
     int32_t _readPeriod() {
         return readRegister(PERIOD_16, BIT_16, false);
+    }
+
+    float _readGridFrequency() {
+        int32_t period = _readPeriod();
+        return period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / float(period) : float(DEFAULT_FALLBACK_FREQUENCY);
     }
 
     // Verification and validation functions
@@ -3094,9 +3242,25 @@ namespace Ade7953
         return INVALID_CHANNEL; // Invalid channel, no active channels found
     }
 
+    // Poor man's phase shift (doing with modulus didn't work properly,
+    // and in any case the phases will always be at most 3)
+
     Phase _getLaggingPhase(Phase phase) {
-        // Poor man's phase shift (doing with modulus didn't work properly,
-        // and in any case the phases will always be at most 3)
+        // Lagging means it is behind (yes it should be trivial but this costed me a lot of time..)
+        // So if it is phase 1, the lagging phase behind is phase 3
+        switch (phase) {
+            case PHASE_1:
+                return PHASE_3;
+            case PHASE_2:
+                return PHASE_1;
+            case PHASE_3:
+                return PHASE_2;
+            default:
+                return PHASE_1;
+        }
+    }
+
+    Phase _getLeadingPhase(Phase phase) {
         switch (phase) {
             case PHASE_1:
                 return PHASE_2;
@@ -3109,17 +3273,33 @@ namespace Ade7953
         }
     }
 
-    Phase _getLeadingPhase(Phase phase) {
-        switch (phase) {
-            case PHASE_1:
-                return PHASE_3;
-            case PHASE_2:
-                return PHASE_1;
-            case PHASE_3:
-                return PHASE_2;
-            default:
-                return PHASE_1;
+    float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase) {
+        /**
+         * Calculate phase shift to align voltage waveform with current's phase reference.
+         * 
+         * Returns angle in degrees: positive = shift forward, negative = shift backward
+         * Formula: currentPhaseAngle - voltagePhaseAngle
+         */
+        
+        // Get phase angle for voltage
+        float voltageAngle = 0.0f;
+        switch (voltagePhase) {
+            case PHASE_1: voltageAngle = 0.0f; break;      // Phase A: 0°
+            case PHASE_2: voltageAngle = 120.0f; break;    // Phase B: 120°
+            case PHASE_3: voltageAngle = -120.0f; break;   // Phase C: -120°
+            default: return 0.0f;  // Invalid phase
         }
+        
+        // Get phase angle for current
+        float currentAngle = 0.0f;
+        switch (currentPhase) {
+            case PHASE_1: currentAngle = 0.0f; break;      // Phase A: 0°
+            case PHASE_2: currentAngle = 120.0f; break;    // Phase B: 120°
+            case PHASE_3: currentAngle = -120.0f; break;   // Phase C: -120°
+            default: return 0.0f;  // Invalid phase
+        }
+        
+        return currentAngle - voltageAngle;
     }
 
     const char* _irqstataBitName(uint32_t bit) {
@@ -3209,7 +3389,7 @@ namespace Ade7953
     // ====================
 
     bool startWaveformCapture(uint8_t channelIndex) {
-        if (!isChannelValid(channelIndex)) {
+        if (!isChannelActive(channelIndex)) {
             LOG_WARNING("Invalid channel index for waveform capture: %u", channelIndex);
             return false;
         }
@@ -3241,12 +3421,17 @@ namespace Ade7953
     }
 
     uint16_t getWaveformCaptureData(int32_t* vBuffer, int32_t* iBuffer, uint64_t* microsBuffer, uint16_t bufferSize) {
+        if (!vBuffer || !iBuffer || !microsBuffer) {
+            LOG_ERROR("Invalid buffer pointers provided to getWaveformCaptureData");
+            return 0;
+        }
+
         if (_captureState != CaptureState::COMPLETE) {
             return 0; // No data ready
         }
 
-        if (!vBuffer || !iBuffer || !microsBuffer) {
-            LOG_ERROR("Invalid buffer pointers provided to getWaveformCaptureData");
+        if (_captureRequestedChannel == INVALID_CHANNEL || _captureChannel == INVALID_CHANNEL) {
+            LOG_ERROR("Invalid capture channel state (requested: %u, captured: %u)", _captureRequestedChannel, _captureChannel);
             return 0;
         }
 
@@ -3270,11 +3455,25 @@ namespace Ade7953
             return false;
         }
 
+        if (_captureRequestedChannel == INVALID_CHANNEL || _captureChannel == INVALID_CHANNEL) {
+            LOG_ERROR("Invalid capture channel state for JSON serialization (requested: %u, captured: %u)", _captureRequestedChannel, _captureChannel);
+            return false;
+        }
+
         // Add metadata to the root object
         jsonDocument["channelIndex"] = _captureChannel;
         jsonDocument["sampleCount"] = _captureSampleCount;
         jsonDocument["captureStartUnixMillis"] = _captureStartUnixMillis;
         jsonDocument["captureStartMicros"] = _captureStartMicros;
+        
+        // Add phase information
+        Phase voltagePhase = _channelData[0].phase;  // Voltage reference is always channel 0
+        Phase currentPhase = _channelData[_captureChannel].phase;
+        float phaseShift = _calculatePhaseShift(voltagePhase, currentPhase);
+        
+        jsonDocument["voltagePhase"] = static_cast<uint32_t>(voltagePhase);
+        jsonDocument["currentPhase"] = static_cast<uint32_t>(currentPhase);
+        jsonDocument["phaseShiftDegrees"] = roundToDecimals(phaseShift, 0);
 
         // Create JSON arrays for voltage, current, and microseconds (only scaled values)
         JsonArray voltageArray = jsonDocument["voltage"].to<JsonArray>();
