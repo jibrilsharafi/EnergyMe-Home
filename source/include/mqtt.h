@@ -50,6 +50,15 @@
 #define OTA_PRESIGNED_URL_BUFFER_SIZE (4 * 1024) // The presigned S3 URL can be very long
 #define MQTT_OTA_SIZE_REPORT_UPDATE (128 * 1024)
 
+// OTA validation constants
+#define OTA_VALIDATION_TASK_NAME "ota_validation_task"
+#define OTA_VALIDATION_TASK_STACK_SIZE (4 * 1024)
+#define OTA_VALIDATION_TASK_PRIORITY 2
+#define OTA_VALIDATION_TIMEOUT (3 * 60 * 1000) // 3 minutes of stable operation before marking OTA as successful
+#define OTA_VALIDATION_CHECK_INTERVAL (10 * 1000) // Check every 10 seconds during validation period
+#define MQTT_PREFERENCES_OTA_JOB_ID_KEY "ota_job_id"
+#define MQTT_PREFERENCES_OTA_PENDING_KEY "ota_pending"
+
 // MQTT buffer sizes - all moved to PSRAM for better memory utilization
 #define MQTT_BUFFER_SIZE (5 * 1024) // Needs to be at least 4 kB for the certificates
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (32 * 1024) // PSRAM buffer for MQTT subscribe messages (reduced for efficiency)

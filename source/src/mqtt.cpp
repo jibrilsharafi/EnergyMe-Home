@@ -73,6 +73,7 @@ namespace Mqtt
     static char *_otaCurrentUrl = nullptr;  // URL_BUFFER_SIZE - allocated in PSRAM
     static char _otaCurrentJobId[NAME_BUFFER_SIZE];
     static TaskHandle_t _otaTaskHandle = nullptr;
+    static TaskHandle_t _otaValidationTaskHandle = nullptr;
 
     // Thread safety
     static SemaphoreHandle_t _configMutex = nullptr;
@@ -143,6 +144,11 @@ namespace Mqtt
     static void _otaTask(void* parameter);
     static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event);
     static bool _performOtaUpdate();
+    
+    // OTA validation functions
+    static void _otaValidationTask(void* parameter);
+    static void _checkPendingOtaValidation();
+    static void _publishOtaStatus(const char* jobId, const char* status, const char* reason);
 
     // Publishing functions
     static void _publishMeter();
@@ -218,8 +224,8 @@ namespace Mqtt
         _loadConfigFromPreferences();
         _initializeLogQueue();
         _initializeMeterQueue();
-
-        // Initialize OTA buffers
+        
+        // Initialize OTA buffers before checking pending validation
         if (_otaCurrentUrl == nullptr) {
             _otaCurrentUrl = (char*)ps_malloc(OTA_PRESIGNED_URL_BUFFER_SIZE);
             if (_otaCurrentUrl == nullptr) {
@@ -230,6 +236,9 @@ namespace Mqtt
         }
         
         memset(_otaCurrentJobId, 0, sizeof(_otaCurrentJobId));
+        
+        // Check if we just rebooted after an OTA update (must be AFTER memset to allow job ID loading)
+        _checkPendingOtaValidation();
 
         // Allocate certificate buffers in PSRAM
         if (_awsIotCoreCert == nullptr) {
@@ -1048,11 +1057,11 @@ namespace Mqtt
             .max_http_request_size = 0
         };
 
-        // Do the actual OTA (your existing code)
+        // Perform OTA without validating the partition (allows rollback if new firmware crashes)
         esp_err_t result = esp_https_ota(&_otaConfig);
 
         if (result == ESP_OK) {
-            LOG_INFO("OTA update completed successfully");
+            LOG_INFO("OTA update downloaded successfully (not yet validated)");
             return true;
         } else {
             LOG_ERROR("OTA update failed with error: %s (%d)", esp_err_to_name(result), result);
@@ -1065,33 +1074,29 @@ namespace Mqtt
 
         bool otaSuccess = _performOtaUpdate();
 
-        // Prepare the final status update topic
-        char partialTopic[MQTT_TOPIC_BUFFER_SIZE];
-        snprintf(partialTopic, sizeof(partialTopic), "jobs/%s/update", _otaCurrentJobId);
-
-        char fullTopic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructMqttTopicReservedThings(partialTopic, fullTopic, sizeof(fullTopic));
-
-        // Prepare the final status payload
-        SpiRamAllocator allocator;
-        JsonDocument doc(&allocator);
-
         if (otaSuccess) {
-            doc["status"] = "SUCCEEDED";
-            doc["statusDetails"]["reason"] = "success";
-            LOG_INFO("OTA update successful for job %s. Preparing to restart.", _otaCurrentJobId);
+            LOG_INFO("OTA download successful for job %s. Preparing to reboot.", _otaCurrentJobId);
             
-            // Publish success status
-            _publishJsonStreaming(doc, fullTopic);
+            // Save OTA job ID and pending state to preferences for post-reboot validation
+            Preferences prefs;
+            prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
+            prefs.putString(MQTT_PREFERENCES_OTA_JOB_ID_KEY, _otaCurrentJobId);
+            prefs.putBool(MQTT_PREFERENCES_OTA_PENDING_KEY, true);
+            prefs.end();
+            LOG_DEBUG("Saved OTA pending state for job %s", _otaCurrentJobId);
 
-            setRestartSystem("OTA update successful");
-        } else {
-            doc["status"] = "FAILED";
-            doc["statusDetails"]["reason"] = "download_failed";
-            LOG_ERROR("OTA update failed for job %s.", _otaCurrentJobId);
+            // Publish IN_PROGRESS status (download complete, about to reboot)
+            _publishOtaStatus(_otaCurrentJobId, "IN_PROGRESS", "rebooting");
             
-            // Publish failure status
-            _publishJsonStreaming(doc, fullTopic);
+            // Give time for MQTT message to be sent
+            delay(500);
+            
+            setRestartSystem("OTA download complete, rebooting for validation");
+        } else {
+            LOG_ERROR("OTA download failed for job %s.", _otaCurrentJobId);
+            
+            // Publish failure status immediately
+            _publishOtaStatus(_otaCurrentJobId, "FAILED", "download_failed");
         }
 
         // Clean up
@@ -1216,36 +1221,21 @@ namespace Mqtt
         // Additional validation for operation type (validation function only checks existence)
         if (strcmp(operation, "ota_update") != 0) {
             LOG_WARNING("Job operation '%s' is not supported, rejecting job %s.", operation, jobId);
+            _publishOtaStatus(jobId, "REJECTED", "unsupported_operation");
+            return;
+        }
 
-            SpiRamAllocator allocator;
-            JsonDocument docReject(&allocator);
-            docReject["status"] = "REJECTED";
-            docReject["statusDetails"]["reason"] = "unsupported_operation";
-
-            char partialTopic[MQTT_TOPIC_BUFFER_SIZE];
-            snprintf(partialTopic, sizeof(partialTopic), "jobs/%s/update", jobId);
-
-            char fullTopic[MQTT_TOPIC_BUFFER_SIZE];
-            _constructMqttTopicReservedThings(partialTopic, fullTopic, sizeof(fullTopic));
-
-            _publishJsonStreaming(docReject, fullTopic);
+        // Check if there is already a OTA job being validated (no need to check the ID since only one can be active at a time)
+        // If so, skip it to prevent download loop during validation period
+        if (_otaValidationTaskHandle != nullptr) {
+            LOG_DEBUG("Skipping OTA job '%s' - already being validated", jobId);
             return;
         }
 
         LOG_INFO("Received OTA Job '%s'. Firmware URL length: %d", jobId, strlen(url));
 
-        // 1. Acknowledge the job and set status to IN_PROGRESS
-        char partialTopic[MQTT_TOPIC_BUFFER_SIZE];
-        snprintf(partialTopic, sizeof(partialTopic), "jobs/%s/update", jobId);
-
-        char fullTopic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructMqttTopicReservedThings(partialTopic, fullTopic, sizeof(fullTopic));
-
-        SpiRamAllocator allocator;
-        JsonDocument docStatus(&allocator);
-        docStatus["status"] = "IN_PROGRESS";
-        docStatus["statusDetails"]["reason"] = "downloading";
-        _publishJsonStreaming(docStatus, fullTopic);
+        // Acknowledge the job and set status to IN_PROGRESS
+        _publishOtaStatus(jobId, "IN_PROGRESS", "downloading");
 
         // Save in the static variables to ensure we don't have any dangling pointers
         snprintf(_otaCurrentUrl, OTA_PRESIGNED_URL_BUFFER_SIZE, "%s", url);
@@ -2289,6 +2279,120 @@ namespace Mqtt
 
         snprintf(buffer, bufferSize, "%.*s", (int)length, start);
         return true;
+    }
+
+    // OTA validation functions
+    // ========================
+
+    static void _publishOtaStatus(const char* jobId, const char* status, const char* reason) {
+        if (!jobId || !status || !reason) return;
+
+        char partialTopic[MQTT_TOPIC_BUFFER_SIZE];
+        snprintf(partialTopic, sizeof(partialTopic), "jobs/%s/update", jobId);
+
+        char fullTopic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings(partialTopic, fullTopic, sizeof(fullTopic));
+
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        doc["status"] = status;
+        doc["statusDetails"]["reason"] = reason;
+
+        if (_publishJsonStreaming(doc, fullTopic)) {
+            LOG_DEBUG("Published OTA status '%s' for job %s", status, jobId);
+        } else {
+            LOG_ERROR("Failed to publish OTA status '%s' for job %s", status, jobId);
+        }
+    }
+
+    static void _checkPendingOtaValidation() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            LOG_ERROR("Failed to open preferences for OTA validation check");
+            return;
+        }
+
+        bool otaPending = prefs.getBool(MQTT_PREFERENCES_OTA_PENDING_KEY, false);
+        char jobId[NAME_BUFFER_SIZE];
+        memset(jobId, 0, sizeof(jobId));
+        prefs.getString(MQTT_PREFERENCES_OTA_JOB_ID_KEY, jobId, sizeof(jobId));
+        prefs.end();
+
+        if (!otaPending || strlen(jobId) == 0) {
+            LOG_DEBUG("No pending OTA validation");
+            return;
+        }
+
+        LOG_INFO("Detected pending OTA validation for job %s", jobId);
+        
+        // Copy job ID to global variable for validation task
+        snprintf(_otaCurrentJobId, sizeof(_otaCurrentJobId), "%s", jobId);
+
+        // Create validation task to monitor stability for 3 minutes
+        LOG_DEBUG("Starting OTA validation task with %d bytes stack in internal RAM", OTA_VALIDATION_TASK_STACK_SIZE);
+        
+        BaseType_t result = xTaskCreate(
+            _otaValidationTask,
+            OTA_VALIDATION_TASK_NAME,
+            OTA_VALIDATION_TASK_STACK_SIZE,
+            nullptr,
+            OTA_VALIDATION_TASK_PRIORITY,
+            &_otaValidationTaskHandle);
+
+        if (result != pdPASS) {
+            LOG_ERROR("Failed to create OTA validation task");
+            _otaValidationTaskHandle = nullptr;
+            
+            // Clear pending state since we can't validate
+            prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
+            prefs.remove(MQTT_PREFERENCES_OTA_PENDING_KEY);
+            prefs.remove(MQTT_PREFERENCES_OTA_JOB_ID_KEY);
+            prefs.end();
+        }
+    }
+
+    static void _otaValidationTask(void* parameter) {
+        LOG_INFO("OTA validation task started - monitoring stability for %d seconds", OTA_VALIDATION_TIMEOUT / 1000);
+        
+        uint64_t validationStartTime = millis64();
+        const esp_partition_t* boot_partition = esp_ota_get_boot_partition();
+        
+        if (!boot_partition) {
+            LOG_ERROR("Failed to get boot partition for OTA validation");
+            _otaValidationTaskHandle = nullptr;
+            vTaskDelete(nullptr);
+            return;
+        }
+
+        // Monitor for stability period
+        while (millis64() - validationStartTime < OTA_VALIDATION_TIMEOUT) {
+            LOG_DEBUG("OTA validation in progress - %lu ms remaining", OTA_VALIDATION_TIMEOUT + validationStartTime - millis64());
+            delay(OTA_VALIDATION_CHECK_INTERVAL);
+        }
+
+        // If we reached here, the firmware is stable - mark partition as valid
+        esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+        if (err == ESP_OK) {
+            LOG_INFO("OTA validation successful - partition marked as valid for job %s", _otaCurrentJobId);
+            
+            // Publish success status to cloud
+            _publishOtaStatus(_otaCurrentJobId, "SUCCEEDED", "validated after successful boot and stability period");
+            
+            // Clear pending OTA state
+            Preferences prefs;
+            prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
+            prefs.remove(MQTT_PREFERENCES_OTA_PENDING_KEY);
+            prefs.remove(MQTT_PREFERENCES_OTA_JOB_ID_KEY);
+            prefs.end();
+            
+            LOG_INFO("OTA update completed and validated successfully");
+        } else {
+            LOG_ERROR("Failed to mark OTA partition as valid: %s", esp_err_to_name(err));
+            // Don't publish failure - let rollback mechanism handle it
+        }
+
+        _otaValidationTaskHandle = nullptr;
+        vTaskDelete(nullptr);
     }
 }
 #endif
