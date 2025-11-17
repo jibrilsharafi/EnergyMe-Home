@@ -1024,7 +1024,7 @@ namespace Mqtt
         return ESP_OK;
     }
 
-    static bool _performOtaUpdate() { // TODO: improve process to ensure the response is actually sent after reboot
+    static bool _performOtaUpdate() {
         LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
 
         WiFiClient testClient;
@@ -1077,13 +1077,42 @@ namespace Mqtt
         if (otaSuccess) {
             LOG_INFO("OTA download successful for job %s. Preparing to reboot.", _otaCurrentJobId);
             
-            // Save OTA job ID and pending state to preferences for post-reboot validation
+            // Get the update partition that was just written
+            const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
+            if (!update_partition) {
+                LOG_ERROR("Failed to get update partition");
+                _publishOtaStatus(_otaCurrentJobId, "FAILED", "partition_error");
+                _otaTaskHandle = nullptr;
+                vTaskDelete(nullptr);
+                return;
+            }
+            
+            // Read the app description from the new firmware to get its SHA256
+            esp_app_desc_t new_app_desc;
+            esp_err_t err = esp_ota_get_partition_description(update_partition, &new_app_desc);
+            if (err != ESP_OK) {
+                LOG_ERROR("Failed to get partition description: %s", esp_err_to_name(err));
+                _publishOtaStatus(_otaCurrentJobId, "FAILED", "sha256_read_error");
+                _otaTaskHandle = nullptr;
+                vTaskDelete(nullptr);
+                return;
+            }
+            
+            // Convert SHA256 to hex string (32 bytes -> 64 hex chars)
+            char sha256Hex[65];
+            for (int i = 0; i < 32; i++) {
+                snprintf(&sha256Hex[i*2], 3, "%02x", new_app_desc.app_elf_sha256[i]);
+            }
+            sha256Hex[64] = '\0';
+            
+            // Save OTA job ID, pending state, and expected SHA256 to Preferences
             Preferences prefs;
             prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
             prefs.putString(MQTT_PREFERENCES_OTA_JOB_ID_KEY, _otaCurrentJobId);
             prefs.putBool(MQTT_PREFERENCES_OTA_PENDING_KEY, true);
+            prefs.putString(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY, sha256Hex);
             prefs.end();
-            LOG_DEBUG("Saved OTA pending state for job %s", _otaCurrentJobId);
+            LOG_DEBUG("Saved OTA pending state for job %s, expected SHA256: %s", _otaCurrentJobId, sha256Hex);
 
             // Publish IN_PROGRESS status (download complete, about to reboot)
             _publishOtaStatus(_otaCurrentJobId, "IN_PROGRESS", "rebooting");
@@ -2370,8 +2399,67 @@ namespace Mqtt
             delay(OTA_VALIDATION_CHECK_INTERVAL);
         }
 
-        // If we reached here, the firmware is stable - mark partition as valid
-        esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+        // If we reached here, the firmware is stable - verify SHA256 before marking as valid
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
+            LOG_ERROR("Failed to open preferences for SHA256 validation");
+            _otaValidationTaskHandle = nullptr;
+            vTaskDelete(nullptr);
+            return;
+        }
+        
+        char expectedSHA256[65];
+        memset(expectedSHA256, 0, sizeof(expectedSHA256));
+        prefs.getString(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY, expectedSHA256, sizeof(expectedSHA256));
+        prefs.end();
+        
+        if (strlen(expectedSHA256) != 64) {
+            LOG_ERROR("Invalid expected SHA256 in preferences (length: %d)", strlen(expectedSHA256));
+            _otaValidationTaskHandle = nullptr;
+            vTaskDelete(nullptr);
+            return;
+        }
+        
+        // Get current running partition's SHA256
+        esp_app_desc_t current_app_desc;
+        esp_err_t err = esp_ota_get_partition_description(boot_partition, &current_app_desc);
+        if (err != ESP_OK) {
+            LOG_ERROR("Failed to get current partition description: %s", esp_err_to_name(err));
+            _otaValidationTaskHandle = nullptr;
+            vTaskDelete(nullptr);
+            return;
+        }
+        
+        // Convert current SHA256 to hex string
+        char currentSHA256[65];
+        for (int i = 0; i < 32; i++) {
+            snprintf(&currentSHA256[i*2], 3, "%02x", current_app_desc.app_elf_sha256[i]);
+        }
+        currentSHA256[64] = '\0';
+        
+        // Compare SHA256 hashes
+        if (strcmp(expectedSHA256, currentSHA256) != 0) {
+            LOG_ERROR("OTA validation failed - SHA256 mismatch (expected: %s, current: %s) - firmware rolled back", expectedSHA256, currentSHA256);
+            
+            // Publish failure status
+            _publishOtaStatus(_otaCurrentJobId, "FAILED", "sha256_mismatch_firmware_rollback");
+            
+            // Clear pending state
+            prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
+            prefs.remove(MQTT_PREFERENCES_OTA_PENDING_KEY);
+            prefs.remove(MQTT_PREFERENCES_OTA_JOB_ID_KEY);
+            prefs.remove(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY);
+            prefs.end();
+            
+            _otaValidationTaskHandle = nullptr;
+            vTaskDelete(nullptr);
+            return;
+        }
+        
+        LOG_INFO("OTA validation successful - SHA256 verified: %s", currentSHA256);
+
+        // Mark partition as valid
+        err = esp_ota_mark_app_valid_cancel_rollback();
         if (err == ESP_OK) {
             LOG_INFO("OTA validation successful - partition marked as valid for job %s", _otaCurrentJobId);
             
@@ -2383,6 +2471,7 @@ namespace Mqtt
             prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
             prefs.remove(MQTT_PREFERENCES_OTA_PENDING_KEY);
             prefs.remove(MQTT_PREFERENCES_OTA_JOB_ID_KEY);
+            prefs.remove(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY);
             prefs.end();
             
             LOG_INFO("OTA update completed and validated successfully");

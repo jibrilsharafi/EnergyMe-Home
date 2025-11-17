@@ -54,10 +54,11 @@
 #define OTA_VALIDATION_TASK_NAME "ota_validation_task"
 #define OTA_VALIDATION_TASK_STACK_SIZE (4 * 1024)
 #define OTA_VALIDATION_TASK_PRIORITY 2
-#define OTA_VALIDATION_TIMEOUT (3 * 60 * 1000) // 3 minutes of stable operation before marking OTA as successful
-#define OTA_VALIDATION_CHECK_INTERVAL (10 * 1000) // Check every 10 seconds during validation period
+#define OTA_VALIDATION_TIMEOUT (5 * 60 * 1000) // Stable operation before marking OTA as successful
+#define OTA_VALIDATION_CHECK_INTERVAL (10 * 1000) // Check periodically during validation period
 #define MQTT_PREFERENCES_OTA_JOB_ID_KEY "ota_job_id"
 #define MQTT_PREFERENCES_OTA_PENDING_KEY "ota_pending"
+#define MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY "ota_sha256" // Expected firmware SHA256 for validation
 
 // MQTT buffer sizes - all moved to PSRAM for better memory utilization
 #define MQTT_BUFFER_SIZE (5 * 1024) // Needs to be at least 4 kB for the certificates
