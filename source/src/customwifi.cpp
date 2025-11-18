@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customwifi.h"
+#include <esp_system.h>
 
 namespace CustomWifi
 {
@@ -36,6 +37,7 @@ namespace CustomWifi
   static void _stopWifiTask();
   static bool _testConnectivity();
   static void _forceReconnectInternal();
+  static bool _isPowerReset();
 
   bool begin()
   {
@@ -107,7 +109,15 @@ namespace CustomWifi
   {
     LOG_DEBUG("Setting up the WiFiManager...");
 
-    wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SECONDS);
+    // Check if this is a power reset - router likely rebooting
+    bool isPowerReset = _isPowerReset();
+    uint32_t connectTimeout = isPowerReset ? WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS : WIFI_CONNECT_TIMEOUT_SECONDS;
+    
+    if (isPowerReset) {
+      LOG_INFO("Power reset detected - using extended WiFi timeout (%d seconds) to allow router to reboot", connectTimeout);
+    }
+
+    wifiManager.setConnectTimeout(connectTimeout);
     wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SECONDS);
     wifiManager.setConnectRetries(WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS); // Let WiFiManager handle initial retries
     
@@ -504,6 +514,15 @@ namespace CustomWifi
     statistics.wifiConnectionError++;
     
     LOG_INFO("Forced reconnection initiated (attempt %d)", _reconnectAttempts);
+  }
+
+  static bool _isPowerReset()
+  {
+    // Check if the reset reason indicates a power-related event
+    // ESP_RST_POWERON: Power on reset (cold boot)
+    // ESP_RST_BROWNOUT: Brownout reset (power supply voltage dropped below minimum)
+    esp_reset_reason_t resetReason = esp_reset_reason();
+    return resetReason == ESP_RST_POWERON || resetReason == ESP_RST_BROWNOUT;
   }
 
   static void _startWifiTask()
