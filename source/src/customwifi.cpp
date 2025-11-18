@@ -480,9 +480,15 @@ namespace CustomWifi
     
     // Connection successful - internet is reachable
     client.stop();
+    
+    // Use char buffers to avoid dynamic string allocation in logs and potential crashes
+    char gatewayStr[IP_ADDRESS_BUFFER_SIZE];
+    snprintf(gatewayStr, sizeof(gatewayStr), "%d.%d.%d.%d", gateway[0], gateway[1], gateway[2], gateway[3]);
+    char dns1Str[IP_ADDRESS_BUFFER_SIZE];
+    snprintf(dns1Str, sizeof(dns1Str), "%d.%d.%d.%d", dns1[0], dns1[1], dns1[2], dns1[3]);
     LOG_DEBUG("Connectivity test passed - Gateway: %s, DNS: %s, Internet: %s:%d reachable", 
-              gateway.toString().c_str(), 
-              dns1.toString().c_str(),
+              gatewayStr,
+              dns1Str,
               CONNECTIVITY_TEST_IP,
               CONNECTIVITY_TEST_PORT);
     return true;
