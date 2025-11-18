@@ -52,7 +52,7 @@
 
 // OTA validation constants
 #define OTA_VALIDATION_TASK_NAME "ota_validation_task"
-#define OTA_VALIDATION_TASK_STACK_SIZE (4 * 1024)
+#define OTA_VALIDATION_TASK_STACK_SIZE (6 * 1024)
 #define OTA_VALIDATION_TASK_PRIORITY 2
 #define OTA_VALIDATION_TIMEOUT (5 * 60 * 1000) // Stable operation before marking OTA as successful
 #define OTA_VALIDATION_CHECK_INTERVAL (10 * 1000) // Check periodically during validation period
