@@ -20,6 +20,8 @@ namespace Ade7953
     // Timing and measurement variables
     static uint64_t _sampleTime; // in milliseconds, time between linecycles readings
     static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
+    static uint8_t _lastHighPriorityChannel = INVALID_CHANNEL; // Track last HP channel for round-robin
+    static uint8_t _lastLowPriorityChannel = INVALID_CHANNEL; // Track last LP channel for round-robin
     static float _gridFrequency = 50.0f;
 
     // Failure tracking
@@ -3229,37 +3231,52 @@ namespace Ade7953
     // =================
 
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
-        // Since the current channel is initialized with the invalid one (which has a very high value),
-        // we need to convert it to a valid channel index (0 is always active) and move on
-        uint8_t realCurrentChannel = currentChannel == INVALID_CHANNEL ? 0 : currentChannel;
-
         // Determine whether to look for high-priority or low-priority channel next
-        // If current channel is high-priority (or invalid), look for low-priority next
-        // If current channel is low-priority, look for high-priority next
-        bool lookForHighPriority = (currentChannel == INVALID_CHANNEL) ? true : !_channelData[realCurrentChannel].highPriority;
+        // If current channel is high-priority, look for low-priority next
+        // If current channel is low-priority (or INVALID/channel 0), look for high-priority next
+        bool currentIsHighPriority = (currentChannel != INVALID_CHANNEL && currentChannel != 0) 
+                                      ? _channelData[currentChannel].highPriority 
+                                      : false;  // Treat channel 0 / INVALID as LP, so we look for HP next
+        bool lookForHighPriority = !currentIsHighPriority;
 
-        // First pass: look for the desired priority type (HP or LP)
-        for (uint8_t i = realCurrentChannel + 1; i < CHANNEL_COUNT; i++) {
+        // Use the appropriate last channel tracker
+        uint8_t lastChannel = lookForHighPriority ? _lastHighPriorityChannel : _lastLowPriorityChannel;
+        uint8_t startSearch = (lastChannel == INVALID_CHANNEL) ? 0 : lastChannel;
+
+        // Search for next channel of desired priority, starting after the last one of that priority
+        for (uint8_t i = startSearch + 1; i < CHANNEL_COUNT; i++) {
             if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
+                // Update the tracker for this priority
+                if (lookForHighPriority) {
+                    _lastHighPriorityChannel = i;
+                } else {
+                    _lastLowPriorityChannel = i;
+                }
                 return i;
             }
         }
-        // Wrap around from beginning to currentChannel
-        for (uint8_t i = 1; i < realCurrentChannel; i++) {
+        
+        // Wrap around: search from beginning
+        for (uint8_t i = 1; i <= startSearch; i++) {
             if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
+                // Update the tracker for this priority
+                if (lookForHighPriority) {
+                    _lastHighPriorityChannel = i;
+                } else {
+                    _lastLowPriorityChannel = i;
+                }
                 return i;
             }
         }
 
         // Second pass: if no channel of desired priority found, look for any active channel
         // This ensures we always return an active channel if one exists
-        for (uint8_t i = realCurrentChannel + 1; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = startSearch + 1; i < CHANNEL_COUNT; i++) {
             if (i != 0 && isChannelActive(i)) {
                 return i;
             }
         }
-        // Wrap around from beginning to currentChannel
-        for (uint8_t i = 1; i < realCurrentChannel; i++) {
+        for (uint8_t i = 1; i <= startSearch; i++) {
             if (i != 0 && isChannelActive(i)) {
                 return i;
             }
