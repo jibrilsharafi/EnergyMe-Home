@@ -870,7 +870,8 @@ namespace Ade7953
             channelData.index = jsonDocument["index"].as<uint8_t>();
             channelData.active = jsonDocument["active"].as<bool>();
             channelData.reverse = jsonDocument["reverse"].as<bool>();
-            channelData.highPriority = jsonDocument["highPriority"].as<bool>();
+            // highPriority is optional for backward compatibility (defaults to false if not provided)
+            channelData.highPriority = jsonDocument["highPriority"].as<bool>() | false;
             snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
             
@@ -2113,7 +2114,11 @@ namespace Ade7953
             // Full validation - all fields must be present and valid
             if (!jsonDocument["active"].is<bool>()) { LOG_WARNING("active is missing or not bool"); return false; }
             if (!jsonDocument["reverse"].is<bool>()) { LOG_WARNING("reverse is missing or not bool"); return false; }
-            if (!jsonDocument["highPriority"].is<bool>()) { LOG_WARNING("highPriority is missing or not bool"); return false; }
+            // highPriority is optional for backward compatibility (defaults to false)
+            if (jsonDocument["highPriority"].is<JsonVariant>() && !jsonDocument["highPriority"].is<bool>()) { 
+                LOG_WARNING("highPriority is not bool"); 
+                return false; 
+            }
             if (!jsonDocument["label"].is<const char*>()) { LOG_WARNING("label is missing or not string"); return false; }
             if (!jsonDocument["phase"].is<uint8_t>()) { LOG_WARNING("phase is missing or not uint8_t"); return false; }
 
