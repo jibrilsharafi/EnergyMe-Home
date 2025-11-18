@@ -2458,27 +2458,17 @@ namespace Mqtt
         
         LOG_INFO("OTA validation successful - SHA256 verified: %s", currentSHA256);
 
-        // Mark partition as valid
-        err = esp_ota_mark_app_valid_cancel_rollback();
-        if (err == ESP_OK) {
-            LOG_INFO("OTA validation successful - partition marked as valid for job %s", _otaCurrentJobId);
-            
-            // Publish success status to cloud
-            _publishOtaStatus(_otaCurrentJobId, "SUCCEEDED", "validated after successful boot and stability period");
-            
-            // Clear pending OTA state
-            Preferences prefs;
-            prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
-            prefs.remove(MQTT_PREFERENCES_OTA_PENDING_KEY);
-            prefs.remove(MQTT_PREFERENCES_OTA_JOB_ID_KEY);
-            prefs.remove(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY);
-            prefs.end();
-            
-            LOG_INFO("OTA update completed and validated successfully");
-        } else {
-            LOG_ERROR("Failed to mark OTA partition as valid: %s", esp_err_to_name(err));
-            // Don't publish failure - let rollback mechanism handle it
-        }
+        // Publish success status to cloud
+        _publishOtaStatus(_otaCurrentJobId, "SUCCEEDED", "validated after successful boot and stability period");
+        
+        // Clear pending OTA state
+        prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
+        prefs.remove(MQTT_PREFERENCES_OTA_PENDING_KEY);
+        prefs.remove(MQTT_PREFERENCES_OTA_JOB_ID_KEY);
+        prefs.remove(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY);
+        prefs.end();
+        
+        LOG_INFO("OTA update completed and validated successfully");
 
         _otaValidationTaskHandle = nullptr;
         vTaskDelete(nullptr);
