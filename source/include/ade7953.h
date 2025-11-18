@@ -222,6 +222,7 @@
 #define CHANNEL_REVERSE_KEY "reverse_%u" // Format: reverse_0 (10 chars)
 #define CHANNEL_LABEL_KEY "label_%u" // Format: label_0 (8 chars)
 #define CHANNEL_PHASE_KEY "phase_%u" // Format: phase_0 (9 chars)
+#define CHANNEL_HIGH_PRIORITY_KEY "highpri_%u" // Format: highpri_0 (10 chars)
 
 // CT Specification keys
 #define CHANNEL_CT_CURRENT_RATING_KEY "ct_current_%u" // Format: ct_current_0 (12 chars)
@@ -233,6 +234,7 @@
 #define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
 #define DEFAULT_CHANNEL_REVERSE false
 #define DEFAULT_CHANNEL_PHASE PHASE_1
+#define DEFAULT_CHANNEL_HIGH_PRIORITY false
 #define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
 
 // CT Specification defaults
@@ -381,6 +383,7 @@ struct ChannelData
   uint8_t index;
   bool active;
   bool reverse;
+  bool highPriority;
   char label[NAME_BUFFER_SIZE];
   Phase phase;
   CtSpecification ctSpecification;
@@ -389,6 +392,7 @@ struct ChannelData
     : index(0), 
       active(false), 
       reverse(false), 
+      highPriority(false),
       phase(PHASE_1), 
       ctSpecification(CtSpecification()) {
       snprintf(label, sizeof(label), "Channel");

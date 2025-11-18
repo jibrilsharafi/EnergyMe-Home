@@ -198,6 +198,11 @@
                     Active ${isChannel0 ? '(Main voltage - cannot be disabled)' : ''}
                 </label>
                 <div style="height: 10px;"></div>
+                <label>
+                    <input type="checkbox" ${channel.highPriority ? 'checked' : ''} id="highPriority${index}" onchange="queueChannelUpdate(${index})" ${isChannel0 ? 'disabled' : ''}>
+                    High Priority ${isChannel0 ? '(Always read)' : '(Read more frequently)'}
+                </label>
+                <div style="height: 10px;"></div>
                 <span id="power${index}" style="font-weight: bold; color: #333;"></span>
             `;
             container.appendChild(box);
@@ -295,7 +300,8 @@
             label: document.getElementById(`label${index}`).value,
             reverse: document.getElementById(`reverse${index}`).checked,
             phase: parseInt(document.getElementById(`phase${index}`).value),
-            active: document.getElementById(`active${index}`).checked
+            active: document.getElementById(`active${index}`).checked,
+            highPriority: document.getElementById(`highPriority${index}`).checked
         };
 
         // Update local channelData immediately for UI responsiveness
@@ -304,6 +310,7 @@
             channelData[index].label = channelUpdate.label;
             channelData[index].reverse = channelUpdate.reverse;
             channelData[index].phase = channelUpdate.phase;
+            channelData[index].highPriority = channelUpdate.highPriority;
         }
 
         // Store in queue - this will overwrite any previous update for this channel

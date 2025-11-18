@@ -830,6 +830,7 @@ namespace Ade7953
         jsonDocument["index"] = channelData.index;
         jsonDocument["active"] = channelData.active;
         jsonDocument["reverse"] = channelData.reverse;
+        jsonDocument["highPriority"] = channelData.highPriority;
         jsonDocument["label"] = JsonString(channelData.label); // Ensure it is not a dangling pointer
         jsonDocument["phase"] = channelData.phase;
 
@@ -846,6 +847,7 @@ namespace Ade7953
             if (jsonDocument["index"].is<uint8_t>()) channelData.index = jsonDocument["index"].as<uint8_t>();
             if (jsonDocument["active"].is<bool>()) channelData.active = jsonDocument["active"].as<bool>();
             if (jsonDocument["reverse"].is<bool>()) channelData.reverse = jsonDocument["reverse"].as<bool>();
+            if (jsonDocument["highPriority"].is<bool>()) channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             if (jsonDocument["label"].is<const char*>()) {
                 snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             }
@@ -866,6 +868,7 @@ namespace Ade7953
             channelData.index = jsonDocument["index"].as<uint8_t>();
             channelData.active = jsonDocument["active"].as<bool>();
             channelData.reverse = jsonDocument["reverse"].as<bool>();
+            channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
             
@@ -1999,6 +2002,9 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         channelData.phase = static_cast<Phase>(preferences.getUChar(key, (uint8_t)(DEFAULT_CHANNEL_PHASE)));
 
+        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
+        channelData.highPriority = preferences.getBool(key, DEFAULT_CHANNEL_HIGH_PRIORITY);
+
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
         channelData.ctSpecification.currentRating = preferences.getFloat(key, channelIndex == 0 ? DEFAULT_CT_CURRENT_RATING_CHANNEL_0 : DEFAULT_CT_CURRENT_RATING);
@@ -2049,6 +2055,9 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         preferences.putUChar(key, (uint8_t)(channelData.phase));
 
+        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
+        preferences.putBool(key, channelData.highPriority);
+
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
         preferences.putFloat(key, channelData.ctSpecification.currentRating);
@@ -2085,6 +2094,7 @@ namespace Ade7953
         if (partial) {
             if (jsonDocument["active"].is<bool>()) return true;
             if (jsonDocument["reverse"].is<bool>()) return true;
+            if (jsonDocument["highPriority"].is<bool>()) return true;
             if (jsonDocument["label"].is<const char*>()) return true;
             if (jsonDocument["phase"].is<uint8_t>()) return true;
 
@@ -2101,6 +2111,7 @@ namespace Ade7953
             // Full validation - all fields must be present and valid
             if (!jsonDocument["active"].is<bool>()) { LOG_WARNING("active is missing or not bool"); return false; }
             if (!jsonDocument["reverse"].is<bool>()) { LOG_WARNING("reverse is missing or not bool"); return false; }
+            if (!jsonDocument["highPriority"].is<bool>()) { LOG_WARNING("highPriority is missing or not bool"); return false; }
             if (!jsonDocument["label"].is<const char*>()) { LOG_WARNING("label is missing or not string"); return false; }
             if (!jsonDocument["phase"].is<uint8_t>()) { LOG_WARNING("phase is missing or not uint8_t"); return false; }
 
@@ -3222,17 +3233,32 @@ namespace Ade7953
         // we need to convert it to a valid channel index (0 is always active) and move on
         uint8_t realCurrentChannel = currentChannel == INVALID_CHANNEL ? 0 : currentChannel;
 
-        // This returns the next channel (except 0, which has to be always active) that is active
-        // For i that starts from currentChannel + 1, it will return the first active channel found
-        // up to the maximum channel count
+        // Determine whether to look for high-priority or low-priority channel next
+        // If current channel is high-priority (or invalid), look for low-priority next
+        // If current channel is low-priority, look for high-priority next
+        bool lookForHighPriority = (currentChannel == INVALID_CHANNEL) ? true : !_channelData[realCurrentChannel].highPriority;
+
+        // First pass: look for the desired priority type (HP or LP)
+        for (uint8_t i = realCurrentChannel + 1; i < CHANNEL_COUNT; i++) {
+            if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
+                return i;
+            }
+        }
+        // Wrap around from beginning to currentChannel
+        for (uint8_t i = 1; i < realCurrentChannel; i++) {
+            if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
+                return i;
+            }
+        }
+
+        // Second pass: if no channel of desired priority found, look for any active channel
+        // This ensures we always return an active channel if one exists
         for (uint8_t i = realCurrentChannel + 1; i < CHANNEL_COUNT; i++) {
             if (i != 0 && isChannelActive(i)) {
                 return i;
             }
         }
-
-        // If no active channel is found after the current one, it will start from 1 and go up to currentChannel
-        // simulating us starting from the beginning
+        // Wrap around from beginning to currentChannel
         for (uint8_t i = 1; i < realCurrentChannel; i++) {
             if (i != 0 && isChannelActive(i)) {
                 return i;
