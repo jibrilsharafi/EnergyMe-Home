@@ -146,6 +146,7 @@ namespace Mqtt
     static bool _performOtaUpdate();
     
     // OTA validation functions
+    static void _clearOtaPendingState();
     static void _otaValidationTask(void* parameter);
     static void _checkPendingOtaValidation();
     static void _publishOtaStatus(const char* jobId, const char* status, const char* reason);
@@ -1106,8 +1107,14 @@ namespace Mqtt
             sha256Hex[64] = '\0';
             
             // Save OTA job ID, pending state, and expected SHA256 to Preferences
-            Preferences prefs;
-            prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
+            Preferences prefs;  
+            if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {  
+                LOG_ERROR("Failed to save OTA pending state - aborting OTA");  
+                _publishOtaStatus(_otaCurrentJobId, "FAILED", "preferences_error");  
+                _otaTaskHandle = nullptr;  
+                vTaskDelete(nullptr);  
+                return;  
+            }  
             prefs.putString(MQTT_PREFERENCES_OTA_JOB_ID_KEY, _otaCurrentJobId);
             prefs.putBool(MQTT_PREFERENCES_OTA_PENDING_KEY, true);
             prefs.putString(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY, sha256Hex);
@@ -1117,8 +1124,8 @@ namespace Mqtt
             // Publish IN_PROGRESS status (download complete, about to reboot)
             _publishOtaStatus(_otaCurrentJobId, "IN_PROGRESS", "rebooting");
             
-            // Give time for MQTT message to be sent
-            delay(500);
+            // Give time for MQTT message to be sent - no need to rush to the restart
+            delay(2000);
             
             setRestartSystem("OTA download complete, rebooting for validation");
         } else {
@@ -1259,6 +1266,12 @@ namespace Mqtt
         if (_otaValidationTaskHandle != nullptr) {
             LOG_DEBUG("Skipping OTA job '%s' - already being validated", jobId);
             return;
+        }
+
+        // Check if there is already an OTA job being downloaded  
+        if (_otaTaskHandle != nullptr) {  
+            LOG_DEBUG("Skipping OTA job '%s' - download already in progress", jobId);  
+            return;  
         }
 
         LOG_INFO("Received OTA Job '%s'. Firmware URL length: %d", jobId, strlen(url));
@@ -2313,6 +2326,18 @@ namespace Mqtt
     // OTA validation functions
     // ========================
 
+    static void _clearOtaPendingState() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            LOG_ERROR("Failed to clear OTA pending state");
+            return;
+        }
+        prefs.remove(MQTT_PREFERENCES_OTA_PENDING_KEY);
+        prefs.remove(MQTT_PREFERENCES_OTA_JOB_ID_KEY);
+        prefs.remove(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY);
+        prefs.end();
+    }
+
     static void _publishOtaStatus(const char* jobId, const char* status, const char* reason) {
         if (!jobId || !status || !reason) return;
 
@@ -2357,7 +2382,7 @@ namespace Mqtt
         // Copy job ID to global variable for validation task
         snprintf(_otaCurrentJobId, sizeof(_otaCurrentJobId), "%s", jobId);
 
-        // Create validation task to monitor stability for 3 minutes
+        // Create validation task to monitor stability
         LOG_DEBUG("Starting OTA validation task with %d bytes stack in internal RAM", OTA_VALIDATION_TASK_STACK_SIZE);
         
         BaseType_t result = xTaskCreate(
@@ -2371,12 +2396,7 @@ namespace Mqtt
         if (result != pdPASS) {
             LOG_ERROR("Failed to create OTA validation task");
             _otaValidationTaskHandle = nullptr;
-            
-            // Clear pending state since we can't validate
-            prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
-            prefs.remove(MQTT_PREFERENCES_OTA_PENDING_KEY);
-            prefs.remove(MQTT_PREFERENCES_OTA_JOB_ID_KEY);
-            prefs.end();
+            _clearOtaPendingState();
         }
     }
 
@@ -2388,6 +2408,7 @@ namespace Mqtt
         
         if (!boot_partition) {
             LOG_ERROR("Failed to get boot partition for OTA validation");
+            _clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
             vTaskDelete(nullptr);
             return;
@@ -2395,7 +2416,7 @@ namespace Mqtt
 
         // Monitor for stability period
         while (millis64() - validationStartTime < OTA_VALIDATION_TIMEOUT) {
-            LOG_DEBUG("OTA validation in progress - %lu ms remaining", OTA_VALIDATION_TIMEOUT + validationStartTime - millis64());
+            LOG_DEBUG("OTA validation in progress - %llu ms remaining", OTA_VALIDATION_TIMEOUT + validationStartTime - millis64());
             delay(OTA_VALIDATION_CHECK_INTERVAL);
         }
 
@@ -2403,6 +2424,7 @@ namespace Mqtt
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
             LOG_ERROR("Failed to open preferences for SHA256 validation");
+            _clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
             vTaskDelete(nullptr);
             return;
@@ -2415,6 +2437,7 @@ namespace Mqtt
         
         if (strlen(expectedSHA256) != 64) {
             LOG_ERROR("Invalid expected SHA256 in preferences (length: %d)", strlen(expectedSHA256));
+            _clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
             vTaskDelete(nullptr);
             return;
@@ -2425,6 +2448,7 @@ namespace Mqtt
         esp_err_t err = esp_ota_get_partition_description(boot_partition, &current_app_desc);
         if (err != ESP_OK) {
             LOG_ERROR("Failed to get current partition description: %s", esp_err_to_name(err));
+            _clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
             vTaskDelete(nullptr);
             return;
@@ -2440,34 +2464,16 @@ namespace Mqtt
         // Compare SHA256 hashes
         if (strcmp(expectedSHA256, currentSHA256) != 0) {
             LOG_ERROR("OTA validation failed - SHA256 mismatch (expected: %s, current: %s) - firmware rolled back", expectedSHA256, currentSHA256);
-            
-            // Publish failure status
             _publishOtaStatus(_otaCurrentJobId, "FAILED", "sha256_mismatch_firmware_rollback");
-            
-            // Clear pending state
-            prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
-            prefs.remove(MQTT_PREFERENCES_OTA_PENDING_KEY);
-            prefs.remove(MQTT_PREFERENCES_OTA_JOB_ID_KEY);
-            prefs.remove(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY);
-            prefs.end();
-            
+            _clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
             vTaskDelete(nullptr);
             return;
         }
         
         LOG_INFO("OTA validation successful - SHA256 verified: %s", currentSHA256);
-
-        // Publish success status to cloud
         _publishOtaStatus(_otaCurrentJobId, "SUCCEEDED", "validated after successful boot and stability period");
-        
-        // Clear pending OTA state
-        prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
-        prefs.remove(MQTT_PREFERENCES_OTA_PENDING_KEY);
-        prefs.remove(MQTT_PREFERENCES_OTA_JOB_ID_KEY);
-        prefs.remove(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY);
-        prefs.end();
-        
+        _clearOtaPendingState();
         LOG_INFO("OTA update completed and validated successfully");
 
         _otaValidationTaskHandle = nullptr;
