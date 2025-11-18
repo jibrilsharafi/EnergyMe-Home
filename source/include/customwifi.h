@@ -22,6 +22,7 @@
 
 #define WIFI_LOOP_INTERVAL (1 * 1000)
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
+#define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS 300  // Extended timeout after power reset (router likely rebooting)
 #define WIFI_PORTAL_TIMEOUT_SECONDS (5 * 60)
 #define WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS 3       // How many times to try connecting (with timeout) before giving up
 #define WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS 5   // Maximum WiFi reconnection attempts before restart
