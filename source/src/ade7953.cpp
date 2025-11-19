@@ -20,6 +20,10 @@ namespace Ade7953
     // Timing and measurement variables
     static uint64_t _sampleTime; // in milliseconds, time between linecycles readings
     static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
+    static uint8_t _lastHighPriorityChannel = INVALID_CHANNEL; // Track last HP channel for round-robin
+    static uint8_t _lastLowPriorityChannel = INVALID_CHANNEL; // Track last LP channel for round-robin
+    static uint8_t _hpRunCount = 0;      // Tracks consecutive HP executions
+    static uint8_t _dynamicRatio = 1;    // Calculated ratio (HP slots per 1 LP slot)
     static float _gridFrequency = 50.0f;
 
     // Failure tracking
@@ -225,6 +229,7 @@ namespace Ade7953
     static bool _validateGridFrequency(float newValue);
 
     // Utility functions
+    static void _recalculateRatio();
     static uint8_t _findNextActiveChannel(uint8_t currentChannel);
     static Phase _getLaggingPhase(Phase phase);
     static Phase _getLeadingPhase(Phase phase);
@@ -719,7 +724,7 @@ namespace Ade7953
         return true;
     }
 
-    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
+bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
             return false;
@@ -737,6 +742,8 @@ namespace Ade7953
         } else {
             _channelData[channelIndex] = channelData;
         }
+
+        _recalculateRatio();
 
         releaseMutex(&_channelDataMutex);
 
@@ -756,10 +763,8 @@ namespace Ade7953
             return;
         }
 
-        ChannelData channelData; // Default constructor initializes to default values
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            setChannelData(channelData, i);
-        }
+        ChannelData channelData(channelIndex); // Constructor with index sets proper defaults for channel 0
+        setChannelData(channelData, channelIndex);
 
         LOG_DEBUG("Successfully reset channel data for channel %lu", channelIndex);
     }
@@ -830,6 +835,7 @@ namespace Ade7953
         jsonDocument["index"] = channelData.index;
         jsonDocument["active"] = channelData.active;
         jsonDocument["reverse"] = channelData.reverse;
+        jsonDocument["highPriority"] = channelData.highPriority;
         jsonDocument["label"] = JsonString(channelData.label); // Ensure it is not a dangling pointer
         jsonDocument["phase"] = channelData.phase;
 
@@ -846,6 +852,7 @@ namespace Ade7953
             if (jsonDocument["index"].is<uint8_t>()) channelData.index = jsonDocument["index"].as<uint8_t>();
             if (jsonDocument["active"].is<bool>()) channelData.active = jsonDocument["active"].as<bool>();
             if (jsonDocument["reverse"].is<bool>()) channelData.reverse = jsonDocument["reverse"].as<bool>();
+            if (jsonDocument["highPriority"].is<bool>()) channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             if (jsonDocument["label"].is<const char*>()) {
                 snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             }
@@ -866,6 +873,8 @@ namespace Ade7953
             channelData.index = jsonDocument["index"].as<uint8_t>();
             channelData.active = jsonDocument["active"].as<bool>();
             channelData.reverse = jsonDocument["reverse"].as<bool>();
+            // highPriority is optional for backward compatibility (defaults to false if not provided)
+            channelData.highPriority = jsonDocument["highPriority"].as<bool>() | false;
             snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
             
@@ -1999,6 +2008,9 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         channelData.phase = static_cast<Phase>(preferences.getUChar(key, (uint8_t)(DEFAULT_CHANNEL_PHASE)));
 
+        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
+        channelData.highPriority = preferences.getBool(key, channelIndex == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY);
+
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
         channelData.ctSpecification.currentRating = preferences.getFloat(key, channelIndex == 0 ? DEFAULT_CT_CURRENT_RATING_CHANNEL_0 : DEFAULT_CT_CURRENT_RATING);
@@ -2049,6 +2061,9 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         preferences.putUChar(key, (uint8_t)(channelData.phase));
 
+        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
+        preferences.putBool(key, channelData.highPriority);
+
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
         preferences.putFloat(key, channelData.ctSpecification.currentRating);
@@ -2085,6 +2100,7 @@ namespace Ade7953
         if (partial) {
             if (jsonDocument["active"].is<bool>()) return true;
             if (jsonDocument["reverse"].is<bool>()) return true;
+            if (jsonDocument["highPriority"].is<bool>()) return true;
             if (jsonDocument["label"].is<const char*>()) return true;
             if (jsonDocument["phase"].is<uint8_t>()) return true;
 
@@ -2101,6 +2117,11 @@ namespace Ade7953
             // Full validation - all fields must be present and valid
             if (!jsonDocument["active"].is<bool>()) { LOG_WARNING("active is missing or not bool"); return false; }
             if (!jsonDocument["reverse"].is<bool>()) { LOG_WARNING("reverse is missing or not bool"); return false; }
+            // highPriority is optional for backward compatibility (defaults to false)
+            if (jsonDocument["highPriority"].is<JsonVariant>() && !jsonDocument["highPriority"].is<bool>()) { 
+                LOG_WARNING("highPriority is not bool"); 
+                return false; 
+            }
             if (!jsonDocument["label"].is<const char*>()) { LOG_WARNING("label is missing or not string"); return false; }
             if (!jsonDocument["phase"].is<uint8_t>()) { LOG_WARNING("phase is missing or not uint8_t"); return false; }
 
@@ -3217,29 +3238,96 @@ namespace Ade7953
     // Utility functions
     // =================
 
+    static void _recalculateRatio() {
+        uint8_t activeHP = 0;
+        uint8_t activeLP = 0;
+
+        // Iterate 1 to CHANNEL_COUNT (skip 0)
+        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+            if (_channelData[i].active) {
+                if (_channelData[i].highPriority) activeHP++;
+                else activeLP++;
+            }
+        }
+
+        // Logic: Ratio = (HP_Count / LP_Count) * Bias
+        // This ensures that individually, an HP channel visits 'Bias' times more often than an LP.
+        if (activeLP > 0) {
+            // Ceiling division: (A + B - 1) / B
+            uint8_t baseRatio = (activeHP + activeLP - 1) / activeLP;
+            if (baseRatio < 1) baseRatio = 1;
+            _dynamicRatio = baseRatio * PRIORITY_BIAS;
+        } else {
+            _dynamicRatio = 1; // Fallback
+        }
+    }
+
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
-        // Since the current channel is initialized with the invalid one (which has a very high value),
-        // we need to convert it to a valid channel index (0 is always active) and move on
-        uint8_t realCurrentChannel = currentChannel == INVALID_CHANNEL ? 0 : currentChannel;
+        // 1. Analyze previous state
+        bool currentIsHighPriority = (currentChannel != INVALID_CHANNEL && currentChannel != 0) 
+                                      ? _channelData[currentChannel].highPriority 
+                                      : false;
 
-        // This returns the next channel (except 0, which has to be always active) that is active
-        // For i that starts from currentChannel + 1, it will return the first active channel found
-        // up to the maximum channel count
-        for (uint8_t i = realCurrentChannel + 1; i < CHANNEL_COUNT; i++) {
-            if (i != 0 && isChannelActive(i)) {
+        // 2. Update Consecutive Run Counters
+        if (currentIsHighPriority) {
+            _hpRunCount++;
+        } else {
+            _hpRunCount = 0; // Reset counter when we run an LP
+        }
+
+        // 3. Decide Priority Goal
+        // Default: Look for HP. Only switch to LP if we hit the ratio limit.
+        bool lookForHighPriority = true; 
+
+        if (currentIsHighPriority) {
+            // If we just ran HP, only continue if we haven't hit the quota
+            if (_hpRunCount >= _dynamicRatio) {
+                lookForHighPriority = false; // Quota met, allow one LP slot
+            }
+        } 
+        // Else: If we just ran LP, we automatically default to looking for HP next.
+
+        // 4. Setup Search Pointers
+        uint8_t& lastChannel = lookForHighPriority ? _lastHighPriorityChannel : _lastLowPriorityChannel;
+        uint8_t startSearch = (lastChannel == INVALID_CHANNEL) ? 0 : lastChannel;
+
+        // 5. Pass 1: Search for Desired Priority (Standard Wrap-around)
+        for (uint8_t i = startSearch + 1; i < CHANNEL_COUNT; i++) {
+            if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
+                if (lookForHighPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
+                return i;
+            }
+        }
+        for (uint8_t i = 1; i <= startSearch; i++) {
+            if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
+                if (lookForHighPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
                 return i;
             }
         }
 
-        // If no active channel is found after the current one, it will start from 1 and go up to currentChannel
-        // simulating us starting from the beginning
-        for (uint8_t i = 1; i < realCurrentChannel; i++) {
+        // 6. Pass 2: Fallback (If desired priority not found, take ANY active channel)
+        // We must update the specific tracker for whatever channel type we actually find.
+        uint8_t& otherLastChannel = lookForHighPriority ? _lastLowPriorityChannel : _lastHighPriorityChannel;
+        uint8_t fallbackStart = (otherLastChannel == INVALID_CHANNEL) ? 0 : otherLastChannel;
+
+        for (uint8_t i = fallbackStart + 1; i < CHANNEL_COUNT; i++) {
             if (i != 0 && isChannelActive(i)) {
+                if (_channelData[i].highPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
+                return i;
+            }
+        }
+        for (uint8_t i = 1; i <= fallbackStart; i++) {
+            if (i != 0 && isChannelActive(i)) {
+                if (_channelData[i].highPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
                 return i;
             }
         }
 
-        return INVALID_CHANNEL; // Invalid channel, no active channels found
+        return INVALID_CHANNEL; // No active channels found
     }
 
     // Poor man's phase shift (doing with modulus didn't work properly,

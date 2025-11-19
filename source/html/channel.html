@@ -173,6 +173,8 @@
             const isChannel0 = index == 0;
             const activeCheckboxDisabled = isChannel0 ? 'disabled' : '';
             const activeChecked = isChannel0 ? 'checked' : (channel.active ? 'checked' : '');
+            const highPriorityCheckboxDisabled = isChannel0 ? 'disabled' : '';
+            const highPriorityChecked = isChannel0 ? 'checked' : (channel.highPriority ? 'checked' : '');
 
             box.innerHTML = `
                 <h3>Channel ${index}</h3>
@@ -196,6 +198,11 @@
                 <label>
                     <input type="checkbox" ${activeChecked} id="active${index}" onchange="queueChannelUpdate(${index})" ${activeCheckboxDisabled}>
                     Active ${isChannel0 ? '(Main voltage - cannot be disabled)' : ''}
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    <input type="checkbox" ${highPriorityChecked} id="highPriority${index}" onchange="queueChannelUpdate(${index})" ${highPriorityCheckboxDisabled}>
+                    High Priority ${isChannel0 ? '(Always read)' : '(Read more frequently)'}
                 </label>
                 <div style="height: 10px;"></div>
                 <span id="power${index}" style="font-weight: bold; color: #333;"></span>
@@ -295,7 +302,8 @@
             label: document.getElementById(`label${index}`).value,
             reverse: document.getElementById(`reverse${index}`).checked,
             phase: parseInt(document.getElementById(`phase${index}`).value),
-            active: document.getElementById(`active${index}`).checked
+            active: document.getElementById(`active${index}`).checked,
+            highPriority: document.getElementById(`highPriority${index}`).checked
         };
 
         // Update local channelData immediately for UI responsiveness
@@ -304,6 +312,7 @@
             channelData[index].label = channelUpdate.label;
             channelData[index].reverse = channelUpdate.reverse;
             channelData[index].phase = channelUpdate.phase;
+            channelData[index].highPriority = channelUpdate.highPriority;
         }
 
         // Store in queue - this will overwrite any previous update for this channel
