@@ -55,6 +55,9 @@
 #define ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS 5
 #define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500
 
+// Channel priority scheduling
+#define PRIORITY_BIAS 2 // Bias Factor: 2 means HP runs ~2x faster than LP
+
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
 #define UNLOCK_OPTIMUM_REGISTER 0x00FE // Value to write to unlock the optimum register

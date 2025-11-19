@@ -22,6 +22,8 @@ namespace Ade7953
     static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
     static uint8_t _lastHighPriorityChannel = INVALID_CHANNEL; // Track last HP channel for round-robin
     static uint8_t _lastLowPriorityChannel = INVALID_CHANNEL; // Track last LP channel for round-robin
+    static uint8_t _hpRunCount = 0;      // Tracks consecutive HP executions
+    static uint8_t _dynamicRatio = 1;    // Calculated ratio (HP slots per 1 LP slot)
     static float _gridFrequency = 50.0f;
 
     // Failure tracking
@@ -227,6 +229,7 @@ namespace Ade7953
     static bool _validateGridFrequency(float newValue);
 
     // Utility functions
+    static void _recalculateRatio();
     static uint8_t _findNextActiveChannel(uint8_t currentChannel);
     static Phase _getLaggingPhase(Phase phase);
     static Phase _getLeadingPhase(Phase phase);
@@ -721,7 +724,7 @@ namespace Ade7953
         return true;
     }
 
-    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
+bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
             return false;
@@ -739,6 +742,8 @@ namespace Ade7953
         } else {
             _channelData[channelIndex] = channelData;
         }
+
+        _recalculateRatio();
 
         releaseMutex(&_channelDataMutex);
 
@@ -3235,59 +3240,96 @@ namespace Ade7953
     // Utility functions
     // =================
 
+    static void _recalculateRatio() {
+        uint8_t activeHP = 0;
+        uint8_t activeLP = 0;
+
+        // Iterate 1 to CHANNEL_COUNT (skip 0)
+        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+            if (_channelData[i].active) {
+                if (_channelData[i].highPriority) activeHP++;
+                else activeLP++;
+            }
+        }
+
+        // Logic: Ratio = (HP_Count / LP_Count) * Bias
+        // This ensures that individually, an HP channel visits 'Bias' times more often than an LP.
+        if (activeLP > 0) {
+            // Ceiling division: (A + B - 1) / B
+            uint8_t baseRatio = (activeHP + activeLP - 1) / activeLP;
+            if (baseRatio < 1) baseRatio = 1;
+            _dynamicRatio = baseRatio * PRIORITY_BIAS;
+        } else {
+            _dynamicRatio = 1; // Fallback
+        }
+    }
+
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
-        // Determine whether to look for high-priority or low-priority channel next
-        // If current channel is high-priority, look for low-priority next
-        // If current channel is low-priority (or INVALID/channel 0), look for high-priority next
+        // 1. Analyze previous state
         bool currentIsHighPriority = (currentChannel != INVALID_CHANNEL && currentChannel != 0) 
                                       ? _channelData[currentChannel].highPriority 
-                                      : false;  // Treat channel 0 / INVALID as LP, so we look for HP next
-        bool lookForHighPriority = !currentIsHighPriority;
+                                      : false;
 
-        // Use the appropriate last channel tracker
-        uint8_t lastChannel = lookForHighPriority ? _lastHighPriorityChannel : _lastLowPriorityChannel;
+        // 2. Update Consecutive Run Counters
+        if (currentIsHighPriority) {
+            _hpRunCount++;
+        } else {
+            _hpRunCount = 0; // Reset counter when we run an LP
+        }
+
+        // 3. Decide Priority Goal
+        // Default: Look for HP. Only switch to LP if we hit the ratio limit.
+        bool lookForHighPriority = true; 
+
+        if (currentIsHighPriority) {
+            // If we just ran HP, only continue if we haven't hit the quota
+            if (_hpRunCount >= _dynamicRatio) {
+                lookForHighPriority = false; // Quota met, allow one LP slot
+            }
+        } 
+        // Else: If we just ran LP, we automatically default to looking for HP next.
+
+        // 4. Setup Search Pointers
+        uint8_t& lastChannel = lookForHighPriority ? _lastHighPriorityChannel : _lastLowPriorityChannel;
         uint8_t startSearch = (lastChannel == INVALID_CHANNEL) ? 0 : lastChannel;
 
-        // Search for next channel of desired priority, starting after the last one of that priority
+        // 5. Pass 1: Search for Desired Priority (Standard Wrap-around)
         for (uint8_t i = startSearch + 1; i < CHANNEL_COUNT; i++) {
             if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
-                // Update the tracker for this priority
-                if (lookForHighPriority) {
-                    _lastHighPriorityChannel = i;
-                } else {
-                    _lastLowPriorityChannel = i;
-                }
-                return i;
-            }
-        }
-        
-        // Wrap around: search from beginning
-        for (uint8_t i = 1; i <= startSearch; i++) {
-            if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
-                // Update the tracker for this priority
-                if (lookForHighPriority) {
-                    _lastHighPriorityChannel = i;
-                } else {
-                    _lastLowPriorityChannel = i;
-                }
-                return i;
-            }
-        }
-
-        // Second pass: if no channel of desired priority found, look for any active channel
-        // This ensures we always return an active channel if one exists
-        for (uint8_t i = startSearch + 1; i < CHANNEL_COUNT; i++) {
-            if (i != 0 && isChannelActive(i)) {
+                if (lookForHighPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
                 return i;
             }
         }
         for (uint8_t i = 1; i <= startSearch; i++) {
-            if (i != 0 && isChannelActive(i)) {
+            if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
+                if (lookForHighPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
                 return i;
             }
         }
 
-        return INVALID_CHANNEL; // Invalid channel, no active channels found
+        // 6. Pass 2: Fallback (If desired priority not found, take ANY active channel)
+        // We must update the specific tracker for whatever channel type we actually find.
+        uint8_t& otherLastChannel = lookForHighPriority ? _lastLowPriorityChannel : _lastHighPriorityChannel;
+        uint8_t fallbackStart = (otherLastChannel == INVALID_CHANNEL) ? 0 : otherLastChannel;
+
+        for (uint8_t i = fallbackStart + 1; i < CHANNEL_COUNT; i++) {
+            if (i != 0 && isChannelActive(i)) {
+                if (_channelData[i].highPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
+                return i;
+            }
+        }
+        for (uint8_t i = 1; i <= fallbackStart; i++) {
+            if (i != 0 && isChannelActive(i)) {
+                if (_channelData[i].highPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
+                return i;
+            }
+        }
+
+        return INVALID_CHANNEL; // No active channels found
     }
 
     // Poor man's phase shift (doing with modulus didn't work properly,
