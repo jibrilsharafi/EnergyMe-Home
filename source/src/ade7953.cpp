@@ -763,10 +763,8 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             return;
         }
 
-        ChannelData channelData; // Default constructor initializes to default values
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            setChannelData(channelData, i);
-        }
+        ChannelData channelData(channelIndex); // Constructor with index sets proper defaults for channel 0
+        setChannelData(channelData, channelIndex);
 
         LOG_DEBUG("Successfully reset channel data for channel %lu", channelIndex);
     }
@@ -2011,7 +2009,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         channelData.phase = static_cast<Phase>(preferences.getUChar(key, (uint8_t)(DEFAULT_CHANNEL_PHASE)));
 
         snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
-        channelData.highPriority = preferences.getBool(key, DEFAULT_CHANNEL_HIGH_PRIORITY);
+        channelData.highPriority = preferences.getBool(key, channelIndex == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY);
 
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);

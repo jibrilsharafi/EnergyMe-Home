@@ -238,6 +238,7 @@
 #define DEFAULT_CHANNEL_REVERSE false
 #define DEFAULT_CHANNEL_PHASE PHASE_1
 #define DEFAULT_CHANNEL_HIGH_PRIORITY false
+#define DEFAULT_CHANNEL_0_HIGH_PRIORITY true // Channel 0 is always high priority - even though it has no real impact since it is on a dedicated ADE7953 channel
 #define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
 
 // CT Specification defaults
@@ -399,6 +400,16 @@ struct ChannelData
       phase(PHASE_1), 
       ctSpecification(CtSpecification()) {
       snprintf(label, sizeof(label), "Channel");
+    }
+  
+  ChannelData(uint8_t idx)
+    : index(idx), 
+      active(idx == 0 ? DEFAULT_CHANNEL_0_ACTIVE : DEFAULT_CHANNEL_ACTIVE), 
+      reverse(DEFAULT_CHANNEL_REVERSE), 
+      highPriority(idx == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY),
+      phase(DEFAULT_CHANNEL_PHASE), 
+      ctSpecification(CtSpecification()) {
+      snprintf(label, sizeof(label), DEFAULT_CHANNEL_LABEL_FORMAT, idx);
     }
 };
 
