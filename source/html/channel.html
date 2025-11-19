@@ -173,6 +173,8 @@
             const isChannel0 = index == 0;
             const activeCheckboxDisabled = isChannel0 ? 'disabled' : '';
             const activeChecked = isChannel0 ? 'checked' : (channel.active ? 'checked' : '');
+            const highPriorityCheckboxDisabled = isChannel0 ? 'disabled' : '';
+            const highPriorityChecked = isChannel0 ? 'checked' : (channel.highPriority ? 'checked' : '');
 
             box.innerHTML = `
                 <h3>Channel ${index}</h3>
@@ -199,7 +201,7 @@
                 </label>
                 <div style="height: 10px;"></div>
                 <label>
-                    <input type="checkbox" ${channel.highPriority ? 'checked' : ''} id="highPriority${index}" onchange="queueChannelUpdate(${index})" ${isChannel0 ? 'disabled' : ''}>
+                    <input type="checkbox" ${highPriorityChecked} id="highPriority${index}" onchange="queueChannelUpdate(${index})" ${highPriorityCheckboxDisabled}>
                     High Priority ${isChannel0 ? '(Always read)' : '(Read more frequently)'}
                 </label>
                 <div style="height: 10px;"></div>
