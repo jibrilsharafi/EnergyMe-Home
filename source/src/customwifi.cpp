@@ -394,6 +394,67 @@ namespace CustomWifi
     setRestartSystem("Restart after WiFi reset");
   }
 
+  bool setCredentials(const char* ssid, const char* password)
+  {
+    if (!ssid || strlen(ssid) == 0)
+    {
+      LOG_ERROR("Invalid SSID provided");
+      return false;
+    }
+
+    if (!password || strlen(password) == 0)
+    {
+      LOG_WARNING("Empty password provided for SSID: %s", ssid);
+    }
+
+    LOG_INFO("Setting new WiFi credentials for SSID: %s", ssid);
+    
+    // Disconnect from current network without erasing stored credentials
+    if (WiFi.isConnected())
+    {
+      LOG_DEBUG("Disconnecting from current network");
+      WiFi.disconnect(false);
+      delay(1000);
+    }
+
+    // Attempt to connect with new credentials
+    LOG_DEBUG("Attempting connection to new SSID");
+    WiFi.begin(ssid, password);
+    
+    // Wait for connection with timeout
+    uint64_t startTime = millis64();
+    uint32_t timeout = WIFI_CONNECT_TIMEOUT_SECONDS * 1000;
+    
+    while (WiFi.status() != WL_CONNECTED && (millis64() - startTime) < timeout)
+    {
+      delay(500);
+    }
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      LOG_INFO("Successfully connected to new WiFi: %s", ssid);
+      
+      // WiFiManager will automatically save these credentials on successful connection
+      // when WiFi.persistent(true) is set (done in begin())
+      
+      // Reset reconnection counters
+      _reconnectAttempts = 0;
+      _lastWifiConnectedMillis = millis64();
+      
+      return true;
+    }
+    else
+    {
+      LOG_ERROR("Failed to connect to new WiFi: %s", ssid);
+      
+      // Trigger reconnection to previous network (if any stored credentials exist)
+      LOG_DEBUG("Attempting to reconnect to previous network");
+      WiFi.reconnect();
+      
+      return false;
+    }
+  }
+
   bool _setupMdns()
   {
     LOG_DEBUG("Setting up mDNS...");
