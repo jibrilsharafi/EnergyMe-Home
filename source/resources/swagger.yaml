@@ -610,6 +610,81 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
 
+  /api/v1/network/wifi/credentials:
+    post:
+      summary: Set WiFi credentials
+      description: |
+        Set new WiFi credentials and attempt to connect to the specified network.
+        The device will disconnect from the current network and attempt connection with the new credentials.
+        If successful, the new credentials are automatically saved and will be used for future connections.
+        If the connection fails, the device will attempt to reconnect to the previously configured network.
+      tags:
+        - Network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ssid
+                - password
+              properties:
+                ssid:
+                  type: string
+                  description: WiFi SSID (network name)
+                  minLength: 1
+                  maxLength: 32
+                  example: "MyHomeNetwork"
+                password:
+                  type: string
+                  description: WiFi password (WPA/WPA2/WPA3)
+                  minLength: 0
+                  maxLength: 63
+                  example: "mySecurePassword123"
+            examples:
+              home_network:
+                summary: Home WiFi
+                value:
+                  ssid: "MyHomeNetwork"
+                  password: "mySecurePassword123"
+              open_network:
+                summary: Open network (no password)
+                value:
+                  ssid: "FreeWiFi"
+                  password: ""
+      responses:
+        '200':
+          description: Successfully connected to the new WiFi network
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "WiFi credentials updated successfully. Connected to new network."
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "SSID exceeds maximum length of 32 characters"
+        '500':
+          description: Failed to connect to the specified network
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Failed to connect to the specified network. Please verify credentials and try again."
+
   # Crash Monitor endpoints
   /api/v1/crash/info:
     get:
