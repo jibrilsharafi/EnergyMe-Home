@@ -573,7 +573,7 @@ namespace CustomWifi
 
     WiFiClientSecure client;
     client.setTimeout(TELEMETRY_TIMEOUT_MS);
-    client.setInsecure(); // NOTE: Public endpoint; skipping cert validation for simplicity
+    client.setCACert(AWS_IOT_CORE_CA_CERT); // Use Amazon Root CA 1 for secure connection
 
     if (!client.connect(TELEMETRY_URL, TELEMETRY_PORT)) {
       LOG_WARNING("Telemetry connection failed");
@@ -599,6 +599,7 @@ namespace CustomWifi
     client.write(reinterpret_cast<const uint8_t*>(jsonBuffer), jsonSize);
 
     // Lightweight response handling (discard data, avoid dynamic allocations)
+    // While we could avoid this, it is safer to ensure the server closes the connection properly
     uint64_t start = millis64();
     while (client.connected() && (millis64() - start) < TELEMETRY_TIMEOUT_MS)
     {
@@ -607,7 +608,7 @@ namespace CustomWifi
     }
     client.stop();
 
-    _telemetrySent = true;
+    _telemetrySent = true; // Set to true regardless of success to avoid repeated attempts. This info is not critical.
     LOG_INFO("Open source telemetry sent");
 #else
     LOG_DEBUG("Open source telemetry disabled (compile-time)");
