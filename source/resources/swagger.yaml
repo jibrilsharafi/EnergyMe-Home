@@ -614,10 +614,14 @@ paths:
     post:
       summary: Set WiFi credentials
       description: |
-        Set new WiFi credentials and attempt to connect to the specified network.
+        Queue new WiFi credentials for asynchronous connection attempt.
         The device will disconnect from the current network and attempt connection with the new credentials.
         If successful, the new credentials are automatically saved and will be used for future connections.
         If the connection fails, the device will attempt to reconnect to the previously configured network.
+        
+        **Note:** This is an asynchronous operation. The API returns immediately after queuing the credentials.
+        The actual connection attempt happens in the background. Monitor the device status or LED indicators
+        to verify successful connection.
       tags:
         - Network
       requestBody:
@@ -638,7 +642,7 @@ paths:
                   example: "MyHomeNetwork"
                 password:
                   type: string
-                  description: WiFi password (WPA/WPA2/WPA3)
+                  description: WiFi password (WPA/WPA2/WPA3). Use empty string for open networks.
                   minLength: 0
                   maxLength: 63
                   example: "mySecurePassword123"
@@ -655,7 +659,7 @@ paths:
                   password: ""
       responses:
         '200':
-          description: Successfully connected to the new WiFi network
+          description: WiFi credentials successfully queued for connection attempt
           content:
             application/json:
               schema:
@@ -663,7 +667,7 @@ paths:
                 properties:
                   message:
                     type: string
-                    example: "WiFi credentials updated successfully. Connected to new network."
+                    example: "WiFi credentials queued. Device will attempt connection to new network."
         '400':
           description: Invalid request parameters
           content:
@@ -675,7 +679,7 @@ paths:
                     type: string
                     example: "SSID exceeds maximum length of 32 characters"
         '500':
-          description: Failed to connect to the specified network
+          description: Failed to queue credentials (e.g., WiFi task not running)
           content:
             application/json:
               schema:
@@ -683,7 +687,7 @@ paths:
                 properties:
                   error:
                     type: string
-                    example: "Failed to connect to the specified network. Please verify credentials and try again."
+                    example: "Failed to queue WiFi credentials. Please try again."
 
   # Crash Monitor endpoints
   /api/v1/crash/info:

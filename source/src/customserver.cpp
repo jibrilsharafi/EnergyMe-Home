@@ -1354,18 +1354,20 @@ namespace CustomServer
             {
                 if (!_validateRequest(request, "POST")) return;
 
-                JsonDocument &doc = json.as<JsonDocument>();
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
 
                 // Validate required fields
                 if (!doc["ssid"].is<const char*>() || strlen(doc["ssid"].as<const char*>()) == 0)
                 {
-                    _sendErrorResponse(request, 400, "Missing or invalid 'ssid' field");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid 'ssid' field");
                     return;
                 }
 
                 if (!doc["password"].is<const char*>())
                 {
-                    _sendErrorResponse(request, 400, "Missing 'password' field");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'password' field");
                     return;
                 }
 
@@ -1373,31 +1375,32 @@ namespace CustomServer
                 const char* password = doc["password"];
 
                 // Validate SSID length
-                if (strlen(ssid) > 32)
+                if (strlen(ssid) > WIFI_SSID_BUFFER_SIZE)
                 {
-                    _sendErrorResponse(request, 400, "SSID exceeds maximum length of 32 characters");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "SSID exceeds maximum length of 32 characters");
                     return;
                 }
 
                 // Validate password length
-                if (strlen(password) > 63)
+                if (strlen(password) > WIFI_PASSWORD_BUFFER_SIZE)
                 {
-                    _sendErrorResponse(request, 400, "Password exceeds maximum length of 63 characters");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Password exceeds maximum length of 63 characters");
                     return;
                 }
 
                 LOG_INFO("Received request to set WiFi credentials for SSID: %s", ssid);
 
-                // Attempt to set credentials (this will try to connect)
-                bool success = CustomWifi::setCredentials(ssid, password);
+                // Queue credentials for asynchronous connection attempt
+                // The WiFi task will handle the actual connection
+                bool queued = CustomWifi::setCredentials(ssid, password);
 
-                if (success)
+                if (queued)
                 {
-                    _sendSuccessResponse(request, "WiFi credentials updated successfully. Connected to new network.");
+                    _sendSuccessResponse(request, "WiFi credentials queued. Device will attempt connection to new network.");
                 }
                 else
                 {
-                    _sendErrorResponse(request, 500, "Failed to connect to the specified network. Please verify credentials and try again.");
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to queue WiFi credentials. Please try again.");
                 }
             });
         server.addHandler(wifiCredentialsHandler);

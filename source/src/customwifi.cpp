@@ -19,10 +19,16 @@ namespace CustomWifi
   static const uint32_t WIFI_EVENT_DISCONNECTED = 3;
   static const uint32_t WIFI_EVENT_SHUTDOWN = 4;
   static const uint32_t WIFI_EVENT_FORCE_RECONNECT = 5;
+  static const uint32_t WIFI_EVENT_NEW_CREDENTIALS = 6;
 
   // Task state management
   static bool _taskShouldRun = false;
   static bool _eventsEnabled = false;
+  
+  // New credentials storage for async switching
+  static char _pendingSSID[WIFI_SSID_BUFFER_SIZE] = {0};
+  static char _pendingPassword[WIFI_PASSWORD_BUFFER_SIZE] = {0};
+  static bool _hasPendingCredentials = false;
 
 
   // Private helper functions
@@ -293,6 +299,34 @@ namespace CustomWifi
           _forceReconnectInternal();
           continue; // No further action needed
 
+        case WIFI_EVENT_NEW_CREDENTIALS:
+          if (_hasPendingCredentials)
+          {
+            LOG_INFO("Processing new WiFi credentials for SSID: %s", _pendingSSID);
+            
+            // Disconnect from current network, erasing old credentials
+            if (WiFi.isConnected())
+            {
+              LOG_DEBUG("Disconnecting from current network");
+              WiFi.disconnect(false, true, 1000); // wifioff=false, eraseap=true, timeout=1000ms
+              delay(1000); // Wait for clean disconnect
+            }
+            
+            // Attempt connection with new credentials
+            LOG_DEBUG("Attempting connection to new SSID: %s", _pendingSSID);
+            WiFi.begin(_pendingSSID, _pendingPassword);
+            
+            // Clear pending credentials (security: don't keep password in memory)
+            memset(_pendingSSID, 0, sizeof(_pendingSSID));
+            memset(_pendingPassword, 0, sizeof(_pendingPassword));
+            _hasPendingCredentials = false;
+            
+            // Note: Connection result will be handled by WIFI_EVENT_GOT_IP or WIFI_EVENT_DISCONNECTED
+            // If connection fails, the WIFI_EVENT_DISCONNECTED handler will trigger reconnection
+            // attempts and eventually launch the portal if needed
+          }
+          continue; // No further action needed
+
         case WIFI_EVENT_DISCONNECTED:
           statistics.wifiConnectionError++;
           Led::pulseBlue(Led::PRIO_MEDIUM);
@@ -396,63 +430,56 @@ namespace CustomWifi
 
   bool setCredentials(const char* ssid, const char* password)
   {
+    // Validate inputs
     if (!ssid || strlen(ssid) == 0)
     {
       LOG_ERROR("Invalid SSID provided");
       return false;
     }
 
-    if (!password || strlen(password) == 0)
+    if (strlen(ssid) > 32)
     {
-      LOG_WARNING("Empty password provided for SSID: %s", ssid);
-    }
-
-    LOG_INFO("Setting new WiFi credentials for SSID: %s", ssid);
-    
-    // Disconnect from current network without erasing stored credentials
-    if (WiFi.isConnected())
-    {
-      LOG_DEBUG("Disconnecting from current network");
-      WiFi.disconnect(false);
-      delay(1000);
-    }
-
-    // Attempt to connect with new credentials
-    LOG_DEBUG("Attempting connection to new SSID");
-    WiFi.begin(ssid, password);
-    
-    // Wait for connection with timeout
-    uint64_t startTime = millis64();
-    uint32_t timeout = WIFI_CONNECT_TIMEOUT_SECONDS * 1000;
-    
-    while (WiFi.status() != WL_CONNECTED && (millis64() - startTime) < timeout)
-    {
-      delay(500);
-    }
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-      LOG_INFO("Successfully connected to new WiFi: %s", ssid);
-      
-      // WiFiManager will automatically save these credentials on successful connection
-      // when WiFi.persistent(true) is set (done in begin())
-      
-      // Reset reconnection counters
-      _reconnectAttempts = 0;
-      _lastWifiConnectedMillis = millis64();
-      
-      return true;
-    }
-    else
-    {
-      LOG_ERROR("Failed to connect to new WiFi: %s", ssid);
-      
-      // Trigger reconnection to previous network (if any stored credentials exist)
-      LOG_DEBUG("Attempting to reconnect to previous network");
-      WiFi.reconnect();
-      
+      LOG_ERROR("SSID exceeds maximum length of 32 characters");
       return false;
     }
+
+    if (!password)
+    {
+      LOG_ERROR("Password cannot be NULL");
+      return false;
+    }
+
+    if (strlen(password) > 63)
+    {
+      LOG_ERROR("Password exceeds maximum length of 63 characters");
+      return false;
+    }
+
+    if (strlen(password) == 0)
+    {
+      LOG_WARNING("Empty password provided for SSID: %s (open network)", ssid);
+    }
+
+    // Check if WiFi task is running
+    if (_wifiTaskHandle == NULL)
+    {
+      LOG_ERROR("Cannot set credentials - WiFi task not running");
+      return false;
+    }
+
+    LOG_INFO("Queueing new WiFi credentials for SSID: %s", ssid);
+    
+    // Store credentials for WiFi task to process
+    snprintf(_pendingSSID, sizeof(_pendingSSID), "%s", ssid);
+    snprintf(_pendingPassword, sizeof(_pendingPassword), "%s", password);
+    _hasPendingCredentials = true;
+    
+    // Notify WiFi task to process new credentials
+    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_NEW_CREDENTIALS, eSetValueWithOverwrite);
+    
+    // Return immediately - actual connection happens asynchronously in WiFi task
+    // This prevents blocking the web server and avoids conflicts with event handlers
+    return true;
   }
 
   bool _setupMdns()
