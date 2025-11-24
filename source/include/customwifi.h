@@ -6,13 +6,18 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <AdvancedLogger.h>
+#include <esp_system.h>
 #include <ESPmDNS.h>
+#include <mbedtls/sha256.h>
 #include <WiFi.h>
 #include <WiFiManager.h>
+#include <WiFiClientSecure.h>
 
+#include "awsconfig.h"
 #include "constants.h"
 #include "globals.h"
 #include "led.h"
+#include "utils.h"
 
 #define WIFI_TASK_NAME "wifi_task"
 #define WIFI_TASK_STACK_SIZE (5 * 1024) // WiFiManager now allocated on heap, not stack
@@ -45,6 +50,16 @@
 #define MAC_ADDRESS_BUFFER_SIZE 18 // For MAC addresses (xx:xx:xx:xx:xx:xx + null terminator)
 #define WIFI_STATUS_BUFFER_SIZE 18 // For connection status messages (longest expected is "Connection Failed" + null terminator)
 #define WIFI_SSID_BUFFER_SIZE 64  // For WiFi SSID
+
+// Open Source Telemetry
+// =====================
+// NOTE: Build-time flag ENABLE_OPEN_SOURCE_TELEMETRY controls whether telemetry is sent.
+//       Set -DENABLE_OPEN_SOURCE_TELEMETRY=0 or remove the define to disable.
+#define TELEMETRY_URL "lwpomidzl5vkgmit72oq25rwtu0asdwf.lambda-url.eu-central-1.on.aws"
+#define TELEMETRY_PORT 443
+#define TELEMETRY_PATH "/"
+#define TELEMETRY_TIMEOUT_MS (1 * 1000) // Very short timeout since we don't really care about the response
+#define TELEMETRY_JSON_BUFFER_SIZE 512 // Sufficient for {device_id, firmware_version, sketch_md5}
 
 namespace CustomWifi
 {

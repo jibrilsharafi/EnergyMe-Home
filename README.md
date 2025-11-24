@@ -1,13 +1,15 @@
 # <img src="resources/logo.png" width="32" height="32" align="center"> EnergyMe-Home
 
 <!-- All the usual badges (license, stars, release, etc.) -->
+![Online](https://img.shields.io/badge/dynamic/json?url=https://4uemnt5duad63ldajxymghlv3e0yvwnw.lambda-url.eu-central-1.on.aws/&query=$.total_active&style=for-the-badge&label=EnergyMe-Home%20Active&color=green&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAHYAAAB2AH6XKZyAAAD+ElEQVR42r2Xa0xTVxzAyRaBrcRlU4bZK5hhhiPZJGaguEUZzrgikOHI1kQT34+YGD/4SExM6r23two2tS8KrSCtpbWYKEQUFFEuglBa2tSm1kd8EASiH4wYTTRK/95zg8U+bnvv9fHh96Ef2t/vnHvO6blJAJAkhH8u65anH699VdihsaLPQhH0pVJKXT7DVjMxzWSEz8wGKKbU6z5awIo2o3S2/cgrJH/DDHomxL3KeR88YHlbfUOmzRRE0kiyTunHV5+rEn2wgKXtNc0ZlqNIxkpBu673vQesuStNnd9a7UeCRKSYjVDWrdrw3gL+7jDl5p80P2MEHMk6qX+ScFABZaYU4JO4AaWt9Vvzmo4HRaa6KQFHyqjDeyJ/zzYmz7SNkTtto6TjX+8BKHETK1kDVpyrU82xm4LJvMRT5J/VXUO/0zQsz7KOkLtpqdM2KgdE/X05fN2DQ5GHtMQMEJ9tOJ3RyCw2QXxpNUBpl+qpdVR+HQkjKfcSkNKFQZ6T8EUFFLcf3fettYGXcHqjARa262CdQwkHb1SBdQSJYqMeIiGNwpiA7H7iUViA5NKhmd/YDS+5in87o4PdXgWY7x+YFCRmoYsZPUP6ZWwiLKCgTdvJRTy3uRqwQBWLhJ1dN0kkDiGiMAgFlFBVs9MsxmA8cTJNaZcaLMwU88M4TEJ6DxKHg84YJqCwQ1uXSL7NpeQpnmLRIIGEUZT5FN8zAT+d0j+IF/Bfj0qwfPt1GZLFROKTZTAB6fbal+x7WgtWgfLKeyRM744tF9EwayCpqenTVBZ5msUA2jsHBckNw3L4rhfJYjOzZ3IX5LcczmAbvfiiWpDcRC/UnH4ciViZ0088ZgLQSkw2xw5Q3KrkLW+k5QWh/c7OIid+JbQN6eMzagvOstfwlltplroTyxFiDy4NBWQ3V49HBKDjlbd8mYebHJ2CFX5pWihg8XktFRmw8oqGsxwdTn9yHDnij0GiM+xCsn5AUZQSsQ5WObScF1yei7v8q248KLlKZkfdiH5u0Y+9HbDGmXgG0H/7LwM4ZzniLzehiXklE3eqJW9fQNa64m9BzRAJP/bxk//qwIfj3glzWqpH3gRscLPPAHabpPfxfl7yrD58HB29cQMqutXFqZNrYSNLwJaADEQ8xIgcB/6wwl85i9OtOLdVfxMFbPJoop73kkGCl/gLCoMij6x1vqt2GudrefklxQLRMSNs9k4FyO+Q8EMvzln8OU3uADZU4Sd+F/ReUHhB07flqh6OjZAg8REg4iKlmOf8fIlHdnGtH8t/pxeTHb4jxXtv6CY2BnCY66gMY57zECxwK4OLPcoXy7yqRyU+VeB/v+rEnnuKAiEvp68BSJih/3uMeCMAAAAASUVORK5CYII=)
+
 [![GitHub release](https://img.shields.io/github/release/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/releases)
 [![GitHub stars](https://img.shields.io/github/stars/jibrilsharafi/EnergyMe-Home.svg?style=social&label=Stars)](https://github.com/jibrilsharafi/EnergyMe-Home/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/issues)
 [![GitHub license](https://img.shields.io/github/license/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/blob/main/LICENSE)
 
-[<img src="resources/certification-mark-IT000025-wide.svg" alt="OSHWA Certified Open Source Hardware IT000025" height="40">](https://certification.oshwa.org/it000025.html)
-<a href="https://www.tindie.com/stores/energyme/?ref=offsite_badges&utm_source=sellers_jabrillo&utm_medium=badges&utm_campaign=badge_small"><img src="https://d2ss6ovg47m0r5.cloudfront.net/badges/tindie-smalls.png" alt="I sell on Tindie" height="35"></a>
+<a href="https://certification.oshwa.org/it000025.html"><img src="resources/certification-mark-IT000025-wide.svg" alt="OSHWA Certified Open Source Hardware IT000025" height="40" style="background:#ffffff;"></a>
+<a href="https://www.tindie.com/stores/energyme/?ref=offsite_badges&utm_source=sellers_jabrillo&utm_medium=badges&utm_campaign=badge_small"><img src="https://d2ss6ovg47m0r5.cloudfront.net/badges/tindie-smalls.png" alt="I sell on Tindie" height="42"></a>
 
 ![Homepage](resources/homepage.png)
 
@@ -107,6 +109,10 @@ Get started at [homeassistant-energyme](https://github.com/jibrilsharafi/homeass
 5. **Start monitoring**: Access the web interface at `http://energyme.local` (default credentials: *admin*/*energyme*)
 
 For detailed build instructions and troubleshooting, see the [documentation](documentation/README.md).
+
+## Privacy & Telemetry
+
+Optional anonymous usage statistics sent once per boot: hashed device ID, firmware version, country/city (from public IP). Helps count active installations. No personal data or usage patterns collected. Disable in `platformio.ini`: set `ENABLE_OPEN_SOURCE_TELEMETRY=0`.
 
 ## Contributing
 

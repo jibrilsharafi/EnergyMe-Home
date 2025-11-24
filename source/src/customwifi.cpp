@@ -2,7 +2,6 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customwifi.h"
-#include <esp_system.h>
 
 namespace CustomWifi
 {
@@ -38,6 +37,8 @@ namespace CustomWifi
   static bool _testConnectivity();
   static void _forceReconnectInternal();
   static bool _isPowerReset();
+  static void _sendOpenSourceTelemetry();
+  static bool _telemetrySent = false; // Ensures telemetry is sent only once per boot
 
   bool begin()
   {
@@ -206,6 +207,7 @@ namespace CustomWifi
     Led::clearPattern(Led::PRIO_MEDIUM); // Ensure that if we are connected again, we don't keep the blue pattern
     Led::setGreen(Led::PRIO_NORMAL); // Hack: to ensure we get back to green light, we set it here even though a proper LED manager would handle priorities better
     LOG_INFO("WiFi fully connected and operational");
+    _sendOpenSourceTelemetry(); // Non-blocking short POST (guarded by compile-time flag)
   }
 
   static void _wifiConnectionTask(void *parameter)
@@ -529,6 +531,88 @@ namespace CustomWifi
     // ESP_RST_BROWNOUT: Brownout reset (power supply voltage dropped below minimum)
     esp_reset_reason_t resetReason = esp_reset_reason();
     return resetReason == ESP_RST_POWERON || resetReason == ESP_RST_BROWNOUT;
+  }
+
+  static void _sendOpenSourceTelemetry()
+  {
+#ifdef ENABLE_OPEN_SOURCE_TELEMETRY
+    if (_telemetrySent) return;
+
+    // Basic preconditions: WiFi connected with IP
+    if (!isFullyConnected(true)) {
+      LOG_DEBUG("Skipping telemetry - WiFi not fully connected");
+      return;
+    }
+
+    // Prepare JSON payload using PSRAM allocator
+    SpiRamAllocator allocator;
+    JsonDocument doc(&allocator);
+
+    // Hash the device identifier (privacy: avoid sending raw ID)
+    unsigned char hash[32];
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    mbedtls_sha256_starts(&sha, 0);
+    mbedtls_sha256_update(&sha, reinterpret_cast<const unsigned char*>(DEVICE_ID), strlen((const char*)DEVICE_ID));
+    mbedtls_sha256_finish(&sha, hash);
+    mbedtls_sha256_free(&sha);
+    
+    char hashedDeviceId[65]; // 64 hex chars + null
+    for (int i = 0; i < 32; i++) snprintf(&hashedDeviceId[i * 2], 3, "%02x", hash[i]);
+    
+    doc["device_id"] = hashedDeviceId; // Replace plain ID with hashed value
+    doc["firmware_version"] = FIRMWARE_BUILD_VERSION;
+    doc["sketch_md5"] = ESP.getSketchMD5();
+
+    char jsonBuffer[TELEMETRY_JSON_BUFFER_SIZE];
+    size_t jsonSize = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
+    if (jsonSize == 0 || jsonSize >= sizeof(jsonBuffer)) {
+      LOG_WARNING("Telemetry JSON invalid or too large"); 
+      return; 
+    }
+
+    WiFiClientSecure client;
+    client.setTimeout(TELEMETRY_TIMEOUT_MS);
+    client.setCACert(AWS_IOT_CORE_CA_CERT); // Use Amazon Root CA 1 for secure connection
+
+    if (!client.connect(TELEMETRY_URL, TELEMETRY_PORT)) {
+      LOG_WARNING("Telemetry connection failed");
+      return;
+    }
+
+    // Build HTTP request headers
+    char header[TELEMETRY_JSON_BUFFER_SIZE];
+    int headerLen = snprintf(header, sizeof(header),
+                             "POST %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: EnergyMe-Home/%s\r\nContent-Type: application/json\r\nContent-Length: %u\r\nConnection: close\r\n\r\n",
+                             TELEMETRY_PATH,
+                             TELEMETRY_URL,
+                             FIRMWARE_BUILD_VERSION,
+                             (unsigned)jsonSize);
+    if (headerLen <= 0 || headerLen >= (int)sizeof(header)) {
+      client.stop(); 
+      LOG_WARNING("Telemetry header build failed"); 
+      return; 
+    }
+
+    // Send request
+    client.write(reinterpret_cast<const uint8_t*>(header), headerLen);
+    client.write(reinterpret_cast<const uint8_t*>(jsonBuffer), jsonSize);
+
+    // Lightweight response handling (discard data, avoid dynamic allocations)
+    // While we could avoid this, it is safer to ensure the server closes the connection properly
+    uint64_t start = millis64();
+    while (client.connected() && (millis64() - start) < TELEMETRY_TIMEOUT_MS)
+    {
+      while (client.available()) client.read();
+      delay(10);
+    }
+    client.stop();
+
+    _telemetrySent = true; // Set to true regardless of success to avoid repeated attempts. This info is not critical.
+    LOG_INFO("Open source telemetry sent");
+#else
+    LOG_DEBUG("Open source telemetry disabled (compile-time)");
+#endif
   }
 
   static void _startWifiTask()
