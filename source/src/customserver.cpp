@@ -1346,6 +1346,61 @@ namespace CustomServer
 
             _sendSuccessResponse(request, "WiFi credentials reset. Device will restart and enter configuration mode.");
             CustomWifi::resetWifi(); });
+
+        // Set WiFi credentials
+        AsyncCallbackJsonWebHandler *wifiCredentialsHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/network/wifi/credentials",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST")) return;
+
+                JsonDocument &doc = json.as<JsonDocument>();
+
+                // Validate required fields
+                if (!doc["ssid"].is<const char*>() || strlen(doc["ssid"].as<const char*>()) == 0)
+                {
+                    _sendErrorResponse(request, 400, "Missing or invalid 'ssid' field");
+                    return;
+                }
+
+                if (!doc["password"].is<const char*>())
+                {
+                    _sendErrorResponse(request, 400, "Missing 'password' field");
+                    return;
+                }
+
+                const char* ssid = doc["ssid"];
+                const char* password = doc["password"];
+
+                // Validate SSID length
+                if (strlen(ssid) > 32)
+                {
+                    _sendErrorResponse(request, 400, "SSID exceeds maximum length of 32 characters");
+                    return;
+                }
+
+                // Validate password length
+                if (strlen(password) > 63)
+                {
+                    _sendErrorResponse(request, 400, "Password exceeds maximum length of 63 characters");
+                    return;
+                }
+
+                LOG_INFO("Received request to set WiFi credentials for SSID: %s", ssid);
+
+                // Attempt to set credentials (this will try to connect)
+                bool success = CustomWifi::setCredentials(ssid, password);
+
+                if (success)
+                {
+                    _sendSuccessResponse(request, "WiFi credentials updated successfully. Connected to new network.");
+                }
+                else
+                {
+                    _sendErrorResponse(request, 500, "Failed to connect to the specified network. Please verify credentials and try again.");
+                }
+            });
+        server.addHandler(wifiCredentialsHandler);
     }
 
     // === LOGGING ENDPOINTS ===
