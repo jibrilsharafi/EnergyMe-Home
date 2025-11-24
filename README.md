@@ -112,7 +112,7 @@ For detailed build instructions and troubleshooting, see the [documentation](doc
 
 ## Privacy & Telemetry
 
-Optional anonymous usage statistics sent once per boot: hashed device ID, firmware version, country/city (from IP). Helps count active installations. No personal data or usage patterns collected. Disable in `platformio.ini`: set `ENABLE_OPEN_SOURCE_TELEMETRY=0`.
+Optional anonymous usage statistics sent once per boot: hashed device ID, firmware version, country/city (from public IP). Helps count active installations. No personal data or usage patterns collected. Disable in `platformio.ini`: set `ENABLE_OPEN_SOURCE_TELEMETRY=0`.
 
 ## Contributing
 
