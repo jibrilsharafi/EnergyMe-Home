@@ -6,7 +6,9 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <AdvancedLogger.h>
+#include <esp_system.h>
 #include <ESPmDNS.h>
+#include <mbedtls/sha256.h>
 #include <WiFi.h>
 #include <WiFiManager.h>
 

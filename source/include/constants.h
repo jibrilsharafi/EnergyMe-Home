@@ -93,3 +93,13 @@
 
 // Useful constants
 #define MAGIC_WORD_RTC 0xDEADBEEF // This is crucial to ensure that the RTC variables used have sensible values or it is just some garbage after reboot
+
+// Open Source Telemetry
+// =====================
+// NOTE: Build-time flag ENABLE_OPEN_SOURCE_TELEMETRY controls whether telemetry is sent.
+//       Set -DENABLE_OPEN_SOURCE_TELEMETRY=0 or remove the define to disable.
+#define TELEMETRY_URL "lwpomidzl5vkgmit72oq25rwtu0asdwf.lambda-url.eu-central-1.on.aws"
+#define TELEMETRY_PORT 443
+#define TELEMETRY_PATH "/"
+#define TELEMETRY_TIMEOUT_MS (5 * 1000)
+#define TELEMETRY_JSON_BUFFER_SIZE 256 // Sufficient for {device_id, firmware_version, sketch_md5}
