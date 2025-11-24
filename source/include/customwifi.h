@@ -47,9 +47,7 @@
 #define MDNS_QUERY_TIMEOUT (5 * 1000)
 
 #define OCTET_BUFFER_SIZE 16       // For IPv4-like strings (xxx.xxx.xxx.xxx + null terminator)
-#define MAC_ADDRESS_BUFFER_SIZE 18 // For MAC addresses (xx:xx:xx:xx:xx:xx + null terminator)
 #define WIFI_STATUS_BUFFER_SIZE 18 // For connection status messages (longest expected is "Connection Failed" + null terminator)
-#define WIFI_SSID_BUFFER_SIZE 64  // For WiFi SSID
 
 // Open Source Telemetry
 // =====================
@@ -71,6 +69,7 @@ namespace CustomWifi
     void forceReconnect();   // Force immediate WiFi reconnection
 
     void resetWifi();
+    bool setCredentials(const char* ssid, const char* password); // Set new WiFi credentials and trigger reconnection
 
     // Task information
     TaskInfo getTaskInfo();
