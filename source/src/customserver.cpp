@@ -1388,20 +1388,10 @@ namespace CustomServer
                     return;
                 }
 
-                LOG_INFO("Received request to set WiFi credentials for SSID: %s", ssid);
+                LOG_INFO("Received request to set WiFi credentials for SSID: %s", ssid);;
 
-                // Queue credentials for asynchronous connection attempt
-                // The WiFi task will handle the actual connection
-                bool queued = CustomWifi::setCredentials(ssid, password);
-
-                if (queued)
-                {
-                    _sendSuccessResponse(request, "WiFi credentials queued. Device will attempt connection to new network.");
-                }
-                else
-                {
-                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to queue WiFi credentials. Please try again.");
-                }
+                if (CustomWifi::setCredentials(ssid, password)) _sendSuccessResponse(request, "WiFi credentials updated successfully. It will attempt to connect to the new network.");
+                else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to connect to the specified network. Please verify credentials and try again.");
             });
         server.addHandler(wifiCredentialsHandler);
     }

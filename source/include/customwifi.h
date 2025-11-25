@@ -7,6 +7,7 @@
 #include <ArduinoJson.h>
 #include <AdvancedLogger.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 #include <ESPmDNS.h>
 #include <mbedtls/sha256.h>
 #include <WiFi.h>
@@ -20,7 +21,7 @@
 #include "utils.h"
 
 #define WIFI_TASK_NAME "wifi_task"
-#define WIFI_TASK_STACK_SIZE (5 * 1024) // WiFiManager now allocated on heap, not stack
+#define WIFI_TASK_STACK_SIZE (6 * 1024) // Increased for esp_wifi_set_config() which uses ~500+ bytes stack
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"

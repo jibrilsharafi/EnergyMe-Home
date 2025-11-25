@@ -304,26 +304,30 @@ namespace CustomWifi
           {
             LOG_INFO("Processing new WiFi credentials for SSID: %s", _pendingSSID);
             
-            // Disconnect from current network, erasing old credentials
-            if (WiFi.isConnected())
-            {
-              LOG_DEBUG("Disconnecting from current network");
-              WiFi.disconnect(false, true, 1000); // wifioff=false, eraseap=true, timeout=1000ms
-              delay(1000); // Wait for clean disconnect
+            // Save new credentials to NVS using esp_wifi_set_config() directly
+            // This stores credentials WITHOUT triggering a connection attempt,
+            // which avoids heap corruption when restarting immediately after
+            wifi_config_t wifi_config = {};
+            snprintf((char*)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), "%s", _pendingSSID);
+            snprintf((char*)wifi_config.sta.password, sizeof(wifi_config.sta.password), "%s", _pendingPassword);
+            
+            esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+            if (err != ESP_OK) {
+              LOG_ERROR("Failed to save WiFi credentials: %s", esp_err_to_name(err));
+              memset(_pendingSSID, 0, sizeof(_pendingSSID));
+              memset(_pendingPassword, 0, sizeof(_pendingPassword));
+              _hasPendingCredentials = false;
+              continue;
             }
             
-            // Attempt connection with new credentials
-            LOG_DEBUG("Attempting connection to new SSID: %s", _pendingSSID);
-            WiFi.begin(_pendingSSID, _pendingPassword);
-            
-            // Clear pending credentials (security: don't keep password in memory)
+            // Clear pending credentials from memory
             memset(_pendingSSID, 0, sizeof(_pendingSSID));
             memset(_pendingPassword, 0, sizeof(_pendingPassword));
             _hasPendingCredentials = false;
             
-            // Note: Connection result will be handled by WIFI_EVENT_GOT_IP or WIFI_EVENT_DISCONNECTED
-            // If connection fails, the WIFI_EVENT_DISCONNECTED handler will trigger reconnection
-            // attempts and eventually launch the portal if needed
+            // Request system restart to apply new WiFi credentials
+            LOG_INFO("New credentials saved to NVS, restarting system");
+            setRestartSystem("Restart to apply new WiFi credentials");
           }
           continue; // No further action needed
 
@@ -437,9 +441,9 @@ namespace CustomWifi
       return false;
     }
 
-    if (strlen(ssid) > 32)
+    if (strlen(ssid) > WIFI_SSID_BUFFER_SIZE)
     {
-      LOG_ERROR("SSID exceeds maximum length of 32 characters");
+      LOG_ERROR("SSID exceeds maximum length of %d characters", WIFI_SSID_BUFFER_SIZE);
       return false;
     }
 
@@ -449,9 +453,9 @@ namespace CustomWifi
       return false;
     }
 
-    if (strlen(password) > 63)
+    if (strlen(password) > WIFI_PASSWORD_BUFFER_SIZE)
     {
-      LOG_ERROR("Password exceeds maximum length of 63 characters");
+      LOG_ERROR("Password exceeds maximum length of %d characters", WIFI_PASSWORD_BUFFER_SIZE);
       return false;
     }
 
