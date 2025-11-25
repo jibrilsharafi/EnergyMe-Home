@@ -382,6 +382,26 @@
     </div>
 
     <div class="section-box">
+        <h2>Switch WiFi Network</h2>
+        <p><i>Enter new WiFi credentials to switch to a different network. The device will save the credentials and restart to connect to the new network.</i></p>
+        <div style="display: flex; flex-direction: column; gap: 10px; margin: 15px 0;">
+            <div>
+                <label for="newWifiSsid">Network Name (SSID):</label>
+                <input type="text" id="newWifiSsid" class="config-input" placeholder="Enter WiFi network name" maxlength="32" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="newWifiPassword">Password:</label>
+                <input type="password" id="newWifiPassword" class="config-input" placeholder="Enter WiFi password" maxlength="63" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+        </div>
+        <div class="warning-box"
+            style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;"> ⚠️
+            Warning: The device will restart to apply the new credentials. You will temporarily lose access.
+        </div>
+        <button class="buttonForm" onclick="switchWifi()" id="switchWifi">📶 Switch Network</button>
+    </div>
+
+    <div class="section-box">
         <h2>Disconnect from WiFi</h2>
         <p><i>This will erase the WiFi credentials.</i></p>
         <p><i>The device will create a WiFi network called "EnergyMe" with no password.
@@ -461,6 +481,39 @@
                 });
         } 
         
+        function switchWifi() {
+            const ssid = document.getElementById("newWifiSsid").value.trim();
+            const password = document.getElementById("newWifiPassword").value;
+
+            if (!ssid) {
+                alert("Please enter a WiFi network name (SSID).");
+                return;
+            }
+
+            var confirm = window.confirm("Are you sure you want to switch to WiFi network '" + ssid + "'? The device will restart to apply the new credentials.");
+            if (!confirm) {
+                return;
+            }
+
+            const button = document.getElementById("switchWifi");
+            button.innerHTML = "Switching...";
+            button.disabled = true;
+
+            energyApi.setWifiCredentials(ssid, password)
+                .then(response => {
+                    button.innerHTML = "Credentials saved! Restarting...";
+                    alert("WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds, then reconnect to the new network.");
+                    // Clear the form
+                    document.getElementById("newWifiSsid").value = "";
+                    document.getElementById("newWifiPassword").value = "";
+                })
+                .catch(error => {
+                    button.innerHTML = "📶 Switch Network";
+                    button.disabled = false;
+                    alert("Error switching WiFi network: " + error.message);
+                });
+        }
+
         function disconnectWifi() {
             var confirm = window.confirm("Are you sure you want to disconnect from WiFi? You will lose access to the device until you reconnect it to WiFi.");
             if (!confirm) {

@@ -330,6 +330,15 @@ class EnergyMeAPI {
     }
 
     /**
+     * Set new WiFi credentials
+     * @param {string} ssid - The WiFi network name
+     * @param {string} password - The WiFi password
+     */
+    async setWifiCredentials(ssid, password) {
+        return this.post('network/wifi/credentials', { ssid, password });
+    }
+
+    /**
      * Get health status
      */
     async getHealth() {
