@@ -238,9 +238,8 @@
     <div class="section-box-wide">
         <div style="position: relative;">
             <h2>Log</h2>
-            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
+            <button id="download-csv" style="position: absolute; top: 2px; right: 2px;">
                 <i class="fas fa-download"></i>
-                <span class="tooltiptext">Download as CSV</span>
             </button>
             <div class="controls">
                 <input type="text" id="search-input-text" class="search-input" placeholder="Search log..."
@@ -461,7 +460,7 @@
             const csvContent = ["data:text/csv;charset=utf-8,"];
             csvContent.push("Row,Timestamp,Elapsed,Level,Core,File,Function,Message");
 
-            const rows = document.querySelectorAll('.log-table tr:not(:first-child)');
+            const rows = document.querySelectorAll('.log-table tbody tr');
             rows.forEach(function (row) {
                 const rowData = Array.from(row.querySelectorAll('td'))
                     .map(cell => {
