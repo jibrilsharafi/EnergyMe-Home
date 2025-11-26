@@ -1174,7 +1174,9 @@ namespace CustomServer
         
         for (JsonObject asset : assets) {
             const char* name = asset["name"];
-            if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) { // We must ensure we are not taking bootloader.bin or similars. The firmware name is always like energyme_home_vX.Y.Z.bin
+            // We must ensure we are not taking bootloader.bin or similar files.
+            // The firmware name is always like energyme_home_vX.Y.Z.bin.
+            if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
                 downloadUrl = asset["browser_download_url"];
                 break;
             }

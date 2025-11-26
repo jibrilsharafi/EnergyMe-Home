@@ -764,7 +764,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             return;
         }
 
-        ChannelData channelData(channelIndex); // Constructor with index sets proper defaults for channel 0
+        ChannelData channelData(channelIndex); // Constructor with index sets proper defaults
         setChannelData(channelData, channelIndex);
 
         LOG_DEBUG("Successfully reset channel data for channel %lu", channelIndex);
@@ -875,7 +875,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             channelData.active = jsonDocument["active"].as<bool>();
             channelData.reverse = jsonDocument["reverse"].as<bool>();
             // highPriority is optional for backward compatibility (defaults to false if not provided)
-            channelData.highPriority = jsonDocument["highPriority"].as<bool>() | false;
+            channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
             

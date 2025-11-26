@@ -572,11 +572,13 @@
             const csvFilename = `energy/daily/${date}.csv`;
             const gzFilename = `energy/daily/${date}.csv.gz`;
             
+            // First we try the uncompressed file (which should be the only one present)
             try {
                 const response = await energyApi.apiCall(`files/${encodeURIComponent(csvFilename)}`, { method: 'GET' });
                 if (response.ok) return await response.text();
             } catch (e) { /* continue */ }
             
+            // Safe fallback (should never happen)
             try {
                 return await decompressGzipFile(gzFilename);
             } catch (e) { /* continue */ }

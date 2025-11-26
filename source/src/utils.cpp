@@ -1537,7 +1537,8 @@ bool consolidateDailyFilesToMonthly(const char* yearMonth, const char* excludeDa
                     strcpy(fileCopy, filename);
                     dailyFiles.push_back(fileCopy);
                 } else {
-                    LOG_WARNING("Failed to allocate memory for filename: %s", filename);
+                    LOG_WARNING("Failed to allocate %zu bytes from PSRAM for filename: %s (free PSRAM: %lu)", 
+                                strlen(filename) + 1, filename, ESP.getFreePsram());
                 }
             }
         }
@@ -1771,7 +1772,8 @@ bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth)
                     strcpy(fileCopy, filename);
                     monthlyFiles.push_back(fileCopy);
                 } else {
-                    LOG_WARNING("Failed to allocate memory for filename: %s", filename);
+                    LOG_WARNING("Failed to allocate %zu bytes from PSRAM for filename: %s (free PSRAM: %lu)", 
+                                strlen(filename) + 1, filename, ESP.getFreePsram());
                 }
             }
         }

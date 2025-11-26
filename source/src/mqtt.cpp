@@ -200,6 +200,7 @@ namespace Mqtt
     // Utilities
     static const char* _getMqttStateReason(int32_t state);
     static const char* _getMqttStateMachineName(MqttState state);
+    static void _sha256ToHex(const uint8_t sha256[32], char hexOut[65]);
     bool extractHost(const char* url, char* buffer, size_t bufferSize);
 
     // Public API functions
@@ -1099,12 +1100,9 @@ namespace Mqtt
                 return;
             }
             
-            // Convert SHA256 to hex string (32 bytes -> 64 hex chars)
+            // Convert SHA256 to hex string
             char sha256Hex[65];
-            for (int i = 0; i < 32; i++) {
-                snprintf(&sha256Hex[i*2], 3, "%02x", new_app_desc.app_elf_sha256[i]);
-            }
-            sha256Hex[64] = '\0';
+            _sha256ToHex(new_app_desc.app_elf_sha256, sha256Hex);
             
             // Save OTA job ID, pending state, and expected SHA256 to Preferences
             Preferences prefs;  
@@ -2303,6 +2301,13 @@ namespace Mqtt
         }
     }
 
+    static void _sha256ToHex(const uint8_t sha256[32], char hexOut[65]) {
+        for (int i = 0; i < 32; i++) {
+            snprintf(&hexOut[i*2], 3, "%02x", sha256[i]);
+        }
+        hexOut[64] = '\0';
+    }
+
     bool extractHost(const char* url, char* buffer, size_t bufferSize) {
         if (!url || !buffer || bufferSize == 0) return false;
 
@@ -2456,10 +2461,7 @@ namespace Mqtt
         
         // Convert current SHA256 to hex string
         char currentSHA256[65];
-        for (int i = 0; i < 32; i++) {
-            snprintf(&currentSHA256[i*2], 3, "%02x", current_app_desc.app_elf_sha256[i]);
-        }
-        currentSHA256[64] = '\0';
+        _sha256ToHex(current_app_desc.app_elf_sha256, currentSHA256);
         
         // Compare SHA256 hashes
         if (strcmp(expectedSHA256, currentSHA256) != 0) {
