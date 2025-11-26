@@ -667,7 +667,7 @@ paths:
                 properties:
                   message:
                     type: string
-                    example: "WiFi credentials queued. Device will attempt connection to new network."
+                    example: "WiFi credentials updated successfully. It will restart and attempt to connect to the new network."
         '400':
           description: Invalid request parameters
           content:

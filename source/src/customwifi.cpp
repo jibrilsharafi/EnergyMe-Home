@@ -26,6 +26,8 @@ namespace CustomWifi
   static bool _eventsEnabled = false;
   
   // New credentials storage for async switching
+  // To be safe, we should create mutexes around these since they are accessed via a public method
+  // But since they are seldom written and read, we can avoid the complexity for now
   static char _pendingSSID[WIFI_SSID_BUFFER_SIZE] = {0};
   static char _pendingPassword[WIFI_PASSWORD_BUFFER_SIZE] = {0};
   static bool _hasPendingCredentials = false;
@@ -441,7 +443,7 @@ namespace CustomWifi
       return false;
     }
 
-    if (strlen(ssid) > WIFI_SSID_BUFFER_SIZE)
+    if (strlen(ssid) >= WIFI_SSID_BUFFER_SIZE)
     {
       LOG_ERROR("SSID exceeds maximum length of %d characters", WIFI_SSID_BUFFER_SIZE);
       return false;
@@ -453,7 +455,7 @@ namespace CustomWifi
       return false;
     }
 
-    if (strlen(password) > WIFI_PASSWORD_BUFFER_SIZE)
+    if (strlen(password) >= WIFI_PASSWORD_BUFFER_SIZE)
     {
       LOG_ERROR("Password exceeds maximum length of %d characters", WIFI_PASSWORD_BUFFER_SIZE);
       return false;

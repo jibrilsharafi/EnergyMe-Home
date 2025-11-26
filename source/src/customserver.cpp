@@ -1375,23 +1375,23 @@ namespace CustomServer
                 const char* password = doc["password"];
 
                 // Validate SSID length
-                if (strlen(ssid) > WIFI_SSID_BUFFER_SIZE)
+                if (strlen(ssid) >= WIFI_SSID_BUFFER_SIZE)
                 {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "SSID exceeds maximum length of 32 characters");
                     return;
                 }
 
                 // Validate password length
-                if (strlen(password) > WIFI_PASSWORD_BUFFER_SIZE)
+                if (strlen(password) >= WIFI_PASSWORD_BUFFER_SIZE)
                 {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Password exceeds maximum length of 63 characters");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Password exceeds maximum length of 64 characters");
                     return;
                 }
 
-                LOG_INFO("Received request to set WiFi credentials for SSID: %s", ssid);;
+                LOG_INFO("Received request to set WiFi credentials for SSID: %s", ssid);
 
-                if (CustomWifi::setCredentials(ssid, password)) _sendSuccessResponse(request, "WiFi credentials updated successfully. It will attempt to connect to the new network.");
-                else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to connect to the specified network. Please verify credentials and try again.");
+                if (CustomWifi::setCredentials(ssid, password)) _sendSuccessResponse(request, "WiFi credentials updated successfully. It will restart and attempt to connect to the new network.");
+                else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to save credentials for the specified network. Please verify them and try again.");
             });
         server.addHandler(wifiCredentialsHandler);
     }

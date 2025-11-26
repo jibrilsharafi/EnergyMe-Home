@@ -67,7 +67,7 @@
 #define TIMESTAMP_ISO_BUFFER_SIZE 25    // For ISO UTC timestamps (formatted as "YYYY-MM-DDTHH:MM:SS.sssZ")
 #define SHORT_NAME_BUFFER_SIZE 32       // For short names (e.g., channel names, labels)
 #define MD5_BUFFER_SIZE 33              // 32 characters + null terminator
-#define WIFI_SSID_BUFFER_SIZE 32        // For WiFi SSID (maximum SSID length is 32, but allow extra space)
+#define WIFI_SSID_BUFFER_SIZE 32        // For WiFi SSID (maximum SSID length is 31)
 #define WIFI_PASSWORD_BUFFER_SIZE 64    // For WiFi password (maximum WPA2 password length is 63)
 #define USERNAME_BUFFER_SIZE 64         // For usernames (e.g., MQTT username)
 #define PASSWORD_BUFFER_SIZE 64         // For passwords (e.g., MQTT password)
