@@ -372,6 +372,22 @@
     <div class="section-box">
         <h2>Change Password</h2>
         <p><i>Change your password to secure your device. Default credentials should be changed immediately after first login.</i></p>
+        <div style="display: flex; flex-direction: column; gap: 10px; margin: 15px 0;">
+            <div>
+                <label for="currentPassword">Current Password:</label>
+                <input type="password" id="currentPassword" class="config-input" placeholder="Enter current password" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="newPassword">New Password:</label>
+                <input type="password" id="newPassword" class="config-input" placeholder="Enter new password (min. 8 characters)" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="confirmPassword">Confirm New Password:</label>
+                <input type="password" id="confirmPassword" class="config-input" placeholder="Confirm new password" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+        </div>
+        <div id="passwordError" style="color: #c62828; margin-bottom: 10px; display: none;"></div>
+        <div id="passwordSuccess" style="color: #2e7d32; margin-bottom: 10px; display: none;"></div>
         <button class="buttonForm" onclick="changePassword()" id="changePasswordButton">🔑 Change Password</button>
     </div>
 
@@ -552,28 +568,38 @@
         } 
         
         function changePassword() {
-            const currentPassword = prompt("Enter your current password:");
+            const currentPassword = document.getElementById("currentPassword").value;
+            const newPassword = document.getElementById("newPassword").value;
+            const confirmPassword = document.getElementById("confirmPassword").value;
+            const errorDiv = document.getElementById("passwordError");
+            const successDiv = document.getElementById("passwordSuccess");
+
+            // Hide previous messages
+            errorDiv.style.display = "none";
+            successDiv.style.display = "none";
+
+            // Validation
             if (!currentPassword) {
-                return; // User cancelled
+                errorDiv.textContent = "Please enter your current password.";
+                errorDiv.style.display = "block";
+                return;
             }
 
-            const newPassword = prompt("Enter your new password:");
             if (!newPassword) {
-                return; // User cancelled
-            }
-
-            const confirmPassword = prompt("Confirm your new password:");
-            if (!confirmPassword) {
-                return; // User cancelled
-            }
-
-            if (newPassword !== confirmPassword) {
-                alert("Error: New passwords do not match. Please try again.");
+                errorDiv.textContent = "Please enter a new password.";
+                errorDiv.style.display = "block";
                 return;
             }
 
             if (newPassword.length < 8) {
-                alert("Error: Password must be at least 8 characters long.");
+                errorDiv.textContent = "New password must be at least 8 characters long.";
+                errorDiv.style.display = "block";
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                errorDiv.textContent = "New passwords do not match.";
+                errorDiv.style.display = "block";
                 return;
             }
 
@@ -582,12 +608,18 @@
 
             energyApi.changePassword(currentPassword, newPassword)
                 .then(response => {
-                    alert("Password changed successfully! Please use your new password on next login.");
+                    successDiv.textContent = "Password changed successfully! Please use your new password on next login.";
+                    successDiv.style.display = "block";
+                    // Clear the form
+                    document.getElementById("currentPassword").value = "";
+                    document.getElementById("newPassword").value = "";
+                    document.getElementById("confirmPassword").value = "";
                     document.getElementById("changePasswordButton").innerHTML = "🔑 Change Password";
                     document.getElementById("changePasswordButton").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error changing password: " + error.message);
+                    errorDiv.textContent = "Error changing password: " + error.message;
+                    errorDiv.style.display = "block";
                     document.getElementById("changePasswordButton").innerHTML = "🔑 Change Password";
                     document.getElementById("changePasswordButton").disabled = false;
                 });
