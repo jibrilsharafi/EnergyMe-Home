@@ -466,10 +466,12 @@
                 <div class="view-selector">
                     <button id="daily-view" class="view-toggle active">Daily View</button>
                     <button id="monthly-view" class="view-toggle">Monthly View</button>
+                    <button id="yearly-view" class="view-toggle">Yearly View</button>
                 </div>
                 <div class="date-selector">
                     <input type="date" id="date-picker" />
                     <input type="month" id="month-picker" style="display: none;" />
+                    <input type="number" id="year-picker" min="2020" max="2100" style="display: none; width: 80px;" />
                     <button id="prev-period" class="nav-button">◀</button>
                     <button id="next-period" class="nav-button">▶</button>
                 </div>
@@ -524,9 +526,11 @@
     var meterData = {};
     var availableDates = [];
     var availableMonths = [];
+    var availableYears = [];
     var currentDate = null;
     var currentMonth = null;
-    var currentView = 'daily'; // 'daily' or 'monthly'
+    var currentYear = null;
+    var currentView = 'daily'; // 'daily', 'monthly', or 'yearly'
     var consumptionChart = null;
     var pieChart = null;
     var totalPieChart = null;
@@ -587,6 +591,17 @@
         }
     }
 
+    // Function to load yearly consolidated CSV data
+    async function loadYearlyCsvData(year) {
+        try {
+            const gzFilename = `energy/yearly/${year}.csv.gz`;
+            return await decompressGzipFile(gzFilename);
+        } catch (error) {
+            console.error(`Error loading yearly CSV data for ${year}:`, error);
+            throw error;
+        }
+    }
+
     // Initialize page
     async function initializePage() {
         try {
@@ -606,8 +621,10 @@
             if (availableDates.length > 0) {
                 currentDate = availableDates[availableDates.length - 1];
                 currentMonth = availableMonths[availableMonths.length - 1];
+                currentYear = availableYears[availableYears.length - 1];
                 document.getElementById('date-picker').value = currentDate;
                 document.getElementById('month-picker').value = currentMonth;
+                document.getElementById('year-picker').value = currentYear;
                 updateNavigationButtons();
                 await loadAndDisplayCharts();
                 await updateTotalPieChart();
@@ -627,14 +644,14 @@
     async function loadAvailableDates() {
         try {
             // Load daily files for daily view
-            const dailyFiles = await energyApi.getFileList('energy/daily');
+            const dailyFiles = await energyApi.getFileList('energy/daily') || {};
             availableDates = Object.keys(dailyFiles)
                 .filter(filename => filename.endsWith('.csv.gz') || filename.endsWith('.csv'))
                 .map(filename => filename.replace('energy/daily/', '').replace('.csv.gz', '').replace('.csv', ''))
                 .sort();
             
             // Load monthly files for monthly view
-            const monthlyFiles = await energyApi.getFileList('energy/monthly');
+            const monthlyFiles = await energyApi.getFileList('energy/monthly') || {};
             availableMonths = Object.keys(monthlyFiles)
                 .filter(filename => filename.endsWith('.csv.gz'))
                 .map(filename => filename.replace('energy/monthly/', '').replace('.csv.gz', ''))
@@ -648,10 +665,27 @@
                 }
             });
             availableMonths.sort();
+            
+            // Load yearly files for yearly view
+            const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
+            availableYears = Object.keys(yearlyFiles)
+                .filter(filename => filename.endsWith('.csv.gz'))
+                .map(filename => filename.replace('energy/yearly/', '').replace('.csv.gz', ''))
+                .sort();
+            
+            // Also include current year from monthly files if not in yearly yet
+            const monthlyYears = [...new Set(availableMonths.map(month => month.substring(0, 4)))];
+            monthlyYears.forEach(year => {
+                if (!availableYears.includes(year)) {
+                    availableYears.push(year);
+                }
+            });
+            availableYears.sort();
         } catch (error) {
             console.error('Error loading available dates:', error);
             availableDates = [];
             availableMonths = [];
+            availableYears = [];
         }
     }
 
@@ -663,6 +697,10 @@
         
         document.getElementById('monthly-view').addEventListener('click', () => {
             switchView('monthly');
+        });
+        
+        document.getElementById('yearly-view').addEventListener('click', () => {
+            switchView('yearly');
         });
         
         // Date picker change
@@ -678,6 +716,13 @@
             updateNavigationButtons();
             await loadAndDisplayCharts();
         });
+        
+        // Year picker change
+        document.getElementById('year-picker').addEventListener('change', async (e) => {
+            currentYear = e.target.value;
+            updateNavigationButtons();
+            await loadAndDisplayCharts();
+        });
 
         // Navigation buttons
         document.getElementById('prev-period').addEventListener('click', async () => {
@@ -689,11 +734,19 @@
                     updateNavigationButtons();
                     await loadAndDisplayCharts();
                 }
-            } else {
+            } else if (currentView === 'monthly') {
                 const currentIndex = availableMonths.indexOf(currentMonth);
                 if (currentIndex > 0) {
                     currentMonth = availableMonths[currentIndex - 1];
                     document.getElementById('month-picker').value = currentMonth;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
+            } else {
+                const currentIndex = availableYears.indexOf(currentYear);
+                if (currentIndex > 0) {
+                    currentYear = availableYears[currentIndex - 1];
+                    document.getElementById('year-picker').value = currentYear;
                     updateNavigationButtons();
                     await loadAndDisplayCharts();
                 }
@@ -709,11 +762,19 @@
                     updateNavigationButtons();
                     await loadAndDisplayCharts();
                 }
-            } else {
+            } else if (currentView === 'monthly') {
                 const currentIndex = availableMonths.indexOf(currentMonth);
                 if (currentIndex < availableMonths.length - 1) {
                     currentMonth = availableMonths[currentIndex + 1];
                     document.getElementById('month-picker').value = currentMonth;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
+            } else {
+                const currentIndex = availableYears.indexOf(currentYear);
+                if (currentIndex < availableYears.length - 1) {
+                    currentYear = availableYears[currentIndex + 1];
+                    document.getElementById('year-picker').value = currentYear;
                     updateNavigationButtons();
                     await loadAndDisplayCharts();
                 }
@@ -727,14 +788,16 @@
         // Update button states
         document.getElementById('daily-view').classList.toggle('active', view === 'daily');
         document.getElementById('monthly-view').classList.toggle('active', view === 'monthly');
+        document.getElementById('yearly-view').classList.toggle('active', view === 'yearly');
         
         // Show/hide appropriate date pickers
         document.getElementById('date-picker').style.display = view === 'daily' ? 'block' : 'none';
         document.getElementById('month-picker').style.display = view === 'monthly' ? 'block' : 'none';
+        document.getElementById('year-picker').style.display = view === 'yearly' ? 'block' : 'none';
         
         // Update chart title
-        const title = view === 'daily' ? 'Daily Energy Distribution' : 'Monthly Energy Distribution';
-        document.getElementById('pie-chart-title').textContent = title;
+        const titles = { 'daily': 'Daily Energy Distribution', 'monthly': 'Monthly Energy Distribution', 'yearly': 'Yearly Energy Distribution' };
+        document.getElementById('pie-chart-title').textContent = titles[view];
         
         updateNavigationButtons();
         loadAndDisplayCharts();
@@ -745,30 +808,37 @@
             const currentIndex = availableDates.indexOf(currentDate);
             document.getElementById('prev-period').disabled = currentIndex <= 0;
             document.getElementById('next-period').disabled = currentIndex >= availableDates.length - 1;
-        } else {
+        } else if (currentView === 'monthly') {
             const currentIndex = availableMonths.indexOf(currentMonth);
             document.getElementById('prev-period').disabled = currentIndex <= 0;
             document.getElementById('next-period').disabled = currentIndex >= availableMonths.length - 1;
+        } else {
+            const currentIndex = availableYears.indexOf(currentYear);
+            document.getElementById('prev-period').disabled = currentIndex <= 0;
+            document.getElementById('next-period').disabled = currentIndex >= availableYears.length - 1;
         }
     }
 
     async function loadAndDisplayCharts() {
         if (currentView === 'daily' && !currentDate) return;
         if (currentView === 'monthly' && !currentMonth) return;
+        if (currentView === 'yearly' && !currentYear) return;
 
         try {
             showLoadingMessage();
             
             if (currentView === 'daily') {
                 await loadDailyCharts();
-            } else {
+            } else if (currentView === 'monthly') {
                 await loadMonthlyCharts();
+            } else {
+                await loadYearlyCharts();
             }
             
         } catch (error) {
             console.error('Error loading charts:', error);
-            const period = currentView === 'daily' ? currentDate : currentMonth;
-            showErrorMessage(`Failed to load energy data for ${period}`);
+            const periods = { 'daily': currentDate, 'monthly': currentMonth, 'yearly': currentYear };
+            showErrorMessage(`Failed to load energy data for ${periods[currentView]}`);
         }
     }
     
@@ -865,6 +935,85 @@
         
         // Set up CSV download
         setupCsvDownload(dailyConsumptions, 'monthly');
+    }
+
+    async function loadYearlyCharts() {
+        // Load data from consolidated yearly file + any remaining monthly files
+        let allEnergyData = [];
+        
+        // Try to load consolidated yearly file
+        try {
+            const csvData = await loadYearlyCsvData(currentYear);
+            allEnergyData = parseCsvEnergyData(csvData);
+            console.log(`Loaded ${allEnergyData.length} records from yearly archive for ${currentYear}`);
+        } catch (error) {
+            console.warn(`No consolidated yearly file for ${currentYear}:`, error.message);
+        }
+        
+        // Also load monthly files for current year (includes current month not yet consolidated)
+        const yearMonths = availableMonths.filter(month => month.startsWith(currentYear));
+        for (const month of yearMonths) {
+            try {
+                const csvData = await loadMonthlyCsvData(month);
+                const monthlyData = parseCsvEnergyData(csvData);
+                allEnergyData = allEnergyData.concat(monthlyData);
+                console.log(`Loaded ${monthlyData.length} records from monthly file for ${month}`);
+            } catch (error) {
+                console.warn(`Failed to load data for ${month}:`, error.message);
+            }
+        }
+        
+        // Also load daily files for current month if exists
+        const currentMonthDates = availableDates.filter(date => date.startsWith(currentYear));
+        for (const date of currentMonthDates) {
+            try {
+                const csvData = await loadDailyCsvData(date);
+                const dailyData = parseCsvEnergyData(csvData);
+                allEnergyData = allEnergyData.concat(dailyData);
+                console.log(`Loaded ${dailyData.length} records from daily file for ${date}`);
+            } catch (error) {
+                console.warn(`Failed to load data for ${date}:`, error.message);
+            }
+        }
+        
+        if (allEnergyData.length === 0) {
+            throw new Error('No data available for selected year');
+        }
+        
+        // Group data by month and calculate monthly consumption
+        const monthlyConsumptions = {};
+        const yearlyData = {};
+        
+        // Group by month
+        const dataByMonth = {};
+        allEnergyData.forEach(entry => {
+            const month = entry.timestamp.substring(5, 7); // MM from YYYY-MM-DD
+            if (!dataByMonth[month]) dataByMonth[month] = [];
+            dataByMonth[month].push(entry);
+        });
+        
+        // Calculate consumption for each month
+        Object.keys(dataByMonth).sort().forEach(month => {
+            const monthData = dataByMonth[month];
+            const monthConsumption = calculateTotalConsumption(monthData);
+            monthlyConsumptions[month] = monthConsumption;
+            
+            // Add to yearly totals
+            Object.keys(monthConsumption).forEach(channel => {
+                if (!yearlyData[channel]) yearlyData[channel] = 0;
+                yearlyData[channel] += monthConsumption[channel];
+            });
+        });
+        
+        // Restore chart canvases before updating
+        restoreChartCanvases();
+        
+        // Update charts
+        updateConsumptionChart(monthlyConsumptions, 'yearly');
+        updatePieChart(yearlyData);
+        
+        // Set up CSV download
+        setupCsvDownload(monthlyConsumptions, 'yearly');
     }
 
     function parseCsvEnergyData(csvText) {
@@ -1042,14 +1191,22 @@
         }
         
         // Format labels based on view type
-        const labels = viewType === 'daily' 
-            ? periods.map(hour => `${hour}:00`)
-            : periods.map(day => day);
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        let labels;
+        if (viewType === 'daily') {
+            labels = periods.map(hour => `${hour}:00`);
+        } else if (viewType === 'monthly') {
+            labels = periods.map(day => day);
+        } else {
+            labels = periods.map(month => monthNames[parseInt(month) - 1] || month);
+        }
         
         // Create new chart
         const ctx = canvasElement.getContext('2d');
         const isMobile = window.innerWidth <= 768;
         const isSmallMobile = window.innerWidth <= 480;
+        
+        const xAxisLabels = { 'daily': 'Hour (UTC)', 'monthly': 'Day', 'yearly': 'Month' };
         
         consumptionChart = new Chart(ctx, {
             type: 'bar',
@@ -1065,7 +1222,7 @@
                         stacked: true,
                         title: {
                             display: true,
-                            text: viewType === 'daily' ? 'Hour' : 'Day'
+                            text: xAxisLabels[viewType]
                         },
                         ticks: {
                             font: {
