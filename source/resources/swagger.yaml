@@ -614,14 +614,12 @@ paths:
     post:
       summary: Set WiFi credentials
       description: |
-        Queue new WiFi credentials for asynchronous connection attempt.
-        The device will disconnect from the current network and attempt connection with the new credentials.
-        If successful, the new credentials are automatically saved and will be used for future connections.
-        If the connection fails, the device will attempt to reconnect to the previously configured network.
+        Save new WiFi credentials and immediately restart the device.
+        After receiving new credentials, the device will save them and perform a restart.
+        Upon reboot, the device will attempt to connect to the specified WiFi network using the new credentials.
         
-        **Note:** This is an asynchronous operation. The API returns immediately after queuing the credentials.
-        The actual connection attempt happens in the background. Monitor the device status or LED indicators
-        to verify successful connection.
+        **Note:** The API returns as soon as the credentials are saved and the restart is triggered. The device will temporarily be unavailable during the restart process.
+        Monitor the device status or LED indicators to verify successful connection after reboot.
       tags:
         - Network
       requestBody:
