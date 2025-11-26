@@ -558,37 +558,110 @@
         }
     }
 
+    // Cache for archive data to avoid redundant downloads
+    var archiveCache = {
+        monthly: {},  // yearMonth -> csvData
+        yearly: {}    // year -> csvData
+    };
+    var dailyFilesSet = new Set(); // Set of dates available in daily folder
+
     // Function to load daily CSV data (compressed or uncompressed)
+    // Smart lookup: daily folder (if file exists) -> monthly archive -> yearly archive
     async function loadDailyCsvData(date) {
-        const csvFilename = `energy/daily/${date}.csv`;
-        const gzFilename = `energy/daily/${date}.csv.gz`;
-        
-        // Try uncompressed first (today's file), then compressed
-        try {
-            const response = await energyApi.apiCall(`files/${encodeURIComponent(csvFilename)}`, { method: 'GET' });
-            if (response.ok) {
-                return await response.text();
-            }
-        } catch (e) {
-            // Ignore, try compressed
+        // Only try daily folder if we know the file exists there
+        if (dailyFilesSet.has(date)) {
+            const csvFilename = `energy/daily/${date}.csv`;
+            const gzFilename = `energy/daily/${date}.csv.gz`;
+            
+            try {
+                const response = await energyApi.apiCall(`files/${encodeURIComponent(csvFilename)}`, { method: 'GET' });
+                if (response.ok) return await response.text();
+            } catch (e) { /* continue */ }
+            
+            try {
+                return await decompressGzipFile(gzFilename);
+            } catch (e) { /* continue */ }
         }
         
-        try {
-            return await decompressGzipFile(gzFilename);
-        } catch (e) {
-            throw new Error(`No CSV file found for date ${date}`);
+        // Try monthly archive - use cache if available
+        const yearMonth = date.substring(0, 7);
+        let monthlyData = archiveCache.monthly[yearMonth];
+        if (!monthlyData) {
+            try {
+                monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
+                archiveCache.monthly[yearMonth] = monthlyData;
+            } catch (e) { /* continue */ }
         }
+        if (monthlyData) {
+            const filtered = filterCsvByDate(monthlyData, date);
+            if (filtered) return filtered;
+        }
+        
+        // Try yearly archive - use cache if available
+        const year = date.substring(0, 4);
+        let yearlyData = archiveCache.yearly[year];
+        if (!yearlyData) {
+            try {
+                yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
+                archiveCache.yearly[year] = yearlyData;
+            } catch (e) { /* continue */ }
+        }
+        if (yearlyData) {
+            const filtered = filterCsvByDate(yearlyData, date);
+            if (filtered) return filtered;
+        }
+        
+        throw new Error(`No CSV data found for date ${date}`);
+    }
+    
+    // Helper function to filter CSV data by date prefix
+    function filterCsvByDate(csvText, datePrefix) {
+        const lines = csvText.trim().split('\n');
+        const header = lines[0];
+        const dataLines = lines.slice(1).filter(line => line.startsWith(datePrefix));
+        if (dataLines.length === 0) return null;
+        return header + '\n' + dataLines.join('\n');
     }
 
     // Function to load monthly consolidated CSV data
+    // Smart lookup: monthly archive -> yearly archive (with caching)
     async function loadMonthlyCsvData(yearMonth) {
-        try {
-            const gzFilename = `energy/monthly/${yearMonth}.csv.gz`;
-            return await decompressGzipFile(gzFilename);
-        } catch (error) {
-            console.error(`Error loading monthly CSV data for ${yearMonth}:`, error);
-            throw error;
+        // Try monthly archive - use cache if available
+        let monthlyData = archiveCache.monthly[yearMonth];
+        if (!monthlyData) {
+            try {
+                monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
+                archiveCache.monthly[yearMonth] = monthlyData;
+                return monthlyData;
+            } catch (e) { /* continue to yearly */ }
+        } else {
+            return monthlyData;
         }
+        
+        // Try yearly archive - use cache if available
+        const year = yearMonth.substring(0, 4);
+        let yearlyData = archiveCache.yearly[year];
+        if (!yearlyData) {
+            try {
+                yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
+                archiveCache.yearly[year] = yearlyData;
+            } catch (e) { /* continue */ }
+        }
+        if (yearlyData) {
+            const filtered = filterCsvByMonth(yearlyData, yearMonth);
+            if (filtered) return filtered;
+        }
+        
+        throw new Error(`No CSV data found for month ${yearMonth}`);
+    }
+    
+    // Helper function to filter CSV data by month prefix
+    function filterCsvByMonth(csvText, monthPrefix) {
+        const lines = csvText.trim().split('\n');
+        const header = lines[0];
+        const dataLines = lines.slice(1).filter(line => line.startsWith(monthPrefix));
+        if (dataLines.length === 0) return null;
+        return header + '\n' + dataLines.join('\n');
     }
 
     // Function to load yearly consolidated CSV data
@@ -643,50 +716,83 @@
 
     async function loadAvailableDates() {
         try {
-            // Load daily files for daily view
+            const allDates = new Set();
+            const allMonths = new Set();
+            const allYears = new Set();
+            
+            // Load daily files and populate dailyFilesSet
             const dailyFiles = await energyApi.getFileList('energy/daily') || {};
-            availableDates = Object.keys(dailyFiles)
+            dailyFilesSet.clear();
+            Object.keys(dailyFiles)
                 .filter(filename => filename.endsWith('.csv.gz') || filename.endsWith('.csv'))
                 .map(filename => filename.replace('.csv.gz', '').replace('.csv', ''))
-                .sort();
+                .forEach(date => {
+                    dailyFilesSet.add(date);
+                    allDates.add(date);
+                    allMonths.add(date.substring(0, 7));
+                    allYears.add(date.substring(0, 4));
+                });
             
-            // Load monthly files for monthly view
+            // Load monthly archives and extract dates (cache the data)
             const monthlyFiles = await energyApi.getFileList('energy/monthly') || {};
-            availableMonths = Object.keys(monthlyFiles)
-                .filter(filename => filename.endsWith('.csv.gz'))
-                .map(filename => filename.replace('.csv.gz', ''))
-                .sort();
-            
-            // Also include current month from daily files if not in monthly yet
-            const dailyMonths = [...new Set(availableDates.map(date => date.substring(0, 7)))];
-            dailyMonths.forEach(month => {
-                if (!availableMonths.includes(month)) {
-                    availableMonths.push(month);
+            for (const filename of Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz'))) {
+                const yearMonth = filename.replace('.csv.gz', '');
+                allMonths.add(yearMonth);
+                allYears.add(yearMonth.substring(0, 4));
+                
+                // Extract available dates from monthly archive and cache
+                try {
+                    const csvData = await decompressGzipFile(`energy/monthly/${filename}`);
+                    archiveCache.monthly[yearMonth] = csvData;
+                    extractDatesFromCsv(csvData).forEach(date => allDates.add(date));
+                } catch (e) {
+                    console.warn(`Could not read monthly archive ${filename}:`, e.message);
                 }
-            });
-            availableMonths.sort();
+            }
             
-            // Load yearly files for yearly view
+            // Load yearly archives and extract dates/months (cache the data)
             const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
-            availableYears = Object.keys(yearlyFiles)
-                .filter(filename => filename.endsWith('.csv.gz'))
-                .map(filename => filename.replace('.csv.gz', ''))
-                .sort();
-            
-            // Also include current year from monthly files if not in yearly yet
-            const monthlyYears = [...new Set(availableMonths.map(month => month.substring(0, 4)))];
-            monthlyYears.forEach(year => {
-                if (!availableYears.includes(year)) {
-                    availableYears.push(year);
+            for (const filename of Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz'))) {
+                const year = filename.replace('.csv.gz', '');
+                allYears.add(year);
+                
+                // Extract available dates and months from yearly archive and cache
+                try {
+                    const csvData = await decompressGzipFile(`energy/yearly/${filename}`);
+                    archiveCache.yearly[year] = csvData;
+                    extractDatesFromCsv(csvData).forEach(date => {
+                        allDates.add(date);
+                        allMonths.add(date.substring(0, 7));
+                    });
+                } catch (e) {
+                    console.warn(`Could not read yearly archive ${filename}:`, e.message);
                 }
-            });
-            availableYears.sort();
+            }
+            
+            availableDates = [...allDates].sort();
+            availableMonths = [...allMonths].sort();
+            availableYears = [...allYears].sort();
+            
+            console.log(`Loaded ${availableDates.length} dates, ${availableMonths.length} months, ${availableYears.length} years`);
         } catch (error) {
             console.error('Error loading available dates:', error);
             availableDates = [];
             availableMonths = [];
             availableYears = [];
         }
+    }
+    
+    // Helper function to extract unique dates from CSV data
+    function extractDatesFromCsv(csvText) {
+        const lines = csvText.trim().split('\n');
+        const dates = new Set();
+        for (let i = 1; i < lines.length; i++) {
+            const timestamp = lines[i].split(',')[0];
+            if (timestamp && timestamp.length >= 10) {
+                dates.add(timestamp.substring(0, 10)); // YYYY-MM-DD
+            }
+        }
+        return dates;
     }
 
     function setupEventListeners() {
@@ -843,11 +949,7 @@
     }
     
     async function loadDailyCharts() {
-        // Load data for the selected UTC date
-        if (!availableDates.includes(currentDate)) {
-            throw new Error('No data available for selected date');
-        }
-        
+        // Load data for the selected UTC date (from daily folder, monthly, or yearly archive)
         const csvData = await loadDailyCsvData(currentDate);
         const energyData = parseCsvEnergyData(csvData);
         
