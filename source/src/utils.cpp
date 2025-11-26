@@ -12,7 +12,10 @@ static void _factoryReset();
 static void _restartTask(void* parameter);
 static void _restartSystem(bool factoryReset = false);
 static void _maintenanceTask(void* parameter);
-static bool _listLittleFsFilesRecursive(JsonDocument &doc, const char* dirname, uint8_t levels);
+static bool _listLittleFsFilesRecursive(JsonDocument &doc, const char* dirname, const char* basePath, uint8_t levels);
+static bool _ensureDirectoryExists(const char* dirPath);
+static bool _decompressGzipFile(const char* gzPath, const char* outputPath);
+static bool _appendFileToFile(const char* srcPath, File &destFile, bool skipHeader);
 
 // New system info functions
 void populateSystemStaticInfo(SystemStaticInfo& info) {
@@ -1051,11 +1054,28 @@ uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval,
     
 // === LittleFS FILE OPERATIONS ===
 
-bool listLittleFsFiles(JsonDocument &doc) {
-    return _listLittleFsFilesRecursive(doc, "/", 0);
+bool listLittleFsFiles(JsonDocument &doc, const char* folderPath) {
+    if (folderPath && strlen(folderPath) > 0) {
+        // Ensure folder path starts with /
+        char normalizedPath[NAME_BUFFER_SIZE];
+        if (folderPath[0] != '/') {
+            snprintf(normalizedPath, sizeof(normalizedPath), "/%s", folderPath);
+        } else {
+            snprintf(normalizedPath, sizeof(normalizedPath), "%s", folderPath);
+        }
+        
+        // Check if the folder exists
+        if (!LittleFS.exists(normalizedPath)) {
+            LOG_DEBUG("Folder does not exist: %s", normalizedPath);
+            return true; // Return true with empty doc - not an error
+        }
+        
+        return _listLittleFsFilesRecursive(doc, normalizedPath, normalizedPath, 0);
+    }
+    return _listLittleFsFilesRecursive(doc, "/", nullptr, 0);
 }
 
-static bool _listLittleFsFilesRecursive(JsonDocument &doc, const char* dirname, uint8_t levels) {
+static bool _listLittleFsFilesRecursive(JsonDocument &doc, const char* dirname, const char* basePath, uint8_t levels) {
     File root = LittleFS.open(dirname);
     if (!root) {
         LOG_ERROR("Failed to open LittleFS directory: %s", dirname);
@@ -1078,14 +1098,26 @@ static bool _listLittleFsFilesRecursive(JsonDocument &doc, const char* dirname, 
         if (file.isDirectory()) {
             // Recursively list subdirectory contents (limit depth to prevent infinite recursion)
             if (levels < 5) {
-                _listLittleFsFilesRecursive(doc, filepath, levels + 1);
+                _listLittleFsFilesRecursive(doc, filepath, basePath, levels + 1);
             }
         } else {
-            // Remove leading slash for consistency
-            if (filepath[0] == '/') filepath++;
+            const char* displayPath = filepath;
+            
+            // If we have a basePath, make paths relative to it
+            if (basePath) {
+                size_t baseLen = strlen(basePath);
+                if (strncmp(filepath, basePath, baseLen) == 0) {
+                    displayPath = filepath + baseLen;
+                    // Skip leading slash after base path
+                    if (displayPath[0] == '/') displayPath++;
+                }
+            } else {
+                // Remove leading slash for consistency (global listing)
+                if (filepath[0] == '/') displayPath++;
+            }
             
             // Add file with its size to the JSON document
-            doc[filepath] = file.size();
+            doc[displayPath] = file.size();
         }
         
         file = root.openNextFile();
@@ -1282,4 +1314,604 @@ void migrateCsvToGzip(const char* dirPath, const char* excludePrefix) {
     dir.close();
 
     LOG_DEBUG("CSV -> gzip migration finished");
+}
+
+// === ENERGY FILE CONSOLIDATION ===
+
+static bool _ensureDirectoryExists(const char* dirPath) {
+    if (LittleFS.exists(dirPath)) return true;
+    
+    if (LittleFS.mkdir(dirPath)) {
+        LOG_DEBUG("Created directory: %s", dirPath);
+        return true;
+    }
+    
+    LOG_ERROR("Failed to create directory: %s", dirPath);
+    return false;
+}
+
+static bool _decompressGzipFile(const char* gzPath, const char* outputPath) {
+    if (!LittleFS.exists(gzPath)) {
+        LOG_WARNING("Gzip file not found: %s", gzPath);
+        return false;
+    }
+    
+    GzUnpacker *unpacker = new GzUnpacker();
+    if (!unpacker) {
+        LOG_ERROR("Failed to allocate GzUnpacker");
+        return false;
+    }
+    
+    unpacker->haltOnError(false);
+    
+    bool success = unpacker->gzExpander(LittleFS, gzPath, LittleFS, outputPath);
+    if (!success) {
+        LOG_ERROR("Failed to decompress %s (error %d)", gzPath, unpacker->tarGzGetError());
+    }
+    
+    delete unpacker;
+    return success;
+}
+
+static bool _appendFileToFile(const char* srcPath, File &destFile, bool skipHeader) {
+    File srcFile = LittleFS.open(srcPath, FILE_READ);
+    if (!srcFile) {
+        LOG_ERROR("Failed to open source file: %s", srcPath);
+        return false;
+    }
+    
+    // Skip header line if requested
+    if (skipHeader && srcFile.available()) {
+        // Read and discard the first line (header)
+        while (srcFile.available()) {
+            char c = srcFile.read();
+            if (c == '\n') break;
+        }
+    }
+    
+    // Copy remaining content
+    uint8_t buffer[512];
+    while (srcFile.available()) {
+        size_t bytesRead = srcFile.read(buffer, sizeof(buffer));
+        if (bytesRead > 0) {
+            destFile.write(buffer, bytesRead);
+        }
+    }
+    
+    srcFile.close();
+    return true;
+}
+
+bool migrateEnergyFilesToDailyFolder() {
+    LOG_DEBUG("Starting energy files migration to daily folder");
+    
+    // Ensure base energy directory exists
+    if (!_ensureDirectoryExists(ENERGY_CSV_PREFIX)) return false;
+    
+    // Check if there are any files in the root energy folder to migrate
+    File dir = LittleFS.open(ENERGY_CSV_PREFIX);
+    if (!dir) {
+        LOG_DEBUG("Energy folder not present, nothing to migrate");
+        return true;
+    }
+    
+    // Ensure daily subdirectory exists
+    if (!_ensureDirectoryExists(ENERGY_CSV_DAILY_PREFIX)) {
+        dir.close();
+        return false;
+    }
+    
+    dir.rewindDirectory();
+    uint32_t migratedCount = 0;
+    uint32_t loops = 0;
+    
+    File file = dir.openNextFile();
+    while (file && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
+        
+        if (!file.isDirectory()) {
+            const char* filename = file.name();
+            
+            // Only migrate .csv.gz files (daily energy files)
+            if (endsWith(filename, ".csv.gz")) {
+                char srcPath[NAME_BUFFER_SIZE];
+                char destPath[NAME_BUFFER_SIZE];
+                snprintf(srcPath, sizeof(srcPath), "%s/%s", ENERGY_CSV_PREFIX, filename);
+                snprintf(destPath, sizeof(destPath), "%s/%s", ENERGY_CSV_DAILY_PREFIX, filename);
+                
+                file.close(); // Close before rename
+                
+                if (LittleFS.rename(srcPath, destPath)) {
+                    LOG_DEBUG("Migrated %s -> %s", srcPath, destPath);
+                    migratedCount++;
+                } else {
+                    LOG_ERROR("Failed to migrate %s", srcPath);
+                }
+                
+                file = dir.openNextFile();
+                continue;
+            }
+            // Also migrate uncompressed .csv files (except today's)
+            else if (endsWith(filename, ".csv")) {
+                char srcPath[NAME_BUFFER_SIZE];
+                char destPath[NAME_BUFFER_SIZE];
+                snprintf(srcPath, sizeof(srcPath), "%s/%s", ENERGY_CSV_PREFIX, filename);
+                snprintf(destPath, sizeof(destPath), "%s/%s", ENERGY_CSV_DAILY_PREFIX, filename);
+                
+                file.close(); // Close before rename
+                
+                if (LittleFS.rename(srcPath, destPath)) {
+                    LOG_DEBUG("Migrated %s -> %s", srcPath, destPath);
+                    migratedCount++;
+                } else {
+                    LOG_ERROR("Failed to migrate %s", srcPath);
+                }
+                
+                file = dir.openNextFile();
+                continue;
+            }
+        }
+        
+        file.close();
+        file = dir.openNextFile();
+    }
+    
+    dir.close();
+    
+    if (migratedCount > 0) {
+        LOG_INFO("Migrated %lu energy files to daily folder", migratedCount);
+    } else {
+        LOG_DEBUG("No energy files needed migration");
+    }
+    
+    return true;
+}
+
+bool consolidateDailyFilesToMonthly(const char* yearMonth, const char* excludeDate) {
+    if (!yearMonth || strlen(yearMonth) != 7) { // Format: YYYY-MM
+        LOG_ERROR("Invalid yearMonth format: %s (expected YYYY-MM)", yearMonth ? yearMonth : "null");
+        return false;
+    }
+    
+    LOG_DEBUG("Starting daily -> monthly consolidation for %s (excluding: %s)", yearMonth, excludeDate ? excludeDate : "none");
+    
+    // Ensure monthly directory exists
+    if (!_ensureDirectoryExists(ENERGY_CSV_MONTHLY_PREFIX)) return false;
+    
+    // Check if daily folder exists
+    if (!LittleFS.exists(ENERGY_CSV_DAILY_PREFIX)) {
+        LOG_DEBUG("Daily folder does not exist, nothing to consolidate");
+        return true;
+    }
+    
+    // Prepare paths
+    char monthlyTempPath[NAME_BUFFER_SIZE];
+    char monthlyFinalPath[NAME_BUFFER_SIZE];
+    char monthlyGzPath[NAME_BUFFER_SIZE];
+    char monthlyGzTempPath[NAME_BUFFER_SIZE];
+    snprintf(monthlyTempPath, sizeof(monthlyTempPath), "%s/%s.csv.tmp", ENERGY_CSV_MONTHLY_PREFIX, yearMonth);
+    snprintf(monthlyFinalPath, sizeof(monthlyFinalPath), "%s/%s.csv", ENERGY_CSV_MONTHLY_PREFIX, yearMonth);
+    snprintf(monthlyGzPath, sizeof(monthlyGzPath), "%s/%s.csv.gz", ENERGY_CSV_MONTHLY_PREFIX, yearMonth);
+    snprintf(monthlyGzTempPath, sizeof(monthlyGzTempPath), "%s/%s.csv.gz.tmp", ENERGY_CSV_MONTHLY_PREFIX, yearMonth);
+    
+    // Check if monthly archive already exists - we'll need to decompress and append
+    bool existingArchive = LittleFS.exists(monthlyGzPath);
+    if (existingArchive) {
+        LOG_DEBUG("Monthly archive already exists for %s, will append new daily files", yearMonth);
+    }
+    
+    // Clean up any existing temp files from previous failed attempts
+    if (LittleFS.exists(monthlyTempPath)) LittleFS.remove(monthlyTempPath);
+    if (LittleFS.exists(monthlyGzTempPath)) LittleFS.remove(monthlyGzTempPath);
+    
+    // Collect matching daily files (excluding the specified date if provided)
+    std::vector<char*> dailyFiles;
+    File dir = LittleFS.open(ENERGY_CSV_DAILY_PREFIX);
+    if (!dir) {
+        LOG_ERROR("Failed to open daily folder");
+        return false;
+    }
+    
+    dir.rewindDirectory();
+    uint32_t loops = 0;
+    
+    File file = dir.openNextFile();
+    while (file && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
+        
+        if (!file.isDirectory()) {
+            const char* filename = file.name();
+            
+            // Check if file matches the month pattern (YYYY-MM-DD.csv.gz)
+            if (endsWith(filename, ".csv.gz") && strncmp(filename, yearMonth, 7) == 0) {
+                // Check if this date should be excluded (e.g., today's date)
+                if (excludeDate && strncmp(filename, excludeDate, 10) == 0) {
+                    LOG_DEBUG("Skipping excluded date: %s", filename);
+                    file.close();
+                    file = dir.openNextFile();
+                    continue;
+                }
+                
+                char* fileCopy = (char*)ps_malloc(strlen(filename) + 1);
+                if (fileCopy) {
+                    strcpy(fileCopy, filename);
+                    dailyFiles.push_back(fileCopy);
+                }
+            }
+        }
+        
+        file.close();
+        file = dir.openNextFile();
+    }
+    dir.close();
+    
+    if (dailyFiles.empty()) {
+        LOG_DEBUG("No daily files found for %s", yearMonth);
+        return true;
+    }
+    
+    LOG_DEBUG("Found %d daily files for %s", dailyFiles.size(), yearMonth);
+    
+    // Sort files by name (chronological order)
+    std::sort(dailyFiles.begin(), dailyFiles.end(), [](const char* a, const char* b) {
+        return strcmp(a, b) < 0;
+    });
+    
+    // Create temporary consolidated CSV file
+    File tempFile = LittleFS.open(monthlyTempPath, FILE_WRITE);
+    if (!tempFile) {
+        LOG_ERROR("Failed to create temp file: %s", monthlyTempPath);
+        for (auto f : dailyFiles) free(f);
+        return false;
+    }
+    
+    bool success = true;
+    
+    // If existing archive exists, decompress it and copy content first (skip writing new header)
+    if (existingArchive) {
+        char existingCsvPath[NAME_BUFFER_SIZE];
+        snprintf(existingCsvPath, sizeof(existingCsvPath), "%s/_existing_monthly.csv", ENERGY_CSV_MONTHLY_PREFIX);
+        
+        // Clean up any existing temp file
+        if (LittleFS.exists(existingCsvPath)) LittleFS.remove(existingCsvPath);
+        
+        // Decompress existing archive
+        if (_decompressGzipFile(monthlyGzPath, existingCsvPath)) {
+            // Append existing content (including header since it's the first content)
+            if (!_appendFileToFile(existingCsvPath, tempFile, false)) {
+                LOG_ERROR("Failed to append existing monthly archive content");
+                success = false;
+            }
+            LittleFS.remove(existingCsvPath);
+        } else {
+            LOG_ERROR("Failed to decompress existing monthly archive");
+            success = false;
+        }
+        
+        if (!success) {
+            tempFile.close();
+            LittleFS.remove(monthlyTempPath);
+            for (auto f : dailyFiles) free(f);
+            return false;
+        }
+    } else {
+        // Write header once (only for new archives)
+        tempFile.println(DAILY_ENERGY_CSV_HEADER);
+    }
+    
+    std::vector<char*> processedFiles;
+    
+    for (size_t i = 0; i < dailyFiles.size() && success; i++) {
+        char gzPath[NAME_BUFFER_SIZE];
+        char csvPath[NAME_BUFFER_SIZE];
+        snprintf(gzPath, sizeof(gzPath), "%s/%s", ENERGY_CSV_DAILY_PREFIX, dailyFiles[i]);
+        
+        // Create temp path for decompressed CSV
+        char tempCsvName[NAME_BUFFER_SIZE];
+        snprintf(tempCsvName, sizeof(tempCsvName), "%s/_temp_decomp.csv", ENERGY_CSV_DAILY_PREFIX);
+        snprintf(csvPath, sizeof(csvPath), "%s", tempCsvName);
+        
+        // Clean up any existing temp CSV
+        if (LittleFS.exists(csvPath)) LittleFS.remove(csvPath);
+        
+        // Decompress the daily file
+        if (!_decompressGzipFile(gzPath, csvPath)) {
+            LOG_ERROR("Failed to decompress %s", gzPath);
+            success = false;
+            break;
+        }
+        
+        // Append to consolidated file (skip header)
+        if (!_appendFileToFile(csvPath, tempFile, true)) {
+            LOG_ERROR("Failed to append %s to consolidated file", dailyFiles[i]);
+            LittleFS.remove(csvPath);
+            success = false;
+            break;
+        }
+        
+        // Remove temp decompressed file
+        LittleFS.remove(csvPath);
+        
+        processedFiles.push_back(dailyFiles[i]);
+        LOG_VERBOSE("Consolidated %s", dailyFiles[i]);
+    }
+    
+    tempFile.close();
+    
+    if (!success) {
+        LittleFS.remove(monthlyTempPath);
+        for (auto f : dailyFiles) free(f);
+        return false;
+    }
+    
+    // Verify temp file has content
+    File verifyFile = LittleFS.open(monthlyTempPath, FILE_READ);
+    if (!verifyFile || verifyFile.size() < ENERGY_CONSOLIDATION_MIN_SIZE) {
+        LOG_ERROR("Consolidated temp file too small or invalid");
+        if (verifyFile) verifyFile.close();
+        LittleFS.remove(monthlyTempPath);
+        for (auto f : dailyFiles) free(f);
+        return false;
+    }
+    verifyFile.close();
+    
+    // Rename temp to final CSV
+    if (!LittleFS.rename(monthlyTempPath, monthlyFinalPath)) {
+        LOG_ERROR("Failed to rename temp file to final CSV");
+        LittleFS.remove(monthlyTempPath);
+        for (auto f : dailyFiles) free(f);
+        return false;
+    }
+    
+    // Compress the consolidated CSV
+    if (!compressFile(monthlyFinalPath)) {
+        LOG_ERROR("Failed to compress consolidated file");
+        for (auto f : dailyFiles) free(f);
+        return false;
+    }
+    
+    // Verify compressed file exists and has content
+    File verifyGz = LittleFS.open(monthlyGzPath, FILE_READ);
+    if (!verifyGz || verifyGz.size() < ENERGY_CONSOLIDATION_MIN_SIZE) {
+        LOG_ERROR("Compressed file too small or invalid");
+        if (verifyGz) verifyGz.close();
+        for (auto f : dailyFiles) free(f);
+        return false;
+    }
+    size_t finalSize = verifyGz.size();
+    verifyGz.close();
+    
+    // Delete original daily files
+    uint32_t deletedCount = 0;
+    for (auto filename : processedFiles) {
+        char gzPath[NAME_BUFFER_SIZE];
+        snprintf(gzPath, sizeof(gzPath), "%s/%s", ENERGY_CSV_DAILY_PREFIX, filename);
+        if (LittleFS.remove(gzPath)) {
+            deletedCount++;
+        } else {
+            LOG_WARNING("Failed to delete %s after consolidation", gzPath);
+        }
+    }
+    
+    // Cleanup
+    for (auto f : dailyFiles) free(f);
+    
+    LOG_INFO("Consolidated %d daily files for %s into %zu bytes (%lu deleted)", 
+             processedFiles.size(), yearMonth, finalSize, deletedCount);
+    
+    return true;
+}
+
+bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth) {
+    if (!year || strlen(year) != 4) { // Format: YYYY
+        LOG_ERROR("Invalid year format: %s (expected YYYY)", year ? year : "null");
+        return false;
+    }
+    
+    LOG_DEBUG("Starting monthly -> yearly consolidation for %s (excluding: %s)", year, excludeMonth ? excludeMonth : "none");
+    
+    // Ensure yearly directory exists
+    if (!_ensureDirectoryExists(ENERGY_CSV_YEARLY_PREFIX)) return false;
+    
+    // Check if monthly folder exists
+    if (!LittleFS.exists(ENERGY_CSV_MONTHLY_PREFIX)) {
+        LOG_DEBUG("Monthly folder does not exist, nothing to consolidate");
+        return true;
+    }
+    
+    // Prepare paths
+    char yearlyTempPath[NAME_BUFFER_SIZE];
+    char yearlyFinalPath[NAME_BUFFER_SIZE];
+    char yearlyGzPath[NAME_BUFFER_SIZE];
+    snprintf(yearlyTempPath, sizeof(yearlyTempPath), "%s/%s.csv.tmp", ENERGY_CSV_YEARLY_PREFIX, year);
+    snprintf(yearlyFinalPath, sizeof(yearlyFinalPath), "%s/%s.csv", ENERGY_CSV_YEARLY_PREFIX, year);
+    snprintf(yearlyGzPath, sizeof(yearlyGzPath), "%s/%s.csv.gz", ENERGY_CSV_YEARLY_PREFIX, year);
+    
+    // Check if yearly archive already exists - we'll need to decompress and append
+    bool existingArchive = LittleFS.exists(yearlyGzPath);
+    if (existingArchive) {
+        LOG_DEBUG("Yearly archive already exists for %s, will append new monthly files", year);
+    }
+    
+    // Clean up any existing temp files
+    if (LittleFS.exists(yearlyTempPath)) LittleFS.remove(yearlyTempPath);
+    
+    // Collect matching monthly files (excluding the specified month if provided)
+    std::vector<char*> monthlyFiles;
+    File dir = LittleFS.open(ENERGY_CSV_MONTHLY_PREFIX);
+    if (!dir) {
+        LOG_ERROR("Failed to open monthly folder");
+        return false;
+    }
+    
+    dir.rewindDirectory();
+    uint32_t loops = 0;
+    
+    File file = dir.openNextFile();
+    while (file && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
+        
+        if (!file.isDirectory()) {
+            const char* filename = file.name();
+            
+            // Check if file matches the year pattern (YYYY-MM.csv.gz)
+            if (endsWith(filename, ".csv.gz") && strncmp(filename, year, 4) == 0) {
+                // Check if this month should be excluded (e.g., current month)
+                if (excludeMonth && strncmp(filename, excludeMonth, 7) == 0) {
+                    LOG_DEBUG("Skipping excluded month: %s", filename);
+                    file.close();
+                    file = dir.openNextFile();
+                    continue;
+                }
+                
+                char* fileCopy = (char*)ps_malloc(strlen(filename) + 1);
+                if (fileCopy) {
+                    strcpy(fileCopy, filename);
+                    monthlyFiles.push_back(fileCopy);
+                }
+            }
+        }
+        
+        file.close();
+        file = dir.openNextFile();
+    }
+    dir.close();
+    
+    if (monthlyFiles.empty()) {
+        LOG_DEBUG("No monthly files found for %s", year);
+        return true;
+    }
+    
+    LOG_DEBUG("Found %d monthly files for %s", monthlyFiles.size(), year);
+    
+    // Sort files by name (chronological order)
+    std::sort(monthlyFiles.begin(), monthlyFiles.end(), [](const char* a, const char* b) {
+        return strcmp(a, b) < 0;
+    });
+    
+    // If existing archive, decompress it first as a starting point
+    if (existingArchive) {
+        if (!_decompressGzipFile(yearlyGzPath, yearlyTempPath)) {
+            LOG_ERROR("Failed to decompress existing yearly archive %s", yearlyGzPath);
+            for (auto f : monthlyFiles) free(f);
+            return false;
+        }
+        LOG_DEBUG("Decompressed existing yearly archive for appending");
+    }
+    
+    // Create/append to temporary consolidated CSV file
+    File tempFile = LittleFS.open(yearlyTempPath, existingArchive ? FILE_APPEND : FILE_WRITE);
+    if (!tempFile) {
+        LOG_ERROR("Failed to open temp file: %s", yearlyTempPath);
+        for (auto f : monthlyFiles) free(f);
+        return false;
+    }
+    
+    // Write header only if new file
+    if (!existingArchive) {
+        tempFile.println(DAILY_ENERGY_CSV_HEADER);
+    }
+    
+    bool success = true;
+    std::vector<char*> processedFiles;
+    
+    for (size_t i = 0; i < monthlyFiles.size() && success; i++) {
+        char gzPath[NAME_BUFFER_SIZE];
+        char csvPath[NAME_BUFFER_SIZE];
+        snprintf(gzPath, sizeof(gzPath), "%s/%s", ENERGY_CSV_MONTHLY_PREFIX, monthlyFiles[i]);
+        
+        // Create temp path for decompressed CSV
+        char tempCsvName[NAME_BUFFER_SIZE];
+        snprintf(tempCsvName, sizeof(tempCsvName), "%s/_temp_decomp.csv", ENERGY_CSV_MONTHLY_PREFIX);
+        snprintf(csvPath, sizeof(csvPath), "%s", tempCsvName);
+        
+        // Clean up any existing temp CSV
+        if (LittleFS.exists(csvPath)) LittleFS.remove(csvPath);
+        
+        // Decompress the monthly file
+        if (!_decompressGzipFile(gzPath, csvPath)) {
+            LOG_ERROR("Failed to decompress %s", gzPath);
+            success = false;
+            break;
+        }
+        
+        // Append to consolidated file (skip header)
+        if (!_appendFileToFile(csvPath, tempFile, true)) {
+            LOG_ERROR("Failed to append %s to consolidated file", monthlyFiles[i]);
+            LittleFS.remove(csvPath);
+            success = false;
+            break;
+        }
+        
+        // Remove temp decompressed file
+        LittleFS.remove(csvPath);
+        
+        processedFiles.push_back(monthlyFiles[i]);
+        LOG_VERBOSE("Consolidated %s", monthlyFiles[i]);
+    }
+    
+    tempFile.close();
+    
+    if (!success) {
+        LittleFS.remove(yearlyTempPath);
+        for (auto f : monthlyFiles) free(f);
+        return false;
+    }
+    
+    // Verify temp file has content
+    File verifyFile = LittleFS.open(yearlyTempPath, FILE_READ);
+    if (!verifyFile || verifyFile.size() < ENERGY_CONSOLIDATION_MIN_SIZE) {
+        LOG_ERROR("Consolidated temp file too small or invalid");
+        if (verifyFile) verifyFile.close();
+        LittleFS.remove(yearlyTempPath);
+        for (auto f : monthlyFiles) free(f);
+        return false;
+    }
+    verifyFile.close();
+    
+    // Rename temp to final CSV
+    if (!LittleFS.rename(yearlyTempPath, yearlyFinalPath)) {
+        LOG_ERROR("Failed to rename temp file to final CSV");
+        LittleFS.remove(yearlyTempPath);
+        for (auto f : monthlyFiles) free(f);
+        return false;
+    }
+    
+    // Compress the consolidated CSV
+    if (!compressFile(yearlyFinalPath)) {
+        LOG_ERROR("Failed to compress consolidated file");
+        for (auto f : monthlyFiles) free(f);
+        return false;
+    }
+    
+    // Verify compressed file exists and has content
+    File verifyGz = LittleFS.open(yearlyGzPath, FILE_READ);
+    if (!verifyGz || verifyGz.size() < ENERGY_CONSOLIDATION_MIN_SIZE) {
+        LOG_ERROR("Compressed file too small or invalid");
+        if (verifyGz) verifyGz.close();
+        for (auto f : monthlyFiles) free(f);
+        return false;
+    }
+    size_t finalSize = verifyGz.size();
+    verifyGz.close();
+    
+    // Delete original monthly files
+    uint32_t deletedCount = 0;
+    for (auto filename : processedFiles) {
+        char gzPath[NAME_BUFFER_SIZE];
+        snprintf(gzPath, sizeof(gzPath), "%s/%s", ENERGY_CSV_MONTHLY_PREFIX, filename);
+        if (LittleFS.remove(gzPath)) {
+            deletedCount++;
+        } else {
+            LOG_WARNING("Failed to delete %s after consolidation", gzPath);
+        }
+    }
+    
+    // Cleanup
+    for (auto f : monthlyFiles) free(f);
+    
+    LOG_INFO("Consolidated %d monthly files for %s into %zu bytes (%lu deleted)", 
+             processedFiles.size(), year, finalSize, deletedCount);
+    
+    return true;
 }

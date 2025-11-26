@@ -910,22 +910,31 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         preferences.clear();
         preferences.end();
 
-        // Remove all CSV energy files
-        File root = LittleFS.open(ENERGY_CSV_PREFIX "/"); // We already know all the historical energy files will be inside the ENERGY_CSV_PREFIX folder
-        File file = root.openNextFile();
-        while (file) {
-            if (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv")) { // Remove the CSV files (current day is not compressed, thus only .csv)
-                char fullPathFile[NAME_BUFFER_SIZE]; // Since the file name would only be the name inside the ENERGY_CSV_PREFIX folder, we need to prepend the folder path
-                snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", ENERGY_CSV_PREFIX, file.name());
-                
-                // We now need to close the file before removing it, otherwise we get esp_littlefs: Failed to unlink path "/energy/2025-09-23.csv". Has open FD.
-                file.close();
-                LittleFS.remove(fullPathFile);
-                LOG_DEBUG("Removed energy CSV file: %s", fullPathFile);
+        // Remove all CSV energy files from all subdirectories (daily, monthly, yearly)
+        const char* energyDirs[] = { ENERGY_CSV_DAILY_PREFIX, ENERGY_CSV_MONTHLY_PREFIX, ENERGY_CSV_YEARLY_PREFIX, ENERGY_CSV_PREFIX };
+        for (const char* dirPath : energyDirs) {
+            if (!LittleFS.exists(dirPath)) continue;
+            
+            File root = LittleFS.open(dirPath);
+            if (!root) continue;
+            
+            File file = root.openNextFile();
+            while (file) {
+                if (!file.isDirectory() && (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv"))) {
+                    char fullPathFile[NAME_BUFFER_SIZE];
+                    snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", dirPath, file.name());
+                    
+                    // We now need to close the file before removing it
+                    file.close();
+                    LittleFS.remove(fullPathFile);
+                    LOG_DEBUG("Removed energy CSV file: %s", fullPathFile);
+                } else {
+                    file.close();
+                }
+                file = root.openNextFile();
             }
-            file = root.openNextFile();
+            root.close();
         }
-        root.close();
 
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) _saveEnergyToPreferences(i);
 
@@ -1741,14 +1750,83 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         if (!CustomTime::isTimeSynched()) {
             LOG_WARNING("Time not synchronized after timeout, skipping CSV migration on startup");
         } else {
-            // Avoid compressing current day CSV (still need to append today's data)
+            // Step 1: Migrate existing files from /energy/ to /energy/daily/ (one-time migration for existing devices)
+            migrateEnergyFilesToDailyFolder();
+            
+            // Step 2: Compress any uncompressed CSV files in daily folder (excluding today's)
             char dateIso[TIMESTAMP_BUFFER_SIZE];
             CustomTime::getCurrentDateIso(dateIso, sizeof(dateIso));
-            char excludeFilepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 1]; // Added space for prefix plus "/"
-            snprintf(excludeFilepath, sizeof(excludeFilepath), "%s/%s", ENERGY_CSV_PREFIX, dateIso);
+            char excludeFilepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_DAILY_PREFIX) + 1];
+            snprintf(excludeFilepath, sizeof(excludeFilepath), "%s/%s", ENERGY_CSV_DAILY_PREFIX, dateIso);
             
             LOG_DEBUG("Migrating the CSV files, excluding prefix of %s", excludeFilepath);
-            migrateCsvToGzip(ENERGY_CSV_PREFIX, excludeFilepath);
+            migrateCsvToGzip(ENERGY_CSV_DAILY_PREFIX, excludeFilepath);
+            
+            // Step 3: Get current date info for consolidation
+            char currentYearMonth[8]; // YYYY-MM
+            snprintf(currentYearMonth, sizeof(currentYearMonth), "%.7s", dateIso); // First 7 chars of YYYY-MM-DD
+            char currentYear[5]; // YYYY
+            snprintf(currentYear, sizeof(currentYear), "%.4s", dateIso); // First 4 chars
+            
+            // Step 4: Consolidate daily files from previous months (no exclusion needed - full month)
+            File dailyDir = LittleFS.open(ENERGY_CSV_DAILY_PREFIX);
+            if (dailyDir) {
+                File file = dailyDir.openNextFile();
+                while (file) {
+                    const char* filename = file.name();
+                    // Check for files like YYYY-MM-DD.csv.gz from previous months
+                    if (endsWith(filename, ".csv.gz") && strlen(filename) >= 10) {
+                        char fileMonth[8];
+                        snprintf(fileMonth, sizeof(fileMonth), "%.7s", filename);
+                        if (strcmp(fileMonth, currentYearMonth) < 0) {
+                            // This file is from a previous month - trigger consolidation (no exclusion)
+                            LOG_DEBUG("Found daily file from previous month: %s, triggering consolidation for %s", filename, fileMonth);
+                            file.close();
+                            consolidateDailyFilesToMonthly(fileMonth, nullptr);
+                            file = dailyDir.openNextFile();
+                            continue;
+                        }
+                    }
+                    file.close();
+                    file = dailyDir.openNextFile();
+                }
+                dailyDir.close();
+            }
+            
+            // Step 5: Consolidate daily files from current month (excluding today)
+            // This consolidates all past days of the current month into the monthly archive
+            LOG_DEBUG("Consolidating current month %s daily files (excluding today %s)", currentYearMonth, dateIso);
+            consolidateDailyFilesToMonthly(currentYearMonth, dateIso);
+            
+            // Step 6: Consolidate monthly files from previous years into yearly archives
+            File monthlyDir = LittleFS.open(ENERGY_CSV_MONTHLY_PREFIX);
+            if (monthlyDir) {
+                File file = monthlyDir.openNextFile();
+                while (file) {
+                    const char* filename = file.name();
+                    // Check for files like YYYY-MM.csv.gz from previous years
+                    if (endsWith(filename, ".csv.gz") && strlen(filename) >= 7) {
+                        char fileYear[5];
+                        snprintf(fileYear, sizeof(fileYear), "%.4s", filename);
+                        if (strcmp(fileYear, currentYear) < 0) {
+                            // This file is from a previous year - trigger consolidation (no exclusion)
+                            LOG_DEBUG("Found monthly file from previous year: %s, triggering consolidation for %s", filename, fileYear);
+                            file.close();
+                            consolidateMonthlyFilesToYearly(fileYear, nullptr);
+                            file = monthlyDir.openNextFile();
+                            continue;
+                        }
+                    }
+                    file.close();
+                    file = monthlyDir.openNextFile();
+                }
+                monthlyDir.close();
+            }
+            
+            // Step 7: Consolidate monthly files from current year (excluding current month)
+            // This consolidates all past months of the current year into the yearly archive
+            LOG_DEBUG("Consolidating current year %s monthly files (excluding %s)", currentYear, currentYearMonth);
+            consolidateMonthlyFilesToYearly(currentYear, currentYearMonth);
         }
 
         _hourlyCsvSaveTaskShouldRun = true;
@@ -1774,18 +1852,57 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                         _saveHourlyEnergyToCsv();
 
                         // If this save corresponds to the first hour of the new day (HH == 00),
-                        // compress the previous day's CSV (yesterday).
+                        // compress the previous day's CSV (yesterday) and consolidate into monthly archive.
                         if (CustomTime::isNowHourZero()) {
-                            LOG_DEBUG("Timestamp is at hour 00: trigger compression of yesterday's CSV");
+                            LOG_DEBUG("Timestamp is at hour 00: trigger compression and consolidation of yesterday's CSV");
 
                             // Create filename for yesterday's CSV file (UTC date)
-                            char dateIso[TIMESTAMP_BUFFER_SIZE];
-                            CustomTime::getDateIsoOffset(dateIso, sizeof(dateIso), -1);
-                            char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
-                            snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, dateIso);
+                            char yesterdayIso[TIMESTAMP_BUFFER_SIZE];
+                            CustomTime::getDateIsoOffset(yesterdayIso, sizeof(yesterdayIso), -1);
+                            char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_DAILY_PREFIX) + 4];
+                            snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_DAILY_PREFIX, yesterdayIso);
 
                             if (compressFile(filepath)) {
                                 LOG_DEBUG("Successfully compressed yesterday's CSV: %s", filepath);
+                                
+                                // Get today's date to exclude from consolidation
+                                char todayIso[TIMESTAMP_BUFFER_SIZE];
+                                CustomTime::getCurrentDateIso(todayIso, sizeof(todayIso));
+                                
+                                // Check if we crossed a month boundary (if today is day 01, yesterday was last day of prev month)
+                                if (todayIso[8] == '0' && todayIso[9] == '1') {
+                                    // Today is day 01, so yesterday was the last day of the previous month
+                                    // Consolidate all daily files from the previous month (no exclusion)
+                                    char prevMonth[8];
+                                    snprintf(prevMonth, sizeof(prevMonth), "%.7s", yesterdayIso);
+                                    LOG_DEBUG("Month boundary crossed, consolidating all daily files for %s", prevMonth);
+                                    consolidateDailyFilesToMonthly(prevMonth, nullptr);
+                                    
+                                    // After monthly consolidation, consolidate into yearly archive (excluding current month)
+                                    char currentYear[5];
+                                    snprintf(currentYear, sizeof(currentYear), "%.4s", todayIso);
+                                    char currentMonth[8];
+                                    snprintf(currentMonth, sizeof(currentMonth), "%.7s", todayIso);
+                                    
+                                    // Check if we also crossed a year boundary (if today is Jan 01)
+                                    if (todayIso[5] == '0' && todayIso[6] == '1') {
+                                        // Today is January, so consolidate all monthly files from previous year (no exclusion)
+                                        char prevYear[5];
+                                        snprintf(prevYear, sizeof(prevYear), "%.4s", yesterdayIso);
+                                        LOG_DEBUG("Year boundary crossed, consolidating all monthly files for %s", prevYear);
+                                        consolidateMonthlyFilesToYearly(prevYear, nullptr);
+                                    } else {
+                                        // Same year - consolidate the previous month into the yearly archive
+                                        LOG_DEBUG("Consolidating monthly files into yearly archive for %s (excluding %s)", currentYear, currentMonth);
+                                        consolidateMonthlyFilesToYearly(currentYear, currentMonth);
+                                    }
+                                } else {
+                                    // Same month - consolidate yesterday into current month's archive (excluding today)
+                                    char currentMonth[8];
+                                    snprintf(currentMonth, sizeof(currentMonth), "%.7s", todayIso);
+                                    LOG_DEBUG("Consolidating yesterday's data into monthly archive for %s", currentMonth);
+                                    consolidateDailyFilesToMonthly(currentMonth, todayIso);
+                                }
                             } else {
                                 LOG_ERROR("Failed to compress yesterday's CSV: %s", filepath);
                             }
@@ -2385,16 +2502,23 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         char filename[NAME_BUFFER_SIZE];
         CustomTime::getCurrentDateIso(filename, sizeof(filename));
 
-        char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
-        snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, filename);
+        char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_DAILY_PREFIX) + 4]; // Added space for prefix plus "/.csv"
+        snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_DAILY_PREFIX, filename);
         
-        // Ensure the energy directory exists (LittleFS requires explicit directory creation)
+        // Ensure the energy directories exist (LittleFS requires explicit directory creation)
         if (!LittleFS.exists(ENERGY_CSV_PREFIX)) {
             if (!LittleFS.mkdir(ENERGY_CSV_PREFIX)) {
                 LOG_ERROR("Failed to create energy directory %s", ENERGY_CSV_PREFIX);
                 return;
             }
             LOG_DEBUG("Created energy directory %s", ENERGY_CSV_PREFIX);
+        }
+        if (!LittleFS.exists(ENERGY_CSV_DAILY_PREFIX)) {
+            if (!LittleFS.mkdir(ENERGY_CSV_DAILY_PREFIX)) {
+                LOG_ERROR("Failed to create daily energy directory %s", ENERGY_CSV_DAILY_PREFIX);
+                return;
+            }
+            LOG_DEBUG("Created daily energy directory %s", ENERGY_CSV_DAILY_PREFIX);
         }
         
         // Check if file exists to determine if we need to write header
