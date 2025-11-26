@@ -225,6 +225,21 @@ class EnergyMeAPI {
     }
 
     /**
+     * Get system time
+     */
+    async getSystemTime() {
+        return this.get('system/time');
+    }
+
+    /**
+     * Set system time (for devices without internet connectivity)
+     * @param {number} unixSeconds - Unix timestamp in seconds
+     */
+    async setSystemTime(unixSeconds) {
+        return this.post('system/time', { unixTime: unixSeconds });
+    }
+
+    /**
      * Get custom MQTT config
      */
     async getCustomMqttConfig() {

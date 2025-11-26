@@ -396,6 +396,71 @@ paths:
                   hasSecrets:
                     type: boolean
 
+  /api/v1/system/time:
+    get:
+      summary: Get system time
+      description: Get current system time and synchronization status
+      tags:
+        - System
+      responses:
+        '200':
+          description: System time information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  synced:
+                    type: boolean
+                    description: Whether time is synchronized (via NTP or manual)
+                    example: true
+                  unixTime:
+                    type: integer
+                    description: Current Unix timestamp in seconds
+                    example: 1732620000
+                  isoTime:
+                    type: string
+                    description: Current time in ISO 8601 format (UTC)
+                    example: "2025-11-26T12:00:00.000Z"
+    post:
+      summary: Set system time
+      description: Manually set system time for devices without internet connectivity. Useful for static IP setups or isolated networks where NTP is unavailable.
+      tags:
+        - System
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - unixTime
+              properties:
+                unixTime:
+                  type: integer
+                  description: Unix timestamp in seconds to set
+                  example: 1732620000
+      responses:
+        '200':
+          description: Time set successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Time synchronized"
+                  newTime:
+                    type: string
+                    description: New time in ISO 8601 format
+                    example: "2025-11-26T12:00:00.000Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/v1/firmware/update-info:
     get:
       summary: Get firmware update information
