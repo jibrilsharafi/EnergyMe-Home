@@ -948,17 +948,69 @@
     }
     
     async function loadDailyCharts() {
-        // Load data for the selected UTC date (from daily folder, monthly, or yearly archive)
-        const csvData = await loadDailyCsvData(currentDate);
-        const energyData = parseCsvEnergyData(csvData);
+        // For local time display, we may need data from adjacent UTC dates
+        // E.g., if local is UTC+8, local midnight = 16:00 UTC previous day
+        const selectedLocalDate = new Date(currentDate + 'T00:00:00');
+        const localStartOfDay = new Date(selectedLocalDate);
+        const localEndOfDay = new Date(selectedLocalDate);
+        localEndOfDay.setDate(localEndOfDay.getDate() + 1);
+        
+        // Get UTC dates that cover the local day
+        const utcDatesNeeded = new Set();
+        utcDatesNeeded.add(localStartOfDay.toISOString().substring(0, 10));
+        utcDatesNeeded.add(localEndOfDay.toISOString().substring(0, 10));
+        // Also add previous day in case timezone offset pushes us back
+        const prevDay = new Date(localStartOfDay);
+        prevDay.setDate(prevDay.getDate() - 1);
+        utcDatesNeeded.add(prevDay.toISOString().substring(0, 10));
+        
+        // Load data from all needed UTC dates
+        let allEnergyData = [];
+        for (const utcDate of utcDatesNeeded) {
+            try {
+                const csvData = await loadDailyCsvData(utcDate);
+                const dayData = parseCsvEnergyData(csvData);
+                allEnergyData = allEnergyData.concat(dayData);
+            } catch (e) {
+                // Date may not exist, that's OK
+            }
+        }
+        
+        if (allEnergyData.length === 0) {
+            throw new Error('No data available for selected date');
+        }
+        
+        // Filter data: include entries from selected local date AND first hour of next day
+        // (needed to calculate consumption for hour 23:00)
+        const nextLocalDate = new Date(currentDate + 'T00:00:00');
+        nextLocalDate.setDate(nextLocalDate.getDate() + 1);
+        const nextLocalDateStr = nextLocalDate.toLocaleDateString('sv-SE');
+        
+        const energyData = allEnergyData.filter(entry => {
+            const entryDate = new Date(entry.timestamp);
+            const entryLocalDate = entryDate.toLocaleDateString('sv-SE');
+            const entryLocalHour = entryDate.getHours();
+            
+            // Include all entries from selected date
+            if (entryLocalDate === currentDate) return true;
+            
+            // Include entries from hour 00 of next day (needed for hour 23 calculation)
+            if (entryLocalDate === nextLocalDateStr && entryLocalHour === 0) return true;
+            
+            return false;
+        });
         
         if (energyData.length === 0) {
             throw new Error('No data available for selected date');
         }
         
-        // Calculate hourly consumption and total consumption (all in UTC)
-        const hourlyConsumption = calculateHourlyConsumption(energyData);
-        const totalConsumption = calculateTotalConsumption(energyData);
+        // Calculate hourly consumption and total consumption (in local time)
+        // Standard convention: bar at "16:00" = consumption during 16:00-16:59
+        const hourlyConsumption = calculateHourlyConsumption(energyData, currentDate);
+        const totalConsumption = calculateTotalConsumption(energyData.filter(entry => {
+            const entryDate = new Date(entry.timestamp);
+            return entryDate.toLocaleDateString('sv-SE') === currentDate;
+        }));
         
         // Restore chart canvases before updating
         restoreChartCanvases();
@@ -1135,7 +1187,7 @@
         return data;
     }
 
-    function calculateHourlyConsumption(energyData) {
+    function calculateHourlyConsumption(energyData, targetLocalDate) {
         // Sort all data chronologically first
         const sortedData = energyData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         
@@ -1145,12 +1197,15 @@
             if (!channelSequences[entry.channel]) {
                 channelSequences[entry.channel] = [];
             }
-            // Use UTC hour directly from timestamp (format: YYYY-MM-DDTHH:MM:SS)
-            const utcHour = entry.timestamp.substring(11, 13);
+            // Convert UTC timestamp to local date and hour
+            const date = new Date(entry.timestamp);
+            const localDate = date.toLocaleDateString('sv-SE');
+            const localHour = date.getHours().toString().padStart(2, '0');
             channelSequences[entry.channel].push({
                 timestamp: entry.timestamp,
                 energy: entry.activeImported,
-                hour: utcHour
+                hour: localHour,
+                localDate: localDate
             });
         });
         
@@ -1164,13 +1219,18 @@
                 const current = sequence[i];
                 const previous = sequence[i - 1];
                 
+                // Only record consumption if the previous reading is from the target date
+                // This ensures bar at "16:00" represents consumption during hour 16 (16:xx to 17:xx)
+                if (targetLocalDate && previous.localDate !== targetLocalDate) continue;
+                
                 const hourlyConsumption = Math.max(0, (current.energy - previous.energy) / 1000); // Convert Wh to kWh
                 
-                // Assign consumption to the hour when it ended (current hour in UTC)
-                if (!consumption[current.hour]) {
-                    consumption[current.hour] = {};
+                // Assign consumption to the hour when it started (previous local hour)
+                // Standard convention: bar at "16:00" = consumption during 16:00-16:59
+                if (!consumption[previous.hour]) {
+                    consumption[previous.hour] = {};
                 }
-                consumption[current.hour][channel] = hourlyConsumption;
+                consumption[previous.hour][channel] = hourlyConsumption;
             }
         });
         
@@ -1307,7 +1367,7 @@
         const isMobile = window.innerWidth <= 768;
         const isSmallMobile = window.innerWidth <= 480;
         
-        const xAxisLabels = { 'daily': 'Hour (UTC)', 'monthly': 'Day', 'yearly': 'Month' };
+        const xAxisLabels = { 'daily': 'Hour', 'monthly': 'Day', 'yearly': 'Month' };
         
         consumptionChart = new Chart(ctx, {
             type: 'bar',
@@ -1457,7 +1517,7 @@
         return colors[index % (colors.length - 1)]; // Reserve last color for "Other"
     }
 
-    // Note: All data is stored and displayed in UTC
+    // Note: Data is stored in UTC, displayed in local time
     // Future enhancement: Add timezone conversion for local display
 
     function setupCsvDownload(consumptionData, viewType) {
