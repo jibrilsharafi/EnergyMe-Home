@@ -610,6 +610,83 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
 
+  /api/v1/network/wifi/credentials:
+    post:
+      summary: Set WiFi credentials
+      description: |
+        Save new WiFi credentials and immediately restart the device.
+        After receiving new credentials, the device will save them and perform a restart.
+        Upon reboot, the device will attempt to connect to the specified WiFi network using the new credentials.
+        
+        **Note:** The API returns as soon as the credentials are saved and the restart is triggered. The device will temporarily be unavailable during the restart process.
+        Monitor the device status or LED indicators to verify successful connection after reboot.
+      tags:
+        - Network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ssid
+                - password
+              properties:
+                ssid:
+                  type: string
+                  description: WiFi SSID (network name)
+                  minLength: 1
+                  maxLength: 32
+                  example: "MyHomeNetwork"
+                password:
+                  type: string
+                  description: WiFi password (WPA/WPA2/WPA3). Use empty string for open networks.
+                  minLength: 0
+                  maxLength: 63
+                  example: "mySecurePassword123"
+            examples:
+              home_network:
+                summary: Home WiFi
+                value:
+                  ssid: "MyHomeNetwork"
+                  password: "mySecurePassword123"
+              open_network:
+                summary: Open network (no password)
+                value:
+                  ssid: "FreeWiFi"
+                  password: ""
+      responses:
+        '200':
+          description: WiFi credentials successfully queued for connection attempt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "WiFi credentials updated successfully. It will restart and attempt to connect to the new network."
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "SSID exceeds maximum length of 32 characters"
+        '500':
+          description: Failed to queue credentials (e.g., WiFi task not running)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Failed to queue WiFi credentials. Please try again."
+
   # Crash Monitor endpoints
   /api/v1/crash/info:
     get:

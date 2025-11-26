@@ -7,6 +7,7 @@
 #include <ArduinoJson.h>
 #include <AdvancedLogger.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 #include <ESPmDNS.h>
 #include <mbedtls/sha256.h>
 #include <WiFi.h>
@@ -20,7 +21,7 @@
 #include "utils.h"
 
 #define WIFI_TASK_NAME "wifi_task"
-#define WIFI_TASK_STACK_SIZE (5 * 1024) // WiFiManager now allocated on heap, not stack
+#define WIFI_TASK_STACK_SIZE (6 * 1024) // Increased for esp_wifi_set_config() which uses ~500+ bytes stack
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
@@ -47,9 +48,7 @@
 #define MDNS_QUERY_TIMEOUT (5 * 1000)
 
 #define OCTET_BUFFER_SIZE 16       // For IPv4-like strings (xxx.xxx.xxx.xxx + null terminator)
-#define MAC_ADDRESS_BUFFER_SIZE 18 // For MAC addresses (xx:xx:xx:xx:xx:xx + null terminator)
 #define WIFI_STATUS_BUFFER_SIZE 18 // For connection status messages (longest expected is "Connection Failed" + null terminator)
-#define WIFI_SSID_BUFFER_SIZE 64  // For WiFi SSID
 
 // Open Source Telemetry
 // =====================
@@ -71,6 +70,7 @@ namespace CustomWifi
     void forceReconnect();   // Force immediate WiFi reconnection
 
     void resetWifi();
+    bool setCredentials(const char* ssid, const char* password); // Set new WiFi credentials and trigger reconnection
 
     // Task information
     TaskInfo getTaskInfo();

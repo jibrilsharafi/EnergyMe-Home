@@ -1346,6 +1346,54 @@ namespace CustomServer
 
             _sendSuccessResponse(request, "WiFi credentials reset. Device will restart and enter configuration mode.");
             CustomWifi::resetWifi(); });
+
+        // Set WiFi credentials
+        AsyncCallbackJsonWebHandler *wifiCredentialsHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/network/wifi/credentials",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST")) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                // Validate required fields
+                if (!doc["ssid"].is<const char*>() || strlen(doc["ssid"].as<const char*>()) == 0)
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid 'ssid' field");
+                    return;
+                }
+
+                if (!doc["password"].is<const char*>())
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'password' field");
+                    return;
+                }
+
+                const char* ssid = doc["ssid"];
+                const char* password = doc["password"];
+
+                // Validate SSID length
+                if (strlen(ssid) >= WIFI_SSID_BUFFER_SIZE)
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "SSID exceeds maximum length of 32 characters");
+                    return;
+                }
+
+                // Validate password length
+                if (strlen(password) >= WIFI_PASSWORD_BUFFER_SIZE)
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Password exceeds maximum length of 64 characters");
+                    return;
+                }
+
+                LOG_INFO("Received request to set WiFi credentials for SSID: %s", ssid);
+
+                if (CustomWifi::setCredentials(ssid, password)) _sendSuccessResponse(request, "WiFi credentials updated successfully. It will restart and attempt to connect to the new network.");
+                else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to save credentials for the specified network. Please verify them and try again.");
+            });
+        server.addHandler(wifiCredentialsHandler);
     }
 
     // === LOGGING ENDPOINTS ===

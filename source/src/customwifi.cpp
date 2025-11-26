@@ -19,10 +19,18 @@ namespace CustomWifi
   static const uint32_t WIFI_EVENT_DISCONNECTED = 3;
   static const uint32_t WIFI_EVENT_SHUTDOWN = 4;
   static const uint32_t WIFI_EVENT_FORCE_RECONNECT = 5;
+  static const uint32_t WIFI_EVENT_NEW_CREDENTIALS = 6;
 
   // Task state management
   static bool _taskShouldRun = false;
   static bool _eventsEnabled = false;
+  
+  // New credentials storage for async switching
+  // To be safe, we should create mutexes around these since they are accessed via a public method
+  // But since they are seldom written and read, we can avoid the complexity for now
+  static char _pendingSSID[WIFI_SSID_BUFFER_SIZE] = {0};
+  static char _pendingPassword[WIFI_PASSWORD_BUFFER_SIZE] = {0};
+  static bool _hasPendingCredentials = false;
 
 
   // Private helper functions
@@ -293,6 +301,38 @@ namespace CustomWifi
           _forceReconnectInternal();
           continue; // No further action needed
 
+        case WIFI_EVENT_NEW_CREDENTIALS:
+          if (_hasPendingCredentials)
+          {
+            LOG_INFO("Processing new WiFi credentials for SSID: %s", _pendingSSID);
+            
+            // Save new credentials to NVS using esp_wifi_set_config() directly
+            // This stores credentials WITHOUT triggering a connection attempt,
+            // which avoids heap corruption when restarting immediately after
+            wifi_config_t wifi_config = {};
+            snprintf((char*)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), "%s", _pendingSSID);
+            snprintf((char*)wifi_config.sta.password, sizeof(wifi_config.sta.password), "%s", _pendingPassword);
+            
+            esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+            if (err != ESP_OK) {
+              LOG_ERROR("Failed to save WiFi credentials: %s", esp_err_to_name(err));
+              memset(_pendingSSID, 0, sizeof(_pendingSSID));
+              memset(_pendingPassword, 0, sizeof(_pendingPassword));
+              _hasPendingCredentials = false;
+              continue;
+            }
+            
+            // Clear pending credentials from memory
+            memset(_pendingSSID, 0, sizeof(_pendingSSID));
+            memset(_pendingPassword, 0, sizeof(_pendingPassword));
+            _hasPendingCredentials = false;
+            
+            // Request system restart to apply new WiFi credentials
+            LOG_INFO("New credentials saved to NVS, restarting system");
+            setRestartSystem("Restart to apply new WiFi credentials");
+          }
+          continue; // No further action needed
+
         case WIFI_EVENT_DISCONNECTED:
           statistics.wifiConnectionError++;
           Led::pulseBlue(Led::PRIO_MEDIUM);
@@ -392,6 +432,60 @@ namespace CustomWifi
     }
     
     setRestartSystem("Restart after WiFi reset");
+  }
+
+  bool setCredentials(const char* ssid, const char* password)
+  {
+    // Validate inputs
+    if (!ssid || strlen(ssid) == 0)
+    {
+      LOG_ERROR("Invalid SSID provided");
+      return false;
+    }
+
+    if (strlen(ssid) >= WIFI_SSID_BUFFER_SIZE)
+    {
+      LOG_ERROR("SSID exceeds maximum length of %d characters", WIFI_SSID_BUFFER_SIZE);
+      return false;
+    }
+
+    if (!password)
+    {
+      LOG_ERROR("Password cannot be NULL");
+      return false;
+    }
+
+    if (strlen(password) >= WIFI_PASSWORD_BUFFER_SIZE)
+    {
+      LOG_ERROR("Password exceeds maximum length of %d characters", WIFI_PASSWORD_BUFFER_SIZE);
+      return false;
+    }
+
+    if (strlen(password) == 0)
+    {
+      LOG_WARNING("Empty password provided for SSID: %s (open network)", ssid);
+    }
+
+    // Check if WiFi task is running
+    if (_wifiTaskHandle == NULL)
+    {
+      LOG_ERROR("Cannot set credentials - WiFi task not running");
+      return false;
+    }
+
+    LOG_INFO("Queueing new WiFi credentials for SSID: %s", ssid);
+    
+    // Store credentials for WiFi task to process
+    snprintf(_pendingSSID, sizeof(_pendingSSID), "%s", ssid);
+    snprintf(_pendingPassword, sizeof(_pendingPassword), "%s", password);
+    _hasPendingCredentials = true;
+    
+    // Notify WiFi task to process new credentials
+    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_NEW_CREDENTIALS, eSetValueWithOverwrite);
+    
+    // Return immediately - actual connection happens asynchronously in WiFi task
+    // This prevents blocking the web server and avoids conflicts with event handlers
+    return true;
   }
 
   bool _setupMdns()
