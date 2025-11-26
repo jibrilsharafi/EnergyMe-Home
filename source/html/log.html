@@ -327,7 +327,19 @@
                             };
                         }
 
-                        const timestamp = parts[0];
+                        const timestampUtc = parts[0];
+                        // Convert UTC timestamp to local time
+                        let timestamp = timestampUtc;
+                        try {
+                            const date = new Date(timestampUtc);
+                            if (!isNaN(date.getTime())) {
+                                timestamp = date.toLocaleString('sv-SE', { 
+                                    year: 'numeric', month: '2-digit', day: '2-digit',
+                                    hour: '2-digit', minute: '2-digit', second: '2-digit',
+                                    fractionalSecondDigits: 3
+                                }).replace(',', '.');
+                            }
+                        } catch (e) { /* Keep original if conversion fails */ }
                         const elapsedTime = parts[1];
                         const level = parts[2].trim();
                         const core = parts[3].replace('Core ', '');
