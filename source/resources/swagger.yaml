@@ -504,9 +504,27 @@ paths:
   /api/v1/list-files:
     get:
       summary: List LittleFS files
-      description: Get a list of all files stored in LittleFS with their sizes
+      description: |
+        Get a list of all files stored in LittleFS with their sizes.
+        Optionally filter by folder path to list only files within a specific directory.
+        
+        Energy data is organized in subdirectories:
+        - `energy/daily/` - Daily energy CSV files (YYYY-MM-DD.csv.gz)
+        - `energy/monthly/` - Monthly consolidated archives (YYYY-MM.csv.gz)
+        - `energy/yearly/` - Yearly consolidated archives (YYYY.csv.gz)
       tags:
         - Files
+      parameters:
+        - name: folder
+          in: query
+          required: false
+          description: |
+            Optional folder path to filter files. When provided, only files within this 
+            folder are returned with paths relative to the folder.
+            Examples: `energy/daily`, `energy/monthly`, `energy/yearly`
+          schema:
+            type: string
+          example: "energy/daily"
       responses:
         '200':
           description: List of files with their sizes
@@ -517,11 +535,19 @@ paths:
                 additionalProperties:
                   type: integer
                   description: File size in bytes
-              example:
-                "/logger/log.txt": 2048
-                "/logger/config.txt": 256
-                "/energy/channel_0.json": 512
-                "/calibration/config.json": 128
+              examples:
+                allFiles:
+                  summary: All files (no folder filter)
+                  value:
+                    "log.txt": 2048
+                    "energy/daily/2025-11-25.csv.gz": 512
+                    "energy/monthly/2025-10.csv.gz": 1024
+                dailyFiles:
+                  summary: Daily energy files only
+                  value:
+                    "2025-11-25.csv.gz": 512
+                    "2025-11-24.csv.gz": 498
+                    "2025-11-23.csv.gz": 501
         '500':
           $ref: '#/components/responses/InternalServerError'
 

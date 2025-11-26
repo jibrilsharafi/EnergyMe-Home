@@ -2353,12 +2353,19 @@ namespace CustomServer
     static void _serveFileEndpoints()
     {
         // List files in LittleFS. The endpoint cannot be only "files" as it conflicts with the file serving endpoint (defined below)
+        // Optional query parameter: folder (e.g., /api/v1/list-files?folder=energy/daily)
         server.on("/api/v1/list-files", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             
-            if (listLittleFsFiles(doc)) {
+            // Check for optional folder parameter
+            const char* folderPath = nullptr;
+            if (request->hasParam("folder")) {
+                folderPath = request->getParam("folder")->value().c_str();
+            }
+            
+            if (listLittleFsFiles(doc, folderPath)) {
                 _sendJsonResponse(request, doc);
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to list LittleFS files");

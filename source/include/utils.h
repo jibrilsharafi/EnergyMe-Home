@@ -165,11 +165,16 @@ void createAllNamespaces();
 void clearAllPreferences(bool nuclearOption = false); // No real function passes true to this function, but maybe it will be useful in the future
 
 // LittleFS file operations
-bool listLittleFsFiles(JsonDocument &doc);
+bool listLittleFsFiles(JsonDocument &doc, const char* folderPath = nullptr); // Optional folder path to filter files
 bool getLittleFsFileContent(const char* filepath, char* buffer, size_t bufferSize);
 const char* getContentTypeFromFilename(const char* filename);
 bool compressFile(const char* filepath);
 void migrateCsvToGzip(const char* dirPath, const char* excludePrefix = nullptr); // Migrates CSV files to gzip, excluding files with the specified prefix (optional)
+
+// Energy file consolidation
+bool migrateEnergyFilesToDailyFolder(); // One-time migration of existing /energy/*.csv.gz to /energy/daily/
+bool consolidateDailyFilesToMonthly(const char* yearMonth, const char* excludeDate = nullptr); // Consolidate daily files for YYYY-MM into monthly archive (optionally exclude a specific date)
+bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth = nullptr); // Consolidate monthly files for YYYY into yearly archive (optionally exclude a specific month)
 
 // String utilities
 inline bool endsWith(const char* s, const char* suffix) {

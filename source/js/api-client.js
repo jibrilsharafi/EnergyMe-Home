@@ -332,9 +332,11 @@ class EnergyMeAPI {
 
     /**
      * Get list of files
+     * @param {string} folder - Optional folder path to filter files
      */
-    async getFileList() {
-        return this.get('list-files');
+    async getFileList(folder = null) {
+        const endpoint = folder ? `list-files?folder=${encodeURIComponent(folder)}` : 'list-files';
+        return this.get(endpoint);
     }
 
     /**

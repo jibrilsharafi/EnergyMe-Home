@@ -43,9 +43,13 @@
 // ENERGY_SAVING
 #define SAVE_ENERGY_INTERVAL (15 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory. In any case, this is part of the requirement. The other part is ENERGY_SAVE_THRESHOLD 
 #define ENERGY_CSV_PREFIX "/energy"
+#define ENERGY_CSV_DAILY_PREFIX ENERGY_CSV_PREFIX "/daily"
+#define ENERGY_CSV_MONTHLY_PREFIX ENERGY_CSV_PREFIX "/monthly"
+#define ENERGY_CSV_YEARLY_PREFIX ENERGY_CSV_PREFIX "/yearly"
 #define DAILY_ENERGY_CSV_HEADER "timestamp,channel,active_imported,active_exported"
 #define DAILY_ENERGY_CSV_DIGITS 0 // Since the energy is in Wh, it is useless to go below 1 Wh, and we also save in space usage
 #define ENERGY_SAVE_THRESHOLD 100.0f // Threshold for saving energy data (in Wh) and in any case not more frequent than SAVE_ENERGY_INTERVAL
+#define ENERGY_CONSOLIDATION_MIN_SIZE 10 // Minimum file size (bytes) to consider consolidation successful
 
 // Interrupt handling
 #define ADE7953_INTERRUPT_TIMEOUT_MS 1000ULL // If exceed this plus sample time, something is wrong as we are not receiving the interrupt
