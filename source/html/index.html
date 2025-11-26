@@ -647,14 +647,14 @@
             const dailyFiles = await energyApi.getFileList('energy/daily') || {};
             availableDates = Object.keys(dailyFiles)
                 .filter(filename => filename.endsWith('.csv.gz') || filename.endsWith('.csv'))
-                .map(filename => filename.replace('energy/daily/', '').replace('.csv.gz', '').replace('.csv', ''))
+                .map(filename => filename.replace('.csv.gz', '').replace('.csv', ''))
                 .sort();
             
             // Load monthly files for monthly view
             const monthlyFiles = await energyApi.getFileList('energy/monthly') || {};
             availableMonths = Object.keys(monthlyFiles)
                 .filter(filename => filename.endsWith('.csv.gz'))
-                .map(filename => filename.replace('energy/monthly/', '').replace('.csv.gz', ''))
+                .map(filename => filename.replace('.csv.gz', ''))
                 .sort();
             
             // Also include current month from daily files if not in monthly yet
@@ -670,7 +670,7 @@
             const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
             availableYears = Object.keys(yearlyFiles)
                 .filter(filename => filename.endsWith('.csv.gz'))
-                .map(filename => filename.replace('energy/yearly/', '').replace('.csv.gz', ''))
+                .map(filename => filename.replace('.csv.gz', ''))
                 .sort();
             
             // Also include current year from monthly files if not in yearly yet

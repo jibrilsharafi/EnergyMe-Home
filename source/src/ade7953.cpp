@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "ade7953.h"
+#include <set>
 
 namespace Ade7953
 {
@@ -1769,6 +1770,8 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             snprintf(currentYear, sizeof(currentYear), "%.4s", dateIso); // First 4 chars
             
             // Step 4: Consolidate daily files from previous months (no exclusion needed - full month)
+            // Collect unique months first to avoid redundant consolidation calls
+            std::set<std::string> monthsToConsolidate;
             File dailyDir = LittleFS.open(ENERGY_CSV_DAILY_PREFIX);
             if (dailyDir) {
                 File file = dailyDir.openNextFile();
@@ -1779,18 +1782,17 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                         char fileMonth[8];
                         snprintf(fileMonth, sizeof(fileMonth), "%.7s", filename);
                         if (strcmp(fileMonth, currentYearMonth) < 0) {
-                            // This file is from a previous month - trigger consolidation (no exclusion)
-                            LOG_DEBUG("Found daily file from previous month: %s, triggering consolidation for %s", filename, fileMonth);
-                            file.close();
-                            consolidateDailyFilesToMonthly(fileMonth, nullptr);
-                            file = dailyDir.openNextFile();
-                            continue;
+                            monthsToConsolidate.insert(std::string(fileMonth));
                         }
                     }
                     file.close();
                     file = dailyDir.openNextFile();
                 }
                 dailyDir.close();
+            }
+            for (const auto& month : monthsToConsolidate) {
+                LOG_DEBUG("Consolidating daily files from previous month: %s", month.c_str());
+                consolidateDailyFilesToMonthly(month.c_str(), nullptr);
             }
             
             // Step 5: Consolidate daily files from current month (excluding today)
@@ -1799,6 +1801,8 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             consolidateDailyFilesToMonthly(currentYearMonth, dateIso);
             
             // Step 6: Consolidate monthly files from previous years into yearly archives
+            // Collect unique years first to avoid redundant consolidation calls
+            std::set<std::string> yearsToConsolidate;
             File monthlyDir = LittleFS.open(ENERGY_CSV_MONTHLY_PREFIX);
             if (monthlyDir) {
                 File file = monthlyDir.openNextFile();
@@ -1809,18 +1813,17 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                         char fileYear[5];
                         snprintf(fileYear, sizeof(fileYear), "%.4s", filename);
                         if (strcmp(fileYear, currentYear) < 0) {
-                            // This file is from a previous year - trigger consolidation (no exclusion)
-                            LOG_DEBUG("Found monthly file from previous year: %s, triggering consolidation for %s", filename, fileYear);
-                            file.close();
-                            consolidateMonthlyFilesToYearly(fileYear, nullptr);
-                            file = monthlyDir.openNextFile();
-                            continue;
+                            yearsToConsolidate.insert(std::string(fileYear));
                         }
                     }
                     file.close();
                     file = monthlyDir.openNextFile();
                 }
                 monthlyDir.close();
+            }
+            for (const auto& year : yearsToConsolidate) {
+                LOG_DEBUG("Consolidating monthly files from previous year: %s", year.c_str());
+                consolidateMonthlyFilesToYearly(year.c_str(), nullptr);
             }
             
             // Step 7: Consolidate monthly files from current year (excluding current month)

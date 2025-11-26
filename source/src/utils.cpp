@@ -1536,6 +1536,8 @@ bool consolidateDailyFilesToMonthly(const char* yearMonth, const char* excludeDa
                 if (fileCopy) {
                     strcpy(fileCopy, filename);
                     dailyFiles.push_back(fileCopy);
+                } else {
+                    LOG_WARNING("Failed to allocate memory for filename: %s", filename);
                 }
             }
         }
@@ -1768,6 +1770,8 @@ bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth)
                 if (fileCopy) {
                     strcpy(fileCopy, filename);
                     monthlyFiles.push_back(fileCopy);
+                } else {
+                    LOG_WARNING("Failed to allocate memory for filename: %s", filename);
                 }
             }
         }
