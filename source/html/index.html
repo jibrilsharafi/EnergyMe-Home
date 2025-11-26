@@ -554,29 +554,35 @@
         }
     }
 
-    // Function to load CSV data (compressed or uncompressed)
-    async function loadCsvData(date) {
+    // Function to load daily CSV data (compressed or uncompressed)
+    async function loadDailyCsvData(date) {
+        const csvFilename = `energy/daily/${date}.csv`;
+        const gzFilename = `energy/daily/${date}.csv.gz`;
+        
+        // Try uncompressed first (today's file), then compressed
         try {
-            // First try to get file list to determine available format
-            const fileList = await energyApi.getFileList();
-            const csvFilename = `energy/${date}.csv`;
-            const gzFilename = `energy/${date}.csv.gz`;
-            
-            if (fileList[csvFilename] !== undefined) {
-                // Plain CSV file exists - load directly
-                const response = await energyApi.apiCall(`files/${encodeURIComponent(csvFilename)}`, { method: 'GET' });
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch ${csvFilename}: ${response.status}`);
-                }
+            const response = await energyApi.apiCall(`files/${encodeURIComponent(csvFilename)}`, { method: 'GET' });
+            if (response.ok) {
                 return await response.text();
-            } else if (fileList[gzFilename] !== undefined) {
-                // Compressed file exists - decompress
-                return await decompressGzipFile(gzFilename);
-            } else {
-                throw new Error(`No CSV file found for date ${date}`);
             }
+        } catch (e) {
+            // Ignore, try compressed
+        }
+        
+        try {
+            return await decompressGzipFile(gzFilename);
+        } catch (e) {
+            throw new Error(`No CSV file found for date ${date}`);
+        }
+    }
+
+    // Function to load monthly consolidated CSV data
+    async function loadMonthlyCsvData(yearMonth) {
+        try {
+            const gzFilename = `energy/monthly/${yearMonth}.csv.gz`;
+            return await decompressGzipFile(gzFilename);
         } catch (error) {
-            console.error(`Error loading CSV data for ${date}:`, error);
+            console.error(`Error loading monthly CSV data for ${yearMonth}:`, error);
             throw error;
         }
     }
@@ -620,14 +626,28 @@
 
     async function loadAvailableDates() {
         try {
-            const fileList = await energyApi.getFileList();
-            availableDates = Object.keys(fileList)
-                .filter(filename => filename.startsWith('energy/') && (filename.endsWith('.csv.gz') || filename.endsWith('.csv')))
-                .map(filename => filename.replace('energy/', '').replace('.csv.gz', '').replace('.csv', ''))
+            // Load daily files for daily view
+            const dailyFiles = await energyApi.getFileList('energy/daily');
+            availableDates = Object.keys(dailyFiles)
+                .filter(filename => filename.endsWith('.csv.gz') || filename.endsWith('.csv'))
+                .map(filename => filename.replace('energy/daily/', '').replace('.csv.gz', '').replace('.csv', ''))
                 .sort();
             
-            // Extract unique months
-            availableMonths = [...new Set(availableDates.map(date => date.substring(0, 7)))].sort();
+            // Load monthly files for monthly view
+            const monthlyFiles = await energyApi.getFileList('energy/monthly');
+            availableMonths = Object.keys(monthlyFiles)
+                .filter(filename => filename.endsWith('.csv.gz'))
+                .map(filename => filename.replace('energy/monthly/', '').replace('.csv.gz', ''))
+                .sort();
+            
+            // Also include current month from daily files if not in monthly yet
+            const dailyMonths = [...new Set(availableDates.map(date => date.substring(0, 7)))];
+            dailyMonths.forEach(month => {
+                if (!availableMonths.includes(month)) {
+                    availableMonths.push(month);
+                }
+            });
+            availableMonths.sort();
         } catch (error) {
             console.error('Error loading available dates:', error);
             availableDates = [];
@@ -753,44 +773,21 @@
     }
     
     async function loadDailyCharts() {
-        // Get required UTC dates for the selected local date
-        const requiredDates = getRequiredDatesForLocal(currentDate);
-        
-        let allEnergyData = [];
-        
-        // Load data from all required UTC dates
-        for (const utcDate of requiredDates) {
-            if (availableDates.includes(utcDate)) {
-                try {
-                    const csvData = await loadCsvData(utcDate);
-                    const energyData = parseCsvEnergyData(csvData);
-                    allEnergyData = allEnergyData.concat(energyData);
-                } catch (error) {
-                    console.warn(`Failed to load data for UTC date ${utcDate}:`, error);
-                }
-            }
-        }
-        
-        if (allEnergyData.length === 0) {
+        // Load data for the selected UTC date
+        if (!availableDates.includes(currentDate)) {
             throw new Error('No data available for selected date');
         }
         
-        // Filter data to include the full local day plus first hour of next day
-        // We need the next day's first reading to calculate consumption for hour 23:00
-        const localDayStart = new Date(currentDate + 'T00:00:00');
-        const nextDayStart = new Date(currentDate + 'T00:00:00');
-        nextDayStart.setDate(nextDayStart.getDate() + 1);
-        nextDayStart.setHours(1, 0, 0, 0); // Include up to 01:00 next day
+        const csvData = await loadDailyCsvData(currentDate);
+        const energyData = parseCsvEnergyData(csvData);
         
-        const filteredData = allEnergyData.filter(entry => {
-            // Parse the UTC timestamp from CSV and convert to local time for comparison
-            const entryLocalDate = new Date(entry.timestamp);
-            return entryLocalDate >= localDayStart && entryLocalDate < nextDayStart;
-        });
+        if (energyData.length === 0) {
+            throw new Error('No data available for selected date');
+        }
         
-        // Calculate hourly consumption and total consumption
-        const hourlyConsumption = calculateHourlyConsumption(filteredData);
-        const totalConsumption = calculateTotalConsumption(filteredData);
+        // Calculate hourly consumption and total consumption (all in UTC)
+        const hourlyConsumption = calculateHourlyConsumption(energyData);
+        const totalConsumption = calculateTotalConsumption(energyData);
         
         // Restore chart canvases before updating
         restoreChartCanvases();
@@ -804,35 +801,60 @@
     }
     
     async function loadMonthlyCharts() {
-        // Get all dates for the selected month
-        const monthDates = availableDates.filter(date => date.startsWith(currentMonth));
+        // Load data from consolidated monthly file + any remaining daily files
+        let allEnergyData = [];
         
-        if (monthDates.length === 0) {
+        // Try to load consolidated monthly file
+        try {
+            const csvData = await loadMonthlyCsvData(currentMonth);
+            allEnergyData = parseCsvEnergyData(csvData);
+            console.log(`Loaded ${allEnergyData.length} records from monthly archive for ${currentMonth}`);
+        } catch (error) {
+            console.warn(`No consolidated monthly file for ${currentMonth}:`, error.message);
+        }
+        
+        // Also load daily files for current month (includes today's data not yet consolidated)
+        const monthDates = availableDates.filter(date => date.startsWith(currentMonth));
+        for (const date of monthDates) {
+            try {
+                const csvData = await loadDailyCsvData(date);
+                const dailyData = parseCsvEnergyData(csvData);
+                allEnergyData = allEnergyData.concat(dailyData);
+                console.log(`Loaded ${dailyData.length} records from daily file for ${date}`);
+            } catch (error) {
+                console.warn(`Failed to load data for ${date}:`, error.message);
+            }
+        }
+        
+        if (allEnergyData.length === 0) {
             throw new Error('No data available for selected month');
         }
         
-        // Load data for all days in the month
-        const monthlyData = {};
+        // Group data by day and calculate daily consumption
         const dailyConsumptions = {};
+        const monthlyData = {};
         
-        for (const date of monthDates) {
-            try {
-                const csvData = await loadCsvData(date);
-                const energyData = parseCsvEnergyData(csvData);
-                const dailyConsumption = calculateTotalConsumption(energyData);
-                
-                const day = date.substring(8, 10); // Extract day from YYYY-MM-DD
-                dailyConsumptions[day] = dailyConsumption;
-                
-                // Add to monthly totals
-                Object.keys(dailyConsumption).forEach(channel => {
-                    if (!monthlyData[channel]) monthlyData[channel] = 0;
-                    monthlyData[channel] += dailyConsumption[channel];
-                });
-            } catch (error) {
-                console.warn(`Failed to load data for ${date}:`, error);
-            }
-        }
+        // Group by date
+        const dataByDate = {};
+        allEnergyData.forEach(entry => {
+            const date = entry.timestamp.substring(0, 10); // YYYY-MM-DD
+            if (!dataByDate[date]) dataByDate[date] = [];
+            dataByDate[date].push(entry);
+        });
+        
+        // Calculate consumption for each day
+        Object.keys(dataByDate).sort().forEach(date => {
+            const dayData = dataByDate[date];
+            const dailyConsumption = calculateTotalConsumption(dayData);
+            const day = date.substring(8, 10); // Extract day from YYYY-MM-DD
+            dailyConsumptions[day] = dailyConsumption;
+            
+            // Add to monthly totals
+            Object.keys(dailyConsumption).forEach(channel => {
+                if (!monthlyData[channel]) monthlyData[channel] = 0;
+                monthlyData[channel] += dailyConsumption[channel];
+            });
+        });
         
         // Restore chart canvases before updating
         restoreChartCanvases();
@@ -873,10 +895,12 @@
             if (!channelSequences[entry.channel]) {
                 channelSequences[entry.channel] = [];
             }
+            // Use UTC hour directly from timestamp (format: YYYY-MM-DDTHH:MM:SS)
+            const utcHour = entry.timestamp.substring(11, 13);
             channelSequences[entry.channel].push({
                 timestamp: entry.timestamp,
                 energy: entry.activeImported,
-                localHour: new Date(entry.timestamp).getHours().toString().padStart(2, '0')
+                hour: utcHour
             });
         });
         
@@ -892,11 +916,11 @@
                 
                 const hourlyConsumption = Math.max(0, (current.energy - previous.energy) / 1000); // Convert Wh to kWh
                 
-                // Assign consumption to the hour when it ended (current hour)
-                if (!consumption[current.localHour]) {
-                    consumption[current.localHour] = {};
+                // Assign consumption to the hour when it ended (current hour in UTC)
+                if (!consumption[current.hour]) {
+                    consumption[current.hour] = {};
                 }
-                consumption[current.localHour][channel] = hourlyConsumption;
+                consumption[current.hour][channel] = hourlyConsumption;
             }
         });
         
@@ -1175,29 +1199,8 @@
         return colors[index % (colors.length - 1)]; // Reserve last color for "Other"
     }
 
-    function getRequiredDatesForLocal(localDateString) {
-        // For a local date, determine which UTC dates we need to query
-        // This handles cases where local timezone spans multiple UTC days
-        // We also need data from the next day to calculate consumption for the last hour
-        const localDate = new Date(localDateString + 'T00:00:00');
-        const localDateEnd = new Date(localDateString + 'T23:59:59');
-        const nextDayStart = new Date(localDateString + 'T00:00:00');
-        nextDayStart.setDate(nextDayStart.getDate() + 1); // Add one day for next day's first reading
-        
-        // Convert local time to UTC to see what UTC dates we need
-        // getTimezoneOffset() returns offset in minutes (positive = west of UTC, negative = east of UTC)
-        // To convert local to UTC: add the offset (this compensates for the timezone difference)
-        const utcStart = new Date(localDate.getTime() + localDate.getTimezoneOffset() * 60000);
-        const utcEnd = new Date(localDateEnd.getTime() + localDateEnd.getTimezoneOffset() * 60000);
-        const utcNextDayStart = new Date(nextDayStart.getTime() + nextDayStart.getTimezoneOffset() * 60000);
-        
-        const requiredDates = new Set();
-        requiredDates.add(utcStart.toISOString().substring(0, 10));
-        requiredDates.add(utcEnd.toISOString().substring(0, 10));
-        requiredDates.add(utcNextDayStart.toISOString().substring(0, 10));
-        
-        return Array.from(requiredDates);
-    }
+    // Note: All data is stored and displayed in UTC
+    // Future enhancement: Add timezone conversion for local display
 
     function setupCsvDownload(consumptionData, viewType) {
         const downloadBtn = document.getElementById('download-csv');
