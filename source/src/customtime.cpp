@@ -203,6 +203,26 @@ namespace CustomTime {
         else { return (unixTime >= MINIMUM_UNIX_TIME_SECONDS && unixTime <= MAXIMUM_UNIX_TIME_SECONDS); }
     }
 
+    bool setUnixTime(uint64_t unixSeconds) {
+        if (!isUnixTimeValid(unixSeconds, false)) {
+            LOG_WARNING("Invalid Unix time provided: %llu", unixSeconds);
+            return false;
+        }
+        
+        struct timeval tv;
+        tv.tv_sec = (time_t)unixSeconds;
+        tv.tv_usec = 0;
+        
+        if (settimeofday(&tv, NULL) != 0) {
+            LOG_ERROR("Failed to set system time");
+            return false;
+        }
+        
+        _isTimeSynched = true;
+        LOG_INFO("Time manually synchronized: %llu", unixSeconds);
+        return true;
+    }
+
     static bool _getTime() {
         struct tm timeinfo;
         if (!getLocalTime(&timeinfo)) {

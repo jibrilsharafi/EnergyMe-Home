@@ -1334,6 +1334,61 @@ namespace CustomServer
             doc["hasSecrets"] = false;
             #endif
             _sendJsonResponse(request, doc); });
+
+        // Get system time
+        server.on("/api/v1/system/time", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            doc["synced"] = CustomTime::isTimeSynched();
+            doc["unixTime"] = CustomTime::getUnixTime();
+
+            char isoBuffer[TIMESTAMP_BUFFER_SIZE];
+            CustomTime::getTimestampIso(isoBuffer, sizeof(isoBuffer));
+            doc["isoTime"] = isoBuffer;
+
+            _sendJsonResponse(request, doc); });
+
+        // Set system time (for devices without internet connectivity)
+        server.on(
+            "/api/v1/system/time",
+            HTTP_POST,
+            [](AsyncWebServerRequest *request) {},
+            NULL,
+            [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+            {
+                if (!_validateRequest(request, "POST")) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                DeserializationError error = deserializeJson(doc, data, len);
+
+                if (error || !doc["unixTime"].is<uint64_t>())
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON. Required: {\"unixTime\": <unix_seconds>}");
+                    return;
+                }
+
+                uint64_t unixTime = doc["unixTime"].as<uint64_t>();
+                if (CustomTime::setUnixTime(unixTime))
+                {
+                    SpiRamAllocator respAllocator;
+                    JsonDocument respDoc(&respAllocator);
+                    respDoc["success"] = true;
+                    respDoc["message"] = "Time synchronized";
+
+                    char isoBuffer[TIMESTAMP_BUFFER_SIZE];
+                    CustomTime::getTimestampIso(isoBuffer, sizeof(isoBuffer));
+                    respDoc["newTime"] = isoBuffer;
+
+                    _sendJsonResponse(request, respDoc);
+                }
+                else
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Failed to set time. Value out of valid range.");
+                }
+            });
     }
 
     // === NETWORK MANAGEMENT ENDPOINTS ===

@@ -398,6 +398,13 @@
     </div>
 
     <div class="section-box">
+        <h2>Sync Time</h2>
+        <p><i>Sync the device time with your browser. Useful for devices without internet connectivity (static IP, isolated networks).</i></p>
+        <p id="currentDeviceTime">Device time: Loading...</p>
+        <button class="buttonForm" onclick="syncTime()" id="syncTime">🕐 Sync Time</button>
+    </div>
+
+    <div class="section-box">
         <h2>Switch WiFi Network</h2>
         <p><i>Enter new WiFi credentials to switch to a different network. The device will save the credentials and restart to connect to the new network.</i></p>
         <div style="display: flex; flex-direction: column; gap: 10px; margin: 15px 0;">
@@ -495,7 +502,45 @@
                     restartButton.innerHTML = "🔄 Restart";
                     restartButton.disabled = false;
                 });
-        } 
+        }
+
+        function loadDeviceTime() {
+            energyApi.getSystemTime()
+                .then(response => {
+                    const timeEl = document.getElementById("currentDeviceTime");
+                    const syncStatus = response.synced ? "✅ Synced" : "⚠️ Not synced";
+                    timeEl.innerHTML = `Device time: ${response.isoTime} (${syncStatus})`;
+                })
+                .catch(error => {
+                    document.getElementById("currentDeviceTime").innerHTML = "Device time: Error loading";
+                });
+        }
+
+        function syncTime() {
+            const syncButton = document.getElementById("syncTime");
+            syncButton.innerHTML = "Syncing...";
+            syncButton.disabled = true;
+
+            const unixSeconds = Math.floor(Date.now() / 1000);
+
+            energyApi.setSystemTime(unixSeconds)
+                .then(response => {
+                    syncButton.innerHTML = "🕐 Sync Time";
+                    syncButton.disabled = false;
+                    alert("Time synchronized successfully! New time: " + response.newTime);
+                    loadDeviceTime();
+                })
+                .catch(error => {
+                    syncButton.innerHTML = "🕐 Sync Time";
+                    syncButton.disabled = false;
+                    alert("Error syncing time: " + error.message);
+                });
+        }
+
+        // Load device time on page load
+        document.addEventListener("DOMContentLoaded", function() {
+            loadDeviceTime();
+        });
         
         function switchWifi() {
             const ssid = document.getElementById("newWifiSsid").value.trim();

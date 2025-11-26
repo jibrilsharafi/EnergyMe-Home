@@ -394,18 +394,29 @@ namespace CustomWifi
       else
       {
         // Timeout occurred - perform periodic health check
-        if (_taskShouldRun && isFullyConnected())
-        {   
-          if (!_testConnectivity()) {
-            LOG_WARNING("Connectivity test failed - forcing reconnection");
-            _forceReconnectInternal();
+        if (_taskShouldRun)
+        {
+          if (isFullyConnected())
+          {   
+            // Test internet connectivity but don't force reconnection if it fails
+            // WiFi is connected to local network - internet may simply be unavailable
+            // This allows the device to operate in local-only mode (static IP, isolated networks)
+            if (!_testConnectivity()) {
+              LOG_DEBUG("Internet connectivity unavailable - device operating in local-only mode");
+            }
+          
+            // Reset failure counter on sustained connection
+            if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
+            {
+              LOG_DEBUG("WiFi connection stable - resetting counters");
+              _reconnectAttempts = 0;
+            }
           }
-        
-          // Reset failure counter on sustained connection
-          if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
+          else
           {
-            LOG_DEBUG("WiFi connection stable - resetting counters");
-            _reconnectAttempts = 0;
+            // WiFi not connected or no IP - force reconnection
+            LOG_WARNING("Periodic check: WiFi not fully connected - forcing reconnection");
+            _forceReconnectInternal();
           }
         }
       }
