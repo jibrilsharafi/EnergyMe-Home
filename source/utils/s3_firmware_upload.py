@@ -10,6 +10,13 @@ This script:
 2. Uploads firmware files (bin, elf, partitions) to AWS S3
 3. Generates an OTA update JSON document
 
+Version Handling:
+    - Stable releases (e.g., "1.0.2"): Uploaded to both version-specific folder AND 'latest' folder
+    - Pre-release versions (e.g., "1.0.3-alpha", "1.0.3alpha", "1.0.3-dev", "1.0.3-beta.1", "1.0.3-rc1"):
+      Only uploaded to version-specific folder (does NOT overwrite 'latest' folder)
+    
+    This allows safe testing of pre-release firmware without affecting production devices.
+
 Usage:
     python3 utils/s3_firmware_upload.py [options]
 
@@ -38,10 +45,11 @@ from botocore.exceptions import ClientError
 from tempfile import NamedTemporaryFile
 
 class FirmwareUploader:
-    def __init__(self, bucket_name="energyme-home-firmware-updates", environment="esp32s3-dev", profile_name="default", package_dir: str | None = None):
+    def __init__(self, bucket_name="energyme-home-firmware-updates", environment="esp32s3-dev", profile_name="default", package_dir: str | None = None, version_override: str | None = None):
         self.bucket_name = bucket_name
         self.environment = environment
         self.profile_name = profile_name
+        self.version_override = version_override
         self.project_root = Path(__file__).parent.parent
         # If a package_dir is provided prefer that as the build directory (useful for CI artifact folders)
         self.package_dir = Path(package_dir) if package_dir else None
@@ -129,6 +137,16 @@ class FirmwareUploader:
         version = f"{major_match.group(1)}.{minor_match.group(1)}.{patch_match.group(1)}" # type: ignore
         print(f"Parsed firmware version: {version}")
         return version
+    
+    def is_prerelease_version(self, version):
+        """Check if version is a pre-release (alpha, beta, dev, rc, etc.)
+        
+        Returns True if version contains: alpha, beta, dev, rc (case-insensitive)
+        Examples: 1.0.3-alpha, 1.0.3alpha, 1.0.3-dev, 1.0.3-beta.1, 1.0.3-rc1
+        """
+        prerelease_markers = ['alpha', 'beta', 'dev', 'rc']
+        version_lower = version.lower()
+        return any(marker in version_lower for marker in prerelease_markers)
     
     def check_build_files_exist(self):
         """Find build files in the build directory.
@@ -236,19 +254,24 @@ class FirmwareUploader:
             return False
 
     def upload_file_to_both_locations(self, local_path, version, base_filename):
-        """Upload a file to both version-specific and latest folders with versioned filenames"""
+        """Upload a file to both version-specific and latest folders with versioned filenames
+        
+        For pre-release versions (alpha, beta, dev, rc), only uploads to version-specific folder.
+        For stable releases, uploads to both version-specific and latest folders.
+        """
         versioned_filename = self.get_versioned_filename(base_filename, version)
         
         version_key = f"{self.get_s3_folder_path(version)}/{versioned_filename}"
-        latest_key = f"{self.get_s3_folder_path('latest')}/{versioned_filename}"
         
-        # Upload to version-specific folder
+        # Always upload to version-specific folder
         if not self.upload_file_to_s3(local_path, version_key):
             return False
         
-        # Upload to latest folder
-        if not self.upload_file_to_s3(local_path, latest_key):
-            return False
+        # Only upload to latest folder for stable releases (not pre-releases)
+        if not self.is_prerelease_version(version):
+            latest_key = f"{self.get_s3_folder_path('latest')}/{versioned_filename}"
+            if not self.upload_file_to_s3(local_path, latest_key):
+                return False
         
         return True
     
@@ -341,8 +364,11 @@ class FirmwareUploader:
         if not files_exist:
             return False
 
-        # Prefer version detected from filenames in package_dir, otherwise fall back to constants.h
-        if detected_version:
+        # Priority: 1) version_override, 2) detected_version from filenames, 3) constants.h
+        if self.version_override:
+            version = self.version_override
+            print(f"Using version override from command line: {version}")
+        elif detected_version:
             version = detected_version
             print(f"Using version detected from filenames: {version}")
         else:
@@ -351,6 +377,13 @@ class FirmwareUploader:
             except Exception as e:
                 print(f"ERROR parsing version: {e}")
                 return False
+        
+        # Check if this is a pre-release version
+        is_prerelease = self.is_prerelease_version(version)
+        if is_prerelease:
+            print(f"🧪 Pre-release version detected: {version}")
+            print(f"   Will upload to version-specific folder only (latest folder will NOT be updated)")
+            print()
         
         # Check if version already exists in S3 and ask for confirmation
         if not dry_run:
@@ -385,19 +418,25 @@ class FirmwareUploader:
                 versioned_name = self.get_versioned_filename(name, version)
                 print(f"Would upload: s3://{self.bucket_name}/{self.get_s3_folder_path(version)}/{versioned_name}")
             
-            # Show latest folder uploads
-            for name in build_files.keys():
-                versioned_name = self.get_versioned_filename(name, version)
-                print(f"Would upload: s3://{self.bucket_name}/{self.get_s3_folder_path('latest')}/{versioned_name}")
+            # Show latest folder uploads only for stable releases
+            if not is_prerelease:
+                for name in build_files.keys():
+                    versioned_name = self.get_versioned_filename(name, version)
+                    print(f"Would upload: s3://{self.bucket_name}/{self.get_s3_folder_path('latest')}/{versioned_name}")
+            else:
+                print("\n(Skipping 'latest' folder uploads for pre-release version)")
             
             ota_json = self.create_ota_json(version)
-            latest_ota_json = self.create_latest_ota_json(version)
             print(f"\nWould create version-specific OTA JSON:")
             print(json.dumps(ota_json, indent=2))
             print(f"Would upload: s3://{self.bucket_name}/{self.get_s3_folder_path(version)}/ota-job-document.json")
-            print(f"\nWould create latest OTA JSON (CONSTANT FILENAME):")
-            print(json.dumps(latest_ota_json, indent=2))
-            print(f"Would upload: s3://{self.bucket_name}/{self.get_s3_folder_path('latest')}/ota-job-document.json")
+            
+            if not is_prerelease:
+                latest_ota_json = self.create_latest_ota_json(version)
+                print(f"\nWould create latest OTA JSON (CONSTANT FILENAME):")
+                print(json.dumps(latest_ota_json, indent=2))
+                print(f"Would upload: s3://{self.bucket_name}/{self.get_s3_folder_path('latest')}/ota-job-document.json")
+            
             return True
         
         # Upload files to S3 (both version and latest folders)
@@ -412,11 +451,13 @@ class FirmwareUploader:
         
         # Create and display OTA JSON documents
         ota_json = self.create_ota_json(version)
-        latest_ota_json = self.create_latest_ota_json(version)
         print(f"\nVersion-specific OTA Update JSON Document:")
         print(json.dumps(ota_json, indent=2))
-        print(f"\nLatest OTA Update JSON Document:")
-        print(json.dumps(latest_ota_json, indent=2))
+        
+        if not is_prerelease:
+            latest_ota_json = self.create_latest_ota_json(version)
+            print(f"\nLatest OTA Update JSON Document:")
+            print(json.dumps(latest_ota_json, indent=2))
         
         # Upload version-specific OTA JSON to S3
         ota_json_key = f"{self.get_s3_folder_path(version)}/ota-job-document.json"
@@ -435,28 +476,31 @@ class FirmwareUploader:
             print(f"ERROR uploading version-specific OTA JSON: {e}")
             upload_success = False
         
-        # Upload latest OTA JSON to S3
-        latest_ota_json_key = f"{self.get_s3_folder_path('latest')}/ota-job-document.json"
-        try:
-            # Save JSON to a temporary file for upload
-            with NamedTemporaryFile("w", delete=False) as tmp_json:
-                json.dump(latest_ota_json, tmp_json, indent=2)
-                tmp_json_path = tmp_json.name
-            if self.upload_file_to_s3(Path(tmp_json_path), latest_ota_json_key):
-                print(f"Latest OTA JSON uploaded to: s3://{self.bucket_name}/{latest_ota_json_key}")
-            else:
-                print(f"ERROR: Failed to upload latest OTA JSON to S3")
+        # Upload latest OTA JSON to S3 (only for stable releases)
+        latest_ota_json_key = None
+        if not is_prerelease:
+            latest_ota_json = self.create_latest_ota_json(version)
+            latest_ota_json_key = f"{self.get_s3_folder_path('latest')}/ota-job-document.json"
+            try:
+                # Save JSON to a temporary file for upload
+                with NamedTemporaryFile("w", delete=False) as tmp_json:
+                    json.dump(latest_ota_json, tmp_json, indent=2)
+                    tmp_json_path = tmp_json.name
+                if self.upload_file_to_s3(Path(tmp_json_path), latest_ota_json_key):
+                    print(f"Latest OTA JSON uploaded to: s3://{self.bucket_name}/{latest_ota_json_key}")
+                else:
+                    print(f"ERROR: Failed to upload latest OTA JSON to S3")
+                    upload_success = False
+                os.remove(tmp_json_path)
+            except Exception as e:
+                print(f"ERROR uploading latest OTA JSON: {e}")
                 upload_success = False
-            os.remove(tmp_json_path)
-        except Exception as e:
-            print(f"ERROR uploading latest OTA JSON: {e}")
-            upload_success = False
         
         if not upload_success:
             return False
 
-        # Clean up old versioned files in the 'latest' prefix so older artifacts don't accumulate
-        if not dry_run:
+        # Clean up old versioned files in the 'latest' prefix (only for stable releases)
+        if not dry_run and not is_prerelease:
             try:
                 self.clean_latest_folder(version)
             except Exception as e:
@@ -469,11 +513,14 @@ class FirmwareUploader:
             print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{self.get_s3_folder_path(version)}/{versioned_name}")
         print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{ota_json_key}")
         
-        print(f"\nLatest S3 URLs:")
-        for name in build_files.keys():
-            versioned_name = self.get_versioned_filename(name, version)
-            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{self.get_s3_folder_path('latest')}/{versioned_name}")
-        print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{latest_ota_json_key}")
+        if not is_prerelease:
+            print(f"\nLatest S3 URLs:")
+            for name in build_files.keys():
+                versioned_name = self.get_versioned_filename(name, version)
+                print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{self.get_s3_folder_path('latest')}/{versioned_name}")
+            print(f"  - https://{self.bucket_name}.s3.amazonaws.com/{latest_ota_json_key}")
+        else:
+            print(f"\n(Latest folder not updated for pre-release version)")
         
         return True
 
@@ -489,6 +536,8 @@ Examples:
   python3 utils/s3_firmware_upload.py --bucket my-bucket # Use custom bucket
   python3 utils/s3_firmware_upload.py --env esp32s3-dev  # Use specific environment
   python3 utils/s3_firmware_upload.py --profile my-sso   # Use specific AWS SSO profile
+  python3 utils/s3_firmware_upload.py --version 1.0.3-alpha  # Override version for testing
+  python3 utils/s3_firmware_upload.py -v 1.0.3-dev --dry-run # Test pre-release upload
         """
     )
     
@@ -522,6 +571,13 @@ Examples:
         help='Path to CI package folder containing firmware files (overrides default build dir)'
     )
     
+    parser.add_argument(
+        '--version', '-v',
+        dest='version_override',
+        default=None,
+        help='Override version for S3 upload (e.g., "1.0.3-alpha"). Use for testing without modifying constants.h'
+    )
+    
     args = parser.parse_args()
     
     # Create uploader and run
@@ -529,7 +585,8 @@ Examples:
         bucket_name=args.bucket,
         environment=args.environment,
         profile_name=args.profile,
-        package_dir=args.package_dir
+        package_dir=args.package_dir,
+        version_override=args.version_override
     )
     
     success = uploader.upload_firmware(dry_run=args.dry_run)

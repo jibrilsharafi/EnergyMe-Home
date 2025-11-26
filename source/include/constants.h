@@ -8,7 +8,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "1"
 #define FIRMWARE_BUILD_VERSION_MINOR "0"
-#define FIRMWARE_BUILD_VERSION_PATCH "2"
+#define FIRMWARE_BUILD_VERSION_PATCH "3"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -67,8 +67,10 @@
 #define TIMESTAMP_ISO_BUFFER_SIZE 25    // For ISO UTC timestamps (formatted as "YYYY-MM-DDTHH:MM:SS.sssZ")
 #define SHORT_NAME_BUFFER_SIZE 32       // For short names (e.g., channel names, labels)
 #define MD5_BUFFER_SIZE 33              // 32 characters + null terminator
-#define USERNAME_BUFFER_SIZE 64         // For usernames (e.g., WiFi SSID, MQTT username)
-#define PASSWORD_BUFFER_SIZE 64         // For passwords (e.g., WiFi password, MQTT password)
+#define WIFI_SSID_BUFFER_SIZE 32        // For WiFi SSID (maximum SSID length is 31)
+#define WIFI_PASSWORD_BUFFER_SIZE 64    // For WiFi password (maximum WPA2 password length is 63)
+#define USERNAME_BUFFER_SIZE 64         // For usernames (e.g., MQTT username)
+#define PASSWORD_BUFFER_SIZE 64         // For passwords (e.g., MQTT password)
 #define SHORT_STATUS_BUFFER_SIZE 64     // Generic short status messages. Smaller than status so we can use %s of SHORT_STATUS in STATUS
 #define NAME_BUFFER_SIZE 64             // For generic names (device, user, etc.)
 #define MQTT_TOPIC_BUFFER_SIZE 128      // For MQTT topics

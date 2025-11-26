@@ -466,10 +466,12 @@
                 <div class="view-selector">
                     <button id="daily-view" class="view-toggle active">Daily View</button>
                     <button id="monthly-view" class="view-toggle">Monthly View</button>
+                    <button id="yearly-view" class="view-toggle">Yearly View</button>
                 </div>
                 <div class="date-selector">
                     <input type="date" id="date-picker" />
                     <input type="month" id="month-picker" style="display: none;" />
+                    <input type="number" id="year-picker" min="2020" max="2100" style="display: none; width: 80px;" />
                     <button id="prev-period" class="nav-button">◀</button>
                     <button id="next-period" class="nav-button">▶</button>
                 </div>
@@ -477,9 +479,8 @@
         </div>
         <div id="consumption-chart" style="position: relative;">
             <canvas id="consumption-chart-canvas"></canvas>
-            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;"> <!-- FIXME: the text is not properly displayed (cut at the box border and "below")-->
+            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
                 <i class="fas fa-download"></i>
-                <span class="tooltiptext">Download as CSV</span>
             </button>
         </div>
     </div>
@@ -524,9 +525,11 @@
     var meterData = {};
     var availableDates = [];
     var availableMonths = [];
+    var availableYears = [];
     var currentDate = null;
     var currentMonth = null;
-    var currentView = 'daily'; // 'daily' or 'monthly'
+    var currentYear = null;
+    var currentView = 'daily'; // 'daily', 'monthly', or 'yearly'
     var consumptionChart = null;
     var pieChart = null;
     var totalPieChart = null;
@@ -554,29 +557,121 @@
         }
     }
 
-    // Function to load CSV data (compressed or uncompressed)
-    async function loadCsvData(date) {
-        try {
-            // First try to get file list to determine available format
-            const fileList = await energyApi.getFileList();
-            const csvFilename = `energy/${date}.csv`;
-            const gzFilename = `energy/${date}.csv.gz`;
+    // Cache for archive data to avoid redundant downloads
+    var archiveCache = {
+        monthly: {},  // yearMonth -> csvData
+        yearly: {}    // year -> csvData
+    };
+    var dailyFilesSet = new Set(); // Set of dates available in daily folder
+
+    // Function to load daily CSV data (compressed or uncompressed)
+    // Smart lookup: daily folder (if file exists) -> monthly archive -> yearly archive
+    async function loadDailyCsvData(date) {
+        // Only try daily folder if we know the file exists there
+        if (dailyFilesSet.has(date)) {
+            const csvFilename = `energy/daily/${date}.csv`;
+            const gzFilename = `energy/daily/${date}.csv.gz`;
             
-            if (fileList[csvFilename] !== undefined) {
-                // Plain CSV file exists - load directly
+            // First we try the uncompressed file (which should be the only one present)
+            try {
                 const response = await energyApi.apiCall(`files/${encodeURIComponent(csvFilename)}`, { method: 'GET' });
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch ${csvFilename}: ${response.status}`);
-                }
-                return await response.text();
-            } else if (fileList[gzFilename] !== undefined) {
-                // Compressed file exists - decompress
+                if (response.ok) return await response.text();
+            } catch (e) { /* continue */ }
+            
+            // Safe fallback (should never happen)
+            try {
                 return await decompressGzipFile(gzFilename);
-            } else {
-                throw new Error(`No CSV file found for date ${date}`);
-            }
+            } catch (e) { /* continue */ }
+        }
+        
+        // Try monthly archive - use cache if available
+        const yearMonth = date.substring(0, 7);
+        let monthlyData = archiveCache.monthly[yearMonth];
+        if (!monthlyData) {
+            try {
+                monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
+                archiveCache.monthly[yearMonth] = monthlyData;
+            } catch (e) { /* continue */ }
+        }
+        if (monthlyData) {
+            const filtered = filterCsvByDate(monthlyData, date);
+            if (filtered) return filtered;
+        }
+        
+        // Try yearly archive - use cache if available
+        const year = date.substring(0, 4);
+        let yearlyData = archiveCache.yearly[year];
+        if (!yearlyData) {
+            try {
+                yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
+                archiveCache.yearly[year] = yearlyData;
+            } catch (e) { /* continue */ }
+        }
+        if (yearlyData) {
+            const filtered = filterCsvByDate(yearlyData, date);
+            if (filtered) return filtered;
+        }
+        
+        throw new Error(`No CSV data found for date ${date}`);
+    }
+    
+    // Helper function to filter CSV data by date prefix
+    function filterCsvByDate(csvText, datePrefix) {
+        const lines = csvText.trim().split('\n');
+        const header = lines[0];
+        const dataLines = lines.slice(1).filter(line => line.startsWith(datePrefix));
+        if (dataLines.length === 0) return null;
+        return header + '\n' + dataLines.join('\n');
+    }
+
+    // Function to load monthly consolidated CSV data
+    // Smart lookup: monthly archive -> yearly archive (with caching)
+    async function loadMonthlyCsvData(yearMonth) {
+        // Try monthly archive - use cache if available
+        let monthlyData = archiveCache.monthly[yearMonth];
+        if (!monthlyData) {
+            try {
+                monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
+                archiveCache.monthly[yearMonth] = monthlyData;
+                return monthlyData;
+            } catch (e) { /* continue to yearly */ }
+        } else {
+            return monthlyData;
+        }
+        
+        // Try yearly archive - use cache if available
+        const year = yearMonth.substring(0, 4);
+        let yearlyData = archiveCache.yearly[year];
+        if (!yearlyData) {
+            try {
+                yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
+                archiveCache.yearly[year] = yearlyData;
+            } catch (e) { /* continue */ }
+        }
+        if (yearlyData) {
+            const filtered = filterCsvByMonth(yearlyData, yearMonth);
+            if (filtered) return filtered;
+        }
+        
+        throw new Error(`No CSV data found for month ${yearMonth}`);
+    }
+    
+    // Helper function to filter CSV data by month prefix
+    function filterCsvByMonth(csvText, monthPrefix) {
+        const lines = csvText.trim().split('\n');
+        const header = lines[0];
+        const dataLines = lines.slice(1).filter(line => line.startsWith(monthPrefix));
+        if (dataLines.length === 0) return null;
+        return header + '\n' + dataLines.join('\n');
+    }
+
+    // Function to load yearly consolidated CSV data
+    async function loadYearlyCsvData(year) {
+        try {
+            const gzFilename = `energy/yearly/${year}.csv.gz`;
+            return await decompressGzipFile(gzFilename);
         } catch (error) {
-            console.error(`Error loading CSV data for ${date}:`, error);
+            console.error(`Error loading yearly CSV data for ${year}:`, error);
             throw error;
         }
     }
@@ -600,8 +695,10 @@
             if (availableDates.length > 0) {
                 currentDate = availableDates[availableDates.length - 1];
                 currentMonth = availableMonths[availableMonths.length - 1];
+                currentYear = availableYears[availableYears.length - 1];
                 document.getElementById('date-picker').value = currentDate;
                 document.getElementById('month-picker').value = currentMonth;
+                document.getElementById('year-picker').value = currentYear;
                 updateNavigationButtons();
                 await loadAndDisplayCharts();
                 await updateTotalPieChart();
@@ -620,19 +717,83 @@
 
     async function loadAvailableDates() {
         try {
-            const fileList = await energyApi.getFileList();
-            availableDates = Object.keys(fileList)
-                .filter(filename => filename.startsWith('energy/') && (filename.endsWith('.csv.gz') || filename.endsWith('.csv')))
-                .map(filename => filename.replace('energy/', '').replace('.csv.gz', '').replace('.csv', ''))
-                .sort();
+            const allDates = new Set();
+            const allMonths = new Set();
+            const allYears = new Set();
             
-            // Extract unique months
-            availableMonths = [...new Set(availableDates.map(date => date.substring(0, 7)))].sort();
+            // Load daily files and populate dailyFilesSet
+            const dailyFiles = await energyApi.getFileList('energy/daily') || {};
+            dailyFilesSet.clear();
+            Object.keys(dailyFiles)
+                .filter(filename => filename.endsWith('.csv.gz') || filename.endsWith('.csv'))
+                .map(filename => filename.replace('.csv.gz', '').replace('.csv', ''))
+                .forEach(date => {
+                    dailyFilesSet.add(date);
+                    allDates.add(date);
+                    allMonths.add(date.substring(0, 7));
+                    allYears.add(date.substring(0, 4));
+                });
+            
+            // Load monthly archives and extract dates (cache the data)
+            const monthlyFiles = await energyApi.getFileList('energy/monthly') || {};
+            for (const filename of Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz'))) {
+                const yearMonth = filename.replace('.csv.gz', '');
+                allMonths.add(yearMonth);
+                allYears.add(yearMonth.substring(0, 4));
+                
+                // Extract available dates from monthly archive and cache
+                try {
+                    const csvData = await decompressGzipFile(`energy/monthly/${filename}`);
+                    archiveCache.monthly[yearMonth] = csvData;
+                    extractDatesFromCsv(csvData).forEach(date => allDates.add(date));
+                } catch (e) {
+                    console.warn(`Could not read monthly archive ${filename}:`, e.message);
+                }
+            }
+            
+            // Load yearly archives and extract dates/months (cache the data)
+            const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
+            for (const filename of Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz'))) {
+                const year = filename.replace('.csv.gz', '');
+                allYears.add(year);
+                
+                // Extract available dates and months from yearly archive and cache
+                try {
+                    const csvData = await decompressGzipFile(`energy/yearly/${filename}`);
+                    archiveCache.yearly[year] = csvData;
+                    extractDatesFromCsv(csvData).forEach(date => {
+                        allDates.add(date);
+                        allMonths.add(date.substring(0, 7));
+                    });
+                } catch (e) {
+                    console.warn(`Could not read yearly archive ${filename}:`, e.message);
+                }
+            }
+            
+            availableDates = [...allDates].sort();
+            availableMonths = [...allMonths].sort();
+            availableYears = [...allYears].sort();
+            
+            console.log(`Loaded ${availableDates.length} dates, ${availableMonths.length} months, ${availableYears.length} years`);
         } catch (error) {
             console.error('Error loading available dates:', error);
             availableDates = [];
             availableMonths = [];
+            availableYears = [];
         }
+    }
+    
+    // Helper function to extract unique dates from CSV data
+    function extractDatesFromCsv(csvText) {
+        const lines = csvText.trim().split('\n');
+        const dates = new Set();
+        for (let i = 1; i < lines.length; i++) {
+            const timestamp = lines[i].split(',')[0];
+            if (timestamp && timestamp.length >= 10) {
+                dates.add(timestamp.substring(0, 10)); // YYYY-MM-DD
+            }
+        }
+        return dates;
     }
 
     function setupEventListeners() {
@@ -643,6 +804,10 @@
         
         document.getElementById('monthly-view').addEventListener('click', () => {
             switchView('monthly');
+        });
+        
+        document.getElementById('yearly-view').addEventListener('click', () => {
+            switchView('yearly');
         });
         
         // Date picker change
@@ -658,6 +823,13 @@
             updateNavigationButtons();
             await loadAndDisplayCharts();
         });
+        
+        // Year picker change
+        document.getElementById('year-picker').addEventListener('change', async (e) => {
+            currentYear = e.target.value;
+            updateNavigationButtons();
+            await loadAndDisplayCharts();
+        });
 
         // Navigation buttons
         document.getElementById('prev-period').addEventListener('click', async () => {
@@ -669,11 +841,19 @@
                     updateNavigationButtons();
                     await loadAndDisplayCharts();
                 }
-            } else {
+            } else if (currentView === 'monthly') {
                 const currentIndex = availableMonths.indexOf(currentMonth);
                 if (currentIndex > 0) {
                     currentMonth = availableMonths[currentIndex - 1];
                     document.getElementById('month-picker').value = currentMonth;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
+            } else {
+                const currentIndex = availableYears.indexOf(currentYear);
+                if (currentIndex > 0) {
+                    currentYear = availableYears[currentIndex - 1];
+                    document.getElementById('year-picker').value = currentYear;
                     updateNavigationButtons();
                     await loadAndDisplayCharts();
                 }
@@ -689,11 +869,19 @@
                     updateNavigationButtons();
                     await loadAndDisplayCharts();
                 }
-            } else {
+            } else if (currentView === 'monthly') {
                 const currentIndex = availableMonths.indexOf(currentMonth);
                 if (currentIndex < availableMonths.length - 1) {
                     currentMonth = availableMonths[currentIndex + 1];
                     document.getElementById('month-picker').value = currentMonth;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
+            } else {
+                const currentIndex = availableYears.indexOf(currentYear);
+                if (currentIndex < availableYears.length - 1) {
+                    currentYear = availableYears[currentIndex + 1];
+                    document.getElementById('year-picker').value = currentYear;
                     updateNavigationButtons();
                     await loadAndDisplayCharts();
                 }
@@ -707,14 +895,16 @@
         // Update button states
         document.getElementById('daily-view').classList.toggle('active', view === 'daily');
         document.getElementById('monthly-view').classList.toggle('active', view === 'monthly');
+        document.getElementById('yearly-view').classList.toggle('active', view === 'yearly');
         
         // Show/hide appropriate date pickers
         document.getElementById('date-picker').style.display = view === 'daily' ? 'block' : 'none';
         document.getElementById('month-picker').style.display = view === 'monthly' ? 'block' : 'none';
+        document.getElementById('year-picker').style.display = view === 'yearly' ? 'block' : 'none';
         
         // Update chart title
-        const title = view === 'daily' ? 'Daily Energy Distribution' : 'Monthly Energy Distribution';
-        document.getElementById('pie-chart-title').textContent = title;
+        const titles = { 'daily': 'Daily Energy Distribution', 'monthly': 'Monthly Energy Distribution', 'yearly': 'Yearly Energy Distribution' };
+        document.getElementById('pie-chart-title').textContent = titles[view];
         
         updateNavigationButtons();
         loadAndDisplayCharts();
@@ -725,49 +915,66 @@
             const currentIndex = availableDates.indexOf(currentDate);
             document.getElementById('prev-period').disabled = currentIndex <= 0;
             document.getElementById('next-period').disabled = currentIndex >= availableDates.length - 1;
-        } else {
+        } else if (currentView === 'monthly') {
             const currentIndex = availableMonths.indexOf(currentMonth);
             document.getElementById('prev-period').disabled = currentIndex <= 0;
             document.getElementById('next-period').disabled = currentIndex >= availableMonths.length - 1;
+        } else {
+            const currentIndex = availableYears.indexOf(currentYear);
+            document.getElementById('prev-period').disabled = currentIndex <= 0;
+            document.getElementById('next-period').disabled = currentIndex >= availableYears.length - 1;
         }
     }
 
     async function loadAndDisplayCharts() {
         if (currentView === 'daily' && !currentDate) return;
         if (currentView === 'monthly' && !currentMonth) return;
+        if (currentView === 'yearly' && !currentYear) return;
 
         try {
             showLoadingMessage();
             
             if (currentView === 'daily') {
                 await loadDailyCharts();
-            } else {
+            } else if (currentView === 'monthly') {
                 await loadMonthlyCharts();
+            } else {
+                await loadYearlyCharts();
             }
             
         } catch (error) {
             console.error('Error loading charts:', error);
-            const period = currentView === 'daily' ? currentDate : currentMonth;
-            showErrorMessage(`Failed to load energy data for ${period}`);
+            const periods = { 'daily': currentDate, 'monthly': currentMonth, 'yearly': currentYear };
+            showErrorMessage(`Failed to load energy data for ${periods[currentView]}`);
         }
     }
     
     async function loadDailyCharts() {
-        // Get required UTC dates for the selected local date
-        const requiredDates = getRequiredDatesForLocal(currentDate);
+        // For local time display, we may need data from adjacent UTC dates
+        // E.g., if local is UTC+8, local midnight = 16:00 UTC previous day
+        const selectedLocalDate = new Date(currentDate + 'T00:00:00');
+        const localStartOfDay = new Date(selectedLocalDate);
+        const localEndOfDay = new Date(selectedLocalDate);
+        localEndOfDay.setDate(localEndOfDay.getDate() + 1);
         
+        // Get UTC dates that cover the local day
+        const utcDatesNeeded = new Set();
+        utcDatesNeeded.add(localStartOfDay.toISOString().substring(0, 10));
+        utcDatesNeeded.add(localEndOfDay.toISOString().substring(0, 10));
+        // Also add previous day in case timezone offset pushes us back
+        const prevDay = new Date(localStartOfDay);
+        prevDay.setDate(prevDay.getDate() - 1);
+        utcDatesNeeded.add(prevDay.toISOString().substring(0, 10));
+        
+        // Load data from all needed UTC dates
         let allEnergyData = [];
-        
-        // Load data from all required UTC dates
-        for (const utcDate of requiredDates) {
-            if (availableDates.includes(utcDate)) {
-                try {
-                    const csvData = await loadCsvData(utcDate);
-                    const energyData = parseCsvEnergyData(csvData);
-                    allEnergyData = allEnergyData.concat(energyData);
-                } catch (error) {
-                    console.warn(`Failed to load data for UTC date ${utcDate}:`, error);
-                }
+        for (const utcDate of utcDatesNeeded) {
+            try {
+                const csvData = await loadDailyCsvData(utcDate);
+                const dayData = parseCsvEnergyData(csvData);
+                allEnergyData = allEnergyData.concat(dayData);
+            } catch (e) {
+                // Date may not exist, that's OK
             }
         }
         
@@ -775,22 +982,37 @@
             throw new Error('No data available for selected date');
         }
         
-        // Filter data to include the full local day plus first hour of next day
-        // We need the next day's first reading to calculate consumption for hour 23:00
-        const localDayStart = new Date(currentDate + 'T00:00:00');
-        const nextDayStart = new Date(currentDate + 'T00:00:00');
-        nextDayStart.setDate(nextDayStart.getDate() + 1);
-        nextDayStart.setHours(1, 0, 0, 0); // Include up to 01:00 next day
+        // Filter data: include entries from selected local date AND first hour of next day
+        // (needed to calculate consumption for hour 23:00)
+        const nextLocalDate = new Date(currentDate + 'T00:00:00');
+        nextLocalDate.setDate(nextLocalDate.getDate() + 1);
+        const nextLocalDateStr = nextLocalDate.toLocaleDateString('sv-SE');
         
-        const filteredData = allEnergyData.filter(entry => {
-            // Parse the UTC timestamp from CSV and convert to local time for comparison
-            const entryLocalDate = new Date(entry.timestamp);
-            return entryLocalDate >= localDayStart && entryLocalDate < nextDayStart;
+        const energyData = allEnergyData.filter(entry => {
+            const entryDate = new Date(entry.timestamp);
+            const entryLocalDate = entryDate.toLocaleDateString('sv-SE');
+            const entryLocalHour = entryDate.getHours();
+            
+            // Include all entries from selected date
+            if (entryLocalDate === currentDate) return true;
+            
+            // Include entries from hour 00 of next day (needed for hour 23 calculation)
+            if (entryLocalDate === nextLocalDateStr && entryLocalHour === 0) return true;
+            
+            return false;
         });
         
-        // Calculate hourly consumption and total consumption
-        const hourlyConsumption = calculateHourlyConsumption(filteredData);
-        const totalConsumption = calculateTotalConsumption(filteredData);
+        if (energyData.length === 0) {
+            throw new Error('No data available for selected date');
+        }
+        
+        // Calculate hourly consumption and total consumption (in local time)
+        // Standard convention: bar at "16:00" = consumption during 16:00-16:59
+        const hourlyConsumption = calculateHourlyConsumption(energyData, currentDate);
+        const totalConsumption = calculateTotalConsumption(energyData.filter(entry => {
+            const entryDate = new Date(entry.timestamp);
+            return entryDate.toLocaleDateString('sv-SE') === currentDate;
+        }));
         
         // Restore chart canvases before updating
         restoreChartCanvases();
@@ -804,35 +1026,60 @@
     }
     
     async function loadMonthlyCharts() {
-        // Get all dates for the selected month
-        const monthDates = availableDates.filter(date => date.startsWith(currentMonth));
+        // Load data from consolidated monthly file + any remaining daily files
+        let allEnergyData = [];
         
-        if (monthDates.length === 0) {
+        // Try to load consolidated monthly file
+        try {
+            const csvData = await loadMonthlyCsvData(currentMonth);
+            allEnergyData = parseCsvEnergyData(csvData);
+            console.log(`Loaded ${allEnergyData.length} records from monthly archive for ${currentMonth}`);
+        } catch (error) {
+            console.warn(`No consolidated monthly file for ${currentMonth}:`, error.message);
+        }
+        
+        // Also load daily files for current month (includes today's data not yet consolidated)
+        const monthDates = availableDates.filter(date => date.startsWith(currentMonth));
+        for (const date of monthDates) {
+            try {
+                const csvData = await loadDailyCsvData(date);
+                const dailyData = parseCsvEnergyData(csvData);
+                allEnergyData = allEnergyData.concat(dailyData);
+                console.log(`Loaded ${dailyData.length} records from daily file for ${date}`);
+            } catch (error) {
+                console.warn(`Failed to load data for ${date}:`, error.message);
+            }
+        }
+        
+        if (allEnergyData.length === 0) {
             throw new Error('No data available for selected month');
         }
         
-        // Load data for all days in the month
-        const monthlyData = {};
+        // Group data by day and calculate daily consumption
         const dailyConsumptions = {};
+        const monthlyData = {};
         
-        for (const date of monthDates) {
-            try {
-                const csvData = await loadCsvData(date);
-                const energyData = parseCsvEnergyData(csvData);
-                const dailyConsumption = calculateTotalConsumption(energyData);
-                
-                const day = date.substring(8, 10); // Extract day from YYYY-MM-DD
-                dailyConsumptions[day] = dailyConsumption;
-                
-                // Add to monthly totals
-                Object.keys(dailyConsumption).forEach(channel => {
-                    if (!monthlyData[channel]) monthlyData[channel] = 0;
-                    monthlyData[channel] += dailyConsumption[channel];
-                });
-            } catch (error) {
-                console.warn(`Failed to load data for ${date}:`, error);
-            }
-        }
+        // Group by date
+        const dataByDate = {};
+        allEnergyData.forEach(entry => {
+            const date = entry.timestamp.substring(0, 10); // YYYY-MM-DD
+            if (!dataByDate[date]) dataByDate[date] = [];
+            dataByDate[date].push(entry);
+        });
+        
+        // Calculate consumption for each day
+        Object.keys(dataByDate).sort().forEach(date => {
+            const dayData = dataByDate[date];
+            const dailyConsumption = calculateTotalConsumption(dayData);
+            const day = date.substring(8, 10); // Extract day from YYYY-MM-DD
+            dailyConsumptions[day] = dailyConsumption;
+            
+            // Add to monthly totals
+            Object.keys(dailyConsumption).forEach(channel => {
+                if (!monthlyData[channel]) monthlyData[channel] = 0;
+                monthlyData[channel] += dailyConsumption[channel];
+            });
+        });
         
         // Restore chart canvases before updating
         restoreChartCanvases();
@@ -843,6 +1090,85 @@
         
         // Set up CSV download
         setupCsvDownload(dailyConsumptions, 'monthly');
+    }
+
+    async function loadYearlyCharts() {
+        // Load data from consolidated yearly file + any remaining monthly files
+        let allEnergyData = [];
+        
+        // Try to load consolidated yearly file
+        try {
+            const csvData = await loadYearlyCsvData(currentYear);
+            allEnergyData = parseCsvEnergyData(csvData);
+            console.log(`Loaded ${allEnergyData.length} records from yearly archive for ${currentYear}`);
+        } catch (error) {
+            console.warn(`No consolidated yearly file for ${currentYear}:`, error.message);
+        }
+        
+        // Also load monthly files for current year (includes current month not yet consolidated)
+        const yearMonths = availableMonths.filter(month => month.startsWith(currentYear));
+        for (const month of yearMonths) {
+            try {
+                const csvData = await loadMonthlyCsvData(month);
+                const monthlyData = parseCsvEnergyData(csvData);
+                allEnergyData = allEnergyData.concat(monthlyData);
+                console.log(`Loaded ${monthlyData.length} records from monthly file for ${month}`);
+            } catch (error) {
+                console.warn(`Failed to load data for ${month}:`, error.message);
+            }
+        }
+        
+        // Also load daily files for current month if exists
+        const currentMonthDates = availableDates.filter(date => date.startsWith(currentYear));
+        for (const date of currentMonthDates) {
+            try {
+                const csvData = await loadDailyCsvData(date);
+                const dailyData = parseCsvEnergyData(csvData);
+                allEnergyData = allEnergyData.concat(dailyData);
+                console.log(`Loaded ${dailyData.length} records from daily file for ${date}`);
+            } catch (error) {
+                console.warn(`Failed to load data for ${date}:`, error.message);
+            }
+        }
+        
+        if (allEnergyData.length === 0) {
+            throw new Error('No data available for selected year');
+        }
+        
+        // Group data by month and calculate monthly consumption
+        const monthlyConsumptions = {};
+        const yearlyData = {};
+        
+        // Group by month
+        const dataByMonth = {};
+        allEnergyData.forEach(entry => {
+            const month = entry.timestamp.substring(5, 7); // MM from YYYY-MM-DD
+            if (!dataByMonth[month]) dataByMonth[month] = [];
+            dataByMonth[month].push(entry);
+        });
+        
+        // Calculate consumption for each month
+        Object.keys(dataByMonth).sort().forEach(month => {
+            const monthData = dataByMonth[month];
+            const monthConsumption = calculateTotalConsumption(monthData);
+            monthlyConsumptions[month] = monthConsumption;
+            
+            // Add to yearly totals
+            Object.keys(monthConsumption).forEach(channel => {
+                if (!yearlyData[channel]) yearlyData[channel] = 0;
+                yearlyData[channel] += monthConsumption[channel];
+            });
+        });
+        
+        // Restore chart canvases before updating
+        restoreChartCanvases();
+        
+        // Update charts
+        updateConsumptionChart(monthlyConsumptions, 'yearly');
+        updatePieChart(yearlyData);
+        
+        // Set up CSV download
+        setupCsvDownload(monthlyConsumptions, 'yearly');
     }
 
     function parseCsvEnergyData(csvText) {
@@ -863,7 +1189,7 @@
         return data;
     }
 
-    function calculateHourlyConsumption(energyData) {
+    function calculateHourlyConsumption(energyData, targetLocalDate) {
         // Sort all data chronologically first
         const sortedData = energyData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         
@@ -873,10 +1199,15 @@
             if (!channelSequences[entry.channel]) {
                 channelSequences[entry.channel] = [];
             }
+            // Convert UTC timestamp to local date and hour
+            const date = new Date(entry.timestamp);
+            const localDate = date.toLocaleDateString('sv-SE');
+            const localHour = date.getHours().toString().padStart(2, '0');
             channelSequences[entry.channel].push({
                 timestamp: entry.timestamp,
                 energy: entry.activeImported,
-                localHour: new Date(entry.timestamp).getHours().toString().padStart(2, '0')
+                hour: localHour,
+                localDate: localDate
             });
         });
         
@@ -890,13 +1221,18 @@
                 const current = sequence[i];
                 const previous = sequence[i - 1];
                 
+                // Only record consumption if the previous reading is from the target date
+                // This ensures bar at "16:00" represents consumption during hour 16 (16:xx to 17:xx)
+                if (targetLocalDate && previous.localDate !== targetLocalDate) continue;
+                
                 const hourlyConsumption = Math.max(0, (current.energy - previous.energy) / 1000); // Convert Wh to kWh
                 
-                // Assign consumption to the hour when it ended (current hour)
-                if (!consumption[current.localHour]) {
-                    consumption[current.localHour] = {};
+                // Assign consumption to the hour when it started (previous local hour)
+                // Standard convention: bar at "16:00" = consumption during 16:00-16:59
+                if (!consumption[previous.hour]) {
+                    consumption[previous.hour] = {};
                 }
-                consumption[current.localHour][channel] = hourlyConsumption;
+                consumption[previous.hour][channel] = hourlyConsumption;
             }
         });
         
@@ -1018,14 +1354,22 @@
         }
         
         // Format labels based on view type
-        const labels = viewType === 'daily' 
-            ? periods.map(hour => `${hour}:00`)
-            : periods.map(day => day);
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        let labels;
+        if (viewType === 'daily') {
+            labels = periods.map(hour => `${hour}:00`);
+        } else if (viewType === 'monthly') {
+            labels = periods.map(day => day);
+        } else {
+            labels = periods.map(month => monthNames[parseInt(month) - 1] || month);
+        }
         
         // Create new chart
         const ctx = canvasElement.getContext('2d');
         const isMobile = window.innerWidth <= 768;
         const isSmallMobile = window.innerWidth <= 480;
+        
+        const xAxisLabels = { 'daily': 'Hour', 'monthly': 'Day', 'yearly': 'Month' };
         
         consumptionChart = new Chart(ctx, {
             type: 'bar',
@@ -1041,7 +1385,7 @@
                         stacked: true,
                         title: {
                             display: true,
-                            text: viewType === 'daily' ? 'Hour' : 'Day'
+                            text: xAxisLabels[viewType]
                         },
                         ticks: {
                             font: {
@@ -1175,29 +1519,8 @@
         return colors[index % (colors.length - 1)]; // Reserve last color for "Other"
     }
 
-    function getRequiredDatesForLocal(localDateString) {
-        // For a local date, determine which UTC dates we need to query
-        // This handles cases where local timezone spans multiple UTC days
-        // We also need data from the next day to calculate consumption for the last hour
-        const localDate = new Date(localDateString + 'T00:00:00');
-        const localDateEnd = new Date(localDateString + 'T23:59:59');
-        const nextDayStart = new Date(localDateString + 'T00:00:00');
-        nextDayStart.setDate(nextDayStart.getDate() + 1); // Add one day for next day's first reading
-        
-        // Convert local time to UTC to see what UTC dates we need
-        // getTimezoneOffset() returns offset in minutes (positive = west of UTC, negative = east of UTC)
-        // To convert local to UTC: add the offset (this compensates for the timezone difference)
-        const utcStart = new Date(localDate.getTime() + localDate.getTimezoneOffset() * 60000);
-        const utcEnd = new Date(localDateEnd.getTime() + localDateEnd.getTimezoneOffset() * 60000);
-        const utcNextDayStart = new Date(nextDayStart.getTime() + nextDayStart.getTimezoneOffset() * 60000);
-        
-        const requiredDates = new Set();
-        requiredDates.add(utcStart.toISOString().substring(0, 10));
-        requiredDates.add(utcEnd.toISOString().substring(0, 10));
-        requiredDates.add(utcNextDayStart.toISOString().substring(0, 10));
-        
-        return Array.from(requiredDates);
-    }
+    // Note: Data is stored in UTC, displayed in local time
+    // Future enhancement: Add timezone conversion for local display
 
     function setupCsvDownload(consumptionData, viewType) {
         const downloadBtn = document.getElementById('download-csv');
@@ -1470,7 +1793,6 @@
             <canvas id="consumption-chart-canvas"></canvas>
             <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
                 <i class="fas fa-download"></i>
-                <span class="tooltiptext">Download as CSV</span>
             </button>
         `;
         

@@ -19,6 +19,7 @@
 #include "crashmonitor.h"
 #include "customlog.h"
 #include "custommqtt.h"
+#include "customtime.h"
 #include "mqtt.h"
 #include "influxdbclient.h"
 #include "ade7953.h"

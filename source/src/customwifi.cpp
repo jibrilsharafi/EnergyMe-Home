@@ -19,10 +19,18 @@ namespace CustomWifi
   static const uint32_t WIFI_EVENT_DISCONNECTED = 3;
   static const uint32_t WIFI_EVENT_SHUTDOWN = 4;
   static const uint32_t WIFI_EVENT_FORCE_RECONNECT = 5;
+  static const uint32_t WIFI_EVENT_NEW_CREDENTIALS = 6;
 
   // Task state management
   static bool _taskShouldRun = false;
   static bool _eventsEnabled = false;
+  
+  // New credentials storage for async switching
+  // To be safe, we should create mutexes around these since they are accessed via a public method
+  // But since they are seldom written and read, we can avoid the complexity for now
+  static char _pendingSSID[WIFI_SSID_BUFFER_SIZE] = {0};
+  static char _pendingPassword[WIFI_PASSWORD_BUFFER_SIZE] = {0};
+  static bool _hasPendingCredentials = false;
 
 
   // Private helper functions
@@ -36,6 +44,9 @@ namespace CustomWifi
   static void _stopWifiTask();
   static bool _testConnectivity();
   static void _forceReconnectInternal();
+  static bool _isPowerReset();
+  static void _sendOpenSourceTelemetry();
+  static bool _telemetrySent = false; // Ensures telemetry is sent only once per boot
 
   bool begin()
   {
@@ -107,7 +118,15 @@ namespace CustomWifi
   {
     LOG_DEBUG("Setting up the WiFiManager...");
 
-    wifiManager.setConnectTimeout(WIFI_CONNECT_TIMEOUT_SECONDS);
+    // Check if this is a power reset - router likely rebooting
+    bool isPowerReset = _isPowerReset();
+    uint32_t connectTimeout = isPowerReset ? WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS : WIFI_CONNECT_TIMEOUT_SECONDS;
+    
+    if (isPowerReset) {
+      LOG_INFO("Power reset detected - using extended WiFi timeout (%d seconds) to allow router to reboot", connectTimeout);
+    }
+
+    wifiManager.setConnectTimeout(connectTimeout);
     wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SECONDS);
     wifiManager.setConnectRetries(WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS); // Let WiFiManager handle initial retries
     
@@ -196,6 +215,7 @@ namespace CustomWifi
     Led::clearPattern(Led::PRIO_MEDIUM); // Ensure that if we are connected again, we don't keep the blue pattern
     Led::setGreen(Led::PRIO_NORMAL); // Hack: to ensure we get back to green light, we set it here even though a proper LED manager would handle priorities better
     LOG_INFO("WiFi fully connected and operational");
+    _sendOpenSourceTelemetry(); // Non-blocking short POST (guarded by compile-time flag)
   }
 
   static void _wifiConnectionTask(void *parameter)
@@ -281,6 +301,38 @@ namespace CustomWifi
           _forceReconnectInternal();
           continue; // No further action needed
 
+        case WIFI_EVENT_NEW_CREDENTIALS:
+          if (_hasPendingCredentials)
+          {
+            LOG_INFO("Processing new WiFi credentials for SSID: %s", _pendingSSID);
+            
+            // Save new credentials to NVS using esp_wifi_set_config() directly
+            // This stores credentials WITHOUT triggering a connection attempt,
+            // which avoids heap corruption when restarting immediately after
+            wifi_config_t wifi_config = {};
+            snprintf((char*)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), "%s", _pendingSSID);
+            snprintf((char*)wifi_config.sta.password, sizeof(wifi_config.sta.password), "%s", _pendingPassword);
+            
+            esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+            if (err != ESP_OK) {
+              LOG_ERROR("Failed to save WiFi credentials: %s", esp_err_to_name(err));
+              memset(_pendingSSID, 0, sizeof(_pendingSSID));
+              memset(_pendingPassword, 0, sizeof(_pendingPassword));
+              _hasPendingCredentials = false;
+              continue;
+            }
+            
+            // Clear pending credentials from memory
+            memset(_pendingSSID, 0, sizeof(_pendingSSID));
+            memset(_pendingPassword, 0, sizeof(_pendingPassword));
+            _hasPendingCredentials = false;
+            
+            // Request system restart to apply new WiFi credentials
+            LOG_INFO("New credentials saved to NVS, restarting system");
+            setRestartSystem("Restart to apply new WiFi credentials");
+          }
+          continue; // No further action needed
+
         case WIFI_EVENT_DISCONNECTED:
           statistics.wifiConnectionError++;
           Led::pulseBlue(Led::PRIO_MEDIUM);
@@ -342,18 +394,29 @@ namespace CustomWifi
       else
       {
         // Timeout occurred - perform periodic health check
-        if (_taskShouldRun && isFullyConnected())
-        {   
-          if (!_testConnectivity()) {
-            LOG_WARNING("Connectivity test failed - forcing reconnection");
-            _forceReconnectInternal();
+        if (_taskShouldRun)
+        {
+          if (isFullyConnected())
+          {   
+            // Test internet connectivity but don't force reconnection if it fails
+            // WiFi is connected to local network - internet may simply be unavailable
+            // This allows the device to operate in local-only mode (static IP, isolated networks)
+            if (!_testConnectivity()) {
+              LOG_DEBUG("Internet connectivity unavailable - device operating in local-only mode");
+            }
+          
+            // Reset failure counter on sustained connection
+            if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
+            {
+              LOG_DEBUG("WiFi connection stable - resetting counters");
+              _reconnectAttempts = 0;
+            }
           }
-        
-          // Reset failure counter on sustained connection
-          if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
+          else
           {
-            LOG_DEBUG("WiFi connection stable - resetting counters");
-            _reconnectAttempts = 0;
+            // WiFi not connected or no IP - force reconnection
+            LOG_WARNING("Periodic check: WiFi not fully connected - forcing reconnection");
+            _forceReconnectInternal();
           }
         }
       }
@@ -380,6 +443,60 @@ namespace CustomWifi
     }
     
     setRestartSystem("Restart after WiFi reset");
+  }
+
+  bool setCredentials(const char* ssid, const char* password)
+  {
+    // Validate inputs
+    if (!ssid || strlen(ssid) == 0)
+    {
+      LOG_ERROR("Invalid SSID provided");
+      return false;
+    }
+
+    if (strlen(ssid) >= WIFI_SSID_BUFFER_SIZE)
+    {
+      LOG_ERROR("SSID exceeds maximum length of %d characters", WIFI_SSID_BUFFER_SIZE);
+      return false;
+    }
+
+    if (!password)
+    {
+      LOG_ERROR("Password cannot be NULL");
+      return false;
+    }
+
+    if (strlen(password) >= WIFI_PASSWORD_BUFFER_SIZE)
+    {
+      LOG_ERROR("Password exceeds maximum length of %d characters", WIFI_PASSWORD_BUFFER_SIZE);
+      return false;
+    }
+
+    if (strlen(password) == 0)
+    {
+      LOG_WARNING("Empty password provided for SSID: %s (open network)", ssid);
+    }
+
+    // Check if WiFi task is running
+    if (_wifiTaskHandle == NULL)
+    {
+      LOG_ERROR("Cannot set credentials - WiFi task not running");
+      return false;
+    }
+
+    LOG_INFO("Queueing new WiFi credentials for SSID: %s", ssid);
+    
+    // Store credentials for WiFi task to process
+    snprintf(_pendingSSID, sizeof(_pendingSSID), "%s", ssid);
+    snprintf(_pendingPassword, sizeof(_pendingPassword), "%s", password);
+    _hasPendingCredentials = true;
+    
+    // Notify WiFi task to process new credentials
+    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_NEW_CREDENTIALS, eSetValueWithOverwrite);
+    
+    // Return immediately - actual connection happens asynchronously in WiFi task
+    // This prevents blocking the web server and avoids conflicts with event handlers
+    return true;
   }
 
   bool _setupMdns()
@@ -480,9 +597,15 @@ namespace CustomWifi
     
     // Connection successful - internet is reachable
     client.stop();
+    
+    // Use char buffers to avoid dynamic string allocation in logs and potential crashes
+    char gatewayStr[IP_ADDRESS_BUFFER_SIZE];
+    snprintf(gatewayStr, sizeof(gatewayStr), "%d.%d.%d.%d", gateway[0], gateway[1], gateway[2], gateway[3]);
+    char dns1Str[IP_ADDRESS_BUFFER_SIZE];
+    snprintf(dns1Str, sizeof(dns1Str), "%d.%d.%d.%d", dns1[0], dns1[1], dns1[2], dns1[3]);
     LOG_DEBUG("Connectivity test passed - Gateway: %s, DNS: %s, Internet: %s:%d reachable", 
-              gateway.toString().c_str(), 
-              dns1.toString().c_str(),
+              gatewayStr,
+              dns1Str,
               CONNECTIVITY_TEST_IP,
               CONNECTIVITY_TEST_PORT);
     return true;
@@ -504,6 +627,97 @@ namespace CustomWifi
     statistics.wifiConnectionError++;
     
     LOG_INFO("Forced reconnection initiated (attempt %d)", _reconnectAttempts);
+  }
+
+  static bool _isPowerReset()
+  {
+    // Check if the reset reason indicates a power-related event
+    // ESP_RST_POWERON: Power on reset (cold boot)
+    // ESP_RST_BROWNOUT: Brownout reset (power supply voltage dropped below minimum)
+    esp_reset_reason_t resetReason = esp_reset_reason();
+    return resetReason == ESP_RST_POWERON || resetReason == ESP_RST_BROWNOUT;
+  }
+
+  static void _sendOpenSourceTelemetry()
+  {
+#ifdef ENABLE_OPEN_SOURCE_TELEMETRY
+    if (_telemetrySent) return;
+
+    // Basic preconditions: WiFi connected with IP
+    if (!isFullyConnected(true)) {
+      LOG_DEBUG("Skipping telemetry - WiFi not fully connected");
+      return;
+    }
+
+    // Prepare JSON payload using PSRAM allocator
+    SpiRamAllocator allocator;
+    JsonDocument doc(&allocator);
+
+    // Hash the device identifier (privacy: avoid sending raw ID)
+    unsigned char hash[32];
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    mbedtls_sha256_starts(&sha, 0);
+    mbedtls_sha256_update(&sha, reinterpret_cast<const unsigned char*>(DEVICE_ID), strlen((const char*)DEVICE_ID));
+    mbedtls_sha256_finish(&sha, hash);
+    mbedtls_sha256_free(&sha);
+    
+    char hashedDeviceId[65]; // 64 hex chars + null
+    for (int i = 0; i < 32; i++) snprintf(&hashedDeviceId[i * 2], 3, "%02x", hash[i]);
+    
+    doc["device_id"] = hashedDeviceId; // Replace plain ID with hashed value
+    doc["firmware_version"] = FIRMWARE_BUILD_VERSION;
+    doc["sketch_md5"] = ESP.getSketchMD5();
+
+    char jsonBuffer[TELEMETRY_JSON_BUFFER_SIZE];
+    size_t jsonSize = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
+    if (jsonSize == 0 || jsonSize >= sizeof(jsonBuffer)) {
+      LOG_WARNING("Telemetry JSON invalid or too large"); 
+      return; 
+    }
+
+    WiFiClientSecure client;
+    client.setTimeout(TELEMETRY_TIMEOUT_MS);
+    client.setCACert(AWS_IOT_CORE_CA_CERT); // Use Amazon Root CA 1 for secure connection
+
+    if (!client.connect(TELEMETRY_URL, TELEMETRY_PORT)) {
+      LOG_WARNING("Telemetry connection failed");
+      return;
+    }
+
+    // Build HTTP request headers
+    char header[TELEMETRY_JSON_BUFFER_SIZE];
+    int headerLen = snprintf(header, sizeof(header),
+                             "POST %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: EnergyMe-Home/%s\r\nContent-Type: application/json\r\nContent-Length: %u\r\nConnection: close\r\n\r\n",
+                             TELEMETRY_PATH,
+                             TELEMETRY_URL,
+                             FIRMWARE_BUILD_VERSION,
+                             (unsigned)jsonSize);
+    if (headerLen <= 0 || headerLen >= (int)sizeof(header)) {
+      client.stop(); 
+      LOG_WARNING("Telemetry header build failed"); 
+      return; 
+    }
+
+    // Send request
+    client.write(reinterpret_cast<const uint8_t*>(header), headerLen);
+    client.write(reinterpret_cast<const uint8_t*>(jsonBuffer), jsonSize);
+
+    // Lightweight response handling (discard data, avoid dynamic allocations)
+    // While we could avoid this, it is safer to ensure the server closes the connection properly
+    uint64_t start = millis64();
+    while (client.connected() && (millis64() - start) < TELEMETRY_TIMEOUT_MS)
+    {
+      while (client.available()) client.read();
+      delay(10);
+    }
+    client.stop();
+
+    _telemetrySent = true; // Set to true regardless of success to avoid repeated attempts. This info is not critical.
+    LOG_INFO("Open source telemetry sent");
+#else
+    LOG_DEBUG("Open source telemetry disabled (compile-time)");
+#endif
   }
 
   static void _startWifiTask()

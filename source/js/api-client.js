@@ -225,6 +225,21 @@ class EnergyMeAPI {
     }
 
     /**
+     * Get system time
+     */
+    async getSystemTime() {
+        return this.get('system/time');
+    }
+
+    /**
+     * Set system time (for devices without internet connectivity)
+     * @param {number} unixSeconds - Unix timestamp in seconds
+     */
+    async setSystemTime(unixSeconds) {
+        return this.post('system/time', { unixTime: unixSeconds });
+    }
+
+    /**
      * Get custom MQTT config
      */
     async getCustomMqttConfig() {
@@ -317,9 +332,11 @@ class EnergyMeAPI {
 
     /**
      * Get list of files
+     * @param {string} folder - Optional folder path to filter files
      */
-    async getFileList() {
-        return this.get('list-files');
+    async getFileList(folder = null) {
+        const endpoint = folder ? `list-files?folder=${encodeURIComponent(folder)}` : 'list-files';
+        return this.get(endpoint);
     }
 
     /**
@@ -327,6 +344,15 @@ class EnergyMeAPI {
      */
     async resetWifi() {
         return this.post('network/wifi/reset');
+    }
+
+    /**
+     * Set new WiFi credentials
+     * @param {string} ssid - The WiFi network name
+     * @param {string} password - The WiFi password
+     */
+    async setWifiCredentials(ssid, password) {
+        return this.post('network/wifi/credentials', { ssid, password });
     }
 
     /**

@@ -240,7 +240,6 @@
             <h2>Log</h2>
             <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
                 <i class="fas fa-download"></i>
-                <span class="tooltiptext">Download as CSV</span>
             </button>
             <div class="controls">
                 <input type="text" id="search-input-text" class="search-input" placeholder="Search log..."
@@ -328,7 +327,19 @@
                             };
                         }
 
-                        const timestamp = parts[0];
+                        const timestampUtc = parts[0];
+                        // Convert UTC timestamp to local time
+                        let timestamp = timestampUtc;
+                        try {
+                            const date = new Date(timestampUtc);
+                            if (!isNaN(date.getTime())) {
+                                timestamp = date.toLocaleString('sv-SE', { 
+                                    year: 'numeric', month: '2-digit', day: '2-digit',
+                                    hour: '2-digit', minute: '2-digit', second: '2-digit',
+                                    fractionalSecondDigits: 3
+                                }).replace(',', '.');
+                            }
+                        } catch (e) { /* Keep original if conversion fails */ }
                         const elapsedTime = parts[1];
                         const level = parts[2].trim();
                         const core = parts[3].replace('Core ', '');
@@ -461,7 +472,7 @@
             const csvContent = ["data:text/csv;charset=utf-8,"];
             csvContent.push("Row,Timestamp,Elapsed,Level,Core,File,Function,Message");
 
-            const rows = document.querySelectorAll('.log-table tr:not(:first-child)');
+            const rows = document.querySelectorAll('.log-table tbody tr');
             rows.forEach(function (row) {
                 const rowData = Array.from(row.querySelectorAll('td'))
                     .map(cell => {

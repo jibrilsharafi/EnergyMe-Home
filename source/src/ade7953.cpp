@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "ade7953.h"
+#include <set>
 
 namespace Ade7953
 {
@@ -20,6 +21,10 @@ namespace Ade7953
     // Timing and measurement variables
     static uint64_t _sampleTime; // in milliseconds, time between linecycles readings
     static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
+    static uint8_t _lastHighPriorityChannel = INVALID_CHANNEL; // Track last HP channel for round-robin
+    static uint8_t _lastLowPriorityChannel = INVALID_CHANNEL; // Track last LP channel for round-robin
+    static uint8_t _hpRunCount = 0;      // Tracks consecutive HP executions
+    static uint8_t _dynamicRatio = 1;    // Calculated ratio (HP slots per 1 LP slot)
     static float _gridFrequency = 50.0f;
 
     // Failure tracking
@@ -225,6 +230,7 @@ namespace Ade7953
     static bool _validateGridFrequency(float newValue);
 
     // Utility functions
+    static void _recalculateRatio();
     static uint8_t _findNextActiveChannel(uint8_t currentChannel);
     static Phase _getLaggingPhase(Phase phase);
     static Phase _getLeadingPhase(Phase phase);
@@ -719,7 +725,7 @@ namespace Ade7953
         return true;
     }
 
-    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
+bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
             return false;
@@ -737,6 +743,8 @@ namespace Ade7953
         } else {
             _channelData[channelIndex] = channelData;
         }
+
+        _recalculateRatio();
 
         releaseMutex(&_channelDataMutex);
 
@@ -756,10 +764,8 @@ namespace Ade7953
             return;
         }
 
-        ChannelData channelData; // Default constructor initializes to default values
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            setChannelData(channelData, i);
-        }
+        ChannelData channelData(channelIndex); // Constructor with index sets proper defaults
+        setChannelData(channelData, channelIndex);
 
         LOG_DEBUG("Successfully reset channel data for channel %lu", channelIndex);
     }
@@ -830,6 +836,7 @@ namespace Ade7953
         jsonDocument["index"] = channelData.index;
         jsonDocument["active"] = channelData.active;
         jsonDocument["reverse"] = channelData.reverse;
+        jsonDocument["highPriority"] = channelData.highPriority;
         jsonDocument["label"] = JsonString(channelData.label); // Ensure it is not a dangling pointer
         jsonDocument["phase"] = channelData.phase;
 
@@ -846,6 +853,7 @@ namespace Ade7953
             if (jsonDocument["index"].is<uint8_t>()) channelData.index = jsonDocument["index"].as<uint8_t>();
             if (jsonDocument["active"].is<bool>()) channelData.active = jsonDocument["active"].as<bool>();
             if (jsonDocument["reverse"].is<bool>()) channelData.reverse = jsonDocument["reverse"].as<bool>();
+            if (jsonDocument["highPriority"].is<bool>()) channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             if (jsonDocument["label"].is<const char*>()) {
                 snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             }
@@ -866,6 +874,8 @@ namespace Ade7953
             channelData.index = jsonDocument["index"].as<uint8_t>();
             channelData.active = jsonDocument["active"].as<bool>();
             channelData.reverse = jsonDocument["reverse"].as<bool>();
+            // highPriority is optional for backward compatibility (defaults to false if not provided)
+            channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
             
@@ -901,22 +911,31 @@ namespace Ade7953
         preferences.clear();
         preferences.end();
 
-        // Remove all CSV energy files
-        File root = LittleFS.open(ENERGY_CSV_PREFIX "/"); // We already know all the historical energy files will be inside the ENERGY_CSV_PREFIX folder
-        File file = root.openNextFile();
-        while (file) {
-            if (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv")) { // Remove the CSV files (current day is not compressed, thus only .csv)
-                char fullPathFile[NAME_BUFFER_SIZE]; // Since the file name would only be the name inside the ENERGY_CSV_PREFIX folder, we need to prepend the folder path
-                snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", ENERGY_CSV_PREFIX, file.name());
-                
-                // We now need to close the file before removing it, otherwise we get esp_littlefs: Failed to unlink path "/energy/2025-09-23.csv". Has open FD.
-                file.close();
-                LittleFS.remove(fullPathFile);
-                LOG_DEBUG("Removed energy CSV file: %s", fullPathFile);
+        // Remove all CSV energy files from all subdirectories (daily, monthly, yearly)
+        const char* energyDirs[] = { ENERGY_CSV_DAILY_PREFIX, ENERGY_CSV_MONTHLY_PREFIX, ENERGY_CSV_YEARLY_PREFIX, ENERGY_CSV_PREFIX };
+        for (const char* dirPath : energyDirs) {
+            if (!LittleFS.exists(dirPath)) continue;
+            
+            File root = LittleFS.open(dirPath);
+            if (!root) continue;
+            
+            File file = root.openNextFile();
+            while (file) {
+                if (!file.isDirectory() && (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv"))) {
+                    char fullPathFile[NAME_BUFFER_SIZE];
+                    snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", dirPath, file.name());
+                    
+                    // We now need to close the file before removing it
+                    file.close();
+                    LittleFS.remove(fullPathFile);
+                    LOG_DEBUG("Removed energy CSV file: %s", fullPathFile);
+                } else {
+                    file.close();
+                }
+                file = root.openNextFile();
             }
-            file = root.openNextFile();
+            root.close();
         }
-        root.close();
 
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) _saveEnergyToPreferences(i);
 
@@ -1732,14 +1751,85 @@ namespace Ade7953
         if (!CustomTime::isTimeSynched()) {
             LOG_WARNING("Time not synchronized after timeout, skipping CSV migration on startup");
         } else {
-            // Avoid compressing current day CSV (still need to append today's data)
+            // Step 1: Migrate existing files from /energy/ to /energy/daily/ (one-time migration for existing devices)
+            migrateEnergyFilesToDailyFolder();
+            
+            // Step 2: Compress any uncompressed CSV files in daily folder (excluding today's)
             char dateIso[TIMESTAMP_BUFFER_SIZE];
             CustomTime::getCurrentDateIso(dateIso, sizeof(dateIso));
-            char excludeFilepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 1]; // Added space for prefix plus "/"
-            snprintf(excludeFilepath, sizeof(excludeFilepath), "%s/%s", ENERGY_CSV_PREFIX, dateIso);
+            char excludeFilepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_DAILY_PREFIX) + 1];
+            snprintf(excludeFilepath, sizeof(excludeFilepath), "%s/%s", ENERGY_CSV_DAILY_PREFIX, dateIso);
             
             LOG_DEBUG("Migrating the CSV files, excluding prefix of %s", excludeFilepath);
-            migrateCsvToGzip(ENERGY_CSV_PREFIX, excludeFilepath);
+            migrateCsvToGzip(ENERGY_CSV_DAILY_PREFIX, excludeFilepath);
+            
+            // Step 3: Get current date info for consolidation
+            char currentYearMonth[8]; // YYYY-MM
+            snprintf(currentYearMonth, sizeof(currentYearMonth), "%.7s", dateIso); // First 7 chars of YYYY-MM-DD
+            char currentYear[5]; // YYYY
+            snprintf(currentYear, sizeof(currentYear), "%.4s", dateIso); // First 4 chars
+            
+            // Step 4: Consolidate daily files from previous months (no exclusion needed - full month)
+            // Collect unique months first to avoid redundant consolidation calls
+            std::set<std::string> monthsToConsolidate;
+            File dailyDir = LittleFS.open(ENERGY_CSV_DAILY_PREFIX);
+            if (dailyDir) {
+                File file = dailyDir.openNextFile();
+                while (file) {
+                    const char* filename = file.name();
+                    // Check for files like YYYY-MM-DD.csv.gz from previous months
+                    if (endsWith(filename, ".csv.gz") && strlen(filename) >= 10) {
+                        char fileMonth[8];
+                        snprintf(fileMonth, sizeof(fileMonth), "%.7s", filename);
+                        if (strcmp(fileMonth, currentYearMonth) < 0) {
+                            monthsToConsolidate.insert(std::string(fileMonth));
+                        }
+                    }
+                    file.close();
+                    file = dailyDir.openNextFile();
+                }
+                dailyDir.close();
+            }
+            for (const auto& month : monthsToConsolidate) {
+                LOG_DEBUG("Consolidating daily files from previous month: %s", month.c_str());
+                consolidateDailyFilesToMonthly(month.c_str(), nullptr);
+            }
+            
+            // Step 5: Consolidate daily files from current month (excluding today)
+            // This consolidates all past days of the current month into the monthly archive
+            LOG_DEBUG("Consolidating current month %s daily files (excluding today %s)", currentYearMonth, dateIso);
+            consolidateDailyFilesToMonthly(currentYearMonth, dateIso);
+            
+            // Step 6: Consolidate monthly files from previous years into yearly archives
+            // Collect unique years first to avoid redundant consolidation calls
+            std::set<std::string> yearsToConsolidate;
+            File monthlyDir = LittleFS.open(ENERGY_CSV_MONTHLY_PREFIX);
+            if (monthlyDir) {
+                File file = monthlyDir.openNextFile();
+                while (file) {
+                    const char* filename = file.name();
+                    // Check for files like YYYY-MM.csv.gz from previous years
+                    if (endsWith(filename, ".csv.gz") && strlen(filename) >= 7) {
+                        char fileYear[5];
+                        snprintf(fileYear, sizeof(fileYear), "%.4s", filename);
+                        if (strcmp(fileYear, currentYear) < 0) {
+                            yearsToConsolidate.insert(std::string(fileYear));
+                        }
+                    }
+                    file.close();
+                    file = monthlyDir.openNextFile();
+                }
+                monthlyDir.close();
+            }
+            for (const auto& year : yearsToConsolidate) {
+                LOG_DEBUG("Consolidating monthly files from previous year: %s", year.c_str());
+                consolidateMonthlyFilesToYearly(year.c_str(), nullptr);
+            }
+            
+            // Step 7: Consolidate monthly files from current year (excluding current month)
+            // This consolidates all past months of the current year into the yearly archive
+            LOG_DEBUG("Consolidating current year %s monthly files (excluding %s)", currentYear, currentYearMonth);
+            consolidateMonthlyFilesToYearly(currentYear, currentYearMonth);
         }
 
         _hourlyCsvSaveTaskShouldRun = true;
@@ -1765,18 +1855,57 @@ namespace Ade7953
                         _saveHourlyEnergyToCsv();
 
                         // If this save corresponds to the first hour of the new day (HH == 00),
-                        // compress the previous day's CSV (yesterday).
+                        // compress the previous day's CSV (yesterday) and consolidate into monthly archive.
                         if (CustomTime::isNowHourZero()) {
-                            LOG_DEBUG("Timestamp is at hour 00: trigger compression of yesterday's CSV");
+                            LOG_DEBUG("Timestamp is at hour 00: trigger compression and consolidation of yesterday's CSV");
 
                             // Create filename for yesterday's CSV file (UTC date)
-                            char dateIso[TIMESTAMP_BUFFER_SIZE];
-                            CustomTime::getDateIsoOffset(dateIso, sizeof(dateIso), -1);
-                            char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
-                            snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, dateIso);
+                            char yesterdayIso[TIMESTAMP_BUFFER_SIZE];
+                            CustomTime::getDateIsoOffset(yesterdayIso, sizeof(yesterdayIso), -1);
+                            char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_DAILY_PREFIX) + 4];
+                            snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_DAILY_PREFIX, yesterdayIso);
 
                             if (compressFile(filepath)) {
                                 LOG_DEBUG("Successfully compressed yesterday's CSV: %s", filepath);
+                                
+                                // Get today's date to exclude from consolidation
+                                char todayIso[TIMESTAMP_BUFFER_SIZE];
+                                CustomTime::getCurrentDateIso(todayIso, sizeof(todayIso));
+                                
+                                // Check if we crossed a month boundary (if today is day 01, yesterday was last day of prev month)
+                                if (todayIso[8] == '0' && todayIso[9] == '1') {
+                                    // Today is day 01, so yesterday was the last day of the previous month
+                                    // Consolidate all daily files from the previous month (no exclusion)
+                                    char prevMonth[8];
+                                    snprintf(prevMonth, sizeof(prevMonth), "%.7s", yesterdayIso);
+                                    LOG_DEBUG("Month boundary crossed, consolidating all daily files for %s", prevMonth);
+                                    consolidateDailyFilesToMonthly(prevMonth, nullptr);
+                                    
+                                    // After monthly consolidation, consolidate into yearly archive (excluding current month)
+                                    char currentYear[5];
+                                    snprintf(currentYear, sizeof(currentYear), "%.4s", todayIso);
+                                    char currentMonth[8];
+                                    snprintf(currentMonth, sizeof(currentMonth), "%.7s", todayIso);
+                                    
+                                    // Check if we also crossed a year boundary (if today is Jan 01)
+                                    if (todayIso[5] == '0' && todayIso[6] == '1') {
+                                        // Today is January, so consolidate all monthly files from previous year (no exclusion)
+                                        char prevYear[5];
+                                        snprintf(prevYear, sizeof(prevYear), "%.4s", yesterdayIso);
+                                        LOG_DEBUG("Year boundary crossed, consolidating all monthly files for %s", prevYear);
+                                        consolidateMonthlyFilesToYearly(prevYear, nullptr);
+                                    } else {
+                                        // Same year - consolidate the previous month into the yearly archive
+                                        LOG_DEBUG("Consolidating monthly files into yearly archive for %s (excluding %s)", currentYear, currentMonth);
+                                        consolidateMonthlyFilesToYearly(currentYear, currentMonth);
+                                    }
+                                } else {
+                                    // Same month - consolidate yesterday into current month's archive (excluding today)
+                                    char currentMonth[8];
+                                    snprintf(currentMonth, sizeof(currentMonth), "%.7s", todayIso);
+                                    LOG_DEBUG("Consolidating yesterday's data into monthly archive for %s", currentMonth);
+                                    consolidateDailyFilesToMonthly(currentMonth, todayIso);
+                                }
                             } else {
                                 LOG_ERROR("Failed to compress yesterday's CSV: %s", filepath);
                             }
@@ -1999,6 +2128,9 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         channelData.phase = static_cast<Phase>(preferences.getUChar(key, (uint8_t)(DEFAULT_CHANNEL_PHASE)));
 
+        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
+        channelData.highPriority = preferences.getBool(key, channelIndex == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY);
+
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
         channelData.ctSpecification.currentRating = preferences.getFloat(key, channelIndex == 0 ? DEFAULT_CT_CURRENT_RATING_CHANNEL_0 : DEFAULT_CT_CURRENT_RATING);
@@ -2049,6 +2181,9 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         preferences.putUChar(key, (uint8_t)(channelData.phase));
 
+        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
+        preferences.putBool(key, channelData.highPriority);
+
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
         preferences.putFloat(key, channelData.ctSpecification.currentRating);
@@ -2085,6 +2220,7 @@ namespace Ade7953
         if (partial) {
             if (jsonDocument["active"].is<bool>()) return true;
             if (jsonDocument["reverse"].is<bool>()) return true;
+            if (jsonDocument["highPriority"].is<bool>()) return true;
             if (jsonDocument["label"].is<const char*>()) return true;
             if (jsonDocument["phase"].is<uint8_t>()) return true;
 
@@ -2101,6 +2237,11 @@ namespace Ade7953
             // Full validation - all fields must be present and valid
             if (!jsonDocument["active"].is<bool>()) { LOG_WARNING("active is missing or not bool"); return false; }
             if (!jsonDocument["reverse"].is<bool>()) { LOG_WARNING("reverse is missing or not bool"); return false; }
+            // highPriority is optional for backward compatibility (defaults to false)
+            if (jsonDocument["highPriority"].is<JsonVariant>() && !jsonDocument["highPriority"].is<bool>()) { 
+                LOG_WARNING("highPriority is not bool"); 
+                return false; 
+            }
             if (!jsonDocument["label"].is<const char*>()) { LOG_WARNING("label is missing or not string"); return false; }
             if (!jsonDocument["phase"].is<uint8_t>()) { LOG_WARNING("phase is missing or not uint8_t"); return false; }
 
@@ -2364,16 +2505,23 @@ namespace Ade7953
         char filename[NAME_BUFFER_SIZE];
         CustomTime::getCurrentDateIso(filename, sizeof(filename));
 
-        char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_PREFIX) + 4]; // Added space for prefix plus "/.csv"
-        snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_PREFIX, filename);
+        char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_DAILY_PREFIX) + 4]; // Added space for prefix plus "/.csv"
+        snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_DAILY_PREFIX, filename);
         
-        // Ensure the energy directory exists (LittleFS requires explicit directory creation)
+        // Ensure the energy directories exist (LittleFS requires explicit directory creation)
         if (!LittleFS.exists(ENERGY_CSV_PREFIX)) {
             if (!LittleFS.mkdir(ENERGY_CSV_PREFIX)) {
                 LOG_ERROR("Failed to create energy directory %s", ENERGY_CSV_PREFIX);
                 return;
             }
             LOG_DEBUG("Created energy directory %s", ENERGY_CSV_PREFIX);
+        }
+        if (!LittleFS.exists(ENERGY_CSV_DAILY_PREFIX)) {
+            if (!LittleFS.mkdir(ENERGY_CSV_DAILY_PREFIX)) {
+                LOG_ERROR("Failed to create daily energy directory %s", ENERGY_CSV_DAILY_PREFIX);
+                return;
+            }
+            LOG_DEBUG("Created daily energy directory %s", ENERGY_CSV_DAILY_PREFIX);
         }
         
         // Check if file exists to determine if we need to write header
@@ -3217,29 +3365,96 @@ namespace Ade7953
     // Utility functions
     // =================
 
+    static void _recalculateRatio() {
+        uint8_t activeHP = 0;
+        uint8_t activeLP = 0;
+
+        // Iterate 1 to CHANNEL_COUNT (skip 0)
+        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+            if (_channelData[i].active) {
+                if (_channelData[i].highPriority) activeHP++;
+                else activeLP++;
+            }
+        }
+
+        // Logic: Ratio = (HP_Count / LP_Count) * Bias
+        // This ensures that individually, an HP channel visits 'Bias' times more often than an LP.
+        if (activeLP > 0) {
+            // Ceiling division: (A + B - 1) / B
+            uint8_t baseRatio = (activeHP + activeLP - 1) / activeLP;
+            if (baseRatio < 1) baseRatio = 1;
+            _dynamicRatio = baseRatio * PRIORITY_BIAS;
+        } else {
+            _dynamicRatio = 1; // Fallback
+        }
+    }
+
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
-        // Since the current channel is initialized with the invalid one (which has a very high value),
-        // we need to convert it to a valid channel index (0 is always active) and move on
-        uint8_t realCurrentChannel = currentChannel == INVALID_CHANNEL ? 0 : currentChannel;
+        // 1. Analyze previous state
+        bool currentIsHighPriority = (currentChannel != INVALID_CHANNEL && currentChannel != 0) 
+                                      ? _channelData[currentChannel].highPriority 
+                                      : false;
 
-        // This returns the next channel (except 0, which has to be always active) that is active
-        // For i that starts from currentChannel + 1, it will return the first active channel found
-        // up to the maximum channel count
-        for (uint8_t i = realCurrentChannel + 1; i < CHANNEL_COUNT; i++) {
-            if (i != 0 && isChannelActive(i)) {
+        // 2. Update Consecutive Run Counters
+        if (currentIsHighPriority) {
+            _hpRunCount++;
+        } else {
+            _hpRunCount = 0; // Reset counter when we run an LP
+        }
+
+        // 3. Decide Priority Goal
+        // Default: Look for HP. Only switch to LP if we hit the ratio limit.
+        bool lookForHighPriority = true; 
+
+        if (currentIsHighPriority) {
+            // If we just ran HP, only continue if we haven't hit the quota
+            if (_hpRunCount >= _dynamicRatio) {
+                lookForHighPriority = false; // Quota met, allow one LP slot
+            }
+        } 
+        // Else: If we just ran LP, we automatically default to looking for HP next.
+
+        // 4. Setup Search Pointers
+        uint8_t& lastChannel = lookForHighPriority ? _lastHighPriorityChannel : _lastLowPriorityChannel;
+        uint8_t startSearch = (lastChannel == INVALID_CHANNEL) ? 0 : lastChannel;
+
+        // 5. Pass 1: Search for Desired Priority (Standard Wrap-around)
+        for (uint8_t i = startSearch + 1; i < CHANNEL_COUNT; i++) {
+            if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
+                if (lookForHighPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
+                return i;
+            }
+        }
+        for (uint8_t i = 1; i <= startSearch; i++) {
+            if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
+                if (lookForHighPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
                 return i;
             }
         }
 
-        // If no active channel is found after the current one, it will start from 1 and go up to currentChannel
-        // simulating us starting from the beginning
-        for (uint8_t i = 1; i < realCurrentChannel; i++) {
+        // 6. Pass 2: Fallback (If desired priority not found, take ANY active channel)
+        // We must update the specific tracker for whatever channel type we actually find.
+        uint8_t& otherLastChannel = lookForHighPriority ? _lastLowPriorityChannel : _lastHighPriorityChannel;
+        uint8_t fallbackStart = (otherLastChannel == INVALID_CHANNEL) ? 0 : otherLastChannel;
+
+        for (uint8_t i = fallbackStart + 1; i < CHANNEL_COUNT; i++) {
             if (i != 0 && isChannelActive(i)) {
+                if (_channelData[i].highPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
+                return i;
+            }
+        }
+        for (uint8_t i = 1; i <= fallbackStart; i++) {
+            if (i != 0 && isChannelActive(i)) {
+                if (_channelData[i].highPriority) _lastHighPriorityChannel = i;
+                else _lastLowPriorityChannel = i;
                 return i;
             }
         }
 
-        return INVALID_CHANNEL; // Invalid channel, no active channels found
+        return INVALID_CHANNEL; // No active channels found
     }
 
     // Poor man's phase shift (doing with modulus didn't work properly,

@@ -49,4 +49,7 @@ namespace CustomTime {
     void timestampIsoFromUnix(time_t unix, char* buffer, size_t bufferSize);
 
     bool isUnixTimeValid(uint64_t unixTime, bool isMilliseconds = true);
+
+    // Manual time sync for devices without internet connectivity
+    bool setUnixTime(uint64_t unixSeconds);
 }

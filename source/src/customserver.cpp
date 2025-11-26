@@ -1174,7 +1174,9 @@ namespace CustomServer
         
         for (JsonObject asset : assets) {
             const char* name = asset["name"];
-            if (name && strstr(name, ".bin") != nullptr) {
+            // We must ensure we are not taking bootloader.bin or similar files.
+            // The firmware name is always like energyme_home_vX.Y.Z.bin.
+            if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
                 downloadUrl = asset["browser_download_url"];
                 break;
             }
@@ -1334,6 +1336,61 @@ namespace CustomServer
             doc["hasSecrets"] = false;
             #endif
             _sendJsonResponse(request, doc); });
+
+        // Get system time
+        server.on("/api/v1/system/time", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            doc["synced"] = CustomTime::isTimeSynched();
+            doc["unixTime"] = CustomTime::getUnixTime();
+
+            char isoBuffer[TIMESTAMP_BUFFER_SIZE];
+            CustomTime::getTimestampIso(isoBuffer, sizeof(isoBuffer));
+            doc["isoTime"] = isoBuffer;
+
+            _sendJsonResponse(request, doc); });
+
+        // Set system time (for devices without internet connectivity)
+        server.on(
+            "/api/v1/system/time",
+            HTTP_POST,
+            [](AsyncWebServerRequest *request) {},
+            NULL,
+            [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+            {
+                if (!_validateRequest(request, "POST")) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                DeserializationError error = deserializeJson(doc, data, len);
+
+                if (error || !doc["unixTime"].is<uint64_t>())
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON. Required: {\"unixTime\": <unix_seconds>}");
+                    return;
+                }
+
+                uint64_t unixTime = doc["unixTime"].as<uint64_t>();
+                if (CustomTime::setUnixTime(unixTime))
+                {
+                    SpiRamAllocator respAllocator;
+                    JsonDocument respDoc(&respAllocator);
+                    respDoc["success"] = true;
+                    respDoc["message"] = "Time synchronized";
+
+                    char isoBuffer[TIMESTAMP_BUFFER_SIZE];
+                    CustomTime::getTimestampIso(isoBuffer, sizeof(isoBuffer));
+                    respDoc["newTime"] = isoBuffer;
+
+                    _sendJsonResponse(request, respDoc);
+                }
+                else
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Failed to set time. Value out of valid range.");
+                }
+            });
     }
 
     // === NETWORK MANAGEMENT ENDPOINTS ===
@@ -1346,6 +1403,54 @@ namespace CustomServer
 
             _sendSuccessResponse(request, "WiFi credentials reset. Device will restart and enter configuration mode.");
             CustomWifi::resetWifi(); });
+
+        // Set WiFi credentials
+        AsyncCallbackJsonWebHandler *wifiCredentialsHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/network/wifi/credentials",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST")) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                // Validate required fields
+                if (!doc["ssid"].is<const char*>() || strlen(doc["ssid"].as<const char*>()) == 0)
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid 'ssid' field");
+                    return;
+                }
+
+                if (!doc["password"].is<const char*>())
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'password' field");
+                    return;
+                }
+
+                const char* ssid = doc["ssid"];
+                const char* password = doc["password"];
+
+                // Validate SSID length
+                if (strlen(ssid) >= WIFI_SSID_BUFFER_SIZE)
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "SSID exceeds maximum length of 32 characters");
+                    return;
+                }
+
+                // Validate password length
+                if (strlen(password) >= WIFI_PASSWORD_BUFFER_SIZE)
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Password exceeds maximum length of 64 characters");
+                    return;
+                }
+
+                LOG_INFO("Received request to set WiFi credentials for SSID: %s", ssid);
+
+                if (CustomWifi::setCredentials(ssid, password)) _sendSuccessResponse(request, "WiFi credentials updated successfully. It will restart and attempt to connect to the new network.");
+                else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to save credentials for the specified network. Please verify them and try again.");
+            });
+        server.addHandler(wifiCredentialsHandler);
     }
 
     // === LOGGING ENDPOINTS ===
@@ -2250,12 +2355,19 @@ namespace CustomServer
     static void _serveFileEndpoints()
     {
         // List files in LittleFS. The endpoint cannot be only "files" as it conflicts with the file serving endpoint (defined below)
+        // Optional query parameter: folder (e.g., /api/v1/list-files?folder=energy/daily)
         server.on("/api/v1/list-files", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             
-            if (listLittleFsFiles(doc)) {
+            // Check for optional folder parameter
+            const char* folderPath = nullptr;
+            if (request->hasParam("folder")) {
+                folderPath = request->getParam("folder")->value().c_str();
+            }
+            
+            if (listLittleFsFiles(doc, folderPath)) {
                 _sendJsonResponse(request, doc);
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to list LittleFS files");

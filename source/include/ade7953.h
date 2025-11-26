@@ -43,9 +43,13 @@
 // ENERGY_SAVING
 #define SAVE_ENERGY_INTERVAL (15 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory. In any case, this is part of the requirement. The other part is ENERGY_SAVE_THRESHOLD 
 #define ENERGY_CSV_PREFIX "/energy"
+#define ENERGY_CSV_DAILY_PREFIX ENERGY_CSV_PREFIX "/daily"
+#define ENERGY_CSV_MONTHLY_PREFIX ENERGY_CSV_PREFIX "/monthly"
+#define ENERGY_CSV_YEARLY_PREFIX ENERGY_CSV_PREFIX "/yearly"
 #define DAILY_ENERGY_CSV_HEADER "timestamp,channel,active_imported,active_exported"
 #define DAILY_ENERGY_CSV_DIGITS 0 // Since the energy is in Wh, it is useless to go below 1 Wh, and we also save in space usage
 #define ENERGY_SAVE_THRESHOLD 100.0f // Threshold for saving energy data (in Wh) and in any case not more frequent than SAVE_ENERGY_INTERVAL
+#define ENERGY_CONSOLIDATION_MIN_SIZE 10 // Minimum file size (bytes) to consider consolidation successful
 
 // Interrupt handling
 #define ADE7953_INTERRUPT_TIMEOUT_MS 1000ULL // If exceed this plus sample time, something is wrong as we are not receiving the interrupt
@@ -54,6 +58,9 @@
 #define ADE7953_RESET_LOW_DURATION 200 // The duration for the reset pin to be low (minimum is way lower, but this is a safe value)
 #define ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS 5
 #define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500
+
+// Channel priority scheduling
+#define PRIORITY_BIAS 2 // Bias Factor: 2 means HP runs ~2x faster than LP
 
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
@@ -222,6 +229,7 @@
 #define CHANNEL_REVERSE_KEY "reverse_%u" // Format: reverse_0 (10 chars)
 #define CHANNEL_LABEL_KEY "label_%u" // Format: label_0 (8 chars)
 #define CHANNEL_PHASE_KEY "phase_%u" // Format: phase_0 (9 chars)
+#define CHANNEL_HIGH_PRIORITY_KEY "highpri_%u" // Format: highpri_0 (10 chars)
 
 // CT Specification keys
 #define CHANNEL_CT_CURRENT_RATING_KEY "ct_current_%u" // Format: ct_current_0 (12 chars)
@@ -233,6 +241,8 @@
 #define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
 #define DEFAULT_CHANNEL_REVERSE false
 #define DEFAULT_CHANNEL_PHASE PHASE_1
+#define DEFAULT_CHANNEL_HIGH_PRIORITY false
+#define DEFAULT_CHANNEL_0_HIGH_PRIORITY true // Channel 0 is always high priority - even though it has no real impact since it is on a dedicated ADE7953 channel
 #define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
 
 // CT Specification defaults
@@ -381,6 +391,7 @@ struct ChannelData
   uint8_t index;
   bool active;
   bool reverse;
+  bool highPriority;
   char label[NAME_BUFFER_SIZE];
   Phase phase;
   CtSpecification ctSpecification;
@@ -389,9 +400,20 @@ struct ChannelData
     : index(0), 
       active(false), 
       reverse(false), 
+      highPriority(false),
       phase(PHASE_1), 
       ctSpecification(CtSpecification()) {
       snprintf(label, sizeof(label), "Channel");
+    }
+  
+  ChannelData(uint8_t idx)
+    : index(idx), 
+      active(idx == 0 ? DEFAULT_CHANNEL_0_ACTIVE : DEFAULT_CHANNEL_ACTIVE), 
+      reverse(DEFAULT_CHANNEL_REVERSE), 
+      highPriority(idx == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY),
+      phase(DEFAULT_CHANNEL_PHASE), 
+      ctSpecification(CtSpecification()) {
+      snprintf(label, sizeof(label), DEFAULT_CHANNEL_LABEL_FORMAT, idx);
     }
 };
 

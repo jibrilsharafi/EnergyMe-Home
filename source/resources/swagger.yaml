@@ -396,6 +396,71 @@ paths:
                   hasSecrets:
                     type: boolean
 
+  /api/v1/system/time:
+    get:
+      summary: Get system time
+      description: Get current system time and synchronization status
+      tags:
+        - System
+      responses:
+        '200':
+          description: System time information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  synced:
+                    type: boolean
+                    description: Whether time is synchronized (via NTP or manual)
+                    example: true
+                  unixTime:
+                    type: integer
+                    description: Current Unix timestamp in seconds
+                    example: 1732620000
+                  isoTime:
+                    type: string
+                    description: Current time in ISO 8601 format (UTC)
+                    example: "2025-11-26T12:00:00.000Z"
+    post:
+      summary: Set system time
+      description: Manually set system time for devices without internet connectivity. Useful for static IP setups or isolated networks where NTP is unavailable.
+      tags:
+        - System
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - unixTime
+              properties:
+                unixTime:
+                  type: integer
+                  description: Unix timestamp in seconds to set
+                  example: 1732620000
+      responses:
+        '200':
+          description: Time set successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Time synchronized"
+                  newTime:
+                    type: string
+                    description: New time in ISO 8601 format
+                    example: "2025-11-26T12:00:00.000Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/v1/firmware/update-info:
     get:
       summary: Get firmware update information
@@ -439,9 +504,27 @@ paths:
   /api/v1/list-files:
     get:
       summary: List LittleFS files
-      description: Get a list of all files stored in LittleFS with their sizes
+      description: |
+        Get a list of all files stored in LittleFS with their sizes.
+        Optionally filter by folder path to list only files within a specific directory.
+        
+        Energy data is organized in subdirectories:
+        - `energy/daily/` - Daily energy CSV files (YYYY-MM-DD.csv.gz)
+        - `energy/monthly/` - Monthly consolidated archives (YYYY-MM.csv.gz)
+        - `energy/yearly/` - Yearly consolidated archives (YYYY.csv.gz)
       tags:
         - Files
+      parameters:
+        - name: folder
+          in: query
+          required: false
+          description: |
+            Optional folder path to filter files. When provided, only files within this 
+            folder are returned with paths relative to the folder.
+            Examples: `energy/daily`, `energy/monthly`, `energy/yearly`
+          schema:
+            type: string
+          example: "energy/daily"
       responses:
         '200':
           description: List of files with their sizes
@@ -452,11 +535,19 @@ paths:
                 additionalProperties:
                   type: integer
                   description: File size in bytes
-              example:
-                "/logger/log.txt": 2048
-                "/logger/config.txt": 256
-                "/energy/channel_0.json": 512
-                "/calibration/config.json": 128
+              examples:
+                allFiles:
+                  summary: All files (no folder filter)
+                  value:
+                    "log.txt": 2048
+                    "energy/daily/2025-11-25.csv.gz": 512
+                    "energy/monthly/2025-10.csv.gz": 1024
+                dailyFiles:
+                  summary: Daily energy files only
+                  value:
+                    "2025-11-25.csv.gz": 512
+                    "2025-11-24.csv.gz": 498
+                    "2025-11-23.csv.gz": 501
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -609,6 +700,83 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Success'
+
+  /api/v1/network/wifi/credentials:
+    post:
+      summary: Set WiFi credentials
+      description: |
+        Save new WiFi credentials and immediately restart the device.
+        After receiving new credentials, the device will save them and perform a restart.
+        Upon reboot, the device will attempt to connect to the specified WiFi network using the new credentials.
+        
+        **Note:** The API returns as soon as the credentials are saved and the restart is triggered. The device will temporarily be unavailable during the restart process.
+        Monitor the device status or LED indicators to verify successful connection after reboot.
+      tags:
+        - Network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ssid
+                - password
+              properties:
+                ssid:
+                  type: string
+                  description: WiFi SSID (network name)
+                  minLength: 1
+                  maxLength: 32
+                  example: "MyHomeNetwork"
+                password:
+                  type: string
+                  description: WiFi password (WPA/WPA2/WPA3). Use empty string for open networks.
+                  minLength: 0
+                  maxLength: 63
+                  example: "mySecurePassword123"
+            examples:
+              home_network:
+                summary: Home WiFi
+                value:
+                  ssid: "MyHomeNetwork"
+                  password: "mySecurePassword123"
+              open_network:
+                summary: Open network (no password)
+                value:
+                  ssid: "FreeWiFi"
+                  password: ""
+      responses:
+        '200':
+          description: WiFi credentials successfully queued for connection attempt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "WiFi credentials updated successfully. It will restart and attempt to connect to the new network."
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "SSID exceeds maximum length of 32 characters"
+        '500':
+          description: Failed to queue credentials (e.g., WiFi task not running)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Failed to queue WiFi credentials. Please try again."
 
   # Crash Monitor endpoints
   /api/v1/crash/info:
@@ -1531,6 +1699,7 @@ paths:
                     index: 0
                     active: true
                     reverse: false
+                    highPriority: false
                     label: "Main Circuit"
                     phase: "A"
                     ctSpecification:
@@ -1543,6 +1712,7 @@ paths:
                       - index: 0
                         active: true
                         reverse: false
+                        highPriority: false
                         label: "Main Circuit"
                         phase: "A"
                         ctSpecification:
@@ -1551,6 +1721,7 @@ paths:
                       - index: 1
                         active: false
                         reverse: false
+                        highPriority: false
                         label: "Kitchen"
                         phase: "A"
                         ctSpecification:
@@ -1619,6 +1790,11 @@ paths:
                   index: 1
                   active: true
                   label: "Kitchen Circuit"
+              set_high_priority:
+                summary: Set channel as high-priority
+                value:
+                  index: 2
+                  highPriority: true
               ct_config:
                 summary: Update CT specifications
                 value:
@@ -1657,6 +1833,7 @@ paths:
               - index: 0
                 active: true
                 reverse: false
+                highPriority: false
                 label: "General"
                 phase: 1
                 ctSpecification:
@@ -1666,6 +1843,7 @@ paths:
               - index: 1
                 active: true
                 reverse: false
+                highPriority: true
                 label: "Luce prese"
                 phase: 1
                 ctSpecification:
@@ -1675,6 +1853,7 @@ paths:
               - index: 6
                 active: true
                 reverse: true
+                highPriority: false
                 label: "Boiler"
                 phase: 1
                 ctSpecification:
@@ -2611,6 +2790,11 @@ components:
           type: boolean
           description: Whether to reverse the current direction measurement
           example: false
+        highPriority:
+          type: boolean
+          description: Whether the channel is high-priority (read more frequently in round-robin). Optional, defaults to false.
+          example: false
+          default: false
         label:
           type: string
           maxLength: 64
