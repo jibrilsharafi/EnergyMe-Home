@@ -561,7 +561,7 @@ namespace CustomWifi
   {
     // Check basic WiFi connectivity (without internet test to avoid recursion)
     if (!WiFi.isConnected() || WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
-      LOG_DEBUG("Connectivity test failed early: WiFi not connected");
+      LOG_WARNING("Connectivity test failed early: WiFi not connected");
       return false;
     }
 
@@ -589,7 +589,7 @@ namespace CustomWifi
     client.setTimeout(CONNECTIVITY_TEST_TIMEOUT_MS);
     
     if (!client.connect(CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT)) {
-      LOG_WARNING("Connectivity test failed: cannot reach %s:%d (no internet)", 
+      LOG_DEBUG("Connectivity test failed: cannot reach %s:%d (no internet)", 
                   CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT);
       statistics.wifiConnectionError++;
       return false;
