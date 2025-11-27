@@ -24,11 +24,12 @@
  *
  * Notes:
  *   Using API from EnergyMe - Jibril Sharafi
- *   Tips: Simply activate in both (mandatory to see values) same EMs channel 
- *     to show values in EM configuration panel
+ *   Tips: Simply activate as you need any numbers of EMs channel 
+ *     to show values in EM1 and EM2 configuration panel
  *
  * Revision History:
  *   [2025-11-06] - 0.99 1st coding
+ *   [2025-11-27] - 1.00 removed mandatory same numbers of channels in both EMs
  *
  ******************************************************************************/
 
@@ -85,19 +86,26 @@ foreach ($indici as $i) {
     $blocco1 = trovaIndex($dati1, $i);
     $blocco2 = trovaIndex($dati2, $i);
     
-    // If a block of index label data is empty skip it
-    if (empty(trim($blocco1['label'])) || empty(trim($blocco2['label']))) {
-        continue;
+    if (empty(trim($blocco1['label']))) {
+		$label1 = "";
+		$val1 = 0;
+		$eml1 = "em1_";
+    } else {
+		$label1 = $blocco1['label'];
+		$val1 = round($blocco1['data']['activePower'], 0);
+		$eml1 = "em1_" . $i;
+    }
+    
+    if (empty(trim($blocco2['label']))) {
+		$label2 = "";
+		$val2 = 0;
+		$eml2 = "em2_";
+    } else {
+		$label2 = $blocco2['label'];
+		$val2 = round($blocco2['data']['activePower'], 0);
+		$eml2 = "em2_" . $i;
     }
 
-   	$label1 = $blocco1['label'];
-    $val1 = round($blocco1['data']['activePower'], 0);
-    $eml1 = "em1_" . $i;
-
-    $label2 = $blocco2['label'];
-   	$val2 = round($blocco2['data']['activePower'], 0);
-    $eml2 = "em2_" . $i;
-    
     if ($i == 0) {
     	$totaleGenerale = $val1 + $val2;
 	}
@@ -110,7 +118,6 @@ foreach ($indici as $i) {
         'eml2'    => $eml2,
     ];
 }
-
 // Output JSON
 
 $risultato['totale_generale'] = $totaleGenerale;
