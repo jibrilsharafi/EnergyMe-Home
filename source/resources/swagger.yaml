@@ -1782,6 +1782,26 @@ paths:
                   $ref: '#/components/schemas/Phase'
                 ctSpecification:
                   $ref: '#/components/schemas/CtSpecification'
+                groupId:
+                  type: integer
+                  minimum: 0
+                  maximum: 16
+                  description: Group ID for grouping channels
+                groupLabel:
+                  type: string
+                  maxLength: 64
+                  description: Human-readable label for the group
+                parentGroup:
+                  type: integer
+                  minimum: 0
+                  maximum: 255
+                  description: Parent group ID (255 = root, no parent)
+                isProduction:
+                  type: boolean
+                  description: Whether this is a production channel (e.g., solar PV)
+                isBattery:
+                  type: boolean
+                  description: Whether this is a battery channel
               minProperties: 2
             examples:
               enable_channel:
@@ -1802,6 +1822,25 @@ paths:
                   ctSpecification:
                     currentRating: 50.0
                     voltageOutput: 1.0
+              three_phase_group:
+                summary: Configure three-phase grouping
+                value:
+                  index: 1
+                  groupId: 0
+                  groupLabel: "Main Three-Phase"
+                  parentGroup: 255
+              solar_production:
+                summary: Mark as solar production channel
+                value:
+                  index: 5
+                  isProduction: true
+                  label: "Solar PV"
+              battery_channel:
+                summary: Mark as battery channel
+                value:
+                  index: 6
+                  isBattery: true
+                  label: "Battery System"
       responses:
         '200':
           description: Channel configuration updated successfully
@@ -2804,6 +2843,35 @@ components:
           $ref: '#/components/schemas/Phase'
         ctSpecification:
           $ref: '#/components/schemas/CtSpecification'
+        groupId:
+          type: integer
+          minimum: 0
+          maximum: 16
+          description: Group ID for grouping channels (e.g., for three-phase systems). Defaults to channel index.
+          example: 0
+          default: 0
+        groupLabel:
+          type: string
+          maxLength: 64
+          description: Human-readable label for the group. Channels with the same groupId should share the same groupLabel.
+          example: "Main Three-Phase"
+        parentGroup:
+          type: integer
+          minimum: 0
+          maximum: 255
+          description: Parent group ID for hierarchical channel relationships. 255 indicates a root channel with no parent.
+          example: 255
+          default: 255
+        isProduction:
+          type: boolean
+          description: Whether this channel monitors energy production (e.g., solar PV, wind turbine)
+          example: false
+          default: false
+        isBattery:
+          type: boolean
+          description: Whether this channel monitors a battery system (charge/discharge)
+          example: false
+          default: false
 
     MeterValues:
       type: object
