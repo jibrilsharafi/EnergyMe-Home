@@ -236,6 +236,13 @@
 #define CHANNEL_CT_VOLTAGE_OUTPUT_KEY "ct_voltage_%u" // Format: ct_voltage_0 (12 chars)
 #define CHANNEL_CT_SCALING_FRACTION_KEY "ct_scaling_%u" // Format: ct_scaling_0 (12 chars)
 
+// Channel grouping and hierarchy keys
+#define CHANNEL_GROUP_ID_KEY "group_id_%u" // Format: group_id_0 (11 chars)
+#define CHANNEL_GROUP_LABEL_KEY "grp_label_%u" // Format: grp_label_0 (12 chars)
+#define CHANNEL_PARENT_GROUP_KEY "parent_grp_%u" // Format: parent_grp_0 (13 chars)
+#define CHANNEL_IS_PRODUCTION_KEY "is_prod_%u" // Format: is_prod_0 (10 chars)
+#define CHANNEL_IS_BATTERY_KEY "is_batt_%u" // Format: is_batt_0 (10 chars)
+
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
 #define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
@@ -244,6 +251,10 @@
 #define DEFAULT_CHANNEL_HIGH_PRIORITY false
 #define DEFAULT_CHANNEL_0_HIGH_PRIORITY true // Channel 0 is always high priority - even though it has no real impact since it is on a dedicated ADE7953 channel
 #define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
+#define DEFAULT_CHANNEL_GROUP_LABEL_FORMAT "Group %u"
+#define DEFAULT_CHANNEL_PARENT_GROUP 255 // 255 = root channel (no parent)
+#define DEFAULT_CHANNEL_IS_PRODUCTION false
+#define DEFAULT_CHANNEL_IS_BATTERY false
 
 // CT Specification defaults
 #define DEFAULT_CT_CURRENT_RATING_CHANNEL_0 50.0f   // 50A for channel 0 only as it is "standard" in EnergyMe Home
@@ -395,6 +406,15 @@ struct ChannelData
   char label[NAME_BUFFER_SIZE];
   Phase phase;
   CtSpecification ctSpecification;
+  
+  // Channel grouping and hierarchy
+  uint8_t groupId;                    // Group ID (default: same as channel index)
+  char groupLabel[NAME_BUFFER_SIZE];  // Label for the group (shared by channels in same group)
+  uint8_t parentGroup;                // Parent group ID (255 = root, no parent)
+  
+  // Special channel flags
+  bool isProduction;                  // True if this is a production channel (e.g., PV/solar)
+  bool isBattery;                     // True if this is a battery channel
 
   ChannelData()
     : index(0), 
@@ -402,8 +422,13 @@ struct ChannelData
       reverse(false), 
       highPriority(false),
       phase(PHASE_1), 
-      ctSpecification(CtSpecification()) {
+      ctSpecification(CtSpecification()),
+      groupId(0),
+      parentGroup(DEFAULT_CHANNEL_PARENT_GROUP),
+      isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
+      isBattery(DEFAULT_CHANNEL_IS_BATTERY) {
       snprintf(label, sizeof(label), "Channel");
+      snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, 0);
     }
   
   ChannelData(uint8_t idx)
@@ -412,8 +437,13 @@ struct ChannelData
       reverse(DEFAULT_CHANNEL_REVERSE), 
       highPriority(idx == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY),
       phase(DEFAULT_CHANNEL_PHASE), 
-      ctSpecification(CtSpecification()) {
+      ctSpecification(CtSpecification()),
+      groupId(idx),
+      parentGroup(idx == 0 ? DEFAULT_CHANNEL_PARENT_GROUP : 0),
+      isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
+      isBattery(DEFAULT_CHANNEL_IS_BATTERY) {
       snprintf(label, sizeof(label), DEFAULT_CHANNEL_LABEL_FORMAT, idx);
+      snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, idx);
     }
 };
 

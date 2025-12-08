@@ -844,6 +844,15 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         jsonDocument["ctSpecification"]["voltageOutput"] = channelData.ctSpecification.voltageOutput;
         jsonDocument["ctSpecification"]["scalingFraction"] = channelData.ctSpecification.scalingFraction;
 
+        // Channel grouping and hierarchy
+        jsonDocument["groupId"] = channelData.groupId;
+        jsonDocument["groupLabel"] = JsonString(channelData.groupLabel);
+        jsonDocument["parentGroup"] = channelData.parentGroup;
+
+        // Special channel flags
+        jsonDocument["isProduction"] = channelData.isProduction;
+        jsonDocument["isBattery"] = channelData.isBattery;
+
         LOG_VERBOSE("Successfully converted channel data to JSON for channel %u", channelData.index);
     }
 
@@ -869,6 +878,17 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) {
                 channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
             }
+
+            // Channel grouping and hierarchy
+            if (jsonDocument["groupId"].is<uint8_t>()) channelData.groupId = jsonDocument["groupId"].as<uint8_t>();
+            if (jsonDocument["groupLabel"].is<const char*>()) {
+                snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", jsonDocument["groupLabel"].as<const char*>());
+            }
+            if (jsonDocument["parentGroup"].is<uint8_t>()) channelData.parentGroup = jsonDocument["parentGroup"].as<uint8_t>();
+
+            // Special channel flags
+            if (jsonDocument["isProduction"].is<bool>()) channelData.isProduction = jsonDocument["isProduction"].as<bool>();
+            if (jsonDocument["isBattery"].is<bool>()) channelData.isBattery = jsonDocument["isBattery"].as<bool>();
         } else {
             // Full update - set all fields
             channelData.index = jsonDocument["index"].as<uint8_t>();
@@ -882,6 +902,24 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             channelData.ctSpecification.currentRating = jsonDocument["ctSpecification"]["currentRating"].as<float>();
             channelData.ctSpecification.voltageOutput = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
             channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
+
+            // Channel grouping and hierarchy (with defaults for backward compatibility)
+            // TODO: is backwards compatibility really needed if we read with default values from Preferences?
+            channelData.groupId = jsonDocument["groupId"].is<uint8_t>() ? 
+                jsonDocument["groupId"].as<uint8_t>() : channelData.index;
+            if (jsonDocument["groupLabel"].is<const char*>()) {
+                snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", jsonDocument["groupLabel"].as<const char*>());
+            } else {
+                snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, channelData.groupId);
+            }
+            channelData.parentGroup = jsonDocument["parentGroup"].is<uint8_t>() ? 
+                jsonDocument["parentGroup"].as<uint8_t>() : DEFAULT_CHANNEL_PARENT_GROUP;
+
+            // Special channel flags (with defaults for backward compatibility)
+            channelData.isProduction = jsonDocument["isProduction"].is<bool>() ? 
+                jsonDocument["isProduction"].as<bool>() : DEFAULT_CHANNEL_IS_PRODUCTION;
+            channelData.isBattery = jsonDocument["isBattery"].is<bool>() ? 
+                jsonDocument["isBattery"].as<bool>() : DEFAULT_CHANNEL_IS_BATTERY;
         }
     }
 
@@ -2141,6 +2179,28 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_CT_SCALING_FRACTION_KEY, channelIndex);
         channelData.ctSpecification.scalingFraction = preferences.getFloat(key, DEFAULT_CT_SCALING_FRACTION);
 
+        // Channel grouping and hierarchy
+        snprintf(key, sizeof(key), CHANNEL_GROUP_ID_KEY, channelIndex);
+        channelData.groupId = preferences.getUChar(key, channelIndex); // Default: same as channel index
+
+        snprintf(key, sizeof(key), CHANNEL_GROUP_LABEL_KEY, channelIndex);
+        char defaultGroupLabel[NAME_BUFFER_SIZE];
+        snprintf(defaultGroupLabel, sizeof(defaultGroupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, channelData.groupId);
+        preferences.getString(key, channelData.groupLabel, sizeof(channelData.groupLabel));
+        if (strlen(channelData.groupLabel) == 0) {
+            snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", defaultGroupLabel);
+        }
+
+        snprintf(key, sizeof(key), CHANNEL_PARENT_GROUP_KEY, channelIndex);
+        channelData.parentGroup = preferences.getUChar(key, DEFAULT_CHANNEL_PARENT_GROUP);
+
+        // Special channel flags
+        snprintf(key, sizeof(key), CHANNEL_IS_PRODUCTION_KEY, channelIndex);
+        channelData.isProduction = preferences.getBool(key, DEFAULT_CHANNEL_IS_PRODUCTION);
+
+        snprintf(key, sizeof(key), CHANNEL_IS_BATTERY_KEY, channelIndex);
+        channelData.isBattery = preferences.getBool(key, DEFAULT_CHANNEL_IS_BATTERY);
+
         preferences.end();
 
         setChannelData(channelData, channelIndex);
@@ -2194,6 +2254,23 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_CT_SCALING_FRACTION_KEY, channelIndex);
         preferences.putFloat(key, channelData.ctSpecification.scalingFraction);
 
+        // Channel grouping and hierarchy
+        snprintf(key, sizeof(key), CHANNEL_GROUP_ID_KEY, channelIndex);
+        preferences.putUChar(key, channelData.groupId);
+
+        snprintf(key, sizeof(key), CHANNEL_GROUP_LABEL_KEY, channelIndex);
+        preferences.putString(key, channelData.groupLabel);
+
+        snprintf(key, sizeof(key), CHANNEL_PARENT_GROUP_KEY, channelIndex);
+        preferences.putUChar(key, channelData.parentGroup);
+
+        // Special channel flags
+        snprintf(key, sizeof(key), CHANNEL_IS_PRODUCTION_KEY, channelIndex);
+        preferences.putBool(key, channelData.isProduction);
+
+        snprintf(key, sizeof(key), CHANNEL_IS_BATTERY_KEY, channelIndex);
+        preferences.putBool(key, channelData.isBattery);
+
         preferences.end();
 
         LOG_DEBUG("Successfully saved channel data to Preferences for channel %lu", channelIndex);
@@ -2231,6 +2308,15 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                 if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) return true;   
             }
 
+            // Channel grouping and hierarchy validation for partial updates
+            if (jsonDocument["groupId"].is<uint8_t>()) return true;
+            if (jsonDocument["groupLabel"].is<const char*>()) return true;
+            if (jsonDocument["parentGroup"].is<uint8_t>()) return true;
+
+            // Special channel flags validation for partial updates
+            if (jsonDocument["isProduction"].is<bool>()) return true;
+            if (jsonDocument["isBattery"].is<bool>()) return true;
+
             LOG_WARNING("No valid fields found for partial update");
             return false; // No valid fields found for partial update
         } else {
@@ -2250,6 +2336,30 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             if (!jsonDocument["ctSpecification"]["currentRating"].is<float>()) { LOG_WARNING("ctSpecification.currentRating is missing or not float"); return false; }
             if (!jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) { LOG_WARNING("ctSpecification.voltageOutput is missing or not float"); return false; }
             if (!jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) { LOG_WARNING("ctSpecification.scalingFraction is missing or not float"); return false; }
+
+            // Channel grouping and hierarchy are optional for backward compatibility
+            if (jsonDocument["groupId"].is<JsonVariant>() && !jsonDocument["groupId"].is<uint8_t>()) { 
+                LOG_WARNING("groupId is not uint8_t"); 
+                return false; 
+            }
+            if (jsonDocument["groupLabel"].is<JsonVariant>() && !jsonDocument["groupLabel"].is<const char*>()) { 
+                LOG_WARNING("groupLabel is not string"); 
+                return false; 
+            }
+            if (jsonDocument["parentGroup"].is<JsonVariant>() && !jsonDocument["parentGroup"].is<uint8_t>()) { 
+                LOG_WARNING("parentGroup is not uint8_t"); 
+                return false; 
+            }
+
+            // Special channel flags are optional for backward compatibility
+            if (jsonDocument["isProduction"].is<JsonVariant>() && !jsonDocument["isProduction"].is<bool>()) { 
+                LOG_WARNING("isProduction is not bool"); 
+                return false; 
+            }
+            if (jsonDocument["isBattery"].is<JsonVariant>() && !jsonDocument["isBattery"].is<bool>()) { 
+                LOG_WARNING("isBattery is not bool"); 
+                return false; 
+            }
 
             return true; // All fields validated successfully
         }
