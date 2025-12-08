@@ -160,6 +160,9 @@
             return;
         }
 
+        // Build list of group IDs for parent group dropdown
+        const groupIds = [...new Set(Object.values(channelData).map(ch => ch.groupId))].sort((a, b) => a - b);
+
         Object.entries(channelData).forEach(([index, channel]) => {
             const box = document.createElement('div');
             box.className = 'section-box';
@@ -167,6 +170,13 @@
 
             const phaseOptions = [1, 2, 3]
                 .map(phase => `<option value="${phase}" ${phase === channel.phase ? 'selected' : ''}>${phase}</option>`)
+                .join('');
+
+            // Parent group options: 255 = root (no parent), or any existing group
+            const parentGroupOptions = ['<option value="255" ' + (channel.parentGroup === 255 ? 'selected' : '') + '>None (Root)</option>']
+                .concat(groupIds.map(gid => 
+                    `<option value="${gid}" ${gid === channel.parentGroup ? 'selected' : ''}>Group ${gid}</option>`
+                ))
                 .join('');
 
             // Check if this is channel 0 (main voltage channel)
@@ -203,6 +213,37 @@
                 <label>
                     <input type="checkbox" ${highPriorityChecked} id="highPriority${index}" onchange="queueChannelUpdate(${index})" ${highPriorityCheckboxDisabled}>
                     High Priority ${isChannel0 ? '(Always read)' : '(Read more frequently)'}
+                </label>
+                <div style="height: 15px;"></div>
+                <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
+                <h4 style="margin: 10px 0;">Grouping</h4>
+                <label>
+                    Group ID:
+                    <input type="number" min="0" max="16" value="${channel.groupId !== undefined ? channel.groupId : index}" id="groupId${index}" onchange="queueChannelUpdate(${index})" style="width: 60px;">
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    Group Label:
+                    <input type="text" value="${channel.groupLabel || ''}" id="groupLabel${index}" onchange="queueChannelUpdate(${index})">
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    Parent Group:
+                    <select id="parentGroup${index}" onchange="queueChannelUpdate(${index})">
+                        ${parentGroupOptions}
+                    </select>
+                </label>
+                <div style="height: 15px;"></div>
+                <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
+                <h4 style="margin: 10px 0;">Special Flags</h4>
+                <label>
+                    <input type="checkbox" ${channel.isProduction ? 'checked' : ''} id="isProduction${index}" onchange="queueChannelUpdate(${index})">
+                    Production (Solar/PV)
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    <input type="checkbox" ${channel.isBattery ? 'checked' : ''} id="isBattery${index}" onchange="queueChannelUpdate(${index})">
+                    Battery
                 </label>
                 <div style="height: 10px;"></div>
                 <span id="power${index}" style="font-weight: bold; color: #333;"></span>
@@ -303,7 +344,14 @@
             reverse: document.getElementById(`reverse${index}`).checked,
             phase: parseInt(document.getElementById(`phase${index}`).value),
             active: document.getElementById(`active${index}`).checked,
-            highPriority: document.getElementById(`highPriority${index}`).checked
+            highPriority: document.getElementById(`highPriority${index}`).checked,
+            // New grouping fields
+            groupId: parseInt(document.getElementById(`groupId${index}`).value),
+            groupLabel: document.getElementById(`groupLabel${index}`).value,
+            parentGroup: parseInt(document.getElementById(`parentGroup${index}`).value),
+            // New special flags
+            isProduction: document.getElementById(`isProduction${index}`).checked,
+            isBattery: document.getElementById(`isBattery${index}`).checked
         };
 
         // Update local channelData immediately for UI responsiveness
@@ -313,6 +361,11 @@
             channelData[index].reverse = channelUpdate.reverse;
             channelData[index].phase = channelUpdate.phase;
             channelData[index].highPriority = channelUpdate.highPriority;
+            channelData[index].groupId = channelUpdate.groupId;
+            channelData[index].groupLabel = channelUpdate.groupLabel;
+            channelData[index].parentGroup = channelUpdate.parentGroup;
+            channelData[index].isProduction = channelUpdate.isProduction;
+            channelData[index].isBattery = channelUpdate.isBattery;
         }
 
         // Store in queue - this will overwrite any previous update for this channel
