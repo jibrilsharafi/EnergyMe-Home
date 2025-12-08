@@ -1024,7 +1024,7 @@
         
         // Calculate hourly consumption and total consumption (in local time)
         // Standard convention: bar at "16:00" = consumption during 16:00-16:59
-        const hourlyConsumption = calculateHourlyConsumption(energyData, currentDate);
+        const hourlyData = calculateHourlyConsumption(energyData, currentDate);
         const totalConsumption = calculateTotalConsumption(energyData.filter(entry => {
             const entryDate = new Date(entry.timestamp);
             return entryDate.toLocaleDateString('sv-SE') === currentDate;
@@ -1034,11 +1034,11 @@
         restoreChartCanvases();
         
         // Update charts
-        updateConsumptionChart(hourlyConsumption, 'daily');
-        updatePieChart(totalConsumption);
+        updateConsumptionChart(hourlyData.imported, 'daily', hourlyData.exported);
+        updatePieChart(totalConsumption.imported);
         
         // Set up CSV download
-        setupCsvDownload(hourlyConsumption, 'daily');
+        setupCsvDownload(hourlyData.imported, 'daily');
     }
     
     async function loadMonthlyCharts() {
@@ -1084,16 +1084,20 @@
         });
         
         // Calculate consumption for each day
+        const dailyExported = {};
         Object.keys(dataByDate).sort().forEach(date => {
             const dayData = dataByDate[date];
-            const dailyConsumption = calculateTotalConsumption(dayData);
+            const dailyData = calculateTotalConsumption(dayData);
             const day = date.substring(8, 10); // Extract day from YYYY-MM-DD
-            dailyConsumptions[day] = dailyConsumption;
+            dailyConsumptions[day] = dailyData.imported;
+            if (Object.keys(dailyData.exported).length > 0) {
+                dailyExported[day] = dailyData.exported;
+            }
             
             // Add to monthly totals
-            Object.keys(dailyConsumption).forEach(channel => {
+            Object.keys(dailyData.imported).forEach(channel => {
                 if (!monthlyData[channel]) monthlyData[channel] = 0;
-                monthlyData[channel] += dailyConsumption[channel];
+                monthlyData[channel] += dailyData.imported[channel];
             });
         });
         
@@ -1101,7 +1105,7 @@
         restoreChartCanvases();
         
         // Update charts
-        updateConsumptionChart(dailyConsumptions, 'monthly');
+        updateConsumptionChart(dailyConsumptions, 'monthly', dailyExported);
         updatePieChart(monthlyData);
         
         // Set up CSV download
@@ -1153,6 +1157,7 @@
         
         // Group data by month and calculate monthly consumption
         const monthlyConsumptions = {};
+        const monthlyExported = {};
         const yearlyData = {};
         
         // Group by month
@@ -1166,13 +1171,16 @@
         // Calculate consumption for each month
         Object.keys(dataByMonth).sort().forEach(month => {
             const monthData = dataByMonth[month];
-            const monthConsumption = calculateTotalConsumption(monthData);
-            monthlyConsumptions[month] = monthConsumption;
+            const monthConsumptionData = calculateTotalConsumption(monthData);
+            monthlyConsumptions[month] = monthConsumptionData.imported;
+            if (Object.keys(monthConsumptionData.exported).length > 0) {
+                monthlyExported[month] = monthConsumptionData.exported;
+            }
             
             // Add to yearly totals
-            Object.keys(monthConsumption).forEach(channel => {
+            Object.keys(monthConsumptionData.imported).forEach(channel => {
                 if (!yearlyData[channel]) yearlyData[channel] = 0;
-                yearlyData[channel] += monthConsumption[channel];
+                yearlyData[channel] += monthConsumptionData.imported[channel];
             });
         });
         
@@ -1180,7 +1188,7 @@
         restoreChartCanvases();
         
         // Update charts
-        updateConsumptionChart(monthlyConsumptions, 'yearly');
+        updateConsumptionChart(monthlyConsumptions, 'yearly', monthlyExported);
         updatePieChart(yearlyData);
         
         // Set up CSV download
@@ -1221,14 +1229,17 @@
             const localHour = date.getHours().toString().padStart(2, '0');
             channelSequences[entry.channel].push({
                 timestamp: entry.timestamp,
-                energy: entry.activeImported,
+                energyImported: entry.activeImported,
+                energyExported: entry.activeExported || 0,
                 hour: localHour,
                 localDate: localDate
             });
         });
         
         // Calculate hourly consumption by finding differences between consecutive readings
+        // consumption stores imported energy (positive), exportData stores exported energy (negative for charts)
         const consumption = {};
+        const exportData = {};
         
         Object.keys(channelSequences).forEach(channel => {
             const sequence = channelSequences[channel];
@@ -1241,19 +1252,30 @@
                 // This ensures bar at "16:00" represents consumption during hour 16 (16:xx to 17:xx)
                 if (targetLocalDate && previous.localDate !== targetLocalDate) continue;
                 
-                const hourlyConsumption = Math.max(0, (current.energy - previous.energy) / 1000); // Convert Wh to kWh
+                const hourlyImport = Math.max(0, (current.energyImported - previous.energyImported) / 1000); // Convert Wh to kWh
+                const hourlyExport = Math.max(0, (current.energyExported - previous.energyExported) / 1000); // Convert Wh to kWh
                 
                 // Assign consumption to the hour when it started (previous local hour)
                 // Standard convention: bar at "16:00" = consumption during 16:00-16:59
                 if (!consumption[previous.hour]) {
                     consumption[previous.hour] = {};
                 }
-                consumption[previous.hour][channel] = hourlyConsumption;
+                if (!exportData[previous.hour]) {
+                    exportData[previous.hour] = {};
+                }
+                
+                consumption[previous.hour][channel] = hourlyImport;
+                if (hourlyExport > 0) {
+                    exportData[previous.hour][channel] = hourlyExport;
+                }
             }
         });
         
         // Add "Other" consumption (channel 0 minus sum of all other channels)
         // Only process hours 00-23 of the current day
+        // Only show "Other" if there are sub-channels (channels other than 0)
+        const hasSubChannels = Object.keys(channelSequences).some(ch => ch !== '0');
+        
         Object.keys(consumption).forEach(hour => {
             // Skip hours outside the current day (e.g., hour "00" of next day)
             const hourNum = parseInt(hour);
@@ -1268,35 +1290,52 @@
                 }
             });
             
-            consumption[hour]['Other'] = Math.max(0, totalConsumption - trackedConsumption);
+            // Only add "Other" if there are sub-channels to compare against
+            if (hasSubChannels) {
+                consumption[hour]['Other'] = totalConsumption - trackedConsumption; // Allow negative values
+            }
             delete consumption[hour]['0']; // Remove total channel from display
         });
         
         // Filter out any hours outside 00-23 range before returning
         const filteredConsumption = {};
+        const filteredExport = {};
         Object.keys(consumption).forEach(hour => {
             const hourNum = parseInt(hour);
             if (hourNum >= 0 && hourNum <= 23) {
                 filteredConsumption[hour] = consumption[hour];
+                if (exportData[hour]) {
+                    filteredExport[hour] = exportData[hour];
+                }
             }
         });
         
-        return filteredConsumption;
+        return { imported: filteredConsumption, exported: filteredExport };
     }
 
     function calculateTotalConsumption(energyData) {
         const latestData = {};
         const firstData = {};
+        const latestExportData = {};
+        const firstExportData = {};
         
-        // Find first and last reading for each channel
+        // Find first and last reading for each channel (both imported and exported)
         energyData.forEach(entry => {
             if (!firstData[entry.channel]) {
                 firstData[entry.channel] = entry.activeImported;
             }
             latestData[entry.channel] = entry.activeImported;
+            
+            // Track exported energy
+            if (entry.activeExported !== undefined) {
+                if (!firstExportData[entry.channel]) {
+                    firstExportData[entry.channel] = entry.activeExported;
+                }
+                latestExportData[entry.channel] = entry.activeExported;
+            }
         });
         
-        // Calculate total consumption for the day
+        // Calculate total consumption for the day (imported)
         const totalConsumption = {};
         Object.keys(latestData).forEach(channel => {
             const dailyConsumption = (latestData[channel] - (firstData[channel] || 0)) / 1000; // Convert to kWh
@@ -1305,8 +1344,18 @@
             }
         });
         
-        // Add "Other" consumption
-        if (totalConsumption[0]) {
+        // Calculate total exported energy for the day
+        const totalExported = {};
+        Object.keys(latestExportData).forEach(channel => {
+            const dailyExport = (latestExportData[channel] - (firstExportData[channel] || 0)) / 1000; // Convert to kWh
+            if (dailyExport > 0) {
+                totalExported[channel] = dailyExport;
+            }
+        });
+        
+        // Add "Other" consumption only if there are sub-channels
+        const hasSubChannels = Object.keys(totalConsumption).some(ch => ch !== '0');
+        if (totalConsumption[0] && hasSubChannels) {
             const totalHouseConsumption = totalConsumption[0];
             let trackedConsumption = 0;
             
@@ -1316,14 +1365,17 @@
                 }
             });
             
-            totalConsumption['Other'] = Math.max(0, totalHouseConsumption - trackedConsumption);
+            totalConsumption['Other'] = totalHouseConsumption - trackedConsumption; // Allow negative values
             delete totalConsumption['0']; // Remove total channel
+        } else if (totalConsumption[0]) {
+            // Only channel 0 exists, don't show "Other", just remove total channel marker
+            delete totalConsumption['0'];
         }
         
-        return totalConsumption;
+        return { imported: totalConsumption, exported: totalExported };
     }
 
-    function updateConsumptionChart(consumptionData, viewType) {
+    function updateConsumptionChart(consumptionData, viewType, exportedData = {}) {
         const periods = Object.keys(consumptionData).sort();
         
         // Get all channels except 'Other' first, then add 'Other' at the end
@@ -1338,7 +1390,7 @@
             channels.push('Other');
         }
         
-        // Create datasets
+        // Create datasets for imported energy (positive values)
         const datasets = channels.map((channel) => {
             const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
             const data = periods.map(period => {
@@ -1353,9 +1405,48 @@
                 data: data,
                 backgroundColor: color,
                 borderColor: color.replace('0.8', '1'),
-                borderWidth: 1
+                borderWidth: 1,
+                stack: 'imported'
             };
         });
+        
+        // Check if there's any exported data
+        const hasExportedData = Object.keys(exportedData).some(period => 
+            Object.keys(exportedData[period] || {}).length > 0
+        );
+        
+        // Create datasets for exported energy (negative values for stacking below x-axis)
+        if (hasExportedData) {
+            // Get all channels that have export data
+            const exportChannels = new Set();
+            Object.keys(exportedData).forEach(period => {
+                Object.keys(exportedData[period] || {}).forEach(channel => {
+                    exportChannels.add(channel);
+                });
+            });
+            
+            [...exportChannels].sort((a, b) => parseInt(a) - parseInt(b)).forEach(channel => {
+                const label = `${getChannelLabel(channel)} (Export)`;
+                const data = periods.map(period => {
+                    const value = (exportedData[period] && exportedData[period][channel]) || 0;
+                    return (-value).toFixed(3); // Negative for below x-axis
+                });
+                
+                // Use a lighter/different shade for export
+                const baseColor = getChannelColor(channel);
+                const exportColor = baseColor.replace('0.8', '0.5'); // More transparent for exports
+                
+                datasets.push({
+                    label: label,
+                    data: data,
+                    backgroundColor: exportColor,
+                    borderColor: baseColor.replace('0.8', '1'),
+                    borderWidth: 1,
+                    borderDash: [5, 5], // Dashed border to distinguish exports
+                    stack: 'exported'
+                });
+            });
+        }
         
         // Destroy existing chart
         if (consumptionChart) {
@@ -1526,13 +1617,13 @@
 
     function getChannelColor(channelIndex) {
         if (channelIndex === 'Other') {
-            // Always use the last color for "Other"
-            return colors[colors.length - 1];
+            // Always use grey for "Other"
+            return 'rgba(128,128,128,0.8)';
         }
         
         // Use channel index to consistently assign colors
         const index = parseInt(channelIndex);
-        return colors[index % (colors.length - 1)]; // Reserve last color for "Other"
+        return colors[index % colors.length];
     }
 
     // Note: Data is stored in UTC, displayed in local time
@@ -1589,6 +1680,9 @@
             // Get total energy from current meter values
             const totalConsumption = {};
             
+            // Check if there are sub-channels (channels other than 0)
+            const hasSubChannels = meterData.some(ch => ch.index !== 0);
+            
             meterData.forEach(channel => {
                 if (channel.index === 0) return; // Skip total channel
                 const totalEnergy = channel.data.activeEnergyImported / 1000; // Convert to kWh
@@ -1597,9 +1691,9 @@
                 }
             });
             
-            // Add "Other" consumption
+            // Add "Other" consumption only if there are sub-channels
             const totalChannel = meterData.find(ch => ch.index === 0);
-            if (totalChannel) {
+            if (totalChannel && hasSubChannels) {
                 const totalHouseConsumption = totalChannel.data.activeEnergyImported / 1000;
                 let trackedConsumption = 0;
                 
@@ -1607,7 +1701,7 @@
                     trackedConsumption += consumption;
                 });
                 
-                totalConsumption['Other'] = Math.max(0, totalHouseConsumption - trackedConsumption);
+                totalConsumption['Other'] = totalHouseConsumption - trackedConsumption; // Allow negative values
             }
             
             // Update total pie chart
@@ -1709,8 +1803,10 @@
         let shouldRebuildChannels = false;
         
         // Check if we need to rebuild the entire channels section
+        // Only add "Other" to expected count if there are sub-channels
+        const hasSubChannelsForCount = meterData.some(ch => ch.index !== 0);
         const existingChannels = document.getElementById("channels").children.length;
-        const expectedChannels = meterData.length + 1; // +1 for "Other"
+        const expectedChannels = hasSubChannelsForCount ? meterData.length + 1 : meterData.length; // +1 for "Other" only if sub-channels exist
         
         if (existingChannels !== expectedChannels) {
             shouldRebuildChannels = true;
@@ -1755,9 +1851,13 @@
             }
         });
         
+        // Check if there are sub-channels (channels other than 0)
+        const hasSubChannels = meterData.some(ch => ch.index !== 0);
+        
         // Finally, add or update the computed "Other" channel
-        const otherPower = Math.max(0, totalPower - trackedPower);
-        if (otherPower > 0 || totalPower > 0) { // Show Other channel if there's any power or if main channel exists
+        // Only show "Other" if there are sub-channels to compare against
+        const otherPower = totalPower - trackedPower; // Allow negative values
+        if (hasSubChannels && (otherPower !== 0 || totalPower > 0)) {
             if (shouldRebuildChannels) {
                 powerDataHtml += '<div class="channel-box other-channel">';
                 powerDataHtml += '<div class="channel-label">';
