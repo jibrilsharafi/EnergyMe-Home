@@ -605,8 +605,11 @@
                 if (groupId === undefined) {
                     // Channel not in any group, keep as individual
                     aggregated[period][channel] = periodData[channel];
+                } else if (groups[groupId] && groups[groupId].channels.length === 1) {
+                    // Single-member group: keep as individual channel (don't aggregate)
+                    aggregated[period][channel] = periodData[channel];
                 } else {
-                    // Aggregate into group
+                    // Multi-member group: aggregate into group
                     const groupKey = `group_${groupId}`;
                     if (!aggregated[period][groupKey]) {
                         aggregated[period][groupKey] = 0;
@@ -2123,4 +2126,4 @@
 
 </script>
 
-</html>
+</html> 
