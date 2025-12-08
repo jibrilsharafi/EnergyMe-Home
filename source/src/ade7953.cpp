@@ -704,7 +704,7 @@ namespace Ade7953
             return;
         }
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         getChannelData(channelData, channelIndex);
 
         snprintf(buffer, bufferSize, "%s", channelData.label); // Fallback is the default constructor value if getChannelData failed
@@ -780,7 +780,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             return false;
         }
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
             LOG_WARNING("Failed to get channel data as JSON for channel %lu", channelIndex);
             return false;
@@ -817,7 +817,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             return false;
         }
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
             LOG_WARNING("Failed to get channel data from JSON for channel %u", channelIndex);
             return false;
@@ -1052,7 +1052,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             // Here we also ensure the channel has valid measurements since we have the "duty" to pass all the correct data
             if (isChannelActive(i) && hasChannelValidMeasurements(i)) {
-                ChannelData channelData;
+                ChannelData channelData(i);
                 if (!getChannelData(channelData, i)) {
                     LOG_WARNING("Failed to get channel data for channel %u", i);
                     continue;
@@ -2132,7 +2132,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             return;
         }
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, true)) { // true = read-only
             LOG_ERROR("Failed to open Preferences for channel data");
@@ -2189,7 +2189,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         }
 
         snprintf(key, sizeof(key), CHANNEL_PARENT_GROUP_KEY, channelIndex);
-        channelData.parentGroup = preferences.getUChar(key, DEFAULT_CHANNEL_PARENT_GROUP);
+        channelData.parentGroup = preferences.getUChar(key, channelIndex == 0 ? DEFAULT_CHANNEL_PARENT_GROUP : 0); // Default: 255 for channel 0, 0 for others
 
         // Special channel flags
         snprintf(key, sizeof(key), CHANNEL_IS_PRODUCTION_KEY, channelIndex);
@@ -2219,7 +2219,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         char key[PREFERENCES_KEY_BUFFER_SIZE];
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
             LOG_WARNING("Failed to get channel data for channel %u", channelIndex);
             return false;
@@ -2353,9 +2353,9 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         // Cycle detection: follow parent chain and check for loops
         // Build a map of groupId -> parentGroup for all channels
-        uint8_t parentMap[CHANNEL_COUNT];
+        uint8_t parentMap[CHANNEL_COUNT]; // FIXME: why not used variable later??
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            ChannelData chData;
+            ChannelData chData(i);
             if (getChannelData(chData, i)) {
                 // Use the new values for the channel being updated
                 if (i == channelIndex) {
@@ -2389,7 +2389,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             // Move to parent
             bool found = false;
             for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-                ChannelData chData;
+                ChannelData chData(i);
                 if (getChannelData(chData, i) && chData.groupId == current) {
                     current = (i == channelIndex) ? parentGroup : chData.parentGroup;
                     found = true;
@@ -2782,7 +2782,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         uint64_t millisRead = millis64();
         uint64_t deltaMillis = millisRead - _meterValues[channelIndex].lastMillis;
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
             LOG_WARNING("Failed to get channel data for channel %u", channelIndex);
             _recordFailure();
@@ -3696,7 +3696,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
     void _printMeterValues(uint8_t channelIndex) {
         MeterValues meterValues;
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         
         if (!getMeterValues(meterValues, channelIndex) ||
             !getChannelData(channelData, channelIndex)) 
