@@ -551,6 +551,112 @@
     var totalPieChart = null;
     var meterDataUpdateInProgress = false;
 
+    // Build group mapping from channel data
+    // Returns: { channelIndex -> groupId } and { groupId -> { label, channels: [indices] } }
+    function buildGroupMapping() {
+        const channelToGroup = {};  // channelIndex -> groupId
+        const groups = {};          // groupId -> { label, channels: [] }
+        
+        if (!channelData || !Array.isArray(channelData)) {
+            return { channelToGroup, groups };
+        }
+        
+        channelData.forEach(ch => {
+            if (ch.index === 0) return; // Skip main channel (channel 0)
+            
+            const groupId = ch.groupId !== undefined ? ch.groupId : ch.index;
+            channelToGroup[ch.index] = groupId;
+            
+            if (!groups[groupId]) {
+                groups[groupId] = {
+                    label: ch.groupLabel || ch.label || `Group ${groupId}`,
+                    channels: []
+                };
+            }
+            groups[groupId].channels.push(ch.index);
+        });
+        
+        return { channelToGroup, groups };
+    }
+    
+    // Aggregate consumption data by groups
+    // Input: { period: { channelIndex: value } }
+    // Output: { period: { groupId: aggregatedValue } }
+    function aggregateByGroup(consumptionData) {
+        const { channelToGroup, groups } = buildGroupMapping();
+        const aggregated = {};
+        
+        Object.keys(consumptionData).forEach(period => {
+            aggregated[period] = {};
+            const periodData = consumptionData[period];
+            
+            // Handle "Other" specially - keep it as is
+            if (periodData['Other'] !== undefined) {
+                aggregated[period]['Other'] = periodData['Other'];
+            }
+            
+            // Aggregate channels by group
+            Object.keys(periodData).forEach(channel => {
+                if (channel === 'Other' || channel === '0') return;
+                
+                const channelIndex = parseInt(channel);
+                const groupId = channelToGroup[channelIndex];
+                
+                if (groupId === undefined) {
+                    // Channel not in any group, keep as individual
+                    aggregated[period][channel] = periodData[channel];
+                } else {
+                    // Aggregate into group
+                    const groupKey = `group_${groupId}`;
+                    if (!aggregated[period][groupKey]) {
+                        aggregated[period][groupKey] = 0;
+                    }
+                    aggregated[period][groupKey] += periodData[channel];
+                }
+            });
+        });
+        
+        return aggregated;
+    }
+    
+    // Get label for a channel or group
+    function getDisplayLabel(key) {
+        if (key === 'Other') return 'Other (Untracked)';
+        
+        // Check if it's a group key
+        if (key.startsWith('group_')) {
+            const groupId = parseInt(key.replace('group_', ''));
+            const { groups } = buildGroupMapping();
+            if (groups[groupId]) {
+                return groups[groupId].label;
+            }
+            return `Group ${groupId}`;
+        }
+        
+        // Individual channel
+        return getChannelLabel(key);
+    }
+    
+    // Get color for a channel or group
+    function getDisplayColor(key) {
+        if (key === 'Other') return 'rgba(128,128,128,0.8)';
+        
+        // Check if it's a group key
+        if (key.startsWith('group_')) {
+            const groupId = parseInt(key.replace('group_', ''));
+            return colors[groupId % colors.length];
+        }
+        
+        // Individual channel
+        return getChannelColor(key);
+    }
+    
+    // Check if grouping is enabled (any channel has a different groupId than its index)
+    function isGroupingEnabled() {
+        if (!channelData || !Array.isArray(channelData)) return false;
+        return channelData.some(ch => ch.index !== 0 && ch.groupId !== undefined && ch.groupId !== ch.index);
+    }
+
     // Function to decompress gzip data
     async function decompressGzipFile(filename) {
         try {
@@ -1376,29 +1482,44 @@
     }
 
     function updateConsumptionChart(consumptionData, viewType, exportedData = {}) {
-        const periods = Object.keys(consumptionData).sort();
+        // Apply grouping if enabled
+        const groupedData = isGroupingEnabled() ? aggregateByGroup(consumptionData) : consumptionData;
+        const groupedExportData = isGroupingEnabled() ? aggregateByGroup(exportedData) : exportedData;
         
-        // Get all channels except 'Other' first, then add 'Other' at the end
+        const periods = Object.keys(groupedData).sort();
+        
+        // Get all channels/groups except 'Other' first, then add 'Other' at the end
         const allChannels = new Set();
         periods.forEach(period => {
-            Object.keys(consumptionData[period]).forEach(channel => {
+            Object.keys(groupedData[period]).forEach(channel => {
                 if (channel !== 'Other') allChannels.add(channel);
             });
         });
-        const channels = [...allChannels].sort((a, b) => parseInt(a) - parseInt(b));
-        if (periods.some(period => consumptionData[period]['Other'])) {
+        
+        // Sort: groups first (by groupId), then individual channels
+        const channels = [...allChannels].sort((a, b) => {
+            const aIsGroup = a.startsWith('group_');
+            const bIsGroup = b.startsWith('group_');
+            if (aIsGroup && !bIsGroup) return -1;
+            if (!aIsGroup && bIsGroup) return 1;
+            if (aIsGroup && bIsGroup) {
+                return parseInt(a.replace('group_', '')) - parseInt(b.replace('group_', ''));
+            }
+            return parseInt(a) - parseInt(b);
+        });
+        if (periods.some(period => groupedData[period]['Other'])) {
             channels.push('Other');
         }
         
         // Create datasets for imported energy (positive values)
         const datasets = channels.map((channel) => {
-            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
+            const label = getDisplayLabel(channel);
             const data = periods.map(period => {
-                const value = consumptionData[period][channel] || 0;
+                const value = groupedData[period][channel] || 0;
                 return value.toFixed(3);
             });
             
-            const color = getChannelColor(channel);
+            const color = getDisplayColor(channel);
             
             return {
                 label: label,
@@ -1411,29 +1532,42 @@
         });
         
         // Check if there's any exported data
-        const hasExportedData = Object.keys(exportedData).some(period => 
-            Object.keys(exportedData[period] || {}).length > 0
+        const hasExportedData = Object.keys(groupedExportData).some(period => 
+            Object.keys(groupedExportData[period] || {}).length > 0
         );
         
         // Create datasets for exported energy (negative values for stacking below x-axis)
         if (hasExportedData) {
             // Get all channels that have export data
             const exportChannels = new Set();
-            Object.keys(exportedData).forEach(period => {
-                Object.keys(exportedData[period] || {}).forEach(channel => {
+            Object.keys(groupedExportData).forEach(period => {
+                Object.keys(groupedExportData[period] || {}).forEach(channel => {
                     exportChannels.add(channel);
                 });
             });
             
-            [...exportChannels].sort((a, b) => parseInt(a) - parseInt(b)).forEach(channel => {
-                const label = `${getChannelLabel(channel)} (Export)`;
+            // Sort export channels same way as import
+            const sortedExportChannels = [...exportChannels].sort((a, b) => {
+                const aIsGroup = a.startsWith('group_');
+                const bIsGroup = b.startsWith('group_');
+                if (aIsGroup && !bIsGroup) return -1;
+                if (!aIsGroup && bIsGroup) return 1;
+                if (aIsGroup && bIsGroup) {
+                    return parseInt(a.replace('group_', '')) - parseInt(b.replace('group_', ''));
+                }
+                return parseInt(a) - parseInt(b);
+            });
+            
+            sortedExportChannels.forEach(channel => {
+                const baseLabel = getDisplayLabel(channel);
+                const label = `${baseLabel} (Export)`;
                 const data = periods.map(period => {
-                    const value = (exportedData[period] && exportedData[period][channel]) || 0;
+                    const value = (groupedExportData[period] && groupedExportData[period][channel]) || 0;
                     return (-value).toFixed(3); // Negative for below x-axis
                 });
                 
                 // Use a lighter/different shade for export
-                const baseColor = getChannelColor(channel);
+                const baseColor = getDisplayColor(channel);
                 const exportColor = baseColor.replace('0.8', '0.5'); // More transparent for exports
                 
                 datasets.push({
@@ -1533,8 +1667,16 @@
     }
 
     function updatePieChart(totalConsumption) {
-        const channels = Object.keys(totalConsumption);
-        const values = Object.values(totalConsumption);
+        // Apply grouping if enabled - wrap in object with single period for aggregateByGroup
+        let dataToDisplay = totalConsumption;
+        if (isGroupingEnabled()) {
+            const wrapped = { '_': totalConsumption };
+            const aggregated = aggregateByGroup(wrapped);
+            dataToDisplay = aggregated['_'];
+        }
+        
+        const channels = Object.keys(dataToDisplay);
+        const values = Object.values(dataToDisplay);
         const total = values.reduce((sum, value) => sum + value, 0);
         
         // Update the total display
@@ -1547,12 +1689,12 @@
         
         // Create labels with percentages and consistent colors
         const labels = channels.map((channel, i) => {
-            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
+            const label = getDisplayLabel(channel);
             const percentage = ((values[i] / total) * 100).toFixed(1);
             return `${label} (${percentage}%)`;
         });
         
-        const backgroundColors = channels.map(channel => getChannelColor(channel));
+        const backgroundColors = channels.map(channel => getDisplayColor(channel));
         
         // Destroy existing chart
         if (pieChart) {
@@ -1590,7 +1732,7 @@
                         callbacks: {
                             label: function(context) {
                                 const label = channels[context.dataIndex];
-                                const channelLabel = label === 'Other' ? 'Other (Untracked)' : getChannelLabel(label);
+                                const channelLabel = getDisplayLabel(label);
                                 const value = context.parsed.toFixed(2);
                                 const percentage = ((context.parsed / total) * 100).toFixed(1);
                                 return `${channelLabel}: ${value} kWh (${percentage}%)`;
@@ -1715,8 +1857,16 @@
     }
     
     function updateTotalPieChartDisplay(totalConsumption) {
-        const channels = Object.keys(totalConsumption);
-        const values = Object.values(totalConsumption);
+        // Apply grouping if enabled - wrap in object with single period for aggregateByGroup
+        let dataToDisplay = totalConsumption;
+        if (isGroupingEnabled()) {
+            const wrapped = { '_': totalConsumption };
+            const aggregated = aggregateByGroup(wrapped);
+            dataToDisplay = aggregated['_'];
+        }
+        
+        const channels = Object.keys(dataToDisplay);
+        const values = Object.values(dataToDisplay);
         const total = values.reduce((sum, value) => sum + value, 0);
         
         // Update the total display
@@ -1730,12 +1880,12 @@
         
         // Create labels with percentages and consistent colors
         const labels = channels.map((channel, i) => {
-            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
+            const label = getDisplayLabel(channel);
             const percentage = ((values[i] / total) * 100).toFixed(1);
             return `${label} (${percentage}%)`;
         });
         
-        const backgroundColors = channels.map(channel => getChannelColor(channel));
+        const backgroundColors = channels.map(channel => getDisplayColor(channel));
         
         // Destroy existing chart
         if (totalPieChart) {
@@ -1773,7 +1923,7 @@
                         callbacks: {
                             label: function(context) {
                                 const label = channels[context.dataIndex];
-                                const channelLabel = label === 'Other' ? 'Other (Untracked)' : getChannelLabel(label);
+                                const channelLabel = getDisplayLabel(label);
                                 const value = context.parsed.toFixed(1);
                                 const percentage = ((context.parsed / total) * 100).toFixed(1);
                                 return `${channelLabel}: ${value} kWh (${percentage}%)`;

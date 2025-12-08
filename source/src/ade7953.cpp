@@ -143,6 +143,7 @@ namespace Ade7953
     static bool _saveChannelDataToPreferences(uint8_t channelIndex);
     static void _updateChannelData(uint8_t channelIndex);
     static bool _validateChannelDataJson(const JsonDocument &jsonDocument, bool partial = false);
+    static bool _validateParentGroup(uint8_t channelIndex, uint8_t groupId, uint8_t parentGroup);
     static void _calculateLsbValues(CtSpecification &ctSpec);
 
     // Energy data management
@@ -823,6 +824,12 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         }
 
         channelDataFromJson(jsonDocument, channelData, partial);
+
+        // Validate parent group to prevent cycles and self-parenting
+        if (!_validateParentGroup(channelIndex, channelData.groupId, channelData.parentGroup)) {
+            LOG_WARNING("Invalid parent group configuration for channel %u", channelIndex);
+            return false;
+        }
 
         if (!setChannelData(channelData, channelIndex)) {
             LOG_WARNING("Failed to set channel data from JSON for channel %u", channelIndex);
@@ -2332,6 +2339,69 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
             return true; // All fields validated successfully
         }
+    }
+
+    bool _validateParentGroup(uint8_t channelIndex, uint8_t groupId, uint8_t parentGroup) {
+        // Root channels (parentGroup = 255) are always valid
+        if (parentGroup == DEFAULT_CHANNEL_PARENT_GROUP) return true;
+
+        // Self-parenting: groupId cannot equal parentGroup
+        if (groupId == parentGroup) {
+            LOG_WARNING("Channel %u: groupId (%u) cannot equal parentGroup (self-parenting)", channelIndex, groupId);
+            return false;
+        }
+
+        // Cycle detection: follow parent chain and check for loops
+        // Build a map of groupId -> parentGroup for all channels
+        uint8_t parentMap[CHANNEL_COUNT];
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            ChannelData chData;
+            if (getChannelData(chData, i)) {
+                // Use the new values for the channel being updated
+                if (i == channelIndex) {
+                    parentMap[chData.groupId] = parentGroup;
+                } else {
+                    parentMap[chData.groupId] = chData.parentGroup;
+                }
+            }
+        }
+
+        // Follow the parent chain from the proposed parentGroup
+        uint8_t visited[CHANNEL_COUNT + 1] = {0}; // Track visited groupIds
+        uint8_t current = parentGroup;
+        uint8_t depth = 0;
+        const uint8_t maxDepth = CHANNEL_COUNT + 1; // Prevent infinite loops
+
+        while (current != DEFAULT_CHANNEL_PARENT_GROUP && depth < maxDepth) {
+            // Check if we've visited this groupId before (cycle detected)
+            if (visited[current]) {
+                LOG_WARNING("Channel %u: cycle detected in parent group chain at groupId %u", channelIndex, current);
+                return false;
+            }
+            visited[current] = 1;
+
+            // Check if following this chain leads back to the channel's own groupId
+            if (current == groupId) {
+                LOG_WARNING("Channel %u: parent chain leads back to own groupId (%u)", channelIndex, groupId);
+                return false;
+            }
+
+            // Move to parent
+            bool found = false;
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                ChannelData chData;
+                if (getChannelData(chData, i) && chData.groupId == current) {
+                    current = (i == channelIndex) ? parentGroup : chData.parentGroup;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) break; // Parent groupId doesn't exist, that's OK (orphan)
+
+            depth++;
+        }
+
+        return true;
     }
 
     void _updateChannelData(uint8_t channelIndex) {
