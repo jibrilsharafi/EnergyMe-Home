@@ -242,6 +242,7 @@
 #define CHANNEL_PARENT_GROUP_KEY "parent_grp_%u" // Format: parent_grp_0 (13 chars)
 #define CHANNEL_IS_PRODUCTION_KEY "is_prod_%u" // Format: is_prod_0 (10 chars)
 #define CHANNEL_IS_BATTERY_KEY "is_batt_%u" // Format: is_batt_0 (10 chars)
+#define CHANNEL_DISCARD_NEGATIVE_KEY "disc_neg_%u" // Format: disc_neg_0 (11 chars)
 
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
@@ -255,6 +256,7 @@
 #define DEFAULT_CHANNEL_PARENT_GROUP 255 // 255 = root channel (no parent)
 #define DEFAULT_CHANNEL_IS_PRODUCTION false
 #define DEFAULT_CHANNEL_IS_BATTERY false
+#define DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS false
 
 // CT Specification defaults
 #define DEFAULT_CT_CURRENT_RATING_CHANNEL_0 50.0f   // 50A for channel 0 only as it is "standard" in EnergyMe Home
@@ -415,6 +417,7 @@ struct ChannelData
   // Special channel flags
   bool isProduction;                  // True if this is a production channel (e.g., PV/solar)
   bool isBattery;                     // True if this is a battery channel
+  bool discardNegativeReadings;       // True to clamp negative active power to 0 (for spurious readings)
 
   ChannelData()
     : index(0), 
@@ -426,7 +429,8 @@ struct ChannelData
       groupId(0),
       parentGroup(DEFAULT_CHANNEL_PARENT_GROUP),
       isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
-      isBattery(DEFAULT_CHANNEL_IS_BATTERY) {
+      isBattery(DEFAULT_CHANNEL_IS_BATTERY),
+      discardNegativeReadings(DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS) {
       snprintf(label, sizeof(label), "Channel");
       snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, 0);
     }
@@ -441,7 +445,8 @@ struct ChannelData
       groupId(idx),
       parentGroup(idx == 0 ? DEFAULT_CHANNEL_PARENT_GROUP : 0),
       isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
-      isBattery(DEFAULT_CHANNEL_IS_BATTERY) {
+      isBattery(DEFAULT_CHANNEL_IS_BATTERY),
+      discardNegativeReadings(DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS) {
       snprintf(label, sizeof(label), DEFAULT_CHANNEL_LABEL_FORMAT, idx);
       snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, idx);
     }

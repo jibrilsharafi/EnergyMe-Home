@@ -859,6 +859,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         // Special channel flags
         jsonDocument["isProduction"] = channelData.isProduction;
         jsonDocument["isBattery"] = channelData.isBattery;
+        jsonDocument["discardNegativeReadings"] = channelData.discardNegativeReadings;
 
         LOG_VERBOSE("Successfully converted channel data to JSON for channel %u", channelData.index);
     }
@@ -896,6 +897,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             // Special channel flags
             if (jsonDocument["isProduction"].is<bool>()) channelData.isProduction = jsonDocument["isProduction"].as<bool>();
             if (jsonDocument["isBattery"].is<bool>()) channelData.isBattery = jsonDocument["isBattery"].as<bool>();
+            if (jsonDocument["discardNegativeReadings"].is<bool>()) channelData.discardNegativeReadings = jsonDocument["discardNegativeReadings"].as<bool>();
         } else {
             // Full update - set all fields
             channelData.index = jsonDocument["index"].as<uint8_t>();
@@ -917,6 +919,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             // Special channel flags
             channelData.isProduction = jsonDocument["isProduction"].as<bool>();
             channelData.isBattery = jsonDocument["isBattery"].as<bool>();
+            channelData.discardNegativeReadings = jsonDocument["discardNegativeReadings"].as<bool>();
         }
     }
 
@@ -2198,6 +2201,9 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_IS_BATTERY_KEY, channelIndex);
         channelData.isBattery = preferences.getBool(key, DEFAULT_CHANNEL_IS_BATTERY);
 
+        snprintf(key, sizeof(key), CHANNEL_DISCARD_NEGATIVE_KEY, channelIndex);
+        channelData.discardNegativeReadings = preferences.getBool(key, DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS);
+
         preferences.end();
 
         setChannelData(channelData, channelIndex);
@@ -2268,6 +2274,9 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_IS_BATTERY_KEY, channelIndex);
         preferences.putBool(key, channelData.isBattery);
 
+        snprintf(key, sizeof(key), CHANNEL_DISCARD_NEGATIVE_KEY, channelIndex);
+        preferences.putBool(key, channelData.discardNegativeReadings);
+
         preferences.end();
 
         LOG_DEBUG("Successfully saved channel data to Preferences for channel %lu", channelIndex);
@@ -2313,6 +2322,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             // Special channel flags validation for partial updates
             if (jsonDocument["isProduction"].is<bool>()) return true;
             if (jsonDocument["isBattery"].is<bool>()) return true;
+            if (jsonDocument["discardNegativeReadings"].is<bool>()) return true;
 
             LOG_WARNING("No valid fields found for partial update");
             return false; // No valid fields found for partial update
@@ -2336,6 +2346,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             if (!jsonDocument["parentGroup"].is<uint8_t>()) { LOG_WARNING("parentGroup is not uint8_t"); return false; }
             if (!jsonDocument["isProduction"].is<bool>()) { LOG_WARNING("isProduction is not bool"); return false; }
             if (!jsonDocument["isBattery"].is<bool>()) { LOG_WARNING("isBattery is not bool"); return false; }
+            if (!jsonDocument["discardNegativeReadings"].is<bool>()) { LOG_WARNING("discardNegativeReadings is not bool"); return false; }
 
             return true; // All fields validated successfully
         }
@@ -2991,6 +3002,19 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                 apparentEnergy = 0.0f;
             }
 
+        }
+
+        // Discard negative readings for channels that should not have them
+        if (activePower < 0.0f && channelData.discardNegativeReadings) {
+            LOG_DEBUG( // Just log as debug as it is not something critical
+                "%s (%d): Discarding negative reading (%.1fW)",
+                channelData.label,
+                channelIndex,
+                activePower
+            );
+            // Record the failure since it is a wrong reading
+            _recordFailure();
+            return false;
         }
         
         // Enough checks, now we can set the values
