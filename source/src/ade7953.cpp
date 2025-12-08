@@ -894,7 +894,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             channelData.index = jsonDocument["index"].as<uint8_t>();
             channelData.active = jsonDocument["active"].as<bool>();
             channelData.reverse = jsonDocument["reverse"].as<bool>();
-            // highPriority is optional for backward compatibility (defaults to false if not provided)
             channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
@@ -903,23 +902,14 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             channelData.ctSpecification.voltageOutput = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
             channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
 
-            // Channel grouping and hierarchy (with defaults for backward compatibility)
-            // TODO: is backwards compatibility really needed if we read with default values from Preferences?
-            channelData.groupId = jsonDocument["groupId"].is<uint8_t>() ? 
-                jsonDocument["groupId"].as<uint8_t>() : channelData.index;
-            if (jsonDocument["groupLabel"].is<const char*>()) {
-                snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", jsonDocument["groupLabel"].as<const char*>());
-            } else {
-                snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, channelData.groupId);
-            }
-            channelData.parentGroup = jsonDocument["parentGroup"].is<uint8_t>() ? 
-                jsonDocument["parentGroup"].as<uint8_t>() : DEFAULT_CHANNEL_PARENT_GROUP;
+            // Channel grouping and hierarchy
+            channelData.groupId = jsonDocument["groupId"].as<uint8_t>();
+            snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", jsonDocument["groupLabel"].as<const char*>());
+            channelData.parentGroup = jsonDocument["parentGroup"].as<uint8_t>();
 
-            // Special channel flags (with defaults for backward compatibility)
-            channelData.isProduction = jsonDocument["isProduction"].is<bool>() ? 
-                jsonDocument["isProduction"].as<bool>() : DEFAULT_CHANNEL_IS_PRODUCTION;
-            channelData.isBattery = jsonDocument["isBattery"].is<bool>() ? 
-                jsonDocument["isBattery"].as<bool>() : DEFAULT_CHANNEL_IS_BATTERY;
+            // Special channel flags
+            channelData.isProduction = jsonDocument["isProduction"].as<bool>();
+            channelData.isBattery = jsonDocument["isBattery"].as<bool>();
         }
     }
 
@@ -2323,11 +2313,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             // Full validation - all fields must be present and valid
             if (!jsonDocument["active"].is<bool>()) { LOG_WARNING("active is missing or not bool"); return false; }
             if (!jsonDocument["reverse"].is<bool>()) { LOG_WARNING("reverse is missing or not bool"); return false; }
-            // highPriority is optional for backward compatibility (defaults to false)
-            if (jsonDocument["highPriority"].is<JsonVariant>() && !jsonDocument["highPriority"].is<bool>()) { 
-                LOG_WARNING("highPriority is not bool"); 
-                return false; 
-            }
+            if (!jsonDocument["highPriority"].is<bool>()) { LOG_WARNING("highPriority is not bool"); return false; }
             if (!jsonDocument["label"].is<const char*>()) { LOG_WARNING("label is missing or not string"); return false; }
             if (!jsonDocument["phase"].is<uint8_t>()) { LOG_WARNING("phase is missing or not uint8_t"); return false; }
 
@@ -2337,29 +2323,12 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             if (!jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) { LOG_WARNING("ctSpecification.voltageOutput is missing or not float"); return false; }
             if (!jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) { LOG_WARNING("ctSpecification.scalingFraction is missing or not float"); return false; }
 
-            // Channel grouping and hierarchy are optional for backward compatibility
-            if (jsonDocument["groupId"].is<JsonVariant>() && !jsonDocument["groupId"].is<uint8_t>()) { 
-                LOG_WARNING("groupId is not uint8_t"); 
-                return false; 
-            }
-            if (jsonDocument["groupLabel"].is<JsonVariant>() && !jsonDocument["groupLabel"].is<const char*>()) { 
-                LOG_WARNING("groupLabel is not string"); 
-                return false; 
-            }
-            if (jsonDocument["parentGroup"].is<JsonVariant>() && !jsonDocument["parentGroup"].is<uint8_t>()) { 
-                LOG_WARNING("parentGroup is not uint8_t"); 
-                return false; 
-            }
-
-            // Special channel flags are optional for backward compatibility
-            if (jsonDocument["isProduction"].is<JsonVariant>() && !jsonDocument["isProduction"].is<bool>()) { 
-                LOG_WARNING("isProduction is not bool"); 
-                return false; 
-            }
-            if (jsonDocument["isBattery"].is<JsonVariant>() && !jsonDocument["isBattery"].is<bool>()) { 
-                LOG_WARNING("isBattery is not bool"); 
-                return false; 
-            }
+            // Channel grouping and hierarchy validation
+            if (!jsonDocument["groupId"].is<uint8_t>()) { LOG_WARNING("groupId is not uint8_t"); return false; }
+            if (!jsonDocument["groupLabel"].is<const char*>()) { LOG_WARNING("groupLabel is not string"); return false; }
+            if (!jsonDocument["parentGroup"].is<uint8_t>()) { LOG_WARNING("parentGroup is not uint8_t"); return false; }
+            if (!jsonDocument["isProduction"].is<bool>()) { LOG_WARNING("isProduction is not bool"); return false; }
+            if (!jsonDocument["isBattery"].is<bool>()) { LOG_WARNING("isBattery is not bool"); return false; }
 
             return true; // All fields validated successfully
         }
