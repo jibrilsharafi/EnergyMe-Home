@@ -441,6 +441,192 @@
                 font-size: 10px;
             }
         }
+        
+        /* Energy Flow Diagram Styles */
+        .energy-flow-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            min-height: 350px;
+        }
+        
+        .energy-flow-diagram {
+            position: relative;
+            width: 300px;
+            height: 300px;
+        }
+        
+        .energy-node {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        
+        .energy-node-icon {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            border: 3px solid;
+            background: white;
+        }
+        
+        .energy-node-label {
+            font-size: 12px;
+            font-weight: bold;
+            margin-top: 4px;
+            color: #333;
+        }
+        
+        .energy-node-value {
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 2px;
+        }
+        
+        .energy-node-subvalue {
+            font-size: 11px;
+            color: #666;
+        }
+        
+        /* Node positions */
+        .node-solar { top: 0; left: 50%; transform: translateX(-50%); }
+        .node-grid { top: 50%; left: 0; transform: translateY(-50%); }
+        .node-home { top: 50%; right: 0; transform: translateY(-50%); }
+        .node-battery { bottom: 0; left: 50%; transform: translateX(-50%); }
+        
+        /* Node colors */
+        .node-solar .energy-node-icon { border-color: #FF9800; color: #FF9800; }
+        .node-grid .energy-node-icon { border-color: #2196F3; color: #2196F3; }
+        .node-home .energy-node-icon { border-color: #4CAF50; color: #4CAF50; }
+        .node-battery .energy-node-icon { border-color: #9C27B0; color: #9C27B0; }
+        
+        .node-solar .energy-node-value { color: #FF9800; }
+        .node-grid .energy-node-value { color: #2196F3; }
+        .node-home .energy-node-value { color: #4CAF50; }
+        .node-battery .energy-node-value { color: #9C27B0; }
+        
+        /* Connection lines (SVG overlay) */
+        .energy-flow-lines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .flow-line {
+            fill: none;
+            stroke-width: 3;
+            stroke-linecap: round;
+        }
+        
+        .flow-solar { stroke: #FF9800; }
+        .flow-grid { stroke: #2196F3; }
+        .flow-battery { stroke: #9C27B0; }
+        
+        /* Animated flow effect */
+        .flow-line.active {
+            stroke-dasharray: 8 4;
+            animation: flowAnimation 1s linear infinite;
+        }
+        
+        .flow-line.active.reverse {
+            animation: flowAnimationReverse 1s linear infinite;
+        }
+        
+        @keyframes flowAnimation {
+            from { stroke-dashoffset: 12; }
+            to { stroke-dashoffset: 0; }
+        }
+        
+        @keyframes flowAnimationReverse {
+            from { stroke-dashoffset: 0; }
+            to { stroke-dashoffset: 12; }
+        }
+        
+        .flow-line.inactive {
+            stroke-dasharray: 2 4;
+            opacity: 0.3;
+        }
+        
+        /* KPI styles */
+        .energy-kpis {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+            width: 100%;
+        }
+        
+        .kpi-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 12px 20px;
+            text-align: center;
+            min-width: 140px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .kpi-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        
+        .kpi-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .kpi-unit {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        /* Hidden by default, shown when PV/Battery configured */
+        .energy-flow-section {
+            display: none;
+        }
+        
+        .energy-flow-section.visible {
+            display: block;
+        }
+        
+        @media (max-width: 768px) {
+            .energy-flow-diagram {
+                width: 250px;
+                height: 250px;
+            }
+            
+            .energy-node-icon {
+                width: 55px;
+                height: 55px;
+                font-size: 22px;
+            }
+            
+            .energy-node-value {
+                font-size: 12px;
+            }
+            
+            .kpi-card {
+                min-width: 100px;
+                padding: 8px 12px;
+            }
+            
+            .kpi-value {
+                font-size: 16px;
+            }
+        }
     </style>
 </head>
 
@@ -457,6 +643,58 @@
     <div class="section-box">
         <div id="voltage" class="voltage-box"></div>
         <div id="channels" class="channels-box"></div>
+    </div>
+
+    <!-- Energy Flow Diagram - Only shown when PV or Battery channels are configured -->
+    <div id="energy-flow-section" class="section-box energy-flow-section">
+        <div class="chart-header">
+            <h3>Energy Flow</h3>
+        </div>
+        <div class="energy-flow-container">
+            <div class="energy-flow-diagram">
+                <!-- SVG for connection lines -->
+                <svg class="energy-flow-lines" viewBox="0 0 300 300">
+                    <!-- Solar to center -->
+                    <path id="line-solar" class="flow-line flow-solar" d="M 150 70 L 150 130" />
+                    <!-- Grid to center -->
+                    <path id="line-grid" class="flow-line flow-grid" d="M 70 150 L 130 150" />
+                    <!-- Center to Home -->
+                    <path id="line-home" class="flow-line" style="stroke: #4CAF50;" d="M 170 150 L 230 150" />
+                    <!-- Battery to center -->
+                    <path id="line-battery" class="flow-line flow-battery" d="M 150 170 L 150 230" />
+                    <!-- Center dot -->
+                    <circle cx="150" cy="150" r="8" fill="#666" />
+                </svg>
+                
+                <!-- Solar/PV Node -->
+                <div id="node-solar" class="energy-node node-solar" style="display: none;">
+                    <div class="energy-node-icon">☀️</div>
+                    <div class="energy-node-label">Solar</div>
+                    <div class="energy-node-value" id="solar-power">0 W</div>
+                </div>
+                
+                <!-- Grid Node -->
+                <div class="energy-node node-grid">
+                    <div class="energy-node-icon">🔌</div>
+                    <div class="energy-node-label">Grid</div>
+                    <div class="energy-node-value" id="grid-power">0 W</div>
+                </div>
+                
+                <!-- Home Node -->
+                <div class="energy-node node-home">
+                    <div class="energy-node-icon">🏠</div>
+                    <div class="energy-node-label">Home</div>
+                    <div class="energy-node-value" id="home-power">0 W</div>
+                </div>
+                
+                <!-- Battery Node -->
+                <div id="node-battery" class="energy-node node-battery" style="display: none;">
+                    <div class="energy-node-icon">🔋</div>
+                    <div class="energy-node-label">Battery</div>
+                    <div class="energy-node-value" id="battery-power">0 W</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="section-box">
@@ -482,6 +720,42 @@
             <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
                 <i class="fas fa-download"></i>
             </button>
+        </div>
+        <!-- Energy KPIs - Based on chart timerange data -->
+        <div id="energy-kpis-section" class="energy-kpis" style="display: none;">
+            <div id="kpi-grid-import" class="kpi-card">
+                <div class="kpi-label">🔌 Grid Import</div>
+                <div class="kpi-value" id="kpi-grid-import-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="kpi-grid-export" class="kpi-card">
+                <div class="kpi-label">⚡ Grid Export</div>
+                <div class="kpi-value" id="kpi-grid-export-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="kpi-production" class="kpi-card" style="display: none;">
+                <div class="kpi-label">☀️ Production</div>
+                <div class="kpi-value" id="kpi-production-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="kpi-self-consumption" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🏠 Self-Consumption</div>
+                <div class="kpi-value" id="kpi-self-consumption-value">0%</div>
+            </div>
+            <div id="kpi-autosufficiency" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🌱 Autosufficiency</div>
+                <div class="kpi-value" id="kpi-autosufficiency-value">0%</div>
+            </div>
+            <div id="kpi-battery-charge" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🔋 Battery Charged</div>
+                <div class="kpi-value" id="kpi-battery-charge-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="kpi-battery-discharge" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🔋 Battery Discharged</div>
+                <div class="kpi-value" id="kpi-battery-discharge-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
         </div>
     </div>
 
@@ -551,6 +825,26 @@
     var totalPieChart = null;
     var meterDataUpdateInProgress = false;
 
+    // Find the root channel (channel with parentGroup = 255, which is the main meter)
+    // Returns the channel index of the root channel, or 0 as fallback
+    function getRootChannelIndex() {
+        if (!channelData || !Array.isArray(channelData)) return 0;
+        const rootChannel = channelData.find(ch => ch.parentGroup === 255);
+        return rootChannel ? rootChannel.index : 0;
+    }
+
+    // Get channels that are marked as production (PV/solar)
+    function getProductionChannels() {
+        if (!channelData || !Array.isArray(channelData)) return [];
+        return channelData.filter(ch => ch.isProduction === true);
+    }
+
+    // Get channels that are marked as battery
+    function getBatteryChannels() {
+        if (!channelData || !Array.isArray(channelData)) return [];
+        return channelData.filter(ch => ch.isBattery === true);
+    }
+
     // Build group mapping from channel data
     // Returns: { channelIndex -> groupId } and { groupId -> { label, channels: [indices] } }
     function buildGroupMapping() {
@@ -561,8 +855,10 @@
             return { channelToGroup, groups };
         }
         
+        const rootChannelIndex = getRootChannelIndex();
+        
         channelData.forEach(ch => {
-            if (ch.index === 0) return; // Skip main channel (channel 0)
+            if (ch.index === rootChannelIndex) return; // Skip root/main channel
             
             const groupId = ch.groupId !== undefined ? ch.groupId : ch.index;
             channelToGroup[ch.index] = groupId;
@@ -585,6 +881,7 @@
     function aggregateByGroup(consumptionData) {
         const { channelToGroup, groups } = buildGroupMapping();
         const aggregated = {};
+        const rootChannelKey = String(getRootChannelIndex());
         
         Object.keys(consumptionData).forEach(period => {
             aggregated[period] = {};
@@ -597,7 +894,7 @@
             
             // Aggregate channels by group
             Object.keys(periodData).forEach(channel => {
-                if (channel === 'Other' || channel === '0') return;
+                if (channel === 'Other' || channel === rootChannelKey) return;
                 
                 const channelIndex = parseInt(channel);
                 const groupId = channelToGroup[channelIndex];
@@ -654,10 +951,11 @@
         return getChannelColor(key);
     }
     
-    // Check if grouping is enabled (any channel has a different groupId than its index)
+    // Check if grouping is enabled (any non-root channel has a different groupId than its index)
     function isGroupingEnabled() {
         if (!channelData || !Array.isArray(channelData)) return false;
-        return channelData.some(ch => ch.index !== 0 && ch.groupId !== undefined && ch.groupId !== ch.index);
+        const rootChannelIndex = getRootChannelIndex();
+        return channelData.some(ch => ch.index !== rootChannelIndex && ch.groupId !== undefined && ch.groupId !== ch.index);
     }
 
     // Function to decompress gzip data
@@ -1144,6 +1442,7 @@
         
         // Update charts
         updateConsumptionChart(hourlyData.imported, 'daily', hourlyData.exported);
+        updateEnergyKPIs(totalConsumption.rawImported, totalConsumption.rawExported);
         updatePieChart(totalConsumption.imported);
         
         // Set up CSV download
@@ -1183,6 +1482,8 @@
         // Group data by day and calculate daily consumption
         const dailyConsumptions = {};
         const monthlyData = {};
+        const monthlyRawImported = {};  // For KPIs
+        const monthlyRawExported = {};  // For KPIs
         
         // Group by date
         const dataByDate = {};
@@ -1203,10 +1504,20 @@
                 dailyExported[day] = dailyData.exported;
             }
             
-            // Add to monthly totals
+            // Add to monthly totals (for charts)
             Object.keys(dailyData.imported).forEach(channel => {
                 if (!monthlyData[channel]) monthlyData[channel] = 0;
                 monthlyData[channel] += dailyData.imported[channel];
+            });
+            
+            // Add raw data to monthly totals (for KPIs)
+            Object.keys(dailyData.rawImported).forEach(channel => {
+                if (!monthlyRawImported[channel]) monthlyRawImported[channel] = 0;
+                monthlyRawImported[channel] += dailyData.rawImported[channel];
+            });
+            Object.keys(dailyData.rawExported).forEach(channel => {
+                if (!monthlyRawExported[channel]) monthlyRawExported[channel] = 0;
+                monthlyRawExported[channel] += dailyData.rawExported[channel];
             });
         });
         
@@ -1215,6 +1526,7 @@
         
         // Update charts
         updateConsumptionChart(dailyConsumptions, 'monthly', dailyExported);
+        updateEnergyKPIs(monthlyRawImported, monthlyRawExported);
         updatePieChart(monthlyData);
         
         // Set up CSV download
@@ -1268,6 +1580,8 @@
         const monthlyConsumptions = {};
         const monthlyExported = {};
         const yearlyData = {};
+        const yearlyRawImported = {};  // For KPIs
+        const yearlyRawExported = {};  // For KPIs
         
         // Group by month
         const dataByMonth = {};
@@ -1286,10 +1600,20 @@
                 monthlyExported[month] = monthConsumptionData.exported;
             }
             
-            // Add to yearly totals
+            // Add to yearly totals (for charts)
             Object.keys(monthConsumptionData.imported).forEach(channel => {
                 if (!yearlyData[channel]) yearlyData[channel] = 0;
                 yearlyData[channel] += monthConsumptionData.imported[channel];
+            });
+            
+            // Add raw data to yearly totals (for KPIs)
+            Object.keys(monthConsumptionData.rawImported).forEach(channel => {
+                if (!yearlyRawImported[channel]) yearlyRawImported[channel] = 0;
+                yearlyRawImported[channel] += monthConsumptionData.rawImported[channel];
+            });
+            Object.keys(monthConsumptionData.rawExported).forEach(channel => {
+                if (!yearlyRawExported[channel]) yearlyRawExported[channel] = 0;
+                yearlyRawExported[channel] += monthConsumptionData.rawExported[channel];
             });
         });
         
@@ -1298,6 +1622,7 @@
         
         // Update charts
         updateConsumptionChart(monthlyConsumptions, 'yearly', monthlyExported);
+        updateEnergyKPIs(yearlyRawImported, yearlyRawExported);
         updatePieChart(yearlyData);
         
         // Set up CSV download
@@ -1380,30 +1705,42 @@
             }
         });
         
-        // Add "Other" consumption (channel 0 minus sum of all other channels)
+        // Add "Other" consumption (root channel minus sum of load channels only)
         // Only process hours 00-23 of the current day
-        // Only show "Other" if there are sub-channels (channels other than 0)
-        const hasSubChannels = Object.keys(channelSequences).some(ch => ch !== '0');
+        // Exclude PV and battery channels from "Other" calculation
+        const rootChannelIndex = getRootChannelIndex();
+        const rootChannelKey = String(rootChannelIndex);
+        const productionChannels = getProductionChannels();
+        const batteryChannels = getBatteryChannels();
+        const productionIndices = productionChannels.map(ch => String(ch.index));
+        const batteryIndices = batteryChannels.map(ch => String(ch.index));
+        const excludeFromOther = new Set([rootChannelKey, ...productionIndices, ...batteryIndices]);
+        
+        // Check if there are load sub-channels (exclude root, PV, battery)
+        const hasLoadSubChannels = Object.keys(channelSequences).some(ch => !excludeFromOther.has(ch));
         
         Object.keys(consumption).forEach(hour => {
             // Skip hours outside the current day (e.g., hour "00" of next day)
             const hourNum = parseInt(hour);
             if (hourNum < 0 || hourNum > 23) return;
             
-            const totalConsumption = consumption[hour][0] || 0;
-            let trackedConsumption = 0;
+            const totalConsumption = consumption[hour][rootChannelIndex] || 0;
+            let trackedLoadConsumption = 0;
             
+            // Only sum load channels (exclude root, PV, battery)
             Object.keys(consumption[hour]).forEach(channel => {
-                if (channel !== '0') {
-                    trackedConsumption += consumption[hour][channel];
+                if (!excludeFromOther.has(channel)) {
+                    trackedLoadConsumption += consumption[hour][channel];
                 }
             });
             
-            // Only add "Other" if there are sub-channels to compare against
-            if (hasSubChannels) {
-                consumption[hour]['Other'] = totalConsumption - trackedConsumption; // Allow negative values
+            // Only add "Other" if there are load sub-channels to compare against
+            if (hasLoadSubChannels) {
+                consumption[hour]['Other'] = totalConsumption - trackedLoadConsumption; // Allow negative values
             }
-            delete consumption[hour]['0']; // Remove total channel from display
+            
+            // Remove root, PV, and battery channels from chart display
+            excludeFromOther.forEach(ch => delete consumption[hour][ch]);
         });
         
         // Filter out any hours outside 00-23 range before returning
@@ -1444,44 +1781,64 @@
             }
         });
         
-        // Calculate total consumption for the day (imported)
-        const totalConsumption = {};
+        // Calculate total consumption for the day (imported) - RAW values including root channel
+        const rawConsumption = {};
         Object.keys(latestData).forEach(channel => {
             const dailyConsumption = (latestData[channel] - (firstData[channel] || 0)) / 1000; // Convert to kWh
             if (dailyConsumption > 0) {
-                totalConsumption[channel] = dailyConsumption;
+                rawConsumption[channel] = dailyConsumption;
             }
         });
         
-        // Calculate total exported energy for the day
-        const totalExported = {};
+        // Calculate total exported energy for the day - RAW values including root channel
+        const rawExported = {};
         Object.keys(latestExportData).forEach(channel => {
             const dailyExport = (latestExportData[channel] - (firstExportData[channel] || 0)) / 1000; // Convert to kWh
             if (dailyExport > 0) {
-                totalExported[channel] = dailyExport;
+                rawExported[channel] = dailyExport;
             }
         });
         
-        // Add "Other" consumption only if there are sub-channels
-        const hasSubChannels = Object.keys(totalConsumption).some(ch => ch !== '0');
-        if (totalConsumption[0] && hasSubChannels) {
-            const totalHouseConsumption = totalConsumption[0];
-            let trackedConsumption = 0;
+        // Create chart-ready data (without root channel, with "Other")
+        const totalConsumption = { ...rawConsumption };
+        const totalExported = { ...rawExported };
+        
+        // Add "Other" consumption only if there are load sub-channels
+        // Exclude PV and battery channels from "Other" calculation
+        const rootChannelIndex = getRootChannelIndex();
+        const rootChannelKey = String(rootChannelIndex);
+        const productionChannels = getProductionChannels();
+        const batteryChannels = getBatteryChannels();
+        const productionIndices = productionChannels.map(ch => String(ch.index));
+        const batteryIndices = batteryChannels.map(ch => String(ch.index));
+        const excludeFromOther = new Set([rootChannelKey, ...productionIndices, ...batteryIndices]);
+        
+        // Check if there are load sub-channels (exclude root, PV, battery)
+        const hasLoadSubChannels = Object.keys(totalConsumption).some(ch => !excludeFromOther.has(ch));
+        
+        if (totalConsumption[rootChannelIndex] && hasLoadSubChannels) {
+            const totalHouseConsumption = totalConsumption[rootChannelIndex];
+            let trackedLoadConsumption = 0;
             
+            // Only sum load channels (exclude root, PV, battery)
             Object.keys(totalConsumption).forEach(channel => {
-                if (channel !== '0') {
-                    trackedConsumption += totalConsumption[channel];
+                if (!excludeFromOther.has(channel)) {
+                    trackedLoadConsumption += totalConsumption[channel];
                 }
             });
             
-            totalConsumption['Other'] = totalHouseConsumption - trackedConsumption; // Allow negative values
-            delete totalConsumption['0']; // Remove total channel
-        } else if (totalConsumption[0]) {
-            // Only channel 0 exists, don't show "Other", just remove total channel marker
-            delete totalConsumption['0'];
+            totalConsumption['Other'] = totalHouseConsumption - trackedLoadConsumption; // Allow negative values
         }
         
-        return { imported: totalConsumption, exported: totalExported };
+        // Remove root, PV, and battery channels from chart display
+        excludeFromOther.forEach(ch => delete totalConsumption[ch]);
+        
+        return { 
+            imported: totalConsumption, 
+            exported: totalExported,
+            rawImported: rawConsumption,
+            rawExported: rawExported
+        };
     }
 
     function updateConsumptionChart(consumptionData, viewType, exportedData = {}) {
@@ -1669,6 +2026,94 @@
         });
     }
 
+    // Update energy KPIs based on raw total data (rawImported, rawExported from calculateTotalConsumption)
+    function updateEnergyKPIs(rawImported, rawExported) {
+        const productionChannels = getProductionChannels();
+        const batteryChannels = getBatteryChannels();
+        const rootChannelIndex = getRootChannelIndex();
+        
+        const hasProduction = productionChannels.length > 0;
+        const hasBattery = batteryChannels.length > 0;
+        
+        // Hide KPIs section if no PV or battery
+        const kpisSection = document.getElementById('energy-kpis-section');
+        if (!hasProduction && !hasBattery) {
+            kpisSection.style.display = 'none';
+            return;
+        }
+        kpisSection.style.display = 'flex';
+        
+        // Get channel indices
+        const productionIndices = productionChannels.map(ch => ch.index);
+        const batteryIndices = batteryChannels.map(ch => ch.index);
+        
+        // Calculate totals from raw data (includes root channel)
+        let gridImport = rawImported[rootChannelIndex] || 0;
+        let gridExport = rawExported[rootChannelIndex] || 0;
+        let production = 0;
+        let batteryCharge = 0;
+        let batteryDischarge = 0;
+        
+        // Sum production channels
+        productionIndices.forEach(idx => {
+            production += rawImported[idx] || 0;
+        });
+        
+        // Sum battery channels
+        batteryIndices.forEach(idx => {
+            batteryCharge += rawImported[idx] || 0;
+            batteryDischarge += rawExported[idx] || 0;
+        });
+        
+        // Update grid KPIs (always shown)
+        document.getElementById('kpi-grid-import-value').textContent = gridImport.toFixed(1);
+        document.getElementById('kpi-grid-export-value').textContent = gridExport.toFixed(1);
+        document.getElementById('kpi-grid-export').style.display = gridExport > 0 ? 'block' : 'none';
+        
+        // Update production KPIs
+        if (hasProduction) {
+            document.getElementById('kpi-production').style.display = 'block';
+            document.getElementById('kpi-production-value').textContent = production.toFixed(1);
+            
+            // Self-consumption: (Production - Grid Export) / Production * 100
+            if (production > 0) {
+                const selfConsumed = Math.max(0, production - gridExport);
+                const selfConsumption = Math.min(100, (selfConsumed / production) * 100);
+                document.getElementById('kpi-self-consumption').style.display = 'block';
+                document.getElementById('kpi-self-consumption-value').textContent = selfConsumption.toFixed(0) + '%';
+            } else {
+                document.getElementById('kpi-self-consumption').style.display = 'none';
+            }
+            
+            // Autosufficiency: (Consumption - Grid Import) / Consumption * 100
+            // Total consumption = Grid Import + Production - Grid Export + Battery Discharge - Battery Charge
+            const totalConsumption = gridImport + production - gridExport + batteryDischarge - batteryCharge;
+            if (totalConsumption > 0) {
+                const fromOwnProduction = Math.max(0, totalConsumption - gridImport);
+                const autosufficiency = Math.min(100, (fromOwnProduction / totalConsumption) * 100);
+                document.getElementById('kpi-autosufficiency').style.display = 'block';
+                document.getElementById('kpi-autosufficiency-value').textContent = autosufficiency.toFixed(0) + '%';
+            } else {
+                document.getElementById('kpi-autosufficiency').style.display = 'none';
+            }
+        } else {
+            document.getElementById('kpi-production').style.display = 'none';
+            document.getElementById('kpi-self-consumption').style.display = 'none';
+            document.getElementById('kpi-autosufficiency').style.display = 'none';
+        }
+        
+        // Update battery KPIs
+        if (hasBattery) {
+            document.getElementById('kpi-battery-charge').style.display = 'block';
+            document.getElementById('kpi-battery-charge-value').textContent = batteryCharge.toFixed(1);
+            document.getElementById('kpi-battery-discharge').style.display = 'block';
+            document.getElementById('kpi-battery-discharge-value').textContent = batteryDischarge.toFixed(1);
+        } else {
+            document.getElementById('kpi-battery-charge').style.display = 'none';
+            document.getElementById('kpi-battery-discharge').style.display = 'none';
+        }
+    }
+
     function updatePieChart(totalConsumption) {
         // Apply grouping if enabled - wrap in object with single period for aggregateByGroup
         let dataToDisplay = totalConsumption;
@@ -1824,12 +2269,13 @@
         try {
             // Get total energy from current meter values
             const totalConsumption = {};
+            const rootChannelIndex = getRootChannelIndex();
             
-            // Check if there are sub-channels (channels other than 0)
-            const hasSubChannels = meterData.some(ch => ch.index !== 0);
+            // Check if there are sub-channels (channels other than root)
+            const hasSubChannels = meterData.some(ch => ch.index !== rootChannelIndex);
             
             meterData.forEach(channel => {
-                if (channel.index === 0) return; // Skip total channel
+                if (channel.index === rootChannelIndex) return; // Skip root channel
                 const totalEnergy = channel.data.activeEnergyImported / 1000; // Convert to kWh
                 if (totalEnergy > 0) {
                     totalConsumption[channel.index] = totalEnergy;
@@ -1837,9 +2283,9 @@
             });
             
             // Add "Other" consumption only if there are sub-channels
-            const totalChannel = meterData.find(ch => ch.index === 0);
-            if (totalChannel && hasSubChannels) {
-                const totalHouseConsumption = totalChannel.data.activeEnergyImported / 1000;
+            const rootChannel = meterData.find(ch => ch.index === rootChannelIndex);
+            if (rootChannel && hasSubChannels) {
+                const totalHouseConsumption = rootChannel.data.activeEnergyImported / 1000;
                 let trackedConsumption = 0;
                 
                 Object.values(totalConsumption).forEach(consumption => {
@@ -1945,79 +2391,263 @@
         });
     }
 
+    // Update energy flow diagram with real-time data
+    function updateEnergyFlow() {
+        if (!meterData || meterData.length === 0 || !channelData || !Array.isArray(channelData)) return;
+        
+        const productionChannels = getProductionChannels();
+        const batteryChannels = getBatteryChannels();
+        const rootChannelIndex = getRootChannelIndex();
+        
+        // Check if we should show the energy flow section
+        const hasProduction = productionChannels.length > 0;
+        const hasBattery = batteryChannels.length > 0;
+        
+        const flowSection = document.getElementById('energy-flow-section');
+        if (!hasProduction && !hasBattery) {
+            flowSection.classList.remove('visible');
+            return;
+        }
+        flowSection.classList.add('visible');
+        
+        // Show/hide nodes based on configuration
+        document.getElementById('node-solar').style.display = hasProduction ? 'flex' : 'none';
+        document.getElementById('node-battery').style.display = hasBattery ? 'flex' : 'none';
+        
+        // Get power values
+        const rootMeter = meterData.find(ch => ch.index === rootChannelIndex);
+        const gridPower = rootMeter ? rootMeter.data.activePower : 0;
+        
+        // Calculate solar power (sum of all production channels)
+        let solarPower = 0;
+        productionChannels.forEach(ch => {
+            const meter = meterData.find(m => m.index === ch.index);
+            if (meter) {
+                // For production, we use the absolute value of power (production is always positive)
+                solarPower += Math.abs(meter.data.activePower);
+            }
+        });
+        
+        // Calculate battery power (sum of all battery channels)
+        // Positive = discharging (providing power), Negative = charging (consuming power)
+        let batteryPower = 0;
+        batteryChannels.forEach(ch => {
+            const meter = meterData.find(m => m.index === ch.index);
+            if (meter) {
+                batteryPower += meter.data.activePower;
+            }
+        });
+        
+        // Calculate home consumption
+        // Grid: positive = import, negative = export
+        // Battery: positive = discharge, negative = charge
+        // Home = Grid import + Solar + Battery discharge
+        const homePower = gridPower + solarPower + batteryPower;
+        
+        // Update display values (no arrows - animated lines show direction)
+        document.getElementById('grid-power').textContent = formatPower(Math.abs(gridPower));
+        document.getElementById('home-power').textContent = formatPower(Math.max(0, homePower));
+        
+        if (hasProduction) {
+            document.getElementById('solar-power').textContent = formatPower(solarPower);
+        }
+        
+        if (hasBattery) {
+            document.getElementById('battery-power').textContent = formatPower(Math.abs(batteryPower));
+        }
+        
+        // Update SVG line visibility and animation
+        const lineSolar = document.getElementById('line-solar');
+        const lineGrid = document.getElementById('line-grid');
+        const lineHome = document.getElementById('line-home');
+        const lineBattery = document.getElementById('line-battery');
+        
+        // Solar line: always flows down to center when producing
+        lineSolar.style.display = hasProduction ? 'block' : 'none';
+        if (hasProduction) {
+            lineSolar.classList.toggle('active', solarPower > 10);
+            lineSolar.classList.toggle('inactive', solarPower <= 10);
+            lineSolar.classList.remove('reverse');
+        }
+        
+        // Grid line: flows right when importing, left when exporting
+        lineGrid.classList.toggle('active', Math.abs(gridPower) > 10);
+        lineGrid.classList.toggle('inactive', Math.abs(gridPower) <= 10);
+        lineGrid.classList.toggle('reverse', gridPower < -10); // Reverse animation when exporting
+        
+        // Home line: always receiving
+        lineHome.classList.toggle('active', homePower > 10);
+        lineHome.classList.toggle('inactive', homePower <= 10);
+        lineHome.classList.remove('reverse');
+        
+        // Battery line: flows up when discharging, down when charging
+        lineBattery.style.display = hasBattery ? 'block' : 'none';
+        if (hasBattery) {
+            lineBattery.classList.toggle('active', Math.abs(batteryPower) > 10);
+            lineBattery.classList.toggle('inactive', Math.abs(batteryPower) <= 10);
+            lineBattery.classList.toggle('reverse', batteryPower < -10); // Reverse animation when charging
+        }
+    }
+    
+    // Format power value with appropriate unit
+    function formatPower(watts) {
+        const absWatts = Math.abs(watts);
+        if (absWatts >= 1000) {
+            return (watts / 1000).toFixed(2) + ' kW';
+        }
+        return watts.toFixed(0) + ' W';
+    }
+
     function updateMeterData() {
         if (!meterData || meterData.length === 0) return;
+        
+        const rootChannelIndex = getRootChannelIndex();
+        const productionChannels = getProductionChannels();
+        const batteryChannels = getBatteryChannels();
+        
+        const hasProduction = productionChannels.length > 0;
+        const hasBattery = batteryChannels.length > 0;
+        const hasPvOrBattery = hasProduction || hasBattery;
+        
+        // Get indices to exclude from meter display when PV/battery exists
+        const productionIndices = productionChannels.map(ch => ch.index);
+        const batteryIndices = batteryChannels.map(ch => ch.index);
         
         document.getElementById("voltage").innerHTML = meterData[0].data.voltage.toFixed(1) + ' V';
 
         let powerDataHtml = '';
-        let totalPower = 0;
-        let trackedPower = 0;
+        let totalLoadPower = 0;
+        let trackedLoadPower = 0;
         let shouldRebuildChannels = false;
         
+        // Filter channels to display: when PV/battery exists, exclude root (grid), PV, and battery
+        const displayChannels = meterData.filter(ch => {
+            if (hasPvOrBattery) {
+                // Exclude grid (root), production, and battery channels
+                if (ch.index === rootChannelIndex) return false;
+                if (productionIndices.includes(ch.index)) return false;
+                if (batteryIndices.includes(ch.index)) return false;
+            }
+            return true;
+        });
+        
         // Check if we need to rebuild the entire channels section
-        // Only add "Other" to expected count if there are sub-channels
-        const hasSubChannelsForCount = meterData.some(ch => ch.index !== 0);
         const existingChannels = document.getElementById("channels").children.length;
-        const expectedChannels = hasSubChannelsForCount ? meterData.length + 1 : meterData.length; // +1 for "Other" only if sub-channels exist
+        // Expected: display channels + "Total Loads" (if PV/battery) or nothing extra + "Other" (if sub-channels)
+        const hasSubChannelsForOther = hasPvOrBattery ? displayChannels.length > 0 : displayChannels.some(ch => ch.index !== rootChannelIndex);
+        let expectedChannels = displayChannels.length;
+        if (hasPvOrBattery && displayChannels.length > 0) expectedChannels += 1; // +1 for "Total Loads"
+        if (hasSubChannelsForOther) expectedChannels += 1; // +1 for "Other"
         
         if (existingChannels !== expectedChannels) {
             shouldRebuildChannels = true;
         }
         
-        // First, add the main channel (channel 0) with special styling
-        const mainChannel = meterData.find(ch => ch.index === 0);
-        if (mainChannel) {
-            const mainPower = mainChannel.data.activePower.toFixed(0);
-            totalPower = parseFloat(mainPower);
+        if (hasPvOrBattery) {
+            // When PV/battery exists: show load channels only, compute total from sum
+            // Calculate total load power from energy flow (Home = Grid + Solar + Battery)
+            const rootMeter = meterData.find(ch => ch.index === rootChannelIndex);
+            const gridPower = rootMeter ? rootMeter.data.activePower : 0;
             
-            if (shouldRebuildChannels) {
-                powerDataHtml += '<div class="channel-box main-channel">';
-                powerDataHtml += '<div class="channel-label">' + mainChannel.label + ' (Total)</div>';
-                powerDataHtml += '<div class="channel-value" id="main-channel-value">' + mainPower + ' W</div>';
-                powerDataHtml += '</div>';
-            } else {
-                const mainValueElement = document.getElementById("main-channel-value");
-                if (mainValueElement) {
-                    mainValueElement.textContent = mainPower + ' W';
+            let solarPower = 0;
+            productionChannels.forEach(ch => {
+                const meter = meterData.find(m => m.index === ch.index);
+                if (meter) solarPower += Math.abs(meter.data.activePower);
+            });
+            
+            let batteryPower = 0;
+            batteryChannels.forEach(ch => {
+                const meter = meterData.find(m => m.index === ch.index);
+                if (meter) batteryPower += meter.data.activePower;
+            });
+            
+            totalLoadPower = gridPower + solarPower + batteryPower;
+            
+            // Add "Total Loads" header if there are load channels
+            if (displayChannels.length > 0) {
+                if (shouldRebuildChannels) {
+                    powerDataHtml += '<div class="channel-box main-channel">';
+                    powerDataHtml += '<div class="channel-label">Total Loads</div>';
+                    powerDataHtml += '<div class="channel-value" id="main-channel-value">' + totalLoadPower.toFixed(0) + ' W</div>';
+                    powerDataHtml += '</div>';
+                } else {
+                    const mainValueElement = document.getElementById("main-channel-value");
+                    if (mainValueElement) {
+                        mainValueElement.textContent = totalLoadPower.toFixed(0) + ' W';
+                    }
                 }
             }
+            
+            // Add load channels
+            displayChannels.forEach((channel) => {
+                const activePower = channel.data.activePower.toFixed(0);
+                trackedLoadPower += parseFloat(activePower);
+                
+                if (shouldRebuildChannels) {
+                    powerDataHtml += '<div class="channel-box">';
+                    powerDataHtml += '<div class="channel-label">' + channel.label + '</div>';
+                    powerDataHtml += '<div class="channel-value" id="channel-' + channel.index + '-value">' + activePower + ' W</div>';
+                    powerDataHtml += '</div>';
+                } else {
+                    const channelValueElement = document.getElementById("channel-" + channel.index + "-value");
+                    if (channelValueElement) {
+                        channelValueElement.textContent = activePower + ' W';
+                    }
+                }
+            });
+        } else {
+            // No PV/battery: original behavior - show root channel as "Total"
+            const mainChannel = meterData.find(ch => ch.index === rootChannelIndex);
+            if (mainChannel) {
+                const mainPower = mainChannel.data.activePower.toFixed(0);
+                totalLoadPower = parseFloat(mainPower);
+                
+                if (shouldRebuildChannels) {
+                    powerDataHtml += '<div class="channel-box main-channel">';
+                    powerDataHtml += '<div class="channel-label">' + mainChannel.label + ' (Total)</div>';
+                    powerDataHtml += '<div class="channel-value" id="main-channel-value">' + mainPower + ' W</div>';
+                    powerDataHtml += '</div>';
+                } else {
+                    const mainValueElement = document.getElementById("main-channel-value");
+                    if (mainValueElement) {
+                        mainValueElement.textContent = mainPower + ' W';
+                    }
+                }
+            }
+            
+            // Add all other channels (excluding root channel)
+            meterData.forEach((channel) => {
+                if (channel.index === rootChannelIndex) return;
+                
+                const activePower = channel.data.activePower.toFixed(0);
+                trackedLoadPower += parseFloat(activePower);
+                
+                if (shouldRebuildChannels) {
+                    powerDataHtml += '<div class="channel-box">';
+                    powerDataHtml += '<div class="channel-label">' + channel.label + '</div>';
+                    powerDataHtml += '<div class="channel-value" id="channel-' + channel.index + '-value">' + activePower + ' W</div>';
+                    powerDataHtml += '</div>';
+                } else {
+                    const channelValueElement = document.getElementById("channel-" + channel.index + "-value");
+                    if (channelValueElement) {
+                        channelValueElement.textContent = activePower + ' W';
+                    }
+                }
+            });
         }
         
-        // Then add all other channels (excluding channel 0)
-        meterData.forEach((channel, index) => {
-            if (channel.index === 0) return; // Skip total channel, already added above
-            
-            const activePower = channel.data.activePower.toFixed(0);
-            trackedPower += parseFloat(activePower);
-            
-            if (shouldRebuildChannels) {
-                powerDataHtml += '<div class="channel-box">';
-                powerDataHtml += '<div class="channel-label">' + channel.label + '</div>';
-                powerDataHtml += '<div class="channel-value" id="channel-' + channel.index + '-value">' + activePower + ' W</div>';
-                powerDataHtml += '</div>';
-            } else {
-                const channelValueElement = document.getElementById("channel-" + channel.index + "-value");
-                if (channelValueElement) {
-                    channelValueElement.textContent = activePower + ' W';
-                }
-            }
-        });
+        // Add or update the computed "Other" channel
+        const hasSubChannels = hasPvOrBattery ? displayChannels.length > 0 : meterData.some(ch => ch.index !== rootChannelIndex);
+        const otherPower = totalLoadPower - trackedLoadPower;
         
-        // Check if there are sub-channels (channels other than 0)
-        const hasSubChannels = meterData.some(ch => ch.index !== 0);
-        
-        // Finally, add or update the computed "Other" channel
-        // Only show "Other" if there are sub-channels to compare against
-        const otherPower = totalPower - trackedPower; // Allow negative values
-        if (hasSubChannels && (otherPower !== 0 || totalPower > 0)) {
+        if (hasSubChannels && (otherPower !== 0 || totalLoadPower > 0)) {
             if (shouldRebuildChannels) {
                 powerDataHtml += '<div class="channel-box other-channel">';
                 powerDataHtml += '<div class="channel-label">';
                 powerDataHtml += '<span class="tooltip-container">';
                 powerDataHtml += 'Other';
                 powerDataHtml += '<i class="fas fa-info-circle info-icon"></i>';
-                powerDataHtml += '<span class="tooltip-text">Untracked consumption: Total house consumption minus sum of all monitored channels</span>';
+                powerDataHtml += '<span class="tooltip-text">Untracked consumption: Total loads minus sum of all monitored load channels</span>';
                 powerDataHtml += '</span>';
                 powerDataHtml += '</div>';
                 powerDataHtml += '<div class="channel-value" id="other-channel-value">' + otherPower.toFixed(0) + ' W</div>';
@@ -2102,6 +2732,9 @@
         await fetchFirmwareUpdateInfo();
         await checkDefaultPassword();
         
+        // Initial energy flow update
+        updateEnergyFlow();
+        
         // Set up real-time meter data updates
         setInterval(async () => {
             // Skip if previous meter data update is still in progress
@@ -2114,6 +2747,7 @@
                 meterDataUpdateInProgress = true;
                 meterData = await energyApi.getMeterValues();
                 updateMeterData();
+                updateEnergyFlow();
                 // Note: Total pie chart is only updated on page load, not in real-time
                 // since it represents lifetime consumption which changes slowly
             } catch (error) {

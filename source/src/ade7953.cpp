@@ -2362,21 +2362,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             return false;
         }
 
-        // Cycle detection: follow parent chain and check for loops
-        // Build a map of groupId -> parentGroup for all channels
-        uint8_t parentMap[CHANNEL_COUNT]; // FIXME: why not used variable later??
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            ChannelData chData(i);
-            if (getChannelData(chData, i)) {
-                // Use the new values for the channel being updated
-                if (i == channelIndex) {
-                    parentMap[chData.groupId] = parentGroup;
-                } else {
-                    parentMap[chData.groupId] = chData.parentGroup;
-                }
-            }
-        }
-
         // Follow the parent chain from the proposed parentGroup
         uint8_t visited[CHANNEL_COUNT + 1] = {0}; // Track visited groupIds
         uint8_t current = parentGroup;
@@ -3554,7 +3539,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         // This ensures that individually, an HP channel visits 'Bias' times more often than an LP.
         if (activeLP > 0) {
             // Ceiling division: (A + B - 1) / B
-            uint8_t baseRatio = (activeHP + activeLP - 1) / activeLP;
+            uint8_t baseRatio = uint8_t(activeHP + activeLP - 1) / activeLP;
             if (baseRatio < 1) baseRatio = 1;
             _dynamicRatio = baseRatio * PRIORITY_BIAS;
         } else {
