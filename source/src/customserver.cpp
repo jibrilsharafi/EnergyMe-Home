@@ -1946,6 +1946,22 @@ namespace CustomServer
                 }
 
                 uint8_t channel = doc["channel"].as<uint8_t>();
+
+                if (!isChannelValid(channel)) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
+                    return;
+                }
+
+                if (!doc["activeEnergyImported"].is<double>() ||
+                    !doc["activeEnergyExported"].is<double>() ||
+                    !doc["reactiveEnergyImported"].is<double>() ||
+                    !doc["reactiveEnergyExported"].is<double>() ||
+                    !doc["apparentEnergy"].is<double>()) 
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "All energy value fields must be present and of type double");
+                    return;
+                }
+                
                 double activeEnergyImported = doc["activeEnergyImported"].as<double>();
                 double activeEnergyExported = doc["activeEnergyExported"].as<double>();
                 double reactiveEnergyImported = doc["reactiveEnergyImported"].as<double>();

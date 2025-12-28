@@ -355,7 +355,7 @@
 
     <div class="section-box">
         <h2>Energy Management</h2>
-        <p><i>Manage energy counters for all channels. Changes will clear historical daily energy data.</i></p>
+        <p><i>Manage energy counters for all channels.</i></p>
 
         <div id="energyChannels">
             <!-- Energy channels will be populated here -->
@@ -365,8 +365,7 @@
         <button class="buttonForm" onclick="resetAllEnergy()" id="resetAllEnergyButton"
             style="background-color: #dc3545; border-color: #dc3545; color: white; transition: background-color 0.3s ease;"
             onmouseover="this.style.backgroundColor='#c82333'" onmouseout="this.style.backgroundColor='#dc3545'">🗑️
-            Reset
-            All to Zero</button>
+            Reset all to Zero</button>
     </div>
 
     <div class="section-box">
@@ -1415,7 +1414,9 @@
                     energyApi.setEnergyValues(
                         parseInt(channelIndex),
                         channel.activeEnergyImported || 0,
+                        channel.activeEnergyExported || 0,
                         channel.reactiveEnergyImported || 0,
+                        channel.reactiveEnergyExported || 0,
                         channel.apparentEnergy || 0
                     )
                 );

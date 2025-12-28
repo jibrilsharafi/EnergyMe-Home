@@ -515,12 +515,21 @@ class EnergyMeAPI {
     /**
      * Set energy values
      */
-    async setEnergyValues(index, activeEnergyImported, reactiveEnergyImported, apparentEnergyImported) {
+    async setEnergyValues(
+        index, 
+        activeEnergyImported, 
+        activeEnergyExported,
+        reactiveEnergyImported,
+        reactiveEnergyExported,
+        apparentEnergy
+    ) {
         return this.put('ade7953/energy', {
             index,
             activeEnergyImported,
+            activeEnergyExported,
             reactiveEnergyImported,
-            apparentEnergyImported
+            reactiveEnergyExported,
+            apparentEnergy
         });
     }
 
