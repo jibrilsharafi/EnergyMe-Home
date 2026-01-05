@@ -1929,6 +1929,31 @@ namespace CustomServer
             _sendSuccessResponse(request, "ADE7953 energy values reset successfully");
         });
 
+        // Clear historical data for a specific channel
+        server.on("/api/v1/ade7953/energy/clear-history", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            if (!request->hasParam("index")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'index' query parameter");
+                return;
+            }
+
+            uint8_t channelIndex = static_cast<uint8_t>(request->getParam("index")->value().toInt());
+            
+            if (!isChannelValid(channelIndex)) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
+                return;
+            }
+
+            if (Ade7953::clearChannelHistoricalData(channelIndex)) {
+                LOG_INFO("Historical data cleared for channel %u via API", channelIndex);
+                _sendSuccessResponse(request, "Historical data cleared successfully");
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to clear historical data");
+            }
+        });
+
         // Set energy values for a specific channel
         static AsyncCallbackJsonWebHandler *setEnergyValuesHandler = new AsyncCallbackJsonWebHandler(
             "/api/v1/ade7953/energy",
@@ -1961,7 +1986,7 @@ namespace CustomServer
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "All energy value fields must be present and of type double");
                     return;
                 }
-                
+
                 double activeEnergyImported = doc["activeEnergyImported"].as<double>();
                 double activeEnergyExported = doc["activeEnergyExported"].as<double>();
                 double reactiveEnergyImported = doc["reactiveEnergyImported"].as<double>();

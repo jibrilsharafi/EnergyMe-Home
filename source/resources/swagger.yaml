@@ -524,7 +524,7 @@ paths:
             Examples: `energy/daily`, `energy/monthly`, `energy/yearly`
           schema:
             type: string
-          example: "energy/daily"
+          example: ""
       responses:
         '200':
           description: List of files with their sizes

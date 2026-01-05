@@ -980,6 +980,176 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         LOG_INFO("Successfully reset energy values to 0");
     }
 
+    bool clearChannelHistoricalData(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) {
+            LOG_ERROR("Invalid channel index: %u", channelIndex);
+            return false;
+        }
+
+        LOG_INFO("Clearing historical data for channel %u...", channelIndex);
+
+        // Process all three energy directories (daily, monthly, yearly)
+        const char* energyDirs[] = { ENERGY_CSV_DAILY_PREFIX, ENERGY_CSV_MONTHLY_PREFIX, ENERGY_CSV_YEARLY_PREFIX };
+        uint32_t filesProcessed = 0;
+        uint32_t filesModified = 0;
+
+        for (const char* dirPath : energyDirs) {
+            if (!LittleFS.exists(dirPath)) continue;
+
+            File dir = LittleFS.open(dirPath);
+            if (!dir) continue;
+
+            // Collect filenames first (to avoid modifying while iterating)
+            std::vector<char*> filenames;
+            File file = dir.openNextFile();
+            while (file) {
+                const char* filename = file.name();
+                if (!file.isDirectory() && (endsWith(filename, ".csv") || endsWith(filename, ".csv.gz"))) {
+                    char* nameCopy = (char*)ps_malloc(strlen(filename) + 1);
+                    if (nameCopy) {
+                        strcpy(nameCopy, filename);
+                        filenames.push_back(nameCopy);
+                    }
+                }
+                file.close();
+                file = dir.openNextFile();
+            }
+            dir.close();
+
+            // Process each file
+            for (const char* filename : filenames) {
+                char filepath[NAME_BUFFER_SIZE];
+                snprintf(filepath, sizeof(filepath), "%s/%s", dirPath, filename);
+                filesProcessed++;
+
+                bool isGzip = endsWith(filename, ".csv.gz");
+                char csvPath[NAME_BUFFER_SIZE];
+                char tempPath[NAME_BUFFER_SIZE];
+                snprintf(tempPath, sizeof(tempPath), "%s/_temp_filter.csv", dirPath);
+
+                // If gzip, decompress first
+                if (isGzip) {
+                    snprintf(csvPath, sizeof(csvPath), "%s/_temp_decompressed.csv", dirPath);
+                    
+                    // Use GzUnpacker to decompress
+                    GzUnpacker *unpacker = new GzUnpacker();
+                    if (!unpacker) {
+                        LOG_ERROR("Failed to allocate GzUnpacker for %s", filepath);
+                        continue;
+                    }
+                    unpacker->haltOnError(false);
+                    bool decompressSuccess = unpacker->gzExpander(LittleFS, filepath, LittleFS, csvPath);
+                    delete unpacker;
+                    
+                    if (!decompressSuccess) {
+                        LOG_ERROR("Failed to decompress %s", filepath);
+                        LittleFS.remove(csvPath);
+                        continue;
+                    }
+                } else {
+                    snprintf(csvPath, sizeof(csvPath), "%s", filepath);
+                }
+
+                // Filter the CSV file - remove lines for the specified channel
+                File srcFile = LittleFS.open(csvPath, FILE_READ);
+                if (!srcFile) {
+                    LOG_ERROR("Failed to open source file: %s", csvPath);
+                    if (isGzip) LittleFS.remove(csvPath);
+                    continue;
+                }
+
+                File destFile = LittleFS.open(tempPath, FILE_WRITE);
+                if (!destFile) {
+                    LOG_ERROR("Failed to create temp file: %s", tempPath);
+                    srcFile.close();
+                    if (isGzip) LittleFS.remove(csvPath);
+                    continue;
+                }
+
+                // Read line by line and filter
+                char lineBuffer[256];
+                bool isFirstLine = true;
+                bool hasDataRemaining = false;
+                char channelStr[8];
+                snprintf(channelStr, sizeof(channelStr), ",%u,", channelIndex);
+
+                while (srcFile.available()) {
+                    size_t len = 0;
+                    char c;
+                    while (srcFile.available() && len < sizeof(lineBuffer) - 1) {
+                        c = static_cast<char>(srcFile.read());
+                        if (c == '\n') break;
+                        lineBuffer[len++] = c;
+                    }
+                    lineBuffer[len] = '\0';
+
+                    // Skip empty lines
+                    if (len == 0) continue;
+
+                    // Always keep the header
+                    if (isFirstLine) {
+                        destFile.println(lineBuffer);
+                        isFirstLine = false;
+                        continue;
+                    }
+
+                    // Check if this line belongs to the channel we want to remove
+                    // CSV format: timestamp,channel,active_imported,active_exported
+                    // We check for ",X," pattern where X is the channel number
+                    if (strstr(lineBuffer, channelStr) == nullptr) {
+                        destFile.println(lineBuffer);
+                        hasDataRemaining = true;
+                    }
+                }
+
+                srcFile.close();
+                destFile.close();
+
+                // Clean up decompressed temp file if we used gzip
+                if (isGzip) {
+                    LittleFS.remove(csvPath);
+                }
+
+                // Replace original file with filtered version
+                if (hasDataRemaining) {
+                    // Remove original and rename temp
+                    LittleFS.remove(filepath);
+                    
+                    if (isGzip) {
+                        // Recompress the filtered file
+                        char finalCsvPath[NAME_BUFFER_SIZE];
+                        // Remove the .gz extension to get the csv path for compression
+                        snprintf(finalCsvPath, sizeof(finalCsvPath), "%s", filepath);
+                        finalCsvPath[strlen(finalCsvPath) - 3] = '\0'; // Remove ".gz"
+                        
+                        LittleFS.rename(tempPath, finalCsvPath);
+                        
+                        if (!compressFile(finalCsvPath)) {
+                            LOG_WARNING("Failed to recompress %s, keeping as CSV", finalCsvPath);
+                        }
+                    } else {
+                        LittleFS.rename(tempPath, filepath);
+                    }
+                    filesModified++;
+                    LOG_DEBUG("Filtered channel %u from %s", channelIndex, filepath);
+                } else {
+                    // No data remaining, remove the file entirely
+                    LittleFS.remove(filepath);
+                    LittleFS.remove(tempPath);
+                    filesModified++;
+                    LOG_DEBUG("Removed empty file after filtering: %s", filepath);
+                }
+            }
+
+            // Cleanup filename copies
+            for (char* name : filenames) free(name);
+        }
+
+        LOG_INFO("Cleared historical data for channel %u: %lu files processed, %lu files modified", 
+                 channelIndex, filesProcessed, filesModified);
+        return true;
+    }
+
     bool setEnergyValues(
         uint8_t channelIndex,
         double activeEnergyImported,

@@ -1364,7 +1364,7 @@ static bool _appendFileToFile(const char* srcPath, File &destFile, bool skipHead
     if (skipHeader && srcFile.available()) {
         // Read and discard the first line (header)
         while (srcFile.available()) {
-            char c = srcFile.read();
+            char c = static_cast<char>(srcFile.read());
             if (c == '\n') break;
         }
     }

@@ -310,6 +310,14 @@ class EnergyMeAPI {
     }
 
     /**
+     * Clear historical data for a specific channel
+     * @param {number} channelIndex - The channel index to clear history for
+     */
+    async clearChannelHistory(channelIndex) {
+        return this.post(`ade7953/energy/clear-history?index=${channelIndex}`);
+    }
+
+    /**
      * Get firmware update info
      */
     async getFirmwareUpdateInfo() {

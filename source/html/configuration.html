@@ -1298,6 +1298,15 @@
                                        style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
                             </div>
                         </div>
+                        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e9ecef;">
+                            <button class="buttonForm" onclick="clearChannelHistory(${channelIndex})" 
+                                    style="background-color: #fd7e14; border-color: #fd7e14; color: white; font-size: 0.85em; padding: 6px 12px;"
+                                    onmouseover="this.style.backgroundColor='#e96b02'" 
+                                    onmouseout="this.style.backgroundColor='#fd7e14'">
+                                🗑️ Clear Historical Data
+                            </button>
+                            <span style="font-size: 0.8em; color: #6c757d; margin-left: 8px;">Removes this channel from daily/monthly/yearly CSV files</span>
+                        </div>
                     `;
 
                     // Add focus effects to inputs
@@ -1434,6 +1443,43 @@
                     setTimeout(function () {
                         document.getElementById("setEnergyButton").innerHTML = "Set Energy Values";
                         document.getElementById("setEnergyButton").disabled = false;
+                    }, 3000);
+                });
+        }
+
+        function clearChannelHistory(channelIndex) {
+            const channelLabel = channelData[channelIndex] ? channelData[channelIndex].label : `Channel ${channelIndex}`;
+            var confirm = window.confirm(`Are you sure you want to clear historical data for "${channelLabel}"?\n\nThis will remove this channel's data from all daily, monthly, and yearly CSV files. Current energy counters will NOT be affected.`);
+            if (!confirm) {
+                return;
+            }
+
+            // Find the button that was clicked and update it
+            const buttons = document.querySelectorAll(`button[onclick="clearChannelHistory(${channelIndex})"]`);
+            buttons.forEach(btn => {
+                btn.innerHTML = "Clearing...";
+                btn.disabled = true;
+            });
+
+            energyApi.clearChannelHistory(channelIndex)
+                .then(data => {
+                    buttons.forEach(btn => {
+                        btn.innerHTML = "✓ Cleared";
+                    });
+                    alert(`Historical data for "${channelLabel}" has been cleared successfully.`);
+                })
+                .catch(error => {
+                    alert("Error clearing historical data: " + error.message);
+                    buttons.forEach(btn => {
+                        btn.innerHTML = "❌ Failed";
+                    });
+                })
+                .finally(() => {
+                    setTimeout(function () {
+                        buttons.forEach(btn => {
+                            btn.innerHTML = "🗑️ Clear Historical Data";
+                            btn.disabled = false;
+                        });
                     }, 3000);
                 });
         }

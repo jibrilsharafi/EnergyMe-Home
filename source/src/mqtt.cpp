@@ -660,7 +660,7 @@ namespace Mqtt
         while (_taskShouldRun)
         {
             // Skip processing if WiFi is not connected
-            if (CustomWifi::isFullyConnected()) {
+            if (CustomWifi::isFullyConnected()) { // TODO: ensure that if there is no internet, we don't flush/delete the values from the queue of the meter data
                 switch (_currentState) {
                     case MqttState::IDLE:                    _handleIdleState(); break;
                     case MqttState::CLAIMING_CERTIFICATES:   _handleClaimingState(); break;

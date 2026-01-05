@@ -567,6 +567,7 @@ namespace Ade7953
 
     // Energy data management
     void resetEnergyValues();
+    bool clearChannelHistoricalData(uint8_t channelIndex); // Clears historical CSV data for a specific channel (daily, monthly, yearly)
     bool setEnergyValues(
         uint8_t channelIndex,
         double activeEnergyImported,
