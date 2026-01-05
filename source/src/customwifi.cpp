@@ -66,6 +66,13 @@ namespace CustomWifi
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false); // Disable WiFi sleep to prevent handshake timeouts
 
+    char hostname[WIFI_SSID_BUFFER_SIZE];
+    snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_HOSTNAME_PREFIX, DEVICE_ID);
+    WiFi.setHostname(hostname); // Allow for easier identification in the router/network client list
+    // TODO: add these functionalities (via config) to allow for channel and power settings
+    // WiFi.setChannel(6);       // Optional - if user configured a specific channel
+    // WiFi.setTxPower(WIFI_POWER_20dBm);  // Optional - regional compliance
+
     // Start WiFi connection task
     _startWifiTask();
     

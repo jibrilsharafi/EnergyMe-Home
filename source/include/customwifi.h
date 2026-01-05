@@ -25,6 +25,7 @@
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
+#define WIFI_HOSTNAME_PREFIX "energyme-home"
 
 #define WIFI_LOOP_INTERVAL (1 * 1000)
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
