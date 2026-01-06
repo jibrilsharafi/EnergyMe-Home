@@ -62,7 +62,7 @@ void setup()
   if (!LittleFS.begin(true)) // Ensure the partition name is "spiffs" in partitions.csv (even when using LittleFS). Setting the partition label to "littlefs" caused issues
   {
     Serial.println("LittleFS initialization failed!");
-    ESP.restart(); // No reason to live if we cannot mount the filesystem
+    ESP.restart();
     return;
   }
 

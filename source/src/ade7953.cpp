@@ -3381,7 +3381,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         // This ensures that individually, an HP channel visits 'Bias' times more often than an LP.
         if (activeLP > 0) {
             // Ceiling division: (A + B - 1) / B
-            uint8_t baseRatio = (uint8_t)((activeHP + activeLP - 1) / activeLP);
+            uint8_t baseRatio = (activeHP + activeLP - 1) / activeLP;
             if (baseRatio < 1) baseRatio = 1;
             _dynamicRatio = baseRatio * PRIORITY_BIAS;
         } else {

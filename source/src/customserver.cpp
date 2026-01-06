@@ -1135,12 +1135,6 @@ namespace CustomServer
     #ifndef HAS_SECRETS
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc) // Used only if no secrets are compiled
     {
-        // Check internet connectivity before attempting API call
-        if (!CustomWifi::isFullyConnected(true)) {
-            LOG_DEBUG("Cannot fetch GitHub release info: no internet connectivity");
-            return false;
-        }
-
         HTTPClient http;
         http.begin(GITHUB_API_RELEASES_URL);
         http.addHeader("User-Agent", "EnergyMe-Home-ESP32");
@@ -1148,7 +1142,7 @@ namespace CustomServer
         
         int httpCode = http.GET();
         if (httpCode != HTTP_CODE_OK) {
-            LOG_WARNING("GitHub API request failed with code: %d", httpCode);
+            LOG_ERROR("GitHub API request failed with code: %d", httpCode);
             http.end();
             return false;
         }
@@ -1159,13 +1153,13 @@ namespace CustomServer
 
         DeserializationError error = deserializeJson(doc, response);
         if (error) {
-            LOG_WARNING("Failed to parse GitHub API response: %s", error.c_str());
+            LOG_ERROR("Failed to parse GitHub API response: %s", error.c_str());
             return false;
         }
         
         // Extract release information
         if (!doc["tag_name"].is<const char*>()) {
-            LOG_WARNING("Invalid GitHub API response: missing tag_name");
+            LOG_ERROR("Invalid GitHub API response: missing tag_name");
             return false;
         }
         
@@ -1408,8 +1402,7 @@ namespace CustomServer
             if (!_validateRequest(request, "POST")) return;
 
             _sendSuccessResponse(request, "WiFi credentials reset. Device will restart and enter configuration mode.");
-            CustomWifi::resetWifi(); 
-        });
+            CustomWifi::resetWifi(); });
 
         // Set WiFi credentials
         AsyncCallbackJsonWebHandler *wifiCredentialsHandler = new AsyncCallbackJsonWebHandler(
