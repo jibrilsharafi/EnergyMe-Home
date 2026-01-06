@@ -339,7 +339,7 @@ namespace CustomWifi
         // Recent Logs Section
         page += F("<div class='section'><h2>Recent Logs</h2>");
         page += F("<div style='margin-bottom:10px'>");
-        page += F("<button onclick='downloadLogs()'>⬇Download Logs</button>");
+        page += F("<button onclick='downloadLogs()'>Download Logs</button>");
         page += F("</div>");
         page += F("<pre id='logs-content'>");
         
@@ -732,7 +732,7 @@ namespace CustomWifi
 
   void resetWifi()
   {
-    LOG_WARNING("Resetting WiFi credentials and restarting...");
+    LOG_INFO("Resetting WiFi credentials and restarting...");
     Led::blinkOrangeFast(Led::PRIO_CRITICAL);
     
     // Create WiFiManager on heap temporarily to reset settings
