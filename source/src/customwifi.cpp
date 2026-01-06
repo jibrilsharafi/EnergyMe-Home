@@ -182,10 +182,12 @@ namespace CustomWifi
   {
     // Add diagnostic endpoint accessible during config portal fallback
     // This uses WiFiManager's synchronous WebServer (not AsyncWebServer)
+    // While we could add some other endpoints for meter data and what not,
+    // it is better to keep this simple and light, and only for debugging.
     wifiManager.setWebServerCallback([&wifiManager]() {
       wifiManager.server->on("/diagnostic", HTTP_GET, [&wifiManager]() {
-        // TODO: can we avoid this terrible mess of writing an HTML page like this?
-        // TODO: can we have API calls here to show "real time data"?
+        // This is the most convenient (yet ugly) way of writing HTML injection
+        // Do not try to over-optimize this, as it is only used in fallback mode
         String page = F("<!DOCTYPE html><html><head>");
         page += F("<meta name='viewport' content='width=device-width,initial-scale=1'>");
         page += F("<title>EnergyMe Diagnostic</title>");
