@@ -426,7 +426,7 @@
     <div class="section-box">
         <h2>Disconnect from WiFi</h2>
         <p><i>This will erase the WiFi credentials.</i></p>
-        <p><i>The device will create a WiFi network called "EnergyMe" with no password.
+        <p><i>The device will create a WiFi network called "EnergyMe-XXXXXXXXXX" (where XXXXXXXXXX is the device ID) with no password.
                 Connect to that network and navigate to <a href="http://192.168.4.1" ,
                     target="_blank">http://192.168.4.1</a>
                 (or <a href="http://energyme.local" , target="_blank">http://energyme.local</a>)
@@ -585,9 +585,18 @@
             energyApi.resetWifi()
                 .then(response => {
                     alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1");
+                    document.getElementById("disconnect").innerHTML = "📶 Disconnect";
+                    document.getElementById("disconnect").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error disconnecting from WiFi. Response: " + error.message);
+                    // Treat "signal is aborted without reason" as successful (it means WiFi was reset)
+                    if (error.message && error.message.includes("signal is aborted without reason")) {
+                        alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1");
+                    } else {
+                        alert("Error disconnecting from WiFi. Response: " + error.message);
+                    }
+                    document.getElementById("disconnect").innerHTML = "📶 Disconnect";
+                    document.getElementById("disconnect").disabled = false;
                 });
         } 
         
