@@ -361,6 +361,8 @@ namespace CustomWifi
               if (c == '<') page += "&lt;";
               else if (c == '>') page += "&gt;";
               else if (c == '&') page += "&amp;";
+              else if (c == '"') page += "&quot;";
+              else if (c == '\'') page += "&#39;";
               else page += static_cast<char>(c);
             }
             logFile.close();
