@@ -1408,7 +1408,8 @@ namespace CustomServer
             if (!_validateRequest(request, "POST")) return;
 
             _sendSuccessResponse(request, "WiFi credentials reset. Device will restart and enter configuration mode.");
-            CustomWifi::resetWifi(); });
+            CustomWifi::resetWifi(); 
+        });
 
         // Set WiFi credentials
         AsyncCallbackJsonWebHandler *wifiCredentialsHandler = new AsyncCallbackJsonWebHandler(
