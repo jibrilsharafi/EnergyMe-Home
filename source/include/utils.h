@@ -53,10 +53,8 @@
 #define MINIMUM_FREE_PSRAM_SIZE (10 * 1024) // Below this value (in bytes), the system will restart
 #define MINIMUM_FREE_LITTLEFS_SIZE (10 * 1024) // Below this value (in bytes), the system will clear the log
 #define SYSTEM_RESTART_DELAY (3 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations (like flushing logs)
+#define SYSTEM_RESTART_FAILSAFE_TIMEOUT (10 * 1000) // Failsafe timeout - if restart doesn't complete within this time, force restart via timer
 #define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
-#define STOP_SERVICES_TASK_NAME "stop_services_task"
-#define STOP_SERVICES_TASK_STACK_SIZE (6 * 1024)
-#define STOP_SERVICES_TASK_PRIORITY 10
 
 // Restart infos
 #define FUNCTION_NAME_BUFFER_SIZE 32
@@ -154,6 +152,22 @@ TaskInfo getMaintenanceTaskInfo();
 
 // System restart and maintenance
 bool setRestartSystem(const char* reason, bool factoryReset = false);
+inline const char* getResetReasonString(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_UNKNOWN: return "Unknown";
+        case ESP_RST_POWERON: return "Power on";
+        case ESP_RST_EXT: return "External pin";
+        case ESP_RST_SW: return "Software";
+        case ESP_RST_PANIC: return "Exception/panic";
+        case ESP_RST_INT_WDT: return "Interrupt watchdog";
+        case ESP_RST_TASK_WDT: return "Task watchdog";
+        case ESP_RST_WDT: return "Other watchdog";
+        case ESP_RST_DEEPSLEEP: return "Deep sleep";
+        case ESP_RST_BROWNOUT: return "Brownout";
+        case ESP_RST_SDIO: return "SDIO";
+        default: return "Undefined";
+    }
+}
 
 // JSON utilities
 bool safeSerializeJson(JsonDocument &jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);

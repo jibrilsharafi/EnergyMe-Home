@@ -35,8 +35,8 @@ namespace CustomWifi
   // Diagnostic info for fallback portal
   static char _lastAttemptedSSID[WIFI_SSID_BUFFER_SIZE] = {0};
   static uint8_t _lastDisconnectReason = 0;
-  static char _lastDisconnectSSID[33] = {0};  // SSID from disconnect event (32 + null)
-  static uint8_t _lastDisconnectBSSID[6] = {0};
+  static char _lastDisconnectSSID[WIFI_SSID_BUFFER_SIZE] = {0};
+  static char _lastDisconnectBSSID[MAC_ADDRESS_BUFFER_SIZE] = {0};
   static int8_t _lastDisconnectRSSI = 0;
 
   // Private helper functions
@@ -202,16 +202,42 @@ namespace CustomWifi
         page += F("button{background:#1fa3ec;color:#fff;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;font-size:14px}");
         page += F("button:hover{background:#0e7ac4}");
         page += F(".warn{color:#d9534f}");
-        page += F("</style></head><body>");
+        page += F("</style>");
+        page += F("<script>");
+        page += F("function downloadLogs(){");
+        page += F("const logs=document.getElementById('logs-content').innerText;");
+        page += F("const blob=new Blob([logs],{type:'text/plain'});");
+        page += F("const url=URL.createObjectURL(blob);");
+        page += F("const a=document.createElement('a');");
+        page += F("a.href=url;");
+        page += F("a.download='energyme_diagnostic_'+new Date().toISOString().slice(0,10)+'.log';");
+        page += F("document.body.appendChild(a);");
+        page += F("a.click();");
+        page += F("document.body.removeChild(a);");
+        page += F("URL.revokeObjectURL(url);");
+        page += F("}");
+        page += F("</script>");
+        page += F("</head><body>");
         
         page += F("<h1>&#128295; EnergyMe Diagnostic</h1>");
         
         // System Information Section
+        // --------------------------
         page += F("<div class='section'><h2>System Information</h2><div class='info'>");
         
         char buffer[64];
         snprintf(buffer, sizeof(buffer), "%s", FIRMWARE_BUILD_VERSION);
         page += F("<div class='info-item'><div class='label'>Firmware</div><div class='value'>");
+        page += buffer;
+        page += F("</div></div>");
+
+        snprintf(buffer, sizeof(buffer), "%s", ESP.getSketchMD5().c_str());
+        page += F("<div class='info-item'><div class='label'>Sketch MD5</div><div class='value'>");
+        page += buffer;
+        page += F("</div></div>");
+
+        snprintf(buffer, sizeof(buffer), "%s %s", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
+        page += F("<div class='info-item'><div class='label'>Build Time</div><div class='value'>");
         page += buffer;
         page += F("</div></div>");
         
@@ -231,7 +257,7 @@ namespace CustomWifi
         page += F("</div></div>");
         
         uint64_t uptimeMs = millis64();
-        uint32_t uptimeSec = uptimeMs / 1000;
+        uint32_t uptimeSec = static_cast<uint32_t>(uptimeMs / 1000);
         uint32_t hours = uptimeSec / 3600;
         uint32_t minutes = (uptimeSec % 3600) / 60;
         uint32_t seconds = uptimeSec % 60;
@@ -240,7 +266,7 @@ namespace CustomWifi
         page += buffer;
         page += F("</div></div>");
         
-        snprintf(buffer, sizeof(buffer), "%d", esp_reset_reason());
+        snprintf(buffer, sizeof(buffer), "%s", getResetReasonString(esp_reset_reason()));
         page += F("<div class='info-item'><div class='label'>Last Reset Reason</div><div class='value'>");
         page += buffer;
         page += F("</div></div>");
@@ -248,21 +274,21 @@ namespace CustomWifi
         page += F("</div></div>");
         
         // WiFi Information Section
+        // ------------------------
         page += F("<div class='section'><h2>WiFi Status</h2><div class='info'>");
         
         page += F("<div class='info-item'><div class='label'>Connection Status</div><div class='value'>");
         page += wifiManager.getWLStatusString();
         page += F("</div></div>");
         
-        page += F("<div class='info-item'><div class='label'>Last Attempted SSID</div><div class='value'>");
-        page += (strlen(_lastAttemptedSSID) > 0) ? _lastAttemptedSSID : "(none)";
-        page += F("</div></div>");
-        
         page += F("<div class='info-item'><div class='label'>Saved SSID</div><div class='value'>");
         page += wifiManager.getWiFiSSID(true);
         page += F("</div></div>");
         
-        // TODO: avoid duplication of information here
+        page += F("<div class='info-item'><div class='label'>Last Attempted SSID</div><div class='value'>");
+        page += (strlen(_lastAttemptedSSID) > 0) ? _lastAttemptedSSID : "(none)";
+        page += F("</div></div>");
+        
         // Show last disconnect reason captured during connection attempt
         page += F("<div class='info-item'><div class='label'>Disconnect Reason</div><div class='value'>");
         if (_lastDisconnectReason != 0) {
@@ -281,11 +307,8 @@ namespace CustomWifi
         
         // Show BSSID from disconnect event
         page += F("<div class='info-item'><div class='label'>Disconnect BSSID</div><div class='value'>");
-        if (_lastDisconnectBSSID[0] != 0 || _lastDisconnectBSSID[1] != 0 || _lastDisconnectBSSID[2] != 0) {
-          snprintf(buffer, sizeof(buffer), "%02X:%02X:%02X:%02X:%02X:%02X", 
-                   _lastDisconnectBSSID[0], _lastDisconnectBSSID[1], _lastDisconnectBSSID[2],
-                   _lastDisconnectBSSID[3], _lastDisconnectBSSID[4], _lastDisconnectBSSID[5]);
-          page += buffer;
+        if (strlen(_lastDisconnectBSSID) > 0) {
+          page += _lastDisconnectBSSID;
         } else {
           page += "(none)";
         }
@@ -312,26 +335,31 @@ namespace CustomWifi
         page += F("</div></div>");
         
         // Recent Logs Section
-        page += F("<div class='section'><h2>Recent Logs</h2><pre>");
+        page += F("<div class='section'><h2>Recent Logs</h2>");
+        page += F("<div style='margin-bottom:10px'>");
+        page += F("<button onclick='downloadLogs()'>⬇Download Logs</button>");
+        page += F("</div>");
+        page += F("<pre id='logs-content'>");
         
         if (LittleFS.exists(LOG_PATH)) {
           File logFile = LittleFS.open(LOG_PATH, "r");
           if (logFile) {
             size_t fileSize = logFile.size();
             // Read last 4KB of logs to avoid memory issues
-            const size_t maxLogSize = 4096; // TODO: make a constant in header file, and more than 4 kB
+            const size_t maxLogSize = MAX_LOG_SIZE_DIAGNOSTIC_FALLBACK_PAGE;
             if (fileSize > maxLogSize) {
               logFile.seek(fileSize - maxLogSize);
               // Skip to next newline to avoid partial line
               while (logFile.available() && logFile.read() != '\n') {}
             }
             while (logFile.available()) {
-              char c = logFile.read();
+              int c = logFile.read();
+              if (c < 0) break; // EOF or error
               // Escape HTML special characters
               if (c == '<') page += "&lt;";
               else if (c == '>') page += "&gt;";
               else if (c == '&') page += "&amp;";
-              else page += c;
+              else page += static_cast<char>(c);
             }
             logFile.close();
           } else {
@@ -410,22 +438,15 @@ namespace CustomWifi
   // This runs BEFORE autoConnect so we can capture why connection failed
   static void _onWiFiEventWithInfo(WiFiEvent_t event, WiFiEventInfo_t info)
   {
+    // DO NOT USE ANY LOGGING HERE to avoid weird crashes (this is a callback.. I don't know why but it seems unsafe)
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
       _lastDisconnectReason = info.wifi_sta_disconnected.reason;
       _lastDisconnectRSSI = info.wifi_sta_disconnected.rssi;
-      
-      // Copy SSID (may not be null-terminated, use ssid_len)
-      memset(_lastDisconnectSSID, 0, sizeof(_lastDisconnectSSID));
-      uint8_t ssidLen = info.wifi_sta_disconnected.ssid_len;
-      if (ssidLen > 32) ssidLen = 32;
-      memcpy(_lastDisconnectSSID, info.wifi_sta_disconnected.ssid, ssidLen);
-      
-      // Copy BSSID
-      memcpy(_lastDisconnectBSSID, info.wifi_sta_disconnected.bssid, 6);
-      
-      LOG_WARNING("WiFi disconnect event: reason=%d (%s), SSID=%s, RSSI=%d",
-                  _lastDisconnectReason, _getDisconnectReasonString(_lastDisconnectReason),
-                  _lastDisconnectSSID, _lastDisconnectRSSI);
+      snprintf(_lastDisconnectSSID, sizeof(_lastDisconnectSSID), "%s", info.wifi_sta_disconnected.ssid);
+      snprintf((char*)_lastDisconnectBSSID, sizeof(_lastDisconnectBSSID), "%02X:%02X:%02X:%02X:%02X:%02X",
+               info.wifi_sta_disconnected.bssid[0], info.wifi_sta_disconnected.bssid[1],
+               info.wifi_sta_disconnected.bssid[2], info.wifi_sta_disconnected.bssid[3],
+               info.wifi_sta_disconnected.bssid[4], info.wifi_sta_disconnected.bssid[5]);
     }
   }
 
@@ -643,7 +664,6 @@ namespace CustomWifi
               _setupWiFiManager(*portalManager);
 
               // Try WiFiManager portal
-              // TODO: this eventually will need to be async or similar since we lose meter 
               // readings in the meanwhile (and infinite loop of portal - reboots)
               if (!portalManager->startConfigPortal(hostname))
               {

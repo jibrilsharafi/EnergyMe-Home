@@ -10,7 +10,8 @@ static bool _maintenanceTaskShouldRun = false;
 // Static function declarations
 static void _factoryReset();
 static void _restartTask(void* parameter);
-static void _restartSystem(bool factoryReset = false);
+static void _failsafeRestartCallback(void* parameter);
+static void _startFailsafeTimer();
 static void _maintenanceTask(void* parameter);
 static bool _listLittleFsFilesRecursive(JsonDocument &doc, const char* dirname, const char* basePath, uint8_t levels);
 static bool _ensureDirectoryExists(const char* dirPath);
@@ -55,7 +56,7 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     info.resetCount = CrashMonitor::getResetCount();
     info.consecutiveResetCount = CrashMonitor::getConsecutiveResetCount();
     info.lastResetReason = (uint32_t)esp_reset_reason();
-    snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s", CrashMonitor::getResetReasonString(esp_reset_reason()));
+    snprintf(info.lastResetReasonString, sizeof(info.lastResetReasonString), "%s", getResetReasonString(esp_reset_reason()));
     info.lastResetWasCrash = CrashMonitor::isLastResetDueToCrash();
     
     // SDK info
@@ -526,50 +527,62 @@ TaskInfo getMaintenanceTaskInfo()
     return getTaskInfoSafely(_maintenanceTaskHandle, TASK_MAINTENANCE_STACK_SIZE);
 }
 
-// Task function that handles delayed restart. No need for complex handling here, just a simple delay and restart.
+// Failsafe timer callback - runs from esp_timer task context, guaranteed to execute
+// even if all other tasks are blocked/deadlocked
+static void _failsafeRestartCallback(void* parameter) {
+    // Don't log here - we're in timer context and logging might be what's blocked
+    ESP.restart();
+}
+
+// Start the failsafe timer that guarantees restart even if something blocks
+static void _startFailsafeTimer() {
+    const esp_timer_create_args_t timerArgs = {
+        .callback = _failsafeRestartCallback,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "restart_failsafe"
+    };
+    esp_timer_handle_t failsafeTimer = NULL;
+    if (esp_timer_create(&timerArgs, &failsafeTimer) == ESP_OK) {
+        esp_timer_start_once(failsafeTimer, SYSTEM_RESTART_FAILSAFE_TIMEOUT * 1000ULL); // Convert ms to us
+        LOG_DEBUG("Failsafe restart timer started (%d ms)", SYSTEM_RESTART_FAILSAFE_TIMEOUT);
+    } else {
+        LOG_WARNING("Failed to create failsafe timer - restart may hang if blocked");
+    }
+}
+
+// Restart task - handles service shutdown and restart (failsafe timer protects this from blocking)
 static void _restartTask(void* parameter) {
     bool factoryReset = (bool)(uintptr_t)parameter;
 
-    LOG_DEBUG(
-        "Restart task started, stopping all services and waiting %d ms before restart (factory reset: %s)",
-        SYSTEM_RESTART_DELAY,
-        factoryReset ? "true" : "false"
-    );
+    LOG_DEBUG("Restart task started (factory reset: %s)", factoryReset ? "true" : "false");
 
-    // Only stop Ade7953 as we need to save the energy data and MQTT to avoid trying to send data while rebooting. Everything else can just die abruptly
-    // Actually also stop the webserver to avoid requests on non-existent resources
-    // We do this in an Async way so if for any reason the stopping takes too long or blocks forever, it won't block the restart
-    xTaskCreate([](void*) {
-        LOG_DEBUG("Stopping critical services before restart");
-        CustomServer::stop(); // Stop first customserver to avoid deadlocks with MQTT
-        Ade7953::stop();
-        ModbusTcp::stop();
-        #ifdef HAS_SECRETS
-        Mqtt::stop();
-        #endif
-        LOG_DEBUG("Critical services stopped");
-        vTaskDelete(NULL);
-    }, STOP_SERVICES_TASK_NAME, STOP_SERVICES_TASK_STACK_SIZE, NULL, STOP_SERVICES_TASK_PRIORITY, NULL);
-
-    _restartSystem(factoryReset);
-    
-    // Task should never reach here, but clean up just in case
-    vTaskDelete(NULL);
-}
-
-static void _restartSystem(bool factoryReset) {
-    Led::setBrightness(max(Led::getBrightness(), (uint8_t)1)); // Show a faint light even if it is off
+    // 1. Visual indicator
+    Led::setBrightness(max(Led::getBrightness(), (uint8_t)1));
     Led::setOrange(Led::PRIO_CRITICAL);
 
-    delay(SYSTEM_RESTART_DELAY); // Allow for logs to flush
+    // 2. Stop all services (best effort, don't wait forever for each)
+    LOG_DEBUG("Stopping services before restart...");
+    CustomServer::stop();
+    Ade7953::stop();
+    ModbusTcp::stop();
+    #ifdef HAS_SECRETS
+    Mqtt::stop();
+    #endif
+    LOG_DEBUG("Services stopped");
 
-    // Ensure the log file is properly saved and closed
+    // 3. Close log file (if this blocks, failsafe timer will restart us)
     AdvancedLogger::end();
 
+    // 4. Factory reset if requested
     LOG_INFO("Restarting system. Factory reset: %s", factoryReset ? "true" : "false");
-    if (factoryReset) {_factoryReset();}
+    if (factoryReset) { _factoryReset(); }
 
+    // 5. Normal restart - if we get here, great. If not, failsafe timer handles it.
     ESP.restart();
+
+    // Should never reach here
+    vTaskDelete(NULL);
 }
 
 bool setRestartSystem(const char* reason, bool factoryReset) {
@@ -599,12 +612,13 @@ bool setRestartSystem(const char* reason, bool factoryReset) {
 
     if (_restartTaskHandle != NULL) {
         LOG_INFO("A restart is already scheduled. Keeping the existing one.");
-        return false; // Prevent overwriting an existing restart request
+        return false;
     }
 
-    // Create a task that will handle the delayed restart/factory reset and stop services safely
-    LOG_DEBUG("Starting restart task with %d bytes stack in internal RAM (performs flash I/O operations)", TASK_RESTART_STACK_SIZE);
+    // START FAILSAFE TIMER FIRST - guarantees restart even if task creation or execution fails
+    _startFailsafeTimer();
 
+    // Create task to handle graceful shutdown and restart
     BaseType_t result = xTaskCreate(
         _restartTask,
         TASK_RESTART_NAME,
@@ -614,16 +628,8 @@ bool setRestartSystem(const char* reason, bool factoryReset) {
         &_restartTaskHandle);
 
     if (result != pdPASS) {
-        LOG_ERROR("Failed to create restart task, performing immediate operation");
-        CustomServer::stop();
-        Ade7953::stop();
-        ModbusTcp::stop();
-        #ifdef HAS_SECRETS
-        Mqtt::stop();
-        #endif
-        _restartSystem(factoryReset);
-    } else {
-        LOG_DEBUG("Restart task created successfully");
+        // Task creation failed, but failsafe timer is already running
+        LOG_ERROR("Failed to create restart task - failsafe timer will restart system");
     }
 
     return true;
@@ -914,7 +920,7 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     Serial.println("[WARNING] Formatting LittleFS. This will take some time.");
     LittleFS.format();
 
-    // Removed ESP.restart() call since the factory reset can only be called from the restart task
+    // Removed ESP.restart() call since the factory reset must be called only from the restart task
 }
 
 bool isFirstBootDone() {
@@ -1364,7 +1370,7 @@ static bool _appendFileToFile(const char* srcPath, File &destFile, bool skipHead
     if (skipHeader && srcFile.available()) {
         // Read and discard the first line (header)
         while (srcFile.available()) {
-            char c = srcFile.read();
+            int c = srcFile.read();
             if (c == '\n') break;
         }
     }

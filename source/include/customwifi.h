@@ -39,6 +39,7 @@
 #define WIFI_PERIODIC_CHECK_INTERVAL (30 * 1000)    // Interval to check WiFi connection status (does not need to be too frequent since we have an event-based system)
 #define WIFI_FORCE_RECONNECT_DELAY (2 * 1000)      // Delay after forcing reconnection
 #define WIFI_LWIP_STABILIZATION_DELAY (1 * 1000)    // Delay after WiFi connection to allow lwIP network stack to stabilize (prevents DNS/UDP crashes)
+#define MAX_LOG_SIZE_DIAGNOSTIC_FALLBACK_PAGE (8 * 1024) // Maximum log size to include in diagnostic fallback page
 
 // Connectivity test parameters - lightweight TCP connect to public DNS (no DNS lookup needed, rarely blocked)
 #define CONNECTIVITY_TEST_TIMEOUT_MS (3 * 1000)           // Timeout for connectivity tests
