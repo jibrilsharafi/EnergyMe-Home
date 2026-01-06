@@ -257,9 +257,9 @@ namespace CustomWifi
         // Calculate uptime
         uint64_t uptimeMs = millis64();
         uint64_t uptimeSec = uptimeMs / 1000;
-        uint32_t hours = uptimeSec / 3600;
-        uint32_t minutes = (uptimeSec % 3600) / 60;
-        uint32_t seconds = uptimeSec % 60;
+        uint32_t hours = (uint32_t)(uptimeSec / 3600);
+        uint32_t minutes = (uint32_t)((uptimeSec % 3600) / 60);
+        uint32_t seconds = (uint32_t)(uptimeSec % 60);
         APPEND_PAGE("<div class='info-item'><div class='label'>Uptime</div><div class='value'>%02lu:%02lu:%02lu</div></div>", hours, minutes, seconds);
         APPEND_PAGE("<div class='info-item'><div class='label'>Last Reset Reason</div><div class='value'>%s</div></div>", getResetReasonString(esp_reset_reason()));
         
