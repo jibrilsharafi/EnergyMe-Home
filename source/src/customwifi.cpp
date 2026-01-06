@@ -325,6 +325,10 @@ namespace CustomWifi
                 pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&gt;");
               } else if (c == '&') {
                 pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&amp;");
+              } else if (c == '"') {
+                pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&quot;");
+              } else if (c == '\'') {
+                pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&#39;");
               } else {
                 pageBuffer[pos++] = static_cast<char>(c);
               }
