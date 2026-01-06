@@ -178,6 +178,20 @@ namespace CustomWifi
     LOG_DEBUG("WiFiManager set up");
   }
 
+  // Helper function to safely append to diagnostic page buffer
+  static size_t _appendToPageBuffer(char* buffer, size_t bufferSize, size_t currentPos, const char* format, ...)
+  {
+    if (currentPos >= bufferSize) return currentPos; // Buffer full
+    
+    va_list args;
+    va_start(args, format);
+    int written = vsnprintf(buffer + currentPos, bufferSize - currentPos, format, args);
+    va_end(args);
+    
+    if (written < 0) return currentPos; // Error
+    return currentPos + written;
+  }
+
   static void _setupDiagnosticEndpoint(WiFiManager& wifiManager)
   {
     // Add diagnostic endpoint accessible during config portal fallback
@@ -186,162 +200,109 @@ namespace CustomWifi
     // it is better to keep this simple and light, and only for debugging.
     wifiManager.setWebServerCallback([&wifiManager]() {
       wifiManager.server->on("/diagnostic", HTTP_GET, [&wifiManager]() {
-        // This is the most convenient (yet ugly) way of writing HTML injection
-        // Do not try to over-optimize this, as it is only used in fallback mode
-        String page = F("<!DOCTYPE html><html><head>");
-        page += F("<meta name='viewport' content='width=device-width,initial-scale=1'>");
-        page += F("<title>EnergyMe Diagnostic</title>");
-        // Use WiFiManager-compatible light theme
-        page += F("<style>");
-        page += F("body{font-family:Verdana,sans-serif;margin:0;padding:20px;background:#f5f5f5;color:#333}");
-        page += F("h1{color:#1fa3ec;border-bottom:2px solid #1fa3ec;padding-bottom:10px;margin-top:0}");
-        page += F("h2{color:#1fa3ec;margin:10px 0}");
-        page += F(".section{background:#fff;padding:15px;margin:15px 0;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.1)}");
-        page += F("pre{background:#1a1a2e;color:#eee;padding:10px;overflow-x:auto;font-size:11px;max-height:300px;overflow-y:auto;border-radius:4px;white-space:pre-wrap;word-wrap:break-word}");
-        page += F(".info{display:grid;grid-template-columns:1fr 1fr;gap:8px}");
-        page += F(".info-item{background:#f9f9f9;padding:8px;border-radius:4px;border:1px solid #eee}");
-        page += F(".label{color:#888;font-size:11px;text-transform:uppercase}.value{font-weight:bold;color:#1fa3ec;word-break:break-all}");
-        page += F("button{background:#1fa3ec;color:#fff;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;font-size:14px}");
-        page += F("button:hover{background:#0e7ac4}");
-        page += F(".warn{color:#d9534f}");
-        page += F("</style>");
-        page += F("<script>");
-        page += F("function downloadLogs(){");
-        page += F("const logs=document.getElementById('logs-content').innerText;");
-        page += F("const blob=new Blob([logs],{type:'text/plain'});");
-        page += F("const url=URL.createObjectURL(blob);");
-        page += F("const a=document.createElement('a');");
-        page += F("a.href=url;");
-        page += F("a.download='energyme_diagnostic_'+new Date().toISOString().slice(0,10)+'.log';");
-        page += F("document.body.appendChild(a);");
-        page += F("a.click();");
-        page += F("document.body.removeChild(a);");
-        page += F("URL.revokeObjectURL(url);");
-        page += F("}");
-        page += F("</script>");
-        page += F("</head><body>");
+        // Allocate static buffer for diagnostic page (16KB should be sufficient)
+        const size_t PAGE_BUFFER_SIZE = 16384;
+        static char pageBuffer[PAGE_BUFFER_SIZE] = {0};
+        size_t pos = 0;
         
-        page += F("<h1>&#128295; EnergyMe Diagnostic</h1>");
+        // Helper macro for cleaner append calls
+        #define APPEND_PAGE(fmt, ...) pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, fmt, ##__VA_ARGS__)
+        #define APPEND_PAGE_LITERAL(str) pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", str)
+        
+        // HTML head and styles
+        APPEND_PAGE_LITERAL("<!DOCTYPE html><html><head>");
+        APPEND_PAGE_LITERAL("<meta name='viewport' content='width=device-width,initial-scale=1'>");
+        APPEND_PAGE_LITERAL("<title>EnergyMe Diagnostic</title>");
+        APPEND_PAGE_LITERAL("<style>");
+        APPEND_PAGE_LITERAL("body{font-family:Verdana,sans-serif;margin:0;padding:20px;background:#f5f5f5;color:#333}");
+        APPEND_PAGE_LITERAL("h1{color:#1fa3ec;border-bottom:2px solid #1fa3ec;padding-bottom:10px;margin-top:0}");
+        APPEND_PAGE_LITERAL("h2{color:#1fa3ec;margin:10px 0}");
+        APPEND_PAGE_LITERAL(".section{background:#fff;padding:15px;margin:15px 0;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.1)}");
+        APPEND_PAGE_LITERAL("pre{background:#1a1a2e;color:#eee;padding:10px;overflow-x:auto;font-size:11px;max-height:300px;overflow-y:auto;border-radius:4px;white-space:pre-wrap;word-wrap:break-word}");
+        APPEND_PAGE_LITERAL(".info{display:grid;grid-template-columns:1fr 1fr;gap:8px}");
+        APPEND_PAGE_LITERAL(".info-item{background:#f9f9f9;padding:8px;border-radius:4px;border:1px solid #eee}");
+        APPEND_PAGE_LITERAL(".label{color:#888;font-size:11px;text-transform:uppercase}.value{font-weight:bold;color:#1fa3ec;word-break:break-all}");
+        APPEND_PAGE_LITERAL("button{background:#1fa3ec;color:#fff;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;font-size:14px}");
+        APPEND_PAGE_LITERAL("button:hover{background:#0e7ac4}");
+        APPEND_PAGE_LITERAL(".warn{color:#d9534f}");
+        APPEND_PAGE_LITERAL("</style>");
+        APPEND_PAGE_LITERAL("<script>");
+        APPEND_PAGE_LITERAL("function downloadLogs(){");
+        APPEND_PAGE_LITERAL("const logs=document.getElementById('logs-content').innerText;");
+        APPEND_PAGE_LITERAL("const blob=new Blob([logs],{type:'text/plain'});");
+        APPEND_PAGE_LITERAL("const url=URL.createObjectURL(blob);");
+        APPEND_PAGE_LITERAL("const a=document.createElement('a');");
+        APPEND_PAGE_LITERAL("a.href=url;");
+        APPEND_PAGE_LITERAL("a.download='energyme_diagnostic_'+new Date().toISOString().slice(0,10)+'.log';");
+        APPEND_PAGE_LITERAL("document.body.appendChild(a);");
+        APPEND_PAGE_LITERAL("a.click();");
+        APPEND_PAGE_LITERAL("document.body.removeChild(a);");
+        APPEND_PAGE_LITERAL("URL.revokeObjectURL(url);");
+        APPEND_PAGE_LITERAL("}");
+        APPEND_PAGE_LITERAL("</script>");
+        APPEND_PAGE_LITERAL("</head><body>");
+        
+        APPEND_PAGE_LITERAL("<h1>&#128295; EnergyMe Diagnostic</h1>");
         
         // System Information Section
-        // --------------------------
-        page += F("<div class='section'><h2>System Information</h2><div class='info'>");
+        APPEND_PAGE_LITERAL("<div class='section'><h2>System Information</h2><div class='info'>");
         
-        char buffer[64];
-        snprintf(buffer, sizeof(buffer), "%s", FIRMWARE_BUILD_VERSION);
-        page += F("<div class='info-item'><div class='label'>Firmware</div><div class='value'>");
-        page += buffer;
-        page += F("</div></div>");
-
-        snprintf(buffer, sizeof(buffer), "%s", ESP.getSketchMD5().c_str());
-        page += F("<div class='info-item'><div class='label'>Sketch MD5</div><div class='value'>");
-        page += buffer;
-        page += F("</div></div>");
-
-        snprintf(buffer, sizeof(buffer), "%s %s", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
-        page += F("<div class='info-item'><div class='label'>Build Time</div><div class='value'>");
-        page += buffer;
-        page += F("</div></div>");
+        APPEND_PAGE("<div class='info-item'><div class='label'>Firmware</div><div class='value'>%s</div></div>", FIRMWARE_BUILD_VERSION);
+        APPEND_PAGE("<div class='info-item'><div class='label'>Sketch MD5</div><div class='value'>%s</div></div>", ESP.getSketchMD5().c_str());
+        APPEND_PAGE("<div class='info-item'><div class='label'>Build Time</div><div class='value'>%s %s</div></div>", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
+        APPEND_PAGE("<div class='info-item'><div class='label'>Device ID</div><div class='value'>%s</div></div>", DEVICE_ID);
+        APPEND_PAGE("<div class='info-item'><div class='label'>Free Heap</div><div class='value'>%lu bytes</div></div>", ESP.getFreeHeap());
+        APPEND_PAGE("<div class='info-item'><div class='label'>Free PSRAM</div><div class='value'>%lu bytes</div></div>", ESP.getFreePsram());
         
-        snprintf(buffer, sizeof(buffer), "%s", DEVICE_ID);
-        page += F("<div class='info-item'><div class='label'>Device ID</div><div class='value'>");
-        page += buffer;
-        page += F("</div></div>");
-        
-        snprintf(buffer, sizeof(buffer), "%lu bytes", ESP.getFreeHeap());
-        page += F("<div class='info-item'><div class='label'>Free Heap</div><div class='value'>");
-        page += buffer;
-        page += F("</div></div>");
-        
-        snprintf(buffer, sizeof(buffer), "%lu bytes", ESP.getFreePsram());
-        page += F("<div class='info-item'><div class='label'>Free PSRAM</div><div class='value'>");
-        page += buffer;
-        page += F("</div></div>");
-        
+        // Calculate uptime
         uint64_t uptimeMs = millis64();
-        uint32_t uptimeSec = static_cast<uint32_t>(uptimeMs / 1000);
+        uint64_t uptimeSec = uptimeMs / 1000;
         uint32_t hours = uptimeSec / 3600;
         uint32_t minutes = (uptimeSec % 3600) / 60;
         uint32_t seconds = uptimeSec % 60;
-        snprintf(buffer, sizeof(buffer), "%02lu:%02lu:%02lu", hours, minutes, seconds);
-        page += F("<div class='info-item'><div class='label'>Uptime</div><div class='value'>");
-        page += buffer;
-        page += F("</div></div>");
+        APPEND_PAGE("<div class='info-item'><div class='label'>Uptime</div><div class='value'>%02lu:%02lu:%02lu</div></div>", hours, minutes, seconds);
+        APPEND_PAGE("<div class='info-item'><div class='label'>Last Reset Reason</div><div class='value'>%s</div></div>", getResetReasonString(esp_reset_reason()));
         
-        snprintf(buffer, sizeof(buffer), "%s", getResetReasonString(esp_reset_reason()));
-        page += F("<div class='info-item'><div class='label'>Last Reset Reason</div><div class='value'>");
-        page += buffer;
-        page += F("</div></div>");
-        
-        page += F("</div></div>");
+        APPEND_PAGE_LITERAL("</div></div>");
         
         // WiFi Information Section
-        // ------------------------
-        page += F("<div class='section'><h2>WiFi Status</h2><div class='info'>");
+        APPEND_PAGE_LITERAL("<div class='section'><h2>WiFi Status</h2><div class='info'>");
+        APPEND_PAGE("<div class='info-item'><div class='label'>Connection Status</div><div class='value'>%s</div></div>", wifiManager.getWLStatusString());
+        APPEND_PAGE("<div class='info-item'><div class='label'>Saved SSID</div><div class='value'>%s</div></div>", wifiManager.getWiFiSSID(true).c_str());
+        APPEND_PAGE("<div class='info-item'><div class='label'>Last Attempted SSID</div><div class='value'>%s</div></div>", 
+                    (strlen(_lastAttemptedSSID) > 0) ? _lastAttemptedSSID : "(none)");
         
-        page += F("<div class='info-item'><div class='label'>Connection Status</div><div class='value'>");
-        page += wifiManager.getWLStatusString();
-        page += F("</div></div>");
-        
-        page += F("<div class='info-item'><div class='label'>Saved SSID</div><div class='value'>");
-        page += wifiManager.getWiFiSSID(true);
-        page += F("</div></div>");
-        
-        page += F("<div class='info-item'><div class='label'>Last Attempted SSID</div><div class='value'>");
-        page += (strlen(_lastAttemptedSSID) > 0) ? _lastAttemptedSSID : "(none)";
-        page += F("</div></div>");
-        
-        // Show last disconnect reason captured during connection attempt
-        page += F("<div class='info-item'><div class='label'>Disconnect Reason</div><div class='value'>");
+        // Disconnect reason with warning styling
         if (_lastDisconnectReason != 0) {
-          snprintf(buffer, sizeof(buffer), "<span class='warn'>%d (%s)</span>", 
-                   _lastDisconnectReason, _getDisconnectReasonString(_lastDisconnectReason));
-          page += buffer;
+          APPEND_PAGE("<div class='info-item'><div class='label'>Disconnect Reason</div><div class='value'><span class='warn'>%d (%s)</span></div></div>",
+                      _lastDisconnectReason, _getDisconnectReasonString(_lastDisconnectReason));
         } else {
-          page += "(no disconnect recorded)";
+          APPEND_PAGE_LITERAL("<div class='info-item'><div class='label'>Disconnect Reason</div><div class='value'>(no disconnect recorded)</div></div>");
         }
-        page += F("</div></div>");
         
-        // Show SSID from disconnect event (what the ESP was trying to connect to)
-        page += F("<div class='info-item'><div class='label'>Disconnect SSID</div><div class='value'>");
-        page += (strlen(_lastDisconnectSSID) > 0) ? _lastDisconnectSSID : "(none)";
-        page += F("</div></div>");
+        APPEND_PAGE("<div class='info-item'><div class='label'>Disconnect SSID</div><div class='value'>%s</div></div>",
+                    (strlen(_lastDisconnectSSID) > 0) ? _lastDisconnectSSID : "(none)");
+        APPEND_PAGE("<div class='info-item'><div class='label'>Disconnect BSSID</div><div class='value'>%s</div></div>",
+                    (strlen(_lastDisconnectBSSID) > 0) ? _lastDisconnectBSSID : "(none)");
         
-        // Show BSSID from disconnect event
-        page += F("<div class='info-item'><div class='label'>Disconnect BSSID</div><div class='value'>");
-        if (strlen(_lastDisconnectBSSID) > 0) {
-          page += _lastDisconnectBSSID;
-        } else {
-          page += "(none)";
-        }
-        page += F("</div></div>");
-        
-        // Show RSSI at disconnect time
-        page += F("<div class='info-item'><div class='label'>Disconnect RSSI</div><div class='value'>");
         if (_lastDisconnectReason != 0) {
-          snprintf(buffer, sizeof(buffer), "%d dBm", _lastDisconnectRSSI);
-          page += buffer;
+          APPEND_PAGE("<div class='info-item'><div class='label'>Disconnect RSSI</div><div class='value'>%d dBm</div></div>", _lastDisconnectRSSI);
         } else {
-          page += "(none)";
+          APPEND_PAGE_LITERAL("<div class='info-item'><div class='label'>Disconnect RSSI</div><div class='value'>(none)</div></div>");
         }
-        page += F("</div></div>");
         
-        // Get MAC address from ESP chip (works even in AP mode)
+        // Device MAC address
         uint8_t mac[6];
         esp_read_mac(mac, ESP_MAC_WIFI_STA);
-        page += F("<div class='info-item'><div class='label'>Device MAC</div><div class='value'>");
-        snprintf(buffer, sizeof(buffer), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-        page += buffer;
-        page += F("</div></div>");
+        APPEND_PAGE("<div class='info-item'><div class='label'>Device MAC</div><div class='value'>%02X:%02X:%02X:%02X:%02X:%02X</div></div>",
+                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
         
-        page += F("</div></div>");
+        APPEND_PAGE_LITERAL("</div></div>");
         
         // Recent Logs Section
-        page += F("<div class='section'><h2>Recent Logs</h2>");
-        page += F("<div style='margin-bottom:10px'>");
-        page += F("<button onclick='downloadLogs()'>Download Logs</button>");
-        page += F("</div>");
-        page += F("<pre id='logs-content'>");
+        APPEND_PAGE_LITERAL("<div class='section'><h2>Recent Logs</h2>");
+        APPEND_PAGE_LITERAL("<div style='margin-bottom:10px'><button onclick='downloadLogs()'>Download Logs</button></div>");
+        APPEND_PAGE_LITERAL("<pre id='logs-content'>");
         
         if (LittleFS.exists(LOG_PATH)) {
           File logFile = LittleFS.open(LOG_PATH, "r");
@@ -354,33 +315,41 @@ namespace CustomWifi
               // Skip to next newline to avoid partial line
               while (logFile.available() && logFile.read() != '\n') {}
             }
-            while (logFile.available()) {
+            while (logFile.available() && pos < PAGE_BUFFER_SIZE - 10) { // Leave margin for closing tags
               int c = logFile.read();
               if (c < 0) break; // EOF or error
               // Escape HTML special characters
-              if (c == '<') page += "&lt;";
-              else if (c == '>') page += "&gt;";
-              else if (c == '&') page += "&amp;";
-              else page += static_cast<char>(c);
+              if (c == '<') {
+                pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&lt;");
+              } else if (c == '>') {
+                pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&gt;");
+              } else if (c == '&') {
+                pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&amp;");
+              } else {
+                pageBuffer[pos++] = static_cast<char>(c);
+              }
             }
             logFile.close();
           } else {
-            page += F("(Could not open log file)");
+            APPEND_PAGE_LITERAL("(Could not open log file)");
           }
         } else {
-          page += F("(No log file found)");
+          APPEND_PAGE_LITERAL("(No log file found)");
         }
         
-        page += F("</pre></div>");
+        APPEND_PAGE_LITERAL("</pre></div>");
         
         // Navigation
-        page += F("<div style='text-align:center;margin-top:20px'>");
-        page += F("<a href='/'><button>&#8592; Back to WiFi Setup</button></a>");
-        page += F("</div>");
+        APPEND_PAGE_LITERAL("<div style='text-align:center;margin-top:20px'>");
+        APPEND_PAGE_LITERAL("<a href='/'><button>&#8592; Back to WiFi Setup</button></a>");
+        APPEND_PAGE_LITERAL("</div>");
         
-        page += F("</body></html>");
+        APPEND_PAGE_LITERAL("</body></html>");
         
-        wifiManager.server->send(200, "text/html", page);
+        #undef APPEND_PAGE
+        #undef APPEND_PAGE_LITERAL
+        
+        wifiManager.server->send(200, "text/html", pageBuffer);
       });
     });
 
@@ -666,13 +635,13 @@ namespace CustomWifi
               _setupWiFiManager(*portalManager);
 
               // Try WiFiManager portal
-              // readings in the meanwhile (and infinite loop of portal - reboots)
               if (!portalManager->startConfigPortal(hostname))
               {
                 LOG_ERROR("Portal failed - restarting device");
                 Led::blinkRedFast(Led::PRIO_URGENT);
                 setRestartSystem("Restart after portal failure");
               }
+
               // Clean up WiFiManager after portal operation
               delete portalManager;
               // If portal succeeds, device will restart automatically
@@ -889,9 +858,10 @@ namespace CustomWifi
     client.setTimeout(CONNECTIVITY_TEST_TIMEOUT_MS);
     
     if (!client.connect(CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT)) {
+      // Here we only log a debug since the internet connectivity is not a must-have
+      // While before we used LOG_WARNING since the issue is WiFi related (critical)
       LOG_DEBUG("Connectivity test failed: cannot reach %s:%d (no internet)", 
                   CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT);
-      statistics.wifiConnectionError++;
       return false;
     }
     

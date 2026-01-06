@@ -586,9 +586,18 @@
             energyApi.resetWifi()
                 .then(response => {
                     alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1");
+                    document.getElementById("disconnect").innerHTML = "📶 Disconnect";
+                    document.getElementById("disconnect").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error disconnecting from WiFi. Response: " + error.message);
+                    // Treat "signal is aborted without reason" as successful (it means WiFi was reset)
+                    if (error.message && error.message.includes("signal is aborted without reason")) {
+                        alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1");
+                    } else {
+                        alert("Error disconnecting from WiFi. Response: " + error.message);
+                    }
+                    document.getElementById("disconnect").innerHTML = "📶 Disconnect";
+                    document.getElementById("disconnect").disabled = false;
                 });
         } 
         

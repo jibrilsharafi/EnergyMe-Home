@@ -53,6 +53,7 @@
 #define MINIMUM_FREE_PSRAM_SIZE (10 * 1024) // Below this value (in bytes), the system will restart
 #define MINIMUM_FREE_LITTLEFS_SIZE (10 * 1024) // Below this value (in bytes), the system will clear the log
 #define SYSTEM_RESTART_DELAY (3 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations (like flushing logs)
+#define SYSTEM_RESTART_FAILSAFE_TIMER_NAME "restart_failsafe"
 #define SYSTEM_RESTART_FAILSAFE_TIMEOUT (10 * 1000) // Failsafe timeout - if restart doesn't complete within this time, force restart via timer
 #define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
 

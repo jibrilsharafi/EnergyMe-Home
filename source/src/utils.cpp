@@ -7,6 +7,8 @@ static TaskHandle_t _restartTaskHandle = NULL;
 static TaskHandle_t _maintenanceTaskHandle = NULL;
 static bool _maintenanceTaskShouldRun = false;
 
+static esp_timer_handle_t _failsafeTimer = NULL;
+
 // Static function declarations
 static void _factoryReset();
 static void _restartTask(void* parameter);
@@ -50,7 +52,7 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     info.psramSizeBytes = ESP.getPsramSize();
     info.cpuFrequencyMHz = ESP.getCpuFreqMHz();
     
-    // // Crash and reset monitoring
+    // Crash and reset monitoring
     info.crashCount = CrashMonitor::getCrashCount();
     info.consecutiveCrashCount = CrashMonitor::getConsecutiveCrashCount();
     info.resetCount = CrashMonitor::getResetCount();
@@ -536,15 +538,18 @@ static void _failsafeRestartCallback(void* parameter) {
 
 // Start the failsafe timer that guarantees restart even if something blocks
 static void _startFailsafeTimer() {
+    // Ensure only one timer is running
+    if (_failsafeTimer != NULL) return;
+
     const esp_timer_create_args_t timerArgs = {
         .callback = _failsafeRestartCallback,
         .arg = NULL,
         .dispatch_method = ESP_TIMER_TASK,
-        .name = "restart_failsafe"
+        .name = SYSTEM_RESTART_FAILSAFE_TIMER_NAME,
+        .skip_unhandled_events = true
     };
-    esp_timer_handle_t failsafeTimer = NULL;
-    if (esp_timer_create(&timerArgs, &failsafeTimer) == ESP_OK) {
-        esp_timer_start_once(failsafeTimer, SYSTEM_RESTART_FAILSAFE_TIMEOUT * 1000ULL); // Convert ms to us
+    if (esp_timer_create(&timerArgs, &_failsafeTimer) == ESP_OK) {
+        esp_timer_start_once(_failsafeTimer, SYSTEM_RESTART_FAILSAFE_TIMEOUT * 1000ULL); // Convert ms to us
         LOG_DEBUG("Failsafe restart timer started (%d ms)", SYSTEM_RESTART_FAILSAFE_TIMEOUT);
     } else {
         LOG_WARNING("Failed to create failsafe timer - restart may hang if blocked");
