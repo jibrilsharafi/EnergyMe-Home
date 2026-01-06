@@ -1039,7 +1039,7 @@ async function performWrite() {
           newCell.textContent = 'OK';
         }
       }
-      showToast('Register written successfully');
+      showStatus('Register written successfully', 'success');
     } else {
       const error = await response.text();
       showStatus(`Write failed: ${error}`, 'error');
