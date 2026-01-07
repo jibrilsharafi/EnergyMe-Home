@@ -3676,19 +3676,46 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         return true;
     }
 
-    bool _validateValue(float newValue, float min, float max) {
-        if (newValue < min || newValue > max) {
-            LOG_WARNING("Value %f out of range (minimum: %f, maximum: %f)", newValue, min, max);
+    bool _validateValue(float value, float min, float max) {
+        if (value < min || value > max) return false;
+        else return true;
+    }
+
+    bool _validateVoltage(float value) {
+        if (!_validateValue(value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX)) {
+            LOG_WARNING("Voltage %.1f V out of range (%.1f - %.1f V)", value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
             return false;
         }
         return true;
     }
-
-    bool _validateVoltage(float newValue) { return _validateValue(newValue, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX); }
-    bool _validateCurrent(float newValue) { return _validateValue(newValue, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX); }
-    bool _validatePower(float newValue) { return _validateValue(newValue, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX); }
-    bool _validatePowerFactor(float newValue) { return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX); }
-    bool _validateGridFrequency(float newValue) { return _validateValue(newValue, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX); }
+    bool _validateCurrent(float value) {
+        if (!_validateValue(value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX)) {
+            LOG_WARNING("Current %.3f A out of range (%.3f - %.3f A)", value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
+            return false;
+        }
+        return true;
+    }
+    bool _validatePower(float value) {
+        if (!_validateValue(value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX)) {
+            LOG_WARNING("Power %.1f W out of range (%.1f - %.1f W)", value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
+            return false;
+        }
+        return true;
+    }
+    bool _validatePowerFactor(float value) {
+        if (!_validateValue(value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX)) {
+            LOG_WARNING("Power factor %.3f out of range (%.3f - %.3f)", value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
+            return false;
+        }
+        return true;
+    }
+    bool _validateGridFrequency(float value) {
+        if (!_validateValue(value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX)) {
+            LOG_WARNING("Grid frequency %.1f Hz out of range (%.1f - %.1f Hz)", value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
+            return false;
+        }
+        return true;
+    }
 
     // Utility functions
     // =================
