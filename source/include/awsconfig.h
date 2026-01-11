@@ -8,6 +8,7 @@ constexpr const char* AWS_IOT_CORE_ENDPOINT = "a4c07oxnykeeh-ats.iot.eu-central-
 
 // The name of the IoT Core rule that will route messages to the right place using the Basic Ingest functionality (allowing for cheaper MQTT messages).
 constexpr const char* AWS_IOT_CORE_RULE_METER = "energyme_home_meter";
+constexpr const char* AWS_IOT_CORE_RULE_LOG = "energyme_home_log_v1";
 
 // Amazon Root CA 1 - can be public
 // https://www.amazontrust.com/repository/AmazonRootCA1.pem
