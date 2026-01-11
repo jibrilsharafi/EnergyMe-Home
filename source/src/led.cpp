@@ -109,7 +109,7 @@ namespace Led
         _setHardwareColor(Colors::OFF);
     }
 
-    static void _ledTask(void *parameter) // FIXME: find a better way to handle LED colors. Now it does not behave correctly (maybe more like a state machine?)
+    static void _ledTask(void *parameter) // TODO: while the LED works now, maybe a state machine-like approach would be cleaner
     {
         LedCommand command;
         uint64_t currentTime;
