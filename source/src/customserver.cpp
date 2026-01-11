@@ -1132,6 +1132,7 @@ namespace CustomServer
         });
     }
 
+    // TODO: important, since we are going to embed the certs in the nvs of the device in v6, we can allow to update from github since the firmware will be unified regardless of the secrets compiled or not
     #ifndef HAS_SECRETS
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc) // Used only if no secrets are compiled
     {
@@ -1176,7 +1177,6 @@ namespace CustomServer
         // Find .bin asset
         JsonArray assets = doc["assets"];
         const char* downloadUrl = nullptr;
-        const char* md5Hash = nullptr;
         
         for (JsonObject asset : assets) {
             const char* name = asset["name"];
@@ -1193,7 +1193,6 @@ namespace CustomServer
         if (releaseDate) doc["releaseDate"] = releaseDate;
         if (downloadUrl) doc["updateUrl"] = downloadUrl;
         if (changelog) doc["changelogUrl"] = changelog;
-        if (md5Hash) doc["md5"] = md5Hash;
         
         // Compare versions to determine if update is available
         doc["isLatest"] = _compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
@@ -2357,6 +2356,7 @@ namespace CustomServer
     // === LED ENDPOINTS ===
     static void _serveLedEndpoints()
     {
+        // TODO: can we add a fun RGB LED control here? Of limited time of course, but it would allow for ha integrations
         // Get LED brightness
         server.on("/api/v1/led/brightness", HTTP_GET, [](AsyncWebServerRequest *request)
                   {

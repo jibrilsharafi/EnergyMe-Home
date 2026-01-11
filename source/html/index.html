@@ -2706,7 +2706,7 @@
     async function fetchFirmwareUpdateInfo() {
         try {
             const data = await energyApi.getFirmwareUpdateInfo();
-            if (data.latest == false) {
+            if (data.isLatest === false) {
                 document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
             }
         } catch (error) {

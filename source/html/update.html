@@ -201,7 +201,6 @@
             </p>
             <p><span class='list-key'>Changelog:</span><a id='update-changelog' href='' target='_blank'
                     title="Click to see the changelog">Changelog</a></p>
-            <p><span class='list-key'>MD5:</span><span id='update-md5' class='list-value'></span></p>
         </div>
         <p id="no-update" class="light-grey-box">Latest version installed</p>
     </div>
@@ -434,7 +433,9 @@
                     document.getElementById("update-details").style.display = "none";
                     document.getElementById("no-update").style.display = "block";
                 });
-        }        function updateFirmwareInfoUI(data) {
+        }        
+        
+        function updateFirmwareInfoUI(data) {
             if (!data || (!data.availableVersion && data.isLatest)) {
                 document.getElementById("update-details").style.display = "none";
                 document.getElementById("no-update").style.display = "block";
@@ -457,8 +458,6 @@
             } else {
                 document.getElementById("update-changelog").parentElement.style.display = "none";
             }
-
-            document.getElementById("update-md5").innerHTML = data.md5 || 'Not available';
 
             // Show/hide update sections based on isLatest flag
             if (data.isLatest) {
