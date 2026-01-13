@@ -143,7 +143,6 @@ namespace Ade7953
     static bool _saveChannelDataToPreferences(uint8_t channelIndex);
     static void _updateChannelData(uint8_t channelIndex);
     static bool _validateChannelDataJson(const JsonDocument &jsonDocument, bool partial = false);
-    static bool _validateParentGroup(uint8_t channelIndex, uint8_t groupId, uint8_t parentGroup);
     static void _calculateLsbValues(CtSpecification &ctSpec);
 
     // Energy data management
@@ -825,12 +824,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         channelDataFromJson(jsonDocument, channelData, partial);
 
-        // Validate parent group to prevent cycles and self-parenting
-        if (!_validateParentGroup(channelIndex, channelData.groupId, channelData.parentGroup)) {
-            LOG_WARNING("Invalid parent group configuration for channel %u", channelIndex);
-            return false;
-        }
-
         if (!setChannelData(channelData, channelIndex)) {
             LOG_WARNING("Failed to set channel data from JSON for channel %u", channelIndex);
             return false;
@@ -851,12 +844,11 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         jsonDocument["ctSpecification"]["voltageOutput"] = channelData.ctSpecification.voltageOutput;
         jsonDocument["ctSpecification"]["scalingFraction"] = channelData.ctSpecification.scalingFraction;
 
-        // Channel grouping and hierarchy
-        jsonDocument["groupId"] = channelData.groupId;
+        // Channel grouping
         jsonDocument["groupLabel"] = JsonString(channelData.groupLabel);
-        jsonDocument["parentGroup"] = channelData.parentGroup;
 
-        // Special channel flags
+        // Channel type/role flags
+        jsonDocument["isGrid"] = channelData.isGrid;
         jsonDocument["isProduction"] = channelData.isProduction;
         jsonDocument["isBattery"] = channelData.isBattery;
         jsonDocument["discardNegativeReadings"] = channelData.discardNegativeReadings;
@@ -887,14 +879,13 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                 channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
             }
 
-            // Channel grouping and hierarchy
-            if (jsonDocument["groupId"].is<uint8_t>()) channelData.groupId = jsonDocument["groupId"].as<uint8_t>();
+            // Channel grouping
             if (jsonDocument["groupLabel"].is<const char*>()) {
                 snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", jsonDocument["groupLabel"].as<const char*>());
             }
-            if (jsonDocument["parentGroup"].is<uint8_t>()) channelData.parentGroup = jsonDocument["parentGroup"].as<uint8_t>();
 
-            // Special channel flags
+            // Channel type/role flags
+            if (jsonDocument["isGrid"].is<bool>()) channelData.isGrid = jsonDocument["isGrid"].as<bool>();
             if (jsonDocument["isProduction"].is<bool>()) channelData.isProduction = jsonDocument["isProduction"].as<bool>();
             if (jsonDocument["isBattery"].is<bool>()) channelData.isBattery = jsonDocument["isBattery"].as<bool>();
             if (jsonDocument["discardNegativeReadings"].is<bool>()) channelData.discardNegativeReadings = jsonDocument["discardNegativeReadings"].as<bool>();
@@ -911,12 +902,11 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             channelData.ctSpecification.voltageOutput = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
             channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
 
-            // Channel grouping and hierarchy
-            channelData.groupId = jsonDocument["groupId"].as<uint8_t>();
+            // Channel grouping
             snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", jsonDocument["groupLabel"].as<const char*>());
-            channelData.parentGroup = jsonDocument["parentGroup"].as<uint8_t>();
 
-            // Special channel flags
+            // Channel type/role flags
+            channelData.isGrid = jsonDocument["isGrid"].as<bool>();
             channelData.isProduction = jsonDocument["isProduction"].as<bool>();
             channelData.isBattery = jsonDocument["isBattery"].as<bool>();
             channelData.discardNegativeReadings = jsonDocument["discardNegativeReadings"].as<bool>();
@@ -1850,12 +1840,8 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                         break;
                 }
             } else {
-                _recordCriticalFailure();
-                #ifdef ENV_DEV
                 LOG_DEBUG("No ADE7953 interrupt received within timeout, checking for stop notification");
-                #else
-                LOG_WARNING("No ADE7953 interrupt received within time expected, this indicates some problems.");
-                #endif
+                _recordCriticalFailure();
 
                 // Clear any interrupt flag to ensure we don't remain stuck
                 readRegister(RSTIRQSTATA_32, BIT_32, false);
@@ -2349,22 +2335,19 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_CT_SCALING_FRACTION_KEY, channelIndex);
         channelData.ctSpecification.scalingFraction = preferences.getFloat(key, DEFAULT_CT_SCALING_FRACTION);
 
-        // Channel grouping and hierarchy
-        snprintf(key, sizeof(key), CHANNEL_GROUP_ID_KEY, channelIndex);
-        channelData.groupId = preferences.getUChar(key, channelIndex); // Default: same as channel index
-
+        // Channel grouping
         snprintf(key, sizeof(key), CHANNEL_GROUP_LABEL_KEY, channelIndex);
         char defaultGroupLabel[NAME_BUFFER_SIZE];
-        snprintf(defaultGroupLabel, sizeof(defaultGroupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, channelData.groupId);
+        snprintf(defaultGroupLabel, sizeof(defaultGroupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, 0);
         preferences.getString(key, channelData.groupLabel, sizeof(channelData.groupLabel));
         if (strlen(channelData.groupLabel) == 0) {
             snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", defaultGroupLabel);
         }
 
-        snprintf(key, sizeof(key), CHANNEL_PARENT_GROUP_KEY, channelIndex);
-        channelData.parentGroup = preferences.getUChar(key, channelIndex == 0 ? DEFAULT_CHANNEL_PARENT_GROUP : 0); // Default: 255 for channel 0, 0 for others
+        // Channel type/role flags
+        snprintf(key, sizeof(key), CHANNEL_IS_GRID_KEY, channelIndex);
+        channelData.isGrid = preferences.getBool(key, channelIndex == 0 ? DEFAULT_CHANNEL_0_IS_GRID : DEFAULT_CHANNEL_IS_GRID);
 
-        // Special channel flags
         snprintf(key, sizeof(key), CHANNEL_IS_PRODUCTION_KEY, channelIndex);
         channelData.isProduction = preferences.getBool(key, DEFAULT_CHANNEL_IS_PRODUCTION);
 
@@ -2427,17 +2410,14 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_CT_SCALING_FRACTION_KEY, channelIndex);
         preferences.putFloat(key, channelData.ctSpecification.scalingFraction);
 
-        // Channel grouping and hierarchy
-        snprintf(key, sizeof(key), CHANNEL_GROUP_ID_KEY, channelIndex);
-        preferences.putUChar(key, channelData.groupId);
-
+        // Channel grouping
         snprintf(key, sizeof(key), CHANNEL_GROUP_LABEL_KEY, channelIndex);
         preferences.putString(key, channelData.groupLabel);
 
-        snprintf(key, sizeof(key), CHANNEL_PARENT_GROUP_KEY, channelIndex);
-        preferences.putUChar(key, channelData.parentGroup);
+        // Channel type/role flags
+        snprintf(key, sizeof(key), CHANNEL_IS_GRID_KEY, channelIndex);
+        preferences.putBool(key, channelData.isGrid);
 
-        // Special channel flags
         snprintf(key, sizeof(key), CHANNEL_IS_PRODUCTION_KEY, channelIndex);
         preferences.putBool(key, channelData.isProduction);
 
@@ -2484,12 +2464,11 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                 if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) return true;   
             }
 
-            // Channel grouping and hierarchy validation for partial updates
-            if (jsonDocument["groupId"].is<uint8_t>()) return true;
+            // Channel grouping validation for partial updates
             if (jsonDocument["groupLabel"].is<const char*>()) return true;
-            if (jsonDocument["parentGroup"].is<uint8_t>()) return true;
 
-            // Special channel flags validation for partial updates
+            // Channel type/role flags validation for partial updates
+            if (jsonDocument["isGrid"].is<bool>()) return true;
             if (jsonDocument["isProduction"].is<bool>()) return true;
             if (jsonDocument["isBattery"].is<bool>()) return true;
             if (jsonDocument["discardNegativeReadings"].is<bool>()) return true;
@@ -2510,64 +2489,17 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             if (!jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) { LOG_WARNING("ctSpecification.voltageOutput is missing or not float"); return false; }
             if (!jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) { LOG_WARNING("ctSpecification.scalingFraction is missing or not float"); return false; }
 
-            // Channel grouping and hierarchy validation
-            if (!jsonDocument["groupId"].is<uint8_t>()) { LOG_WARNING("groupId is not uint8_t"); return false; }
+            // Channel grouping validation
             if (!jsonDocument["groupLabel"].is<const char*>()) { LOG_WARNING("groupLabel is not string"); return false; }
-            if (!jsonDocument["parentGroup"].is<uint8_t>()) { LOG_WARNING("parentGroup is not uint8_t"); return false; }
+
+            // Channel type/role flags validation
+            if (!jsonDocument["isGrid"].is<bool>()) { LOG_WARNING("isGrid is not bool"); return false; }
             if (!jsonDocument["isProduction"].is<bool>()) { LOG_WARNING("isProduction is not bool"); return false; }
             if (!jsonDocument["isBattery"].is<bool>()) { LOG_WARNING("isBattery is not bool"); return false; }
             if (!jsonDocument["discardNegativeReadings"].is<bool>()) { LOG_WARNING("discardNegativeReadings is not bool"); return false; }
 
             return true; // All fields validated successfully
         }
-    }
-
-    bool _validateParentGroup(uint8_t channelIndex, uint8_t groupId, uint8_t parentGroup) {
-        // Root channels (parentGroup = 255) are always valid
-        if (parentGroup == DEFAULT_CHANNEL_PARENT_GROUP) return true;
-
-        // Self-parenting: groupId cannot equal parentGroup
-        if (groupId == parentGroup) {
-            LOG_WARNING("Channel %u: groupId (%u) cannot equal parentGroup (self-parenting)", channelIndex, groupId);
-            return false;
-        }
-
-        // Follow the parent chain from the proposed parentGroup
-        uint8_t visited[CHANNEL_COUNT + 1] = {0}; // Track visited groupIds
-        uint8_t current = parentGroup;
-        uint8_t depth = 0;
-        const uint8_t maxDepth = CHANNEL_COUNT + 1; // Prevent infinite loops
-
-        while (current != DEFAULT_CHANNEL_PARENT_GROUP && depth < maxDepth) {
-            // Check if we've visited this groupId before (cycle detected)
-            if (visited[current]) {
-                LOG_WARNING("Channel %u: cycle detected in parent group chain at groupId %u", channelIndex, current);
-                return false;
-            }
-            visited[current] = 1;
-
-            // Check if following this chain leads back to the channel's own groupId
-            if (current == groupId) {
-                LOG_WARNING("Channel %u: parent chain leads back to own groupId (%u)", channelIndex, groupId);
-                return false;
-            }
-
-            // Move to parent
-            bool found = false;
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-                ChannelData chData(i);
-                if (getChannelData(chData, i) && chData.groupId == current) {
-                    current = (i == channelIndex) ? parentGroup : chData.parentGroup;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) break; // Parent groupId doesn't exist, that's OK (orphan)
-
-            depth++;
-        }
-
-        return true;
     }
 
     void _updateChannelData(uint8_t channelIndex) {

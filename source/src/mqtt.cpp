@@ -1033,7 +1033,7 @@ namespace Mqtt
         // Extract the DNS to test from the URL
         char host[URL_BUFFER_SIZE]; // Small since we don't have all the presigned stuff
         if (extractHost(_otaCurrentUrl, host, sizeof(host))) {
-            if (testClient.connect(host, 443)) { // Being HTTPS, the port is 443
+            if (testClient.connect(host, 443, 3000)) { // Being HTTPS, the port is 443, and timeout
                 LOG_DEBUG("DNS resolution successful");
                 testClient.stop();
             } else {
@@ -2248,7 +2248,7 @@ namespace Mqtt
             // Small delay to allow LWIP/SNTP operations to complete
             delay(100);
             
-            if (CustomWifi::isFullyConnected(true) && _connectMqtt() && _clientMqtt.connected()) { // Both connect and check immediately after
+            if (CustomWifi::isFullyConnected(true) && _connectMqtt() && _clientMqtt.connected()) { // Both internet, connect and check immediately after
                 _setState(MqttState::CONNECTED);
             }
         }

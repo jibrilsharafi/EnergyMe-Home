@@ -825,12 +825,10 @@
     var totalPieChart = null;
     var meterDataUpdateInProgress = false;
 
-    // Find the root channel (channel with parentGroup = 255, which is the main meter)
-    // Returns the channel index of the root channel, or 0 as fallback
-    function getRootChannelIndex() {
-        if (!channelData || !Array.isArray(channelData)) return 0;
-        const rootChannel = channelData.find(ch => ch.parentGroup === 255);
-        return rootChannel ? rootChannel.index : 0;
+    // Get channels that are marked as grid meters
+    function getGridChannels() {
+        if (!channelData || !Array.isArray(channelData)) return [];
+        return channelData.filter(ch => ch.isGrid === true);
     }
 
     // Get channels that are marked as production (PV/solar)
@@ -846,30 +844,31 @@
     }
 
     // Build group mapping from channel data
-    // Returns: { channelIndex -> groupId } and { groupId -> { label, channels: [indices] } }
+    // Returns: { channelIndex -> groupLabel } and { groupLabel -> { channels: [indices] } }
     function buildGroupMapping() {
-        const channelToGroup = {};  // channelIndex -> groupId
-        const groups = {};          // groupId -> { label, channels: [] }
+        const channelToGroup = {};  // channelIndex -> groupLabel
+        const groups = {};          // groupLabel -> { channels: [] }
         
         if (!channelData || !Array.isArray(channelData)) {
             return { channelToGroup, groups };
         }
         
-        const rootChannelIndex = getRootChannelIndex();
+        // Get grid channel indices to exclude from consumption grouping
+        const gridChannelIndices = getGridChannels().map(ch => ch.index);
         
         channelData.forEach(ch => {
-            if (ch.index === rootChannelIndex) return; // Skip root/main channel
+            // Skip grid channels (they show import/export, not individual consumption)
+            if (gridChannelIndices.includes(ch.index)) return;
             
-            const groupId = ch.groupId !== undefined ? ch.groupId : ch.index;
-            channelToGroup[ch.index] = groupId;
+            const groupLabel = ch.groupLabel || ch.label || `Channel ${ch.index}`;
+            channelToGroup[ch.index] = groupLabel;
             
-            if (!groups[groupId]) {
-                groups[groupId] = {
-                    label: ch.groupLabel || ch.label || `Group ${groupId}`,
+            if (!groups[groupLabel]) {
+                groups[groupLabel] = {
                     channels: []
                 };
             }
-            groups[groupId].channels.push(ch.index);
+            groups[groupLabel].channels.push(ch.index);
         });
         
         return { channelToGroup, groups };
@@ -877,11 +876,11 @@
     
     // Aggregate consumption data by groups
     // Input: { period: { channelIndex: value } }
-    // Output: { period: { groupId: aggregatedValue } }
+    // Output: { period: { groupLabel: aggregatedValue } }
     function aggregateByGroup(consumptionData) {
         const { channelToGroup, groups } = buildGroupMapping();
         const aggregated = {};
-        const rootChannelKey = String(getRootChannelIndex());
+        const gridChannelKeys = getGridChannels().map(ch => String(ch.index));
         
         Object.keys(consumptionData).forEach(period => {
             aggregated[period] = {};
@@ -894,20 +893,20 @@
             
             // Aggregate channels by group
             Object.keys(periodData).forEach(channel => {
-                if (channel === 'Other' || channel === rootChannelKey) return;
+                if (channel === 'Other' || gridChannelKeys.includes(channel)) return;
                 
                 const channelIndex = parseInt(channel);
-                const groupId = channelToGroup[channelIndex];
+                const groupLabel = channelToGroup[channelIndex];
                 
-                if (groupId === undefined) {
+                if (groupLabel === undefined) {
                     // Channel not in any group, keep as individual
                     aggregated[period][channel] = periodData[channel];
-                } else if (groups[groupId] && groups[groupId].channels.length === 1) {
+                } else if (groups[groupLabel] && groups[groupLabel].channels.length === 1) {
                     // Single-member group: keep as individual channel (don't aggregate)
                     aggregated[period][channel] = periodData[channel];
                 } else {
                     // Multi-member group: aggregate into group
-                    const groupKey = `group_${groupId}`;
+                    const groupKey = `group_${groupLabel}`;
                     if (!aggregated[period][groupKey]) {
                         aggregated[period][groupKey] = 0;
                     }
@@ -925,12 +924,8 @@
         
         // Check if it's a group key
         if (key.startsWith('group_')) {
-            const groupId = parseInt(key.replace('group_', ''));
-            const { groups } = buildGroupMapping();
-            if (groups[groupId]) {
-                return groups[groupId].label;
-            }
-            return `Group ${groupId}`;
+            const groupLabel = key.replace('group_', '');
+            return groupLabel;
         }
         
         // Individual channel
@@ -941,21 +936,30 @@
     function getDisplayColor(key) {
         if (key === 'Other') return 'rgba(128,128,128,0.8)';
         
-        // Check if it's a group key
+        // Check if it's a group key (group_<label>)
         if (key.startsWith('group_')) {
-            const groupId = parseInt(key.replace('group_', ''));
-            return colors[groupId % colors.length];
+            // Hash the group label to get a consistent color
+            const groupLabel = key.replace('group_', '');
+            let hash = 0;
+            for (let i = 0; i < groupLabel.length; i++) {
+                hash = ((hash << 5) - hash) + groupLabel.charCodeAt(i);
+                hash |= 0;
+            }
+            return colors[Math.abs(hash) % colors.length];
         }
         
         // Individual channel
         return getChannelColor(key);
     }
     
-    // Check if grouping is enabled (any non-root channel has a different groupId than its index)
+    // Check if grouping is enabled (any two non-grid channels share the same groupLabel)
     function isGroupingEnabled() {
         if (!channelData || !Array.isArray(channelData)) return false;
-        const rootChannelIndex = getRootChannelIndex();
-        return channelData.some(ch => ch.index !== rootChannelIndex && ch.groupId !== undefined && ch.groupId !== ch.index);
+        const gridChannelIndices = getGridChannels().map(ch => ch.index);
+        const nonGridChannels = channelData.filter(ch => !gridChannelIndices.includes(ch.index));
+        const groupLabels = nonGridChannels.map(ch => ch.groupLabel).filter(Boolean);
+        // Check if any groupLabel appears more than once
+        return groupLabels.length !== new Set(groupLabels).size;
     }
 
     // Function to decompress gzip data
@@ -1705,41 +1709,46 @@
             }
         });
         
-        // Add "Other" consumption (root channel minus sum of load channels only)
+        // Add "Other" consumption (grid channel minus sum of load channels only)
         // Only process hours 00-23 of the current day
-        // Exclude PV and battery channels from "Other" calculation
-        const rootChannelIndex = getRootChannelIndex();
-        const rootChannelKey = String(rootChannelIndex);
+        // Exclude grid, PV and battery channels from "Other" calculation
+        const gridChannels = getGridChannels();
+        const gridChannelIndex = gridChannels.length > 0 ? gridChannels[0].index : 0;
+        const gridChannelKey = String(gridChannelIndex);
         const productionChannels = getProductionChannels();
         const batteryChannels = getBatteryChannels();
+        const gridIndices = gridChannels.map(ch => String(ch.index));
         const productionIndices = productionChannels.map(ch => String(ch.index));
         const batteryIndices = batteryChannels.map(ch => String(ch.index));
-        const excludeFromOther = new Set([rootChannelKey, ...productionIndices, ...batteryIndices]);
+        const excludeFromOther = new Set([...gridIndices, ...productionIndices, ...batteryIndices]);
         
-        // Check if there are load sub-channels (exclude root, PV, battery)
+        // Check if there are load sub-channels (exclude grid, PV, battery)
         const hasLoadSubChannels = Object.keys(channelSequences).some(ch => !excludeFromOther.has(ch));
+        
+        // Only compute "Other" if we have a grid channel to establish total consumption
+        const hasGridChannel = gridChannels.length > 0;
         
         Object.keys(consumption).forEach(hour => {
             // Skip hours outside the current day (e.g., hour "00" of next day)
             const hourNum = parseInt(hour);
             if (hourNum < 0 || hourNum > 23) return;
             
-            const totalConsumption = consumption[hour][rootChannelIndex] || 0;
+            const totalConsumption = consumption[hour][gridChannelIndex] || 0;
             let trackedLoadConsumption = 0;
             
-            // Only sum load channels (exclude root, PV, battery)
+            // Only sum load channels (exclude grid, PV, battery)
             Object.keys(consumption[hour]).forEach(channel => {
                 if (!excludeFromOther.has(channel)) {
                     trackedLoadConsumption += consumption[hour][channel];
                 }
             });
             
-            // Only add "Other" if there are load sub-channels to compare against
-            if (hasLoadSubChannels) {
+            // Only add "Other" if we have grid channel and load sub-channels to compare against
+            if (hasGridChannel && hasLoadSubChannels) {
                 consumption[hour]['Other'] = totalConsumption - trackedLoadConsumption; // Allow negative values
             }
             
-            // Remove root, PV, and battery channels from chart display
+            // Remove grid, PV, and battery channels from chart display
             excludeFromOther.forEach(ch => delete consumption[hour][ch]);
         });
         
@@ -1781,7 +1790,7 @@
             }
         });
         
-        // Calculate total consumption for the day (imported) - RAW values including root channel
+        // Calculate total consumption for the day (imported) - RAW values including grid channel
         const rawConsumption = {};
         Object.keys(latestData).forEach(channel => {
             const dailyConsumption = (latestData[channel] - (firstData[channel] || 0)) / 1000; // Convert to kWh
@@ -1790,7 +1799,7 @@
             }
         });
         
-        // Calculate total exported energy for the day - RAW values including root channel
+        // Calculate total exported energy for the day - RAW values including grid channel
         const rawExported = {};
         Object.keys(latestExportData).forEach(channel => {
             const dailyExport = (latestExportData[channel] - (firstExportData[channel] || 0)) / 1000; // Convert to kWh
@@ -1799,28 +1808,33 @@
             }
         });
         
-        // Create chart-ready data (without root channel, with "Other")
+        // Create chart-ready data (without grid channel, with "Other")
         const totalConsumption = { ...rawConsumption };
         const totalExported = { ...rawExported };
         
         // Add "Other" consumption only if there are load sub-channels
-        // Exclude PV and battery channels from "Other" calculation
-        const rootChannelIndex = getRootChannelIndex();
-        const rootChannelKey = String(rootChannelIndex);
+        // Exclude grid, PV and battery channels from "Other" calculation
+        const gridChannels = getGridChannels();
+        const gridChannelIndex = gridChannels.length > 0 ? gridChannels[0].index : 0;
+        const gridChannelKey = String(gridChannelIndex);
         const productionChannels = getProductionChannels();
         const batteryChannels = getBatteryChannels();
+        const gridIndices = gridChannels.map(ch => String(ch.index));
         const productionIndices = productionChannels.map(ch => String(ch.index));
         const batteryIndices = batteryChannels.map(ch => String(ch.index));
-        const excludeFromOther = new Set([rootChannelKey, ...productionIndices, ...batteryIndices]);
+        const excludeFromOther = new Set([...gridIndices, ...productionIndices, ...batteryIndices]);
         
-        // Check if there are load sub-channels (exclude root, PV, battery)
+        // Check if there are load sub-channels (exclude grid, PV, battery)
         const hasLoadSubChannels = Object.keys(totalConsumption).some(ch => !excludeFromOther.has(ch));
         
-        if (totalConsumption[rootChannelIndex] && hasLoadSubChannels) {
-            const totalHouseConsumption = totalConsumption[rootChannelIndex];
+        // Only compute "Other" if we have a grid channel to establish total consumption
+        const hasGridChannel = gridChannels.length > 0;
+        
+        if (hasGridChannel && totalConsumption[gridChannelIndex] && hasLoadSubChannels) {
+            const totalHouseConsumption = totalConsumption[gridChannelIndex];
             let trackedLoadConsumption = 0;
             
-            // Only sum load channels (exclude root, PV, battery)
+            // Only sum load channels (exclude grid, PV, battery)
             Object.keys(totalConsumption).forEach(channel => {
                 if (!excludeFromOther.has(channel)) {
                     trackedLoadConsumption += totalConsumption[channel];
@@ -1830,7 +1844,7 @@
             totalConsumption['Other'] = totalHouseConsumption - trackedLoadConsumption; // Allow negative values
         }
         
-        // Remove root, PV, and battery channels from chart display
+        // Remove grid, PV, and battery channels from chart display
         excludeFromOther.forEach(ch => delete totalConsumption[ch]);
         
         return { 
@@ -1856,14 +1870,14 @@
             });
         });
         
-        // Sort: groups first (by groupId), then individual channels
+        // Sort: groups first (alphabetically by label), then individual channels by index
         const channels = [...allChannels].sort((a, b) => {
             const aIsGroup = a.startsWith('group_');
             const bIsGroup = b.startsWith('group_');
             if (aIsGroup && !bIsGroup) return -1;
             if (!aIsGroup && bIsGroup) return 1;
             if (aIsGroup && bIsGroup) {
-                return parseInt(a.replace('group_', '')) - parseInt(b.replace('group_', ''));
+                return a.localeCompare(b);
             }
             return parseInt(a) - parseInt(b);
         });
@@ -2030,7 +2044,8 @@
     function updateEnergyKPIs(rawImported, rawExported) {
         const productionChannels = getProductionChannels();
         const batteryChannels = getBatteryChannels();
-        const rootChannelIndex = getRootChannelIndex();
+        const gridChannels = getGridChannels();
+        const gridChannelIndex = gridChannels.length > 0 ? gridChannels[0].index : 0;
         
         const hasProduction = productionChannels.length > 0;
         const hasBattery = batteryChannels.length > 0;
@@ -2047,9 +2062,9 @@
         const productionIndices = productionChannels.map(ch => ch.index);
         const batteryIndices = batteryChannels.map(ch => ch.index);
         
-        // Calculate totals from raw data (includes root channel)
-        let gridImport = rawImported[rootChannelIndex] || 0;
-        let gridExport = rawExported[rootChannelIndex] || 0;
+        // Calculate totals from raw data (includes grid channel)
+        let gridImport = rawImported[gridChannelIndex] || 0;
+        let gridExport = rawExported[gridChannelIndex] || 0;
         let production = 0;
         let batteryCharge = 0;
         let batteryDischarge = 0;
@@ -2269,13 +2284,15 @@
         try {
             // Get total energy from current meter values
             const totalConsumption = {};
-            const rootChannelIndex = getRootChannelIndex();
+            const gridChannels = getGridChannels();
+            const gridChannelIndex = gridChannels.length > 0 ? gridChannels[0].index : 0;
+            const gridIndices = gridChannels.map(ch => ch.index);
             
-            // Check if there are sub-channels (channels other than root)
-            const hasSubChannels = meterData.some(ch => ch.index !== rootChannelIndex);
+            // Check if there are sub-channels (channels other than grid)
+            const hasSubChannels = meterData.some(ch => !gridIndices.includes(ch.index));
             
             meterData.forEach(channel => {
-                if (channel.index === rootChannelIndex) return; // Skip root channel
+                if (gridIndices.includes(channel.index)) return; // Skip grid channels
                 const totalEnergy = channel.data.activeEnergyImported / 1000; // Convert to kWh
                 if (totalEnergy > 0) {
                     totalConsumption[channel.index] = totalEnergy;
@@ -2283,9 +2300,9 @@
             });
             
             // Add "Other" consumption only if there are sub-channels
-            const rootChannel = meterData.find(ch => ch.index === rootChannelIndex);
-            if (rootChannel && hasSubChannels) {
-                const totalHouseConsumption = rootChannel.data.activeEnergyImported / 1000;
+            const gridChannel = meterData.find(ch => ch.index === gridChannelIndex);
+            if (gridChannel && hasSubChannels) {
+                const totalHouseConsumption = gridChannel.data.activeEnergyImported / 1000;
                 let trackedConsumption = 0;
                 
                 Object.values(totalConsumption).forEach(consumption => {
@@ -2395,9 +2412,9 @@
     function updateEnergyFlow() {
         if (!meterData || meterData.length === 0 || !channelData || !Array.isArray(channelData)) return;
         
+        const gridChannels = getGridChannels();
         const productionChannels = getProductionChannels();
         const batteryChannels = getBatteryChannels();
-        const rootChannelIndex = getRootChannelIndex();
         
         // Check if we should show the energy flow section
         const hasProduction = productionChannels.length > 0;
@@ -2414,9 +2431,12 @@
         document.getElementById('node-solar').style.display = hasProduction ? 'flex' : 'none';
         document.getElementById('node-battery').style.display = hasBattery ? 'flex' : 'none';
         
-        // Get power values
-        const rootMeter = meterData.find(ch => ch.index === rootChannelIndex);
-        const gridPower = rootMeter ? rootMeter.data.activePower : 0;
+        // Get power values from grid channels (sum if multiple, e.g., 3-phase)
+        let gridPower = 0;
+        gridChannels.forEach(ch => {
+            const meter = meterData.find(m => m.index === ch.index);
+            if (meter) gridPower += meter.data.activePower;
+        });
         
         // Calculate solar power (sum of all production channels)
         let solarPower = 0;
@@ -2501,7 +2521,7 @@
     function updateMeterData() {
         if (!meterData || meterData.length === 0) return;
         
-        const rootChannelIndex = getRootChannelIndex();
+        const gridChannels = getGridChannels();
         const productionChannels = getProductionChannels();
         const batteryChannels = getBatteryChannels();
         
@@ -2510,6 +2530,7 @@
         const hasPvOrBattery = hasProduction || hasBattery;
         
         // Get indices to exclude from meter display when PV/battery exists
+        const gridIndices = gridChannels.map(ch => ch.index);
         const productionIndices = productionChannels.map(ch => ch.index);
         const batteryIndices = batteryChannels.map(ch => ch.index);
         
@@ -2520,11 +2541,11 @@
         let trackedLoadPower = 0;
         let shouldRebuildChannels = false;
         
-        // Filter channels to display: when PV/battery exists, exclude root (grid), PV, and battery
+        // Filter channels to display: when PV/battery exists, exclude grid, PV, and battery
         const displayChannels = meterData.filter(ch => {
             if (hasPvOrBattery) {
-                // Exclude grid (root), production, and battery channels
-                if (ch.index === rootChannelIndex) return false;
+                // Exclude grid, production, and battery channels
+                if (gridIndices.includes(ch.index)) return false;
                 if (productionIndices.includes(ch.index)) return false;
                 if (batteryIndices.includes(ch.index)) return false;
             }
@@ -2534,7 +2555,7 @@
         // Check if we need to rebuild the entire channels section
         const existingChannels = document.getElementById("channels").children.length;
         // Expected: display channels + "Total Loads" (if PV/battery) or nothing extra + "Other" (if sub-channels)
-        const hasSubChannelsForOther = hasPvOrBattery ? displayChannels.length > 0 : displayChannels.some(ch => ch.index !== rootChannelIndex);
+        const hasSubChannelsForOther = hasPvOrBattery ? displayChannels.length > 0 : displayChannels.some(ch => !gridIndices.includes(ch.index));
         let expectedChannels = displayChannels.length;
         if (hasPvOrBattery && displayChannels.length > 0) expectedChannels += 1; // +1 for "Total Loads"
         if (hasSubChannelsForOther) expectedChannels += 1; // +1 for "Other"
@@ -2546,8 +2567,11 @@
         if (hasPvOrBattery) {
             // When PV/battery exists: show load channels only, compute total from sum
             // Calculate total load power from energy flow (Home = Grid + Solar + Battery)
-            const rootMeter = meterData.find(ch => ch.index === rootChannelIndex);
-            const gridPower = rootMeter ? rootMeter.data.activePower : 0;
+            let gridPower = 0;
+            gridChannels.forEach(ch => {
+                const meter = meterData.find(m => m.index === ch.index);
+                if (meter) gridPower += meter.data.activePower;
+            });
             
             let solarPower = 0;
             productionChannels.forEach(ch => {
@@ -2596,15 +2620,19 @@
                 }
             });
         } else {
-            // No PV/battery: original behavior - show root channel as "Total"
-            const mainChannel = meterData.find(ch => ch.index === rootChannelIndex);
+            // No PV/battery: show all channels (all are loads or grid if no grid flag set)
+            // If there are grid channels, show as "Total", otherwise show first channel
+            const hasGridChannels = gridIndices.length > 0;
+            const mainChannelIndex = hasGridChannels ? gridIndices[0] : 0;
+            const mainChannel = meterData.find(ch => ch.index === mainChannelIndex);
             if (mainChannel) {
                 const mainPower = mainChannel.data.activePower.toFixed(0);
                 totalLoadPower = parseFloat(mainPower);
                 
                 if (shouldRebuildChannels) {
                     powerDataHtml += '<div class="channel-box main-channel">';
-                    powerDataHtml += '<div class="channel-label">' + mainChannel.label + ' (Total)</div>';
+                    const labelSuffix = hasGridChannels ? ' (Total)' : '';
+                    powerDataHtml += '<div class="channel-label">' + mainChannel.label + labelSuffix + '</div>';
                     powerDataHtml += '<div class="channel-value" id="main-channel-value">' + mainPower + ' W</div>';
                     powerDataHtml += '</div>';
                 } else {
@@ -2615,9 +2643,9 @@
                 }
             }
             
-            // Add all other channels (excluding root channel)
+            // Add all other channels (excluding grid channel)
             meterData.forEach((channel) => {
-                if (channel.index === rootChannelIndex) return;
+                if (gridIndices.includes(channel.index)) return;
                 
                 const activePower = channel.data.activePower.toFixed(0);
                 trackedLoadPower += parseFloat(activePower);
@@ -2637,7 +2665,7 @@
         }
         
         // Add or update the computed "Other" channel
-        const hasSubChannels = hasPvOrBattery ? displayChannels.length > 0 : meterData.some(ch => ch.index !== rootChannelIndex);
+        const hasSubChannels = hasPvOrBattery ? displayChannels.length > 0 : meterData.some(ch => !gridIndices.includes(ch.index));
         const otherPower = totalLoadPower - trackedLoadPower;
         
         if (hasSubChannels && (otherPower !== 0 || totalLoadPower > 0)) {

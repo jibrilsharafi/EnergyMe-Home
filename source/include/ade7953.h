@@ -232,10 +232,11 @@
 #define CHANNEL_CT_VOLTAGE_OUTPUT_KEY "ct_voltage_%u" // Format: ct_voltage_0 (12 chars)
 #define CHANNEL_CT_SCALING_FRACTION_KEY "ct_scaling_%u" // Format: ct_scaling_0 (12 chars)
 
-// Channel grouping and hierarchy keys
-#define CHANNEL_GROUP_ID_KEY "group_id_%u" // Format: group_id_0 (11 chars)
+// Channel grouping keys
 #define CHANNEL_GROUP_LABEL_KEY "grp_label_%u" // Format: grp_label_0 (12 chars)
-#define CHANNEL_PARENT_GROUP_KEY "parent_grp_%u" // Format: parent_grp_0 (13 chars)
+
+// Channel type/role keys
+#define CHANNEL_IS_GRID_KEY "is_grid_%u" // Format: is_grid_0 (10 chars)
 #define CHANNEL_IS_PRODUCTION_KEY "is_prod_%u" // Format: is_prod_0 (10 chars)
 #define CHANNEL_IS_BATTERY_KEY "is_batt_%u" // Format: is_batt_0 (10 chars)
 #define CHANNEL_DISCARD_NEGATIVE_KEY "disc_neg_%u" // Format: disc_neg_0 (11 chars)
@@ -249,7 +250,8 @@
 #define DEFAULT_CHANNEL_0_HIGH_PRIORITY true // Channel 0 is always high priority - even though it has no real impact since it is on a dedicated ADE7953 channel
 #define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
 #define DEFAULT_CHANNEL_GROUP_LABEL_FORMAT "Group %u"
-#define DEFAULT_CHANNEL_PARENT_GROUP 255 // 255 = root channel (no parent)
+#define DEFAULT_CHANNEL_IS_GRID false
+#define DEFAULT_CHANNEL_0_IS_GRID true // Channel 0 is typically the grid meter
 #define DEFAULT_CHANNEL_IS_PRODUCTION false
 #define DEFAULT_CHANNEL_IS_BATTERY false
 #define DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS false
@@ -405,14 +407,13 @@ struct ChannelData
   Phase phase;
   CtSpecification ctSpecification;
   
-  // Channel grouping and hierarchy
-  uint8_t groupId;                    // Group ID (default: same as channel index)
+  // Channel grouping (for 3-phase aggregation)
   char groupLabel[NAME_BUFFER_SIZE];  // Label for the group (shared by channels in same group)
-  uint8_t parentGroup;                // Parent group ID (255 = root, no parent)
   
-  // Special channel flags
-  bool isProduction;                  // True if this is a production channel (e.g., PV/solar)
-  bool isBattery;                     // True if this is a battery channel
+  // Channel type/role flags (mutually exclusive: Grid, Production, Battery, or Load)
+  bool isGrid;                        // True if this is a grid meter (+ = import, - = export)
+  bool isProduction;                  // True if this is a production channel (e.g., PV/solar, + = generation)
+  bool isBattery;                     // True if this is a battery channel (+ = discharge, - = charge)
   bool discardNegativeReadings;       // True to clamp negative active power to 0 (for spurious readings)
 
   ChannelData()
@@ -422,8 +423,7 @@ struct ChannelData
       highPriority(false),
       phase(PHASE_1), 
       ctSpecification(CtSpecification()),
-      groupId(0),
-      parentGroup(DEFAULT_CHANNEL_PARENT_GROUP),
+      isGrid(DEFAULT_CHANNEL_IS_GRID),
       isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
       isBattery(DEFAULT_CHANNEL_IS_BATTERY),
       discardNegativeReadings(DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS) {
@@ -438,8 +438,7 @@ struct ChannelData
       highPriority(idx == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY),
       phase(DEFAULT_CHANNEL_PHASE), 
       ctSpecification(CtSpecification()),
-      groupId(idx),
-      parentGroup(idx == 0 ? DEFAULT_CHANNEL_PARENT_GROUP : 0),
+      isGrid(idx == 0 ? DEFAULT_CHANNEL_0_IS_GRID : DEFAULT_CHANNEL_IS_GRID),
       isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
       isBattery(DEFAULT_CHANNEL_IS_BATTERY),
       discardNegativeReadings(DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS) {

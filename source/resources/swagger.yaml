@@ -1782,20 +1782,13 @@ paths:
                   $ref: '#/components/schemas/Phase'
                 ctSpecification:
                   $ref: '#/components/schemas/CtSpecification'
-                groupId:
-                  type: integer
-                  minimum: 0
-                  maximum: 16
-                  description: Group ID for grouping channels
+                isGrid:
+                  type: boolean
+                  description: Whether this channel monitors grid import/export (Point of Common Coupling)
                 groupLabel:
                   type: string
                   maxLength: 64
-                  description: Human-readable label for the group
-                parentGroup:
-                  type: integer
-                  minimum: 0
-                  maximum: 255
-                  description: Parent group ID (255 = root, no parent)
+                  description: Human-readable label for the group. Channels with the same groupLabel are aggregated together.
                 isProduction:
                   type: boolean
                   description: Whether this is a production channel (e.g., solar PV)
@@ -1829,9 +1822,13 @@ paths:
                 summary: Configure three-phase grouping
                 value:
                   index: 1
-                  groupId: 0
                   groupLabel: "Main Three-Phase"
-                  parentGroup: 255
+              grid_channel:
+                summary: Mark as grid channel (Point of Common Coupling)
+                value:
+                  index: 0
+                  isGrid: true
+                  label: "Grid"
               solar_production:
                 summary: Mark as solar production channel
                 value:
@@ -2846,25 +2843,16 @@ components:
           $ref: '#/components/schemas/Phase'
         ctSpecification:
           $ref: '#/components/schemas/CtSpecification'
-        groupId:
-          type: integer
-          minimum: 0
-          maximum: 16
-          description: Group ID for grouping channels (e.g., for three-phase systems). Defaults to channel index.
-          example: 0
-          default: 0
+        isGrid:
+          type: boolean
+          description: Whether this channel monitors grid import/export (Point of Common Coupling). Positive = importing, Negative = exporting.
+          example: false
+          default: false
         groupLabel:
           type: string
           maxLength: 64
-          description: Human-readable label for the group. Channels with the same groupId should share the same groupLabel.
+          description: Human-readable label for the group. Channels with the same groupLabel are aggregated together in the UI.
           example: "Main Three-Phase"
-        parentGroup:
-          type: integer
-          minimum: 0
-          maximum: 255
-          description: Parent group ID for hierarchical channel relationships. 255 indicates a root channel with no parent.
-          example: 255
-          default: 255
         isProduction:
           type: boolean
           description: Whether this channel monitors energy production (e.g., solar PV, wind turbine)
