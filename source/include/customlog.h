@@ -23,8 +23,6 @@
 #define DEFAULT_UDP_LOG_DESTINATION_IP "239.255.255.250" // Multicast IP for UDP logging
 
 #define LOG_QUEUE_SIZE (512 * 1024) // Callback queue size in bytes (length will be computed based on this). Can be set high thanks to PSRAM
-#define LOG_CALLBACK_LEVEL_SIZE 8 // Size for log level (e.g., "info", "error")
-#define LOG_CALLBACK_FUNCTION_SIZE 16 // Size for function name
 #define LOG_ESPVPRINTF_CALLBACK_MESSAGE_SIZE 256 // Size for log message coming from ESP-IDF. They are small usually so 256 is enough
 
 #define DELAY_SEND_UDP 10 // Millisecond delay between UDP sends to avoid flooding the network and starving

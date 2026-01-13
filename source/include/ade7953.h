@@ -90,8 +90,8 @@
 // For embedded systems, multiplications are better than divisions, so we use a float constant which is VOLT_PER_LSB = 1 / 25779
 #define VOLT_PER_LSB 0.0000387922f
 #define VOLT_PER_LSB_INSTANTANEOUS 0.000076236f // Same calculations as above, but using 500mV as peak and 6500000 as full scale
-#define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet)
-#define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f 
+#define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet). Unused but left for reference
+#define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f. Unused but left for reference
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
 #define DEFAULT_FALLBACK_FREQUENCY 50 // Most of the world is 50 Hz
 
@@ -219,10 +219,6 @@
 #define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT 50  // This cannot be too low as if we keep missing an interrupt we would reboot every few seconds
 #endif
 #define ADE7953_CRITICAL_FAILURE_RESET_TIMEOUT_MS (5 * 60 * 1000) // Reset counter after 5 minutes
-
-// Check for incorrect readings
-#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0f // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
-#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20f // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
 
 // Channel Preferences Keys
 #define CHANNEL_ACTIVE_KEY "active_%u" // Format: active_0 (9 chars)
