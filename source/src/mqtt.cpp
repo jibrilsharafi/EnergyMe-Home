@@ -659,15 +659,12 @@ namespace Mqtt
 
         while (_taskShouldRun)
         {
-            // Skip processing if WiFi is not connected
-            if (CustomWifi::isFullyConnected()) { // TODO: ensure that if there is no internet, we don't flush/delete the values from the queue of the meter data
-                switch (_currentState) {
-                    case MqttState::IDLE:                    _handleIdleState(); break;
-                    case MqttState::CLAIMING_CERTIFICATES:   _handleClaimingState(); break;
-                    case MqttState::SETTING_UP_CERTIFICATES: _handleSettingUpCertificatesState(); break;
-                    case MqttState::CONNECTING:              _handleConnectingState(); break;
-                    case MqttState::CONNECTED:               _handleConnectedState(); break;
-                }
+            switch (_currentState) {
+                case MqttState::IDLE:                    _handleIdleState(); break;
+                case MqttState::CLAIMING_CERTIFICATES:   _handleClaimingState(); break;
+                case MqttState::SETTING_UP_CERTIFICATES: _handleSettingUpCertificatesState(); break;
+                case MqttState::CONNECTING:              _handleConnectingState(); break;
+                case MqttState::CONNECTED:               _handleConnectedState(); break;
             }
             
             // If we receive a signal to stop the task, we try to publish all the data and flushing the queues so we avoid losing data
@@ -1492,15 +1489,18 @@ namespace Mqtt
 
     static void _checkIfPublishMeterNeeded() {
         UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
+        size_t estimatedJsonSize = queueSize * MQTT_METER_ESTIMATED_PER_ENTRY + MQTT_METER_ESTIMATED_ENERGY_VOLTAGE_OVERHEAD_BYTES;
+        
+        // Publish if:
+        // 1. Queue reaches threshold (at least the billable size for efficiency) AND power data is enabled (trigger only), OR
+        // 2. Enough time has passed (for voltage/energy data, regardless of queue state)
+        // Real JSON size is checked during _publishMeterStreaming() with measureJson()
         if (
-            (queueSize > 0) &&
-            (
-                ((queueSize > (MQTT_METER_QUEUE_SIZE * MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD)) && _sendPowerDataEnabled) || // Either we are sending power data and the queue is almost full
-                ((millis64() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH) // Or enought time has passed and we need to publish anyway (voltage and energy)
-            )
+            ((estimatedJsonSize >= AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE) && _sendPowerDataEnabled) ||
+            ((millis64() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH)
         ) {
             _publishMqtt.meter = true;
-            LOG_DEBUG("Set flag to publish %u meter data points", queueSize);
+            LOG_DEBUG("Set flag to publish meter data (queue: %u entries, real size checked during publish)", queueSize);
         }
     }
 
@@ -1731,8 +1731,8 @@ namespace Mqtt
             return false;
         }
 
-        if (!CustomWifi::isFullyConnected(true)) {
-            LOG_WARNING("WiFi not fully connected. Skipping streaming publish on %s", topic);
+        if (!CustomWifi::isFullyConnected()) {
+            LOG_WARNING("WiFi not connected. Skipping streaming publish on %s", topic);
             statistics.mqttMessagesPublishedError++;
             return false;
         }
@@ -1828,9 +1828,16 @@ namespace Mqtt
             }
         }
         
-        // Only add power data points if sendPowerDataEnabled is true
+        // Only add power data points if sendPowerDataEnabled is true and connected
+        // CRITICAL: Check connectivity BEFORE dequeuing to prevent data loss
         uint32_t entriesAdded = 0;
-        if (_sendPowerDataEnabled && _initializeMeterQueue()) {
+        if (
+            _sendPowerDataEnabled && // Send only if the send power data flag is enabled (to save on data)
+            _initializeMeterQueue() && 
+            // Ensure connectivity again!
+            CustomWifi::isFullyConnected() && 
+            _clientMqtt.connected()
+        ) {
             PayloadMeter payloadMeter;
             uint32_t loops = 0;
             while ((uxQueueMessagesWaiting(_meterQueue) > 0) && loops < MAX_LOOP_ITERATIONS) {
@@ -1845,10 +1852,10 @@ namespace Mqtt
                 powerArray.add(roundToDecimals(payloadMeter.powerFactor, POWER_FACTOR_DECIMALS));
                 entriesAdded++;
 
-                // Check if we're approaching memory limits (using psram automatically)
-                if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * 0.95) {
-                    LOG_DEBUG("Meter data JSON size exceeds 95%% of AWS IoT Core MQTT payload limit, stopping queue processing");
-                    break; // Stop adding new entries if the buffer is nearly full
+                // Check if we're approaching the minimum billable size (optimize costs by staying just under)
+                if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) {
+                    LOG_DEBUG("Meter data JSON approaching billable threshold, stopping queue processing");
+                    break; // Remaining entries will be sent in the next publish
                 }
             }
         }
@@ -2202,6 +2209,8 @@ namespace Mqtt
     }
 
     static void _handleClaimingState() {
+        if (!CustomWifi::isFullyConnected()) return;
+        
         if (_claimProcess()) _setState(MqttState::SETTING_UP_CERTIFICATES);
         else _setState(MqttState::IDLE); // Reset to idle if claiming failed
     }
@@ -2215,6 +2224,8 @@ namespace Mqtt
     }
 
     static void _handleConnectingState() {
+        if (!CustomWifi::isFullyConnected()) return;
+        
         if (_clientMqtt.connected()) {
             _setState(MqttState::CONNECTED);
             return;
@@ -2242,6 +2253,7 @@ namespace Mqtt
     }
 
     static void _handleConnectedState() {
+        // MQTT connection check is sufficient - if TCP to AWS fails, we'll detect it here
         if (!_clientMqtt.connected() || !_clientMqtt.loop()) { // Also process incoming messages with loop()
             LOG_DEBUG("MQTT disconnected, transitioning to connecting state");
             statistics.mqttConnectionErrors++;
@@ -2421,7 +2433,7 @@ namespace Mqtt
             return;
         }
 
-        // Monitor for stability period
+        // Monitor for stability period (here we just wait, rollback will occur automatically on failure)
         while (millis64() - validationStartTime < OTA_VALIDATION_TIMEOUT) {
             LOG_DEBUG("OTA validation in progress - %llu ms remaining", OTA_VALIDATION_TIMEOUT + validationStartTime - millis64());
             delay(OTA_VALIDATION_CHECK_INTERVAL);
