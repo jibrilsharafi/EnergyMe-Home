@@ -331,8 +331,6 @@ namespace InfluxDbClient
                     uint64_t currentTime = millis64();
                     if ((currentTime - lastSendTime) >= (config.frequencySeconds * 1000)) { // Enough time has passed since last send
                         if (currentTime >= _nextSendAttemptMillis) { // Enough time has passed since last attempt (in case of failures)
-                            
-                            // TODO: to really do things well, we should implement a queue method.. But maybe later
                             _sendData(config);
 
                             lastSendTime = currentTime;

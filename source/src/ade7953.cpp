@@ -2944,7 +2944,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
     @param channel The channel to read the values from. Returns
     false if the data reading is not ready yet or valid.
     */
-    bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTimeMillis) { // TODO: add waveform data
+    bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTimeMillis) {
         uint64_t millisRead = millis64();
         uint64_t deltaMillis = millisRead - _meterValues[channelIndex].lastMillis;
 
@@ -3037,7 +3037,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
             current = voltage > 0.0f ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
         } else {
-            // TODO: understand how to aggregate three-phase measurements
             // We cannot use the energy registers as it would be too complicated (or impossible) to account both for the 120° shift and possible reverse current
             // Assume the voltage is the same as channel 0 (in amplitude) but shifted 120°
             // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
@@ -3241,6 +3240,8 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             _meterValues[channelIndex].current = 0.0f;
             _meterValues[channelIndex].apparentPower = 0.0f;
         }
+
+        // TODO: add here, after everything has been validated, the computation of the mean values over the last X values (with a simple exponential filter alpha = 0.3 - 0.5)
 
         // We actually set the timestamp of the channel (used for the energy calculations)
         // only if we actually reached the end. Otherwise it would mean the point had to be
@@ -3978,7 +3979,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         _captureRequestedChannel = channelIndex;
         _captureState = CaptureState::ARMED;
-        LOG_INFO("Waveform capture armed for channel %u", channelIndex);
+        LOG_DEBUG("Waveform capture armed for channel %u", channelIndex);
         return true;
     }
 
@@ -4058,7 +4059,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             microsArray.add(_microsWaveformBuffer[i]);
         }
         
-        LOG_INFO("Serialized %u waveform samples to JSON for channel %u and cleared data", _captureSampleCount, _captureChannel);
+        LOG_DEBUG("Serialized %u waveform samples to JSON for channel %u and cleared data", _captureSampleCount, _captureChannel);
         
         // Data has been "consumed" by serializing it. Reset for the next capture.
         _captureState = CaptureState::IDLE;

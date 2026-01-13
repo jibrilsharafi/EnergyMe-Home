@@ -1237,7 +1237,7 @@ namespace CustomServer
             doc["buildTime"] = FIRMWARE_BUILD_TIME;
             
             #ifdef HAS_SECRETS
-            doc["isLatest"] = true; // TODO: actually implement a notification system on the device (maybe..)
+            doc["isLatest"] = true; // TODO: when with v6 the certs will be embedded, the HAS_SECRETS will be removed and this will work anyway
             #else
             // Fetch from GitHub API when no secrets are available
             if (!_fetchGitHubReleaseInfo(doc)) {
@@ -2469,8 +2469,7 @@ namespace CustomServer
         );
 
         // DELETE - Remove file from LittleFS
-        // HACK: using POST with JSON body to avoid wildcard DELETE issues with AsyncWebServer, and also
-        // not using the same endpoint as the * would catch files/delete
+        // HACK: using POST with JSON body to avoid wildcard DELETE issues with AsyncWebServer, and also not using the same endpoint as the * would catch files/delete
         static AsyncCallbackJsonWebHandler *deleteFileHandler = new AsyncCallbackJsonWebHandler(
             "/api/v1/delete-file",
             [](AsyncWebServerRequest *request, JsonVariant &json)

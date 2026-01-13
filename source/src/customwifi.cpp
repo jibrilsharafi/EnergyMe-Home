@@ -517,8 +517,11 @@ namespace CustomWifi
 
     // Try initial connection with retries for handshake timeouts
     LOG_DEBUG("Attempt WiFi connection");
-      
-    if (!wifiManager->autoConnect(hostname)) { // HACK: actually handle this in such a way where we retry constantly, but without restarting the device. Closing the task has little utility
+
+    // If we don't manage to connect with WiFi Manager and the credentials are not provided, we might as well just restart.
+    // In the future, we could allow for full-offline functionality, but for now, we keep it simple.
+    // TODO: implement a full custom WiFi manager for better UX
+    if (!wifiManager->autoConnect(hostname)) {
       LOG_WARNING("WiFi connection failed, exiting wifi task");
       Led::blinkRedFast(Led::PRIO_URGENT);
       _taskShouldRun = false;
