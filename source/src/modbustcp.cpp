@@ -28,7 +28,7 @@ namespace ModbusTcp // TODO: make the modbus functionality and registers more vi
     {
         LOG_DEBUG("Stopping Modbus TCP server");
         _mbServer.stop();
-        LOG_INFO("Modbus TCP server stopped");
+        LOG_DEBUG("Modbus TCP server stopped");
     }
 
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request)
