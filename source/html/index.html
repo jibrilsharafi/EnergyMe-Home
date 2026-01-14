@@ -62,6 +62,11 @@
             background-color: #f8f9ff;
         }
         
+        .channel-box.grid-channel {
+            border: 3px solid #2196F3;
+            background-color: #f0f8ff;
+        }
+        
         .channel-box.other-channel {
             border: 2px solid #ffc107;
             background-color: #fffdf0;
@@ -2525,170 +2530,134 @@
         const productionChannels = getProductionChannels();
         const batteryChannels = getBatteryChannels();
         
+        const hasGrid = gridChannels.length > 0;
         const hasProduction = productionChannels.length > 0;
         const hasBattery = batteryChannels.length > 0;
-        const hasPvOrBattery = hasProduction || hasBattery;
         
-        // Get indices to exclude from meter display when PV/battery exists
+        // Get indices for special channel types
         const gridIndices = gridChannels.map(ch => ch.index);
         const productionIndices = productionChannels.map(ch => ch.index);
         const batteryIndices = batteryChannels.map(ch => ch.index);
+        const specialIndices = new Set([...gridIndices, ...productionIndices, ...batteryIndices]);
         
         document.getElementById("voltage").innerHTML = meterData[0].data.voltage.toFixed(1) + ' V';
 
         let powerDataHtml = '';
-        let totalLoadPower = 0;
+        let totalGridPower = 0;
         let trackedLoadPower = 0;
-        let shouldRebuildChannels = false;
         
-        // Filter channels to display: when PV/battery exists, exclude grid, PV, and battery
-        const displayChannels = meterData.filter(ch => {
-            if (hasPvOrBattery) {
-                // Exclude grid, production, and battery channels
-                if (gridIndices.includes(ch.index)) return false;
-                if (productionIndices.includes(ch.index)) return false;
-                if (batteryIndices.includes(ch.index)) return false;
+        // Filter to only load channels (exclude grid, PV, battery)
+        const loadChannels = meterData.filter(ch => !specialIndices.has(ch.index));
+        
+        // First pass: count how many channels share each groupLabel
+        const groupLabelCounts = {};
+        loadChannels.forEach(ch => {
+            const groupLabel = channelData[ch.index]?.groupLabel;
+            if (groupLabel) {
+                groupLabelCounts[groupLabel] = (groupLabelCounts[groupLabel] || 0) + 1;
             }
-            return true;
         });
         
-        // Check if we need to rebuild the entire channels section
+        // Aggregate load channels: use groupLabel only if multiple channels share it
+        const aggregatedLoads = {};
+        loadChannels.forEach(ch => {
+            const groupLabel = channelData[ch.index]?.groupLabel;
+            const isSharedGroup = groupLabel && groupLabelCounts[groupLabel] > 1;
+            
+            if (isSharedGroup) {
+                // Multiple channels share this groupLabel - aggregate them
+                if (!aggregatedLoads[groupLabel]) {
+                    aggregatedLoads[groupLabel] = { label: groupLabel, power: 0, indices: [] };
+                }
+                aggregatedLoads[groupLabel].power += ch.data.activePower;
+                aggregatedLoads[groupLabel].indices.push(ch.index);
+            } else {
+                // Single channel - use its own label
+                aggregatedLoads[ch.label + '_' + ch.index] = { label: ch.label, power: ch.data.activePower, indices: [ch.index] };
+            }
+        });
+        
+        // Calculate expected channel count for rebuild check
+        let expectedChannels = Object.keys(aggregatedLoads).length;
+        if (hasGrid) expectedChannels += gridChannels.length; // Grid channels
+        if (hasGrid && Object.keys(aggregatedLoads).length > 0) expectedChannels += 1; // +1 for "Other"
+        
         const existingChannels = document.getElementById("channels").children.length;
-        // Expected: display channels + "Total Loads" (if PV/battery) or nothing extra + "Other" (if sub-channels)
-        const hasSubChannelsForOther = hasPvOrBattery ? displayChannels.length > 0 : displayChannels.some(ch => !gridIndices.includes(ch.index));
-        let expectedChannels = displayChannels.length;
-        if (hasPvOrBattery && displayChannels.length > 0) expectedChannels += 1; // +1 for "Total Loads"
-        if (hasSubChannelsForOther) expectedChannels += 1; // +1 for "Other"
+        const shouldRebuildChannels = existingChannels !== expectedChannels;
         
-        if (existingChannels !== expectedChannels) {
-            shouldRebuildChannels = true;
-        }
+        // Show grid channels with blue border (if any)
+        gridChannels.forEach(gridCh => {
+            const meter = meterData.find(m => m.index === gridCh.index);
+            if (!meter) return;
+            
+            const gridPower = meter.data.activePower;
+            totalGridPower += gridPower;
+            
+            if (shouldRebuildChannels) {
+                powerDataHtml += '<div class="channel-box grid-channel">';
+                powerDataHtml += '<div class="channel-label">' + meter.label + '</div>';
+                powerDataHtml += '<div class="channel-value" id="grid-' + gridCh.index + '-value">' + gridPower.toFixed(0) + ' W</div>';
+                powerDataHtml += '</div>';
+            } else {
+                const el = document.getElementById('grid-' + gridCh.index + '-value');
+                if (el) el.textContent = gridPower.toFixed(0) + ' W';
+            }
+        });
         
-        if (hasPvOrBattery) {
-            // When PV/battery exists: show load channels only, compute total from sum
-            // Calculate total load power from energy flow (Home = Grid + Solar + Battery)
-            let gridPower = 0;
-            gridChannels.forEach(ch => {
-                const meter = meterData.find(m => m.index === ch.index);
-                if (meter) gridPower += meter.data.activePower;
-            });
+        // Show aggregated load channels
+        Object.values(aggregatedLoads).forEach((group) => {
+            const activePower = group.power;
+            trackedLoadPower += activePower;
             
-            let solarPower = 0;
-            productionChannels.forEach(ch => {
-                const meter = meterData.find(m => m.index === ch.index);
-                if (meter) solarPower += Math.abs(meter.data.activePower);
-            });
+            const groupId = 'group-' + group.indices.join('-');
             
-            let batteryPower = 0;
-            batteryChannels.forEach(ch => {
-                const meter = meterData.find(m => m.index === ch.index);
-                if (meter) batteryPower += meter.data.activePower;
-            });
-            
-            totalLoadPower = gridPower + solarPower + batteryPower;
-            
-            // Add "Total Loads" header if there are load channels
-            if (displayChannels.length > 0) {
-                if (shouldRebuildChannels) {
-                    powerDataHtml += '<div class="channel-box main-channel">';
-                    powerDataHtml += '<div class="channel-label">Total Loads</div>';
-                    powerDataHtml += '<div class="channel-value" id="main-channel-value">' + totalLoadPower.toFixed(0) + ' W</div>';
-                    powerDataHtml += '</div>';
-                } else {
-                    const mainValueElement = document.getElementById("main-channel-value");
-                    if (mainValueElement) {
-                        mainValueElement.textContent = totalLoadPower.toFixed(0) + ' W';
-                    }
-                }
+            if (shouldRebuildChannels) {
+                powerDataHtml += '<div class="channel-box">';
+                powerDataHtml += '<div class="channel-label">' + group.label + '</div>';
+                powerDataHtml += '<div class="channel-value" id="' + groupId + '-value">' + activePower.toFixed(0) + ' W</div>';
+                powerDataHtml += '</div>';
+            } else {
+                const el = document.getElementById(groupId + '-value');
+                if (el) el.textContent = activePower.toFixed(0) + ' W';
+            }
+        });
+        
+        // Show "Other" only if we have a grid channel (so we can compute untracked)
+        if (hasGrid && Object.keys(aggregatedLoads).length > 0) {
+            // If we have PV/battery, compute total load from energy balance
+            let totalLoadPower = totalGridPower;
+            if (hasProduction) {
+                productionChannels.forEach(ch => {
+                    const meter = meterData.find(m => m.index === ch.index);
+                    if (meter) totalLoadPower += Math.abs(meter.data.activePower);
+                });
+            }
+            if (hasBattery) {
+                batteryChannels.forEach(ch => {
+                    const meter = meterData.find(m => m.index === ch.index);
+                    if (meter) totalLoadPower += meter.data.activePower;
+                });
             }
             
-            // Add load channels
-            displayChannels.forEach((channel) => {
-                const activePower = channel.data.activePower.toFixed(0);
-                trackedLoadPower += parseFloat(activePower);
-                
-                if (shouldRebuildChannels) {
-                    powerDataHtml += '<div class="channel-box">';
-                    powerDataHtml += '<div class="channel-label">' + channel.label + '</div>';
-                    powerDataHtml += '<div class="channel-value" id="channel-' + channel.index + '-value">' + activePower + ' W</div>';
-                    powerDataHtml += '</div>';
-                } else {
-                    const channelValueElement = document.getElementById("channel-" + channel.index + "-value");
-                    if (channelValueElement) {
-                        channelValueElement.textContent = activePower + ' W';
-                    }
-                }
-            });
-        } else {
-            // No PV/battery: show all channels (all are loads or grid if no grid flag set)
-            // If there are grid channels, show as "Total", otherwise show first channel
-            const hasGridChannels = gridIndices.length > 0;
-            const mainChannelIndex = hasGridChannels ? gridIndices[0] : 0;
-            const mainChannel = meterData.find(ch => ch.index === mainChannelIndex);
-            if (mainChannel) {
-                const mainPower = mainChannel.data.activePower.toFixed(0);
-                totalLoadPower = parseFloat(mainPower);
-                
-                if (shouldRebuildChannels) {
-                    powerDataHtml += '<div class="channel-box main-channel">';
-                    const labelSuffix = hasGridChannels ? ' (Total)' : '';
-                    powerDataHtml += '<div class="channel-label">' + mainChannel.label + labelSuffix + '</div>';
-                    powerDataHtml += '<div class="channel-value" id="main-channel-value">' + mainPower + ' W</div>';
-                    powerDataHtml += '</div>';
-                } else {
-                    const mainValueElement = document.getElementById("main-channel-value");
-                    if (mainValueElement) {
-                        mainValueElement.textContent = mainPower + ' W';
-                    }
-                }
-            }
+            const otherPower = totalLoadPower - trackedLoadPower;
             
-            // Add all other channels (excluding grid channel)
-            meterData.forEach((channel) => {
-                if (gridIndices.includes(channel.index)) return;
-                
-                const activePower = channel.data.activePower.toFixed(0);
-                trackedLoadPower += parseFloat(activePower);
-                
-                if (shouldRebuildChannels) {
-                    powerDataHtml += '<div class="channel-box">';
-                    powerDataHtml += '<div class="channel-label">' + channel.label + '</div>';
-                    powerDataHtml += '<div class="channel-value" id="channel-' + channel.index + '-value">' + activePower + ' W</div>';
-                    powerDataHtml += '</div>';
-                } else {
-                    const channelValueElement = document.getElementById("channel-" + channel.index + "-value");
-                    if (channelValueElement) {
-                        channelValueElement.textContent = activePower + ' W';
-                    }
-                }
-            });
-        }
-        
-        // Add or update the computed "Other" channel
-        const hasSubChannels = hasPvOrBattery ? displayChannels.length > 0 : meterData.some(ch => !gridIndices.includes(ch.index));
-        const otherPower = totalLoadPower - trackedLoadPower;
-        
-        if (hasSubChannels && (otherPower !== 0 || totalLoadPower > 0)) {
             if (shouldRebuildChannels) {
                 powerDataHtml += '<div class="channel-box other-channel">';
                 powerDataHtml += '<div class="channel-label">';
                 powerDataHtml += '<span class="tooltip-container">';
                 powerDataHtml += 'Other';
                 powerDataHtml += '<i class="fas fa-info-circle info-icon"></i>';
-                powerDataHtml += '<span class="tooltip-text">Untracked consumption: Total loads minus sum of all monitored load channels</span>';
+                powerDataHtml += '<span class="tooltip-text">Untracked consumption: Grid minus sum of all monitored load channels</span>';
                 powerDataHtml += '</span>';
                 powerDataHtml += '</div>';
                 powerDataHtml += '<div class="channel-value" id="other-channel-value">' + otherPower.toFixed(0) + ' W</div>';
                 powerDataHtml += '</div>';
             } else {
-                const otherValueElement = document.getElementById("other-channel-value");
-                if (otherValueElement) {
-                    otherValueElement.textContent = otherPower.toFixed(0) + ' W';
-                }
+                const el = document.getElementById('other-channel-value');
+                if (el) el.textContent = otherPower.toFixed(0) + ' W';
             }
         }
 
-        // Only rebuild the entire HTML if needed
         if (shouldRebuildChannels) {
             document.getElementById("channels").innerHTML = powerDataHtml;
         }
