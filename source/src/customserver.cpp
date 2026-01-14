@@ -606,35 +606,104 @@ namespace CustomServer
     static void _serveStaticContent()
     {
         // === STATIC CONTENT (no auth required) ===
+        // Since they are all static files, we can set long cache durations
 
         // CSS files
-        server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", styles_css); });
-        server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", button_css); });
-        server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", section_css); });
-        server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", typography_css); });
+        server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request) { 
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/css", styles_css);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/css", button_css);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/css", section_css);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/css", typography_css);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
 
         // JavaScript files
-        server.on("/js/api-client.js", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "application/javascript", api_client_js); });
+        server.on("/js/api-client.js", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "application/javascript", api_client_js);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
 
         // Resources
-        server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "image/svg+xml", favicon_svg); });
+        server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "image/svg+xml", favicon_svg);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
 
         // Main dashboard
-        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", index_html); });
+        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", index_html);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
 
         // Configuration pages
-        server.on("/ade7953-tester", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", ade7953_tester_html); });
-        server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", configuration_html); });
-        server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", calibration_html); });
-        server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", channel_html); });
-        server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", info_html); });
-        server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", log_html); });
-        server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", update_html); });
-        server.on("/waveform", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", waveform_html); });
+        server.on("/ade7953-tester", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", ade7953_tester_html);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", configuration_html);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", calibration_html);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", channel_html);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", info_html);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", log_html);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", update_html);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/waveform", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", waveform_html);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
 
         // Swagger UI
-        server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", swagger_ui_html); });
-        server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/yaml", swagger_yaml); });
+        server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", swagger_ui_html);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
+        server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/yaml", swagger_yaml);
+            response->addHeader("Cache-Control", "public, max-age=86400");
+            request->send(response);
+        });
     }
 
     // === HEALTH ENDPOINTS ===
