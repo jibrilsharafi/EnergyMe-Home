@@ -967,20 +967,187 @@
     var availableDates = [];
     var availableMonths = [];
     var availableYears = [];
-    var currentDate = null;
-    var currentMonth = null;
-    var currentYear = null;
-    var currentView = 'daily'; // 'daily', 'monthly', or 'yearly'
-    var currentChartType = 'consumption'; // 'consumption' or 'balance'
+    
+    // Unified chart state (replaces separate currentDate/currentMonth/currentYear)
+    const chartState = {
+        view: 'daily',       // 'daily', 'monthly', or 'yearly'
+        chartType: 'consumption', // 'consumption' or 'balance'
+        date: null,          // YYYY-MM-DD for daily view
+        month: null,         // YYYY-MM for monthly view
+        year: null,          // YYYY for yearly view
+        getPeriod() {
+            switch (this.view) {
+                case 'daily': return this.date;
+                case 'monthly': return this.month;
+                case 'yearly': return this.year;
+            }
+        },
+        setPeriod(value) {
+            switch (this.view) {
+                case 'daily': this.date = value; break;
+                case 'monthly': this.month = value; break;
+                case 'yearly': this.year = value; break;
+            }
+        }
+    };
+    
+    // Legacy aliases for backward compatibility during transition
+    var currentView = chartState.view;
+    var currentChartType = chartState.chartType;
+    var currentDate = chartState.date;
+    var currentMonth = chartState.month;
+    var currentYear = chartState.year;
+    
     var consumptionChart = null;
     var balanceChart = null;
     var hasBalanceCapability = false; // Set true if PV or battery configured
     var meterDataUpdateInProgress = false;
-
-    // Sparkline history tracking (max 60 points = ~60 seconds of data)
-    const flowHistory = { solar: [], grid: [], battery: [], home: [] };
+    
+    // ============================================================================
+    // CHANNEL CACHE - Cached channel classifications for efficient repeated lookups
+    // ============================================================================
+    const ChannelCache = {
+        _grid: null,
+        _production: null,
+        _battery: null,
+        _excludeSet: null,  // Set of channel indices to exclude from "Other" calculation
+        _groupMapping: null,
+        
+        invalidate() {
+            this._grid = null;
+            this._production = null;
+            this._battery = null;
+            this._excludeSet = null;
+            this._groupMapping = null;
+        },
+        
+        get grid() {
+            if (this._grid === null) {
+                this._grid = channelData && Array.isArray(channelData) 
+                    ? channelData.filter(ch => ch.isGrid === true) 
+                    : [];
+            }
+            return this._grid;
+        },
+        
+        get production() {
+            if (this._production === null) {
+                this._production = channelData && Array.isArray(channelData) 
+                    ? channelData.filter(ch => ch.isProduction === true) 
+                    : [];
+            }
+            return this._production;
+        },
+        
+        get battery() {
+            if (this._battery === null) {
+                this._battery = channelData && Array.isArray(channelData) 
+                    ? channelData.filter(ch => ch.isBattery === true) 
+                    : [];
+            }
+            return this._battery;
+        },
+        
+        // Set of channel indices to exclude from "Other" calculation (grid + production + battery)
+        get excludeFromOther() {
+            if (this._excludeSet === null) {
+                const gridIndices = this.grid.map(ch => String(ch.index));
+                const productionIndices = this.production.map(ch => String(ch.index));
+                const batteryIndices = this.battery.map(ch => String(ch.index));
+                this._excludeSet = new Set([...gridIndices, ...productionIndices, ...batteryIndices]);
+            }
+            return this._excludeSet;
+        },
+        
+        // Primary grid channel index (first grid channel or 0)
+        get primaryGridIndex() {
+            return this.grid.length > 0 ? this.grid[0].index : 0;
+        },
+        
+        // Check if there are any grid channels configured
+        get hasGrid() {
+            return this.grid.length > 0;
+        },
+        
+        // Group mapping for channel aggregation
+        get groupMapping() {
+            if (this._groupMapping === null) {
+                this._groupMapping = this._buildGroupMapping();
+            }
+            return this._groupMapping;
+        },
+        
+        _buildGroupMapping() {
+            const channelToGroup = {};
+            const groups = {};
+            
+            if (!channelData || !Array.isArray(channelData)) {
+                return { channelToGroup, groups };
+            }
+            
+            const gridIndices = this.grid.map(ch => ch.index);
+            
+            channelData.forEach(ch => {
+                if (gridIndices.includes(ch.index)) return;
+                
+                const groupLabel = ch.groupLabel || ch.label || `Channel ${ch.index}`;
+                channelToGroup[ch.index] = groupLabel;
+                
+                if (!groups[groupLabel]) {
+                    groups[groupLabel] = { channels: [] };
+                }
+                groups[groupLabel].channels.push(ch.index);
+            });
+            
+            return { channelToGroup, groups };
+        }
+    };
+    
+    // ============================================================================
+    // CIRCULAR BUFFER - O(1) push operations for sparkline history
+    // ============================================================================
+    class CircularBuffer {
+        constructor(maxSize) {
+            this.maxSize = maxSize;
+            this.buffer = new Array(maxSize);
+            this.head = 0;     // Next write position
+            this.count = 0;    // Current number of elements
+        }
+        
+        push(value) {
+            this.buffer[this.head] = value;
+            this.head = (this.head + 1) % this.maxSize;
+            if (this.count < this.maxSize) this.count++;
+        }
+        
+        // Get array in chronological order (oldest to newest)
+        toArray() {
+            if (this.count === 0) return [];
+            const result = new Array(this.count);
+            const start = this.count < this.maxSize ? 0 : this.head;
+            for (let i = 0; i < this.count; i++) {
+                result[i] = this.buffer[(start + i) % this.maxSize];
+            }
+            return result;
+        }
+        
+        get length() { return this.count; }
+        
+        clear() {
+            this.head = 0;
+            this.count = 0;
+        }
+    }
+    
+    // Sparkline history tracking using circular buffers (O(1) instead of O(n) for shift)
+    const flowHistory = {
+        solar: new CircularBuffer(CONFIG.MAX_HISTORY),
+        grid: new CircularBuffer(CONFIG.MAX_HISTORY),
+        battery: new CircularBuffer(CONFIG.MAX_HISTORY),
+        home: new CircularBuffer(CONFIG.MAX_HISTORY)
+    };
     const filteredPowers = { solar: null, grid: null, battery: null, home: null };
-    const loadHistory = {};
+    const loadHistory = {};  // Dynamically created CircularBuffers per load
     const loadFilteredPowers = {};
     
     // Other load hysteresis tracking
@@ -1069,10 +1236,11 @@
             if (activeSparklineNodeType) {
                 let data, color;
                 if (isLoad) {
-                    data = loadHistory[nodeType] || [];
+                    const buffer = loadHistory[nodeType];
+                    data = buffer ? buffer.toArray() : [];
                     color = nodeType === 'other' ? '#888' : '#4CAF50';
                 } else {
-                    data = flowHistory[nodeType];
+                    data = flowHistory[nodeType].toArray();
                     color = nodeColors[nodeType];
                 }
                 drawSparkline(data, color);
@@ -1092,7 +1260,7 @@
         }
     }
     
-    // Add history point with exponential filtering
+    // Add history point with exponential filtering (O(1) using circular buffer)
     function addToFlowHistory(nodeType, value) {
         // Apply exponential filter
         if (filteredPowers[nodeType] === null) {
@@ -1100,17 +1268,13 @@
         } else {
             filteredPowers[nodeType] = CONFIG.SPARKLINE_ALPHA * value + (1 - CONFIG.SPARKLINE_ALPHA) * filteredPowers[nodeType];
         }
-        
         flowHistory[nodeType].push(filteredPowers[nodeType]);
-        if (flowHistory[nodeType].length > CONFIG.MAX_HISTORY) {
-            flowHistory[nodeType].shift();
-        }
     }
     
-    // Add load history point with exponential filtering
+    // Add load history point with exponential filtering (O(1) using circular buffer)
     function addToLoadHistory(loadKey, value) {
         if (!loadHistory[loadKey]) {
-            loadHistory[loadKey] = [];
+            loadHistory[loadKey] = new CircularBuffer(CONFIG.MAX_HISTORY);
             loadFilteredPowers[loadKey] = null;
         }
         
@@ -1120,11 +1284,7 @@
         } else {
             loadFilteredPowers[loadKey] = CONFIG.SPARKLINE_ALPHA * value + (1 - CONFIG.SPARKLINE_ALPHA) * loadFilteredPowers[loadKey];
         }
-        
         loadHistory[loadKey].push(loadFilteredPowers[loadKey]);
-        if (loadHistory[loadKey].length > CONFIG.MAX_HISTORY) {
-            loadHistory[loadKey].shift();
-        }
     }
     
     // Setup hover events for main energy nodes
@@ -1160,53 +1320,24 @@
         });
     }
 
-    // Get channels that are marked as grid meters
+    // Get channels that are marked as grid meters (uses cache for efficiency)
     function getGridChannels() {
-        if (!channelData || !Array.isArray(channelData)) return [];
-        return channelData.filter(ch => ch.isGrid === true);
+        return ChannelCache.grid;
     }
 
-    // Get channels that are marked as production (PV/solar)
+    // Get channels that are marked as production (PV/solar) (uses cache for efficiency)
     function getProductionChannels() {
-        if (!channelData || !Array.isArray(channelData)) return [];
-        return channelData.filter(ch => ch.isProduction === true);
+        return ChannelCache.production;
     }
 
-    // Get channels that are marked as battery
+    // Get channels that are marked as battery (uses cache for efficiency)
     function getBatteryChannels() {
-        if (!channelData || !Array.isArray(channelData)) return [];
-        return channelData.filter(ch => ch.isBattery === true);
+        return ChannelCache.battery;
     }
 
-    // Build group mapping from channel data
-    // Returns: { channelIndex -> groupLabel } and { groupLabel -> { channels: [indices] } }
+    // Build group mapping from channel data (uses cache for efficiency)
     function buildGroupMapping() {
-        const channelToGroup = {};  // channelIndex -> groupLabel
-        const groups = {};          // groupLabel -> { channels: [] }
-        
-        if (!channelData || !Array.isArray(channelData)) {
-            return { channelToGroup, groups };
-        }
-        
-        // Get grid channel indices to exclude from consumption grouping
-        const gridChannelIndices = getGridChannels().map(ch => ch.index);
-        
-        channelData.forEach(ch => {
-            // Skip grid channels (they show import/export, not individual consumption)
-            if (gridChannelIndices.includes(ch.index)) return;
-            
-            const groupLabel = ch.groupLabel || ch.label || `Channel ${ch.index}`;
-            channelToGroup[ch.index] = groupLabel;
-            
-            if (!groups[groupLabel]) {
-                groups[groupLabel] = {
-                    channels: []
-                };
-            }
-            groups[groupLabel].channels.push(ch.index);
-        });
-        
-        return { channelToGroup, groups };
+        return ChannelCache.groupMapping;
     }
     
     // Aggregate consumption data by groups
@@ -1215,7 +1346,7 @@
     function aggregateByGroup(consumptionData) {
         const { channelToGroup, groups } = buildGroupMapping();
         const aggregated = {};
-        const gridChannelKeys = getGridChannels().map(ch => String(ch.index));
+        const gridChannelKeys = ChannelCache.grid.map(ch => String(ch.index));
         
         Object.keys(consumptionData).forEach(period => {
             aggregated[period] = {};
@@ -1290,11 +1421,47 @@
     // Check if grouping is enabled (any two non-grid channels share the same groupLabel)
     function isGroupingEnabled() {
         if (!channelData || !Array.isArray(channelData)) return false;
-        const gridChannelIndices = getGridChannels().map(ch => ch.index);
+        const gridChannelIndices = ChannelCache.grid.map(ch => ch.index);
         const nonGridChannels = channelData.filter(ch => !gridChannelIndices.includes(ch.index));
         const groupLabels = nonGridChannels.map(ch => ch.groupLabel).filter(Boolean);
         // Check if any groupLabel appears more than once
         return groupLabels.length !== new Set(groupLabels).size;
+    }
+    
+    // ============================================================================
+    // UTILITY FUNCTIONS - Shared helpers to eliminate code duplication
+    // ============================================================================
+    
+    /**
+     * Calculate "Other" consumption for a period's data
+     * Other = Grid import - sum of all tracked load channels
+     * @param {Object} periodData - { channelIndex: consumptionValue }
+     * @param {Set} excludeFromOther - Set of channel indices to exclude (grid, PV, battery)
+     * @param {number} gridChannelIndex - The primary grid channel index
+     * @returns {number|null} - Other consumption value or null if not applicable
+     */
+    function calculateOtherConsumption(periodData, excludeFromOther, gridChannelIndex) {
+        const totalConsumption = periodData[gridChannelIndex] || 0;
+        let trackedLoadConsumption = 0;
+        
+        Object.keys(periodData).forEach(channel => {
+            if (!excludeFromOther.has(channel)) {
+                trackedLoadConsumption += periodData[channel];
+            }
+        });
+        
+        return totalConsumption - trackedLoadConsumption;  // Allow negative values
+    }
+    
+    /**
+     * Check if there are load sub-channels (channels other than grid/PV/battery)
+     * @param {Object|Array} channels - Object keys or array to check
+     * @param {Set} excludeFromOther - Set of channel indices to exclude
+     * @returns {boolean}
+     */
+    function hasLoadSubChannels(channels, excludeFromOther) {
+        const channelKeys = Array.isArray(channels) ? channels : Object.keys(channels);
+        return channelKeys.some(ch => !excludeFromOther.has(String(ch)));
     }
 
     // Function to decompress gzip data
@@ -1382,6 +1549,54 @@
             return null;
         }
     }
+    
+    // ============================================================================
+    // UNIFIED CSV LOADING - Single function to handle all archive loading with caching
+    // ============================================================================
+    
+    /**
+     * Load archive data with multi-level caching (memory -> localStorage -> fetch)
+     * @param {string} type - 'monthly' or 'yearly'
+     * @param {string} key - The period key (YYYY-MM or YYYY)
+     * @returns {Promise<string>} - CSV data
+     */
+    async function loadArchiveWithCache(type, key) {
+        // Try memory cache first
+        if (archiveCache[type][key]) {
+            return archiveCache[type][key];
+        }
+        
+        // Try localStorage
+        const cacheKey = `${type}_${key}`;
+        const isCompleted = type === 'monthly' ? isCompletedMonth(key) : isCompletedYear(key);
+        let data = loadFromLocalCache(cacheKey, isCompleted);
+        
+        if (data) {
+            archiveCache[type][key] = data;
+            return data;
+        }
+        
+        // Fetch from server
+        const filename = `energy/${type}/${key}.csv.gz`;
+        data = await decompressGzipFile(filename);
+        archiveCache[type][key] = data;
+        saveToLocalCache(cacheKey, data);
+        return data;
+    }
+    
+    /**
+     * Filter CSV data by a date prefix
+     * @param {string} csvText - Full CSV text
+     * @param {string} prefix - Date prefix to filter by
+     * @returns {string|null} - Filtered CSV or null if no matches
+     */
+    function filterCsvByPrefix(csvText, prefix) {
+        const lines = csvText.trim().split('\n');
+        const header = lines[0];
+        const dataLines = lines.slice(1).filter(line => line.startsWith(prefix));
+        if (dataLines.length === 0) return null;
+        return header + '\n' + dataLines.join('\n');
+    }
 
     // Function to load daily CSV data (compressed or uncompressed)
     // Smart lookup: daily folder (if file exists) -> monthly archive -> yearly archive
@@ -1391,7 +1606,7 @@
             const csvFilename = `energy/daily/${date}.csv`;
             const gzFilename = `energy/daily/${date}.csv.gz`;
             
-            // First we try the uncompressed file (which should be the only one present)
+            // First try the uncompressed file (which should be the only one present)
             try {
                 const response = await energyApi.apiCall(`files/${encodeURIComponent(csvFilename)}`, { method: 'GET' });
                 if (response.ok) return await response.text();
@@ -1403,138 +1618,47 @@
             } catch (e) { /* continue */ }
         }
         
-        // Try monthly archive - use memory cache, then localStorage, then fetch
+        // Try monthly archive
         const yearMonth = date.substring(0, 7);
-        let monthlyData = archiveCache.monthly[yearMonth];
-        if (!monthlyData) {
-            // Try localStorage
-            monthlyData = loadFromLocalCache('monthly_' + yearMonth, isCompletedMonth(yearMonth));
-            if (monthlyData) {
-                archiveCache.monthly[yearMonth] = monthlyData;
-            } else {
-                try {
-                    monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
-                    archiveCache.monthly[yearMonth] = monthlyData;
-                    saveToLocalCache('monthly_' + yearMonth, monthlyData);
-                } catch (e) { /* continue */ }
-            }
-        }
-        if (monthlyData) {
-            const filtered = filterCsvByDate(monthlyData, date);
+        try {
+            const monthlyData = await loadArchiveWithCache('monthly', yearMonth);
+            const filtered = filterCsvByPrefix(monthlyData, date);
             if (filtered) return filtered;
-        }
+        } catch (e) { /* continue */ }
         
-        // Try yearly archive - use memory cache, then localStorage, then fetch
+        // Try yearly archive
         const year = date.substring(0, 4);
-        let yearlyData = archiveCache.yearly[year];
-        if (!yearlyData) {
-            // Try localStorage
-            yearlyData = loadFromLocalCache('yearly_' + year, isCompletedYear(year));
-            if (yearlyData) {
-                archiveCache.yearly[year] = yearlyData;
-            } else {
-                try {
-                    yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
-                    archiveCache.yearly[year] = yearlyData;
-                    saveToLocalCache('yearly_' + year, yearlyData);
-                } catch (e) { /* continue */ }
-            }
-        }
-        if (yearlyData) {
-            const filtered = filterCsvByDate(yearlyData, date);
+        try {
+            const yearlyData = await loadArchiveWithCache('yearly', year);
+            const filtered = filterCsvByPrefix(yearlyData, date);
             if (filtered) return filtered;
-        }
+        } catch (e) { /* continue */ }
         
         throw new Error(`No CSV data found for date ${date}`);
-    }
-    
-    // Helper function to filter CSV data by date prefix
-    function filterCsvByDate(csvText, datePrefix) {
-        const lines = csvText.trim().split('\n');
-        const header = lines[0];
-        const dataLines = lines.slice(1).filter(line => line.startsWith(datePrefix));
-        if (dataLines.length === 0) return null;
-        return header + '\n' + dataLines.join('\n');
     }
 
     // Function to load monthly consolidated CSV data
     // Smart lookup: monthly archive -> yearly archive (with caching)
     async function loadMonthlyCsvData(yearMonth) {
-        // Try memory cache first
-        let monthlyData = archiveCache.monthly[yearMonth];
-        if (monthlyData) return monthlyData;
-        
-        // Try localStorage
-        monthlyData = loadFromLocalCache('monthly_' + yearMonth, isCompletedMonth(yearMonth));
-        if (monthlyData) {
-            archiveCache.monthly[yearMonth] = monthlyData;
-            return monthlyData;
-        }
-        
-        // Fetch from server
+        // Try monthly archive first
         try {
-            monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
-            archiveCache.monthly[yearMonth] = monthlyData;
-            saveToLocalCache('monthly_' + yearMonth, monthlyData);
-            return monthlyData;
+            return await loadArchiveWithCache('monthly', yearMonth);
         } catch (e) { /* continue to yearly */ }
         
         // Try yearly archive
         const year = yearMonth.substring(0, 4);
-        let yearlyData = archiveCache.yearly[year];
-        if (!yearlyData) {
-            yearlyData = loadFromLocalCache('yearly_' + year, isCompletedYear(year));
-            if (yearlyData) {
-                archiveCache.yearly[year] = yearlyData;
-            } else {
-                try {
-                    yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
-                    archiveCache.yearly[year] = yearlyData;
-                    saveToLocalCache('yearly_' + year, yearlyData);
-                } catch (e) { /* continue */ }
-            }
-        }
-        if (yearlyData) {
-            const filtered = filterCsvByMonth(yearlyData, yearMonth);
+        try {
+            const yearlyData = await loadArchiveWithCache('yearly', year);
+            const filtered = filterCsvByPrefix(yearlyData, yearMonth);
             if (filtered) return filtered;
-        }
+        } catch (e) { /* continue */ }
         
         throw new Error(`No CSV data found for month ${yearMonth}`);
-    }
-    
-    // Helper function to filter CSV data by month prefix
-    function filterCsvByMonth(csvText, monthPrefix) {
-        const lines = csvText.trim().split('\n');
-        const header = lines[0];
-        const dataLines = lines.slice(1).filter(line => line.startsWith(monthPrefix));
-        if (dataLines.length === 0) return null;
-        return header + '\n' + dataLines.join('\n');
     }
 
     // Function to load yearly consolidated CSV data
     async function loadYearlyCsvData(year) {
-        // Try memory cache first
-        let yearlyData = archiveCache.yearly[year];
-        if (yearlyData) return yearlyData;
-        
-        // Try localStorage
-        yearlyData = loadFromLocalCache('yearly_' + year, isCompletedYear(year));
-        if (yearlyData) {
-            archiveCache.yearly[year] = yearlyData;
-            return yearlyData;
-        }
-        
-        // Fetch from server
-        try {
-            const gzFilename = `energy/yearly/${year}.csv.gz`;
-            yearlyData = await decompressGzipFile(gzFilename);
-            archiveCache.yearly[year] = yearlyData;
-            saveToLocalCache('yearly_' + year, yearlyData);
-            return yearlyData;
-        } catch (error) {
-            console.error(`Error loading yearly CSV data for ${year}:`, error);
-            throw error;
-        }
+        return await loadArchiveWithCache('yearly', year);
     }
 
     // Initialize page
@@ -1545,6 +1669,9 @@
                 energyApi.getChannelConfig(),
                 energyApi.getMeterValues()
             ]);
+            
+            // Invalidate channel cache since we just loaded fresh data
+            ChannelCache.invalidate();
 
             // Update real-time displays IMMEDIATELY - don't wait for charts
             updateMeterData();
@@ -2199,24 +2326,13 @@
             }
         });
         
-        // Add "Other" consumption (grid channel minus sum of load channels only)
-        // Only process hours 00-23 of the current day
-        // Exclude grid, PV and battery channels from "Other" calculation
-        const gridChannels = getGridChannels();
-        const gridChannelIndex = gridChannels.length > 0 ? gridChannels[0].index : 0;
-        const gridChannelKey = String(gridChannelIndex);
-        const productionChannels = getProductionChannels();
-        const batteryChannels = getBatteryChannels();
-        const gridIndices = gridChannels.map(ch => String(ch.index));
-        const productionIndices = productionChannels.map(ch => String(ch.index));
-        const batteryIndices = batteryChannels.map(ch => String(ch.index));
-        const excludeFromOther = new Set([...gridIndices, ...productionIndices, ...batteryIndices]);
+        // Use cached channel classifications for efficiency
+        const excludeFromOther = ChannelCache.excludeFromOther;
+        const gridChannelIndex = ChannelCache.primaryGridIndex;
+        const hasGridChannel = ChannelCache.hasGrid;
         
         // Check if there are load sub-channels (exclude grid, PV, battery)
-        const hasLoadSubChannels = Object.keys(channelSequences).some(ch => !excludeFromOther.has(ch));
-        
-        // Only compute "Other" if we have a grid channel to establish total consumption
-        const hasGridChannel = gridChannels.length > 0;
+        const hasLoads = hasLoadSubChannels(channelSequences, excludeFromOther);
         
         // Save raw data BEFORE modifying consumption object
         const rawHourlyImport = {};
@@ -2229,27 +2345,21 @@
             }
         });
         
+        // Process consumption: add "Other" and remove excluded channels
         Object.keys(consumption).forEach(hour => {
-            // Skip hours outside the current day (e.g., hour "00" of next day)
             const hourNum = parseInt(hour);
             if (hourNum < 0 || hourNum > 23) return;
             
-            const totalConsumption = consumption[hour][gridChannelIndex] || 0;
-            let trackedLoadConsumption = 0;
-            
-            // Only sum load channels (exclude grid, PV, battery)
-            Object.keys(consumption[hour]).forEach(channel => {
-                if (!excludeFromOther.has(channel)) {
-                    trackedLoadConsumption += consumption[hour][channel];
-                }
-            });
-            
-            // Only add "Other" if we have grid channel and load sub-channels to compare against
-            if (hasGridChannel && hasLoadSubChannels) {
-                consumption[hour]['Other'] = totalConsumption - trackedLoadConsumption; // Allow negative values
+            // Add "Other" if we have grid channel and load sub-channels
+            if (hasGridChannel && hasLoads) {
+                consumption[hour]['Other'] = calculateOtherConsumption(
+                    consumption[hour], 
+                    excludeFromOther, 
+                    gridChannelIndex
+                );
             }
             
-            // Remove grid, PV, and battery channels from chart display (only show loads)
+            // Remove grid, PV, and battery channels from chart display
             excludeFromOther.forEach(ch => delete consumption[hour][ch]);
         });
         
@@ -2319,39 +2429,22 @@
         const totalConsumption = { ...rawConsumption };
         const totalExported = { ...rawExported };
         
-        // Add "Other" consumption only if there are load sub-channels
-        // Exclude grid, PV and battery channels from "Other" calculation
-        const gridChannels = getGridChannels();
-        const gridChannelIndex = gridChannels.length > 0 ? gridChannels[0].index : 0;
-        const gridChannelKey = String(gridChannelIndex);
-        const productionChannels = getProductionChannels();
-        const batteryChannels = getBatteryChannels();
-        const gridIndices = gridChannels.map(ch => String(ch.index));
-        const productionIndices = productionChannels.map(ch => String(ch.index));
-        const batteryIndices = batteryChannels.map(ch => String(ch.index));
-        const excludeFromOther = new Set([...gridIndices, ...productionIndices, ...batteryIndices]);
+        // Use cached channel classifications for efficiency
+        const excludeFromOther = ChannelCache.excludeFromOther;
+        const gridChannelIndex = ChannelCache.primaryGridIndex;
+        const hasGridChannel = ChannelCache.hasGrid;
+        const hasLoads = hasLoadSubChannels(totalConsumption, excludeFromOther);
         
-        // Check if there are load sub-channels (exclude grid, PV, battery)
-        const hasLoadSubChannels = Object.keys(totalConsumption).some(ch => !excludeFromOther.has(ch));
-        
-        // Only compute "Other" if we have a grid channel to establish total consumption
-        const hasGridChannel = gridChannels.length > 0;
-        
-        if (hasGridChannel && totalConsumption[gridChannelIndex] && hasLoadSubChannels) {
-            const totalHouseConsumption = totalConsumption[gridChannelIndex];
-            let trackedLoadConsumption = 0;
-            
-            // Only sum load channels (exclude grid, PV, battery)
-            Object.keys(totalConsumption).forEach(channel => {
-                if (!excludeFromOther.has(channel)) {
-                    trackedLoadConsumption += totalConsumption[channel];
-                }
-            });
-            
-            totalConsumption['Other'] = totalHouseConsumption - trackedLoadConsumption; // Allow negative values
+        // Add "Other" if we have grid channel and load sub-channels
+        if (hasGridChannel && totalConsumption[gridChannelIndex] && hasLoads) {
+            totalConsumption['Other'] = calculateOtherConsumption(
+                totalConsumption, 
+                excludeFromOther, 
+                gridChannelIndex
+            );
         }
         
-        // Remove grid, PV, and battery channels from chart display (only show loads)
+        // Remove grid, PV, and battery channels from chart display
         excludeFromOther.forEach(ch => delete totalConsumption[ch]);
         
         return { 
@@ -3292,51 +3385,77 @@
         // All meter data display is now handled through the energy flow visualization
         // No separate channel boxes to update
     }
-
-    function showLoadingMessage() {
-        document.getElementById("consumption-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">📊 Loading energy data...</div>';
-        document.getElementById("balance-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🔋 Loading energy data...</div>';
-    }
-
-    function showNoDataMessage() {
-        document.getElementById("consumption-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">📊 No energy data available.<br><br>Energy tracking files will appear here once data collection begins.</div>';
-        document.getElementById("balance-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🔋 No energy data available.</div>';
-    }
-
-    function showErrorMessage(message) {
-        document.getElementById("consumption-chart").innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ ${message}</div>`;
-        document.getElementById("balance-chart").innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ ${message}</div>`;
-    }
-
-    function restoreChartCanvases() {
-        // Restore balance chart (with loading state visible)
-        const balanceChartDiv = document.getElementById("balance-chart");
-        if (balanceChartDiv) {
-            balanceChartDiv.innerHTML = `
-                <div class="chart-loading">🔋 Calculating energy flows...</div>
-                <canvas id="balance-chart-canvas" style="display: none;"></canvas>
-                <button id="download-balance-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px; display: none;">
-                    <i class="fas fa-download"></i>
-                </button>
-            `;
-            // Preserve visibility based on current chart type
-            balanceChartDiv.style.display = currentChartType === 'balance' ? 'block' : 'none';
+    
+    // ============================================================================
+    // CHART MESSAGE HELPERS - Consolidated functions for chart status display
+    // ============================================================================
+    
+    // Chart container configuration for template-based restoration
+    const CHART_CONFIGS = {
+        consumption: {
+            id: 'consumption-chart',
+            canvasId: 'consumption-chart-canvas',
+            downloadId: 'download-csv',
+            loadingEmoji: '📊',
+            loadingText: 'Crunching the numbers...',
+            noDataText: 'No energy data available.<br><br>Energy tracking files will appear here once data collection begins.'
+        },
+        balance: {
+            id: 'balance-chart',
+            canvasId: 'balance-chart-canvas',
+            downloadId: 'download-balance-csv',
+            loadingEmoji: '🔋',
+            loadingText: 'Calculating energy flows...',
+            noDataText: 'No energy data available.'
         }
-        
-        // Restore consumption chart (with loading state visible)
-        const consumptionChartDiv = document.getElementById("consumption-chart");
-        consumptionChartDiv.innerHTML = `
-            <div class="chart-loading">📊 Crunching the numbers...</div>
-            <canvas id="consumption-chart-canvas" style="display: none;"></canvas>
-            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px; display: none;">
+    };
+    
+    // Generate chart HTML from config
+    function generateChartHtml(config) {
+        return `
+            <div class="chart-loading">${config.loadingEmoji} ${config.loadingText}</div>
+            <canvas id="${config.canvasId}" style="display: none;"></canvas>
+            <button id="${config.downloadId}" class="tooltip" style="position: absolute; top: 2px; right: 2px; display: none;">
                 <i class="fas fa-download"></i>
             </button>
         `;
-        // Preserve visibility based on current chart type
-        consumptionChartDiv.style.display = currentChartType === 'consumption' ? 'block' : 'none';
-        
-        // Note: Total pie chart is not restored here since it should only load once on page initialization
-        // and represents lifetime data that doesn't need to be redrawn during chart interactions
+    }
+    
+    // Set message in both chart containers
+    function setChartMessage(emoji, message, color = '#666') {
+        Object.values(CHART_CONFIGS).forEach(config => {
+            const el = document.getElementById(config.id);
+            if (el) {
+                el.innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: ${color};">${emoji} ${message}</div>`;
+            }
+        });
+    }
+
+    function showLoadingMessage() {
+        setChartMessage('📊', 'Loading energy data...');
+    }
+
+    function showNoDataMessage() {
+        Object.values(CHART_CONFIGS).forEach(config => {
+            const el = document.getElementById(config.id);
+            if (el) {
+                el.innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">${config.loadingEmoji} ${config.noDataText}</div>`;
+            }
+        });
+    }
+
+    function showErrorMessage(message) {
+        setChartMessage('❌', message, '#d32f2f');
+    }
+
+    function restoreChartCanvases() {
+        Object.entries(CHART_CONFIGS).forEach(([type, config]) => {
+            const chartDiv = document.getElementById(config.id);
+            if (chartDiv) {
+                chartDiv.innerHTML = generateChartHtml(config);
+                chartDiv.style.display = currentChartType === type ? 'block' : 'none';
+            }
+        });
     }
 
     async function fetchFirmwareUpdateInfo() {
