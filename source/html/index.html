@@ -248,6 +248,17 @@
             height: 100% !important; /* Force canvas to fill container */
         }
         
+        #balance-chart {
+            position: relative;
+            width: 100%;
+            height: 400px; /* Match consumption chart height */
+        }
+        
+        #balance-chart canvas {
+            width: 100% !important;
+            height: 100% !important; /* Force canvas to fill container */
+        }
+        
         /* Responsive design */
         @media (max-width: 768px) {
             .header {
@@ -346,11 +357,6 @@
                 font-size: 14px;
             }
             
-            #pie-chart-canvas,
-            #total-pie-chart-canvas {
-                max-height: 300px !important;
-            }
-            
             .tooltip-container .tooltip-text {
                 width: 200px;
                 margin-left: -100px;
@@ -433,11 +439,6 @@
             
             .chart-total {
                 font-size: 13px;
-            }
-            
-            #pie-chart-canvas,
-            #total-pie-chart-canvas {
-                max-height: 250px !important;
             }
             
             .tooltip-container .tooltip-text {
@@ -720,6 +721,20 @@
                 font-size: 16px;
             }
         }
+        
+        /* Chart loading state */
+        .chart-loading {
+            text-align: center;
+            padding: 60px 20px;
+            font-size: 18px;
+            color: #888;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
     </style>
 </head>
 
@@ -740,7 +755,7 @@
         <div class="energy-flow-container">
             <div id="energy-flow-diagram" class="energy-flow-diagram">
                 <!-- SVG for connection lines - viewBox will be resized dynamically -->
-                <svg id="energy-flow-svg" class="energy-flow-lines" viewBox="0 0 300 300" preserveAspectRatio="xMinYMid meet">
+                <svg id="energy-flow-svg" class="energy-flow-lines" viewBox="0 0 300 300" preserveAspectRatio="xMinYMid meet" style="opacity: 0;">
                     <!-- Solar to center -->
                     <path id="line-solar" class="flow-line flow-solar" d="M 150 70 L 150 130" />
                     <!-- Grid to center -->
@@ -750,34 +765,34 @@
                     <!-- Battery to center -->
                     <path id="line-battery" class="flow-line flow-battery" d="M 150 170 L 150 230" />
                     <!-- Center dot -->
-                    <circle cx="150" cy="150" r="8" fill="#666" />
+                    <circle id="center-dot" cx="150" cy="150" r="8" fill="#666" />
                     <!-- Load lines will be dynamically added here -->
                     <g id="load-lines"></g>
                 </svg>
                 
                 <!-- Solar/PV Node -->
-                <div id="node-solar" class="energy-node node-solar" style="display: none;">
+                <div id="node-solar" class="energy-node node-solar" style="display: none; opacity: 0;">
                     <div class="energy-node-icon">☀️</div>
                     <div class="energy-node-label">Solar</div>
                     <div class="energy-node-value" id="solar-power">0 W</div>
                 </div>
                 
                 <!-- Grid Node -->
-                <div id="node-grid" class="energy-node node-grid">
+                <div id="node-grid" class="energy-node node-grid" style="opacity: 0;">
                     <div class="energy-node-icon">🔌</div>
                     <div class="energy-node-label">Grid</div>
                     <div class="energy-node-value" id="grid-power">0 W</div>
                 </div>
                 
                 <!-- Home Node -->
-                <div id="node-home" class="energy-node node-home">
+                <div id="node-home" class="energy-node node-home" style="opacity: 0;">
                     <div class="energy-node-icon">🏠</div>
                     <div class="energy-node-label">Home</div>
                     <div class="energy-node-value" id="home-power">0 W</div>
                 </div>
                 
                 <!-- Battery Node -->
-                <div id="node-battery" class="energy-node node-battery" style="display: none;">
+                <div id="node-battery" class="energy-node node-battery" style="display: none; opacity: 0;">
                     <div class="energy-node-icon">🔋</div>
                     <div class="energy-node-label">Battery</div>
                     <div class="energy-node-value" id="battery-power">0 W</div>
@@ -796,12 +811,16 @@
 
     <div class="section-box">
         <div class="chart-header">
-            <h3>Energy Consumption</h3>
+            <h3 id="main-chart-title">Energy Consumption</h3>
             <div class="chart-controls">
+                <div class="view-selector" id="chart-type-selector" style="display: none;">
+                    <button id="consumption-view" class="view-toggle active">Consumption</button>
+                    <button id="balance-view" class="view-toggle">Balance</button>
+                </div>
                 <div class="view-selector">
-                    <button id="daily-view" class="view-toggle active">Daily View</button>
-                    <button id="monthly-view" class="view-toggle">Monthly View</button>
-                    <button id="yearly-view" class="view-toggle">Yearly View</button>
+                    <button id="daily-view" class="view-toggle active">Daily</button>
+                    <button id="monthly-view" class="view-toggle">Monthly</button>
+                    <button id="yearly-view" class="view-toggle">Yearly</button>
                 </div>
                 <div class="date-selector">
                     <input type="date" id="date-picker" />
@@ -813,8 +832,16 @@
             </div>
         </div>
         <div id="consumption-chart" style="position: relative;">
-            <canvas id="consumption-chart-canvas"></canvas>
-            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
+            <div class="chart-loading">📊 Crunching the numbers...</div>
+            <canvas id="consumption-chart-canvas" style="display: none;"></canvas>
+            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px; display: none;">
+                <i class="fas fa-download"></i>
+            </button>
+        </div>
+        <div id="balance-chart" style="position: relative; display: none;">
+            <div class="chart-loading">🔋 Calculating energy flows...</div>
+            <canvas id="balance-chart-canvas" style="display: none;"></canvas>
+            <button id="download-balance-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px; display: none;">
                 <i class="fas fa-download"></i>
             </button>
         </div>
@@ -856,35 +883,62 @@
         </div>
     </div>
 
-    <div class="section-box">
-        <div class="chart-header">
-            <h3 id="pie-chart-title">Daily Energy Distribution</h3>
-        </div>
-        <div class="chart-total" id="pie-chart-total">
-            Total: <span class="total-value" id="pie-chart-total-value">0.0 kWh</span>
-        </div>
-        <div id="pie-chart">
-            <canvas id="pie-chart-canvas"></canvas>
-        </div>
-    </div>
-
-    <div class="section-box">
-        <div class="chart-header">
-            <h3>Total Energy Distribution (Since Installation)</h3>
-        </div>
-        <div class="chart-total" id="total-pie-chart-total">
-            Lifetime Total: <span class="total-value" id="total-pie-chart-total-value">0.0 kWh</span>
-        </div>
-        <div id="total-pie-chart">
-            <canvas id="total-pie-chart-canvas"></canvas>
-        </div>
-    </div>
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 </body>
 
 <script>
+    // ============================================================================
+    // CONSTANTS - Centralized configuration for easy adjustment
+    // ============================================================================
+    const CONFIG = {
+        // Sparkline history
+        MAX_HISTORY: 60,
+        SPARKLINE_ALPHA: 0.7,  // Exponential filter coefficient (0-1, higher = more responsive)
+        SPARKLINE_CANVAS_WIDTH: 120,
+        SPARKLINE_CANVAS_HEIGHT: 40,
+        
+        // Flow speed thresholds (watts)
+        FLOW_SPEED_THRESHOLDS: [
+            { watts: 10, duration: '2s' },
+            { watts: 100, duration: '1.5s' },
+            { watts: 500, duration: '1s' },
+            { watts: 1000, duration: '0.7s' },
+            { watts: 2000, duration: '0.5s' },
+            { watts: 5000, duration: '0.4s' },
+            { watts: Infinity, duration: '0.3s' }
+        ],
+        
+        // Load color thresholds (ratio of power to max power)
+        LOAD_COLOR_THRESHOLDS: [
+            { ratio: 0.3, color: '#4CAF50' },  // Green - low
+            { ratio: 0.6, color: '#FF9800' },  // Orange - medium
+            { ratio: Infinity, color: '#f44336' }  // Red - high
+        ],
+        
+        // Active line threshold (watts)
+        ACTIVE_LINE_THRESHOLD: 10,
+        
+        // Other load hysteresis (consecutive measurements above threshold to enable/disable)
+        OTHER_HYSTERESIS_THRESHOLD: 10,  // watts
+        OTHER_HYSTERESIS_COUNT: 3,       // consecutive measurements
+        
+        // Other load color
+        OTHER_LOAD_COLOR: '#888',        // grey
+        
+        // Tooltip positioning
+        TOOLTIP_HEIGHT: 50,
+        TOOLTIP_X_OFFSET: 60,
+        
+        // Node colors
+        NODE_COLORS: {
+            solar: '#FF9800',
+            grid: '#2196F3',
+            battery: '#9C27B0',
+            home: '#4CAF50'
+        }
+    };
+
     // Perceptually-optimized colors using HSL spacing for maximum distinction
     // Hues distributed evenly around color wheel, high saturation and varied lightness for contrast
     var colors = [
@@ -917,28 +971,31 @@
     var currentMonth = null;
     var currentYear = null;
     var currentView = 'daily'; // 'daily', 'monthly', or 'yearly'
+    var currentChartType = 'consumption'; // 'consumption' or 'balance'
     var consumptionChart = null;
-    var pieChart = null;
-    var totalPieChart = null;
+    var balanceChart = null;
+    var hasBalanceCapability = false; // Set true if PV or battery configured
     var meterDataUpdateInProgress = false;
 
     // Sparkline history tracking (max 60 points = ~60 seconds of data)
-    const MAX_HISTORY = 60;
     const flowHistory = { solar: [], grid: [], battery: [], home: [] };
+    const filteredPowers = { solar: null, grid: null, battery: null, home: null };
     const loadHistory = {};
+    const loadFilteredPowers = {};
+    
+    // Other load hysteresis tracking
+    let otherLoadCounter = 0;  // counts consecutive high measurements
+    let otherLoadShown = false;  // current state
     
     // Sparkline tooltip elements (initialized after DOM ready)
     let sparklineTooltip = null;
     let sparklineCanvas = null;
     let sparklineCtx = null;
+    let sparklineAnimationId = null;  // Animation frame for real-time updates
+    let activeSparklineNodeType = null;  // Track which node is being hovered
     
     // Node colors for sparklines
-    const nodeColors = {
-        solar: '#FF9800',
-        grid: '#2196F3',
-        battery: '#9C27B0',
-        home: '#4CAF50'
-    };
+    const nodeColors = CONFIG.NODE_COLORS;
     
     // Draw sparkline
     function drawSparkline(data, color) {
@@ -957,8 +1014,12 @@
             return;
         }
         
-        const min = Math.min(...data);
-        const max = Math.max(...data);
+        const dataMin = Math.min(...data);
+        const dataMax = Math.max(...data);
+        
+        // Set min to 0 if all values are positive, otherwise use data min
+        const min = dataMin >= 0 ? 0 : dataMin;
+        const max = dataMax;
         const range = max - min || 1;
         
         sparklineCtx.beginPath();
@@ -983,56 +1044,85 @@
         sparklineCtx.fillText(formatPower(min), width - 2, height - 2);
     }
     
-    // Show sparkline tooltip
+    // Show sparkline tooltip with real-time updates
     function showSparkline(nodeType, element, isLoad = false) {
         if (!sparklineTooltip) return;
-        let data, color;
         
-        if (isLoad) {
-            data = loadHistory[nodeType] || [];
-            color = nodeType === 'other' ? '#888' : '#4CAF50';
-        } else {
-            data = flowHistory[nodeType];
-            color = nodeColors[nodeType];
-        }
-        
-        drawSparkline(data, color);
+        activeSparklineNodeType = { nodeType, isLoad, element };
         
         // Position tooltip with smart positioning
         const rect = element.getBoundingClientRect();
         const containerRect = document.getElementById('energy-flow-diagram').getBoundingClientRect();
-        const tooltipHeight = 50;
         
-        let top = rect.top - containerRect.top - tooltipHeight - 10;
+        let top = rect.top - containerRect.top - CONFIG.TOOLTIP_HEIGHT - 10;
         if (top < 0) {
             top = rect.top - containerRect.top + rect.height + 10;
         }
         
-        sparklineTooltip.style.left = (rect.left - containerRect.left + rect.width/2 - 60) + 'px';
+        sparklineTooltip.style.left = (rect.left - containerRect.left + rect.width/2 - CONFIG.TOOLTIP_X_OFFSET) + 'px';
         sparklineTooltip.style.top = top + 'px';
         sparklineTooltip.classList.add('visible');
+        
+        // Start real-time update animation
+        if (sparklineAnimationId) cancelAnimationFrame(sparklineAnimationId);
+        function updateSparklineFrame() {
+            if (activeSparklineNodeType) {
+                let data, color;
+                if (isLoad) {
+                    data = loadHistory[nodeType] || [];
+                    color = nodeType === 'other' ? '#888' : '#4CAF50';
+                } else {
+                    data = flowHistory[nodeType];
+                    color = nodeColors[nodeType];
+                }
+                drawSparkline(data, color);
+                sparklineAnimationId = requestAnimationFrame(updateSparklineFrame);
+            }
+        }
+        updateSparklineFrame();
     }
     
     // Hide sparkline tooltip
     function hideSparkline() {
         if (sparklineTooltip) sparklineTooltip.classList.remove('visible');
+        activeSparklineNodeType = null;
+        if (sparklineAnimationId) {
+            cancelAnimationFrame(sparklineAnimationId);
+            sparklineAnimationId = null;
+        }
     }
     
-    // Add history point
+    // Add history point with exponential filtering
     function addToFlowHistory(nodeType, value) {
-        flowHistory[nodeType].push(value);
-        if (flowHistory[nodeType].length > MAX_HISTORY) {
+        // Apply exponential filter
+        if (filteredPowers[nodeType] === null) {
+            filteredPowers[nodeType] = value;
+        } else {
+            filteredPowers[nodeType] = CONFIG.SPARKLINE_ALPHA * value + (1 - CONFIG.SPARKLINE_ALPHA) * filteredPowers[nodeType];
+        }
+        
+        flowHistory[nodeType].push(filteredPowers[nodeType]);
+        if (flowHistory[nodeType].length > CONFIG.MAX_HISTORY) {
             flowHistory[nodeType].shift();
         }
     }
     
-    // Add load history point
+    // Add load history point with exponential filtering
     function addToLoadHistory(loadKey, value) {
         if (!loadHistory[loadKey]) {
             loadHistory[loadKey] = [];
+            loadFilteredPowers[loadKey] = null;
         }
-        loadHistory[loadKey].push(value);
-        if (loadHistory[loadKey].length > MAX_HISTORY) {
+        
+        // Apply exponential filter
+        if (loadFilteredPowers[loadKey] === null) {
+            loadFilteredPowers[loadKey] = value;
+        } else {
+            loadFilteredPowers[loadKey] = CONFIG.SPARKLINE_ALPHA * value + (1 - CONFIG.SPARKLINE_ALPHA) * loadFilteredPowers[loadKey];
+        }
+        
+        loadHistory[loadKey].push(loadFilteredPowers[loadKey]);
+        if (loadHistory[loadKey].length > CONFIG.MAX_HISTORY) {
             loadHistory[loadKey].shift();
         }
     }
@@ -1069,15 +1159,6 @@
             node.addEventListener('mouseleave', hideSparkline);
         });
     }
-    var availableYears = [];
-    var currentDate = null;
-    var currentMonth = null;
-    var currentYear = null;
-    var currentView = 'daily'; // 'daily', 'monthly', or 'yearly'
-    var consumptionChart = null;
-    var pieChart = null;
-    var totalPieChart = null;
-    var meterDataUpdateInProgress = false;
 
     // Get channels that are marked as grid meters
     function getGridChannels() {
@@ -1244,6 +1325,63 @@
         yearly: {}    // year -> csvData
     };
     var dailyFilesSet = new Set(); // Set of dates available in daily folder
+    
+    // localStorage cache configuration
+    const CACHE_CONFIG = {
+        PREFIX: 'energyme_csv_',
+        COMPLETED_TTL_MS: 30 * 24 * 60 * 60 * 1000,  // 1 month for completed archives
+        CURRENT_MONTH_TTL_MS: 60 * 60 * 1000         // 1 hour for current month
+    };
+    
+    // Get current year-month string
+    function getCurrentYearMonth() {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+    
+    // Check if a year-month is in the past (completed)
+    function isCompletedMonth(yearMonth) {
+        return yearMonth < getCurrentYearMonth();
+    }
+    
+    // Check if a year is completed
+    function isCompletedYear(year) {
+        return parseInt(year) < new Date().getFullYear();
+    }
+    
+    // Save to localStorage with timestamp
+    function saveToLocalCache(key, data) {
+        try {
+            const cacheEntry = {
+                data: data,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(CACHE_CONFIG.PREFIX + key, JSON.stringify(cacheEntry));
+        } catch (e) {
+            console.warn('Failed to save to localStorage:', e);
+        }
+    }
+    
+    // Load from localStorage with TTL check
+    function loadFromLocalCache(key, isCompleted) {
+        try {
+            const cached = localStorage.getItem(CACHE_CONFIG.PREFIX + key);
+            if (!cached) return null;
+            
+            const entry = JSON.parse(cached);
+            const age = Date.now() - entry.timestamp;
+            const ttl = isCompleted ? CACHE_CONFIG.COMPLETED_TTL_MS : CACHE_CONFIG.CURRENT_MONTH_TTL_MS;
+            
+            if (age > ttl) {
+                localStorage.removeItem(CACHE_CONFIG.PREFIX + key);
+                return null;
+            }
+            
+            return entry.data;
+        } catch (e) {
+            return null;
+        }
+    }
 
     // Function to load daily CSV data (compressed or uncompressed)
     // Smart lookup: daily folder (if file exists) -> monthly archive -> yearly archive
@@ -1265,28 +1403,42 @@
             } catch (e) { /* continue */ }
         }
         
-        // Try monthly archive - use cache if available
+        // Try monthly archive - use memory cache, then localStorage, then fetch
         const yearMonth = date.substring(0, 7);
         let monthlyData = archiveCache.monthly[yearMonth];
         if (!monthlyData) {
-            try {
-                monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
+            // Try localStorage
+            monthlyData = loadFromLocalCache('monthly_' + yearMonth, isCompletedMonth(yearMonth));
+            if (monthlyData) {
                 archiveCache.monthly[yearMonth] = monthlyData;
-            } catch (e) { /* continue */ }
+            } else {
+                try {
+                    monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
+                    archiveCache.monthly[yearMonth] = monthlyData;
+                    saveToLocalCache('monthly_' + yearMonth, monthlyData);
+                } catch (e) { /* continue */ }
+            }
         }
         if (monthlyData) {
             const filtered = filterCsvByDate(monthlyData, date);
             if (filtered) return filtered;
         }
         
-        // Try yearly archive - use cache if available
+        // Try yearly archive - use memory cache, then localStorage, then fetch
         const year = date.substring(0, 4);
         let yearlyData = archiveCache.yearly[year];
         if (!yearlyData) {
-            try {
-                yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
+            // Try localStorage
+            yearlyData = loadFromLocalCache('yearly_' + year, isCompletedYear(year));
+            if (yearlyData) {
                 archiveCache.yearly[year] = yearlyData;
-            } catch (e) { /* continue */ }
+            } else {
+                try {
+                    yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
+                    archiveCache.yearly[year] = yearlyData;
+                    saveToLocalCache('yearly_' + year, yearlyData);
+                } catch (e) { /* continue */ }
+            }
         }
         if (yearlyData) {
             const filtered = filterCsvByDate(yearlyData, date);
@@ -1308,26 +1460,39 @@
     // Function to load monthly consolidated CSV data
     // Smart lookup: monthly archive -> yearly archive (with caching)
     async function loadMonthlyCsvData(yearMonth) {
-        // Try monthly archive - use cache if available
+        // Try memory cache first
         let monthlyData = archiveCache.monthly[yearMonth];
-        if (!monthlyData) {
-            try {
-                monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
-                archiveCache.monthly[yearMonth] = monthlyData;
-                return monthlyData;
-            } catch (e) { /* continue to yearly */ }
-        } else {
+        if (monthlyData) return monthlyData;
+        
+        // Try localStorage
+        monthlyData = loadFromLocalCache('monthly_' + yearMonth, isCompletedMonth(yearMonth));
+        if (monthlyData) {
+            archiveCache.monthly[yearMonth] = monthlyData;
             return monthlyData;
         }
         
-        // Try yearly archive - use cache if available
+        // Fetch from server
+        try {
+            monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
+            archiveCache.monthly[yearMonth] = monthlyData;
+            saveToLocalCache('monthly_' + yearMonth, monthlyData);
+            return monthlyData;
+        } catch (e) { /* continue to yearly */ }
+        
+        // Try yearly archive
         const year = yearMonth.substring(0, 4);
         let yearlyData = archiveCache.yearly[year];
         if (!yearlyData) {
-            try {
-                yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
+            yearlyData = loadFromLocalCache('yearly_' + year, isCompletedYear(year));
+            if (yearlyData) {
                 archiveCache.yearly[year] = yearlyData;
-            } catch (e) { /* continue */ }
+            } else {
+                try {
+                    yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
+                    archiveCache.yearly[year] = yearlyData;
+                    saveToLocalCache('yearly_' + year, yearlyData);
+                } catch (e) { /* continue */ }
+            }
         }
         if (yearlyData) {
             const filtered = filterCsvByMonth(yearlyData, yearMonth);
@@ -1348,9 +1513,24 @@
 
     // Function to load yearly consolidated CSV data
     async function loadYearlyCsvData(year) {
+        // Try memory cache first
+        let yearlyData = archiveCache.yearly[year];
+        if (yearlyData) return yearlyData;
+        
+        // Try localStorage
+        yearlyData = loadFromLocalCache('yearly_' + year, isCompletedYear(year));
+        if (yearlyData) {
+            archiveCache.yearly[year] = yearlyData;
+            return yearlyData;
+        }
+        
+        // Fetch from server
         try {
             const gzFilename = `energy/yearly/${year}.csv.gz`;
-            return await decompressGzipFile(gzFilename);
+            yearlyData = await decompressGzipFile(gzFilename);
+            archiveCache.yearly[year] = yearlyData;
+            saveToLocalCache('yearly_' + year, yearlyData);
+            return yearlyData;
         } catch (error) {
             console.error(`Error loading yearly CSV data for ${year}:`, error);
             throw error;
@@ -1366,9 +1546,27 @@
                 energyApi.getMeterValues()
             ]);
 
-            // Update real-time displays
+            // Update real-time displays IMMEDIATELY - don't wait for charts
             updateMeterData();
 
+            // Load charts in parallel (don't block meter display)
+            loadChartsAsync();
+
+            // Set up event listeners
+            setupEventListeners();
+
+        } catch (error) {
+            console.error('Error initializing page:', error);
+            showErrorMessage('Failed to load energy data');
+        }
+    }
+    
+    async function loadChartsAsync() {
+        try {
+            // Show loading message in energy flow section while loading charts
+            const flowDiagram = document.getElementById('energy-flow-diagram');
+            const loadingDiv = flowDiagram?.querySelector('[data-loading-msg]');
+            
             // Get available energy files
             await loadAvailableDates();
 
@@ -1382,17 +1580,16 @@
                 document.getElementById('year-picker').value = currentYear;
                 updateNavigationButtons();
                 await loadAndDisplayCharts();
-                await updateTotalPieChart();
             } else {
                 showNoDataMessage();
             }
-
-            // Set up event listeners
-            setupEventListeners();
+            
+            // Remove loading message from flow diagram
+            if (loadingDiv) loadingDiv.remove();
 
         } catch (error) {
-            console.error('Error initializing page:', error);
-            showErrorMessage('Failed to load energy data');
+            console.error('Error loading charts:', error);
+            showErrorMessage('Failed to load chart data');
         }
     }
 
@@ -1415,39 +1612,46 @@
                     allYears.add(date.substring(0, 4));
                 });
             
-            // Load monthly archives and extract dates (cache the data)
+            // Load monthly archives - just get list, don't fetch content yet (lazy load)
             const monthlyFiles = await energyApi.getFileList('energy/monthly') || {};
             for (const filename of Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz'))) {
                 const yearMonth = filename.replace('.csv.gz', '');
                 allMonths.add(yearMonth);
                 allYears.add(yearMonth.substring(0, 4));
                 
-                // Extract available dates from monthly archive and cache
-                try {
-                    const csvData = await decompressGzipFile(`energy/monthly/${filename}`);
-                    archiveCache.monthly[yearMonth] = csvData;
-                    extractDatesFromCsv(csvData).forEach(date => allDates.add(date));
-                } catch (e) {
-                    console.warn(`Could not read monthly archive ${filename}:`, e.message);
+                // For available dates: if month is in the past, add all days; if current month, only add days we have
+                const [year, month] = yearMonth.split('-');
+                const now = new Date();
+                const archiveMonth = new Date(parseInt(year), parseInt(month) - 1, 1);
+                const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                
+                if (archiveMonth < currentMonth) {
+                    // Past month - add all days
+                    const daysInMonth = new Date(parseInt(year), parseInt(month), 0).getDate();
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        const dateStr = `${yearMonth}-${String(day).padStart(2, '0')}`;
+                        allDates.add(dateStr);
+                    }
                 }
             }
             
-            // Load yearly archives and extract dates/months (cache the data)
+            // Load yearly archives - just get list, don't fetch content yet (lazy load)
             const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
             for (const filename of Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz'))) {
                 const year = filename.replace('.csv.gz', '');
                 allYears.add(year);
                 
-                // Extract available dates and months from yearly archive and cache
-                try {
-                    const csvData = await decompressGzipFile(`energy/yearly/${filename}`);
-                    archiveCache.yearly[year] = csvData;
-                    extractDatesFromCsv(csvData).forEach(date => {
-                        allDates.add(date);
-                        allMonths.add(date.substring(0, 7));
-                    });
-                } catch (e) {
-                    console.warn(`Could not read yearly archive ${filename}:`, e.message);
+                // For available months: add all 12 months for past years
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                const archiveYear = parseInt(year);
+                
+                if (archiveYear < currentYear) {
+                    // Past year - add all months
+                    for (let month = 1; month <= 12; month++) {
+                        const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+                        allMonths.add(monthStr);
+                    }
                 }
             }
             
@@ -1478,6 +1682,15 @@
     }
 
     function setupEventListeners() {
+        // Chart type toggle (Consumption/Balance)
+        document.getElementById('consumption-view').addEventListener('click', () => {
+            switchChartType('consumption');
+        });
+        
+        document.getElementById('balance-view').addEventListener('click', () => {
+            switchChartType('balance');
+        });
+        
         // View toggle buttons
         document.getElementById('daily-view').addEventListener('click', () => {
             switchView('daily');
@@ -1583,27 +1796,38 @@
         document.getElementById('month-picker').style.display = view === 'monthly' ? 'block' : 'none';
         document.getElementById('year-picker').style.display = view === 'yearly' ? 'block' : 'none';
         
-        // Update chart title
-        const titles = { 'daily': 'Daily Energy Distribution', 'monthly': 'Monthly Energy Distribution', 'yearly': 'Yearly Energy Distribution' };
-        document.getElementById('pie-chart-title').textContent = titles[view];
-        
         updateNavigationButtons();
         loadAndDisplayCharts();
+    }
+    
+    function switchChartType(chartType) {
+        currentChartType = chartType;
+        
+        // Update toggle button states
+        document.getElementById('consumption-view').classList.toggle('active', chartType === 'consumption');
+        document.getElementById('balance-view').classList.toggle('active', chartType === 'balance');
+        
+        // Show/hide appropriate chart containers
+        document.getElementById('consumption-chart').style.display = chartType === 'consumption' ? 'block' : 'none';
+        document.getElementById('balance-chart').style.display = chartType === 'balance' ? 'block' : 'none';
+        
+        // Update main chart title
+        document.getElementById('main-chart-title').textContent = chartType === 'consumption' ? 'Energy Consumption' : 'Energy Balance';
     }
 
     function updateNavigationButtons() {
         if (currentView === 'daily') {
-            const currentIndex = availableDates.indexOf(currentDate);
+            const currentIndex = availableDates.length > 0 ? availableDates.indexOf(currentDate) : -1;
             document.getElementById('prev-period').disabled = currentIndex <= 0;
-            document.getElementById('next-period').disabled = currentIndex >= availableDates.length - 1;
+            document.getElementById('next-period').disabled = currentIndex < 0 || currentIndex >= availableDates.length - 1;
         } else if (currentView === 'monthly') {
-            const currentIndex = availableMonths.indexOf(currentMonth);
+            const currentIndex = availableMonths.length > 0 ? availableMonths.indexOf(currentMonth) : -1;
             document.getElementById('prev-period').disabled = currentIndex <= 0;
-            document.getElementById('next-period').disabled = currentIndex >= availableMonths.length - 1;
+            document.getElementById('next-period').disabled = currentIndex < 0 || currentIndex >= availableMonths.length - 1;
         } else {
-            const currentIndex = availableYears.indexOf(currentYear);
+            const currentIndex = availableYears.length > 0 ? availableYears.indexOf(currentYear) : -1;
             document.getElementById('prev-period').disabled = currentIndex <= 0;
-            document.getElementById('next-period').disabled = currentIndex >= availableYears.length - 1;
+            document.getElementById('next-period').disabled = currentIndex < 0 || currentIndex >= availableYears.length - 1;
         }
     }
 
@@ -1700,8 +1924,8 @@
         
         // Update charts
         updateConsumptionChart(hourlyData.imported, 'daily', hourlyData.exported);
+        updateBalanceChart(hourlyData.rawHourlyImport, 'daily', hourlyData.rawHourlyImport, hourlyData.rawHourlyExport);
         updateEnergyKPIs(totalConsumption.rawImported, totalConsumption.rawExported);
-        updatePieChart(totalConsumption.imported);
         
         // Set up CSV download
         setupCsvDownload(hourlyData.imported, 'daily');
@@ -1742,6 +1966,8 @@
         const monthlyData = {};
         const monthlyRawImported = {};  // For KPIs
         const monthlyRawExported = {};  // For KPIs
+        const dailyRawImport = {};      // For balance chart
+        const dailyRawExport = {};      // For balance chart
         
         // Group by date
         const dataByDate = {};
@@ -1761,6 +1987,10 @@
             if (Object.keys(dailyData.exported).length > 0) {
                 dailyExported[day] = dailyData.exported;
             }
+            
+            // Store raw data for balance chart
+            dailyRawImport[day] = dailyData.rawImported;
+            dailyRawExport[day] = dailyData.rawExported;
             
             // Add to monthly totals (for charts)
             Object.keys(dailyData.imported).forEach(channel => {
@@ -1784,8 +2014,8 @@
         
         // Update charts
         updateConsumptionChart(dailyConsumptions, 'monthly', dailyExported);
+        updateBalanceChart(dailyRawImport, 'monthly', dailyRawImport, dailyRawExport);
         updateEnergyKPIs(monthlyRawImported, monthlyRawExported);
-        updatePieChart(monthlyData);
         
         // Set up CSV download
         setupCsvDownload(dailyConsumptions, 'monthly');
@@ -1840,6 +2070,8 @@
         const yearlyData = {};
         const yearlyRawImported = {};  // For KPIs
         const yearlyRawExported = {};  // For KPIs
+        const monthlyRawImport = {};   // For balance chart
+        const monthlyRawExport = {};   // For balance chart
         
         // Group by month
         const dataByMonth = {};
@@ -1857,6 +2089,10 @@
             if (Object.keys(monthConsumptionData.exported).length > 0) {
                 monthlyExported[month] = monthConsumptionData.exported;
             }
+            
+            // Store raw data for balance chart
+            monthlyRawImport[month] = monthConsumptionData.rawImported;
+            monthlyRawExport[month] = monthConsumptionData.rawExported;
             
             // Add to yearly totals (for charts)
             Object.keys(monthConsumptionData.imported).forEach(channel => {
@@ -1880,8 +2116,8 @@
         
         // Update charts
         updateConsumptionChart(monthlyConsumptions, 'yearly', monthlyExported);
+        updateBalanceChart(monthlyRawImport, 'yearly', monthlyRawImport, monthlyRawExport);
         updateEnergyKPIs(yearlyRawImported, yearlyRawExported);
-        updatePieChart(yearlyData);
         
         // Set up CSV download
         setupCsvDownload(monthlyConsumptions, 'yearly');
@@ -1982,6 +2218,17 @@
         // Only compute "Other" if we have a grid channel to establish total consumption
         const hasGridChannel = gridChannels.length > 0;
         
+        // Save raw data BEFORE modifying consumption object
+        const rawHourlyImport = {};
+        const rawHourlyExport = {};
+        Object.keys(consumption).forEach(hour => {
+            const hourNum = parseInt(hour);
+            if (hourNum >= 0 && hourNum <= 23) {
+                rawHourlyImport[hour] = { ...consumption[hour] };
+                rawHourlyExport[hour] = exportData[hour] ? { ...exportData[hour] } : {};
+            }
+        });
+        
         Object.keys(consumption).forEach(hour => {
             // Skip hours outside the current day (e.g., hour "00" of next day)
             const hourNum = parseInt(hour);
@@ -2002,13 +2249,14 @@
                 consumption[hour]['Other'] = totalConsumption - trackedLoadConsumption; // Allow negative values
             }
             
-            // Remove grid, PV, and battery channels from chart display
+            // Remove grid, PV, and battery channels from chart display (only show loads)
             excludeFromOther.forEach(ch => delete consumption[hour][ch]);
         });
         
         // Filter out any hours outside 00-23 range before returning
         const filteredConsumption = {};
         const filteredExport = {};
+        
         Object.keys(consumption).forEach(hour => {
             const hourNum = parseInt(hour);
             if (hourNum >= 0 && hourNum <= 23) {
@@ -2019,7 +2267,12 @@
             }
         });
         
-        return { imported: filteredConsumption, exported: filteredExport };
+        return { 
+            imported: filteredConsumption, 
+            exported: filteredExport,
+            rawHourlyImport: rawHourlyImport,
+            rawHourlyExport: rawHourlyExport
+        };
     }
 
     function calculateTotalConsumption(energyData) {
@@ -2098,7 +2351,7 @@
             totalConsumption['Other'] = totalHouseConsumption - trackedLoadConsumption; // Allow negative values
         }
         
-        // Remove grid, PV, and battery channels from chart display
+        // Remove grid, PV, and battery channels from chart display (only show loads)
         excludeFromOther.forEach(ch => delete totalConsumption[ch]);
         
         return { 
@@ -2109,7 +2362,7 @@
         };
     }
 
-    function updateConsumptionChart(consumptionData, viewType, exportedData = {}) { // TODO: ensure the PV is shown properly (currently only export is shown for some reason, but in reality it should be import since it is positive)
+    function updateConsumptionChart(consumptionData, viewType, exportedData = {}) {
         // Apply grouping if enabled
         const groupedData = isGroupingEnabled() ? aggregateByGroup(consumptionData) : consumptionData;
         const groupedExportData = isGroupingEnabled() ? aggregateByGroup(exportedData) : exportedData;
@@ -2222,6 +2475,13 @@
             return;
         }
         
+        // Show canvas and download button, hide loading
+        const loadingEl = document.querySelector('#consumption-chart .chart-loading');
+        if (loadingEl) loadingEl.style.display = 'none';
+        canvasElement.style.display = 'block';
+        const downloadBtn = document.getElementById('download-csv');
+        if (downloadBtn) downloadBtn.style.display = 'block';
+        
         // Format labels based on view type
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         let labels;
@@ -2264,6 +2524,7 @@
                     },
                     y: {
                         stacked: true,
+                        min: 0,
                         title: {
                             display: true,
                             text: 'Energy (kWh)'
@@ -2383,89 +2644,185 @@
         }
     }
 
-    function updatePieChart(totalConsumption) {
-        // Apply grouping if enabled - wrap in object with single period for aggregateByGroup
-        let dataToDisplay = totalConsumption;
-        if (isGroupingEnabled()) {
-            const wrapped = { '_': totalConsumption };
-            const aggregated = aggregateByGroup(wrapped);
-            dataToDisplay = aggregated['_'];
-        }
+    // Update energy balance chart (Grid, PV, Battery, Home)
+    function updateBalanceChart(hourlyData, viewType, rawImported, rawExported) {
+        const productionChannels = getProductionChannels();
+        const batteryChannels = getBatteryChannels();
+        const gridChannels = getGridChannels();
         
-        const channels = Object.keys(dataToDisplay);
-        const values = Object.values(dataToDisplay);
-        const total = values.reduce((sum, value) => sum + value, 0);
+        const hasProduction = productionChannels.length > 0;
+        const hasBattery = batteryChannels.length > 0;
         
-        // Update the total display
-        document.getElementById('pie-chart-total-value').textContent = `${total.toFixed(1)} kWh`;
+        // Update global flag and show/hide chart type selector
+        hasBalanceCapability = hasProduction || hasBattery;
+        document.getElementById('chart-type-selector').style.display = hasBalanceCapability ? 'flex' : 'none';
         
-        if (total === 0) {
-            showNoPieChartData();
-            return;
-        }
+        // If no PV or battery, nothing to show
+        if (!hasBalanceCapability) return;
         
-        // Create labels with percentages and consistent colors
-        const labels = channels.map((channel, i) => {
-            const label = getDisplayLabel(channel);
-            const percentage = ((values[i] / total) * 100).toFixed(1);
-            return `${label} (${percentage}%)`;
+        const gridChannelIndex = gridChannels.length > 0 ? gridChannels[0].index : 0;
+        const gridChannelKey = String(gridChannelIndex);
+        const productionIndices = productionChannels.map(ch => String(ch.index));
+        const batteryIndices = batteryChannels.map(ch => String(ch.index));
+        
+        const periods = Object.keys(hourlyData).sort();
+        
+        // Build balance data: net values (positive = providing, negative = consuming)
+        const balanceData = {
+            grid: [],      // Import positive, Export negative
+            pv: [],        // Production positive
+            battery: [],   // Discharge positive, Charge negative
+            homeConsumption: []
+        };
+        
+        periods.forEach(period => {
+            const periodData = hourlyData[period] || {};
+            const periodExport = rawExported[period] || {};
+            
+            // Grid: Import - Export (positive = drawing from grid)
+            const gridImport = periodData[gridChannelKey] || 0;
+            const gridExport = periodExport[gridChannelKey] || 0;
+            balanceData.grid.push(gridImport - gridExport);
+            
+            // PV Production (always positive)
+            let pvProd = 0;
+            productionIndices.forEach(idx => {
+                pvProd += periodData[idx] || 0;
+            });
+            balanceData.pv.push(pvProd);
+            
+            // Battery: Discharge - Charge (positive = providing, negative = consuming)
+            let battCharge = 0;
+            let battDischarge = 0;
+            batteryIndices.forEach(idx => {
+                battCharge += periodData[idx] || 0;
+                battDischarge += (periodExport[idx] || 0);
+            });
+            balanceData.battery.push(battDischarge - battCharge);
+            
+            // Home Consumption = Grid Import + PV + Battery Discharge - Grid Export - Battery Charge
+            const home = gridImport + pvProd + battDischarge - gridExport - battCharge;
+            balanceData.homeConsumption.push(Math.max(0, home));
         });
         
-        const backgroundColors = channels.map(channel => getDisplayColor(channel));
-        
         // Destroy existing chart
-        if (pieChart) {
-            pieChart.destroy();
+        if (balanceChart) {
+            balanceChart.destroy();
+            balanceChart = null;
         }
         
-        // Make sure canvas exists
-        const canvasElement = document.getElementById('pie-chart-canvas');
-        if (!canvasElement) {
-            console.error('Pie chart canvas element not found');
-            return;
+        // Show canvas and download button, hide loading
+        const loadingEl = document.querySelector('#balance-chart .chart-loading');
+        const canvasEl = document.getElementById('balance-chart-canvas');
+        if (loadingEl) loadingEl.style.display = 'none';
+        canvasEl.style.display = 'block';
+        const downloadBtn = document.getElementById('download-balance-csv');
+        if (downloadBtn) downloadBtn.style.display = 'block';
+        
+        const ctx = canvasEl.getContext('2d');
+        const isMobile = window.innerWidth <= 768;
+        
+        // Format labels based on view type
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        let labels;
+        if (viewType === 'daily') {
+            labels = periods.map(hour => `${hour}:00`);
+        } else if (viewType === 'monthly') {
+            labels = periods.map(day => day);
+        } else {
+            labels = periods.map(month => monthNames[parseInt(month) - 1] || month);
         }
         
-        // Create new chart
-        const ctx = canvasElement.getContext('2d');
-        pieChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: values,
-                    backgroundColor: backgroundColors,
-                    borderWidth: 2,
-                    borderColor: '#fff'
-                }]
-            },
+        // Build datasets - single stack, values can be negative
+        const datasets = [];
+        
+        if (hasProduction) {
+            datasets.push({
+                label: '☀️ PV',
+                data: balanceData.pv,
+                backgroundColor: 'rgba(255, 152, 0, 0.7)',
+                stack: 'energy'
+            });
+        }
+        
+        datasets.push({
+            label: '🔌 Grid',
+            data: balanceData.grid,
+            backgroundColor: 'rgba(33, 150, 243, 0.7)',
+            stack: 'energy'
+        });
+        
+        if (hasBattery) {
+            datasets.push({
+                label: '🔋 Battery',
+                data: balanceData.battery,
+                backgroundColor: 'rgba(156, 39, 176, 0.7)',
+                stack: 'energy'
+            });
+        }
+        
+        // Home consumption as line overlay (no points, just curve)
+        datasets.push({
+            label: '🏠 Home',
+            data: balanceData.homeConsumption,
+            type: 'line',
+            borderColor: '#4CAF50',
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            fill: false,
+            tension: 0.3
+        });
+        
+        balanceChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels, datasets },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+                maintainAspectRatio: false, // Match consumption chart
+                aspectRatio: isMobile ? 1.2 : 2,
+                scales: {
+                    x: {
+                        stacked: true,
+                        title: {
+                            display: true,
+                            text: viewType === 'daily' ? 'Hour' : viewType === 'monthly' ? 'Day' : 'Month'
+                        },
+                        ticks: {
+                            font: { size: isMobile ? 10 : 12 }
+                        }
+                    },
+                    y: {
+                        stacked: true,
+                        title: {
+                            display: true,
+                            text: 'Energy (kWh)'
+                        },
+                        ticks: {
+                            font: { size: isMobile ? 10 : 12 }
+                        }
+                    }
+                },
                 plugins: {
                     legend: {
-                        position: 'right'
+                        position: isMobile ? 'bottom' : 'top',
+                        labels: { font: { size: isMobile ? 10 : 12 } }
                     },
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                const label = channels[context.dataIndex];
-                                const channelLabel = getDisplayLabel(label);
-                                const value = context.parsed.toFixed(2);
-                                const percentage = ((context.parsed / total) * 100).toFixed(1);
-                                return `${channelLabel}: ${value} kWh (${percentage}%)`;
-                            },
-                            afterLabel: function(context) {
-                                const label = channels[context.dataIndex];
-                                if (label === 'Other') {
-                                    return 'Total consumption minus monitored channels';
-                                }
-                                return '';
+                                const value = context.parsed.y;
+                                const sign = value >= 0 ? '+' : '';
+                                return `${context.dataset.label}: ${sign}${value.toFixed(2)} kWh`;
                             }
                         }
                     }
                 }
             }
         });
+        
+        // Set up CSV download with the balance data
+        setupBalanceCsvDownload(balanceData, viewType);
     }
 
     function getChannelLabel(channelIndex) {
@@ -2534,155 +2891,80 @@
         };
     }
     
-    async function updateTotalPieChart() {
-        try {
-            // Get total energy from current meter values
-            const totalConsumption = {};
-            const gridChannels = getGridChannels();
-            const gridChannelIndex = gridChannels.length > 0 ? gridChannels[0].index : 0;
-            const gridIndices = gridChannels.map(ch => ch.index);
+    function setupBalanceCsvDownload(balanceData, viewType) {
+        const downloadBtn = document.getElementById('download-balance-csv');
+        downloadBtn.onclick = function() {
+            const periods = Object.keys(balanceData.grid).length;
             
-            // Check if there are sub-channels (channels other than grid)
-            const hasSubChannels = meterData.some(ch => !gridIndices.includes(ch.index));
+            // Create CSV content
+            let csvContent = "data:text/csv;charset=utf-8,";
+            const periodLabel = viewType === 'daily' ? 'Hour' : viewType === 'monthly' ? 'Day' : 'Month';
             
-            meterData.forEach(channel => {
-                if (gridIndices.includes(channel.index)) return; // Skip grid channels
-                const totalEnergy = channel.data.activeEnergyImported / 1000; // Convert to kWh
-                if (totalEnergy > 0) {
-                    totalConsumption[channel.index] = totalEnergy;
+            // Header row
+            const headers = [periodLabel, 'Grid (kWh)', 'PV (kWh)', 'Battery (kWh)', 'Home (kWh)'];
+            csvContent += headers.join(",") + "\n";
+            
+            // Data rows
+            for (let i = 0; i < periods; i++) {
+                let periodDisplay;
+                if (viewType === 'daily') {
+                    periodDisplay = `${i}:00`;
+                } else if (viewType === 'monthly') {
+                    periodDisplay = String(i + 1).padStart(2, '0');
+                } else {
+                    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    periodDisplay = monthNames[i] || String(i + 1);
                 }
-            });
-            
-            // Add "Other" consumption only if there are sub-channels
-            const gridChannel = meterData.find(ch => ch.index === gridChannelIndex);
-            if (gridChannel && hasSubChannels) {
-                const totalHouseConsumption = gridChannel.data.activeEnergyImported / 1000;
-                let trackedConsumption = 0;
                 
-                Object.values(totalConsumption).forEach(consumption => {
-                    trackedConsumption += consumption;
-                });
-                
-                totalConsumption['Other'] = totalHouseConsumption - trackedConsumption; // Allow negative values
+                const row = [
+                    periodDisplay,
+                    balanceData.grid[i].toFixed(3),
+                    balanceData.pv[i].toFixed(3),
+                    balanceData.battery[i].toFixed(3),
+                    balanceData.homeConsumption[i].toFixed(3)
+                ];
+                csvContent += row.join(",") + "\n";
             }
             
-            // Update total pie chart
-            updateTotalPieChartDisplay(totalConsumption);
-            
-        } catch (error) {
-            console.error('Error updating total pie chart:', error);
-            document.getElementById("total-pie-chart").innerHTML = 
-                '<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ Failed to load total consumption data</div>';
-        }
+            // Download file
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            const dateStr = viewType === 'daily' ? currentDate : viewType === 'monthly' ? currentMonth : currentYear;
+            const filename = `energy_balance_${viewType}_${dateStr}.csv`;
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
     }
     
-    function updateTotalPieChartDisplay(totalConsumption) {
-        // Apply grouping if enabled - wrap in object with single period for aggregateByGroup
-        let dataToDisplay = totalConsumption;
-        if (isGroupingEnabled()) {
-            const wrapped = { '_': totalConsumption };
-            const aggregated = aggregateByGroup(wrapped);
-            dataToDisplay = aggregated['_'];
-        }
-        
-        const channels = Object.keys(dataToDisplay);
-        const values = Object.values(dataToDisplay);
-        const total = values.reduce((sum, value) => sum + value, 0);
-        
-        // Update the total display
-        document.getElementById('total-pie-chart-total-value').textContent = `${total.toFixed(1)} kWh`;
-        
-        if (total === 0) {
-            document.getElementById("total-pie-chart").innerHTML = 
-                '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 No total consumption data available.</div>';
-            return;
-        }
-        
-        // Create labels with percentages and consistent colors
-        const labels = channels.map((channel, i) => {
-            const label = getDisplayLabel(channel);
-            const percentage = ((values[i] / total) * 100).toFixed(1);
-            return `${label} (${percentage}%)`;
-        });
-        
-        const backgroundColors = channels.map(channel => getDisplayColor(channel));
-        
-        // Destroy existing chart
-        if (totalPieChart) {
-            totalPieChart.destroy();
-        }
-        
-        // Make sure canvas exists
-        const canvasElement = document.getElementById('total-pie-chart-canvas');
-        if (!canvasElement) {
-            console.error('Total pie chart canvas element not found');
-            return;
-        }
-        
-        // Create new chart
-        const ctx = canvasElement.getContext('2d');
-        totalPieChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: values,
-                    backgroundColor: backgroundColors,
-                    borderWidth: 2,
-                    borderColor: '#fff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right'
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = channels[context.dataIndex];
-                                const channelLabel = getDisplayLabel(label);
-                                const value = context.parsed.toFixed(1);
-                                const percentage = ((context.parsed / total) * 100).toFixed(1);
-                                return `${channelLabel}: ${value} kWh (${percentage}%)`;
-                            },
-                            afterLabel: function(context) {
-                                const label = channels[context.dataIndex];
-                                if (label === 'Other') {
-                                    return 'Total consumption minus monitored channels';
-                                }
-                                return '';
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
+
 
     // Calculate animation speed based on power (faster = more power)
     // Returns duration in seconds: 2s for <100W, down to 0.3s for >5000W
     function getFlowSpeed(watts) {
         const absWatts = Math.abs(watts);
-        if (absWatts <= 10) return '2s';
-        if (absWatts <= 100) return '1.5s';
-        if (absWatts <= 500) return '1s';
-        if (absWatts <= 1000) return '0.7s';
-        if (absWatts <= 2000) return '0.5s';
-        if (absWatts <= 5000) return '0.4s';
-        return '0.3s';
+        for (const threshold of CONFIG.FLOW_SPEED_THRESHOLDS) {
+            if (absWatts <= threshold.watts) {
+                return threshold.duration;
+            }
+        }
+        return CONFIG.FLOW_SPEED_THRESHOLDS[CONFIG.FLOW_SPEED_THRESHOLDS.length - 1].duration;
     }
     
     // Get color intensity based on power (green for low, orange for medium, red for high)
+    // Color ratio is: power / maxPower. Used for load node border-left and connecting lines
     function getLoadColor(watts, maxWatts) {
         const absWatts = Math.abs(watts);
         const ratio = Math.min(absWatts / Math.max(maxWatts, 1000), 1);
         
-        if (ratio < 0.3) return '#4CAF50';  // Green - low
-        if (ratio < 0.6) return '#FF9800';  // Orange - medium
-        return '#f44336';  // Red - high
+        for (const threshold of CONFIG.LOAD_COLOR_THRESHOLDS) {
+            if (ratio < threshold.ratio) {
+                return threshold.color;
+            }
+        }
+        return CONFIG.LOAD_COLOR_THRESHOLDS[CONFIG.LOAD_COLOR_THRESHOLDS.length - 1].color;
     }
 
     // Update energy flow diagram with real-time data
@@ -2701,11 +2983,25 @@
         const flowSection = document.getElementById('energy-flow-section');
         flowSection.classList.add('visible');
         
+        // Remove loading message if data now available
+        const flowDiagram = document.getElementById('energy-flow-diagram');
+        if (flowDiagram && meterData && meterData.length > 0) {
+            const loadingMsg = flowDiagram.querySelector('[data-loading-msg]');
+            if (loadingMsg) loadingMsg.remove();
+            
+            // Fade in SVG and nodes
+            document.getElementById('energy-flow-svg').style.opacity = '1';
+            document.getElementById('node-grid').style.opacity = '1';
+            document.getElementById('node-home').style.opacity = '1';
+            if (hasProduction) document.getElementById('node-solar').style.opacity = '1';
+            if (hasBattery) document.getElementById('node-battery').style.opacity = '1';
+        }
+        
         // Show/hide nodes based on configuration
         document.getElementById('node-solar').style.display = hasProduction ? 'flex' : 'none';
         document.getElementById('node-battery').style.display = hasBattery ? 'flex' : 'none';
         // Grid and home always shown
-        document.getElementById('node-grid').style.display = hasGrid ? 'flex' : 'none';
+        document.getElementById('node-grid').style.display = 'flex';
         document.getElementById('node-home').style.display = 'flex';
         
         // Get power values from grid channels (sum if multiple, e.g., 3-phase)
@@ -2768,30 +3064,30 @@
         // Solar line: always flows down to center when producing
         lineSolar.style.display = hasProduction ? 'block' : 'none';
         if (hasProduction) {
-            lineSolar.classList.toggle('active', solarPower > 10);
-            lineSolar.classList.toggle('inactive', solarPower <= 10);
+            lineSolar.classList.toggle('active', solarPower > CONFIG.ACTIVE_LINE_THRESHOLD);
+            lineSolar.classList.toggle('inactive', solarPower <= CONFIG.ACTIVE_LINE_THRESHOLD);
             lineSolar.classList.remove('reverse');
             lineSolar.style.setProperty('--flow-speed', getFlowSpeed(solarPower));
         }
         
         // Grid line: flows right when importing, left when exporting
-        lineGrid.classList.toggle('active', Math.abs(gridPower) > 10);
-        lineGrid.classList.toggle('inactive', Math.abs(gridPower) <= 10);
-        lineGrid.classList.toggle('reverse', gridPower < -10);
+        lineGrid.classList.toggle('active', Math.abs(gridPower) > CONFIG.ACTIVE_LINE_THRESHOLD);
+        lineGrid.classList.toggle('inactive', Math.abs(gridPower) <= CONFIG.ACTIVE_LINE_THRESHOLD);
+        lineGrid.classList.toggle('reverse', gridPower < -CONFIG.ACTIVE_LINE_THRESHOLD);
         lineGrid.style.setProperty('--flow-speed', getFlowSpeed(gridPower));
         
         // Home line: always receiving
-        lineHome.classList.toggle('active', homePower > 10);
-        lineHome.classList.toggle('inactive', homePower <= 10);
+        lineHome.classList.toggle('active', homePower > CONFIG.ACTIVE_LINE_THRESHOLD);
+        lineHome.classList.toggle('inactive', homePower <= CONFIG.ACTIVE_LINE_THRESHOLD);
         lineHome.classList.remove('reverse');
         lineHome.style.setProperty('--flow-speed', getFlowSpeed(homePower));
         
         // Battery line: flows up when discharging, down when charging
         lineBattery.style.display = hasBattery ? 'block' : 'none';
         if (hasBattery) {
-            lineBattery.classList.toggle('active', Math.abs(batteryPower) > 10);
-            lineBattery.classList.toggle('inactive', Math.abs(batteryPower) <= 10);
-            lineBattery.classList.toggle('reverse', batteryPower < -10);
+            lineBattery.classList.toggle('active', Math.abs(batteryPower) > CONFIG.ACTIVE_LINE_THRESHOLD);
+            lineBattery.classList.toggle('inactive', Math.abs(batteryPower) <= CONFIG.ACTIVE_LINE_THRESHOLD);
+            lineBattery.classList.toggle('reverse', batteryPower < -CONFIG.ACTIVE_LINE_THRESHOLD);
             lineBattery.style.setProperty('--flow-speed', getFlowSpeed(batteryPower));
         }
         
@@ -2864,16 +3160,30 @@
         // Calculate "Other" (untracked consumption)
         const otherPower = Math.max(0, homePower - trackedLoadPower);
         
-        // Add "Other" if there's significant untracked consumption
+        // Add "Other" with hysteresis to prevent initial flickering
+        // Once shown, it stays shown (proves there's untracked consumption)
         const hasLoads = aggregatedLoads.length > 0;
-        if (hasGrid && hasLoads && otherPower > 5) {
-            aggregatedLoads.push({
-                key: 'other',
-                label: 'Other',
-                icon: '❓',
-                power: otherPower,
-                isOther: true
-            });
+        if (hasGrid && hasLoads) {
+            // Update hysteresis counter for initial display
+            if (otherPower > CONFIG.OTHER_HYSTERESIS_THRESHOLD) {
+                otherLoadCounter++;
+                if (otherLoadCounter >= CONFIG.OTHER_HYSTERESIS_COUNT && !otherLoadShown) {
+                    otherLoadShown = true;
+                }
+            } else {
+                otherLoadCounter = 0;
+            }
+            
+            // Add "Other" once hysteresis threshold met (never hide once shown)
+            if (otherLoadShown) {
+                aggregatedLoads.push({
+                    key: 'other',
+                    label: 'Other',
+                    icon: '',
+                    power: otherPower,
+                    isOther: true
+                });
+            }
         }
         
         const loadsContainer = document.getElementById('loads-container');
@@ -2905,12 +3215,12 @@
         if (shouldRebuild) {
             previousLoadKeys = currentLoadKeys;
             
-            // Rebuild load nodes HTML
+            // Rebuild load nodes HTML (icons hidden, line color uses LOAD_COLOR_THRESHOLDS based on power ratio)
             let loadsHtml = '';
             aggregatedLoads.forEach((load, idx) => {
-                const color = load.isOther ? '#ffc107' : getLoadColor(load.power, maxPower);
+                const color = load.isOther ? CONFIG.OTHER_LOAD_COLOR : getLoadColor(load.power, maxPower);
                 loadsHtml += '<div class="load-node' + (load.isOther ? ' other-load' : '') + '" style="border-left-color: ' + color + ';">';
-                loadsHtml += '<div class="load-node-icon">' + load.icon + '</div>';
+                loadsHtml += '<div class="load-node-icon" style="display: none;">' + load.icon + '</div>';
                 loadsHtml += '<div class="load-node-info">';
                 loadsHtml += '<div class="load-node-label">' + load.label + '</div>';
                 loadsHtml += '<div class="load-node-value" id="load-value-' + load.key + '">' + formatPower(load.power) + '</div>';
@@ -2932,9 +3242,9 @@
             
             aggregatedLoads.forEach((load, idx) => {
                 const loadY = startY + idx * loadSpacing;
-                const color = load.isOther ? '#ffc107' : getLoadColor(load.power, maxPower);
+                const color = load.isOther ? CONFIG.OTHER_LOAD_COLOR : getLoadColor(load.power, maxPower);
                 const speed = getFlowSpeed(load.power);
-                const isActive = Math.abs(load.power) > 5;
+                const isActive = Math.abs(load.power) > CONFIG.ACTIVE_LINE_THRESHOLD;
                 
                 linesHtml += '<path id="load-line-' + load.key + '" ';
                 linesHtml += 'class="flow-line' + (isActive ? ' active' : ' inactive') + '" ';
@@ -2954,9 +3264,9 @@
                 // Update line style
                 const lineEl = document.getElementById('load-line-' + load.key);
                 if (lineEl) {
-                    const color = load.isOther ? '#ffc107' : getLoadColor(load.power, maxPower);
+                    const color = load.isOther ? CONFIG.OTHER_LOAD_COLOR : getLoadColor(load.power, maxPower);
                     const speed = getFlowSpeed(load.power);
-                    const isActive = Math.abs(load.power) > 5;
+                    const isActive = Math.abs(load.power) > CONFIG.ACTIVE_LINE_THRESHOLD;
                     
                     lineEl.style.stroke = color;
                     lineEl.style.setProperty('--flow-speed', speed);
@@ -2972,9 +3282,6 @@
     // Format power value with appropriate unit
     function formatPower(watts) {
         const absWatts = Math.abs(watts);
-        if (absWatts >= 1000) {
-            return (watts / 1000).toFixed(2) + ' kW';
-        }
         return watts.toFixed(0) + ' W';
     }
 
@@ -2988,36 +3295,45 @@
 
     function showLoadingMessage() {
         document.getElementById("consumption-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">📊 Loading energy data...</div>';
-        document.getElementById("pie-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 Loading energy distribution...</div>';
+        document.getElementById("balance-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🔋 Loading energy data...</div>';
     }
 
     function showNoDataMessage() {
         document.getElementById("consumption-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">📊 No energy data available.<br><br>Energy tracking files will appear here once data collection begins.</div>';
-        document.getElementById("pie-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 No energy data available.</div>';
-    }
-
-    function showNoPieChartData() {
-        document.getElementById("pie-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 No consumption data for this day.</div>';
+        document.getElementById("balance-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🔋 No energy data available.</div>';
     }
 
     function showErrorMessage(message) {
         document.getElementById("consumption-chart").innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ ${message}</div>`;
-        document.getElementById("pie-chart").innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ ${message}</div>`;
+        document.getElementById("balance-chart").innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ ${message}</div>`;
     }
 
     function restoreChartCanvases() {
-        // Restore consumption chart canvas
+        // Restore balance chart (with loading state visible)
+        const balanceChartDiv = document.getElementById("balance-chart");
+        if (balanceChartDiv) {
+            balanceChartDiv.innerHTML = `
+                <div class="chart-loading">🔋 Calculating energy flows...</div>
+                <canvas id="balance-chart-canvas" style="display: none;"></canvas>
+                <button id="download-balance-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px; display: none;">
+                    <i class="fas fa-download"></i>
+                </button>
+            `;
+            // Preserve visibility based on current chart type
+            balanceChartDiv.style.display = currentChartType === 'balance' ? 'block' : 'none';
+        }
+        
+        // Restore consumption chart (with loading state visible)
         const consumptionChartDiv = document.getElementById("consumption-chart");
         consumptionChartDiv.innerHTML = `
-            <canvas id="consumption-chart-canvas"></canvas>
-            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
+            <div class="chart-loading">📊 Crunching the numbers...</div>
+            <canvas id="consumption-chart-canvas" style="display: none;"></canvas>
+            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px; display: none;">
                 <i class="fas fa-download"></i>
             </button>
         `;
-        
-        // Restore pie chart canvas
-        const pieChartDiv = document.getElementById("pie-chart");
-        pieChartDiv.innerHTML = '<canvas id="pie-chart-canvas"></canvas>';
+        // Preserve visibility based on current chart type
+        consumptionChartDiv.style.display = currentChartType === 'consumption' ? 'block' : 'none';
         
         // Note: Total pie chart is not restored here since it should only load once on page initialization
         // and represents lifetime data that doesn't need to be redrawn during chart interactions
