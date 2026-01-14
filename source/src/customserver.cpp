@@ -647,6 +647,64 @@ namespace CustomServer
         request->send(response);
     }
 
+    /**
+     * Generate ETag from file metadata
+     * Uses file size as primary identifier (works well for append-only logs)
+     */
+    static const char* _generateFileEtag(const char* filename) {
+        File file = LittleFS.open(filename, "r");
+        if (!file) return "";
+        
+        size_t fileSize = file.size();
+        file.close();
+        
+        // Use file size as ETag - simple and effective for append-only files
+        // Format: "size-{bytes}" e.g. "size-59635"
+        static char etagBuffer[32];
+        snprintf(etagBuffer, sizeof(etagBuffer), "\"size-%u\"", (unsigned)fileSize);
+        return etagBuffer;
+    }
+
+    /**
+     * Send file with ETag validation
+     * If client sends matching If-None-Match header, responds with 304 Not Modified
+     * Otherwise streams file content with ETag and Cache-Control headers
+     */
+    static void _sendFileWithEtag(AsyncWebServerRequest *request, const char* filename, const char* contentType, bool forceDownload = false)
+    {
+        // Generate ETag from file metadata
+        const char* etag = _generateFileEtag(filename);
+        
+        if (strlen(etag) == 0) {
+            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to generate ETag");
+            return;
+        }
+        
+        // Check if client sent If-None-Match header
+        if (request->hasHeader("If-None-Match")) {
+            const String& clientEtag = request->header("If-None-Match");
+            if (clientEtag == etag) {
+                // ETag matches - content hasn't changed, send 304
+                request->send(HTTP_CODE_NOT_MODIFIED);
+                return;
+            }
+        }
+        
+        // ETag doesn't match or not provided - send full file
+        AsyncWebServerResponse *response = request->beginResponse(LittleFS, filename, contentType, forceDownload);
+        
+        if (!response) {
+            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to create response");
+            return;
+        }
+        
+        // Add caching headers
+        response->addHeader("Cache-Control", "no-cache"); // Always validate with server
+        response->addHeader("ETag", etag);
+        
+        request->send(response);
+    }
+
     static void _serveStaticContent()
     {
         // === STATIC CONTENT (no auth required) ===
@@ -2511,16 +2569,16 @@ namespace CustomServer
 
         // GET - Download file from LittleFS
         server.on("/api/v1/files/*", HTTP_GET, [](AsyncWebServerRequest *request)
-                  {
+        {
             String url = request->url();
-            String filename = url.substring(url.indexOf("/api/v1/files/") + 14); // Remove "/api/v1/files/" prefix
+            String filename = url.substring(url.indexOf("/api/v1/files/") + 14);
             
             if (filename.length() == 0) {
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File path cannot be empty");
                 return;
             }
             
-            // URL decode the filename to handle encoded slashes properly
+            // URL decode the filename
             filename.replace("%2F", "/");
             filename.replace("%2f", "/");
             
@@ -2535,15 +2593,27 @@ namespace CustomServer
                 return;
             }
 
-            // Determine content type based on file extension
+            // Determine content type
             const char* contentType = getContentTypeFromFilename(filename.c_str());
 
-            // Check if download is forced via query parameter
+            // Check if download is forced
             bool forceDownload = request->hasParam("download");
 
-            // Serve the file directly from LittleFS with proper content type
-            request->send(LittleFS, filename, contentType, forceDownload);
+            // Determine if this file should use caching
+            bool shouldCache = filename.endsWith(".csv") || 
+                            filename.endsWith(".csv.gz") ||
+                            filename.startsWith("/energy/monthly/") ||
+                            filename.startsWith("/energy/yearly/");
+            
+            if (shouldCache) {
+                // Send with ETag caching
+                _sendFileWithEtag(request, filename.c_str(), contentType, forceDownload);
+            } else {
+                // Send directly without caching (for frequently changing files)
+                request->send(LittleFS, filename, contentType, forceDownload);
+            }
         });
+
 
         // POST - Upload file to LittleFS
         server.on("/api/v1/files/*", HTTP_POST, 
