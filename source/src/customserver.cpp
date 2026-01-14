@@ -26,6 +26,10 @@ namespace CustomServer
     // API request synchronization
     static SemaphoreHandle_t _apiMutex = NULL;
 
+    // ETag for proper caching
+    static char _cachedEtag[MD5_BUFFER_SIZE + 3] = {0}; // +3 for quotes and null terminator
+    static bool _etagComputed = false;
+
     // Private functions declarations
     // ==============================
     // ==============================
@@ -152,7 +156,7 @@ namespace CustomServer
         // Delete API mutex
         deleteMutex(&_apiMutex);
         
-        LOG_INFO("Web server stopped");
+        LOG_DEBUG("Web server stopped");
     }
 
     void updateAuthPasswordWithOneFromPreferences()
@@ -603,106 +607,120 @@ namespace CustomServer
         _serveFileEndpoints();
     }
 
+    /**
+     * Get sketch MD5 hash as ETag for cache busting
+     * Cached in static variable - computed once on first call
+     * Returns ETag in format: "abc123def456..."
+     */
+    static const char* _getSketchEtag()
+    {        
+        if (!_etagComputed) {
+            snprintf(_cachedEtag, sizeof(_cachedEtag), "\"%s\"", ESP.getSketchMD5().c_str());
+            _etagComputed = true;
+            LOG_DEBUG("Sketch ETag created (and saved in static variable): %s", _cachedEtag);
+        }
+        
+        return _cachedEtag;
+    }
+
+    /**
+     * Send static content with ETag validation
+     * If client sends matching If-None-Match header, responds with 304 Not Modified (no body)
+     * Otherwise sends full content with ETag and Cache-Control headers
+     */
+    static void _sendStaticWithEtag(AsyncWebServerRequest *request, const char* contentType, const char* content, const char* etag)
+    {
+        // Check if client sent If-None-Match header
+        if (request->hasHeader("If-None-Match")) {
+            const String& clientEtag = request->header("If-None-Match");
+            if (clientEtag == etag) {
+                // ETag matches - content hasn't changed, send 304
+                request->send(HTTP_CODE_NOT_MODIFIED);
+                return;
+            }
+        }
+        
+        // ETag doesn't match or not provided - send full content
+        AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, contentType, content);
+        response->addHeader("Cache-Control", "no-cache"); // Always validate with server
+        response->addHeader("ETag", etag);
+        request->send(response);
+    }
+
     static void _serveStaticContent()
     {
         // === STATIC CONTENT (no auth required) ===
-        // Since they are all static files, we can set long cache durations
+        // Cache strategy: "no-cache" with ETag validation
+        // - Browser always asks server before using cache
+        // - Server responds 304 Not Modified (no body) if ETag matches → fast
+        // - Server responds 200 OK with full content if ETag differs → always fresh
+        // When firmware is updated, sketch MD5 changes → ETag differs → fresh content
+
+        // This needs to be a solid pointer, so we need a static variable
+        // that will persist for the server's lifetime
+        const char* etag = _getSketchEtag();
 
         // CSS files
-        server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request) { 
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/css", styles_css);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
+            _sendStaticWithEtag(request, "text/css", styles_css, etag);
         });
-        server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/css", button_css);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/css/button.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", button_css, etag);
         });
-        server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/css", section_css);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/css/section.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", section_css, etag);
         });
-        server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/css", typography_css);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/css/typography.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", typography_css, etag);
         });
 
         // JavaScript files
-        server.on("/js/api-client.js", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "application/javascript", api_client_js);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "application/javascript", api_client_js, etag);
         });
 
         // Resources
-        server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "image/svg+xml", favicon_svg);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/favicon.svg", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "image/svg+xml", favicon_svg, etag);
         });
 
         // Main dashboard
-        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", index_html);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", index_html, etag);
         });
 
         // Configuration pages
-        server.on("/ade7953-tester", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", ade7953_tester_html);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/ade7953-tester", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", ade7953_tester_html, etag);
         });
-        server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", configuration_html);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/configuration", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", configuration_html, etag);
         });
-        server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", calibration_html);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/calibration", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", calibration_html, etag);
         });
-        server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", channel_html);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/channel", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", channel_html, etag);
         });
-        server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", info_html);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/info", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", info_html, etag);
         });
-        server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", log_html);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/log", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", log_html, etag);
         });
-        server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", update_html);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/update", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", update_html, etag);
         });
-        server.on("/waveform", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", waveform_html);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/waveform", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", waveform_html, etag);
         });
 
         // Swagger UI
-        server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/html", swagger_ui_html);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/swagger-ui", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", swagger_ui_html, etag);
         });
-        server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request) {
-            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "text/yaml", swagger_yaml);
-            response->addHeader("Cache-Control", "public, max-age=86400");
-            request->send(response);
+        server.on("/swagger.yaml", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/yaml", swagger_yaml, etag);
         });
     }
 
