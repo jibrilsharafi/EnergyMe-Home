@@ -851,7 +851,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         jsonDocument["isGrid"] = channelData.isGrid;
         jsonDocument["isProduction"] = channelData.isProduction;
         jsonDocument["isBattery"] = channelData.isBattery;
-        jsonDocument["discardNegativeReadings"] = channelData.discardNegativeReadings;
 
         LOG_VERBOSE("Successfully converted channel data to JSON for channel %u", channelData.index);
     }
@@ -888,7 +887,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             if (jsonDocument["isGrid"].is<bool>()) channelData.isGrid = jsonDocument["isGrid"].as<bool>();
             if (jsonDocument["isProduction"].is<bool>()) channelData.isProduction = jsonDocument["isProduction"].as<bool>();
             if (jsonDocument["isBattery"].is<bool>()) channelData.isBattery = jsonDocument["isBattery"].as<bool>();
-            if (jsonDocument["discardNegativeReadings"].is<bool>()) channelData.discardNegativeReadings = jsonDocument["discardNegativeReadings"].as<bool>();
         } else {
             // Full update - set all fields
             channelData.index = jsonDocument["index"].as<uint8_t>();
@@ -909,7 +907,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             channelData.isGrid = jsonDocument["isGrid"].as<bool>();
             channelData.isProduction = jsonDocument["isProduction"].as<bool>();
             channelData.isBattery = jsonDocument["isBattery"].as<bool>();
-            channelData.discardNegativeReadings = jsonDocument["discardNegativeReadings"].as<bool>();
         }
     }
 
@@ -2354,9 +2351,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_IS_BATTERY_KEY, channelIndex);
         channelData.isBattery = preferences.getBool(key, DEFAULT_CHANNEL_IS_BATTERY);
 
-        snprintf(key, sizeof(key), CHANNEL_DISCARD_NEGATIVE_KEY, channelIndex);
-        channelData.discardNegativeReadings = preferences.getBool(key, DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS);
-
         preferences.end();
 
         setChannelData(channelData, channelIndex);
@@ -2424,9 +2418,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_IS_BATTERY_KEY, channelIndex);
         preferences.putBool(key, channelData.isBattery);
 
-        snprintf(key, sizeof(key), CHANNEL_DISCARD_NEGATIVE_KEY, channelIndex);
-        preferences.putBool(key, channelData.discardNegativeReadings);
-
         preferences.end();
 
         LOG_DEBUG("Successfully saved channel data to Preferences for channel %lu", channelIndex);
@@ -2471,7 +2462,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             if (jsonDocument["isGrid"].is<bool>()) return true;
             if (jsonDocument["isProduction"].is<bool>()) return true;
             if (jsonDocument["isBattery"].is<bool>()) return true;
-            if (jsonDocument["discardNegativeReadings"].is<bool>()) return true;
 
             LOG_WARNING("No valid fields found for partial update");
             return false; // No valid fields found for partial update
@@ -2496,7 +2486,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             if (!jsonDocument["isGrid"].is<bool>()) { LOG_WARNING("isGrid is not bool"); return false; }
             if (!jsonDocument["isProduction"].is<bool>()) { LOG_WARNING("isProduction is not bool"); return false; }
             if (!jsonDocument["isBattery"].is<bool>()) { LOG_WARNING("isBattery is not bool"); return false; }
-            if (!jsonDocument["discardNegativeReadings"].is<bool>()) { LOG_WARNING("discardNegativeReadings is not bool"); return false; }
 
             return true; // All fields validated successfully
         }
@@ -3091,7 +3080,10 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         }
 
         // Discard negative readings for channels that should not have them
-        if (activePower < 0.0f && channelData.discardNegativeReadings) {
+        if (
+            activePower < 0.0f && 
+            (!channelData.isBattery && !channelData.isGrid) // If it is load or PV (thus not battery and not grid), we discard negative readings 
+        ) {
             LOG_DEBUG( // Just log as debug as it is not something critical
                 "%s (%d): Discarding negative reading (%.1fW)",
                 channelData.label,
@@ -3677,6 +3669,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         }
     }
 
+     // TODO: how awesome would it be to implement a system that devices the next channel based on how much the data is changing? O.O
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
         // 1. Analyze previous state
         bool currentIsHighPriority = (currentChannel != INVALID_CHANNEL && currentChannel != 0) 

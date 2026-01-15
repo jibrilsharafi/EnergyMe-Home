@@ -113,6 +113,10 @@ namespace CustomServer
     static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength = 0);
     static bool _isPartialUpdate(AsyncWebServerRequest *request);
     
+    // ETag validation helper
+    static bool _checkEtagAndSend304(AsyncWebServerRequest *request, const char* etag);
+    static void _sendResponseWithEtag(AsyncWebServerRequest *request, AsyncWebServerResponse *response, const char* etag);
+    
     // Public functions
     // ================
     // ================
@@ -607,6 +611,35 @@ namespace CustomServer
         _serveFileEndpoints();
     }
 
+    // ETag helper functions for caching
+    // =================================
+
+    /**
+     * Check ETag validity and send 304 Not Modified if matched
+     * Returns true if 304 was sent (caller should return), false otherwise (continue processing)
+     */
+    static bool _checkEtagAndSend304(AsyncWebServerRequest *request, const char* etag)
+    {
+        if (request->hasHeader("If-None-Match")) {
+            const String& clientEtag = request->header("If-None-Match");
+            if (clientEtag == etag) {
+                request->send(HTTP_CODE_NOT_MODIFIED);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Add ETag and Cache-Control headers, then send response
+     */
+    static void _sendResponseWithEtag(AsyncWebServerRequest *request, AsyncWebServerResponse *response, const char* etag)
+    {
+        response->addHeader("Cache-Control", "no-cache"); // Always validate with server
+        response->addHeader("ETag", etag);
+        request->send(response);
+    }
+
     /**
      * Get sketch MD5 hash as ETag for cache busting
      * Cached in static variable - computed once on first call
@@ -624,32 +657,9 @@ namespace CustomServer
     }
 
     /**
-     * Send static content with ETag validation
-     * If client sends matching If-None-Match header, responds with 304 Not Modified (no body)
-     * Otherwise sends full content with ETag and Cache-Control headers
-     */
-    static void _sendStaticWithEtag(AsyncWebServerRequest *request, const char* contentType, const char* content, const char* etag)
-    {
-        // Check if client sent If-None-Match header
-        if (request->hasHeader("If-None-Match")) {
-            const String& clientEtag = request->header("If-None-Match");
-            if (clientEtag == etag) {
-                // ETag matches - content hasn't changed, send 304
-                request->send(HTTP_CODE_NOT_MODIFIED);
-                return;
-            }
-        }
-        
-        // ETag doesn't match or not provided - send full content
-        AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, contentType, content);
-        response->addHeader("Cache-Control", "no-cache"); // Always validate with server
-        response->addHeader("ETag", etag);
-        request->send(response);
-    }
-
-    /**
      * Generate ETag from file metadata
-     * Uses file size as primary identifier (works well for append-only logs)
+     * Uses file size as primary identifier 
+     * Should be very accurate for append-only files like csv energy data and txt logs)
      */
     static const char* _generateFileEtag(const char* filename) {
         File file = LittleFS.open(filename, "r");
@@ -663,6 +673,21 @@ namespace CustomServer
         static char etagBuffer[32];
         snprintf(etagBuffer, sizeof(etagBuffer), "\"size-%u\"", (unsigned)fileSize);
         return etagBuffer;
+    }
+
+    /**
+     * Send static content with ETag validation
+     * If client sends matching If-None-Match header, responds with 304 Not Modified (no body)
+     * Otherwise sends full content with ETag and Cache-Control headers
+     */
+    static void _sendStaticWithEtag(AsyncWebServerRequest *request, const char* contentType, const char* content, const char* etag)
+    {
+        // Check if client sent matching ETag
+        if (_checkEtagAndSend304(request, etag)) return;
+        
+        // ETag doesn't match or not provided - send full content
+        AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, contentType, content);
+        _sendResponseWithEtag(request, response, etag);
     }
 
     /**
@@ -680,15 +705,8 @@ namespace CustomServer
             return;
         }
         
-        // Check if client sent If-None-Match header
-        if (request->hasHeader("If-None-Match")) {
-            const String& clientEtag = request->header("If-None-Match");
-            if (clientEtag == etag) {
-                // ETag matches - content hasn't changed, send 304
-                request->send(HTTP_CODE_NOT_MODIFIED);
-                return;
-            }
-        }
+        // Check if client sent matching ETag
+        if (_checkEtagAndSend304(request, etag)) return;
         
         // ETag doesn't match or not provided - send full file
         AsyncWebServerResponse *response = request->beginResponse(LittleFS, filename, contentType, forceDownload);
@@ -698,13 +716,10 @@ namespace CustomServer
             return;
         }
         
-        // Add caching headers
-        response->addHeader("Cache-Control", "no-cache"); // Always validate with server
-        response->addHeader("ETag", etag);
-        
-        request->send(response);
+        _sendResponseWithEtag(request, response, etag);
     }
 
+    // === STATIC CONTENT SERVING ===
     static void _serveStaticContent()
     {
         // === STATIC CONTENT (no auth required) ===
@@ -790,7 +805,7 @@ namespace CustomServer
             AsyncResponseStream *response = request->beginResponseStream("application/json");
             
             SpiRamAllocator allocator;
-        JsonDocument doc(&allocator);
+            JsonDocument doc(&allocator);
             doc["status"] = "ok";
             doc["uptime"] = millis64();
             char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];

@@ -239,7 +239,6 @@
 #define CHANNEL_IS_GRID_KEY "is_grid_%u" // Format: is_grid_0 (10 chars)
 #define CHANNEL_IS_PRODUCTION_KEY "is_prod_%u" // Format: is_prod_0 (10 chars)
 #define CHANNEL_IS_BATTERY_KEY "is_batt_%u" // Format: is_batt_0 (10 chars)
-#define CHANNEL_DISCARD_NEGATIVE_KEY "disc_neg_%u" // Format: disc_neg_0 (11 chars)
 
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
@@ -254,7 +253,6 @@
 #define DEFAULT_CHANNEL_0_IS_GRID true // Channel 0 is typically the grid meter
 #define DEFAULT_CHANNEL_IS_PRODUCTION false
 #define DEFAULT_CHANNEL_IS_BATTERY false
-#define DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS false
 
 // CT Specification defaults
 #define DEFAULT_CT_CURRENT_RATING_CHANNEL_0 50.0f   // 50A for channel 0 only as it is "standard" in EnergyMe Home
@@ -414,7 +412,6 @@ struct ChannelData
   bool isGrid;                        // True if this is a grid meter (+ = import, - = export)
   bool isProduction;                  // True if this is a production channel (e.g., PV/solar, + = generation)
   bool isBattery;                     // True if this is a battery channel (+ = discharge, - = charge)
-  bool discardNegativeReadings;       // True to clamp negative active power to 0 (for spurious readings)
 
   ChannelData()
     : index(0), 
@@ -425,8 +422,8 @@ struct ChannelData
       ctSpecification(CtSpecification()),
       isGrid(DEFAULT_CHANNEL_IS_GRID),
       isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
-      isBattery(DEFAULT_CHANNEL_IS_BATTERY),
-      discardNegativeReadings(DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS) {
+      isBattery(DEFAULT_CHANNEL_IS_BATTERY)
+    {
       snprintf(label, sizeof(label), "Channel");
       snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, 0);
     }
@@ -440,8 +437,8 @@ struct ChannelData
       ctSpecification(CtSpecification()),
       isGrid(idx == 0 ? DEFAULT_CHANNEL_0_IS_GRID : DEFAULT_CHANNEL_IS_GRID),
       isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
-      isBattery(DEFAULT_CHANNEL_IS_BATTERY),
-      discardNegativeReadings(DEFAULT_CHANNEL_DISCARD_NEGATIVE_READINGS) {
+      isBattery(DEFAULT_CHANNEL_IS_BATTERY)
+    {
       snprintf(label, sizeof(label), DEFAULT_CHANNEL_LABEL_FORMAT, idx);
       snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, idx);
     }

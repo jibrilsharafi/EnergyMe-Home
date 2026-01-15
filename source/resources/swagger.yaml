@@ -1795,9 +1795,6 @@ paths:
                 isBattery:
                   type: boolean
                   description: Whether this is a battery channel
-                discardNegativeReadings:
-                  type: boolean
-                  description: Whether to clamp negative active power readings to 0 (for spurious readings)
               minProperties: 2
             examples:
               enable_channel:
@@ -2861,11 +2858,6 @@ components:
         isBattery:
           type: boolean
           description: Whether this channel monitors a battery system (charge/discharge)
-          example: false
-          default: false
-        discardNegativeReadings:
-          type: boolean
-          description: Whether to clamp negative active power readings to 0. Use this to filter spurious negative readings on consumption-only channels. Does not apply to production/battery channels or channel 0.
           example: false
           default: false
 

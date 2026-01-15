@@ -229,11 +229,6 @@
                     Battery (+ discharge, - charge)
                 </label>
                 <div style="height: 10px;"></div>
-                <label>
-                    <input type="checkbox" ${channel.discardNegativeReadings ? 'checked' : ''} id="discardNegativeReadings${index}" onchange="queueChannelUpdate(${index})">
-                    Discard Negative Readings
-                </label>
-                <div style="height: 10px;"></div>
                 <span id="power${index}" style="font-weight: bold; color: #333;"></span>
             `;
             container.appendChild(box);
@@ -339,7 +334,6 @@
             isGrid: document.getElementById(`isGrid${index}`).checked,
             isProduction: document.getElementById(`isProduction${index}`).checked,
             isBattery: document.getElementById(`isBattery${index}`).checked,
-            discardNegativeReadings: document.getElementById(`discardNegativeReadings${index}`).checked
         };
 
         // Update local channelData immediately for UI responsiveness
@@ -353,7 +347,6 @@
             channelData[index].isGrid = channelUpdate.isGrid;
             channelData[index].isProduction = channelUpdate.isProduction;
             channelData[index].isBattery = channelUpdate.isBattery;
-            channelData[index].discardNegativeReadings = channelUpdate.discardNegativeReadings;
         }
 
         // Store in queue - this will overwrite any previous update for this channel
