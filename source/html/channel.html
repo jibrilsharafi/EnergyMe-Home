@@ -12,6 +12,7 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Channel</title>
@@ -28,7 +29,7 @@
             box-sizing: border-box;
         }
         
-        /* Mobile responsive styles */
+        /* Page-specific mobile styles */
         @media screen and (max-width: 768px) {
             .channel-columns {
                 grid-template-columns: 1fr;
@@ -38,12 +39,6 @@
             
             .channel-columns input[type="text"] {
                 width: 100%;
-                font-size: 16px; /* Prevents zoom on iOS */
-                padding: 12px;
-                margin: 8px 0;
-                border: 1px solid #ddd;
-                border-radius: 5px;
-                box-sizing: border-box;
             }
             
             .channel-item {
@@ -60,20 +55,13 @@
                 margin-bottom: 10px;
             }
             
-            .channel-item label {
-                display: block;
-                font-weight: bold;
-                margin-bottom: 5px;
-                font-size: 14px;
-            }
-            
             .power-display {
                 font-size: 16px;
                 font-weight: bold;
                 color: #333;
                 margin: 8px 0;
             }
-            
+
             #updateStatus {
                 font-size: 14px;
                 margin: 10px 0;
@@ -296,10 +284,9 @@
     }
 
     function startPowerUpdate(index) {
-        // Individual channel power updates are now handled by the global update
-        // Just ensure the power display is visible for this channel
+        // Individual channel power updates are handled by the global update
         const powerElement = document.getElementById(`power${index}`);
-        if (powerElement && channelData[index] && channelData[index].active) {
+        if (powerElement) {
             powerElement.innerHTML = 'Loading...';
         }
     }

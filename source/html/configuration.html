@@ -12,11 +12,13 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Configuration</title>
     <style>
+        /* Slider-specific styles */
         .slider {
             -webkit-appearance: none;
             appearance: none;
@@ -52,46 +54,11 @@
             cursor: pointer;
         }
         
-        /* Mobile responsive form styles */
+        /* Page-specific mobile styles */
         @media screen and (max-width: 768px) {
-            .config-input {
-                width: 100% !important;
-                max-width: 100% !important;
-                font-size: 16px !important; /* Prevents zoom on iOS */
-                padding: 12px !important;
-                margin: 8px 0 !important;
-                box-sizing: border-box !important;
-                border: 1px solid #ddd !important;
-                border-radius: 5px !important;
-            }
-            
-            label {
-                display: block;
-                font-weight: bold;
-                margin-bottom: 5px;
-                font-size: 14px;
-            }
-            
-            select.config-input {
-                -webkit-appearance: none;
-                -moz-appearance: none;
-                appearance: none;
-                background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
-                background-position: right 12px center;
-                background-repeat: no-repeat;
-                background-size: 16px;
-                padding-right: 40px;
-            }
-            
-            .warning-box {
-                padding: 8px !important;
-                font-size: 13px !important;
-                margin: 8px 0 !important;
-            }
-            
             .slider {
-                height: 20px !important;
-                margin: 10px 0 !important;
+                height: 20px;
+                margin: 10px 0;
             }
             
             .slider::-webkit-slider-thumb {
@@ -105,13 +72,13 @@
             }
             
             #influxDbStatusContainer {
-                flex-direction: column !important;
-                align-items: flex-start !important;
+                flex-direction: column;
+                align-items: flex-start;
             }
             
             #influxDbStatusIcon {
-                margin-bottom: 8px !important;
-                margin-right: 0 !important;
+                margin-bottom: 8px;
+                margin-right: 0;
             }
             
             #energyChannels .channel-container {
@@ -120,53 +87,6 @@
                 border: 1px solid #eee;
                 border-radius: 5px;
                 background-color: #f9f9f9;
-            }
-            
-            table {
-                width: 100% !important;
-                font-size: 13px !important;
-                overflow-x: auto !important;
-                display: block !important;
-            }
-            
-            table thead,
-            table tbody,
-            table tr {
-                display: block !important;
-            }
-            
-            table td,
-            table th {
-                display: block !important;
-                width: 100% !important;
-                padding: 8px 5px !important;
-                border: none !important;
-                text-align: left !important;
-            }
-            
-            table th {
-                background-color: #f5f5f5 !important;
-                font-weight: bold !important;
-            }
-            
-            table tr {
-                border-bottom: 1px solid #ddd !important;
-                margin-bottom: 10px !important;
-            }
-        }
-        
-        @media screen and (max-width: 480px) {
-            .config-input {
-                font-size: 14px !important;
-                padding: 10px !important;
-            }
-            
-            label {
-                font-size: 13px;
-            }
-            
-            .warning-box {
-                font-size: 12px !important;
             }
         }
     </style>
