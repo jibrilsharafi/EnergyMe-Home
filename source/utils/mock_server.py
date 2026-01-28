@@ -5,8 +5,13 @@
 """
 Simple mock server for EnergyMe HTML development
 Serves static files and provides basic mock API responses
+
+Usage:
+    python mock_server.py                    # Mock mode (fake data)
+    python mock_server.py --proxy 192.168.2.75  # Proxy mode (real device data)
 """
 
+import argparse
 import http.server
 import socketserver
 from http import HTTPStatus
@@ -20,8 +25,12 @@ from urllib.parse import urlparse, parse_qs
 import threading
 import time
 import math
+import urllib.request
+import urllib.error
 
 PORT = 8081
+PROXY_TARGET = None  # Set via --proxy argument
+PROXY_PASSWORD = None  # Set via --proxy argument
 
 class SimpleHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -33,15 +42,65 @@ class SimpleHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         super().end_headers()
     
+    def proxy_request(self, method='GET', body=None):
+        """Forward request to real device and return response"""
+        parsed_path = urlparse(self.path)
+        target_url = f"http://{PROXY_TARGET}{parsed_path.path}"
+        if parsed_path.query:
+            target_url += f"?{parsed_path.query}"
+        
+        try:
+            # Set up digest auth handler
+            password_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+            password_mgr.add_password(None, f"http://{PROXY_TARGET}/", "admin", PROXY_PASSWORD)
+            auth_handler = urllib.request.HTTPDigestAuthHandler(password_mgr)
+            opener = urllib.request.build_opener(auth_handler)
+            
+            req = urllib.request.Request(target_url, data=body, method=method)
+            req.add_header('Content-Type', self.headers.get('Content-Type', 'application/json'))
+            
+            with opener.open(req, timeout=10) as response:
+                content = response.read()
+                content_type = response.headers.get('Content-Type', 'application/octet-stream')
+                
+                self.send_response(response.status)
+                self.send_header('Content-Type', content_type)
+                self.end_headers()
+                self.wfile.write(content)
+                return True
+        except urllib.error.HTTPError as e:
+            self.send_response(e.code)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            try:
+                self.wfile.write(e.read())
+            except:
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+            return True
+        except Exception as e:
+            print(f"Proxy error: {e}")
+            self.send_response(502)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": f"Proxy failed: {e}"}).encode())
+            return True
+    
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
     
     def do_POST(self):
-        # Handle POST requests with generic success responses
         parsed_path = urlparse(self.path)
         path = parsed_path.path
         
+        # Proxy mode: forward API requests to real device
+        if PROXY_TARGET and path.startswith('/api/'):
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length) if length > 0 else None
+            self.proxy_request('POST', body)
+            return
+        
+        # Mock mode: handle with fake responses
         success_endpoints = [
             '/api/v1/system/restart',
             '/api/v1/system/factory-reset',
@@ -143,10 +202,17 @@ class SimpleHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
     
     def do_PUT(self):
-        # Handle PUT requests with generic success responses
         parsed_path = urlparse(self.path)
         path = parsed_path.path
         
+        # Proxy mode: forward API requests to real device
+        if PROXY_TARGET and path.startswith('/api/'):
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length) if length > 0 else None
+            self.proxy_request('PUT', body)
+            return
+        
+        # Mock mode: handle with fake responses
         success_endpoints = [
             '/api/v1/logs/level',
             '/api/v1/custom-mqtt/config',
@@ -167,10 +233,17 @@ class SimpleHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
     
     def do_PATCH(self):
-        # Handle PATCH requests with generic success responses
         parsed_path = urlparse(self.path)
         path = parsed_path.path
         
+        # Proxy mode: forward API requests to real device
+        if PROXY_TARGET and path.startswith('/api/'):
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length) if length > 0 else None
+            self.proxy_request('PATCH', body)
+            return
+        
+        # Mock mode: handle with fake responses
         success_endpoints = [
             '/api/v1/logs/level',
             '/api/v1/custom-mqtt/config',
@@ -188,7 +261,6 @@ class SimpleHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed_path = urlparse(self.path)
         path = parsed_path.path
-
         # Live-reload JS client
         if path == '/livereload.js':
             self.send_response(200)
@@ -237,7 +309,12 @@ class SimpleHandler(http.server.SimpleHTTPRequestHandler):
                     pass
             return
         
-        # API endpoints
+        # Proxy mode: forward API requests to real device
+        if PROXY_TARGET and path.startswith('/api/'):
+            self.proxy_request('GET')
+            return
+        
+        # API endpoints (mock mode)
         if path == '/api/v1/ade7953/channel':
             self.send_json([
                 {"index": 0, "active": True, "label": "Total House", "multiplier": 1},
@@ -561,10 +638,25 @@ class FileWatcher(threading.Thread):
 
 
 if __name__ == '__main__':
-    print(f"Starting simple mock server on http://localhost:{PORT}")
-    print("Serving HTML files and mock APIs...")
-    print("Press Ctrl+C to stop")
+    parser = argparse.ArgumentParser(description='EnergyMe development server')
+    parser.add_argument('--proxy', nargs=2, metavar=('HOST', 'PASSWORD'), 
+                        help='Proxy API requests to real device (e.g., --proxy 192.168.2.75 mypassword)')
+    parser.add_argument('--port', type=int, default=PORT, help=f'Server port (default: {PORT})')
+    args = parser.parse_args()
     
+    if args.proxy:
+        PROXY_TARGET = args.proxy[0]
+        PROXY_PASSWORD = args.proxy[1]
+    
+    PORT = args.port
+    
+    print(f"Starting server on http://localhost:{PORT}")
+    if PROXY_TARGET:
+        print(f"PROXY MODE: API requests → http://{PROXY_TARGET} (digest auth as admin)")
+    else:
+        print("MOCK MODE: Using fake API data")
+    print("Live-reload enabled (watches .html, .js, .css files)")
+    print("Press Ctrl+C to stop\n")    
     # Use a threading server so SSE clients don't block other handlers
     with socketserver.ThreadingTCPServer(("", PORT), SimpleHandler) as httpd:
         # Start file watcher watching the repo root
