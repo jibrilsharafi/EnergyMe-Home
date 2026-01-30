@@ -734,11 +734,17 @@ namespace CustomServer
         const char* etag = _getSketchEtag();
 
         // CSS files
-        server.on("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
-            _sendStaticWithEtag(request, "text/css", styles_css, etag);
-        });
         server.on("/css/button.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", button_css, etag);
+        });
+        server.on("/css/forms.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", forms_css, etag);
+        });
+        server.on("/css/index.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", index_css, etag);
+        });
+        server.on("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
+            _sendStaticWithEtag(request, "text/css", styles_css, etag);
         });
         server.on("/css/section.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", section_css, etag);
@@ -750,6 +756,15 @@ namespace CustomServer
         // JavaScript files
         server.on("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", api_client_js, etag);
+        });
+        server.on("/js/chart-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "application/javascript", chart_helpers_js, etag);
+        });
+        server.on("/js/data-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "application/javascript", data_helpers_js, etag);
+        });
+        server.on("/js/power-flow.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "application/javascript", power_flow_js, etag);
         });
 
         // Resources

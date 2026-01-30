@@ -15,24 +15,14 @@
     overflow-x: auto;
 }
 
-.section-box-wide {
+/* Wide modifier - use as .section-box.wide */
+.section-box.wide {
     width: 80%;
-    margin: 20px;
-    padding: 20px;
-    border: 1px solid #ddd;
-    border-radius: 10px;
-    box-sizing: border-box;
-    background-color: white;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-    /* Mobile responsive adjustments */
-    max-width: 100%;
-    overflow-x: auto;
 }
 
 /* Mobile-first responsive design */
 @media screen and (max-width: 768px) {
-    .section-box,
-    .section-box-wide {
+    .section-box {
         width: 95%;
         margin: 10px;
         padding: 15px;
@@ -40,8 +30,7 @@
     }
     
     /* Ensure tables and forms fit on mobile */
-    .section-box table,
-    .section-box-wide table {
+    .section-box table {
         width: 100%;
         overflow-x: auto;
         display: block;
@@ -50,10 +39,7 @@
     
     .section-box input,
     .section-box select,
-    .section-box textarea,
-    .section-box-wide input,
-    .section-box-wide select,
-    .section-box-wide textarea {
+    .section-box textarea {
         width: 100%;
         max-width: 100%;
         font-size: 16px; /* Prevents zoom on iOS */
@@ -62,8 +48,7 @@
 }
 
 @media screen and (max-width: 480px) {
-    .section-box,
-    .section-box-wide {
+    .section-box {
         width: 98%;
         margin: 5px;
         padding: 12px;

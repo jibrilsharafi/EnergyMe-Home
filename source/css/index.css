@@ -1,0 +1,691 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright (C) 2025 Jibril Sharafi */
+
+/* Index page specific styles */
+
+.header {
+    font-size: 96px;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.subheader {
+    font-size: 32px;
+    margin-bottom: 20px;
+    text-align: center;
+    color: #808080;
+}
+
+.voltage-box {
+    text-align: center;
+    font-size: 20px;
+    margin-bottom: 20px;
+    margin-top: 5px;
+}
+
+/* Channel boxes */
+.channels-box {
+    display: none;
+    flex-wrap: wrap;
+    justify-content: space-around;
+}
+
+.channel-box {
+    width: 18%;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    box-sizing: border-box;
+    background-color: white;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    margin-bottom: 20px;
+    padding: 10px;
+    text-align: center;
+}
+
+.channel-box.main-channel {
+    border: 3px solid #007bff;
+    background-color: #f8f9ff;
+}
+
+.channel-box.grid-channel {
+    border: 3px solid #2196F3;
+    background-color: #f0f8ff;
+}
+
+.channel-box.other-channel {
+    border: 2px solid #ffc107;
+    background-color: #fffdf0;
+}
+
+.channel-label {
+    font-size: 24px;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.channel-value {
+    font-style: italic;
+    color: #808080;
+}
+
+/* Chart header and controls */
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding: 0 10px;
+}
+
+.chart-header h3 {
+    margin: 0;
+    font-size: 24px;
+    color: #333;
+}
+
+.chart-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.view-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.date-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.chart-total {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.chart-total .total-value {
+    font-weight: bold;
+    color: #333;
+}
+
+/* Tooltip container */
+.tooltip-container {
+    position: relative;
+    display: inline-block;
+}
+
+.tooltip-container .tooltip-text {
+    visibility: hidden;
+    width: 280px;
+    background-color: #333;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 12px;
+    position: absolute;
+    z-index: 1000;
+    bottom: 125%;
+    left: 50%;
+    margin-left: -140px;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.tooltip-container .tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #333 transparent transparent transparent;
+}
+
+.tooltip-container:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+.info-icon {
+    color: #666;
+    font-size: 14px;
+    margin-left: 4px;
+    cursor: help;
+}
+
+/* View toggle buttons */
+.view-toggle {
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.view-toggle.active {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.view-toggle:hover {
+    background: #e9ecef;
+}
+
+.view-toggle.active:hover {
+    background: #0056b3;
+}
+
+/* Navigation buttons */
+.nav-button {
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.2s;
+}
+
+.nav-button:hover {
+    background: #0056b3;
+}
+
+.nav-button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+#date-picker {
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+/* Chart containers */
+#consumption-chart {
+    position: relative;
+    width: 100%;
+    height: 400px;
+}
+
+#consumption-chart canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+#balance-chart {
+    position: relative;
+    width: 100%;
+    height: 400px;
+}
+
+#balance-chart canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Chart loading state */
+.chart-loading {
+    text-align: center;
+    padding: 60px 20px;
+    font-size: 18px;
+    color: #888;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
+/* Energy Flow Diagram Styles */
+.energy-flow-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    min-height: 350px;
+    overflow-x: auto;
+}
+
+.energy-flow-diagram {
+    position: relative;
+    width: 300px;
+    height: 300px;
+    transition: width 0.3s ease;
+}
+
+.energy-flow-diagram.with-loads {
+    width: 600px;
+}
+
+.energy-node {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.energy-node-icon {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    border: 3px solid;
+    background: white;
+}
+
+.energy-node-label {
+    font-size: 12px;
+    font-weight: bold;
+    margin-top: 4px;
+    color: #333;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.energy-node-value {
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 2px;
+}
+
+.energy-node-subvalue {
+    font-size: 11px;
+    color: #666;
+}
+
+/* Node positions - core diagram on left side (150px center) */
+.node-solar { top: 0; left: 150px; transform: translateX(-50%); }
+.node-grid { top: 50%; left: 0; transform: translateY(-50%); }
+.node-home { top: 50%; left: 230px; transform: translateY(-50%); }
+.node-battery { bottom: 0; left: 150px; transform: translateX(-50%); }
+
+/* Load nodes container */
+.loads-container {
+    position: absolute;
+    top: 0;
+    left: 340px;
+    width: 260px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+}
+
+.load-node {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #666;
+}
+
+.load-node-icon {
+    font-size: 18px;
+    width: 24px;
+    text-align: center;
+}
+
+.load-node-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.load-node-label {
+    font-size: 11px;
+    color: #333;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.load-node-value {
+    font-size: 13px;
+    font-weight: bold;
+    color: #666;
+}
+
+.load-node.other-load {
+    border-left-color: #ffc107;
+    background: #fffdf0;
+}
+
+/* Node colors */
+.node-solar .energy-node-icon { border-color: #FF9800; color: #FF9800; }
+.node-grid .energy-node-icon { border-color: #2196F3; color: #2196F3; }
+.node-home .energy-node-icon { border-color: #4CAF50; color: #4CAF50; }
+.node-battery .energy-node-icon { border-color: #9C27B0; color: #9C27B0; }
+
+.node-solar .energy-node-value { color: #FF9800; }
+.node-grid .energy-node-value { color: #2196F3; }
+.node-home .energy-node-value { color: #4CAF50; }
+.node-battery .energy-node-value { color: #9C27B0; }
+
+/* Connection lines (SVG overlay) */
+.energy-flow-lines {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.flow-line {
+    fill: none;
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.flow-solar { stroke: #FF9800; }
+.flow-grid { stroke: #2196F3; }
+.flow-battery { stroke: #9C27B0; }
+.flow-load { stroke: #4CAF50; }
+
+/* Animated flow effect */
+.flow-line.active {
+    stroke-dasharray: 8 4;
+    animation: flowAnimation var(--flow-speed, 1s) linear infinite;
+}
+
+.flow-line.active.reverse {
+    animation: flowAnimationReverse var(--flow-speed, 1s) linear infinite;
+}
+
+@keyframes flowAnimation {
+    from { stroke-dashoffset: 12; }
+    to { stroke-dashoffset: 0; }
+}
+
+@keyframes flowAnimationReverse {
+    from { stroke-dashoffset: 0; }
+    to { stroke-dashoffset: 12; }
+}
+
+.flow-line.inactive {
+    stroke-dasharray: 2 4;
+    opacity: 0.3;
+}
+
+/* Sparkline tooltip */
+.sparkline-tooltip {
+    position: absolute;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 100;
+}
+
+.sparkline-tooltip.visible {
+    opacity: 1;
+}
+
+.sparkline-tooltip canvas {
+    display: block;
+}
+
+/* KPI styles */
+.energy-kpis {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 20px;
+    width: 100%;
+}
+
+.kpi-card {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 12px 20px;
+    text-align: center;
+    min-width: 140px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.kpi-label {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+.kpi-value {
+    font-size: 20px;
+    font-weight: bold;
+    color: #333;
+}
+
+.kpi-unit {
+    font-size: 12px;
+    color: #666;
+}
+
+/* Hidden by default, shown when PV/Battery configured */
+.energy-flow-section {
+    display: block;
+}
+
+.energy-flow-section.visible {
+    display: block;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .header {
+        font-size: 64px;
+        margin-bottom: 8px;
+    }
+    
+    .subheader {
+        font-size: 24px;
+        margin-bottom: 15px;
+    }
+    
+    .voltage-box {
+        font-size: 18px;
+        margin-bottom: 15px;
+    }
+    
+    .channels-box {
+        justify-content: center;
+    }
+    
+    .channel-box {
+        width: 45%;
+        margin-bottom: 15px;
+        padding: 8px;
+        min-width: 140px;
+    }
+    
+    .channel-label {
+        font-size: 18px;
+        margin-bottom: 4px;
+    }
+    
+    .chart-header {
+        flex-direction: column;
+        gap: 15px;
+        margin-bottom: 10px;
+        padding: 0 5px;
+        align-items: stretch;
+    }
+    
+    .chart-header h3 {
+        font-size: 20px;
+        text-align: center;
+        margin-bottom: 0;
+    }
+    
+    .chart-controls {
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .view-selector {
+        justify-content: center;
+        gap: 8px;
+        order: 1;
+    }
+    
+    .date-selector {
+        justify-content: center;
+        gap: 8px;
+        order: 2;
+    }
+    
+    #consumption-chart {
+        height: 300px;
+    }
+    
+    .view-toggle {
+        padding: 6px 12px;
+        font-size: 13px;
+    }
+    
+    .nav-button {
+        padding: 6px 10px;
+        font-size: 14px;
+    }
+    
+    #date-picker,
+    #month-picker {
+        padding: 6px;
+        font-size: 13px;
+        width: 150px;
+    }
+    
+    #download-csv {
+        top: 5px;
+        right: 5px;
+        font-size: 12px;
+        padding: 4px;
+    }
+    
+    .chart-total {
+        text-align: center;
+        font-size: 14px;
+    }
+    
+    .tooltip-container .tooltip-text {
+        width: 200px;
+        margin-left: -100px;
+        font-size: 11px;
+    }
+    
+    .energy-flow-diagram {
+        width: 250px;
+        height: 250px;
+    }
+    
+    .energy-node-icon {
+        width: 55px;
+        height: 55px;
+        font-size: 22px;
+    }
+    
+    .energy-node-value {
+        font-size: 12px;
+    }
+    
+    .kpi-card {
+        min-width: 100px;
+        padding: 8px 12px;
+    }
+    
+    .kpi-value {
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .header {
+        font-size: 48px;
+        margin-bottom: 5px;
+    }
+    
+    .subheader {
+        font-size: 20px;
+        margin-bottom: 12px;
+    }
+    
+    .voltage-box {
+        font-size: 16px;
+        margin-bottom: 12px;
+    }
+    
+    .channel-box {
+        width: 90%;
+        margin-bottom: 12px;
+        padding: 6px;
+        min-width: auto;
+    }
+    
+    .channel-label {
+        font-size: 16px;
+    }
+    
+    .chart-header h3 {
+        font-size: 18px;
+    }
+    
+    .chart-total {
+        font-size: 13px;
+    }
+    
+    .view-toggle {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+    
+    .nav-button {
+        padding: 5px 8px;
+        font-size: 13px;
+    }
+    
+    #date-picker,
+    #month-picker {
+        width: 130px;
+        font-size: 12px;
+        padding: 5px;
+    }
+    
+    #consumption-chart {
+        height: 250px;
+    }
+    
+    .tooltip-container .tooltip-text {
+        width: 160px;
+        margin-left: -80px;
+        font-size: 10px;
+    }
+}

@@ -561,6 +561,98 @@ class EnergyMeAPI {
     async getFileAsText(filepath) {
         return this.get(`files/${encodeURIComponent(filepath)}`, { responseType: 'text' });
     }
+
+    /**
+     * Upload a file to LittleFS
+     * @param {string} filepath - Target file path on device
+     * @param {File|Blob} file - File to upload
+     */
+    async uploadFile(filepath, file) {
+        const formData = new FormData();
+        formData.append('file', file, filepath);
+        
+        const response = await this.apiCall(`files/${encodeURIComponent(filepath)}`, {
+            method: 'POST',
+            body: formData,
+            headers: {} // Let browser set Content-Type with boundary
+        }, this.otherTimeoutMs);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`File upload failed: ${response.status} - ${errorText}`);
+        }
+        
+        return response.json().catch(() => ({}));
+    }
+
+    /**
+     * Delete a file from LittleFS
+     * @param {string} filepath - File path to delete
+     */
+    async deleteFile(filepath) {
+        return this.post('delete-file', { filepath });
+    }
+
+    /**
+     * Get safe mode status
+     */
+    async getSafeModeStatus() {
+        return this.get('system/safe-mode');
+    }
+
+    /**
+     * Clear safe mode
+     */
+    async clearSafeMode() {
+        return this.post('system/safe-mode/clear');
+    }
+
+    /**
+     * Get UDP log destination
+     */
+    async getUdpLogDestination() {
+        return this.get('logs-udp-destination');
+    }
+
+    /**
+     * Set UDP log destination
+     * @param {string} host - UDP destination host
+     * @param {number} port - UDP destination port
+     */
+    async setUdpLogDestination(host, port) {
+        return this.put('logs-udp-destination', { host, port });
+    }
+
+    /**
+     * Update all channels configuration (bulk update)
+     * @param {Array} channels - Array of channel configurations
+     */
+    async updateAllChannels(channels) {
+        return this.put('ade7953/channels', { channels });
+    }
+
+    /**
+     * Arm waveform capture
+     * @param {number} channelIndex - Channel index for capture
+     * @param {string} signal - Signal type to capture
+     */
+    async armWaveformCapture(channelIndex, signal) {
+        return this.post('ade7953/waveform/arm', { index: channelIndex, signal });
+    }
+
+    /**
+     * Get waveform capture status
+     */
+    async getWaveformStatus() {
+        return this.get('ade7953/waveform/status');
+    }
+
+    /**
+     * Get captured waveform data
+     */
+    async getWaveformData() {
+        return this.get('ade7953/waveform/data');
+    }
 }
 
 // Create global instance

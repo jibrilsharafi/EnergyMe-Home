@@ -9,12 +9,17 @@
 // --------------------------------------------------
 // Styles
 extern const char button_css[] asm("_binary_css_button_css_start");
+extern const char forms_css[] asm("_binary_css_forms_css_start");
+extern const char index_css[] asm("_binary_css_index_css_start");
 extern const char styles_css[] asm("_binary_css_styles_css_start");
 extern const char section_css[] asm("_binary_css_section_css_start");
 extern const char typography_css[] asm("_binary_css_typography_css_start");
 
 // JavaScript
 extern const char api_client_js[] asm("_binary_js_api_client_js_start");
+extern const char chart_helpers_js[] asm("_binary_js_chart_helpers_js_start");
+extern const char data_helpers_js[] asm("_binary_js_data_helpers_js_start");
+extern const char power_flow_js[] asm("_binary_js_power_flow_js_start");
 
 // HTML
 extern const char ade7953_tester_html[] asm("_binary_html_ade7953_tester_html_start");
