@@ -3080,6 +3080,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         }
 
         // Discard negative readings for channels that should not have them
+        // TODO: if we just set the channel or similar, should we automatically reverse or at least warn the user?
         if (
             activePower < 0.0f && 
             (!channelData.isBattery && !channelData.isGrid) // If it is load or PV (thus not battery and not grid), we discard negative readings 

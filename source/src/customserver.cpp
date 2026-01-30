@@ -170,7 +170,7 @@ namespace CustomServer
         {
             digestAuth.setPassword(webPassword);
             digestAuth.generateHash(); // regenerate hash with new password
-            LOG_INFO("Authentication password updated");
+            LOG_DEBUG("Authentication password updated");
         }
         else
         {
@@ -180,7 +180,7 @@ namespace CustomServer
 
     bool resetWebPassword()
     {
-        LOG_INFO("Resetting web password to default");
+        LOG_DEBUG("Resetting web password to default");
         return _setWebPassword(WEBSERVER_DEFAULT_PASSWORD);
     }
 
@@ -580,14 +580,14 @@ namespace CustomServer
         // Check minimum length
         if (length < MIN_PASSWORD_LENGTH)
         {
-            LOG_WARNING("Password too short");
+            LOG_WARNING("Password too short (min %d characters)", MIN_PASSWORD_LENGTH);
             return false;
         }
 
         // Check maximum length
         if (length > MAX_PASSWORD_LENGTH)
         {
-            LOG_WARNING("Password too int32_t");
+            LOG_WARNING("Password too long (max %d characters)", MAX_PASSWORD_LENGTH);
             return false;
         }
         
@@ -812,8 +812,7 @@ namespace CustomServer
             CustomTime::getTimestampIso(timestamp, sizeof(timestamp));
             doc["timestamp"] = timestamp;
             
-            serializeJson(doc, *response);
-            request->send(response); 
+            _sendJsonResponse(request, doc);
         }).skipServerMiddlewares(); // For the health endpoint, no authentication or rate limiting
     }
 
@@ -844,8 +843,7 @@ namespace CustomServer
             doc["usingDefaultPassword"] = isDefault;
             doc["username"] = WEBSERVER_DEFAULT_USERNAME;
             
-            serializeJson(doc, *response);
-            request->send(response); 
+            _sendJsonResponse(request, doc);
         });
     }
 
@@ -2317,7 +2315,9 @@ namespace CustomServer
             Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
             
             if (state != Ade7953::CaptureState::COMPLETE) {
-                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No waveform data available");
+                JsonDocument doc;
+                doc["message"] = "Waveform capture data not available";
+                _sendJsonResponse(request, doc, HTTP_CODE_NO_CONTENT);
                 return;
             }
 

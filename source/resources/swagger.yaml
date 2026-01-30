@@ -2375,7 +2375,7 @@ paths:
                       type: integer
                       format: int64
                     example: [20, 53, 87, 120]
-        '404':
+        '204':
           description: No complete waveform data available
           content:
             application/json:

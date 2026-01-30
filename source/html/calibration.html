@@ -471,7 +471,7 @@
                 const voltageOutput = parseFloat(document.getElementById('voltageOutput').value);
                 const scalingFraction = scalingPercentage / 100; // Convert percentage to fraction
 
-                const channelUpdate = {
+                const channelUpdate = { // TODO: align this with latest payload format
                     index: parseInt(selectedChannelIndex),
                     label: channelData[selectedChannelIndex].label,
                     phase: channelData[selectedChannelIndex].phase,
