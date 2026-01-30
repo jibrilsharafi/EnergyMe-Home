@@ -27,3 +27,6 @@ tmp/
 # Python virtual environments
 venv/
 .venv/
+
+# Mock data for mock server
+mocks/
