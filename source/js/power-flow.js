@@ -168,9 +168,9 @@ const PowerFlowHelpers = {
      * Setup hover events for load nodes
      */
     setupLoadSparklineHovers(flowHistory, loadHistory, nodeColors) {
-        const loadNodes = document.querySelectorAll('.load-node');
+        const loadNodes = document.querySelectorAll('.pf-load-item');
         loadNodes.forEach((node) => {
-            const valueEl = node.querySelector('.load-node-value');
+            const valueEl = node.querySelector('.pf-load-value');
             if (!valueEl) return;
 
             const loadKey = valueEl.id.replace('load-value-', '');
@@ -181,7 +181,7 @@ const PowerFlowHelpers = {
     },
 
     /**
-     * Update energy flow diagram with real-time data
+     * Update energy flow diagram with real-time data (Simple Layout)
      */
     updateEnergyFlow(meterData, channelData) {
         if (!meterData || meterData.length === 0 || !channelData || !Array.isArray(channelData)) return;
@@ -198,25 +198,14 @@ const PowerFlowHelpers = {
         const flowSection = document.getElementById('energy-flow-section');
         flowSection.classList.add('visible');
 
-        // Remove loading message if data available
-        const flowDiagram = document.getElementById('energy-flow-diagram');
-        if (flowDiagram && meterData && meterData.length > 0) {
-            const loadingMsg = flowDiagram.querySelector('[data-loading-msg]');
-            if (loadingMsg) loadingMsg.remove();
-
-            // Fade in SVG and nodes
-            document.getElementById('energy-flow-svg').style.opacity = '1';
-            document.getElementById('node-grid').style.opacity = '1';
-            document.getElementById('node-home').style.opacity = '1';
-            if (hasProduction) document.getElementById('node-solar').style.opacity = '1';
-            if (hasBattery) document.getElementById('node-battery').style.opacity = '1';
-        }
-
-        // Show/hide nodes
-        document.getElementById('node-solar').style.display = hasProduction ? 'flex' : 'none';
-        document.getElementById('node-battery').style.display = hasBattery ? 'flex' : 'none';
-        document.getElementById('node-grid').style.display = 'flex';
-        document.getElementById('node-home').style.display = 'flex';
+        // Show/hide nodes (new simple IDs)
+        const pfSolar = document.getElementById('pf-solar');
+        const pfBattery = document.getElementById('pf-battery');
+        const pfGrid = document.getElementById('pf-grid');
+        const pfHome = document.getElementById('pf-home');
+        
+        if (pfSolar) pfSolar.style.display = hasProduction ? 'flex' : 'none';
+        if (pfBattery) pfBattery.style.display = hasBattery ? 'flex' : 'none';
 
         // Calculate power values
         let gridPower = 0;
@@ -245,56 +234,45 @@ const PowerFlowHelpers = {
         this.addToFlowHistory('battery', batteryPower);
         this.addToFlowHistory('home', Math.max(0, homePower));
 
-        // Update display values
-        document.getElementById('grid-power').textContent = this.formatPower(Math.abs(gridPower));
-        document.getElementById('home-power').textContent = this.formatPower(Math.max(0, homePower));
+        // Update display values (with null checks)
+        const gridPowerEl = document.getElementById('grid-power');
+        const homePowerEl = document.getElementById('home-power');
+        const solarPowerEl = document.getElementById('solar-power');
+        const batteryPowerEl = document.getElementById('battery-power');
+        
+        if (gridPowerEl) gridPowerEl.textContent = this.formatPower(Math.abs(gridPower));
+        if (homePowerEl) homePowerEl.textContent = this.formatPower(Math.max(0, homePower));
+        if (hasProduction && solarPowerEl) solarPowerEl.textContent = this.formatPower(solarPower);
+        if (hasBattery && batteryPowerEl) batteryPowerEl.textContent = this.formatPower(Math.abs(batteryPower));
 
-        if (hasProduction) {
-            document.getElementById('solar-power').textContent = this.formatPower(solarPower);
-        }
-
-        if (hasBattery) {
-            document.getElementById('battery-power').textContent = this.formatPower(Math.abs(batteryPower));
-        }
-
-        // Update SVG lines
-        const lineSolar = document.getElementById('line-solar');
-        const lineGrid = document.getElementById('line-grid');
-        const lineHome = document.getElementById('line-home');
-        const lineBattery = document.getElementById('line-battery');
-
-        lineSolar.style.display = hasProduction ? 'block' : 'none';
-        if (hasProduction) {
-            lineSolar.classList.toggle('active', solarPower > PowerFlowConfig.ACTIVE_LINE_THRESHOLD);
-            lineSolar.classList.toggle('inactive', solarPower <= PowerFlowConfig.ACTIVE_LINE_THRESHOLD);
-            lineSolar.classList.remove('reverse');
-            lineSolar.style.setProperty('--flow-speed', this.getFlowSpeed(solarPower));
-        }
-
-        lineGrid.classList.toggle('active', Math.abs(gridPower) > PowerFlowConfig.ACTIVE_LINE_THRESHOLD);
-        lineGrid.classList.toggle('inactive', Math.abs(gridPower) <= PowerFlowConfig.ACTIVE_LINE_THRESHOLD);
-        lineGrid.classList.toggle('reverse', gridPower < -PowerFlowConfig.ACTIVE_LINE_THRESHOLD);
-        lineGrid.style.setProperty('--flow-speed', this.getFlowSpeed(gridPower));
-
-        lineHome.classList.toggle('active', homePower > PowerFlowConfig.ACTIVE_LINE_THRESHOLD);
-        lineHome.classList.toggle('inactive', homePower <= PowerFlowConfig.ACTIVE_LINE_THRESHOLD);
-        lineHome.classList.remove('reverse');
-        lineHome.style.setProperty('--flow-speed', this.getFlowSpeed(homePower));
-
-        lineBattery.style.display = hasBattery ? 'block' : 'none';
-        if (hasBattery) {
-            lineBattery.classList.toggle('active', Math.abs(batteryPower) > PowerFlowConfig.ACTIVE_LINE_THRESHOLD);
-            lineBattery.classList.toggle('inactive', Math.abs(batteryPower) <= PowerFlowConfig.ACTIVE_LINE_THRESHOLD);
-            lineBattery.classList.toggle('reverse', batteryPower < -PowerFlowConfig.ACTIVE_LINE_THRESHOLD);
-            lineBattery.style.setProperty('--flow-speed', this.getFlowSpeed(batteryPower));
-        }
+        // Update connectors (simple CSS-based, no SVG)
+        this.updateConnector('pf-solar', solarPower, hasProduction);
+        this.updateConnector('pf-grid', gridPower, true);
+        this.updateConnector('pf-home', homePower, true);
+        this.updateConnector('pf-battery', batteryPower, hasBattery);
 
         // Update load breakdown
         this.updateLoadBreakdown(hasGrid, hasProduction, hasBattery, gridPower, solarPower, batteryPower, homePower, meterData, channelData);
     },
 
     /**
-     * Update load breakdown section
+     * Update connector animation state
+     */
+    updateConnector(nodeId, power, isVisible) {
+        const node = document.getElementById(nodeId);
+        if (!node) return;
+        
+        const connector = node.querySelector('.pf-connector');
+        if (!connector) return;
+        
+        if (!isVisible) return;
+        
+        const isActive = Math.abs(power) > PowerFlowConfig.ACTIVE_LINE_THRESHOLD;
+        connector.classList.toggle('active', isActive);
+    },
+
+    /**
+     * Update load breakdown section (simple list)
      */
     updateLoadBreakdown(hasGrid, hasProduction, hasBattery, gridPower, solarPower, batteryPower, homePower, meterData, channelData) {
         const gridIndices = ChannelCache.grid.map(ch => ch.index);
@@ -370,30 +348,24 @@ const PowerFlowHelpers = {
                 aggregatedLoads.push({
                     key: 'other',
                     label: 'Other',
-                    icon: '',
+                    icon: '❓',
                     power: otherPower,
                     isOther: true
                 });
             }
         }
 
-        const loadsContainer = document.getElementById('loads-container');
-        const diagram = document.getElementById('energy-flow-diagram');
-        const svg = document.getElementById('energy-flow-svg');
-        const loadLinesGroup = document.getElementById('load-lines');
+        // Get containers (new simple structure)
+        const pfLoads = document.getElementById('pf-loads');
+        const loadsList = document.getElementById('pf-loads-list');
 
         if (!hasLoads) {
-            loadsContainer.style.display = 'none';
-            diagram.classList.remove('with-loads');
-            svg.setAttribute('viewBox', '0 0 300 300');
-            loadLinesGroup.innerHTML = '';
+            if (pfLoads) pfLoads.style.display = 'none';
             PowerFlowState.previousLoadKeys = null;
             return;
         }
 
-        loadsContainer.style.display = 'flex';
-        diagram.classList.add('with-loads');
-        svg.setAttribute('viewBox', '0 0 600 300');
+        if (pfLoads) pfLoads.style.display = 'flex';
 
         const currentLoadKeys = aggregatedLoads.map(l => l.key).join(',');
         const shouldRebuild = currentLoadKeys !== PowerFlowState.previousLoadKeys;
@@ -405,51 +377,20 @@ const PowerFlowHelpers = {
             let loadsHtml = '';
             aggregatedLoads.forEach((load) => {
                 const color = load.isOther ? PowerFlowConfig.OTHER_LOAD_COLOR : this.getLoadColor(load.power, maxPower);
-                loadsHtml += '<div class="load-node' + (load.isOther ? ' other-load' : '') + '" style="border-left-color: ' + color + ';">';
-                loadsHtml += '<div class="load-node-icon" style="display: none;">' + load.icon + '</div>';
-                loadsHtml += '<div class="load-node-info">';
-                loadsHtml += '<div class="load-node-label">' + load.label + '</div>';
-                loadsHtml += '<div class="load-node-value" id="load-value-' + load.key + '">' + this.formatPower(load.power) + '</div>';
-                loadsHtml += '</div></div>';
+                loadsHtml += '<div class="pf-load-item' + (load.isOther ? ' other' : '') + '" style="border-left-color: ' + color + ';">';
+                loadsHtml += '<div class="pf-load-icon">' + load.icon + '</div>';
+                loadsHtml += '<div class="pf-load-name">' + load.label + '</div>';
+                loadsHtml += '<div class="pf-load-value" id="load-value-' + load.key + '">' + this.formatPower(load.power) + '</div>';
+                loadsHtml += '</div>';
                 this.addToLoadHistory(load.key, load.power);
             });
-            loadsContainer.innerHTML = loadsHtml;
+            if (loadsList) loadsList.innerHTML = loadsHtml;
             this.setupLoadSparklineHovers(PowerFlowState.flowHistory, PowerFlowState.loadHistory, PowerFlowConfig.NODE_COLORS);
-
-            let linesHtml = '';
-            const loadCount = aggregatedLoads.length;
-            const loadSpacing = Math.min(40, 280 / Math.max(loadCount, 1));
-            const startY = 150 - ((loadCount - 1) * loadSpacing) / 2;
-
-            aggregatedLoads.forEach((load, idx) => {
-                const loadY = startY + idx * loadSpacing;
-                const color = load.isOther ? PowerFlowConfig.OTHER_LOAD_COLOR : this.getLoadColor(load.power, maxPower);
-                const speed = this.getFlowSpeed(load.power);
-                const isActive = Math.abs(load.power) > PowerFlowConfig.ACTIVE_LINE_THRESHOLD;
-
-                linesHtml += '<path id="load-line-' + load.key + '" ';
-                linesHtml += 'class="flow-line' + (isActive ? ' active' : ' inactive') + '" ';
-                linesHtml += 'style="stroke: ' + color + '; --flow-speed: ' + speed + ';" ';
-                linesHtml += 'd="M 265 150 C 300 150, 310 ' + loadY + ', 340 ' + loadY + '" />';
-            });
-            loadLinesGroup.innerHTML = linesHtml;
         } else {
             aggregatedLoads.forEach((load) => {
                 const valueEl = document.getElementById('load-value-' + load.key);
                 if (valueEl) {
                     valueEl.textContent = this.formatPower(load.power);
-                }
-
-                const lineEl = document.getElementById('load-line-' + load.key);
-                if (lineEl) {
-                    const color = load.isOther ? PowerFlowConfig.OTHER_LOAD_COLOR : this.getLoadColor(load.power, maxPower);
-                    const speed = this.getFlowSpeed(load.power);
-                    const isActive = Math.abs(load.power) > PowerFlowConfig.ACTIVE_LINE_THRESHOLD;
-
-                    lineEl.style.stroke = color;
-                    lineEl.style.setProperty('--flow-speed', speed);
-                    lineEl.classList.toggle('active', isActive);
-                    lineEl.classList.toggle('inactive', !isActive);
                 }
                 this.addToLoadHistory(load.key, load.power);
             });

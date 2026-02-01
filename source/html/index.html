@@ -31,53 +31,60 @@
         <a class="buttonNavigationExternal" type="inner" href="/swagger-ui" target="_blank">📚 API Docs</a>
     </div>
 
-    <!-- Energy Flow Diagram -->
+    <!-- Energy Flow Diagram - Simple Layout -->
     <div id="energy-flow-section" class="section-box energy-flow-section">
-        <div class="energy-flow-container">
-            <div id="energy-flow-diagram" class="energy-flow-diagram">
-                <!-- SVG for connection lines -->
-                <svg id="energy-flow-svg" class="energy-flow-lines" viewBox="0 0 300 300" preserveAspectRatio="xMinYMid meet" style="opacity: 0;">
-                    <path id="line-solar" class="flow-line flow-solar" d="M 150 70 L 150 130" />
-                    <path id="line-grid" class="flow-line flow-grid" d="M 70 150 L 130 150" />
-                    <path id="line-home" class="flow-line flow-load" d="M 170 150 L 230 150" />
-                    <path id="line-battery" class="flow-line flow-battery" d="M 150 170 L 150 230" />
-                    <circle id="center-dot" cx="150" cy="150" r="8" fill="#666" />
-                    <g id="load-lines"></g>
-                </svg>
-                
-                <!-- Energy Nodes -->
-                <div id="node-solar" class="energy-node node-solar" style="display: none; opacity: 0;">
-                    <div class="energy-node-icon">☀️</div>
-                    <div class="energy-node-label">Solar</div>
-                    <div class="energy-node-value" id="solar-power">0 W</div>
+        <div class="power-flow">
+            <!-- Main flow area -->
+            <div class="power-flow-main">
+                <!-- Top: Solar (optional) -->
+                <div id="pf-solar" class="pf-node pf-solar" style="display: none;">
+                    <div class="pf-icon">☀️</div>
+                    <div class="pf-value" id="solar-power">0 W</div>
+                    <div class="pf-connector pf-connector-bottom"></div>
                 </div>
                 
-                <div id="node-grid" class="energy-node node-grid" style="opacity: 0;">
-                    <div class="energy-node-icon">🔌</div>
-                    <div class="energy-node-label">Grid</div>
-                    <div class="energy-node-value" id="grid-power">0 W</div>
+                <!-- Middle row: Grid - Center - Home -->
+                <div class="pf-middle-row">
+                    <div id="pf-grid" class="pf-node pf-grid">
+                        <div class="pf-icon">
+                            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                                <path d="M12 2L8 6h3v4H8l-2 2 2 2h3v6H8l4 4 4-4h-3v-6h3l2-2-2-2h-3V6h3L12 2z"/>
+                                <path d="M4 8h2v8H4zm14 0h2v8h-2z" opacity="0.6"/>
+                            </svg>
+                        </div>
+                        <div class="pf-value" id="grid-power">0 W</div>
+                        <div class="pf-connector pf-connector-right"></div>
+                    </div>
+                    
+                    <div class="pf-center">
+                        <div class="pf-center-dot"></div>
+                    </div>
+                    
+                    <div id="pf-home" class="pf-node pf-home">
+                        <div class="pf-connector pf-connector-left"></div>
+                        <div class="pf-icon">🏠</div>
+                        <div class="pf-value" id="home-power">0 W</div>
+                    </div>
                 </div>
                 
-                <div id="node-home" class="energy-node node-home" style="opacity: 0;">
-                    <div class="energy-node-icon">🏠</div>
-                    <div class="energy-node-label">Home</div>
-                    <div class="energy-node-value" id="home-power">0 W</div>
-                </div>
-                
-                <div id="node-battery" class="energy-node node-battery" style="display: none; opacity: 0;">
-                    <div class="energy-node-icon">🔋</div>
-                    <div class="energy-node-label">Battery</div>
-                    <div class="energy-node-value" id="battery-power">0 W</div>
-                </div>
-                
-                <!-- Loads container -->
-                <div id="loads-container" class="loads-container" style="display: none;"></div>
-                
-                <!-- Sparkline tooltip -->
-                <div id="sparkline-tooltip" class="sparkline-tooltip">
-                    <canvas id="sparkline-canvas" width="120" height="40"></canvas>
+                <!-- Bottom: Battery (optional) -->
+                <div id="pf-battery" class="pf-node pf-battery" style="display: none;">
+                    <div class="pf-connector pf-connector-top"></div>
+                    <div class="pf-icon">🔋</div>
+                    <div class="pf-value" id="battery-power">0 W</div>
                 </div>
             </div>
+            
+            <!-- Loads panel (right side on desktop, below on mobile) -->
+            <div id="pf-loads" class="pf-loads" style="display: none;">
+                <div class="pf-loads-header">Loads</div>
+                <div id="pf-loads-list" class="pf-loads-list"></div>
+            </div>
+        </div>
+        
+        <!-- Sparkline tooltip -->
+        <div id="sparkline-tooltip" class="sparkline-tooltip">
+            <canvas id="sparkline-canvas" width="120" height="40"></canvas>
         </div>
     </div>
 
@@ -220,7 +227,11 @@
             await loadAvailableDates();
 
             if (availableDates.length > 0) {
-                currentDate = availableDates[availableDates.length - 1];
+                // Prefer the most recent date with an actual daily file
+                const actualDailyDates = availableDates.filter(d => ArchiveCache.dailyFilesSet.has(d));
+                currentDate = actualDailyDates.length > 0 
+                    ? actualDailyDates[actualDailyDates.length - 1] 
+                    : availableDates[availableDates.length - 1];
                 currentMonth = availableMonths[availableMonths.length - 1];
                 currentYear = availableYears[availableYears.length - 1];
                 document.getElementById('date-picker').value = currentDate;

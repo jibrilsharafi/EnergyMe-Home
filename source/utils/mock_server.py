@@ -19,7 +19,7 @@ from http import HTTPStatus
 import json
 import os
 from datetime import datetime, timedelta
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 import threading
 import time
 import urllib.request
@@ -29,6 +29,7 @@ PORT = 8081
 PROXY_TARGET = None
 PROXY_PASSWORD = None
 MOCKS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'mocks')
+LITTLE_FS_DIR = os.path.join(MOCKS_DIR, 'little-fs')
 
 # All GET endpoints from swagger.yaml
 GET_ENDPOINTS = [
@@ -92,6 +93,91 @@ def save_mock_response(api_path: str, data):
     print(f"  Saved: {file_path}")
 
 
+def list_little_fs_files(folder = None):
+    """List files in mocks/little-fs directory, mimicking device's LittleFS.
+    
+    - Returns dict of {filepath: size}
+    - If folder specified, returns only filenames (not full paths) within that folder
+    - Paths are relative to little-fs root (no leading slash)
+    """
+    result = {}
+    
+    if not os.path.isdir(LITTLE_FS_DIR):
+        return result
+    
+    for root, dirs, files in os.walk(LITTLE_FS_DIR):
+        for filename in files:
+            full_path = os.path.join(root, filename)
+            rel_path = os.path.relpath(full_path, LITTLE_FS_DIR).replace('\\', '/')
+            
+            # Apply folder filter if specified
+            if folder:
+                if not rel_path.startswith(folder + '/'):
+                    continue
+                # Return just the filename when filtering by folder
+                rel_path = os.path.basename(rel_path)
+            
+            result[rel_path] = os.path.getsize(full_path)
+    
+    return result
+
+
+def fetch_data_files(opener, host: str):
+    """Fetch all data files (energy CSVs, logs) from device and save locally."""
+    print("\nFetching data files...")
+    print("-" * 40)
+    
+    # Get the file list first
+    try:
+        url = f"http://{host}/api/v1/list-files"
+        req = urllib.request.Request(url)
+        with opener.open(req, timeout=10) as response:
+            file_list = json.loads(response.read().decode('utf-8'))
+    except Exception as e:
+        print(f"  Failed to get file list: {e}")
+        return
+    
+    # Download each file
+    success_count = 0
+    fail_count = 0
+    
+    for file_path, file_size in file_list.items():
+        # Skip non-data files
+        if not (file_path.startswith('energy/') or file_path == 'log.txt'):
+            continue
+        
+        url = f"http://{host}/api/v1/files/{file_path}"
+        local_path = os.path.join(LITTLE_FS_DIR, file_path)
+        
+        try:
+            req = urllib.request.Request(url)
+            with opener.open(req, timeout=30) as response:
+                content = response.read()
+                
+            # Create directory structure
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            
+            # Write file (binary for .gz, text for others)
+            mode = 'wb' if file_path.endswith('.gz') else 'w'
+            with open(local_path, mode) as f:
+                if mode == 'wb':
+                    f.write(content)
+                else:
+                    f.write(content.decode('utf-8'))
+            
+            print(f"  Saved: {local_path} ({file_size} bytes)")
+            success_count += 1
+            
+        except urllib.error.HTTPError as e:
+            print(f"  Failed: {file_path} (HTTP {e.code})")
+            fail_count += 1
+        except Exception as e:
+            print(f"  Failed: {file_path} ({e})")
+            fail_count += 1
+    
+    print(f"Data files: Success: {success_count}, Failed: {fail_count}")
+
+
 def fetch_from_device(host: str, password: str):
     """Fetch all GET endpoint responses from real device and save to mocks/."""
     print(f"\nFetching data from http://{host}...")
@@ -135,6 +221,9 @@ def fetch_from_device(host: str, password: str):
     print("=" * 50)
     print(f"Done! Success: {success_count}, Failed: {fail_count}")
     print(f"Mock files saved to: {MOCKS_DIR}")
+    
+    # Also fetch data files (energy CSVs, logs)
+    fetch_data_files(opener, host)
 
 
 class MockHandler(http.server.SimpleHTTPRequestHandler):
@@ -159,6 +248,7 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
             target_url += f"?{parsed_path.query}"
         
         try:
+            assert PROXY_PASSWORD, "Proxy password not set"
             password_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
             password_mgr.add_password(None, f"http://{PROXY_TARGET}/", "admin", PROXY_PASSWORD)
             auth_handler = urllib.request.HTTPDigestAuthHandler(password_mgr)
@@ -190,16 +280,22 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": f"Proxy failed: {e}"}).encode())
     
     def send_json(self, data, status=200):
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        try:
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(data).encode())
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass  # Client disconnected, ignore
     
     def send_text(self, text, status=200):
-        self.send_response(status)
-        self.send_header('Content-Type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(text.encode())
+        try:
+            self.send_response(status)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(text.encode())
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass  # Client disconnected, ignore
     
     def do_OPTIONS(self):
         self.send_response(200)
@@ -321,6 +417,57 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
         
         # Mock mode: load from JSON files
         if path.startswith('/api/'):
+            # Handle file requests (/api/v1/files/...)
+            if path.startswith('/api/v1/files/'):
+                file_path = unquote(path.replace('/api/v1/files/', ''))
+                local_path = os.path.join(LITTLE_FS_DIR, file_path)
+                
+                if os.path.isfile(local_path):
+                    # Determine content type
+                    if file_path.endswith('.gz'):
+                        content_type = 'application/gzip'
+                    elif file_path.endswith('.csv'):
+                        content_type = 'text/csv'
+                    elif file_path.endswith('.txt'):
+                        content_type = 'text/plain'
+                    else:
+                        content_type = 'application/octet-stream'
+                    
+                    try:
+                        with open(local_path, 'rb') as f:
+                            content = f.read()
+                        self.send_response(200)
+                        self.send_header('Content-Type', content_type)
+                        self.send_header('Content-Length', str(len(content)))
+                        self.end_headers()
+                        self.wfile.write(content)
+                        return
+                    except Exception as e:
+                        print(f"Error serving file {local_path}: {e}")
+                        self.send_json({"error": f"Failed to read file: {e}"}, 500)
+                        return
+                else:
+                    self.send_json({
+                        "error": "File not found",
+                        "message": f"File not found: {file_path}",
+                        "hint": "Run with --fetch to download data files"
+                    }, 404)
+                    return
+            
+            # Handle list-files with dynamic folder filtering
+            if path == '/api/v1/list-files':
+                folder = None
+                if '?' in self.path:
+                    query = self.path.split('?', 1)[1]
+                    for param in query.split('&'):
+                        if param.startswith('folder='):
+                            folder = unquote(param.split('=', 1)[1])
+                            break
+                
+                files = list_little_fs_files(folder)
+                self.send_json(files)
+                return
+            
             # Try to load mock response
             mock_data = load_mock_response(path)
             

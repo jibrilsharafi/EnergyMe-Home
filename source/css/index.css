@@ -252,189 +252,237 @@
     50% { opacity: 1; }
 }
 
-/* Energy Flow Diagram Styles */
-.energy-flow-container {
+/* ============================================================================
+   SIMPLE POWER FLOW DIAGRAM
+   ============================================================================ */
+
+.power-flow {
     display: flex;
-    flex-direction: column;
-    align-items: center;
+    gap: 20px;
     padding: 20px;
-    min-height: 350px;
-    overflow-x: auto;
+    align-items: flex-start;
+    justify-content: center;
 }
 
-.energy-flow-diagram {
-    position: relative;
-    width: 300px;
-    height: 300px;
-    transition: width 0.3s ease;
-}
-
-.energy-flow-diagram.with-loads {
-    width: 600px;
-}
-
-.energy-node {
-    position: absolute;
+.power-flow-main {
     display: flex;
     flex-direction: column;
     align-items: center;
-    text-align: center;
+    gap: 0;
+    min-width: 240px;
 }
 
-.energy-node-icon {
-    width: 70px;
-    height: 70px;
+/* Node styling */
+.pf-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    padding: 8px;
+}
+
+.pf-icon {
+    width: 60px;
+    height: 60px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 28px;
+    font-size: 26px;
     border: 3px solid;
     background: white;
+    z-index: 2;
 }
 
-.energy-node-label {
-    font-size: 12px;
-    font-weight: bold;
-    margin-top: 4px;
-    color: #333;
-    max-width: 80px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.energy-node-value {
+.pf-value {
     font-size: 14px;
     font-weight: bold;
-    margin-top: 2px;
+    margin-top: 4px;
+    z-index: 2;
 }
 
-.energy-node-subvalue {
-    font-size: 11px;
-    color: #666;
-}
+/* Node colors */
+.pf-solar .pf-icon { border-color: #FF9800; color: #FF9800; }
+.pf-solar .pf-value { color: #FF9800; }
+.pf-grid .pf-icon { border-color: #2196F3; color: #2196F3; }
+.pf-grid .pf-value { color: #2196F3; }
+.pf-home .pf-icon { border-color: #4CAF50; color: #4CAF50; }
+.pf-home .pf-value { color: #4CAF50; }
+.pf-battery .pf-icon { border-color: #9C27B0; color: #9C27B0; }
+.pf-battery .pf-value { color: #9C27B0; }
 
-/* Node positions - core diagram on left side (150px center) */
-.node-solar { top: 0; left: 150px; transform: translateX(-50%); }
-.node-grid { top: 50%; left: 0; transform: translateY(-50%); }
-.node-home { top: 50%; left: 230px; transform: translateY(-50%); }
-.node-battery { bottom: 0; left: 150px; transform: translateX(-50%); }
-
-/* Load nodes container */
-.loads-container {
-    position: absolute;
-    top: 0;
-    left: 340px;
-    width: 260px;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 8px;
-}
-
-.load-node {
+/* Middle row with grid - center - home */
+.pf-middle-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border-left: 4px solid #666;
+    gap: 0;
 }
 
-.load-node-icon {
-    font-size: 18px;
-    width: 24px;
+.pf-center {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pf-center-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #666;
+}
+
+/* Connectors - simple lines */
+.pf-connector {
+    position: absolute;
+    background: #ddd;
+}
+
+.pf-connector-bottom {
+    width: 3px;
+    height: 20px;
+    bottom: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.pf-connector-top {
+    width: 3px;
+    height: 20px;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.pf-connector-right {
+    width: 20px;
+    height: 3px;
+    right: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.pf-connector-left {
+    width: 20px;
+    height: 3px;
+    left: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+/* Active flow animation */
+.pf-connector.active {
+    background: linear-gradient(90deg, transparent 0%, currentColor 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: flowPulse 1s linear infinite;
+}
+
+.pf-connector-bottom.active,
+.pf-connector-top.active {
+    background: linear-gradient(180deg, transparent 0%, currentColor 50%, transparent 100%);
+    background-size: 100% 200%;
+    animation: flowPulseVertical 1s linear infinite;
+}
+
+@keyframes flowPulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+@keyframes flowPulseVertical {
+    0% { background-position: 0 200%; }
+    100% { background-position: 0 -200%; }
+}
+
+/* Connector colors when active */
+.pf-solar .pf-connector { color: #FF9800; }
+.pf-grid .pf-connector { color: #2196F3; }
+.pf-home .pf-connector { color: #4CAF50; }
+.pf-battery .pf-connector { color: #9C27B0; }
+
+/* Loads panel */
+.pf-loads {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 10px;
+    min-width: 180px;
+    max-width: 220px;
+    max-height: 280px;
+    display: flex;
+    flex-direction: column;
+}
+
+.pf-loads-header {
+    font-size: 12px;
+    font-weight: bold;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #ddd;
+}
+
+.pf-loads-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    flex: 1;
+    scrollbar-width: thin;
+    scrollbar-color: #ccc transparent;
+}
+
+.pf-loads-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.pf-loads-list::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 3px;
+}
+
+.pf-load-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    background: white;
+    border-radius: 6px;
+    border-left: 3px solid #4CAF50;
+}
+
+.pf-load-icon {
+    font-size: 14px;
+    width: 18px;
     text-align: center;
 }
 
-.load-node-info {
+.pf-load-name {
     flex: 1;
-    min-width: 0;
-}
-
-.load-node-label {
     font-size: 11px;
     color: #333;
-    font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.load-node-value {
-    font-size: 13px;
+.pf-load-value {
+    font-size: 11px;
     font-weight: bold;
     color: #666;
+    white-space: nowrap;
 }
 
-.load-node.other-load {
+.pf-load-item.other {
     border-left-color: #ffc107;
     background: #fffdf0;
 }
 
-/* Node colors */
-.node-solar .energy-node-icon { border-color: #FF9800; color: #FF9800; }
-.node-grid .energy-node-icon { border-color: #2196F3; color: #2196F3; }
-.node-home .energy-node-icon { border-color: #4CAF50; color: #4CAF50; }
-.node-battery .energy-node-icon { border-color: #9C27B0; color: #9C27B0; }
-
-.node-solar .energy-node-value { color: #FF9800; }
-.node-grid .energy-node-value { color: #2196F3; }
-.node-home .energy-node-value { color: #4CAF50; }
-.node-battery .energy-node-value { color: #9C27B0; }
-
-/* Connection lines (SVG overlay) */
-.energy-flow-lines {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-}
-
-.flow-line {
-    fill: none;
-    stroke-width: 3;
-    stroke-linecap: round;
-}
-
-.flow-solar { stroke: #FF9800; }
-.flow-grid { stroke: #2196F3; }
-.flow-battery { stroke: #9C27B0; }
-.flow-load { stroke: #4CAF50; }
-
-/* Animated flow effect */
-.flow-line.active {
-    stroke-dasharray: 8 4;
-    animation: flowAnimation var(--flow-speed, 1s) linear infinite;
-}
-
-.flow-line.active.reverse {
-    animation: flowAnimationReverse var(--flow-speed, 1s) linear infinite;
-}
-
-@keyframes flowAnimation {
-    from { stroke-dashoffset: 12; }
-    to { stroke-dashoffset: 0; }
-}
-
-@keyframes flowAnimationReverse {
-    from { stroke-dashoffset: 0; }
-    to { stroke-dashoffset: 12; }
-}
-
-.flow-line.inactive {
-    stroke-dasharray: 2 4;
-    opacity: 0.3;
-}
-
 /* Sparkline tooltip */
 .sparkline-tooltip {
-    position: absolute;
+    position: fixed;
     background: white;
     border: 1px solid #ddd;
     border-radius: 8px;
@@ -443,15 +491,11 @@
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.2s ease;
-    z-index: 100;
+    z-index: 1000;
 }
 
 .sparkline-tooltip.visible {
     opacity: 1;
-}
-
-.sparkline-tooltip canvas {
-    display: block;
 }
 
 /* KPI styles */
@@ -602,19 +646,38 @@
         font-size: 11px;
     }
     
-    .energy-flow-diagram {
-        width: 250px;
-        height: 250px;
+    /* Power flow mobile: stack vertically */
+    .power-flow {
+        flex-direction: column;
+        align-items: center;
+        padding: 15px;
     }
     
-    .energy-node-icon {
-        width: 55px;
-        height: 55px;
+    .pf-icon {
+        width: 50px;
+        height: 50px;
         font-size: 22px;
     }
     
-    .energy-node-value {
+    .pf-value {
         font-size: 12px;
+    }
+    
+    .pf-loads {
+        max-width: 100%;
+        min-width: auto;
+        width: 100%;
+        max-height: none;
+    }
+    
+    .pf-loads-list {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    
+    .pf-load-item {
+        width: calc(50% - 3px);
     }
     
     .kpi-card {
