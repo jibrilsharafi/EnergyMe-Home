@@ -142,14 +142,14 @@ const ChartHelpers = {
         this.sparkline.activeNodeType = { nodeType, isLoad, element };
 
         const rect = element.getBoundingClientRect();
-        const containerRect = document.getElementById('energy-flow-diagram').getBoundingClientRect();
 
-        let top = rect.top - containerRect.top - 50 - 10;
-        if (top < 0) {
-            top = rect.top - containerRect.top + rect.height + 10;
+        // Position tooltip above or below the element (using fixed positioning)
+        let top = rect.top - 60; // 50px tooltip height + 10px gap
+        if (top < 10) {
+            top = rect.bottom + 10; // Show below if not enough space above
         }
 
-        tooltip.style.left = (rect.left - containerRect.left + rect.width / 2 - 60) + 'px';
+        tooltip.style.left = (rect.left + rect.width / 2 - 60) + 'px'; // Center horizontally (120px tooltip width / 2)
         tooltip.style.top = top + 'px';
         tooltip.classList.add('visible');
 

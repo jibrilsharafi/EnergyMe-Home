@@ -148,19 +148,22 @@ const PowerFlowHelpers = {
      */
     setupSparklineHovers(flowHistory, loadHistory, nodeColors) {
         const nodes = [
-            { id: 'node-solar', type: 'solar' },
-            { id: 'node-grid', type: 'grid' },
-            { id: 'node-battery', type: 'battery' },
-            { id: 'node-home', type: 'home' }
+            { id: 'pf-solar', type: 'solar' },
+            { id: 'pf-grid', type: 'grid' },
+            { id: 'pf-battery', type: 'battery' },
+            { id: 'pf-home', type: 'home' }
         ];
 
         nodes.forEach(({ id, type }) => {
             const el = document.getElementById(id);
             if (!el) return;
 
-            el.style.cursor = 'pointer';
-            el.addEventListener('mouseenter', () => ChartHelpers.showSparkline(type, el, false, flowHistory, loadHistory, nodeColors));
-            el.addEventListener('mouseleave', () => ChartHelpers.hideSparkline());
+            const iconEl = el.querySelector('.pf-icon');
+            if (!iconEl) return;
+
+            iconEl.style.cursor = 'pointer';
+            iconEl.addEventListener('mouseenter', () => ChartHelpers.showSparkline(type, iconEl, false, flowHistory, loadHistory, nodeColors));
+            iconEl.addEventListener('mouseleave', () => ChartHelpers.hideSparkline());
         });
     },
 

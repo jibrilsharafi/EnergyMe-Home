@@ -315,22 +315,51 @@
 .pf-middle-row {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0;
 }
 
-.pf-center {
-    width: 40px;
-    height: 40px;
+.pf-middle-row .pf-node {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
 }
 
+.pf-center {
+    width: 40px;
+    height: 60px; /* Match icon height exactly */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
 .pf-center-dot {
-    width: 16px;
-    height: 16px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     background: #666;
+}
+
+/* Horizontal lines from center dot */
+.pf-center::before,
+.pf-center::after {
+    content: '';
+    position: absolute;
+    height: 3px;
+    width: 14px;
+    background: #ddd;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.pf-center::before {
+    left: 0;
+}
+
+.pf-center::after {
+    right: 0;
 }
 
 /* Connectors - simple lines */
@@ -361,6 +390,7 @@
     right: -12px;
     top: 50%;
     transform: translateY(-50%);
+    margin-top: -11px; /* Offset for .pf-value height */
 }
 
 .pf-connector-left {
@@ -369,6 +399,7 @@
     left: -12px;
     top: 50%;
     transform: translateY(-50%);
+    margin-top: -11px; /* Offset for .pf-value height */
 }
 
 /* Active flow animation */
