@@ -817,8 +817,6 @@ namespace CustomServer
     {
         server.on("/api/v1/health", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
-            
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             doc["status"] = "ok";
@@ -826,7 +824,7 @@ namespace CustomServer
             char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
             CustomTime::getTimestampIso(timestamp, sizeof(timestamp));
             doc["timestamp"] = timestamp;
-            
+
             _sendJsonResponse(request, doc);
         }).skipServerMiddlewares(); // For the health endpoint, no authentication or rate limiting
     }
@@ -843,11 +841,9 @@ namespace CustomServer
     {
         server.on("/api/v1/auth/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
-            
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
-            
+
             // Check if using default password
             char currentPassword[PASSWORD_BUFFER_SIZE];
             bool isDefault = true;
