@@ -967,7 +967,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         LOG_INFO("Successfully reset energy values to 0");
     }
 
-    bool clearChannelHistoricalData(uint8_t channelIndex) {
+    bool clearChannelHistoricalData(uint8_t channelIndex) { // TODO: ensure this actually works properly
         if (!isChannelValid(channelIndex)) {
             LOG_ERROR("Invalid channel index: %u", channelIndex);
             return false;
