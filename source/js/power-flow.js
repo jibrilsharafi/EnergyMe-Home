@@ -381,7 +381,6 @@ const PowerFlowHelpers = {
             aggregatedLoads.forEach((load) => {
                 const color = load.isOther ? PowerFlowConfig.OTHER_LOAD_COLOR : this.getLoadColor(load.power, maxPower);
                 loadsHtml += '<div class="pf-load-item' + (load.isOther ? ' other' : '') + '" style="border-left-color: ' + color + ';">';
-                loadsHtml += '<div class="pf-load-icon">' + load.icon + '</div>';
                 loadsHtml += '<div class="pf-load-name">' + load.label + '</div>';
                 loadsHtml += '<div class="pf-load-value" id="load-value-' + load.key + '">' + this.formatPower(load.power) + '</div>';
                 loadsHtml += '</div>';

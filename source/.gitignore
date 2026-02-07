@@ -31,5 +31,6 @@ venv/
 # Mock data for mock server
 mocks/
 
-# MCP data
+# AI stuff
 .playwright*
+.claude

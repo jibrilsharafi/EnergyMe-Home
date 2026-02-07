@@ -124,12 +124,11 @@ const ChartHelpers = {
 
         ctx.stroke();
 
-        // Show min/max labels
+        // Show only max label
         ctx.fillStyle = '#666';
         ctx.font = '9px sans-serif';
         ctx.textAlign = 'right';
         ctx.fillText(PowerFlowHelpers.formatPower(max), width - 2, 10);
-        ctx.fillText(PowerFlowHelpers.formatPower(min), width - 2, height - 2);
     },
 
     /**

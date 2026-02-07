@@ -314,7 +314,7 @@
 /* Middle row with grid - center - home */
 .pf-middle-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     gap: 0;
 }
@@ -328,11 +328,12 @@
 
 .pf-center {
     width: 40px;
-    height: 60px; /* Match icon height exactly */
+    height: 60px;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
+    margin-top: 8px; /* Match .pf-node padding to align dot with icon center */
 }
 
 .pf-center-dot {
@@ -482,12 +483,6 @@
     background: white;
     border-radius: 6px;
     border-left: 3px solid #4CAF50;
-}
-
-.pf-load-icon {
-    font-size: 14px;
-    width: 18px;
-    text-align: center;
 }
 
 .pf-load-name {
@@ -689,7 +684,11 @@
         height: 50px;
         font-size: 22px;
     }
-    
+
+    .pf-center {
+        height: 50px;
+    }
+
     .pf-value {
         font-size: 12px;
     }

@@ -273,10 +273,17 @@
                 const now = new Date();
                 const archiveMonth = new Date(parseInt(year), parseInt(month) - 1, 1);
                 const currentMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                
+
                 if (archiveMonth < currentMonthDate) {
+                    // Past month: generate all days
                     const daysInMonth = new Date(parseInt(year), parseInt(month), 0).getDate();
                     for (let day = 1; day <= daysInMonth; day++) {
+                        allDates.add(`${yearMonth}-${String(day).padStart(2, '0')}`);
+                    }
+                } else if (archiveMonth.getTime() === currentMonthDate.getTime()) {
+                    // Current month: generate days 1 through today
+                    const today = now.getDate();
+                    for (let day = 1; day <= today; day++) {
                         allDates.add(`${yearMonth}-${String(day).padStart(2, '0')}`);
                     }
                 }
@@ -286,12 +293,30 @@
             const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
             for (const filename of Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz'))) {
                 const year = filename.replace('.csv.gz', '');
+                const yearInt = parseInt(year);
                 allYears.add(year);
-                
+
                 const now = new Date();
-                if (parseInt(year) < now.getFullYear()) {
+                if (yearInt < now.getFullYear()) {
+                    // Past year: generate all 12 months and all dates
                     for (let month = 1; month <= 12; month++) {
-                        allMonths.add(`${year}-${String(month).padStart(2, '0')}`);
+                        const ym = `${year}-${String(month).padStart(2, '0')}`;
+                        allMonths.add(ym);
+                        const daysInMonth = new Date(yearInt, month, 0).getDate();
+                        for (let day = 1; day <= daysInMonth; day++) {
+                            allDates.add(`${ym}-${String(day).padStart(2, '0')}`);
+                        }
+                    }
+                } else if (yearInt === now.getFullYear()) {
+                    // Current year: generate completed months (1 through current_month - 1)
+                    const currentMonthNum = now.getMonth() + 1;
+                    for (let month = 1; month < currentMonthNum; month++) {
+                        const ym = `${year}-${String(month).padStart(2, '0')}`;
+                        allMonths.add(ym);
+                        const daysInMonth = new Date(yearInt, month, 0).getDate();
+                        for (let day = 1; day <= daysInMonth; day++) {
+                            allDates.add(`${ym}-${String(day).padStart(2, '0')}`);
+                        }
                     }
                 }
             }
@@ -493,20 +518,27 @@
     
     async function loadMonthlyCharts() {
         let allEnergyData = [];
-        
+
+        // Load monthly archive (DataHelpers falls back to yearly archive)
         try {
             const csvData = await DataHelpers.loadMonthlyCsvData(currentMonth);
             allEnergyData = DataHelpers.parseCsvEnergyData(csvData);
-        } catch (error) { /* No consolidated file */ }
-        
-        const monthDates = availableDates.filter(date => date.startsWith(currentMonth));
-        for (const date of monthDates) {
-            try {
-                const csvData = await DataHelpers.loadDailyCsvData(date);
-                allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
-            } catch (error) { /* Date may not exist */ }
+        } catch (error) { /* No data for this month */ }
+
+        // For current month: also load daily files for fresh intraday data
+        const now = new Date();
+        const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        if (currentMonth === currentYearMonth) {
+            for (const date of ArchiveCache.dailyFilesSet) {
+                if (date.startsWith(currentMonth)) {
+                    try {
+                        const csvData = await DataHelpers.loadDailyCsvData(date);
+                        allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+                    } catch (error) { /* Daily file may not exist */ }
+                }
+            }
         }
-        
+
         if (allEnergyData.length === 0) throw new Error('No data available');
         
         const dailyConsumptions = {};
@@ -554,28 +586,35 @@
 
     async function loadYearlyCharts() {
         let allEnergyData = [];
-        
+
+        // Load yearly archive (contains all completed months for this year)
         try {
             const csvData = await DataHelpers.loadYearlyCsvData(currentYear);
             allEnergyData = DataHelpers.parseCsvEnergyData(csvData);
-        } catch (error) { /* No consolidated file */ }
-        
-        const yearMonths = availableMonths.filter(month => month.startsWith(currentYear));
-        for (const month of yearMonths) {
+        } catch (error) { /* No yearly archive */ }
+
+        // For current year: also load current month + today's daily file
+        const now = new Date();
+        if (parseInt(currentYear) === now.getFullYear()) {
+            const currentYearMonth = `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+            // Load monthly archive for current month
             try {
-                const csvData = await DataHelpers.loadMonthlyCsvData(month);
+                const csvData = await DataHelpers.loadMonthlyCsvData(currentYearMonth);
                 allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
-            } catch (error) { /* Month may not exist */ }
+            } catch (error) { /* No monthly file yet */ }
+
+            // Load today's daily files for fresh intraday data
+            for (const date of ArchiveCache.dailyFilesSet) {
+                if (date.startsWith(currentYearMonth)) {
+                    try {
+                        const csvData = await DataHelpers.loadDailyCsvData(date);
+                        allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+                    } catch (error) { /* Daily file may not exist */ }
+                }
+            }
         }
-        
-        const currentMonthDates = availableDates.filter(date => date.startsWith(currentYear));
-        for (const date of currentMonthDates) {
-            try {
-                const csvData = await DataHelpers.loadDailyCsvData(date);
-                allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
-            } catch (error) { /* Date may not exist */ }
-        }
-        
+
         if (allEnergyData.length === 0) throw new Error('No data available');
         
         const monthlyConsumptions = {};
