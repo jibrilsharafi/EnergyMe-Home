@@ -270,14 +270,31 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             try:
                 self.wfile.write(e.read())
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass  # Client disconnected
             except:
-                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                try:
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                    pass  # Client disconnected
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            print(f"Proxy connection error: {e}")
+            try:
+                self.send_response(504)  # Gateway Timeout
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Device unreachable: {e}"}).encode())
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass  # Client disconnected
         except Exception as e:
             print(f"Proxy error: {e}")
-            self.send_response(502)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": f"Proxy failed: {e}"}).encode())
+            try:
+                self.send_response(502)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Proxy failed: {e}"}).encode())
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass  # Client disconnected
     
     def send_json(self, data, status=200):
         try:
