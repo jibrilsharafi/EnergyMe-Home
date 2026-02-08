@@ -471,12 +471,8 @@
                 const voltageOutput = parseFloat(document.getElementById('voltageOutput').value);
                 const scalingFraction = scalingPercentage / 100; // Convert percentage to fraction
 
-                const channelUpdate = { // TODO: align this with latest payload format
+                const channelUpdate = {
                     index: parseInt(selectedChannelIndex),
-                    label: channelData[selectedChannelIndex].label,
-                    phase: channelData[selectedChannelIndex].phase,
-                    reverse: channelData[selectedChannelIndex].reverse,
-                    active: channelData[selectedChannelIndex].active,
                     ctSpecification: {
                         currentRating: currentRating,
                         voltageOutput: voltageOutput,
@@ -484,7 +480,7 @@
                     }
                 };
 
-                await energyApi.setChannelConfig(channelUpdate);
+                await energyApi.patchChannelConfig(channelUpdate);
                 
                 // Update local data
                 channelData[selectedChannelIndex].ctSpecification = channelUpdate.ctSpecification;

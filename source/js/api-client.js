@@ -184,9 +184,10 @@ class EnergyMeAPI {
 
     /**
      * Patch channel configuration (partial update)
+     * Note: channelData must include 'index' field
      */
-    async patchChannelConfig(index, channelData) {
-        return this.patch(`ade7953/channel?index=${index}`, channelData);
+    async patchChannelConfig(channelData) {
+        return this.patch('ade7953/channel', channelData);
     }
 
     /**

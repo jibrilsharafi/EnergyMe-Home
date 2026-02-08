@@ -370,7 +370,7 @@
             updateQueue = {}; // Clear queue
             
             for (const update of updates) {
-                await energyApi.patchChannelConfig(update.index, update);
+                await energyApi.patchChannelConfig(update);
             }
             
             document.getElementById('updateStatus').textContent = 'Channels updated successfully';
