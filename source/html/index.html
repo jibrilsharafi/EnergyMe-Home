@@ -96,6 +96,7 @@
                     <button id="daily-view" class="view-toggle active">Daily</button>
                     <button id="monthly-view" class="view-toggle">Monthly</button>
                     <button id="yearly-view" class="view-toggle">Yearly</button>
+                    <button id="total-view" class="view-toggle">Total</button>
                 </div>
                 <div class="date-selector">
                     <input type="date" id="date-picker" />
@@ -342,6 +343,7 @@
         document.getElementById('daily-view').addEventListener('click', () => switchView('daily'));
         document.getElementById('monthly-view').addEventListener('click', () => switchView('monthly'));
         document.getElementById('yearly-view').addEventListener('click', () => switchView('yearly'));
+        document.getElementById('total-view').addEventListener('click', () => switchView('total'));
         
         document.getElementById('date-picker').addEventListener('change', async (e) => {
             currentDate = e.target.value;
@@ -366,6 +368,7 @@
     }
     
     async function navigatePrevious() {
+        if (currentView === 'total') return;
         const lists = { daily: availableDates, monthly: availableMonths, yearly: availableYears };
         const current = { daily: currentDate, monthly: currentMonth, yearly: currentYear };
         const pickers = { daily: 'date-picker', monthly: 'month-picker', yearly: 'year-picker' };
@@ -386,6 +389,7 @@
     }
     
     async function navigateNext() {
+        if (currentView === 'total') return;
         const lists = { daily: availableDates, monthly: availableMonths, yearly: availableYears };
         const current = { daily: currentDate, monthly: currentMonth, yearly: currentYear };
         const pickers = { daily: 'date-picker', monthly: 'month-picker', yearly: 'year-picker' };
@@ -411,10 +415,14 @@
         document.getElementById('daily-view').classList.toggle('active', view === 'daily');
         document.getElementById('monthly-view').classList.toggle('active', view === 'monthly');
         document.getElementById('yearly-view').classList.toggle('active', view === 'yearly');
+        document.getElementById('total-view').classList.toggle('active', view === 'total');
         
         document.getElementById('date-picker').style.display = view === 'daily' ? 'block' : 'none';
         document.getElementById('month-picker').style.display = view === 'monthly' ? 'block' : 'none';
         document.getElementById('year-picker').style.display = view === 'yearly' ? 'block' : 'none';
+        
+        const dateSelector = document.querySelector('.date-selector');
+        dateSelector.style.display = view === 'total' ? 'none' : 'flex';
         
         updateNavigationButtons();
         loadAndDisplayCharts();
@@ -433,8 +441,8 @@
     }
 
     function updateNavigationButtons() {
-        const lists = { daily: availableDates, monthly: availableMonths, yearly: availableYears };
-        const current = { daily: currentDate, monthly: currentMonth, yearly: currentYear };
+        const lists = { daily: availableDates, monthly: availableMonths, yearly: availableYears, total: [] };
+        const current = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: null };
         
         const list = lists[currentView];
         const currentIndex = list.length > 0 ? list.indexOf(current[currentView]) : -1;
@@ -456,11 +464,12 @@
             
             if (currentView === 'daily') await loadDailyCharts();
             else if (currentView === 'monthly') await loadMonthlyCharts();
-            else await loadYearlyCharts();
+            else if (currentView === 'yearly') await loadYearlyCharts();
+            else if (currentView === 'total') await loadTotalCharts();
             
         } catch (error) {
             console.error('Error loading charts:', error);
-            const periods = { daily: currentDate, monthly: currentMonth, yearly: currentYear };
+            const periods = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all time' };
             ChartHelpers.showErrorMessage(`Failed to load energy data for ${periods[currentView]}`);
         }
     }
@@ -659,6 +668,83 @@
         setupCsvDownload(monthlyConsumptions, 'yearly');
     }
 
+    async function loadTotalCharts() {
+        let allEnergyData = [];
+
+        const now = new Date();
+        const currentYearStr = String(now.getFullYear());
+
+        for (const year of availableYears) {
+            // Load yearly archive
+            try {
+                const csvData = await DataHelpers.loadYearlyCsvData(year);
+                allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+            } catch (error) { /* No yearly archive for this year */ }
+
+            // For current year: also load current month + daily files
+            if (year === currentYearStr) {
+                const currentYearMonth = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+                try {
+                    const csvData = await DataHelpers.loadMonthlyCsvData(currentYearMonth);
+                    allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+                } catch (error) { /* No monthly file yet */ }
+
+                for (const date of ArchiveCache.dailyFilesSet) {
+                    if (date.startsWith(currentYearMonth)) {
+                        try {
+                            const csvData = await DataHelpers.loadDailyCsvData(date);
+                            allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+                        } catch (error) { /* Daily file may not exist */ }
+                    }
+                }
+            }
+        }
+
+        if (allEnergyData.length === 0) throw new Error('No data available');
+
+        const yearlyConsumptions = {};
+        const yearlyExported = {};
+        const totalRawImported = {};
+        const totalRawExported = {};
+        const yearlyRawImport = {};
+        const yearlyRawExport = {};
+
+        const dataByYear = {};
+        allEnergyData.forEach(entry => {
+            const year = entry.timestamp.substring(0, 4);
+            if (!dataByYear[year]) dataByYear[year] = [];
+            dataByYear[year].push(entry);
+        });
+
+        Object.keys(dataByYear).sort().forEach(year => {
+            const yearData = dataByYear[year];
+            const yearConsumptionData = calculateTotalConsumption(yearData);
+            yearlyConsumptions[year] = yearConsumptionData.imported;
+            if (Object.keys(yearConsumptionData.exported).length > 0) yearlyExported[year] = yearConsumptionData.exported;
+            yearlyRawImport[year] = yearConsumptionData.rawImported;
+            yearlyRawExport[year] = yearConsumptionData.rawExported;
+
+            Object.keys(yearConsumptionData.rawImported).forEach(channel => {
+                if (!totalRawImported[channel]) totalRawImported[channel] = 0;
+                totalRawImported[channel] += yearConsumptionData.rawImported[channel];
+            });
+            Object.keys(yearConsumptionData.rawExported).forEach(channel => {
+                if (!totalRawExported[channel]) totalRawExported[channel] = 0;
+                totalRawExported[channel] += yearConsumptionData.rawExported[channel];
+            });
+        });
+
+        ChartHelpers.restoreChartCanvases(currentChartType);
+
+        ChartHelpers.updateConsumptionChart(yearlyConsumptions, 'total', yearlyExported, channelData, currentChartType);
+        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0;
+        balanceData = ChartHelpers.updateBalanceChart(yearlyRawImport, 'total', yearlyRawImport, yearlyRawExport, hasBalanceCapability);
+        ChartHelpers.updateEnergyKPIs(totalRawImported, totalRawExported, hasBalanceCapability);
+
+        setupCsvDownload(yearlyConsumptions, 'total');
+    }
+
     // ============================================================================
     // DATA PROCESSING
     // ============================================================================
@@ -803,7 +889,8 @@
             });
             
             let csvContent = "data:text/csv;charset=utf-8,";
-            const periodLabel = viewType === 'daily' ? 'Hour' : 'Day';
+            const periodLabels = { daily: 'Hour', monthly: 'Day', yearly: 'Month', total: 'Year' };
+            const periodLabel = periodLabels[viewType] || 'Period';
             csvContent += periodLabel + "," + channelArray.map(ch => ChartHelpers.getChannelLabel(ch, channelData)).join(",") + "\n";
             
             periods.forEach(period => {
@@ -813,7 +900,8 @@
             });
             
             const link = document.createElement("a");
-            const dateStr = viewType === 'daily' ? currentDate : currentMonth;
+            const dateStrs = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all' };
+            const dateStr = dateStrs[viewType] || 'data';
             link.setAttribute("href", encodeURI(csvContent));
             link.setAttribute("download", `energy_consumption_${viewType}_${dateStr}.csv`);
             document.body.appendChild(link);
@@ -827,14 +915,18 @@
             if (!balanceData) return;
             
             let csvContent = "data:text/csv;charset=utf-8,";
-            const periodLabel = viewType === 'daily' ? 'Hour' : viewType === 'monthly' ? 'Day' : 'Month';
+            const balancePeriodLabels = { daily: 'Hour', monthly: 'Day', yearly: 'Month', total: 'Year' };
+            const periodLabel = balancePeriodLabels[viewType] || 'Period';
             csvContent += [periodLabel, 'Grid (kWh)', 'PV (kWh)', 'Battery (kWh)', 'Home (kWh)'].join(",") + "\n";
             
             const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            // For total view, use the sorted year keys from the consumption data
+            const balancePeriodKeys = viewType === 'total' ? Object.keys(consumptionData).sort() : null;
             for (let i = 0; i < balanceData.grid.length; i++) {
                 let periodDisplay;
                 if (viewType === 'daily') periodDisplay = `${i}:00`;
                 else if (viewType === 'monthly') periodDisplay = String(i + 1).padStart(2, '0');
+                else if (viewType === 'total') periodDisplay = balancePeriodKeys ? balancePeriodKeys[i] : String(i);
                 else periodDisplay = monthNames[i] || String(i + 1);
                 
                 csvContent += [periodDisplay, balanceData.grid[i].toFixed(3), balanceData.pv[i].toFixed(3), 
@@ -842,7 +934,8 @@
             }
             
             const link = document.createElement("a");
-            const dateStr = viewType === 'daily' ? currentDate : viewType === 'monthly' ? currentMonth : currentYear;
+            const balanceDateStrs = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all' };
+            const dateStr = balanceDateStrs[viewType] || 'data';
             link.setAttribute("href", encodeURI(csvContent));
             link.setAttribute("download", `energy_balance_${viewType}_${dateStr}.csv`);
             document.body.appendChild(link);

@@ -247,6 +247,8 @@ const ChartHelpers = {
             return periods.map(hour => `${hour}:00`);
         } else if (viewType === 'monthly') {
             return periods.map(day => day);
+        } else if (viewType === 'total') {
+            return periods.map(year => year);
         } else {
             return periods.map(month => ChartConfig.MONTH_NAMES[parseInt(month) - 1] || month);
         }
@@ -372,7 +374,7 @@ const ChartHelpers = {
         const labels = this.formatLabels(periods, viewType);
         const ctx = canvasElement.getContext('2d');
         const isMobile = window.innerWidth <= 768;
-        const xAxisLabels = { 'daily': 'Hour', 'monthly': 'Day', 'yearly': 'Month' };
+        const xAxisLabels = { 'daily': 'Hour', 'monthly': 'Day', 'yearly': 'Month', 'total': 'Year' };
 
         this.consumptionChart = new Chart(ctx, {
             type: 'bar',
@@ -527,7 +529,7 @@ const ChartHelpers = {
                         stacked: true,
                         title: {
                             display: true,
-                            text: viewType === 'daily' ? 'Hour' : viewType === 'monthly' ? 'Day' : 'Month'
+                            text: viewType === 'daily' ? 'Hour' : viewType === 'monthly' ? 'Day' : viewType === 'total' ? 'Year' : 'Month'
                         },
                         ticks: { font: { size: isMobile ? 10 : 12 } }
                     },
