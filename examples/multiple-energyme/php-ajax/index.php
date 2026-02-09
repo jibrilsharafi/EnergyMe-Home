@@ -12,7 +12,7 @@ p { font-size:20px; }
 </head>
 <body>
 
-<h1 id="total">⚡ -- W</h1>
+<h1 id="totale">⚡ -- W</h1>
 <h3>Total Power</h3>
 <p id="em1">EM1: -- W</p>
 <p id="em2">EM2: -- W</p>
