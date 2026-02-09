@@ -268,11 +268,14 @@ const DataHelpers = {
 
         for (let i = 1; i < lines.length; i++) {
             const [timestamp, channel, activeImported, activeExported] = lines[i].split(',');
+            const imported = parseFloat(activeImported);
+            const exported = parseFloat(activeExported);
+
             data.push({
                 timestamp: timestamp,
                 channel: parseInt(channel),
-                activeImported: parseFloat(activeImported),
-                activeExported: parseFloat(activeExported)
+                activeImported: imported,
+                activeExported: exported
             });
         }
 

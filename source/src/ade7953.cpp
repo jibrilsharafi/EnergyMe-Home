@@ -150,6 +150,7 @@ namespace Ade7953
     static void _saveEnergyToPreferences(uint8_t channelIndex, bool forceSave = false); // Needed for saving data anyway on first setup (energy is 0 and not saved otherwise)
     static void _saveHourlyEnergyToCsv(); // Not per channel so that we open the file only once
     static void _saveEnergyComplete();
+    static bool _clearChannelHistoricalData(uint8_t channelIndex);
 
     // Meter reading and processing
     static bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTime);
@@ -725,11 +726,16 @@ namespace Ade7953
         return true;
     }
 
-bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
+    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
             return false;
         }
+
+        // Snapshot old role flags before applying new data (for role change detection)
+        bool oldIsGrid = _channelData[channelIndex].isGrid;
+        bool oldIsProduction = _channelData[channelIndex].isProduction;
+        bool oldIsBattery = _channelData[channelIndex].isBattery;
 
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
@@ -753,6 +759,18 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         #ifdef HAS_SECRETS
         Mqtt::requestChannelPublish();
         #endif
+
+        // Detect role change (isGrid, isProduction, isBattery)
+        bool detected = (oldIsGrid != channelData.isGrid) ||
+                        (oldIsProduction != channelData.isProduction) ||
+                        (oldIsBattery != channelData.isBattery);
+        if (detected) {
+            LOG_INFO("Channel %u role changed (grid:%d->%d, prod:%d->%d, batt:%d->%d)",
+                     channelIndex, oldIsGrid, channelData.isGrid,
+                     oldIsProduction, channelData.isProduction,
+                     oldIsBattery, channelData.isBattery);
+        }
+        if (roleChanged) *roleChanged = detected;
 
         LOG_DEBUG("Successfully set channel data for channel %lu", channelIndex);
         return true;
@@ -803,14 +821,14 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         else return false;
     }
 
-    bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial) {
+    bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial, bool* roleChanged) {
         if (!_validateChannelDataJson(jsonDocument, partial)) {
             LOG_WARNING("Invalid channel data JSON. Skipping setting data");
             return false;
         }
 
         uint8_t channelIndex = jsonDocument["index"].as<uint8_t>();
-        
+
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Invalid channel index: %u. Skipping setting data", channelIndex);
             return false;
@@ -824,7 +842,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         channelDataFromJson(jsonDocument, channelData, partial);
 
-        if (!setChannelData(channelData, channelIndex)) {
+        if (!setChannelData(channelData, channelIndex, roleChanged)) {
             LOG_WARNING("Failed to set channel data from JSON for channel %u", channelIndex);
             return false;
         }
@@ -921,11 +939,11 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         // Set all energy values to 0 (safe since we acquired the mutex)
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            _meterValues[i].activeEnergyImported = 0.0f;
-            _meterValues[i].activeEnergyExported = 0.0f;
-            _meterValues[i].reactiveEnergyImported = 0.0f;
-            _meterValues[i].reactiveEnergyExported = 0.0f;
-            _meterValues[i].apparentEnergy = 0.0f;
+            _meterValues[i].activeEnergyImported = 0.0;
+            _meterValues[i].activeEnergyExported = 0.0;
+            _meterValues[i].reactiveEnergyImported = 0.0;
+            _meterValues[i].reactiveEnergyExported = 0.0;
+            _meterValues[i].apparentEnergy = 0.0;
         }
 
         releaseMutex(&_meterValuesMutex);
@@ -967,7 +985,32 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         LOG_INFO("Successfully reset energy values to 0");
     }
 
-    bool clearChannelHistoricalData(uint8_t channelIndex) { // TODO: ensure this actually works properly
+    void resetChannelEnergyValues(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) {
+            LOG_ERROR("Invalid channel index: %u", channelIndex);
+            return;
+        }
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for meter values");
+            return;
+        }
+
+        _meterValues[channelIndex].activeEnergyImported = 0.0;
+        _meterValues[channelIndex].activeEnergyExported = 0.0;
+        _meterValues[channelIndex].reactiveEnergyImported = 0.0;
+        _meterValues[channelIndex].reactiveEnergyExported = 0.0;
+        _meterValues[channelIndex].apparentEnergy = 0.0;
+
+        releaseMutex(&_meterValuesMutex);
+
+        _saveEnergyToPreferences(channelIndex, true); // Force save zeroed values
+        _clearChannelHistoricalData(channelIndex);
+
+        LOG_INFO("Successfully reset energy values for channel %u", channelIndex);
+    }
+
+    bool _clearChannelHistoricalData(uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_ERROR("Invalid channel index: %u", channelIndex);
             return false;
@@ -1616,7 +1659,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
             // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
             // 1 (since channel 0 does not pass through the multiplexer)
-            Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
+            Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0))); // TODO: if update in progress, just avoid switching channel; we will get wrong readings and timings.
         }
         
         // Check for channel 0 waveform capture separately (channel 0 doesn't go through multiplexer rotation)
@@ -1638,7 +1681,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         _processChannelReading(0, linecycUnix);
     }
 
-    void _pollWaveformSamples() {
+    void _pollWaveformSamples() { // TODO: this could become something related to a websocket for real time visualization and similar
         // This function performs tight polling of instantaneous waveform registers with zero-crossing detection
         // to ensure capture of complete cycles only. We start on a positive-going voltage zero crossing and
         // stop after detecting the Nth positive-going zero crossing.

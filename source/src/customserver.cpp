@@ -1897,10 +1897,15 @@ namespace CustomServer
                 JsonDocument doc(&allocator);
                 doc.set(json);
 
-                if (Ade7953::setChannelDataFromJson(doc, isPartialUpdate))
+                bool roleChanged = false;
+                if (Ade7953::setChannelDataFromJson(doc, isPartialUpdate, &roleChanged))
                 {
-                    uint32_t channelIndex = doc["index"].as<uint32_t>();
-                    LOG_INFO("ADE7953 channel %lu data %s via API", channelIndex, isPartialUpdate ? "partially updated" : "updated");
+                    uint8_t channelIndex = doc["index"].as<uint8_t>();
+                    LOG_INFO("ADE7953 channel %u data %s via API", channelIndex, isPartialUpdate ? "partially updated" : "updated");
+                    if (roleChanged) {
+                        Ade7953::resetChannelEnergyValues(channelIndex);
+                        LOG_INFO("Auto-reset energy and cleared history for channel %u due to role change", channelIndex);
+                    }
                     _sendSuccessResponse(request, "ADE7953 channel data updated successfully");
                 }
                 else
@@ -1931,10 +1936,15 @@ namespace CustomServer
                 SpiRamAllocator channelAllocator;
                 JsonDocument channelDoc(&channelAllocator);
                 for (JsonDocument channelDoc : doc.as<JsonArrayConst>()) {
-
-                    if (!Ade7953::setChannelDataFromJson(channelDoc, false)) {
+                    bool roleChanged = false;
+                    if (!Ade7953::setChannelDataFromJson(channelDoc, false, &roleChanged)) {
                         _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel configuration in array");
                         return;
+                    }
+                    if (roleChanged) {
+                        uint8_t idx = channelDoc["index"].as<uint8_t>();
+                        Ade7953::resetChannelEnergyValues(idx);
+                        LOG_INFO("Auto-reset energy and cleared history for channel %u due to role change", idx);
                     }
                 }
 
@@ -2087,39 +2097,25 @@ namespace CustomServer
         });
 
         // === ENERGY VALUES ENDPOINTS ===
-        
-        // Reset all energy values
+
+        // Reset energy values (all channels, or single channel with ?index=N)
         server.on("/api/v1/ade7953/energy/reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
             if (!_validateRequest(request, "POST")) return;
 
-            Ade7953::resetEnergyValues();
-            LOG_INFO("ADE7953 energy values reset via API");
-            _sendSuccessResponse(request, "ADE7953 energy values reset successfully");
-        });
-
-        // Clear historical data for a specific channel
-        server.on("/api/v1/ade7953/energy/clear-history", HTTP_POST, [](AsyncWebServerRequest *request)
-                  {
-            if (!_validateRequest(request, "POST")) return;
-
-            if (!request->hasParam("index")) {
-                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'index' query parameter");
-                return;
-            }
-
-            uint8_t channelIndex = static_cast<uint8_t>(request->getParam("index")->value().toInt());
-            
-            if (!isChannelValid(channelIndex)) {
-                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
-                return;
-            }
-
-            if (Ade7953::clearChannelHistoricalData(channelIndex)) {
-                LOG_INFO("Historical data cleared for channel %u via API", channelIndex);
-                _sendSuccessResponse(request, "Historical data cleared successfully");
+            if (request->hasParam("index")) {
+                uint8_t channelIndex = static_cast<uint8_t>(request->getParam("index")->value().toInt());
+                if (!isChannelValid(channelIndex)) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
+                    return;
+                }
+                Ade7953::resetChannelEnergyValues(channelIndex);
+                LOG_INFO("ADE7953 energy values reset for channel %u via API", channelIndex);
+                _sendSuccessResponse(request, "ADE7953 energy values reset for channel");
             } else {
-                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to clear historical data");
+                Ade7953::resetEnergyValues();
+                LOG_INFO("ADE7953 energy values reset via API");
+                _sendSuccessResponse(request, "ADE7953 energy values reset successfully");
             }
         });
 
@@ -2571,6 +2567,7 @@ namespace CustomServer
     }
 
     // === FILE OPERATION ENDPOINTS ===
+    // TODO: add full backup/restore endpoint (NVS + LittleFS in a single file) to allow data export and device restoration
     static void _serveFileEndpoints()
     {
         // List files in LittleFS. The endpoint cannot be only "files" as it conflicts with the file serving endpoint (defined below)

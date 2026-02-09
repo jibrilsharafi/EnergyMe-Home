@@ -107,10 +107,12 @@
         <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
     </div>    <div id="channelContainer" class="section-box" style="text-align: center;">
         <h1>Channels</h1>
+        <!-- TODO: enhance updateStatus with colored feedback (green success, red error) consistent across all pages -->
         <div id="updateStatus" style="height: 20px; color: #666; font-style: italic;"></div>
         <div class="channel-columns"></div>
     </div>
 </body>
+
 <script src="/js/api-client.js"></script>
 <script>
     var channelData = {};
@@ -297,7 +299,9 @@
         if (powerElement) {
             powerElement.innerHTML = '';
         }
-    }    function queueChannelUpdate(index) {
+    }
+
+    function queueChannelUpdate(index) {
         // Prevent channel 0 from being disabled
         if (index == 0) {
             const activeCheckbox = document.getElementById(`active${index}`);
@@ -308,6 +312,32 @@
             }
         }
 
+        // Detect role change BEFORE updating local data
+        const oldData = channelData[index];
+        const newIsGrid = document.getElementById(`isGrid${index}`).checked;
+        const newIsProduction = document.getElementById(`isProduction${index}`).checked;
+        const newIsBattery = document.getElementById(`isBattery${index}`).checked;
+
+        const roleChanged = oldData && (
+            oldData.isGrid !== newIsGrid ||
+            oldData.isProduction !== newIsProduction ||
+            oldData.isBattery !== newIsBattery
+        );
+
+        if (roleChanged) {
+            if (!confirm('Changing the channel role will reset its energy values and delete its historical data. This cannot be undone.\n\nDo you want to continue?')) {
+                // Revert checkboxes to original values
+                document.getElementById(`isGrid${index}`).checked = oldData.isGrid;
+                document.getElementById(`isProduction${index}`).checked = oldData.isProduction;
+                document.getElementById(`isBattery${index}`).checked = oldData.isBattery;
+                return;
+            }
+        }
+
+        doQueueChannelUpdate(index);
+    }
+
+    function doQueueChannelUpdate(index) {
         const channelUpdate = {
             index: parseInt(index),
             label: document.getElementById(`label${index}`).value,
@@ -338,7 +368,7 @@
 
         // Store in queue - this will overwrite any previous update for this channel
         updateQueue[index] = channelUpdate;
-        
+
         // Update UI responsiveness immediately
         if (channelUpdate.active) {
             startPowerUpdate(index);

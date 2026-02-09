@@ -395,7 +395,7 @@ struct CtSpecification
       whLsb(1.0f), varhLsb(1.0f), vahLsb(1.0f) {}
 };
 
-struct ChannelData
+struct ChannelData // TODO: since this is queried often via API, is there a way to define an "hash" of the data and cache it?
 {
   uint8_t index;
   bool active;
@@ -420,7 +420,7 @@ struct ChannelData
       highPriority(false),
       phase(PHASE_1), 
       ctSpecification(CtSpecification()),
-      isGrid(DEFAULT_CHANNEL_IS_GRID),
+      isGrid(DEFAULT_CHANNEL_IS_GRID), // TODO: make this an enum instead of boolean flags, since it is mutually exclusive and it is more scalable
       isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
       isBattery(DEFAULT_CHANNEL_IS_BATTERY)
     {
@@ -547,19 +547,19 @@ namespace Ade7953
     bool hasChannelValidMeasurements(uint8_t channelIndex);
     void getChannelLabel(uint8_t channelIndex, char* buffer, size_t bufferSize); // No need for bool return, fallback is the default constructor value if getChannelData failed
     bool getChannelData(ChannelData &channelData, uint8_t channelIndex);
-    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex);
+    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged = nullptr);
     void resetChannelData(uint8_t channelIndex);
 
     // Channel data management - JSON operations
     bool getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex);
     bool getAllChannelDataAsJson(JsonDocument &jsonDocument);
-    bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial = false);
+    bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial = false, bool* roleChanged = nullptr);
     void channelDataToJson(const ChannelData &channelData, JsonDocument &jsonDocument);
     void channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);
 
     // Energy data management
     void resetEnergyValues();
-    bool clearChannelHistoricalData(uint8_t channelIndex); // Clears historical CSV data for a specific channel (daily, monthly, yearly)
+    void resetChannelEnergyValues(uint8_t channelIndex); // Resets energy counters and clears historical CSV data for a single channel
     bool setEnergyValues(
         uint8_t channelIndex,
         double activeEnergyImported,
