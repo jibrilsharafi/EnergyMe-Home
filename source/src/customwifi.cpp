@@ -644,7 +644,7 @@ namespace CustomWifi
               _setupWiFiManager(*portalManager);
 
               // Try WiFiManager portal
-              if (!portalManager->startConfigPortal(hostname))
+              if (!portalManager->startConfigPortal(hostname)) // TODO: use the password if present in eFuse (or if not present, the device mac address all lower)
               {
                 LOG_ERROR("Portal failed - restarting device");
                 Led::blinkRedFast(Led::PRIO_URGENT);
