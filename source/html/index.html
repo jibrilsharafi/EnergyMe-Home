@@ -518,7 +518,7 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
         
         ChartHelpers.updateConsumptionChart(hourlyData.imported, 'daily', hourlyData.exported, channelData, currentChartType);
-        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0;
+        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(hourlyData.rawHourlyImport, 'daily', hourlyData.rawHourlyImport, hourlyData.rawHourlyExport, hasBalanceCapability);
         ChartHelpers.updateEnergyKPIs(totalConsumption.rawImported, totalConsumption.rawExported, hasBalanceCapability);
         
@@ -586,7 +586,7 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
         
         ChartHelpers.updateConsumptionChart(dailyConsumptions, 'monthly', dailyExported, channelData, currentChartType);
-        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0;
+        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(dailyRawImport, 'monthly', dailyRawImport, dailyRawExport, hasBalanceCapability);
         ChartHelpers.updateEnergyKPIs(monthlyRawImported, monthlyRawExported, hasBalanceCapability);
         
@@ -661,7 +661,7 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
         
         ChartHelpers.updateConsumptionChart(monthlyConsumptions, 'yearly', monthlyExported, channelData, currentChartType);
-        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0;
+        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(monthlyRawImport, 'yearly', monthlyRawImport, monthlyRawExport, hasBalanceCapability);
         ChartHelpers.updateEnergyKPIs(yearlyRawImported, yearlyRawExported, hasBalanceCapability);
         
@@ -738,7 +738,7 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
 
         ChartHelpers.updateConsumptionChart(yearlyConsumptions, 'total', yearlyExported, channelData, currentChartType);
-        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0;
+        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(yearlyRawImport, 'total', yearlyRawImport, yearlyRawExport, hasBalanceCapability);
         ChartHelpers.updateEnergyKPIs(totalRawImported, totalRawExported, hasBalanceCapability);
 

@@ -1782,19 +1782,14 @@ paths:
                   $ref: '#/components/schemas/Phase'
                 ctSpecification:
                   $ref: '#/components/schemas/CtSpecification'
-                isGrid:
-                  type: boolean
-                  description: Whether this channel monitors grid import/export (Point of Common Coupling)
                 groupLabel:
                   type: string
                   maxLength: 64
                   description: Human-readable label for the group. Channels with the same groupLabel are aggregated together.
-                isProduction:
-                  type: boolean
-                  description: Whether this is a production channel (e.g., solar PV)
-                isBattery:
-                  type: boolean
-                  description: Whether this is a battery channel
+                role:
+                  type: string
+                  enum: [load, grid, pv, battery, inverter]
+                  description: "Channel role: load, grid (+ import/- export), pv (+ generation), battery (+ discharge/- charge), inverter (PV + battery DC-coupled)"
               minProperties: 2
             examples:
               enable_channel:
@@ -1821,22 +1816,22 @@ paths:
                   index: 1
                   groupLabel: "Main Three-Phase"
               grid_channel:
-                summary: Mark as grid channel (Point of Common Coupling)
+                summary: Mark as grid channel
                 value:
                   index: 0
-                  isGrid: true
+                  role: "grid"
                   label: "Grid"
               solar_production:
                 summary: Mark as solar production channel
                 value:
                   index: 5
-                  isProduction: true
+                  role: "pv"
                   label: "Solar PV"
               battery_channel:
                 summary: Mark as battery channel
                 value:
                   index: 6
-                  isBattery: true
+                  role: "battery"
                   label: "Battery System"
       responses:
         '200':
@@ -2840,26 +2835,17 @@ components:
           $ref: '#/components/schemas/Phase'
         ctSpecification:
           $ref: '#/components/schemas/CtSpecification'
-        isGrid:
-          type: boolean
-          description: Whether this channel monitors grid import/export (Point of Common Coupling). Positive = importing, Negative = exporting.
-          example: false
-          default: false
         groupLabel:
           type: string
           maxLength: 64
           description: Human-readable label for the group. Channels with the same groupLabel are aggregated together in the UI.
           example: "Main Three-Phase"
-        isProduction:
-          type: boolean
-          description: Whether this channel monitors energy production (e.g., solar PV, wind turbine)
-          example: false
-          default: false
-        isBattery:
-          type: boolean
-          description: Whether this channel monitors a battery system (charge/discharge)
-          example: false
-          default: false
+        role:
+          type: string
+          enum: [load, grid, pv, battery, inverter]
+          description: "Channel role determining measurement behavior and sign convention"
+          example: "load"
+          default: "load"
 
     MeterValues:
       type: object

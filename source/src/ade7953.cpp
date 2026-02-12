@@ -732,10 +732,8 @@ namespace Ade7953
             return false;
         }
 
-        // Snapshot old role flags before applying new data (for role change detection)
-        bool oldIsGrid = _channelData[channelIndex].isGrid;
-        bool oldIsProduction = _channelData[channelIndex].isProduction;
-        bool oldIsBattery = _channelData[channelIndex].isBattery;
+        // Snapshot old role before applying new data (for role change detection)
+        ChannelRole oldRole = _channelData[channelIndex].role;
 
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
@@ -760,15 +758,11 @@ namespace Ade7953
         Mqtt::requestChannelPublish();
         #endif
 
-        // Detect role change (isGrid, isProduction, isBattery)
-        bool detected = (oldIsGrid != channelData.isGrid) ||
-                        (oldIsProduction != channelData.isProduction) ||
-                        (oldIsBattery != channelData.isBattery);
+        // Detect role change
+        bool detected = (oldRole != channelData.role);
         if (detected) {
-            LOG_INFO("Channel %u role changed (grid:%d->%d, prod:%d->%d, batt:%d->%d)",
-                     channelIndex, oldIsGrid, channelData.isGrid,
-                     oldIsProduction, channelData.isProduction,
-                     oldIsBattery, channelData.isBattery);
+            LOG_INFO("Channel %u role changed: %s -> %s",
+                     channelIndex, channelRoleToString(oldRole), channelRoleToString(channelData.role));
         }
         if (roleChanged) *roleChanged = detected;
 
@@ -865,10 +859,8 @@ namespace Ade7953
         // Channel grouping
         jsonDocument["groupLabel"] = JsonString(channelData.groupLabel);
 
-        // Channel type/role flags
-        jsonDocument["isGrid"] = channelData.isGrid;
-        jsonDocument["isProduction"] = channelData.isProduction;
-        jsonDocument["isBattery"] = channelData.isBattery;
+        // Channel role
+        jsonDocument["role"] = channelRoleToString(channelData.role);
 
         LOG_VERBOSE("Successfully converted channel data to JSON for channel %u", channelData.index);
     }
@@ -901,10 +893,10 @@ namespace Ade7953
                 snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", jsonDocument["groupLabel"].as<const char*>());
             }
 
-            // Channel type/role flags
-            if (jsonDocument["isGrid"].is<bool>()) channelData.isGrid = jsonDocument["isGrid"].as<bool>();
-            if (jsonDocument["isProduction"].is<bool>()) channelData.isProduction = jsonDocument["isProduction"].as<bool>();
-            if (jsonDocument["isBattery"].is<bool>()) channelData.isBattery = jsonDocument["isBattery"].as<bool>();
+            // Channel role
+            if (jsonDocument["role"].is<const char*>()) {
+                channelData.role = channelRoleFromString(jsonDocument["role"].as<const char*>());
+            }
         } else {
             // Full update - set all fields
             channelData.index = jsonDocument["index"].as<uint8_t>();
@@ -913,7 +905,7 @@ namespace Ade7953
             channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
-            
+
             channelData.ctSpecification.currentRating = jsonDocument["ctSpecification"]["currentRating"].as<float>();
             channelData.ctSpecification.voltageOutput = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
             channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
@@ -921,11 +913,36 @@ namespace Ade7953
             // Channel grouping
             snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", jsonDocument["groupLabel"].as<const char*>());
 
-            // Channel type/role flags
-            channelData.isGrid = jsonDocument["isGrid"].as<bool>();
-            channelData.isProduction = jsonDocument["isProduction"].as<bool>();
-            channelData.isBattery = jsonDocument["isBattery"].as<bool>();
+            // Channel role
+            channelData.role = channelRoleFromString(jsonDocument["role"].as<const char*>());
         }
+    }
+
+    const char* channelRoleToString(ChannelRole role) {
+        switch (role) {
+            case CHANNEL_ROLE_GRID:     return "grid";
+            case CHANNEL_ROLE_PV:       return "pv";
+            case CHANNEL_ROLE_BATTERY:  return "battery";
+            case CHANNEL_ROLE_INVERTER: return "inverter";
+            case CHANNEL_ROLE_LOAD:
+            default:                    return "load";
+        }
+    }
+
+    ChannelRole channelRoleFromString(const char* roleStr) {
+        if (strcmp(roleStr, "grid") == 0)     return CHANNEL_ROLE_GRID;
+        if (strcmp(roleStr, "pv") == 0)       return CHANNEL_ROLE_PV;
+        if (strcmp(roleStr, "battery") == 0)  return CHANNEL_ROLE_BATTERY;
+        if (strcmp(roleStr, "inverter") == 0) return CHANNEL_ROLE_INVERTER;
+        return CHANNEL_ROLE_LOAD; // Default
+    }
+
+    bool isValidChannelRoleString(const char* roleStr) {
+        return (strcmp(roleStr, "load") == 0 ||
+                strcmp(roleStr, "grid") == 0 ||
+                strcmp(roleStr, "pv") == 0 ||
+                strcmp(roleStr, "battery") == 0 ||
+                strcmp(roleStr, "inverter") == 0);
     }
 
     // Energy data management
@@ -2384,15 +2401,27 @@ namespace Ade7953
             snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", defaultGroupLabel);
         }
 
-        // Channel type/role flags
-        snprintf(key, sizeof(key), CHANNEL_IS_GRID_KEY, channelIndex);
-        channelData.isGrid = preferences.getBool(key, channelIndex == 0 ? DEFAULT_CHANNEL_0_IS_GRID : DEFAULT_CHANNEL_IS_GRID);
+        // Channel role (with migration from old bool keys)
+        snprintf(key, sizeof(key), CHANNEL_ROLE_KEY, channelIndex);
+        if (preferences.isKey(key)) {
+            channelData.role = static_cast<ChannelRole>(preferences.getUChar(key, channelIndex == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE));
+        } else {
+            // Migration: read old bool keys and convert to enum
+            char oldKey[PREFERENCES_KEY_BUFFER_SIZE];
+            snprintf(oldKey, sizeof(oldKey), "is_grid_%u", channelIndex);
+            bool wasGrid = preferences.getBool(oldKey, false);
+            snprintf(oldKey, sizeof(oldKey), "is_prod_%u", channelIndex);
+            bool wasProd = preferences.getBool(oldKey, false);
+            snprintf(oldKey, sizeof(oldKey), "is_batt_%u", channelIndex);
+            bool wasBatt = preferences.getBool(oldKey, false);
 
-        snprintf(key, sizeof(key), CHANNEL_IS_PRODUCTION_KEY, channelIndex);
-        channelData.isProduction = preferences.getBool(key, DEFAULT_CHANNEL_IS_PRODUCTION);
+            if (wasGrid) channelData.role = CHANNEL_ROLE_GRID;
+            else if (wasProd) channelData.role = CHANNEL_ROLE_PV;
+            else if (wasBatt) channelData.role = CHANNEL_ROLE_BATTERY;
+            else channelData.role = (channelIndex == 0) ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE;
 
-        snprintf(key, sizeof(key), CHANNEL_IS_BATTERY_KEY, channelIndex);
-        channelData.isBattery = preferences.getBool(key, DEFAULT_CHANNEL_IS_BATTERY);
+            LOG_DEBUG("Migrated channel %u role from old bool keys: %s", channelIndex, channelRoleToString(channelData.role));
+        }
 
         preferences.end();
 
@@ -2451,15 +2480,9 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_GROUP_LABEL_KEY, channelIndex);
         preferences.putString(key, channelData.groupLabel);
 
-        // Channel type/role flags
-        snprintf(key, sizeof(key), CHANNEL_IS_GRID_KEY, channelIndex);
-        preferences.putBool(key, channelData.isGrid);
-
-        snprintf(key, sizeof(key), CHANNEL_IS_PRODUCTION_KEY, channelIndex);
-        preferences.putBool(key, channelData.isProduction);
-
-        snprintf(key, sizeof(key), CHANNEL_IS_BATTERY_KEY, channelIndex);
-        preferences.putBool(key, channelData.isBattery);
+        // Channel role
+        snprintf(key, sizeof(key), CHANNEL_ROLE_KEY, channelIndex);
+        preferences.putUChar(key, static_cast<uint8_t>(channelData.role));
 
         preferences.end();
 
@@ -2501,10 +2524,14 @@ namespace Ade7953
             // Channel grouping validation for partial updates
             if (jsonDocument["groupLabel"].is<const char*>()) return true;
 
-            // Channel type/role flags validation for partial updates
-            if (jsonDocument["isGrid"].is<bool>()) return true;
-            if (jsonDocument["isProduction"].is<bool>()) return true;
-            if (jsonDocument["isBattery"].is<bool>()) return true;
+            // Channel role validation for partial updates
+            if (jsonDocument["role"].is<const char*>()) {
+                if (!isValidChannelRoleString(jsonDocument["role"].as<const char*>())) {
+                    LOG_WARNING("Invalid role value: %s", jsonDocument["role"].as<const char*>());
+                    return false;
+                }
+                return true;
+            }
 
             LOG_WARNING("No valid fields found for partial update");
             return false; // No valid fields found for partial update
@@ -2525,10 +2552,9 @@ namespace Ade7953
             // Channel grouping validation
             if (!jsonDocument["groupLabel"].is<const char*>()) { LOG_WARNING("groupLabel is not string"); return false; }
 
-            // Channel type/role flags validation
-            if (!jsonDocument["isGrid"].is<bool>()) { LOG_WARNING("isGrid is not bool"); return false; }
-            if (!jsonDocument["isProduction"].is<bool>()) { LOG_WARNING("isProduction is not bool"); return false; }
-            if (!jsonDocument["isBattery"].is<bool>()) { LOG_WARNING("isBattery is not bool"); return false; }
+            // Channel role validation
+            if (!jsonDocument["role"].is<const char*>()) { LOG_WARNING("role is not string"); return false; }
+            if (!isValidChannelRoleString(jsonDocument["role"].as<const char*>())) { LOG_WARNING("Invalid role value: %s", jsonDocument["role"].as<const char*>()); return false; }
 
             return true; // All fields validated successfully
         }
@@ -3123,10 +3149,10 @@ namespace Ade7953
         }
 
         // Discard negative readings for channels that should not have them
-        // TODO: if we just set the channel or similar, should we automatically reverse or at least warn the user?
+        // Grid, Battery, and Inverter channels allow negatives; PV and Load do not
         if (
-            activePower < 0.0f && 
-            (!channelData.isBattery && !channelData.isGrid) // If it is load or PV (thus not battery and not grid), we discard negative readings 
+            activePower < 0.0f &&
+            (channelData.role == CHANNEL_ROLE_LOAD || channelData.role == CHANNEL_ROLE_PV)
         ) {
             LOG_DEBUG( // Just log as debug as it is not something critical
                 "%s (%d): Discarding negative reading (%.1fW)",

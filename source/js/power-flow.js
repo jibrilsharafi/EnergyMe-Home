@@ -192,8 +192,9 @@ const PowerFlowHelpers = {
         const gridChannels = ChannelCache.grid;
         const productionChannels = ChannelCache.production;
         const batteryChannels = ChannelCache.battery;
+        const inverterChannels = ChannelCache.inverter;
 
-        const hasProduction = productionChannels.length > 0;
+        const hasProduction = productionChannels.length > 0 || inverterChannels.length > 0;
         const hasBattery = batteryChannels.length > 0;
         const hasGrid = gridChannels.length > 0;
 
@@ -206,7 +207,7 @@ const PowerFlowHelpers = {
         const pfBattery = document.getElementById('pf-battery');
         const pfGrid = document.getElementById('pf-grid');
         const pfHome = document.getElementById('pf-home');
-        
+
         if (pfSolar) pfSolar.style.display = hasProduction ? 'flex' : 'none';
         if (pfBattery) pfBattery.style.display = hasBattery ? 'flex' : 'none';
 
@@ -221,6 +222,11 @@ const PowerFlowHelpers = {
         productionChannels.forEach(ch => {
             const meter = meterData.find(m => m.index === ch.index);
             if (meter) solarPower += Math.abs(meter.data.activePower);
+        });
+        // Inverter: only count positive output as production (negative = charging from grid)
+        inverterChannels.forEach(ch => {
+            const meter = meterData.find(m => m.index === ch.index);
+            if (meter) solarPower += Math.max(0, meter.data.activePower);
         });
 
         let batteryPower = 0;
@@ -281,7 +287,8 @@ const PowerFlowHelpers = {
         const gridIndices = ChannelCache.grid.map(ch => ch.index);
         const productionIndices = ChannelCache.production.map(ch => ch.index);
         const batteryIndices = ChannelCache.battery.map(ch => ch.index);
-        const specialIndices = new Set([...gridIndices, ...productionIndices, ...batteryIndices]);
+        const inverterIndices = ChannelCache.inverter.map(ch => ch.index);
+        const specialIndices = new Set([...gridIndices, ...productionIndices, ...batteryIndices, ...inverterIndices]);
 
         const loadChannels = meterData.filter(ch => !specialIndices.has(ch.index));
 

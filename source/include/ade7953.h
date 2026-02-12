@@ -235,10 +235,8 @@
 // Channel grouping keys
 #define CHANNEL_GROUP_LABEL_KEY "grp_label_%u" // Format: grp_label_0 (12 chars)
 
-// Channel type/role keys
-#define CHANNEL_IS_GRID_KEY "is_grid_%u" // Format: is_grid_0 (10 chars)
-#define CHANNEL_IS_PRODUCTION_KEY "is_prod_%u" // Format: is_prod_0 (10 chars)
-#define CHANNEL_IS_BATTERY_KEY "is_batt_%u" // Format: is_batt_0 (10 chars)
+// Channel role key
+#define CHANNEL_ROLE_KEY "role_%u" // Format: role_0 (7 chars)
 
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
@@ -249,10 +247,6 @@
 #define DEFAULT_CHANNEL_0_HIGH_PRIORITY true // Channel 0 is always high priority - even though it has no real impact since it is on a dedicated ADE7953 channel
 #define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
 #define DEFAULT_CHANNEL_GROUP_LABEL_FORMAT "Group %u"
-#define DEFAULT_CHANNEL_IS_GRID false
-#define DEFAULT_CHANNEL_0_IS_GRID true // Channel 0 is typically the grid meter
-#define DEFAULT_CHANNEL_IS_PRODUCTION false
-#define DEFAULT_CHANNEL_IS_BATTERY false
 
 // CT Specification defaults
 #define DEFAULT_CT_CURRENT_RATING_CHANNEL_0 50.0f   // 50A for channel 0 only as it is "standard" in EnergyMe Home
@@ -395,6 +389,19 @@ struct CtSpecification
       whLsb(1.0f), varhLsb(1.0f), vahLsb(1.0f) {}
 };
 
+// Channel role enum
+enum ChannelRole : uint8_t {
+    CHANNEL_ROLE_LOAD     = 0, // Default - regular load/consumption (negatives discarded)
+    CHANNEL_ROLE_GRID     = 1, // Grid meter (+ import, - export)
+    CHANNEL_ROLE_PV       = 2, // PV/Solar production (+ generation, negatives discarded)
+    CHANNEL_ROLE_BATTERY  = 3, // Battery (+ discharge, - charge)
+    CHANNEL_ROLE_INVERTER = 4, // Hybrid inverter: PV + battery DC-coupled, AC output (negatives allowed)
+    CHANNEL_ROLE_COUNT    = 5  // Total number of roles
+};
+
+#define DEFAULT_CHANNEL_ROLE CHANNEL_ROLE_LOAD
+#define DEFAULT_CHANNEL_0_ROLE CHANNEL_ROLE_GRID // Channel 0 is typically the grid meter
+
 struct ChannelData // TODO: since this is queried often via API, is there a way to define an "hash" of the data and cache it?
 {
   uint8_t index;
@@ -404,40 +411,34 @@ struct ChannelData // TODO: since this is queried often via API, is there a way 
   char label[NAME_BUFFER_SIZE];
   Phase phase;
   CtSpecification ctSpecification;
-  
+
   // Channel grouping (for 3-phase aggregation)
   char groupLabel[NAME_BUFFER_SIZE];  // Label for the group (shared by channels in same group)
-  
-  // Channel type/role flags (mutually exclusive: Grid, Production, Battery, or Load)
-  bool isGrid;                        // True if this is a grid meter (+ = import, - = export)
-  bool isProduction;                  // True if this is a production channel (e.g., PV/solar, + = generation)
-  bool isBattery;                     // True if this is a battery channel (+ = discharge, - = charge)
+
+  // Channel role
+  ChannelRole role;
 
   ChannelData()
-    : index(0), 
-      active(false), 
-      reverse(false), 
+    : index(0),
+      active(false),
+      reverse(false),
       highPriority(false),
-      phase(PHASE_1), 
+      phase(PHASE_1),
       ctSpecification(CtSpecification()),
-      isGrid(DEFAULT_CHANNEL_IS_GRID), // TODO: make this an enum instead of boolean flags, since it is mutually exclusive and it is more scalable
-      isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
-      isBattery(DEFAULT_CHANNEL_IS_BATTERY)
+      role(DEFAULT_CHANNEL_ROLE)
     {
       snprintf(label, sizeof(label), "Channel");
       snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, 0);
     }
-  
+
   ChannelData(uint8_t idx)
-    : index(idx), 
-      active(idx == 0 ? DEFAULT_CHANNEL_0_ACTIVE : DEFAULT_CHANNEL_ACTIVE), 
-      reverse(DEFAULT_CHANNEL_REVERSE), 
+    : index(idx),
+      active(idx == 0 ? DEFAULT_CHANNEL_0_ACTIVE : DEFAULT_CHANNEL_ACTIVE),
+      reverse(DEFAULT_CHANNEL_REVERSE),
       highPriority(idx == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY),
-      phase(DEFAULT_CHANNEL_PHASE), 
+      phase(DEFAULT_CHANNEL_PHASE),
       ctSpecification(CtSpecification()),
-      isGrid(idx == 0 ? DEFAULT_CHANNEL_0_IS_GRID : DEFAULT_CHANNEL_IS_GRID),
-      isProduction(DEFAULT_CHANNEL_IS_PRODUCTION),
-      isBattery(DEFAULT_CHANNEL_IS_BATTERY)
+      role(idx == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE)
     {
       snprintf(label, sizeof(label), DEFAULT_CHANNEL_LABEL_FORMAT, idx);
       snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, idx);
@@ -556,6 +557,11 @@ namespace Ade7953
     bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial = false, bool* roleChanged = nullptr);
     void channelDataToJson(const ChannelData &channelData, JsonDocument &jsonDocument);
     void channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);
+
+    // Channel role helpers
+    const char* channelRoleToString(ChannelRole role);
+    ChannelRole channelRoleFromString(const char* roleStr);
+    bool isValidChannelRoleString(const char* roleStr);
 
     // Energy data management
     void resetEnergyValues();

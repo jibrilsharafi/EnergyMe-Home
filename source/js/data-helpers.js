@@ -13,6 +13,7 @@ const ChannelCache = {
     _grid: null,
     _production: null,
     _battery: null,
+    _inverter: null,
     _excludeSet: null,
     _groupMapping: null,
     _channelData: null,
@@ -27,6 +28,7 @@ const ChannelCache = {
         this._grid = null;
         this._production = null;
         this._battery = null;
+        this._inverter = null;
         this._excludeSet = null;
         this._groupMapping = null;
     },
@@ -34,7 +36,7 @@ const ChannelCache = {
     get grid() {
         if (this._grid === null) {
             this._grid = this._channelData && Array.isArray(this._channelData)
-                ? this._channelData.filter(ch => ch.isGrid === true)
+                ? this._channelData.filter(ch => ch.role === 'grid')
                 : [];
         }
         return this._grid;
@@ -43,7 +45,7 @@ const ChannelCache = {
     get production() {
         if (this._production === null) {
             this._production = this._channelData && Array.isArray(this._channelData)
-                ? this._channelData.filter(ch => ch.isProduction === true)
+                ? this._channelData.filter(ch => ch.role === 'pv')
                 : [];
         }
         return this._production;
@@ -52,10 +54,19 @@ const ChannelCache = {
     get battery() {
         if (this._battery === null) {
             this._battery = this._channelData && Array.isArray(this._channelData)
-                ? this._channelData.filter(ch => ch.isBattery === true)
+                ? this._channelData.filter(ch => ch.role === 'battery')
                 : [];
         }
         return this._battery;
+    },
+
+    get inverter() {
+        if (this._inverter === null) {
+            this._inverter = this._channelData && Array.isArray(this._channelData)
+                ? this._channelData.filter(ch => ch.role === 'inverter')
+                : [];
+        }
+        return this._inverter;
     },
 
     get excludeFromOther() {
@@ -63,7 +74,8 @@ const ChannelCache = {
             const gridIndices = this.grid.map(ch => String(ch.index));
             const productionIndices = this.production.map(ch => String(ch.index));
             const batteryIndices = this.battery.map(ch => String(ch.index));
-            this._excludeSet = new Set([...gridIndices, ...productionIndices, ...batteryIndices]);
+            const inverterIndices = this.inverter.map(ch => String(ch.index));
+            this._excludeSet = new Set([...gridIndices, ...productionIndices, ...batteryIndices, ...inverterIndices]);
         }
         return this._excludeSet;
     },

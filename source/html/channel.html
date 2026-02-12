@@ -24,6 +24,10 @@
             justify-items: center;
         }
 
+        .channel-columns .section-box {
+            width: 80%;
+        }
+
         .channel-columns input[type="text"] {
             width: 90%;
             box-sizing: border-box;
@@ -203,20 +207,15 @@
                 </label>
                 <div style="height: 15px;"></div>
                 <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
-                <h4 style="margin: 10px 0;">Channel Type</h4>
+                <h4 style="margin: 10px 0;">Channel Role</h4>
                 <label>
-                    <input type="checkbox" ${channel.isGrid ? 'checked' : ''} id="isGrid${index}" onchange="queueChannelUpdate(${index})">
-                    Grid (+ import, - export)
-                </label>
-                <div style="height: 10px;"></div>
-                <label>
-                    <input type="checkbox" ${channel.isProduction ? 'checked' : ''} id="isProduction${index}" onchange="queueChannelUpdate(${index})">
-                    Production (Solar/PV)
-                </label>
-                <div style="height: 10px;"></div>
-                <label>
-                    <input type="checkbox" ${channel.isBattery ? 'checked' : ''} id="isBattery${index}" onchange="queueChannelUpdate(${index})">
-                    Battery (+ discharge, - charge)
+                    <select id="role${index}" onchange="queueChannelUpdate(${index})">
+                        <option value="load" ${channel.role === 'load' ? 'selected' : ''}>Load</option>
+                        <option value="grid" ${channel.role === 'grid' ? 'selected' : ''}>Grid (+ import, - export)</option>
+                        <option value="pv" ${channel.role === 'pv' ? 'selected' : ''}>PV / Solar (+ generation)</option>
+                        <option value="battery" ${channel.role === 'battery' ? 'selected' : ''}>Battery (+ discharge, - charge)</option>
+                        <option value="inverter" ${channel.role === 'inverter' ? 'selected' : ''}>Inverter (PV + Battery DC-coupled)</option>
+                    </select>
                 </label>
                 <div style="height: 10px;"></div>
                 <span id="power${index}" style="font-weight: bold; color: #333;"></span>
@@ -314,22 +313,14 @@
 
         // Detect role change BEFORE updating local data
         const oldData = channelData[index];
-        const newIsGrid = document.getElementById(`isGrid${index}`).checked;
-        const newIsProduction = document.getElementById(`isProduction${index}`).checked;
-        const newIsBattery = document.getElementById(`isBattery${index}`).checked;
+        const newRole = document.getElementById(`role${index}`).value;
 
-        const roleChanged = oldData && (
-            oldData.isGrid !== newIsGrid ||
-            oldData.isProduction !== newIsProduction ||
-            oldData.isBattery !== newIsBattery
-        );
+        const roleChanged = oldData && (oldData.role !== newRole);
 
         if (roleChanged) {
             if (!confirm('Changing the channel role will reset its energy values and delete its historical data. This cannot be undone.\n\nDo you want to continue?')) {
-                // Revert checkboxes to original values
-                document.getElementById(`isGrid${index}`).checked = oldData.isGrid;
-                document.getElementById(`isProduction${index}`).checked = oldData.isProduction;
-                document.getElementById(`isBattery${index}`).checked = oldData.isBattery;
+                // Revert dropdown to original value
+                document.getElementById(`role${index}`).value = oldData.role;
                 return;
             }
         }
@@ -347,10 +338,8 @@
             highPriority: document.getElementById(`highPriority${index}`).checked,
             // Grouping
             groupLabel: document.getElementById(`groupLabel${index}`).value,
-            // Channel type flags
-            isGrid: document.getElementById(`isGrid${index}`).checked,
-            isProduction: document.getElementById(`isProduction${index}`).checked,
-            isBattery: document.getElementById(`isBattery${index}`).checked,
+            // Channel role
+            role: document.getElementById(`role${index}`).value,
         };
 
         // Update local channelData immediately for UI responsiveness
@@ -361,9 +350,7 @@
             channelData[index].phase = channelUpdate.phase;
             channelData[index].highPriority = channelUpdate.highPriority;
             channelData[index].groupLabel = channelUpdate.groupLabel;
-            channelData[index].isGrid = channelUpdate.isGrid;
-            channelData[index].isProduction = channelUpdate.isProduction;
-            channelData[index].isBattery = channelUpdate.isBattery;
+            channelData[index].role = channelUpdate.role;
         }
 
         // Store in queue - this will overwrite any previous update for this channel

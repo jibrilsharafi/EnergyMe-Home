@@ -414,8 +414,9 @@ const ChartHelpers = {
         const productionChannels = ChannelCache.production;
         const batteryChannels = ChannelCache.battery;
         const gridChannels = ChannelCache.grid;
+        const inverterChannels = ChannelCache.inverter;
 
-        const hasProduction = productionChannels.length > 0;
+        const hasProduction = productionChannels.length > 0 || inverterChannels.length > 0;
         const hasBattery = batteryChannels.length > 0;
 
         document.getElementById('chart-type-selector').style.display = hasBalanceCapability ? 'flex' : 'none';
@@ -426,6 +427,7 @@ const ChartHelpers = {
         const gridChannelKey = String(gridChannelIndex);
         const productionIndices = productionChannels.map(ch => String(ch.index));
         const batteryIndices = batteryChannels.map(ch => String(ch.index));
+        const inverterIndices = inverterChannels.map(ch => String(ch.index));
 
         const periods = Object.keys(hourlyData).sort();
 
@@ -446,6 +448,10 @@ const ChartHelpers = {
 
             let pvProd = 0;
             productionIndices.forEach(idx => {
+                pvProd += periodData[idx] || 0;
+            });
+            // Inverter: count imported energy as production
+            inverterIndices.forEach(idx => {
                 pvProd += periodData[idx] || 0;
             });
             balanceData.pv.push(pvProd);
@@ -567,9 +573,10 @@ const ChartHelpers = {
         const productionChannels = ChannelCache.production;
         const batteryChannels = ChannelCache.battery;
         const gridChannels = ChannelCache.grid;
+        const inverterChannels = ChannelCache.inverter;
         const gridChannelIndex = gridChannels.length > 0 ? gridChannels[0].index : 0;
 
-        const hasProduction = productionChannels.length > 0;
+        const hasProduction = productionChannels.length > 0 || inverterChannels.length > 0;
         const hasBattery = batteryChannels.length > 0;
 
         const kpisSection = document.getElementById('energy-kpis-section');
@@ -581,6 +588,7 @@ const ChartHelpers = {
 
         const productionIndices = productionChannels.map(ch => ch.index);
         const batteryIndices = batteryChannels.map(ch => ch.index);
+        const inverterIndices = inverterChannels.map(ch => ch.index);
 
         let gridImport = rawImported[gridChannelIndex] || 0;
         let gridExport = rawExported[gridChannelIndex] || 0;
@@ -589,6 +597,10 @@ const ChartHelpers = {
         let batteryDischarge = 0;
 
         productionIndices.forEach(idx => {
+            production += rawImported[idx] || 0;
+        });
+        // Inverter: imported energy counts as production
+        inverterIndices.forEach(idx => {
             production += rawImported[idx] || 0;
         });
 
