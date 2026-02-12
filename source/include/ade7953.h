@@ -68,8 +68,12 @@
 #define ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS 5
 #define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500
 
-// Channel priority scheduling
-#define PRIORITY_BIAS 2 // Bias Factor: 2 means HP runs ~2x faster than LP
+// Dynamic channel scheduling (Weighted Deficit Round-Robin)
+#define WEIGHT_POWER_SHARE 0.4f      // Weight contribution from power magnitude share
+#define WEIGHT_VARIABILITY 0.4f      // Weight contribution from power variability share
+#define WEIGHT_MIN_BASE 0.1f         // Minimum base weight to prevent starvation
+#define WEIGHT_MANUAL_BOOST 0.5f     // Extra weight when highPriority is manually set
+#define VARIABILITY_EMA_ALPHA 0.3f   // Exponential moving average smoothing for variability (0-1, lower = smoother)
 
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register

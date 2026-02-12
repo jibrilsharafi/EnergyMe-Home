@@ -2843,7 +2843,7 @@ components:
           example: false
         highPriority:
           type: boolean
-          description: Whether the channel is high-priority (read more frequently in round-robin). Optional, defaults to false.
+          description: Manual priority boost for the channel. When true, gives a static weight boost in the dynamic scheduling algorithm. Channels are automatically prioritized based on power magnitude and variability, but this flag provides an additional manual override. Optional, defaults to false.
           example: false
           default: false
         label:
