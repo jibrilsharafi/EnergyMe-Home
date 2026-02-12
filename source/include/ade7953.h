@@ -69,6 +69,9 @@
 #define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500
 
 // Dynamic channel scheduling (Weighted Deficit Round-Robin)
+// Weights are intentionally not normalized to 1.0 — the WDRR deficit counter
+// algorithm uses relative weights: a channel with weight 2x will be sampled ~2x
+// as often. The minimum base prevents starvation; the manual boost is additive.
 #define WEIGHT_POWER_SHARE 0.4f      // Weight contribution from power magnitude share
 #define WEIGHT_VARIABILITY 0.4f      // Weight contribution from power variability share
 #define WEIGHT_MIN_BASE 0.1f         // Minimum base weight to prevent starvation

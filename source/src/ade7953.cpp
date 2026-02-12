@@ -3976,6 +3976,13 @@ namespace Ade7953
     static void _updateVariability(uint8_t channelIndex, float newActivePower) {
         if (channelIndex >= CHANNEL_COUNT) return;
         
+        // Skip variability computation on the very first reading (prevActivePower is 0 from init)
+        // to avoid inflating the variability score with the initial power value
+        if (_prevActivePower[channelIndex] == 0.0f && _powerVariability[channelIndex] == 0.0f) {
+            _prevActivePower[channelIndex] = newActivePower;
+            return;
+        }
+
         float delta = fabsf(newActivePower - _prevActivePower[channelIndex]);
         _powerVariability[channelIndex] = VARIABILITY_EMA_ALPHA * delta + (1.0f - VARIABILITY_EMA_ALPHA) * _powerVariability[channelIndex];
         _prevActivePower[channelIndex] = newActivePower;
@@ -4053,7 +4060,7 @@ namespace Ade7953
 
         // Select the channel with the highest deficit
         uint8_t bestChannel = INVALID_CHANNEL;
-        float bestDeficit = -1.0f;
+        float bestDeficit = -1e9f; // Use a very large negative value to ensure any active channel is selectable
 
         for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
             if (_channelData[i].active && _channelDeficit[i] > bestDeficit) {
