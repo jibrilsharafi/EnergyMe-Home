@@ -4,6 +4,7 @@
 #pragma once
 
 // Hardware revision: EnergyMe - Home v5 (02-12-2024)
+// TODO: make these not hardcoded, but based on the hardware version (eFuse or Platformio flag/define) with fallback
 
 // RGB LED pins
 #define LED_RED_PIN 39
