@@ -242,7 +242,7 @@
 #define CHANNEL_PHASE_KEY "phase_%u" // Format: phase_0 (9 chars)
 
 // Legacy key for migration (remove old NVS entries on load)
-#define CHANNEL_HIGH_PRIORITY_KEY_LEGACY "highpri_%u" // Format: highpri_0 (10 chars)
+#define CHANNEL_HIGHPRI_KEY_LEGACY "highpri_%u" // Format: highpri_0 (10 chars)
 
 // CT Specification keys
 #define CHANNEL_CT_CURRENT_RATING_KEY "ct_current_%u" // Format: ct_current_0 (12 chars)

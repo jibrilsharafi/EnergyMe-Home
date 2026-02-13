@@ -181,7 +181,7 @@ def test_equal_power():
 
     ok = assert_no_starvation(counts, set(active), "equal_power")
 
-    # With equal weights, expect roughly equal distribution (±20%)
+    # With equal weights, expect roughly equal distribution (±30%)
     avg = 1000 / len(active)
     for ch in active:
         ratio = counts[ch] / avg

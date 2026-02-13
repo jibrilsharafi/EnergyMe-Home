@@ -2605,7 +2605,7 @@ namespace Ade7953
         channelData.phase = static_cast<Phase>(preferences.getUChar(key, (uint8_t)(DEFAULT_CHANNEL_PHASE)));
 
         // Migrate legacy highPriority key (remove old NVS entry if present)
-        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY_LEGACY, channelIndex);
+        snprintf(key, sizeof(key), CHANNEL_HIGHPRI_KEY_LEGACY, channelIndex);
         if (preferences.isKey(key)) {
             preferences.remove(key);
             LOG_DEBUG("Removed legacy highPriority key for channel %u", channelIndex);
