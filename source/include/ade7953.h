@@ -572,6 +572,7 @@ namespace Ade7953
     uint32_t computeAllChannelDataHash(); // Compute CRC32 hash of all channel data for ETag caching
 
     // Channel role helpers
+    ChannelRole getChannelRole(uint8_t channelIndex);
     const char* channelRoleToString(ChannelRole role);
     ChannelRole channelRoleFromString(const char* roleStr);
     bool isValidChannelRoleString(const char* roleStr);
@@ -593,11 +594,16 @@ namespace Ade7953
     bool fullMeterValuesToJson(JsonDocument &jsonDocument);
     bool getMeterValues(MeterValues &meterValues, uint8_t channelIndex);
 
-    // Aggregated power calculations 
-    float getAggregatedActivePower(bool includeChannel0 = true);
-    float getAggregatedReactivePower(bool includeChannel0 = true);
-    float getAggregatedApparentPower(bool includeChannel0 = true);
-    float getAggregatedPowerFactor(bool includeChannel0 = true);
+    // Role-based aggregated values
+    float getAggregatedActivePowerByRole(ChannelRole role);
+    float getAggregatedReactivePowerByRole(ChannelRole role);
+    float getAggregatedApparentPowerByRole(ChannelRole role);
+    float getAggregatedPowerFactorByRole(ChannelRole role);
+    float getAggregatedActiveEnergyImportedByRole(ChannelRole role);
+    float getAggregatedActiveEnergyExportedByRole(ChannelRole role);
+    float getAggregatedReactiveEnergyImportedByRole(ChannelRole role);
+    float getAggregatedReactiveEnergyExportedByRole(ChannelRole role);
+    float getAggregatedApparentEnergyByRole(ChannelRole role);
 
     // Grid frequency
     float getGridFrequency();

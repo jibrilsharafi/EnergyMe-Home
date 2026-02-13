@@ -86,7 +86,6 @@
 <body>
     <div class="buttonNavigation-container">
         <a class="buttonNavigation" type="home" href="/">🏠 Home</a>
-        <a class="buttonNavigation" type="inner" href="/configuration">⚙️ Configuration</a>
     </div>
 
     <!-- Custom MQTT Section -->
@@ -255,16 +254,72 @@
                 <li><code>102-103</code>: Grid frequency (float32)</li>
             </ul>
 
-            <h4>Aggregated Values (200-217)</h4>
+            <h4>Aggregated Values - Role Based (200-617)</h4>
+            <p>Power and energy values aggregated by channel role. Each role has 18 registers (9 values × 2 registers each).</p>
+
+            <h5>Grid (200-217)</h5>
             <ul>
-                <li><code>200-201</code>: Total active power (float32)</li>
-                <li><code>202-203</code>: Total reactive power (float32)</li>
-                <li><code>204-205</code>: Total apparent power (float32)</li>
-                <li><code>206-207</code>: Total power factor (float32)</li>
-                <li><code>208-209</code>: Active power without Ch0 (float32)</li>
-                <li><code>210-211</code>: Reactive power without Ch0 (float32)</li>
-                <li><code>212-213</code>: Apparent power without Ch0 (float32)</li>
-                <li><code>214-215</code>: Power factor without Ch0 (float32)</li>
+                <li><code>200-201</code>: Grid active power (float32, W)</li>
+                <li><code>202-203</code>: Grid reactive power (float32, VAR)</li>
+                <li><code>204-205</code>: Grid apparent power (float32, VA)</li>
+                <li><code>206-207</code>: Grid power factor (float32)</li>
+                <li><code>208-209</code>: Grid active energy imported (float32, Wh)</li>
+                <li><code>210-211</code>: Grid active energy exported (float32, Wh)</li>
+                <li><code>212-213</code>: Grid reactive energy imported (float32, VARh)</li>
+                <li><code>214-215</code>: Grid reactive energy exported (float32, VARh)</li>
+                <li><code>216-217</code>: Grid apparent energy (float32, VAh)</li>
+            </ul>
+
+            <h5>Load (300-317)</h5>
+            <ul>
+                <li><code>300-301</code>: Load active power (float32, W)</li>
+                <li><code>302-303</code>: Load reactive power (float32, VAR)</li>
+                <li><code>304-305</code>: Load apparent power (float32, VA)</li>
+                <li><code>306-307</code>: Load power factor (float32)</li>
+                <li><code>308-309</code>: Load active energy imported (float32, Wh)</li>
+                <li><code>310-311</code>: Load active energy exported (float32, Wh)</li>
+                <li><code>312-313</code>: Load reactive energy imported (float32, VARh)</li>
+                <li><code>314-315</code>: Load reactive energy exported (float32, VARh)</li>
+                <li><code>316-317</code>: Load apparent energy (float32, VAh)</li>
+            </ul>
+
+            <h5>PV (400-417)</h5>
+            <ul>
+                <li><code>400-401</code>: PV active power (float32, W)</li>
+                <li><code>402-403</code>: PV reactive power (float32, VAR)</li>
+                <li><code>404-405</code>: PV apparent power (float32, VA)</li>
+                <li><code>406-407</code>: PV power factor (float32)</li>
+                <li><code>408-409</code>: PV active energy imported (float32, Wh)</li>
+                <li><code>410-411</code>: PV active energy exported (float32, Wh)</li>
+                <li><code>412-413</code>: PV reactive energy imported (float32, VARh)</li>
+                <li><code>414-415</code>: PV reactive energy exported (float32, VARh)</li>
+                <li><code>416-417</code>: PV apparent energy (float32, VAh)</li>
+            </ul>
+
+            <h5>Battery (500-517)</h5>
+            <ul>
+                <li><code>500-501</code>: Battery active power (float32, W)</li>
+                <li><code>502-503</code>: Battery reactive power (float32, VAR)</li>
+                <li><code>504-505</code>: Battery apparent power (float32, VA)</li>
+                <li><code>506-507</code>: Battery power factor (float32)</li>
+                <li><code>508-509</code>: Battery active energy imported (float32, Wh)</li>
+                <li><code>510-511</code>: Battery active energy exported (float32, Wh)</li>
+                <li><code>512-513</code>: Battery reactive energy imported (float32, VARh)</li>
+                <li><code>514-515</code>: Battery reactive energy exported (float32, VARh)</li>
+                <li><code>516-517</code>: Battery apparent energy (float32, VAh)</li>
+            </ul>
+
+            <h5>Inverter (600-617)</h5>
+            <ul>
+                <li><code>600-601</code>: Inverter active power (float32, W)</li>
+                <li><code>602-603</code>: Inverter reactive power (float32, VAR)</li>
+                <li><code>604-605</code>: Inverter apparent power (float32, VA)</li>
+                <li><code>606-607</code>: Inverter power factor (float32)</li>
+                <li><code>608-609</code>: Inverter active energy imported (float32, Wh)</li>
+                <li><code>610-611</code>: Inverter active energy exported (float32, Wh)</li>
+                <li><code>612-613</code>: Inverter reactive energy imported (float32, VARh)</li>
+                <li><code>614-615</code>: Inverter reactive energy exported (float32, VARh)</li>
+                <li><code>616-617</code>: Inverter apparent energy (float32, VAh)</li>
             </ul>
 
             <h4>Per-Channel Registers (1000 + channel×100 + offset)</h4>
@@ -694,15 +749,61 @@
             registerMap.push({ offset: 100, count: 2, name: "Voltage", dataType: "float32", unit: "V" });
             registerMap.push({ offset: 102, count: 2, name: "Grid frequency", dataType: "float32", unit: "Hz" });
 
-            // Aggregated Values (200-217)
-            registerMap.push({ offset: 200, count: 2, name: "Total active power", dataType: "float32", unit: "W" });
-            registerMap.push({ offset: 202, count: 2, name: "Total reactive power", dataType: "float32", unit: "VAR" });
-            registerMap.push({ offset: 204, count: 2, name: "Total apparent power", dataType: "float32", unit: "VA" });
-            registerMap.push({ offset: 206, count: 2, name: "Total power factor", dataType: "float32", unit: "" });
-            registerMap.push({ offset: 208, count: 2, name: "Active power without Ch0", dataType: "float32", unit: "W" });
-            registerMap.push({ offset: 210, count: 2, name: "Reactive power without Ch0", dataType: "float32", unit: "VAR" });
-            registerMap.push({ offset: 212, count: 2, name: "Apparent power without Ch0", dataType: "float32", unit: "VA" });
-            registerMap.push({ offset: 214, count: 2, name: "Power factor without Ch0", dataType: "float32", unit: "" });
+            // Role-based Aggregated Values (200-617)
+            // Grid (200-217)
+            registerMap.push({ offset: 200, count: 2, name: "Grid active power", dataType: "float32", unit: "W" });
+            registerMap.push({ offset: 202, count: 2, name: "Grid reactive power", dataType: "float32", unit: "VAR" });
+            registerMap.push({ offset: 204, count: 2, name: "Grid apparent power", dataType: "float32", unit: "VA" });
+            registerMap.push({ offset: 206, count: 2, name: "Grid power factor", dataType: "float32", unit: "" });
+            registerMap.push({ offset: 208, count: 2, name: "Grid active energy imported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 210, count: 2, name: "Grid active energy exported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 212, count: 2, name: "Grid reactive energy imported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 214, count: 2, name: "Grid reactive energy exported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 216, count: 2, name: "Grid apparent energy", dataType: "float32", unit: "VAh" });
+
+            // Load (300-317)
+            registerMap.push({ offset: 300, count: 2, name: "Load active power", dataType: "float32", unit: "W" });
+            registerMap.push({ offset: 302, count: 2, name: "Load reactive power", dataType: "float32", unit: "VAR" });
+            registerMap.push({ offset: 304, count: 2, name: "Load apparent power", dataType: "float32", unit: "VA" });
+            registerMap.push({ offset: 306, count: 2, name: "Load power factor", dataType: "float32", unit: "" });
+            registerMap.push({ offset: 308, count: 2, name: "Load active energy imported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 310, count: 2, name: "Load active energy exported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 312, count: 2, name: "Load reactive energy imported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 314, count: 2, name: "Load reactive energy exported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 316, count: 2, name: "Load apparent energy", dataType: "float32", unit: "VAh" });
+
+            // PV (400-417)
+            registerMap.push({ offset: 400, count: 2, name: "PV active power", dataType: "float32", unit: "W" });
+            registerMap.push({ offset: 402, count: 2, name: "PV reactive power", dataType: "float32", unit: "VAR" });
+            registerMap.push({ offset: 404, count: 2, name: "PV apparent power", dataType: "float32", unit: "VA" });
+            registerMap.push({ offset: 406, count: 2, name: "PV power factor", dataType: "float32", unit: "" });
+            registerMap.push({ offset: 408, count: 2, name: "PV active energy imported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 410, count: 2, name: "PV active energy exported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 412, count: 2, name: "PV reactive energy imported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 414, count: 2, name: "PV reactive energy exported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 416, count: 2, name: "PV apparent energy", dataType: "float32", unit: "VAh" });
+
+            // Battery (500-517)
+            registerMap.push({ offset: 500, count: 2, name: "Battery active power", dataType: "float32", unit: "W" });
+            registerMap.push({ offset: 502, count: 2, name: "Battery reactive power", dataType: "float32", unit: "VAR" });
+            registerMap.push({ offset: 504, count: 2, name: "Battery apparent power", dataType: "float32", unit: "VA" });
+            registerMap.push({ offset: 506, count: 2, name: "Battery power factor", dataType: "float32", unit: "" });
+            registerMap.push({ offset: 508, count: 2, name: "Battery active energy imported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 510, count: 2, name: "Battery active energy exported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 512, count: 2, name: "Battery reactive energy imported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 514, count: 2, name: "Battery reactive energy exported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 516, count: 2, name: "Battery apparent energy", dataType: "float32", unit: "VAh" });
+
+            // Inverter (600-617)
+            registerMap.push({ offset: 600, count: 2, name: "Inverter active power", dataType: "float32", unit: "W" });
+            registerMap.push({ offset: 602, count: 2, name: "Inverter reactive power", dataType: "float32", unit: "VAR" });
+            registerMap.push({ offset: 604, count: 2, name: "Inverter apparent power", dataType: "float32", unit: "VA" });
+            registerMap.push({ offset: 606, count: 2, name: "Inverter power factor", dataType: "float32", unit: "" });
+            registerMap.push({ offset: 608, count: 2, name: "Inverter active energy imported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 610, count: 2, name: "Inverter active energy exported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 612, count: 2, name: "Inverter reactive energy imported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 614, count: 2, name: "Inverter reactive energy exported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 616, count: 2, name: "Inverter apparent energy", dataType: "float32", unit: "VAh" });
 
             // Per-Channel Registers (1000 + channel×100 + offset) for channels 0-16
             for (let channel = 0; channel <= 16; channel++) {

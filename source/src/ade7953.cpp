@@ -943,6 +943,22 @@ namespace Ade7953
         }
     }
 
+    ChannelRole getChannelRole(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) {
+            LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
+            return CHANNEL_ROLE_LOAD; // Default role
+        }
+
+        if (!acquireMutex(&_channelDataMutex)) {
+            LOG_ERROR("Failed to acquire mutex for channel data");
+            return CHANNEL_ROLE_LOAD; // Default role
+        }
+
+        ChannelRole role = _channelData[channelIndex].role;
+        releaseMutex(&_channelDataMutex);
+        return role;
+    }
+
     const char* channelRoleToString(ChannelRole role) {
         switch (role) {
             case CHANNEL_ROLE_GRID:     return "grid";
@@ -1324,65 +1340,163 @@ namespace Ade7953
     // Aggregated power calculations 
     // =============================
 
-    float getAggregatedActivePower(bool includeChannel0) {
+    float getAggregatedActivePowerByRole(ChannelRole role) {
         float sum = 0.0f;
-        uint8_t activeChannelCount = 0;
 
         if (!acquireMutex(&_meterValuesMutex)) {
-            LOG_ERROR("Failed to acquire mutex for meter values");
-            return 0.0f; // Return 0 if mutex acquisition fails
-        }
-        for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
-            if (isChannelActive(i)) {
-                sum += _meterValues[i].activePower;
-                activeChannelCount++;
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].activePower;
+                }
             }
+            releaseMutex(&_meterValuesMutex);
         }
-        releaseMutex(&_meterValuesMutex);
-        return activeChannelCount > 0 ? sum : 0.0f;
+
+        return sum;
     }
 
-    float getAggregatedReactivePower(bool includeChannel0) {
+    float getAggregatedReactivePowerByRole(ChannelRole role) {
         float sum = 0.0f;
-        uint8_t activeChannelCount = 0;
 
         if (!acquireMutex(&_meterValuesMutex)) {
-            LOG_ERROR("Failed to acquire mutex for meter values");
-            return 0.0f; // Return 0 if mutex acquisition fails
-        }
-        for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
-            if (isChannelActive(i)) {
-                sum += _meterValues[i].reactivePower;
-                activeChannelCount++;
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].reactivePower;
+                }
             }
+            releaseMutex(&_meterValuesMutex);
         }
-        releaseMutex(&_meterValuesMutex);
-        return activeChannelCount > 0 ? sum : 0.0f;
+
+        return sum;
     }
 
-    float getAggregatedApparentPower(bool includeChannel0) {
+    float getAggregatedApparentPowerByRole(ChannelRole role) {
         float sum = 0.0f;
-        uint8_t activeChannelCount = 0;
 
         if (!acquireMutex(&_meterValuesMutex)) {
-            LOG_ERROR("Failed to acquire mutex for meter values");
-            return 0.0f; // Return 0 if mutex acquisition fails
-        }
-        for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
-            if (isChannelActive(i)) {
-                sum += _meterValues[i].apparentPower;
-                activeChannelCount++;
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].apparentPower;
+                }
             }
+            releaseMutex(&_meterValuesMutex);
         }
-        releaseMutex(&_meterValuesMutex);
-        return activeChannelCount > 0 ? sum : 0.0f;
+
+        return sum;
     }
 
-    float getAggregatedPowerFactor(bool includeChannel0) {
-        float _aggregatedActivePower = getAggregatedActivePower(includeChannel0);
-        float _aggregatedApparentPower = getAggregatedApparentPower(includeChannel0);
+    float getAggregatedPowerFactorByRole(ChannelRole role) {
+        float sumActivePower = 0.0f;
+        float sumApparentPower = 0.0f;
 
-        return _aggregatedApparentPower > 0 ? _aggregatedActivePower / _aggregatedApparentPower : 0.0f;
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sumActivePower += _meterValues[i].activePower;
+                    sumApparentPower += _meterValues[i].apparentPower;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        if (sumApparentPower == 0.0f) return 0.0f;
+        else return sumActivePower / sumApparentPower;
+    }
+
+    // Aggregated energy calculations
+    // ===============================
+
+    float getAggregatedActiveEnergyImportedByRole(ChannelRole role) {
+        double sum = 0.0;
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].activeEnergyImported;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        return static_cast<float>(sum);
+    }
+
+    float getAggregatedActiveEnergyExportedByRole(ChannelRole role) {
+        double sum = 0.0;
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].activeEnergyExported;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        return static_cast<float>(sum);
+    }
+
+    float getAggregatedReactiveEnergyImportedByRole(ChannelRole role) {
+        double sum = 0.0;
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].reactiveEnergyImported;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        return static_cast<float>(sum);
+    }
+
+    float getAggregatedReactiveEnergyExportedByRole(ChannelRole role) {
+        double sum = 0.0;
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].reactiveEnergyExported;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        return static_cast<float>(sum);
+    }
+
+    float getAggregatedApparentEnergyByRole(ChannelRole role) {
+        double sum = 0.0;
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].apparentEnergy;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        return static_cast<float>(sum);
     }
 
     // Grid frequency
