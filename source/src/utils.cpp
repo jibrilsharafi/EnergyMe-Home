@@ -1622,7 +1622,7 @@ bool consolidateDailyFilesToMonthly(const char* yearMonth, const char* excludeDa
         
         // Create temp path for decompressed CSV
         char tempCsvName[NAME_BUFFER_SIZE];
-        snprintf(tempCsvName, sizeof(tempCsvName), "%s/_temp_decomp.csv", ENERGY_CSV_DAILY_PREFIX);
+        snprintf(tempCsvName, sizeof(tempCsvName), "%s/%sdecomp.csv", ENERGY_CSV_DAILY_PREFIX, TEMPORARY_FILE_PREFIX);
         snprintf(csvPath, sizeof(csvPath), "%s", tempCsvName);
         
         // Clean up any existing temp CSV
@@ -1839,7 +1839,7 @@ bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth)
         
         // Create temp path for decompressed CSV
         char tempCsvName[NAME_BUFFER_SIZE];
-        snprintf(tempCsvName, sizeof(tempCsvName), "%s/_temp_decomp.csv", ENERGY_CSV_MONTHLY_PREFIX);
+        snprintf(tempCsvName, sizeof(tempCsvName), "%s/%sdecomp.csv", ENERGY_CSV_MONTHLY_PREFIX, TEMPORARY_FILE_PREFIX);
         snprintf(csvPath, sizeof(csvPath), "%s", tempCsvName);
         
         // Clean up any existing temp CSV
@@ -1932,3 +1932,5 @@ bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth)
     
     return true;
 }
+
+// TODO: is it possible to add a standard way to retrieve all the NVS data as key value for a JSON?

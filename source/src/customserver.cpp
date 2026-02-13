@@ -1927,7 +1927,7 @@ namespace CustomServer
                     LOG_INFO("ADE7953 channel %u data %s via API", channelIndex, isPartialUpdate ? "partially updated" : "updated");
                     if (roleChanged) {
                         Ade7953::resetChannelEnergyValues(channelIndex);
-                        LOG_INFO("Auto-reset energy and cleared history for channel %u due to role change", channelIndex);
+                        LOG_DEBUG("Auto-reset energy and cleared history for channel %u due to role change", channelIndex);
                     }
                     _sendSuccessResponse(request, "ADE7953 channel data updated successfully");
                 }

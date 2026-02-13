@@ -67,6 +67,8 @@ namespace Ade7953
     static TaskHandle_t _hourlyCsvSaveTaskHandle = NULL;
     static bool _hourlyCsvSaveTaskShouldRun = false;
 
+    static SemaphoreHandle_t _historyClearMutex = NULL;
+
     // Waveform capture state and buffers
     static CaptureState _captureState = CaptureState::IDLE;
     static uint8_t _captureRequestedChannel = INVALID_CHANNEL;
@@ -132,6 +134,10 @@ namespace Ade7953
     static void _startHourlyCsvSaveTask();
     static void _stopHourlyCsvSaveTask();
     static void _hourlyCsvSaveTask(void* parameter);
+
+    static void _historyClearTask(void* parameter);
+    static void _spawnHistoryClearTask(uint8_t channelIndex);
+    static void _clearAllHistoricalData();
 
     // Configuration management
     static void _setConfigurationFromPreferences();
@@ -990,35 +996,12 @@ namespace Ade7953
         preferences.clear();
         preferences.end();
 
-        // Remove all CSV energy files from all subdirectories (daily, monthly, yearly)
-        const char* energyDirs[] = { ENERGY_CSV_DAILY_PREFIX, ENERGY_CSV_MONTHLY_PREFIX, ENERGY_CSV_YEARLY_PREFIX, ENERGY_CSV_PREFIX };
-        for (const char* dirPath : energyDirs) {
-            if (!LittleFS.exists(dirPath)) continue;
-            
-            File root = LittleFS.open(dirPath);
-            if (!root) continue;
-            
-            File file = root.openNextFile();
-            while (file) {
-                if (!file.isDirectory() && (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv"))) {
-                    char fullPathFile[NAME_BUFFER_SIZE];
-                    snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", dirPath, file.name());
-                    
-                    // We now need to close the file before removing it
-                    file.close();
-                    LittleFS.remove(fullPathFile);
-                    LOG_DEBUG("Removed energy CSV file: %s", fullPathFile);
-                } else {
-                    file.close();
-                }
-                file = root.openNextFile();
-            }
-            root.close();
-        }
-
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) _saveEnergyToPreferences(i);
 
-        LOG_INFO("Successfully reset energy values to 0");
+        // Offload heavy file I/O to background task
+        _spawnHistoryClearTask(CLEAR_ALL_CHANNELS_SENTINEL);
+
+        LOG_DEBUG("Started task for clearing history of all channels");
     }
 
     void resetChannelEnergyValues(uint8_t channelIndex) {
@@ -1041,9 +1024,11 @@ namespace Ade7953
         releaseMutex(&_meterValuesMutex);
 
         _saveEnergyToPreferences(channelIndex, true); // Force save zeroed values
-        _clearChannelHistoricalData(channelIndex);
 
-        LOG_INFO("Successfully reset energy values for channel %u", channelIndex);
+        // Offload heavy file I/O to background task
+        _spawnHistoryClearTask(channelIndex);
+
+        LOG_INFO("Started task for clearing history for channel %u", channelIndex);
     }
 
     bool _clearChannelHistoricalData(uint8_t channelIndex) {
@@ -1066,11 +1051,14 @@ namespace Ade7953
             if (!dir) continue;
 
             // Collect filenames first (to avoid modifying while iterating)
+            // Skip temporary working files (TEMPORARY_FILE_PREFIX*) that may be left over from previous crashes
             std::vector<char*> filenames;
             File file = dir.openNextFile();
             while (file) {
                 const char* filename = file.name();
-                if (!file.isDirectory() && (endsWith(filename, ".csv") || endsWith(filename, ".csv.gz"))) {
+                // Skip temporary working files (TEMPORARY_FILE_PREFIX_decompressed.csv, TEMPORARY_FILE_PREFIX_filter.csv, etc.)
+                if (!file.isDirectory() && (endsWith(filename, ".csv") || endsWith(filename, ".csv.gz"))
+                    && strncmp(filename, TEMPORARY_FILE_PREFIX, strlen(TEMPORARY_FILE_PREFIX)) != 0) {
                     char* nameCopy = (char*)ps_malloc(strlen(filename) + 1);
                     if (nameCopy) {
                         strcpy(nameCopy, filename);
@@ -1091,12 +1079,13 @@ namespace Ade7953
                 bool isGzip = endsWith(filename, ".csv.gz");
                 char csvPath[NAME_BUFFER_SIZE];
                 char tempPath[NAME_BUFFER_SIZE];
-                snprintf(tempPath, sizeof(tempPath), "%s/_temp_filter.csv", dirPath);
+                snprintf(tempPath, sizeof(tempPath), "%s/%s_filter.csv", dirPath, TEMPORARY_FILE_PREFIX);
 
                 // If gzip, decompress first
                 if (isGzip) {
-                    snprintf(csvPath, sizeof(csvPath), "%s/_temp_decompressed.csv", dirPath);
-                    
+                    snprintf(csvPath, sizeof(csvPath), "%s/%s_decompressed.csv", dirPath, TEMPORARY_FILE_PREFIX);
+
+                    LOG_DEBUG("Decompressing %s...", filepath);
                     // Use GzUnpacker to decompress
                     GzUnpacker *unpacker = new GzUnpacker();
                     if (!unpacker) {
@@ -1106,7 +1095,7 @@ namespace Ade7953
                     unpacker->haltOnError(false);
                     bool decompressSuccess = unpacker->gzExpander(LittleFS, filepath, LittleFS, csvPath);
                     delete unpacker;
-                    
+
                     if (!decompressSuccess) {
                         LOG_ERROR("Failed to decompress %s", filepath);
                         LittleFS.remove(csvPath);
@@ -1116,6 +1105,7 @@ namespace Ade7953
                     snprintf(csvPath, sizeof(csvPath), "%s", filepath);
                 }
 
+                LOG_DEBUG("Filtering channel %u from %s...", channelIndex, filepath);
                 // Filter the CSV file - remove lines for the specified channel
                 File srcFile = LittleFS.open(csvPath, FILE_READ);
                 if (!srcFile) {
@@ -1189,7 +1179,8 @@ namespace Ade7953
                         finalCsvPath[strlen(finalCsvPath) - 3] = '\0'; // Remove ".gz"
                         
                         LittleFS.rename(tempPath, finalCsvPath);
-                        
+
+                        LOG_DEBUG("Recompressing %s...", finalCsvPath);
                         if (!compressFile(finalCsvPath)) {
                             LOG_WARNING("Failed to recompress %s, keeping as CSV", finalCsvPath);
                         }
@@ -1197,7 +1188,6 @@ namespace Ade7953
                         LittleFS.rename(tempPath, filepath);
                     }
                     filesModified++;
-                    LOG_DEBUG("Filtered channel %u from %s", channelIndex, filepath);
                 } else {
                     // No data remaining, remove the file entirely
                     LittleFS.remove(filepath);
@@ -1534,7 +1524,7 @@ namespace Ade7953
         _stopMeterReadingTask();
         _stopEnergySaveTask();
         _stopHourlyCsvSaveTask();
-        
+
         // Reset failure counters during cleanup
         _failureCount = 0;
         _firstFailureTime = 0;
@@ -2192,6 +2182,103 @@ namespace Ade7953
         LOG_DEBUG("ADE7953 hourly CSV save task stopping");
         _hourlyCsvSaveTaskHandle = NULL;
         vTaskDelete(NULL);
+    }
+
+    // History clear task - offloads heavy file I/O from HTTP handlers
+    // ==============================================================
+
+    void _spawnHistoryClearTask(uint8_t channelIndex) {
+        // Lazy-init the mutex that serializes concurrent clear operations
+        if (_historyClearMutex == NULL) {
+            _historyClearMutex = xSemaphoreCreateMutex();
+            if (_historyClearMutex == NULL) {
+                LOG_ERROR("Failed to create history clear mutex");
+                return;
+            }
+        }
+
+        // Allocate channel index on heap to pass to task
+        uint8_t* channelIndexPtr = (uint8_t*)malloc(sizeof(uint8_t));
+        if (channelIndexPtr == NULL) {
+            LOG_ERROR("Failed to allocate memory for history clear task parameter");
+            return;
+        }
+        *channelIndexPtr = channelIndex;
+
+        BaseType_t result = xTaskCreate(
+            _historyClearTask,
+            ADE7953_HISTORY_CLEAR_TASK_NAME,
+            ADE7953_HISTORY_CLEAR_TASK_STACK_SIZE,
+            channelIndexPtr,  // Pass channel index as parameter
+            ADE7953_HISTORY_CLEAR_TASK_PRIORITY,
+            NULL);  // No need to track the task handle
+
+        if (result != pdPASS) {
+            LOG_ERROR("Failed to spawn history clear task");
+            free(channelIndexPtr);
+        } else {
+            LOG_DEBUG("Spawned history clear task for %s",
+                channelIndex == CLEAR_ALL_CHANNELS_SENTINEL ? "all channels" : String(channelIndex).c_str());
+        }
+    }
+
+    void _clearAllHistoricalData() {
+        LOG_DEBUG("Clearing all historical energy data...");
+        const char* energyDirs[] = { ENERGY_CSV_DAILY_PREFIX, ENERGY_CSV_MONTHLY_PREFIX, ENERGY_CSV_YEARLY_PREFIX, ENERGY_CSV_PREFIX };
+        for (const char* dirPath : energyDirs) {
+            if (!LittleFS.exists(dirPath)) continue;
+
+            File root = LittleFS.open(dirPath);
+            if (!root) continue;
+
+            File file = root.openNextFile();
+            while (file) {
+                if (!file.isDirectory() && (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv"))) {
+                    char fullPathFile[NAME_BUFFER_SIZE];
+                    snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", dirPath, file.name());
+                    file.close();
+                    LittleFS.remove(fullPathFile);
+                    LOG_DEBUG("Removed energy CSV file: %s", fullPathFile);
+                } else {
+                    file.close();
+                }
+                file = root.openNextFile();
+            }
+            root.close();
+        }
+        LOG_INFO("Cleared all historical energy data");
+    }
+
+    void _historyClearTask(void* parameter) {
+        // Retrieve channel index from parameter
+        uint8_t* channelIndexPtr = (uint8_t*)parameter;
+        if (channelIndexPtr == NULL) {
+            LOG_ERROR("History clear task received NULL parameter");
+            vTaskDelete(NULL);
+            return;
+        }
+
+        uint8_t channelIndex = *channelIndexPtr;
+        free(channelIndexPtr);  // Free the allocated memory
+
+        // Serialize: GzUnpacker uses global static state (uzLibDecompressor),
+        // so concurrent decompression operations will corrupt memory.
+        if (xSemaphoreTake(_historyClearMutex, pdMS_TO_TICKS(60000)) != pdTRUE) {
+            LOG_WARNING("History clear timed out waiting for mutex, skipping");
+            vTaskDelete(NULL);
+            return;
+        }
+
+        // Perform the clearing operation
+        if (channelIndex == CLEAR_ALL_CHANNELS_SENTINEL) {
+            _clearAllHistoricalData();
+        } else {
+            _clearChannelHistoricalData(channelIndex);
+        }
+
+        xSemaphoreGive(_historyClearMutex);
+        LOG_DEBUG("History clear task completed");
+        vTaskDelete(NULL);  // Task deletes itself
     }
 
     // Configuration management functions
