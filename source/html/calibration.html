@@ -364,8 +364,6 @@
         // Initialize the page
         async function initializePage() {
             try {
-                showStatus('updateStatus', 'Loading...', '');
-
                 const channelResponse = await energyApi.getChannelConfig();
                 channelData = channelResponse;
 

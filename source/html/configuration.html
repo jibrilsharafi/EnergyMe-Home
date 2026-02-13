@@ -135,6 +135,7 @@
         <a class="buttonForm" href="/log" id="log" style="float: right;">📋 Explore log</a>
     </div>
 
+    <!-- TODO: move this to the "Integration page" along with a new modbus tcp part and the API docs in the homepage -->
     <div class="section-box">
         <h2>Custom MQTT</h2>
         <p><i>
@@ -267,6 +268,13 @@
     </div>
 
     <div class="section-box">
+        <h2>Sync Time</h2>
+        <p><i>Sync the device time with your browser. Useful for devices without internet connectivity (static IP, isolated networks).</i></p>
+        <p id="currentDeviceTime">Device time: Loading...</p>
+        <button class="buttonForm" onclick="syncTime()" id="syncTime">🕐 Sync Time</button>
+    </div>
+
+    <div class="section-box">
         <h2>Change Password</h2>
         <p><i>Change your password to secure your device. Default credentials should be changed immediately after first login.</i></p>
         <div style="display: flex; flex-direction: column; gap: 10px; margin: 15px 0;">
@@ -290,13 +298,6 @@
         <h2>Restart Device</h2>
         <p><i>You already know that restarting a device magically fixes most issues. It will take 10 seconds.</i></p>
         <button class="buttonForm" onclick="restart()" id="restart">🔄 Restart</button>
-    </div>
-
-    <div class="section-box">
-        <h2>Sync Time</h2>
-        <p><i>Sync the device time with your browser. Useful for devices without internet connectivity (static IP, isolated networks).</i></p>
-        <p id="currentDeviceTime">Device time: Loading...</p>
-        <button class="buttonForm" onclick="syncTime()" id="syncTime">🕐 Sync Time</button>
     </div>
 
     <div class="section-box">
@@ -400,14 +401,14 @@
 
         function loadDeviceTime() {
             energyApi.getSystemTime()
-                .then(response => {
-                    const timeEl = document.getElementById("currentDeviceTime");
-                    const syncStatus = response.synced ? "✅ Synced" : "⚠️ Not synced";
-                    timeEl.innerHTML = `Device time: ${response.isoTime} (${syncStatus})`;
-                })
-                .catch(error => {
-                    document.getElementById("currentDeviceTime").innerHTML = "Device time: Error loading";
-                });
+            .then(response => {
+                const timeEl = document.getElementById("currentDeviceTime");
+                const syncStatus = response.synced ? "✅ Synced" : "⚠️ Not synced";
+                timeEl.innerHTML = `Device time: <i>${response.isoTime}</i> (${syncStatus})`;
+            })
+            .catch(error => {
+                document.getElementById("currentDeviceTime").innerHTML = "Device time: Error loading";
+            });
         }
 
         function syncTime() {

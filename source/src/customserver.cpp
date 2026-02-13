@@ -1890,7 +1890,7 @@ namespace CustomServer
 
                 // Generate ETag
                 char etag[16];
-                snprintf(etag, sizeof(etag), "\"%08x\"", configHash);
+                snprintf(etag, sizeof(etag), "\"%08x\"", configHash); // It says the format is incorrect but it works in the end
 
                 // Check If-None-Match header and send 304 if matched
                 if (_checkEtagAndSend304(request, etag)) {
