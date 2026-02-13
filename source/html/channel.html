@@ -217,6 +217,13 @@
                 </label>
                 <div style="height: 10px;"></div>
                 <span id="power${index}" style="font-weight: bold; color: #333;"></span>
+                <div style="height: 15px;"></div>
+                <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
+                <button class="buttonForm" onclick="resetChannelEnergy(${index})"
+                    style="background-color: #dc3545; border-color: #dc3545; color: white; font-size: 0.85em; padding: 6px 12px;"
+                    onmouseover="this.style.backgroundColor='#c82333'" onmouseout="this.style.backgroundColor='#dc3545'">
+                    🗑️ Reset Energy
+                </button>
             `;
             container.appendChild(box);
 
@@ -410,6 +417,22 @@
         // If there are new updates in queue, process them
         if (Object.keys(updateQueue).length > 0) {
             setTimeout(processChannelUpdates, 500);
+        }
+    }
+
+    async function resetChannelEnergy(channelIndex) {
+        const channel = channelData[channelIndex];
+        const label = channel ? channel.label : `Channel ${channelIndex}`;
+
+        if (!confirm(`Reset all energy values for "${label}" (Channel ${channelIndex}) to zero?\n\nThis will permanently delete all historical energy data for this channel.`)) {
+            return;
+        }
+
+        try {
+            await energyApi.resetEnergyValues(channelIndex);
+            showStatus('', `Energy values reset for ${label}`, 'success');
+        } catch (error) {
+            showStatus('', 'Error resetting energy: ' + error.message, 'error');
         }
     }</script>
 

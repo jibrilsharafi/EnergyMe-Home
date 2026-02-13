@@ -304,10 +304,14 @@ class EnergyMeAPI {
     }
 
     /**
-     * Reset energy values
+     * Reset energy values for a specific channel or all channels
+     * @param {number} [channelIndex] - Optional channel index. If omitted, resets all channels.
      */
-    async resetEnergyValues() {
-        return this.post('ade7953/energy/reset');
+    async resetEnergyValues(channelIndex) {
+        const url = channelIndex !== undefined
+            ? `ade7953/energy/reset?index=${channelIndex}`
+            : 'ade7953/energy/reset';
+        return this.post(url);
     }
 
     /**
@@ -511,27 +515,6 @@ class EnergyMeAPI {
      */
     async writeAde7953Register(address, value, bits = 32, signed = false) {
         return this.put('ade7953/register', { address, value, bits, signed });
-    }
-
-    /**
-     * Set energy values
-     */
-    async setEnergyValues(
-        index, 
-        activeEnergyImported, 
-        activeEnergyExported,
-        reactiveEnergyImported,
-        reactiveEnergyExported,
-        apparentEnergy
-    ) {
-        return this.put('ade7953/energy', {
-            index,
-            activeEnergyImported,
-            activeEnergyExported,
-            reactiveEnergyImported,
-            reactiveEnergyExported,
-            apparentEnergy
-        });
     }
 
     /**
