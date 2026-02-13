@@ -2,8 +2,6 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "ade7953.h"
-#include <set>
-#include <rom/crc.h>
 
 namespace Ade7953
 {
@@ -1795,11 +1793,17 @@ namespace Ade7953
             // until the next linecyc interrupt is received, which allows us to switch to the
             // next channel after we've completely read what we need to read (and in any case, the
             // next reading will be purged)
-            _currentChannel = _findNextActiveChannel(_currentChannel);
 
-            // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
-            // 1 (since channel 0 does not pass through the multiplexer)
-            Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0))); // TODO: if update in progress, just avoid switching channel; we will get wrong readings and timings.
+            // Skip channel switching during OTA to avoid timing issues from CPU starvation
+            if (!Update.isRunning()) {
+                _currentChannel = _findNextActiveChannel(_currentChannel);
+
+                // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
+                // 1 (since channel 0 does not pass through the multiplexer)
+                Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
+            } else {
+                LOG_DEBUG("OTA in progress, skipping channel switching to avoid timing issues");
+            }
         }
         
         // Check for channel 0 waveform capture separately (channel 0 doesn't go through multiplexer rotation)

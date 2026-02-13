@@ -368,11 +368,9 @@
 
                 populateChannelDropdown();
                 startLiveMeterUpdates();
-
-                showStatus('updateStatus', '', '');
             } catch (error) {
                 console.error('Error initializing page:', error);
-                showStatus('updateStatus', 'Error loading data: ' + error.message, 'error');
+                showStatus('Error loading data: ' + error.message, 'error');
             }
         }
 
@@ -450,7 +448,7 @@
 
         async function saveCalibration() {
             if (!selectedChannelIndex) {
-                showStatus('updateStatus', 'Please select a channel first', 'error');
+                showStatus('Please select a channel first', 'error');
                 return;
             }
 
@@ -459,7 +457,7 @@
                 saveButton.disabled = true;
                 saveButton.classList.add('loading');
 
-                showStatus('updateStatus', 'Saving calibration...', 'info');
+                showStatus('Saving calibration...', 'info');
 
                 const currentRating = parseInt(document.getElementById('currentRating').value);
                 const voltageOutput = parseFloat(document.getElementById('voltageOutput').value);
@@ -479,11 +477,11 @@
                 // Update local data
                 channelData[selectedChannelIndex].ctSpecification = channelUpdate.ctSpecification;
 
-                showStatus('updateStatus', 'Calibration saved successfully!', 'success');
+                showStatus('Calibration saved successfully!', 'success');
 
             } catch (error) {
                 console.error('Error saving calibration:', error);
-                showStatus('updateStatus', 'Error saving calibration: ' + error.message, 'error');
+                showStatus('Error saving calibration: ' + error.message, 'error');
             } finally {
                 saveButton.disabled = false;
                 saveButton.classList.remove('loading');

@@ -313,7 +313,7 @@
                     }
                 }
             } catch (error) {
-                showStatus('', 'Failed to load channels: ' + error.message, 'error');
+                showStatus('Failed to load channels: ' + error.message, 'error');
             }
         }
 
@@ -371,7 +371,7 @@
          */
         async function armCapture() {
             if (activeChannelIndex === null) {
-                showStatus('', 'Please select a channel first', 'error');
+                showStatus('Please select a channel first', 'error');
                 return;
             }
 
@@ -383,16 +383,16 @@
                 });
 
                 if (response.success === true) {
-                    showStatus('', `Capture armed for channel ${activeChannelIndex}. Waiting for next line cycle...`, 'info');
+                    showStatus(`Capture armed for channel ${activeChannelIndex}. Waiting for next line cycle...`, 'info');
                     startStatusPolling();
                 } else {
-                    showStatus('', response.message || 'Unexpected response from server', 'error');
+                    showStatus(response.message || 'Unexpected response from server', 'error');
                 }
             } catch (error) {
                 if (error.message.includes('409')) {
-                    showStatus('', 'Capture already in progress. Wait for it to complete or refresh status.', 'error');
+                    showStatus('Capture already in progress. Wait for it to complete or refresh status.', 'error');
                 } else {
-                    showStatus('', 'Failed to arm capture: ' + error.message, 'error');
+                    showStatus('Failed to arm capture: ' + error.message, 'error');
                 }
             } finally {
                 setLoading(false);
@@ -467,12 +467,12 @@
                 displayWaveform(data);
                 calculateStats(data);
 
-                showStatus('', `Waveform captured successfully for channel ${channelIndex}!`, 'success');
+                showStatus(`Waveform captured successfully for channel ${channelIndex}!`, 'success');
             } catch (error) {
                 if (error.message.includes('404')) {
-                    showStatus('', 'No waveform data available. Please arm capture first.', 'error');
+                    showStatus('No waveform data available. Please arm capture first.', 'error');
                 } else {
-                    showStatus('', 'Failed to fetch waveform data: ' + error.message, 'error');
+                    showStatus('Failed to fetch waveform data: ' + error.message, 'error');
                 }
             } finally {
                 setLoading(false);
@@ -799,7 +799,7 @@
         function downloadData(channelIndex) {
             const data = channelWaveforms[channelIndex];
             if (!data) {
-                showStatus('', 'No waveform data to download', 'error');
+                showStatus('No waveform data to download', 'error');
                 return;
             }
 

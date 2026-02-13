@@ -275,7 +275,6 @@ def test_energy_balance(client: ModbusTcpClient, registers: Dict[str, Dict[str, 
             # Energy balance
             source_energy = pv_energy + battery_energy + grid_energy
             load_diff_energy = abs(load_energy - source_energy)
-            load_diff_energy_percent = (load_diff_energy / load_energy * 100) if load_energy != 0 else 0
             energy_differences.append(load_diff_energy)
             
             status = "✓" if load_diff < 100 else "⚠️" if load_diff < 500 else "❌"
@@ -283,9 +282,6 @@ def test_energy_balance(client: ModbusTcpClient, registers: Dict[str, Dict[str, 
             print(f"{status} [{counter:2d}] Power: Grid={grid_power:8.1f}W | "
                   f"PV={pv_power:8.1f}W | Battery={battery_power:8.1f}W | "
                   f"Load={load_power:8.1f}W | Δ={load_diff:8.1f}W ({load_diff_percent:5.1f}%)")
-            print(f"    Energy: Grid={grid_energy:8.1f}Wh | "
-                  f"PV={pv_energy:8.1f}Wh | Battery={battery_energy:8.1f}Wh | "
-                  f"Load={load_energy:8.1f}Wh | Δ={load_diff_energy:8.1f}Wh ({load_diff_energy_percent:5.1f}%)")
         else:
             print(f"❌ Error reading values (attempt {counter})")
         

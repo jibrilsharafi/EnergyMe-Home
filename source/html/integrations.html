@@ -822,10 +822,9 @@
 
             // Generate CSV without excessive quotes
             let csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += "Offset,Count,Name,DataType,Unit,Notes\n";
+            csvContent += "Offset,Count,Name,DataType,Unit\n";
             registerMap.forEach(item => {
-                const notes = item.name.includes("energy") ? "Internally double, transmitted as float32" : "";
-                csvContent += `${item.offset},${item.count},${item.name},${item.dataType},${item.unit},${notes}\n`;
+                csvContent += `${item.offset},${item.count},${item.name},${item.dataType},${item.unit}\n`;
             });
 
             // Download CSV
@@ -837,7 +836,7 @@
             link.click();
             document.body.removeChild(link);
 
-            showStatus('', 'Register map downloaded successfully', 'success');
+            showStatus('Register map downloaded successfully', 'success');
         }
 
         // ============================================================================
@@ -859,7 +858,7 @@
                 console.log("Integration configurations loaded successfully");
             } catch (error) {
                 console.error("Error loading configuration data:", error);
-                showStatus('', 'Error loading configuration data. Please refresh the page.', 'error', 10000);
+                showStatus('Error loading configuration data. Please refresh the page.', 'error', 10000);
             }
         }
 

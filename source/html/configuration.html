@@ -237,16 +237,16 @@
             restartButton.classList.add('loading');
 
             try {
-                showStatus('', "Restarting device...", 'info');
+                showStatus("Restarting device...", 'info');
 
                 await energyApi.restartSystem();
 
-                showStatus('', "Device restarting... You will be redirected in 12 seconds.", 'success', 12000);
+                showStatus("Device restarting... You will be redirected in 12 seconds.", 'success', 12000);
                 setTimeout(function () {
                     window.location.href = "/";
                 }, 12000);
             } catch (error) {
-                showStatus('', "Error restarting device: " + error.message, 'error');
+                showStatus("Error restarting device: " + error.message, 'error');
                 restartButton.disabled = false;
                 restartButton.classList.remove('loading');
             }
@@ -295,7 +295,7 @@
             const password = document.getElementById("newWifiPassword").value;
 
             if (!ssid) {
-                showStatus('', 'Please enter a WiFi network name (SSID).', 'error');
+                showStatus('Please enter a WiFi network name (SSID).', 'error');
                 return;
             }
 
@@ -309,11 +309,11 @@
             button.classList.add('loading');
 
             try {
-                showStatus('', "Switching WiFi network...", 'info');
+                showStatus("Switching WiFi network...", 'info');
 
                 await energyApi.setWifiCredentials(ssid, password);
 
-                showStatus('', "WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds.", 'success', 8000);
+                showStatus("WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds.", 'success', 8000);
                 // Clear the form
                 document.getElementById("newWifiSsid").value = "";
                 document.getElementById("newWifiPassword").value = "";
@@ -321,7 +321,7 @@
             } catch (error) {
                 button.disabled = false;
                 button.classList.remove('loading');
-                showStatus('', "Error switching WiFi network: " + error.message, 'error');
+                showStatus("Error switching WiFi network: " + error.message, 'error');
             }
         }
 
@@ -336,17 +336,17 @@
             button.classList.add('loading');
 
             try {
-                showStatus('', "Disconnecting from WiFi...", 'info');
+                showStatus("Disconnecting from WiFi...", 'info');
 
                 await energyApi.resetWifi();
 
-                showStatus('', "Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
+                showStatus("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
             } catch (error) {
                 // Treat "signal is aborted without reason" as successful (it means WiFi was reset)
                 if (error.message && error.message.includes("signal is aborted without reason")) {
-                    showStatus('', "Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
+                    showStatus("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
                 } else {
-                    showStatus('', "Error disconnecting from WiFi: " + error.message, 'error');
+                    showStatus("Error disconnecting from WiFi: " + error.message, 'error');
                 }
             } finally {
                 button.disabled = false;
@@ -365,16 +365,16 @@
             button.classList.add('loading');
 
             try {
-                showStatus('', "Resetting to factory settings...", 'info');
+                showStatus("Resetting to factory settings...", 'info');
 
                 await energyApi.factoryReset();
 
-                showStatus('', "Reset successful! You will be redirected to the home page in 15 seconds.", 'success', 15000);
+                showStatus("Reset successful! You will be redirected to the home page in 15 seconds.", 'success', 15000);
                 setTimeout(function () {
                     window.location.href = "/";
                 }, 15000);
             } catch (error) {
-                showStatus('', "Error resetting to factory settings: " + error.message, 'error');
+                showStatus("Error resetting to factory settings: " + error.message, 'error');
                 button.disabled = false;
                 button.classList.remove('loading');
             }
@@ -651,7 +651,7 @@
 
             } catch (error) {
                 console.error("Error loading configuration data:", error);
-                showStatus('', 'Error loading configuration data. Please refresh the page.', 'error', 10000);
+                showStatus('Error loading configuration data. Please refresh the page.', 'error', 10000);
             }
         }
 

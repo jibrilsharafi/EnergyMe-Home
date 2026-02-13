@@ -6,11 +6,14 @@
 #include <AdvancedLogger.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <Preferences.h>
-#include <SPI.h>
-#include <vector>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <set>
+#include <SPI.h>
+#include <Preferences.h>
+#include <rom/crc.h>
+#include <Update.h>
+#include <vector>
 
 #include "ade7953registers.h"
 #include "multiplexer.h"

@@ -629,12 +629,11 @@ window.energyApi = new EnergyMeAPI();
 
 /**
  * Show a toast notification.
- * @param {string} _unused - Kept for backward compatibility (previously element ID)
  * @param {string} message - Text to display
  * @param {'success'|'error'|''} type - Message type for coloring ('' or falsy = info)
  * @param {number} [timeout] - Auto-dismiss after ms (default: 3000 success, 5000 error, 2000 info)
  */
-function showStatus(_unused, message, type, timeout) {
+function showStatus(message, type, timeout) {
     if (!message) return;
 
     // Ensure container exists

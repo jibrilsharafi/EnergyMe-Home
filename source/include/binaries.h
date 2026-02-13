@@ -28,6 +28,7 @@ extern const char channel_html[] asm("_binary_html_channel_html_start");
 extern const char configuration_html[] asm("_binary_html_configuration_html_start");
 extern const char index_html[] asm("_binary_html_index_html_start");
 extern const char info_html[] asm("_binary_html_info_html_start");
+extern const char integrations_html[] asm("_binary_html_integrations_html_start");
 extern const char log_html[] asm("_binary_html_log_html_start");
 extern const char swagger_ui_html[] asm("_binary_html_swagger_html_start");
 extern const char update_html[] asm("_binary_html_update_html_start");

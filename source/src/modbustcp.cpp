@@ -3,7 +3,7 @@
 
 #include "modbustcp.h"
 
-namespace ModbusTcp // TODO: make the modbus functionality and registers more visible and accessible for the user
+namespace ModbusTcp
 {
     // Static state variables
     static ModbusServerTCPasync _mbServer;

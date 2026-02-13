@@ -131,10 +131,9 @@
             channelData = channelResponse;
 
             createChannelBoxes();
-            showStatus('updateStatus', '', '');
         } catch (error) {
             console.error('Error initializing page:', error);
-            showStatus('updateStatus', 'Error loading data: ' + error.message, 'error');
+            showStatus('Error loading data: ' + error.message, 'error');
         }
     }
 
@@ -309,7 +308,7 @@
             const activeCheckbox = document.getElementById(`active${index}`);
             if (activeCheckbox && !activeCheckbox.checked) {
                 activeCheckbox.checked = true;
-                showStatus('updateStatus', 'Channel 0 is the main voltage channel and cannot be disabled', 'error');
+                showStatus('Channel 0 is the main voltage channel and cannot be disabled', 'error');
                 return;
             }
         }
@@ -383,7 +382,7 @@
         }
 
         try {
-            showStatus('updateStatus', 'Updating channels...', '');
+            showStatus('Updating channels...', '');
 
             // Send all queued updates using PATCH for partial updates
             const updates = Object.values(updateQueue);
@@ -393,20 +392,20 @@
                 await energyApi.patchChannelConfig(update);
             }
 
-            showStatus('updateStatus', 'Channels updated successfully', 'success');
+            showStatus('Channels updated successfully', 'success');
 
         } catch (error) {
             console.error('Error updating channels:', error);
 
             if (error.message.includes('Channel 0 cannot be disabled')) {
-                showStatus('updateStatus', 'Channel 0 cannot be disabled', 'error');
+                showStatus('Channel 0 cannot be disabled', 'error');
                 // Reset channel 0 to active in UI
                 const activeCheckbox = document.getElementById('active0');
                 if (activeCheckbox) {
                     activeCheckbox.checked = true;
                 }
             } else {
-                showStatus('updateStatus', 'Error: ' + error.message, 'error');
+                showStatus('Error: ' + error.message, 'error');
             }
         }
 
@@ -428,9 +427,9 @@
 
         try {
             await energyApi.resetEnergyValues(channelIndex);
-            showStatus('', `Energy values reset for ${label}`, 'success');
+            showStatus(`Energy values reset for ${label}`, 'success');
         } catch (error) {
-            showStatus('', 'Error resetting energy: ' + error.message, 'error');
+            showStatus('Error resetting energy: ' + error.message, 'error');
         }
     }</script>
 

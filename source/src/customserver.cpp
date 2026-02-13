@@ -793,6 +793,9 @@ namespace CustomServer
         server.on("/info", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/html", info_html, etag);
         });
+        server.on("/integrations", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", integrations_html, etag);
+        });
         server.on("/log", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/html", log_html, etag);
         });
