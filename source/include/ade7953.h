@@ -562,6 +562,9 @@ namespace Ade7953
     void channelDataToJson(const ChannelData &channelData, JsonDocument &jsonDocument);
     void channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);
 
+    // Channel data cache helpers
+    uint32_t computeAllChannelDataHash(); // Compute CRC32 hash of all channel data for ETag caching
+
     // Channel role helpers
     const char* channelRoleToString(ChannelRole role);
     ChannelRole channelRoleFromString(const char* roleStr);

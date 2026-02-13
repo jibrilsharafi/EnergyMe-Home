@@ -1867,7 +1867,7 @@ namespace CustomServer
                   {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
-            
+
             if (request->hasParam("index")) {
                 // Get single channel data
                 long indexValue = request->getParam("index")->value().toInt();
@@ -1879,9 +1879,32 @@ namespace CustomServer
                     else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching single channel data");
                 }
             } else {
-                // Get all channels data
-                if (Ade7953::getAllChannelDataAsJson(doc)) _sendJsonResponse(request, doc);
-                else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching all channels data");
+                // Get all channels data - with ETag caching
+                uint32_t configHash = Ade7953::computeAllChannelDataHash();
+                if (configHash == 0) {
+                    // Error computing hash, send data without caching
+                    if (Ade7953::getAllChannelDataAsJson(doc)) _sendJsonResponse(request, doc);
+                    else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching all channels data");
+                    return;
+                }
+
+                // Generate ETag
+                char etag[16];
+                snprintf(etag, sizeof(etag), "\"%08x\"", configHash);
+
+                // Check If-None-Match header and send 304 if matched
+                if (_checkEtagAndSend304(request, etag)) {
+                    return;
+                }
+
+                // Data has changed or no cached version, send full response with ETag
+                if (Ade7953::getAllChannelDataAsJson(doc)) {
+                    AsyncResponseStream *response = request->beginResponseStream("application/json");
+                    serializeJson(doc, *response);
+                    _sendResponseWithEtag(request, response, etag);
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching all channels data");
+                }
             }
         });
 

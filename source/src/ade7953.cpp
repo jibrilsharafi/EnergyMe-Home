@@ -3,6 +3,7 @@
 
 #include "ade7953.h"
 #include <set>
+#include <rom/crc.h>
 
 namespace Ade7953
 {
@@ -813,6 +814,24 @@ namespace Ade7953
 
         if (!jsonDocument.isNull() && jsonDocument.size() > 0) return true;
         else return false;
+    }
+
+    uint32_t computeAllChannelDataHash() {
+        ChannelData allChannelData[CHANNEL_COUNT];
+
+        // Zero-initialize to ensure padding bytes and unused char array bytes are consistent
+        memset(allChannelData, 0, sizeof(allChannelData));
+
+        // Collect all channel data
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            if (!getChannelData(allChannelData[i], i)) {
+                LOG_WARNING("Failed to get channel data for hash computation (channel %u)", i);
+                return 0; // Return 0 on error to force fresh data
+            }
+        }
+
+        // Compute CRC32 hash using ESP32 hardware CRC
+        return crc32_le(0, (const uint8_t*)allChannelData, sizeof(allChannelData));
     }
 
     bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial, bool* roleChanged) {
