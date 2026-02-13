@@ -35,6 +35,59 @@
     margin-right: 10px;
 }
 
+/* Toast notification */
+#toast-container {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.toast {
+    padding: 14px 24px;
+    border-radius: 12px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: auto;
+    text-align: center;
+    max-width: min(400px, 90vw);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.12),
+        0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast.success {
+    background: rgba(16, 185, 129, 0.4);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.toast.error {
+    background: rgba(239, 68, 68, 0.4);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.toast.info {
+    background: rgba(59, 130, 246, 0.4);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
 /* Mobile-first responsive form styles */
 @media screen and (max-width: 768px) {
     .config-input {

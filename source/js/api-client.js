@@ -651,6 +651,44 @@ class EnergyMeAPI {
 // Create global instance
 window.energyApi = new EnergyMeAPI();
 
+/**
+ * Show a toast notification.
+ * @param {string} _unused - Kept for backward compatibility (previously element ID)
+ * @param {string} message - Text to display
+ * @param {'success'|'error'|''} type - Message type for coloring ('' or falsy = info)
+ * @param {number} [timeout] - Auto-dismiss after ms (default: 3000 success, 5000 error, 2000 info)
+ */
+function showStatus(_unused, message, type, timeout) {
+    if (!message) return;
+
+    // Ensure container exists
+    var container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+
+    var toast = document.createElement('div');
+    toast.className = 'toast ' + (type || 'info');
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    // Trigger show after a frame so the transition plays
+    requestAnimationFrame(function() {
+        toast.classList.add('show');
+    });
+
+    if (typeof timeout === 'undefined') {
+        timeout = (type === 'error') ? 5000 : (type === 'success') ? 3000 : 2000;
+    }
+
+    setTimeout(function() {
+        toast.classList.remove('show');
+        setTimeout(function() { toast.remove(); }, 300);
+    }, timeout);
+}
+
 // Backward compatibility aliases
 window.authAPI = window.energyApi;  // For existing code using authAPI
 window.authManager = { apiCall: (endpoint, options) => window.energyApi.apiCall(endpoint, options) };

@@ -111,8 +111,6 @@
         <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
     </div>    <div id="channelContainer" class="section-box" style="text-align: center;">
         <h1>Channels</h1>
-        <!-- TODO: enhance updateStatus with colored feedback (green success, red error) consistent across all pages -->
-        <div id="updateStatus" style="height: 20px; color: #666; font-style: italic;"></div>
         <div class="channel-columns"></div>
     </div>
 </body>
@@ -128,17 +126,17 @@
     // Initialize the page
     async function initializePage() {
         try {
-            document.getElementById('updateStatus').textContent = 'Loading...';
-            
+            showStatus('updateStatus', 'Loading...', '');
+
             // Load channel config only
             const channelResponse = await energyApi.getChannelConfig();
             channelData = channelResponse;
-            
+
             createChannelBoxes();
-            document.getElementById('updateStatus').textContent = '';
+            showStatus('updateStatus', '', '');
         } catch (error) {
             console.error('Error initializing page:', error);
-            document.getElementById('updateStatus').textContent = 'Error loading data: ' + error.message;
+            showStatus('updateStatus', 'Error loading data: ' + error.message, 'error');
         }
     }
 
@@ -306,7 +304,7 @@
             const activeCheckbox = document.getElementById(`active${index}`);
             if (activeCheckbox && !activeCheckbox.checked) {
                 activeCheckbox.checked = true;
-                alert('Channel 0 is the main voltage channel and cannot be disabled.');
+                showStatus('updateStatus', 'Channel 0 is the main voltage channel and cannot be disabled', 'error');
                 return;
             }
         }
@@ -380,44 +378,35 @@
         }
 
         try {
-            document.getElementById('updateStatus').textContent = 'Updating channels...';
-            
+            showStatus('updateStatus', 'Updating channels...', '');
+
             // Send all queued updates using PATCH for partial updates
             const updates = Object.values(updateQueue);
             updateQueue = {}; // Clear queue
-            
+
             for (const update of updates) {
                 await energyApi.patchChannelConfig(update);
             }
-            
-            document.getElementById('updateStatus').textContent = 'Channels updated successfully';
-            setTimeout(() => {
-                document.getElementById('updateStatus').textContent = '';
-            }, 2000);
-            
+
+            showStatus('updateStatus', 'Channels updated successfully', 'success');
+
         } catch (error) {
             console.error('Error updating channels:', error);
-            
+
             if (error.message.includes('Channel 0 cannot be disabled')) {
-                document.getElementById('updateStatus').textContent = 'Channel 0 cannot be disabled';
-                alert('Channel 0 is the main voltage channel and cannot be disabled.');
+                showStatus('updateStatus', 'Channel 0 cannot be disabled', 'error');
                 // Reset channel 0 to active in UI
                 const activeCheckbox = document.getElementById('active0');
                 if (activeCheckbox) {
                     activeCheckbox.checked = true;
                 }
             } else {
-                document.getElementById('updateStatus').textContent = 'Error: ' + error.message;
-                alert('Error updating channels: ' + error.message);
+                showStatus('updateStatus', 'Error: ' + error.message, 'error');
             }
-            
-            setTimeout(() => {
-                document.getElementById('updateStatus').textContent = '';
-            }, 5000);
         }
-        
+
         isProcessingUpdate = false;
-        
+
         // If there are new updates in queue, process them
         if (Object.keys(updateQueue).length > 0) {
             setTimeout(processChannelUpdates, 500);

@@ -274,6 +274,7 @@
     </div>
 
     <div class="section-box">
+        <! -- TODO: move to the channels page -->
         <h2>Energy Management</h2>
         <p><i>Manage energy counters for all channels.</i></p>
 
@@ -305,8 +306,6 @@
                 <input type="password" id="confirmPassword" class="config-input" placeholder="Confirm new password" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
             </div>
         </div>
-        <div id="passwordError" style="color: #c62828; margin-bottom: 10px; display: none;"></div>
-        <div id="passwordSuccess" style="color: #2e7d32; margin-bottom: 10px; display: none;"></div>
         <button class="buttonForm" onclick="changePassword()" id="changePasswordButton">🔑 Change Password</button>
     </div>
 
@@ -412,12 +411,13 @@
 
             energyApi.restartSystem()
                 .then(response => {
+                    showStatus('', "Device restarting... You will be redirected in 12 seconds.", 'success', 12000);
                     setTimeout(function () {
                         window.location.href = "/";
                     }, 12000);
                 })
                 .catch(error => {
-                    alert("Error restarting device. Response: " + error.message);
+                    showStatus('', "Error restarting device: " + error.message, 'error');
                     restartButton.innerHTML = "🔄 Restart";
                     restartButton.disabled = false;
                 });
@@ -446,13 +446,13 @@
                 .then(response => {
                     syncButton.innerHTML = "🕐 Sync Time";
                     syncButton.disabled = false;
-                    alert("Time synchronized successfully! New time: " + response.newTime);
+                    showStatus('syncTimeStatus', 'Time synchronized successfully! New time: ' + response.newTime, 'success');
                     loadDeviceTime();
                 })
                 .catch(error => {
                     syncButton.innerHTML = "🕐 Sync Time";
                     syncButton.disabled = false;
-                    alert("Error syncing time: " + error.message);
+                    showStatus('syncTimeStatus', 'Error syncing time: ' + error.message, 'error');
                 });
         }
 
@@ -466,7 +466,7 @@
             const password = document.getElementById("newWifiPassword").value;
 
             if (!ssid) {
-                alert("Please enter a WiFi network name (SSID).");
+                showStatus('', 'Please enter a WiFi network name (SSID).', 'error');
                 return;
             }
 
@@ -482,7 +482,7 @@
             energyApi.setWifiCredentials(ssid, password)
                 .then(response => {
                     button.innerHTML = "Credentials saved! Restarting...";
-                    alert("WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds, then reconnect to the new network.");
+                    showStatus('', "WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds.", 'success', 8000);
                     // Clear the form
                     document.getElementById("newWifiSsid").value = "";
                     document.getElementById("newWifiPassword").value = "";
@@ -490,7 +490,7 @@
                 .catch(error => {
                     button.innerHTML = "📶 Switch Network";
                     button.disabled = false;
-                    alert("Error switching WiFi network: " + error.message);
+                    showStatus('', "Error switching WiFi network: " + error.message, 'error');
                 });
         }
 
@@ -504,16 +504,16 @@
 
             energyApi.resetWifi()
                 .then(response => {
-                    alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1");
+                    showStatus('', "Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
                     document.getElementById("disconnect").innerHTML = "📶 Disconnect";
                     document.getElementById("disconnect").disabled = false;
                 })
                 .catch(error => {
                     // Treat "signal is aborted without reason" as successful (it means WiFi was reset)
                     if (error.message && error.message.includes("signal is aborted without reason")) {
-                        alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1");
+                        showStatus('', "Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
                     } else {
-                        alert("Error disconnecting from WiFi. Response: " + error.message);
+                        showStatus('', "Error disconnecting from WiFi: " + error.message, 'error');
                     }
                     document.getElementById("disconnect").innerHTML = "📶 Disconnect";
                     document.getElementById("disconnect").disabled = false;
@@ -530,13 +530,16 @@
 
             energyApi.factoryReset()
                 .then(response => {
-                    document.getElementById("factoryReset").innerHTML = "Reset successful! You will be redirected to the home page in 15 seconds.";
+                    showStatus('', "Reset successful! You will be redirected to the home page in 15 seconds.", 'success', 15000);
+                    document.getElementById("factoryReset").innerHTML = "Reset successful!";
                     setTimeout(function () {
                         window.location.href = "/";
                     }, 15000);
                 })
                 .catch(error => {
-                    alert("Error resetting to factory settings. Response: " + error.message);
+                    showStatus('', "Error resetting to factory settings: " + error.message, 'error');
+                    document.getElementById("factoryReset").innerHTML = "🏭 Reset";
+                    document.getElementById("factoryReset").disabled = false;
                 });
         } 
         
@@ -544,35 +547,25 @@
             const currentPassword = document.getElementById("currentPassword").value;
             const newPassword = document.getElementById("newPassword").value;
             const confirmPassword = document.getElementById("confirmPassword").value;
-            const errorDiv = document.getElementById("passwordError");
-            const successDiv = document.getElementById("passwordSuccess");
-
-            // Hide previous messages
-            errorDiv.style.display = "none";
-            successDiv.style.display = "none";
 
             // Validation
             if (!currentPassword) {
-                errorDiv.textContent = "Please enter your current password.";
-                errorDiv.style.display = "block";
+                showStatus('passwordStatus', 'Please enter your current password.', 'error');
                 return;
             }
 
             if (!newPassword) {
-                errorDiv.textContent = "Please enter a new password.";
-                errorDiv.style.display = "block";
+                showStatus('passwordStatus', 'Please enter a new password.', 'error');
                 return;
             }
 
             if (newPassword.length < 8) {
-                errorDiv.textContent = "New password must be at least 8 characters long.";
-                errorDiv.style.display = "block";
+                showStatus('passwordStatus', 'New password must be at least 8 characters long.', 'error');
                 return;
             }
 
             if (newPassword !== confirmPassword) {
-                errorDiv.textContent = "New passwords do not match.";
-                errorDiv.style.display = "block";
+                showStatus('passwordStatus', 'New passwords do not match.', 'error');
                 return;
             }
 
@@ -581,8 +574,7 @@
 
             energyApi.changePassword(currentPassword, newPassword)
                 .then(response => {
-                    successDiv.textContent = "Password changed successfully! Please use your new password on next login.";
-                    successDiv.style.display = "block";
+                    showStatus('passwordStatus', 'Password changed successfully! Please use your new password on next login.', 'success');
                     // Clear the form
                     document.getElementById("currentPassword").value = "";
                     document.getElementById("newPassword").value = "";
@@ -591,8 +583,7 @@
                     document.getElementById("changePasswordButton").disabled = false;
                 })
                 .catch(error => {
-                    errorDiv.textContent = "Error changing password: " + error.message;
-                    errorDiv.style.display = "block";
+                    showStatus('passwordStatus', 'Error changing password: ' + error.message, 'error');
                     document.getElementById("changePasswordButton").innerHTML = "🔑 Change Password";
                     document.getElementById("changePasswordButton").disabled = false;
                 });
@@ -610,7 +601,7 @@
 
             // Validate that the levels are valid
             if (!validLevels.includes(printLogLevel) || !validLevels.includes(saveLogLevel)) {
-                alert("Invalid log level selected");
+                showStatus('loggingStatus', 'Invalid log level selected', 'error');
                 document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
                 document.getElementById("setLogLevel").disabled = false;
                 return;
@@ -623,19 +614,14 @@
                 save: saveLogLevel
             })
                 .then(response => {
-                    document.getElementById("setLogLevel").innerHTML = "Set success!";
-                    setTimeout(function () {
-                        document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
-                        document.getElementById("setLogLevel").disabled = false;
-                    }, 3000);
+                    showStatus('loggingStatus', 'Log level set successfully', 'success');
+                    document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
+                    document.getElementById("setLogLevel").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error setting log level. Response: " + error.message);
-                    document.getElementById("setLogLevel").innerHTML = "Set failed!";
-                    setTimeout(function () {
-                        document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
-                        document.getElementById("setLogLevel").disabled = false;
-                    }, 3000);
+                    showStatus('loggingStatus', 'Error setting log level: ' + error.message, 'error');
+                    document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
+                    document.getElementById("setLogLevel").disabled = false;
                 });
         }
         
@@ -671,18 +657,14 @@
 
             energyApi.clearLogs()
                 .then(response => {
-                    document.getElementById("clearLogs").innerHTML = "Clear success";
-                    setTimeout(function () {
-                        document.getElementById("clearLogs").innerHTML = "🗑️ Clear log";
-                        document.getElementById("clearLogs").disabled = false;
-                    }, 3000);
+                    showStatus('loggingStatus', 'Log cleared successfully', 'success');
+                    document.getElementById("clearLogs").innerHTML = "🗑️ Clear log";
+                    document.getElementById("clearLogs").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error clearing log. Response: " + error.message);
-                    setTimeout(function () {
-                        document.getElementById("clearLogs").innerHTML = "🗑️ Clear log";
-                        document.getElementById("clearLogs").disabled = false;
-                    }, 3000);
+                    showStatus('loggingStatus', 'Error clearing log: ' + error.message, 'error');
+                    document.getElementById("clearLogs").innerHTML = "🗑️ Clear log";
+                    document.getElementById("clearLogs").disabled = false;
                 });
         }
 
@@ -704,10 +686,10 @@
             energyApi.getSystemSecrets()
                 .then(secretsResponse => {
                     const isEnabled = document.getElementById("cloudServices").checked;
-                    
+
                     // If no secrets but cloud services is checked, prevent that
                     if (!secretsResponse.hasSecrets && isEnabled) {
-                        alert("Cannot enable cloud services: This firmware build does not include secrets.");
+                        showStatus('cloudServicesStatus', 'Cannot enable: firmware does not include secrets', 'error');
                         document.getElementById("cloudServices").checked = false;
                         throw new Error("No secrets available");
                     }
@@ -716,21 +698,16 @@
                     return energyApi.setMqttCloudServices(isEnabled);
                 })
                 .then(data => {
-                    document.getElementById("setCloudServicesButton").innerHTML = "Set success!";
-                    setTimeout(function () {
-                        document.getElementById("setCloudServicesButton").innerHTML = "☁️ Set cloud services";
-                        document.getElementById("setCloudServicesButton").disabled = false;
-                    }, 3000);
+                    showStatus('cloudServicesStatus', 'Cloud services updated', 'success');
+                    document.getElementById("setCloudServicesButton").innerHTML = "☁️ Set cloud services";
+                    document.getElementById("setCloudServicesButton").disabled = false;
                 })
                 .catch(error => {
                     if (error.message !== "No secrets available") {
-                        alert("Error setting cloud services. Response: " + error.message);
+                        showStatus('cloudServicesStatus', 'Error: ' + error.message, 'error');
                     }
-                    document.getElementById("setCloudServicesButton").innerHTML = "Set failed!";
-                    setTimeout(function () {
-                        document.getElementById("setCloudServicesButton").innerHTML = "☁️ Set cloud services";
-                        document.getElementById("setCloudServicesButton").disabled = false;
-                    }, 3000);
+                    document.getElementById("setCloudServicesButton").innerHTML = "☁️ Set cloud services";
+                    document.getElementById("setCloudServicesButton").disabled = false;
                 });
         }
 
@@ -754,19 +731,14 @@
 
             energyApi.setLedBrightness(brightness)
                 .then(data => {
-                    document.getElementById("setLedBrightnessButton").innerHTML = "Set success!";
-                    setTimeout(function () {
-                        document.getElementById("setLedBrightnessButton").innerHTML = "💡 Set brightness";
-                        document.getElementById("setLedBrightnessButton").disabled = false;
-                    }, 3000);
+                    showStatus('ledBrightnessStatus', 'Brightness set successfully', 'success');
+                    document.getElementById("setLedBrightnessButton").innerHTML = "💡 Set brightness";
+                    document.getElementById("setLedBrightnessButton").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error setting LED brightness. Response: " + error.message);
-                    document.getElementById("setLedBrightnessButton").innerHTML = "Set failed!";
-                    setTimeout(function () {
-                        document.getElementById("setLedBrightnessButton").innerHTML = "💡 Set brightness";
-                        document.getElementById("setLedBrightnessButton").disabled = false;
-                    }, 3000);
+                    showStatus('ledBrightnessStatus', 'Error: ' + error.message, 'error');
+                    document.getElementById("setLedBrightnessButton").innerHTML = "💡 Set brightness";
+                    document.getElementById("setLedBrightnessButton").disabled = false;
                 });
         }
 
@@ -909,22 +881,17 @@
 
             energyApi.setCustomMqttConfig(newCustomMqttConfig)
                 .then(data => {
-                    document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set success!";
+                    showStatus('mqttConfigStatus', 'MQTT configuration saved', 'success');
                     setTimeout(() => {
                         getCustomMqttConfiguration(); // This will reload config and restart auto-reload if needed
                     }, 2000); // Wait 2 seconds for the device to process the new config
-                    setTimeout(function () {
-                        document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
-                        document.getElementById("setCustomMqttConfigurationButton").disabled = false;
-                    }, 3000);
+                    document.getElementById("setCustomMqttConfigurationButton").innerHTML = "💾 Set configuration";
+                    document.getElementById("setCustomMqttConfigurationButton").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error setting custom MQTT configuration. Response: " + error.message);
-                    document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set failed!";
-                    setTimeout(function () {
-                        document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
-                        document.getElementById("setCustomMqttConfigurationButton").disabled = false;
-                    }, 3000);
+                    showStatus('mqttConfigStatus', 'Error: ' + error.message, 'error');
+                    document.getElementById("setCustomMqttConfigurationButton").innerHTML = "💾 Set configuration";
+                    document.getElementById("setCustomMqttConfigurationButton").disabled = false;
                 });
 
             // Call to refresh the custom MQTT configuration after setting it
@@ -1116,22 +1083,17 @@
 
             energyApi.setInfluxDbConfig(newInfluxDbConfig)
                 .then(data => {
-                    document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set success!";
+                    showStatus('influxDbConfigStatus', 'InfluxDB configuration saved', 'success');
                     setTimeout(() => {
                         getInfluxDbConfiguration(); // This will reload config and restart auto-reload if needed
                     }, 2000); // Wait 2 seconds for the device to process the new config
-                    setTimeout(function () {
-                        document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
-                        document.getElementById("setInfluxDbConfigurationButton").disabled = false;
-                    }, 3000);
+                    document.getElementById("setInfluxDbConfigurationButton").innerHTML = "💾 Set configuration";
+                    document.getElementById("setInfluxDbConfigurationButton").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error setting InfluxDB configuration. Response: " + error.message);
-                    document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set failed!";
-                    setTimeout(function () {
-                        document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
-                        document.getElementById("setInfluxDbConfigurationButton").disabled = false;
-                    }, 3000);
+                    showStatus('influxDbConfigStatus', 'Error: ' + error.message, 'error');
+                    document.getElementById("setInfluxDbConfigurationButton").innerHTML = "💾 Set configuration";
+                    document.getElementById("setInfluxDbConfigurationButton").disabled = false;
                 });
 
             // Call to refresh the InfluxDB configuration after setting it
@@ -1277,17 +1239,14 @@
                         if (apparentEl) apparentEl.value = channelData.apparentEnergy || 0;
                     });
 
-                    document.getElementById("loadEnergyButton").innerHTML = "✓ Values Loaded";
+                    showStatus('energyStatus', 'Values loaded successfully', 'success');
+                    document.getElementById("loadEnergyButton").innerHTML = "🔄 Load Current Values";
+                    document.getElementById("loadEnergyButton").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error loading energy values. Response: " + error.message);
-                    document.getElementById("loadEnergyButton").innerHTML = "❌ Load Failed";
-                })
-                .finally(() => {
-                    setTimeout(function () {
-                        document.getElementById("loadEnergyButton").innerHTML = "🔄 Load Current Values";
-                        document.getElementById("loadEnergyButton").disabled = false;
-                    }, 3000);
+                    showStatus('energyStatus', 'Error loading energy values: ' + error.message, 'error');
+                    document.getElementById("loadEnergyButton").innerHTML = "🔄 Load Current Values";
+                    document.getElementById("loadEnergyButton").disabled = false;
                 });
         }
 
@@ -1353,17 +1312,14 @@
 
             Promise.all(updatePromises)
                 .then(results => {
-                    document.getElementById("setEnergyButton").innerHTML = "✓ Values Set";
+                    showStatus('energyStatus', 'Energy values set successfully', 'success');
+                    document.getElementById("setEnergyButton").innerHTML = "💾 Set Energy Values";
+                    document.getElementById("setEnergyButton").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error setting energy values. Response: " + error.message);
-                    document.getElementById("setEnergyButton").innerHTML = "❌ Set Failed";
-                })
-                .finally(() => {
-                    setTimeout(function () {
-                        document.getElementById("setEnergyButton").innerHTML = "Set Energy Values";
-                        document.getElementById("setEnergyButton").disabled = false;
-                    }, 3000);
+                    showStatus('energyStatus', 'Error setting energy values: ' + error.message, 'error');
+                    document.getElementById("setEnergyButton").innerHTML = "💾 Set Energy Values";
+                    document.getElementById("setEnergyButton").disabled = false;
                 });
         }
 
@@ -1378,7 +1334,6 @@
 
             energyApi.resetEnergyValues()
                 .then(data => {
-                    document.getElementById("resetAllEnergyButton").innerHTML = "✓ Reset Complete";
                     // Clear all input fields
                     for (let channelIndex in channelData) {
                         const channel = channelData[channelIndex];
@@ -1396,16 +1351,14 @@
                             });
                         }
                     }
+                    showStatus('energyStatus', 'All energy values reset to zero', 'success');
+                    document.getElementById("resetAllEnergyButton").innerHTML = "🗑️ Reset all to Zero";
+                    document.getElementById("resetAllEnergyButton").disabled = false;
                 })
                 .catch(error => {
-                    alert("Error resetting energy values. Response: " + error.message);
-                    document.getElementById("resetAllEnergyButton").innerHTML = "❌ Reset Failed";
-                })
-                .finally(() => {
-                    setTimeout(function () {
-                        document.getElementById("resetAllEnergyButton").innerHTML = "Reset All to Zero";
-                        document.getElementById("resetAllEnergyButton").disabled = false;
-                    }, 3000);
+                    showStatus('energyStatus', 'Error resetting energy values: ' + error.message, 'error');
+                    document.getElementById("resetAllEnergyButton").innerHTML = "🗑️ Reset all to Zero";
+                    document.getElementById("resetAllEnergyButton").disabled = false;
                 });
         }
 
@@ -1441,7 +1394,7 @@
                 
             } catch (error) {
                 console.error("Error loading configuration data:", error);
-                alert("Error loading configuration data. Please refresh the page.");
+                showStatus('', 'Error loading configuration data. Please refresh the page.', 'error', 10000);
             }
         }
 
