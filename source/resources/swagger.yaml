@@ -2076,7 +2076,22 @@ paths:
                   - type: object
                     description: All channels response
                     properties:
-                      channels:
+                      index:
+                        type: integer
+                        description: Channel index
+                      label:
+                        type: string
+                        description: Channel label
+                      phase:
+                        type: integer
+                        description: Channel phase (1, 2, or 3)
+                      groupLabel:
+                        type: string
+                        description: Channel group label (if configured)
+                      role:
+                        type: string
+                        description: Channel role (load, grid, pv, battery, inverter)
+                      data:
                         type: array
                         items:
                           $ref: '#/components/schemas/MeterValues'
@@ -2086,7 +2101,12 @@ paths:
                 all_channels:
                   summary: All channels response
                   value:
-                    channels:
+                    index: 0
+                    label: "Main Circuit"
+                    phase: 1
+                    groupLabel: "Group 0"
+                    role: "grid"
+                    data:
                       - voltage: 230.2
                         current: 5.45
                         activePower: 1254.6

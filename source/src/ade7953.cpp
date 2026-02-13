@@ -1305,6 +1305,8 @@ namespace Ade7953
                 _jsonChannel["index"] = i;
                 _jsonChannel["label"] = JsonString(channelData.label); // Ensure the string is not a dangling pointer
                 _jsonChannel["phase"] = channelData.phase;
+                _jsonChannel["groupLabel"] = JsonString(channelData.groupLabel); // Ensure the string is not a dangling pointer
+                _jsonChannel["role"] = channelRoleToString(channelData.role);
 
                 SpiRamAllocator allocator;
                 JsonDocument jsonData(&allocator);
