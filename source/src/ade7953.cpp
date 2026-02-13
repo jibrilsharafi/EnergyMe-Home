@@ -2407,13 +2407,17 @@ namespace Ade7953
             channelData.role = static_cast<ChannelRole>(preferences.getUChar(key, channelIndex == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE));
         } else {
             // Migration: read old bool keys and convert to enum
+            // Then delete to avoid overcrowding the NVS space with legacy keys
             char oldKey[PREFERENCES_KEY_BUFFER_SIZE];
-            snprintf(oldKey, sizeof(oldKey), "is_grid_%u", channelIndex);
+            snprintf(oldKey, sizeof(oldKey), CHANNEL_IS_GRID_KEY_LEGACY, channelIndex);
             bool wasGrid = preferences.getBool(oldKey, false);
-            snprintf(oldKey, sizeof(oldKey), "is_prod_%u", channelIndex);
+            preferences.remove(oldKey);
+            snprintf(oldKey, sizeof(oldKey), CHANNEL_IS_PRODUCTION_KEY_LEGACY, channelIndex);
             bool wasProd = preferences.getBool(oldKey, false);
-            snprintf(oldKey, sizeof(oldKey), "is_batt_%u", channelIndex);
+            preferences.remove(oldKey);
+            snprintf(oldKey, sizeof(oldKey), CHANNEL_IS_BATTERY_KEY_LEGACY, channelIndex);
             bool wasBatt = preferences.getBool(oldKey, false);
+            preferences.remove(oldKey);
 
             if (wasGrid) channelData.role = CHANNEL_ROLE_GRID;
             else if (wasProd) channelData.role = CHANNEL_ROLE_PV;

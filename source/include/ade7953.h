@@ -237,6 +237,10 @@
 
 // Channel role key
 #define CHANNEL_ROLE_KEY "role_%u" // Format: role_0 (7 chars)
+// Legacy role keys for migration
+#define CHANNEL_IS_GRID_KEY_LEGACY "is_grid_%u" // Format: is_grid_0 (10 chars)
+#define CHANNEL_IS_PRODUCTION_KEY_LEGACY "is_prod_%u" // Format: is_prod_0 (10 chars)
+#define CHANNEL_IS_BATTERY_KEY_LEGACY "is_batt_%u" // Format: is_batt_0 (10 chars)
 
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
