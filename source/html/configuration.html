@@ -380,23 +380,25 @@
             }
         }
 
-        function restart() {
-            var restartButton = document.getElementById("restart");
-            restartButton.innerHTML = "Restarting. You will be redirected to the home page in some seconds.";
+        async function restart() {
+            const restartButton = document.getElementById("restart");
             restartButton.disabled = true;
+            restartButton.classList.add('loading');
 
-            energyApi.restartSystem()
-                .then(response => {
-                    showStatus('', "Device restarting... You will be redirected in 12 seconds.", 'success', 12000);
-                    setTimeout(function () {
-                        window.location.href = "/";
-                    }, 12000);
-                })
-                .catch(error => {
-                    showStatus('', "Error restarting device: " + error.message, 'error');
-                    restartButton.innerHTML = "🔄 Restart";
-                    restartButton.disabled = false;
-                });
+            try {
+                showStatus('', "Restarting device...", 'info');
+
+                await energyApi.restartSystem();
+
+                showStatus('', "Device restarting... You will be redirected in 12 seconds.", 'success', 12000);
+                setTimeout(function () {
+                    window.location.href = "/";
+                }, 12000);
+            } catch (error) {
+                showStatus('', "Error restarting device: " + error.message, 'error');
+                restartButton.disabled = false;
+                restartButton.classList.remove('loading');
+            }
         }
 
         function loadDeviceTime() {
@@ -411,25 +413,25 @@
             });
         }
 
-        function syncTime() {
+        async function syncTime() {
             const syncButton = document.getElementById("syncTime");
-            syncButton.innerHTML = "Syncing...";
             syncButton.disabled = true;
+            syncButton.classList.add('loading');
 
-            const unixSeconds = Math.floor(Date.now() / 1000);
+            try {
+                showStatus('syncTimeStatus', 'Syncing time...', 'info');
 
-            energyApi.setSystemTime(unixSeconds)
-                .then(response => {
-                    syncButton.innerHTML = "🕐 Sync Time";
-                    syncButton.disabled = false;
-                    showStatus('syncTimeStatus', 'Time synchronized successfully! New time: ' + response.newTime, 'success');
-                    loadDeviceTime();
-                })
-                .catch(error => {
-                    syncButton.innerHTML = "🕐 Sync Time";
-                    syncButton.disabled = false;
-                    showStatus('syncTimeStatus', 'Error syncing time: ' + error.message, 'error');
-                });
+                const unixSeconds = Math.floor(Date.now() / 1000);
+                const response = await energyApi.setSystemTime(unixSeconds);
+
+                showStatus('syncTimeStatus', 'Time synchronized successfully! New time: ' + response.newTime, 'success');
+                loadDeviceTime();
+            } catch (error) {
+                showStatus('syncTimeStatus', 'Error syncing time: ' + error.message, 'error');
+            } finally {
+                syncButton.disabled = false;
+                syncButton.classList.remove('loading');
+            }
         }
 
         // Load device time on page load
@@ -437,7 +439,7 @@
             loadDeviceTime();
         });
         
-        function switchWifi() {
+        async function switchWifi() {
             const ssid = document.getElementById("newWifiSsid").value.trim();
             const password = document.getElementById("newWifiPassword").value;
 
@@ -446,80 +448,88 @@
                 return;
             }
 
-            var userConfirmed = window.confirm("Are you sure you want to switch to WiFi network '" + ssid + "'? The device will restart to apply the new credentials.");
+            const userConfirmed = window.confirm("Are you sure you want to switch to WiFi network '" + ssid + "'? The device will restart to apply the new credentials.");
             if (!userConfirmed) {
                 return;
             }
 
             const button = document.getElementById("switchWifi");
-            button.innerHTML = "Switching...";
             button.disabled = true;
+            button.classList.add('loading');
 
-            energyApi.setWifiCredentials(ssid, password)
-                .then(response => {
-                    button.innerHTML = "Credentials saved! Restarting...";
-                    showStatus('', "WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds.", 'success', 8000);
-                    // Clear the form
-                    document.getElementById("newWifiSsid").value = "";
-                    document.getElementById("newWifiPassword").value = "";
-                })
-                .catch(error => {
-                    button.innerHTML = "📶 Switch Network";
-                    button.disabled = false;
-                    showStatus('', "Error switching WiFi network: " + error.message, 'error');
-                });
+            try {
+                showStatus('', "Switching WiFi network...", 'info');
+
+                await energyApi.setWifiCredentials(ssid, password);
+
+                showStatus('', "WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds.", 'success', 8000);
+                // Clear the form
+                document.getElementById("newWifiSsid").value = "";
+                document.getElementById("newWifiPassword").value = "";
+                // Don't restore button - page will become unreachable after restart
+            } catch (error) {
+                button.disabled = false;
+                button.classList.remove('loading');
+                showStatus('', "Error switching WiFi network: " + error.message, 'error');
+            }
         }
 
-        function disconnectWifi() {
-            var confirm = window.confirm("Are you sure you want to disconnect from WiFi? You will lose access to the device until you reconnect it to WiFi.");
+        async function disconnectWifi() {
+            const confirm = window.confirm("Are you sure you want to disconnect from WiFi? You will lose access to the device until you reconnect it to WiFi.");
             if (!confirm) {
                 return;
             }
-            document.getElementById("disconnect").innerHTML = "Disconnecting...";
-            document.getElementById("disconnect").disabled = true;
 
-            energyApi.resetWifi()
-                .then(response => {
+            const button = document.getElementById("disconnect");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus('', "Disconnecting from WiFi...", 'info');
+
+                await energyApi.resetWifi();
+
+                showStatus('', "Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
+            } catch (error) {
+                // Treat "signal is aborted without reason" as successful (it means WiFi was reset)
+                if (error.message && error.message.includes("signal is aborted without reason")) {
                     showStatus('', "Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
-                    document.getElementById("disconnect").innerHTML = "📶 Disconnect";
-                    document.getElementById("disconnect").disabled = false;
-                })
-                .catch(error => {
-                    // Treat "signal is aborted without reason" as successful (it means WiFi was reset)
-                    if (error.message && error.message.includes("signal is aborted without reason")) {
-                        showStatus('', "Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
-                    } else {
-                        showStatus('', "Error disconnecting from WiFi: " + error.message, 'error');
-                    }
-                    document.getElementById("disconnect").innerHTML = "📶 Disconnect";
-                    document.getElementById("disconnect").disabled = false;
-                });
+                } else {
+                    showStatus('', "Error disconnecting from WiFi: " + error.message, 'error');
+                }
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         } 
         
-        function factoryReset() {
-            var confirm = window.confirm("Are you sure you want to reset the device to factory settings? All configurations and data will be lost.");
+        async function factoryReset() {
+            const confirm = window.confirm("Are you sure you want to reset the device to factory settings? All configurations and data will be lost.");
             if (!confirm) {
                 return;
             }
-            document.getElementById("factoryReset").innerHTML = "Waiting for response...";
-            document.getElementById("factoryReset").disabled = true;
 
-            energyApi.factoryReset()
-                .then(response => {
-                    showStatus('', "Reset successful! You will be redirected to the home page in 15 seconds.", 'success', 15000);
-                    document.getElementById("factoryReset").innerHTML = "Reset successful!";
-                    setTimeout(function () {
-                        window.location.href = "/";
-                    }, 15000);
-                })
-                .catch(error => {
-                    showStatus('', "Error resetting to factory settings: " + error.message, 'error');
-                    document.getElementById("factoryReset").innerHTML = "🏭 Reset";
-                    document.getElementById("factoryReset").disabled = false;
-                });
+            const button = document.getElementById("factoryReset");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus('', "Resetting to factory settings...", 'info');
+
+                await energyApi.factoryReset();
+
+                showStatus('', "Reset successful! You will be redirected to the home page in 15 seconds.", 'success', 15000);
+                setTimeout(function () {
+                    window.location.href = "/";
+                }, 15000);
+            } catch (error) {
+                showStatus('', "Error resetting to factory settings: " + error.message, 'error');
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         } 
         
-        function changePassword() {
+        async function changePassword() {
             const currentPassword = document.getElementById("currentPassword").value;
             const newPassword = document.getElementById("newPassword").value;
             const confirmPassword = document.getElementById("confirmPassword").value;
@@ -545,60 +555,64 @@
                 return;
             }
 
-            document.getElementById("changePasswordButton").innerHTML = "Changing password...";
-            document.getElementById("changePasswordButton").disabled = true;
+            const button = document.getElementById("changePasswordButton");
+            button.disabled = true;
+            button.classList.add('loading');
 
-            energyApi.changePassword(currentPassword, newPassword)
-                .then(response => {
-                    showStatus('passwordStatus', 'Password changed successfully! Please use your new password on next login.', 'success');
-                    // Clear the form
-                    document.getElementById("currentPassword").value = "";
-                    document.getElementById("newPassword").value = "";
-                    document.getElementById("confirmPassword").value = "";
-                    document.getElementById("changePasswordButton").innerHTML = "🔑 Change Password";
-                    document.getElementById("changePasswordButton").disabled = false;
-                })
-                .catch(error => {
-                    showStatus('passwordStatus', 'Error changing password: ' + error.message, 'error');
-                    document.getElementById("changePasswordButton").innerHTML = "🔑 Change Password";
-                    document.getElementById("changePasswordButton").disabled = false;
-                });
+            try {
+                showStatus('passwordStatus', 'Changing password...', 'info');
+
+                await energyApi.changePassword(currentPassword, newPassword);
+
+                showStatus('passwordStatus', 'Password changed successfully! Please use your new password on next login.', 'success');
+                // Clear the form
+                document.getElementById("currentPassword").value = "";
+                document.getElementById("newPassword").value = "";
+                document.getElementById("confirmPassword").value = "";
+            } catch (error) {
+                showStatus('passwordStatus', 'Error changing password: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
         
-        function setLogLevel() {
-            document.getElementById("setLogLevel").innerHTML = "Setting...";
-            document.getElementById("setLogLevel").disabled = true;
+        async function setLogLevel() {
+            const button = document.getElementById("setLogLevel");
+            button.disabled = true;
+            button.classList.add('loading');
 
-            var printLogLevel = document.getElementById("printLogLevel").value.toUpperCase();
-            var saveLogLevel = document.getElementById("saveLogLevel").value.toUpperCase();
+            try {
+                const printLogLevel = document.getElementById("printLogLevel").value.toUpperCase();
+                const saveLogLevel = document.getElementById("saveLogLevel").value.toUpperCase();
 
-            // API expects string values like "VERBOSE", "DEBUG", etc.
-            var validLevels = ["VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL"];
+                // API expects string values like "VERBOSE", "DEBUG", etc.
+                const validLevels = ["VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL"];
 
-            // Validate that the levels are valid
-            if (!validLevels.includes(printLogLevel) || !validLevels.includes(saveLogLevel)) {
-                showStatus('loggingStatus', 'Invalid log level selected', 'error');
-                document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
-                document.getElementById("setLogLevel").disabled = false;
-                return;
-            }
+                // Validate that the levels are valid
+                if (!validLevels.includes(printLogLevel) || !validLevels.includes(saveLogLevel)) {
+                    showStatus('loggingStatus', 'Invalid log level selected', 'error');
+                    button.disabled = false;
+                    button.classList.remove('loading');
+                    return;
+                }
 
-            console.log("Setting log levels:", { print: printLogLevel, save: saveLogLevel });
+                console.log("Setting log levels:", { print: printLogLevel, save: saveLogLevel });
 
-            energyApi.setLogLevels({
-                print: printLogLevel,
-                save: saveLogLevel
-            })
-                .then(response => {
-                    showStatus('loggingStatus', 'Log level set successfully', 'success');
-                    document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
-                    document.getElementById("setLogLevel").disabled = false;
-                })
-                .catch(error => {
-                    showStatus('loggingStatus', 'Error setting log level: ' + error.message, 'error');
-                    document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
-                    document.getElementById("setLogLevel").disabled = false;
+                showStatus('loggingStatus', 'Setting log level...', 'info');
+
+                await energyApi.setLogLevels({
+                    print: printLogLevel,
+                    save: saveLogLevel
                 });
+
+                showStatus('loggingStatus', 'Log level set successfully', 'success');
+            } catch (error) {
+                showStatus('loggingStatus', 'Error setting log level: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
         
         function getLogLevel() {
@@ -623,25 +637,28 @@
                 });
         } 
         
-        function clearLogs() {
-            var confirm = window.confirm("Are you sure you want to clear the log?");
+        async function clearLogs() {
+            const confirm = window.confirm("Are you sure you want to clear the log?");
             if (!confirm) {
                 return;
             }
-            document.getElementById("clearLogs").innerHTML = "Clearing...";
-            document.getElementById("clearLogs").disabled = true;
 
-            energyApi.clearLogs()
-                .then(response => {
-                    showStatus('loggingStatus', 'Log cleared successfully', 'success');
-                    document.getElementById("clearLogs").innerHTML = "🗑️ Clear log";
-                    document.getElementById("clearLogs").disabled = false;
-                })
-                .catch(error => {
-                    showStatus('loggingStatus', 'Error clearing log: ' + error.message, 'error');
-                    document.getElementById("clearLogs").innerHTML = "🗑️ Clear log";
-                    document.getElementById("clearLogs").disabled = false;
-                });
+            const button = document.getElementById("clearLogs");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus('loggingStatus', 'Clearing logs...', 'info');
+
+                await energyApi.clearLogs();
+
+                showStatus('loggingStatus', 'Log cleared successfully', 'success');
+            } catch (error) {
+                showStatus('loggingStatus', 'Error clearing log: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
 
         function getCloudServices() {
@@ -654,37 +671,37 @@
                 });
         }
 
-        function setCloudServices() {
-            document.getElementById("setCloudServicesButton").innerHTML = "Setting...";
-            document.getElementById("setCloudServicesButton").disabled = true;
+        async function setCloudServices() {
+            const button = document.getElementById("setCloudServicesButton");
+            button.disabled = true;
+            button.classList.add('loading');
 
-            // First check secrets status
-            energyApi.getSystemSecrets()
-                .then(secretsResponse => {
-                    const isEnabled = document.getElementById("cloudServices").checked;
+            try {
+                showStatus('cloudServicesStatus', 'Updating cloud services...', 'info');
 
-                    // If no secrets but cloud services is checked, prevent that
-                    if (!secretsResponse.hasSecrets && isEnabled) {
-                        showStatus('cloudServicesStatus', 'Cannot enable: firmware does not include secrets', 'error');
-                        document.getElementById("cloudServices").checked = false;
-                        throw new Error("No secrets available");
-                    }
+                // First check secrets status
+                const secretsResponse = await energyApi.getSystemSecrets();
+                const isEnabled = document.getElementById("cloudServices").checked;
 
-                    // Send the configuration
-                    return energyApi.setMqttCloudServices(isEnabled);
-                })
-                .then(data => {
-                    showStatus('cloudServicesStatus', 'Cloud services updated', 'success');
-                    document.getElementById("setCloudServicesButton").innerHTML = "☁️ Set cloud services";
-                    document.getElementById("setCloudServicesButton").disabled = false;
-                })
-                .catch(error => {
-                    if (error.message !== "No secrets available") {
-                        showStatus('cloudServicesStatus', 'Error: ' + error.message, 'error');
-                    }
-                    document.getElementById("setCloudServicesButton").innerHTML = "☁️ Set cloud services";
-                    document.getElementById("setCloudServicesButton").disabled = false;
-                });
+                // If no secrets but cloud services is checked, prevent that
+                if (!secretsResponse.hasSecrets && isEnabled) {
+                    showStatus('cloudServicesStatus', 'Cannot enable: firmware does not include secrets', 'error');
+                    document.getElementById("cloudServices").checked = false;
+                    button.disabled = false;
+                    button.classList.remove('loading');
+                    return;
+                }
+
+                // Send the configuration
+                await energyApi.setMqttCloudServices(isEnabled);
+
+                showStatus('cloudServicesStatus', 'Cloud services updated', 'success');
+            } catch (error) {
+                showStatus('cloudServicesStatus', 'Error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
 
         function getLedBrightness() {
@@ -699,23 +716,24 @@
                 });
         }
 
-        function setLedBrightness() {
-            document.getElementById("setLedBrightnessButton").innerHTML = "Setting...";
-            document.getElementById("setLedBrightnessButton").disabled = true;
+        async function setLedBrightness() {
+            const button = document.getElementById("setLedBrightnessButton");
+            button.disabled = true;
+            button.classList.add('loading');
 
-            const brightness = parseInt(document.getElementById("ledBrightness").value);
+            try {
+                showStatus('ledBrightnessStatus', 'Setting brightness...', 'info');
 
-            energyApi.setLedBrightness(brightness)
-                .then(data => {
-                    showStatus('ledBrightnessStatus', 'Brightness set successfully', 'success');
-                    document.getElementById("setLedBrightnessButton").innerHTML = "💡 Set brightness";
-                    document.getElementById("setLedBrightnessButton").disabled = false;
-                })
-                .catch(error => {
-                    showStatus('ledBrightnessStatus', 'Error: ' + error.message, 'error');
-                    document.getElementById("setLedBrightnessButton").innerHTML = "💡 Set brightness";
-                    document.getElementById("setLedBrightnessButton").disabled = false;
-                });
+                const brightness = parseInt(document.getElementById("ledBrightness").value);
+                await energyApi.setLedBrightness(brightness);
+
+                showStatus('ledBrightnessStatus', 'Brightness set successfully', 'success');
+            } catch (error) {
+                showStatus('ledBrightnessStatus', 'Error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
 
         function updateBrightnessValue() {
@@ -834,44 +852,46 @@
             }
         }
 
-        function setCustomMqttConfiguration() {
-            document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Setting...";
-            document.getElementById("setCustomMqttConfigurationButton").disabled = true;
+        async function setCustomMqttConfiguration() {
+            const button = document.getElementById("setCustomMqttConfigurationButton");
+            button.disabled = true;
+            button.classList.add('loading');
 
-            var currentStatus = customMqttConfig ? customMqttConfig.lastConnectionStatus : "Unknown";
-            var currentTimestamp = customMqttConfig ? customMqttConfig.lastConnectionAttemptTimestamp : "";
+            try {
+                showStatus('mqttConfigStatus', 'Setting MQTT configuration...', 'info');
 
-            var newCustomMqttConfig = {
-                "enabled": document.getElementById("customMqttEnabled").checked,
-                "server": document.getElementById("customMqttServer").value,
-                "port": parseInt(document.getElementById("customMqttPort").value),
-                "clientid": document.getElementById("customMqttClientId").value,
-                "topic": document.getElementById("customMqttTopic").value,
-                "frequency": parseInt(document.getElementById("customMqttFrequency").value),
-                "useCredentials": document.getElementById("customMqttUseCredentials").checked,
-                "username": document.getElementById("customMqttUsername").value,
-                "password": document.getElementById("customMqttPassword").value,
-                "lastConnectionStatus": currentStatus,
-                "lastConnectionAttemptTimestamp": currentTimestamp
-            };
+                var currentStatus = customMqttConfig ? customMqttConfig.lastConnectionStatus : "Unknown";
+                var currentTimestamp = customMqttConfig ? customMqttConfig.lastConnectionAttemptTimestamp : "";
 
-            energyApi.setCustomMqttConfig(newCustomMqttConfig)
-                .then(data => {
-                    showStatus('mqttConfigStatus', 'MQTT configuration saved', 'success');
-                    setTimeout(() => {
-                        getCustomMqttConfiguration(); // This will reload config and restart auto-reload if needed
-                    }, 2000); // Wait 2 seconds for the device to process the new config
-                    document.getElementById("setCustomMqttConfigurationButton").innerHTML = "💾 Set configuration";
-                    document.getElementById("setCustomMqttConfigurationButton").disabled = false;
-                })
-                .catch(error => {
-                    showStatus('mqttConfigStatus', 'Error: ' + error.message, 'error');
-                    document.getElementById("setCustomMqttConfigurationButton").innerHTML = "💾 Set configuration";
-                    document.getElementById("setCustomMqttConfigurationButton").disabled = false;
-                });
+                var newCustomMqttConfig = {
+                    "enabled": document.getElementById("customMqttEnabled").checked,
+                    "server": document.getElementById("customMqttServer").value,
+                    "port": parseInt(document.getElementById("customMqttPort").value),
+                    "clientid": document.getElementById("customMqttClientId").value,
+                    "topic": document.getElementById("customMqttTopic").value,
+                    "frequency": parseInt(document.getElementById("customMqttFrequency").value),
+                    "useCredentials": document.getElementById("customMqttUseCredentials").checked,
+                    "username": document.getElementById("customMqttUsername").value,
+                    "password": document.getElementById("customMqttPassword").value,
+                    "lastConnectionStatus": currentStatus,
+                    "lastConnectionAttemptTimestamp": currentTimestamp
+                };
 
-            // Call to refresh the custom MQTT configuration after setting it
-            setTimeout(getCustomMqttConfiguration, 1000);
+                await energyApi.setCustomMqttConfig(newCustomMqttConfig);
+
+                showStatus('mqttConfigStatus', 'MQTT configuration saved', 'success');
+
+                // Call to refresh the custom MQTT configuration after setting it
+                setTimeout(getCustomMqttConfiguration, 1000);
+                setTimeout(() => {
+                    getCustomMqttConfiguration(); // This will reload config and restart auto-reload if needed
+                }, 2000); // Wait 2 seconds for the device to process the new config
+            } catch (error) {
+                showStatus('mqttConfigStatus', 'Error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
 
         function checkHasSecrets() {
@@ -1032,48 +1052,50 @@
             }
         }
 
-        function setInfluxDbConfiguration() {
-            document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Setting...";
-            document.getElementById("setInfluxDbConfigurationButton").disabled = true;
+        async function setInfluxDbConfiguration() {
+            const button = document.getElementById("setInfluxDbConfigurationButton");
+            button.disabled = true;
+            button.classList.add('loading');
 
-            var currentStatus = influxDbConfig ? influxDbConfig.lastConnectionStatus : "Unknown";
-            var currentTimestamp = influxDbConfig ? influxDbConfig.lastConnectionAttemptTimestamp : "";
+            try {
+                showStatus('influxDbConfigStatus', 'Setting InfluxDB configuration...', 'info');
 
-            var newInfluxDbConfig = {
-                "enabled": document.getElementById("influxDbEnabled").checked,
-                "server": document.getElementById("influxDbServer").value,
-                "port": parseInt(document.getElementById("influxDbPort").value),
-                "version": parseInt(document.getElementById("influxDbVersion").value),
-                "database": document.getElementById("influxDbDatabase").value,
-                "username": document.getElementById("influxDbUsername").value,
-                "password": document.getElementById("influxDbPassword").value,
-                "organization": document.getElementById("influxDbOrganization").value,
-                "bucket": document.getElementById("influxDbBucket").value,
-                "token": document.getElementById("influxDbToken").value,
-                "measurement": document.getElementById("influxDbMeasurement").value,
-                "frequency": Math.max(1, Math.min(3600, parseInt(document.getElementById("influxDbFrequency").value))),
-                "useSsl": document.getElementById("influxDbUseSsl").checked,
-                "lastConnectionStatus": currentStatus,
-                "lastConnectionAttemptTimestamp": currentTimestamp
-            };
+                var currentStatus = influxDbConfig ? influxDbConfig.lastConnectionStatus : "Unknown";
+                var currentTimestamp = influxDbConfig ? influxDbConfig.lastConnectionAttemptTimestamp : "";
 
-            energyApi.setInfluxDbConfig(newInfluxDbConfig)
-                .then(data => {
-                    showStatus('influxDbConfigStatus', 'InfluxDB configuration saved', 'success');
-                    setTimeout(() => {
-                        getInfluxDbConfiguration(); // This will reload config and restart auto-reload if needed
-                    }, 2000); // Wait 2 seconds for the device to process the new config
-                    document.getElementById("setInfluxDbConfigurationButton").innerHTML = "💾 Set configuration";
-                    document.getElementById("setInfluxDbConfigurationButton").disabled = false;
-                })
-                .catch(error => {
-                    showStatus('influxDbConfigStatus', 'Error: ' + error.message, 'error');
-                    document.getElementById("setInfluxDbConfigurationButton").innerHTML = "💾 Set configuration";
-                    document.getElementById("setInfluxDbConfigurationButton").disabled = false;
-                });
+                var newInfluxDbConfig = {
+                    "enabled": document.getElementById("influxDbEnabled").checked,
+                    "server": document.getElementById("influxDbServer").value,
+                    "port": parseInt(document.getElementById("influxDbPort").value),
+                    "version": parseInt(document.getElementById("influxDbVersion").value),
+                    "database": document.getElementById("influxDbDatabase").value,
+                    "username": document.getElementById("influxDbUsername").value,
+                    "password": document.getElementById("influxDbPassword").value,
+                    "organization": document.getElementById("influxDbOrganization").value,
+                    "bucket": document.getElementById("influxDbBucket").value,
+                    "token": document.getElementById("influxDbToken").value,
+                    "measurement": document.getElementById("influxDbMeasurement").value,
+                    "frequency": Math.max(1, Math.min(3600, parseInt(document.getElementById("influxDbFrequency").value))),
+                    "useSsl": document.getElementById("influxDbUseSsl").checked,
+                    "lastConnectionStatus": currentStatus,
+                    "lastConnectionAttemptTimestamp": currentTimestamp
+                };
 
-            // Call to refresh the InfluxDB configuration after setting it
-            setTimeout(getInfluxDbConfiguration, 1000);
+                await energyApi.setInfluxDbConfig(newInfluxDbConfig);
+
+                showStatus('influxDbConfigStatus', 'InfluxDB configuration saved', 'success');
+
+                // Call to refresh the InfluxDB configuration after setting it
+                setTimeout(getInfluxDbConfiguration, 1000);
+                setTimeout(() => {
+                    getInfluxDbConfiguration(); // This will reload config and restart auto-reload if needed
+                }, 2000); // Wait 2 seconds for the device to process the new config
+            } catch (error) {
+                showStatus('influxDbConfigStatus', 'Error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
 
         // Sequential API loading to prevent overwhelming the ESP32

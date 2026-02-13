@@ -88,6 +88,32 @@
     border: 1px solid rgba(59, 130, 246, 0.4);
 }
 
+/* Button loading spinner */
+button.loading {
+    position: relative;
+    color: transparent;
+    pointer-events: none;
+}
+
+button.loading::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: button-spinner 0.6s linear infinite;
+}
+
+@keyframes button-spinner {
+    to { transform: rotate(360deg); }
+}
+
 /* Mobile-first responsive form styles */
 @media screen and (max-width: 768px) {
     .config-input {

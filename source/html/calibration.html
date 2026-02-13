@@ -329,7 +329,6 @@
                     <div id="calibrationStatus" style="margin-bottom: 10px;"></div>
                     <div class="calibration-actions">
                         <button class="buttonForm" onclick="saveCalibration()" id="saveButton">💾 Save</button>
-                        <button class="buttonForm" onclick="resetCalibration()">🔄 Reset</button>
                     </div>
                 </div>
             </div>
@@ -456,12 +455,11 @@
             }
 
             try {
-                // Block the button and show saving status
                 const saveButton = document.getElementById('saveButton');
-                saveButton.textContent = '💾 Saving...';
                 saveButton.disabled = true;
+                saveButton.classList.add('loading');
 
-                showStatus('updateStatus', 'Saving calibration...', '');
+                showStatus('updateStatus', 'Saving calibration...', 'info');
 
                 const currentRating = parseInt(document.getElementById('currentRating').value);
                 const voltageOutput = parseFloat(document.getElementById('voltageOutput').value);
@@ -481,60 +479,14 @@
                 // Update local data
                 channelData[selectedChannelIndex].ctSpecification = channelUpdate.ctSpecification;
 
-                // Show success status
                 showStatus('updateStatus', 'Calibration saved successfully!', 'success');
-                saveButton.textContent = '✅ Saved';
-
-                // Restore button after 3 seconds
-                setTimeout(() => {
-                    saveButton.textContent = '💾 Save';
-                    saveButton.disabled = false;
-                }, 3000);
 
             } catch (error) {
                 console.error('Error saving calibration:', error);
-
-                // Show error status
                 showStatus('updateStatus', 'Error saving calibration: ' + error.message, 'error');
-
-                const saveButton = document.getElementById('saveButton');
-                saveButton.textContent = '❌ Error';
-
-                // Restore button after 5 seconds for errors
-                setTimeout(() => {
-                    saveButton.textContent = '💾 Save';
-                    saveButton.disabled = false;
-                }, 5000);
-            }
-        }
-
-        async function resetCalibration() {
-            if (!selectedChannelIndex) {
-                showStatus('updateStatus', 'Please select a channel first', 'error');
-                return;
-            }
-
-            const resetMessage = 'Reset calibration for this channel to defaults (30A/333mV)?\n\nWarning: This will also disable all channels except Channel 0.';
-
-            if (confirm(resetMessage)) {
-                try {
-                    await energyApi.resetChannelConfig(selectedChannelIndex);
-
-                    // Reload channel data
-                    channelData = await energyApi.getChannelConfig();
-                    onChannelChange(); // Refresh the UI
-
-                    document.getElementById('calibrationStatus').innerHTML = `
-                        <div class="status-indicator status-good">
-                            🔄 Calibration reset to defaults
-                        </div>
-                    `;
-                    showStatus('updateStatus', 'Calibration reset to defaults', 'success');
-
-                } catch (error) {
-                    console.error('Error resetting calibration:', error);
-                    showStatus('updateStatus', 'Error resetting calibration: ' + error.message, 'error');
-                }
+            } finally {
+                saveButton.disabled = false;
+                saveButton.classList.remove('loading');
             }
         }
 

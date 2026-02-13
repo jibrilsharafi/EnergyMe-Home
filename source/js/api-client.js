@@ -495,14 +495,7 @@ class EnergyMeAPI {
     async setAde7953SampleTime(sampleTime) {
         return this.put('ade7953/sample-time', { sampleTime });
     }
-
-    /**
-     * Reset channel configuration
-     */
-    async resetChannelConfig(index) {
-        return this.post(`ade7953/channel/reset?index=${index}`);
-    }
-
+    
     /**
      * Read ADE7953 register
      */

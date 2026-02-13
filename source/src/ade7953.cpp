@@ -1028,7 +1028,7 @@ namespace Ade7953
         // Offload heavy file I/O to background task
         _spawnHistoryClearTask(channelIndex);
 
-        LOG_INFO("Started task for clearing history for channel %u", channelIndex);
+        LOG_DEBUG("Started task for clearing history for channel %u", channelIndex);
     }
 
     bool _clearChannelHistoricalData(uint8_t channelIndex) {
