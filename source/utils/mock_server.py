@@ -517,6 +517,8 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
             self.serve_html_file('html/calibration.html')
         elif path == '/channel':
             self.serve_html_file('html/channel.html')
+        elif path == '/integrations':
+            self.serve_html_file('html/integrations.html')
         elif path == '/log':
             self.serve_html_file('html/log.html')
         elif path == '/waveform':
@@ -525,6 +527,10 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
             self.serve_html_file('html/swagger.html')
         elif path == '/ade7953-tester':
             self.serve_html_file('html/ade7953-tester.html')
+        elif path == '/swagger-ui':
+            self.serve_html_file('html/swagger.html')
+        elif path == '/swagger.yaml':
+            self.serve_html_file('resources/swagger.yaml')
         else:
             # Serve static files (CSS, JS, images)
             super().do_GET()

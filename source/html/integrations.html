@@ -1,0 +1,781 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Copyright (C) 2025 Jibril Sharafi -->
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+    <title>Integrations</title>
+    <style>
+        /* Mobile-specific styles */
+        @media screen and (max-width: 768px) {
+            #statusContainer,
+            #influxDbStatusContainer {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .status-icon {
+                margin-bottom: 8px;
+                margin-right: 0 !important;
+            }
+        }
+
+        /* Register map and documentation styles */
+        .register-map-section {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+            line-height: 1.8;
+        }
+
+        .register-map-section h3 {
+            margin-top: 0;
+        }
+
+        .register-map-section h4 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .register-map-section ul {
+            margin-left: 20px;
+        }
+
+        .register-map-section code {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #e0e0e0;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        .endpoint-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .endpoint-list li {
+            padding: 10px;
+            margin: 5px 0;
+            background-color: #f5f5f5;
+            border-left: 4px solid var(--green);
+            border-radius: 3px;
+        }
+
+        .endpoint-list code {
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            color: #1976d2;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="home" href="/">🏠 Home</a>
+        <a class="buttonNavigation" type="inner" href="/configuration">⚙️ Configuration</a>
+    </div>
+
+    <!-- Custom MQTT Section -->
+    <div class="section-box">
+        <h2>Custom MQTT</h2>
+        <p><i>
+                Custom MQTT is used to send meter data to a custom MQTT server. This is useful for integrating the
+                device with your own IoT platform.
+                <br>
+                <br>
+                The payload content will be the same one returned by the REST API endpoint <a href="/api/v1/ade7953/meter-values"
+                    target="_blank">meter</a>
+                (<a href="/swagger-ui#/ADE7953/get_api_v1_ade7953_meter_values" target="_blank">swagger</a>).
+            </i></p>
+        <input type="checkbox" id="customMqttEnabled" class="config-input">
+        <label for="customMqttEnabled">Enable custom MQTT</label>
+        <div id="customMqttSettings">
+            <label for="customMqttServer">Server:</label>
+            <input type="text" id="customMqttServer" class="config-input" placeholder="e.g., mqtt.example.com">
+            <br>
+            <label for="customMqttPort">Port:</label>
+            <input type="number" id="customMqttPort" class="config-input" placeholder="e.g., 1883">
+            <br>
+            <label for="customMqttClientId">Client ID:</label>
+            <input type="text" id="customMqttClientId" class="config-input" placeholder="e.g., client123">
+            <br>
+            <label for="customMqttTopic">Topic:</label>
+            <input type="text" id="customMqttTopic" class="config-input" placeholder="e.g., home/sensor">
+            <br>
+            <label for="customMqttFrequency">Frequency (in seconds):</label>
+            <input type="number" id="customMqttFrequency" class="config-input" placeholder="e.g., 60" min="1"
+                max="86400">
+            <br>
+            <input type="checkbox" id="customMqttUseCredentials" class="config-input">
+            <label for="useCredentials">Use credentials</label>
+            <br>
+            <label for="customMqttUsername">Username:</label>
+            <input type="text" id="customMqttUsername" class="config-input" placeholder="Leave empty if not required">
+            <br>
+            <label for="customMqttPassword">Password:</label>
+            <input type="password" id="customMqttPassword" class="config-input"
+                placeholder="Leave empty if not required">
+        </div>
+        <div id="customMqttStatus"
+            style="margin-top: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
+            <div id="statusContainer" style="display: flex; align-items: center;">
+                <span id="statusIcon" class="status-icon" style="font-size: 1.5em; margin-right: 10px;">⚪</span>
+                <div>
+                    <strong>Status: </strong><span id="lastConnectionStatus">Loading...</span><br>
+                    <span id="timestampContainer"><strong>Last Attempt: </strong><span
+                            id="lastConnectionAttemptTimestamp">Loading...</span></span>
+                </div>
+            </div>
+        </div>
+        <button class="buttonForm" onclick="setCustomMqttConfiguration()" id="setCustomMqttConfigurationButton">💾 Set configuration</button>
+        <button class="buttonForm" onclick="getCustomMqttConfiguration()" id="reloadCustomMqttButton" style="float: right;">🔄 Reload Status</button>
+    </div>
+
+    <!-- InfluxDB Section -->
+    <div class="section-box">
+        <h2>InfluxDB</h2>
+        <p><i>
+                InfluxDB is used to send meter data to an InfluxDB time-series database. This is useful for storing
+                historical data and creating dashboards with tools like Grafana.
+                <br>
+                <br>
+                The data will be sent in InfluxDB Line Protocol format with all meter values as fields.
+            </i></p>
+        <input type="checkbox" id="influxDbEnabled" class="config-input">
+        <label for="influxDbEnabled">Enable InfluxDB</label>
+        <div id="influxDbSettings">
+            <label for="influxDbServer">Server:</label>
+            <input type="text" id="influxDbServer" class="config-input"
+                placeholder="e.g., localhost or influxdb.example.com">
+            <br>
+            <label for="influxDbPort">Port:</label>
+            <input type="number" id="influxDbPort" class="config-input" placeholder="e.g., 8086">
+            <br>
+            <label for="influxDbVersion">Version:</label>
+            <select id="influxDbVersion" class="config-input">
+                <option value="1">InfluxDB v1.x</option>
+                <option value="2">InfluxDB v2.x</option>
+            </select>
+            <br>
+            <input type="checkbox" id="influxDbUseSsl" class="config-input">
+            <label for="influxDbUseSsl">Use SSL (HTTPS)</label>
+            <br>
+            <div id="influxDbV1Settings">
+                <h4>InfluxDB v1.x Settings</h4>
+                <label for="influxDbDatabase">Database:</label>
+                <input type="text" id="influxDbDatabase" class="config-input" placeholder="e.g., energyme-home">
+                <br>
+                <label for="influxDbUsername">Username:</label>
+                <input type="text" id="influxDbUsername" class="config-input" placeholder="Leave empty if not required">
+                <br>
+                <label for="influxDbPassword">Password:</label>
+                <input type="password" id="influxDbPassword" class="config-input"
+                    placeholder="Leave empty if not required">
+            </div>
+            <div id="influxDbV2Settings">
+                <h4>InfluxDB v2.x Settings</h4>
+                <label for="influxDbOrganization">Organization:</label>
+                <input type="text" id="influxDbOrganization" class="config-input" placeholder="e.g., my-org">
+                <br>
+                <label for="influxDbBucket">Bucket:</label>
+                <input type="text" id="influxDbBucket" class="config-input" placeholder="e.g., energyme-home">
+                <br>
+                <label for="influxDbToken">Token:</label>
+                <input type="password" id="influxDbToken" class="config-input" placeholder="API token">
+            </div>
+            <label for="influxDbMeasurement">Measurement:</label>
+            <input type="text" id="influxDbMeasurement" class="config-input" placeholder="e.g., meter">
+            <br>
+            <label for="influxDbFrequency">Frequency (in seconds):</label>
+            <input type="number" id="influxDbFrequency" class="config-input" placeholder="e.g., 30" min="1" max="3600">
+        </div>
+        <div id="influxDbStatus"
+            style="margin-top: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
+            <div id="influxDbStatusContainer" style="display: flex; align-items: center;">
+                <span id="influxDbStatusIcon" class="status-icon" style="font-size: 1.5em; margin-right: 10px;">⚪</span>
+                <div>
+                    <strong>Status: </strong><span id="influxDbLastConnectionStatus">Loading...</span><br>
+                    <span id="influxDbTimestampContainer"><strong>Last Attempt: </strong><span
+                            id="influxDbLastConnectionAttemptTimestamp">Loading...</span></span>
+                </div>
+            </div>
+        </div>
+        <button class="buttonForm" onclick="setInfluxDbConfiguration()" id="setInfluxDbConfigurationButton">💾 Set configuration</button>
+        <button class="buttonForm" onclick="getInfluxDbConfiguration()" id="reloadInfluxDbButton" style="float: right;">🔄 Reload Status</button>
+    </div>
+
+    <!-- REST API Documentation Section -->
+    <div class="section-box">
+        <h2>REST API Documentation</h2>
+        <p><i>
+                The REST API provides comprehensive access to all device functions including meter readings, channel configuration, energy data archives, and system control.
+                <br>
+                <br>
+                All endpoints require Digest Authentication. The interactive Swagger UI allows you to explore and test API endpoints directly from your browser.
+            </i></p>
+
+        <a href="/swagger-ui" target="_blank" class="buttonForm">📚 Open Swagger UI</a>
+    </div>
+
+    <!-- Modbus TCP Documentation Section -->
+    <div class="section-box">
+        <h2>Modbus TCP</h2>
+        <p><i>
+                The Modbus TCP server is running on port 502 and provides read-only access to meter values via the standard Modbus protocol.
+                Function Code 03 (Read Holding Registers) is supported.
+                No configuration needed - the server is always available when the device is powered on.
+            </i></p>
+
+        <div class="register-map-section">
+            <h3>📋 Register Map Reference</h3>
+
+            <h4>General Registers (0-7)</h4>
+            <ul>
+                <li><code>0-3</code>: Unix timestamp (int64)</li>
+                <li><code>4-7</code>: System uptime in milliseconds (uint64)</li>
+            </ul>
+
+            <h4>Meter Values (100-107)</h4>
+            <ul>
+                <li><code>100-101</code>: Voltage (float32)</li>
+                <li><code>102-103</code>: Grid frequency (float32)</li>
+            </ul>
+
+            <h4>Aggregated Values (200-217)</h4>
+            <ul>
+                <li><code>200-201</code>: Total active power (float32)</li>
+                <li><code>202-203</code>: Total reactive power (float32)</li>
+                <li><code>204-205</code>: Total apparent power (float32)</li>
+                <li><code>206-207</code>: Total power factor (float32)</li>
+                <li><code>208-209</code>: Active power without Ch0 (float32)</li>
+                <li><code>210-211</code>: Reactive power without Ch0 (float32)</li>
+                <li><code>212-213</code>: Apparent power without Ch0 (float32)</li>
+                <li><code>214-215</code>: Power factor without Ch0 (float32)</li>
+            </ul>
+
+            <h4>Per-Channel Registers (1000 + channel×100 + offset)</h4>
+            <p>For each channel 0-16, registers are organized as follows:</p>
+            <ul>
+                <li><code>+0-1</code>: Current (float32)</li>
+                <li><code>+2-3</code>: Active power (float32)</li>
+                <li><code>+4-5</code>: Reactive power (float32)</li>
+                <li><code>+6-7</code>: Apparent power (float32)</li>
+                <li><code>+8-9</code>: Power factor (float32)</li>
+                <li><code>+10-11</code>: Active energy imported (float32)</li>
+                <li><code>+12-13</code>: Active energy exported (float32)</li>
+                <li><code>+14-15</code>: Reactive energy imported (float32)</li>
+                <li><code>+16-17</code>: Reactive energy exported (float32)</li>
+                <li><code>+18-19</code>: Apparent energy (float32)</li>
+            </ul>
+
+            <p><strong>Examples:</strong></p>
+            <ul>
+                <li>Channel 0 current: registers <code>1000-1001</code></li>
+                <li>Channel 1 current: registers <code>1100-1101</code></li>
+                <li>Channel 5 active power: registers <code>1502-1503</code></li>
+            </ul>
+        </div>
+
+        <button class="buttonForm" onclick="downloadModbusRegisterMap()">💾 Download Register Map</button>
+    </div>
+
+    <!-- mDNS Service Discovery Section -->
+    <div class="section-box">
+        <h2>mDNS Service Discovery</h2>
+        <p><i>
+                The device advertises its services via mDNS (Multicast DNS) for easy discovery on your local network.
+                This allows compatible clients and tools to automatically discover the device without needing to know its IP address.
+            </i></p>
+
+        <div class="register-map-section">
+            <h3>Available Services</h3>
+
+            <h4>HTTP Web Interface</h4>
+            <ul>
+                <li><strong>Service Type:</strong> <code>_http._tcp</code></li>
+                <li><strong>Port:</strong> 80</li>
+                <li><strong>TXT Records:</strong>
+                    <ul style="margin-top: 8px;">
+                        <li><code>device_id</code>: Unique device identifier</li>
+                        <li><code>vendor</code>: Manufacturer name</li>
+                        <li><code>model</code>: Product model</li>
+                        <li><code>version</code>: Firmware version</li>
+                        <li><code>path</code>: Root path (/)</li>
+                        <li><code>auth</code>: Authentication required</li>
+                        <li><code>ssl</code>: SSL/TLS support status</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h4>Modbus TCP</h4>
+            <ul>
+                <li><strong>Service Type:</strong> <code>_modbus._tcp</code></li>
+                <li><strong>Port:</strong> 502</li>
+                <li><strong>TXT Records:</strong>
+                    <ul style="margin-top: 8px;">
+                        <li><code>device_id</code>: Unique device identifier</li>
+                        <li><code>vendor</code>: Manufacturer name</li>
+                        <li><code>model</code>: Product model</li>
+                        <li><code>version</code>: Firmware version</li>
+                        <li><code>channels</code>: Number of available channels (17)</li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="/js/api-client.js"></script>
+    <script>
+        // Global variables
+        var customMqttConfig;
+        var influxDbConfig;
+
+        // Auto-reload intervals
+        var customMqttAutoReloadInterval = null;
+        var influxDbAutoReloadInterval = null;
+        const AUTO_RELOAD_INTERVAL_MS = 5000;
+
+        // ============================================================================
+        // CUSTOM MQTT FUNCTIONS
+        // ============================================================================
+
+        function getCustomMqttConfiguration() {
+            // Load configuration
+            energyApi.getCustomMqttConfig()
+                .then(data => {
+                    customMqttConfig = data;
+
+                    document.getElementById("customMqttEnabled").checked = customMqttConfig.enabled;
+                    document.getElementById("customMqttServer").value = customMqttConfig.server;
+                    document.getElementById("customMqttPort").value = customMqttConfig.port;
+                    document.getElementById("customMqttClientId").value = customMqttConfig.clientid;
+                    document.getElementById("customMqttTopic").value = customMqttConfig.topic;
+                    document.getElementById("customMqttFrequency").value = customMqttConfig.frequency;
+                    document.getElementById("customMqttUseCredentials").checked = customMqttConfig.useCredentials;
+                    document.getElementById("customMqttUsername").value = customMqttConfig.username;
+                    document.getElementById("customMqttPassword").value = customMqttConfig.password;
+
+                    // Load status separately
+                    loadCustomMqttStatus();
+
+                    // Start or stop auto-reload based on enabled status
+                    if (customMqttConfig.enabled) {
+                        startCustomMqttAutoReload();
+                    } else {
+                        stopCustomMqttAutoReload();
+                    }
+                })
+                .catch(error => {
+                    console.log("Error getting custom MQTT configuration. Response: " + error.message);
+                    updateStatusDisplay("Error loading configuration", "", false);
+                    stopCustomMqttAutoReload();
+                });
+        }
+
+        function loadCustomMqttStatus() {
+            energyApi.get('custom-mqtt/status')
+                .then(data => {
+                    // Update status display with the latest status information
+                    updateStatusDisplay(data.status, data.statusTimestamp, customMqttConfig.enabled);
+                })
+                .catch(error => {
+                    console.log("Error getting custom MQTT status. Response: " + error.message);
+                    updateStatusDisplay("Error loading status", "", false);
+                });
+        }
+
+        function startCustomMqttAutoReload() {
+            if (customMqttAutoReloadInterval) {
+                clearInterval(customMqttAutoReloadInterval);
+            }
+            customMqttAutoReloadInterval = setInterval(() => {
+                if (customMqttConfig && customMqttConfig.enabled) {
+                    loadCustomMqttStatus();
+                }
+            }, AUTO_RELOAD_INTERVAL_MS);
+        }
+
+        function stopCustomMqttAutoReload() {
+            if (customMqttAutoReloadInterval) {
+                clearInterval(customMqttAutoReloadInterval);
+                customMqttAutoReloadInterval = null;
+            }
+        }
+
+        function updateStatusDisplay(status, timestamp, isEnabled) {
+            const statusElement = document.getElementById("lastConnectionStatus");
+            const timestampElement = document.getElementById("lastConnectionAttemptTimestamp");
+            const timestampContainer = document.getElementById("timestampContainer");
+            const statusIcon = document.getElementById("statusIcon");
+            const statusContainer = document.getElementById("statusContainer");
+
+            // Reset styles
+            statusContainer.style.color = "";
+            statusElement.style.fontWeight = "";
+
+            // If MQTT is disabled, show disabled status
+            if (!isEnabled) {
+                statusElement.textContent = "Disabled";
+                timestampContainer.style.display = "none";
+                statusIcon.innerHTML = "⚫"; // Black circle for disabled
+                statusElement.style.color = "#757575"; // Gray color
+                return;
+            }
+
+            // If enabled, proceed with normal status display
+            statusElement.textContent = status || "N/A";
+            timestampElement.textContent = timestamp || "N/A";
+
+            // Show/hide timestamp based on connection status
+            if (status === "Connected") {
+                timestampContainer.style.display = "none";
+                statusIcon.innerHTML = "🟢"; // Green circle for connected
+                statusElement.style.color = "#2e7d32"; // Dark green
+                statusElement.style.fontWeight = "bold";
+            } else if (status === "Disconnected") {
+                timestampContainer.style.display = "block";
+                statusIcon.innerHTML = "🔴"; // Red circle for disconnected
+                statusElement.style.color = "#c62828"; // Dark red
+            } else if (status && status.startsWith("Error")) {
+                timestampContainer.style.display = "block";
+                statusIcon.innerHTML = "⚠️"; // Warning for errors
+                statusElement.style.color = "#e65100"; // Orange
+            } else {
+                timestampContainer.style.display = "block";
+                statusIcon.innerHTML = "⚪"; // Default neutral circle
+            }
+        }
+
+        async function setCustomMqttConfiguration() {
+            const button = document.getElementById("setCustomMqttConfigurationButton");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus('mqttConfigStatus', 'Setting MQTT configuration...', 'info');
+
+                var currentStatus = customMqttConfig ? customMqttConfig.lastConnectionStatus : "Unknown";
+                var currentTimestamp = customMqttConfig ? customMqttConfig.lastConnectionAttemptTimestamp : "";
+
+                var newCustomMqttConfig = {
+                    "enabled": document.getElementById("customMqttEnabled").checked,
+                    "server": document.getElementById("customMqttServer").value,
+                    "port": parseInt(document.getElementById("customMqttPort").value),
+                    "clientid": document.getElementById("customMqttClientId").value,
+                    "topic": document.getElementById("customMqttTopic").value,
+                    "frequency": parseInt(document.getElementById("customMqttFrequency").value),
+                    "useCredentials": document.getElementById("customMqttUseCredentials").checked,
+                    "username": document.getElementById("customMqttUsername").value,
+                    "password": document.getElementById("customMqttPassword").value,
+                    "lastConnectionStatus": currentStatus,
+                    "lastConnectionAttemptTimestamp": currentTimestamp
+                };
+
+                await energyApi.setCustomMqttConfig(newCustomMqttConfig);
+
+                showStatus('mqttConfigStatus', 'MQTT configuration saved', 'success');
+
+                // Call to refresh the custom MQTT configuration after setting it
+                setTimeout(getCustomMqttConfiguration, 1000);
+                setTimeout(() => {
+                    getCustomMqttConfiguration(); // This will reload config and restart auto-reload if needed
+                }, 2000); // Wait 2 seconds for the device to process the new config
+            } catch (error) {
+                showStatus('mqttConfigStatus', 'Error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
+        }
+
+        // ============================================================================
+        // INFLUXDB FUNCTIONS
+        // ============================================================================
+
+        function updateInfluxDbStatusDisplay(status, timestamp, isEnabled) {
+            const statusElement = document.getElementById("influxDbLastConnectionStatus");
+            const timestampElement = document.getElementById("influxDbLastConnectionAttemptTimestamp");
+            const timestampContainer = document.getElementById("influxDbTimestampContainer");
+            const statusIcon = document.getElementById("influxDbStatusIcon");
+            const statusContainer = document.getElementById("influxDbStatusContainer");
+
+            // Reset styles
+            statusContainer.style.color = "";
+            statusElement.style.fontWeight = "";
+
+            // If InfluxDB is disabled, show disabled status
+            if (!isEnabled) {
+                statusElement.textContent = "Disabled";
+                timestampContainer.style.display = "none";
+                statusIcon.innerHTML = "⚫"; // Black circle for disabled
+                statusElement.style.color = "#757575"; // Gray color
+                return;
+            }
+
+            // If enabled, proceed with normal status display
+            statusElement.textContent = status || "N/A";
+            timestampElement.textContent = timestamp || "N/A";
+
+            // Show/hide timestamp based on connection status
+            if (status === "Upload successful" || status === "Connection successful" || status === "Credentials valid" || status == "Data sent successfully") {
+                timestampContainer.style.display = "none"; // Hide timestamp for successful connections
+                statusIcon.innerHTML = "🟢"; // Green circle for successful
+                statusElement.style.color = "#2e7d32"; // Dark green
+                statusElement.style.fontWeight = "bold";
+            } else if (status && status.toLowerCase().includes("failed")) {
+                timestampContainer.style.display = "block";
+                statusIcon.innerHTML = "🔴"; // Red circle for failed
+                statusElement.style.color = "#c62828"; // Dark red
+            } else if (status && status.includes("Error")) {
+                timestampContainer.style.display = "block";
+                statusIcon.innerHTML = "⚠️"; // Warning for errors
+                statusElement.style.color = "#e65100"; // Orange
+            } else {
+                timestampContainer.style.display = "block";
+                statusIcon.innerHTML = "⚪"; // Default neutral circle
+            }
+        }
+
+        function toggleInfluxDbVersionSettings() {
+            const version = document.getElementById("influxDbVersion").value;
+            const v1Settings = document.getElementById("influxDbV1Settings");
+            const v2Settings = document.getElementById("influxDbV2Settings");
+
+            if (version === "1") {
+                v1Settings.style.display = "block";
+                v2Settings.style.display = "none";
+            } else {
+                v1Settings.style.display = "none";
+                v2Settings.style.display = "block";
+            }
+        }
+
+        function getInfluxDbConfiguration() {
+            energyApi.getInfluxDbConfig()
+                .then(data => {
+                    influxDbConfig = data;
+
+                    document.getElementById("influxDbEnabled").checked = influxDbConfig.enabled;
+                    document.getElementById("influxDbServer").value = influxDbConfig.server;
+                    document.getElementById("influxDbPort").value = influxDbConfig.port;
+                    document.getElementById("influxDbVersion").value = influxDbConfig.version;
+                    document.getElementById("influxDbDatabase").value = influxDbConfig.database;
+                    document.getElementById("influxDbUsername").value = influxDbConfig.username;
+                    document.getElementById("influxDbPassword").value = influxDbConfig.password;
+                    document.getElementById("influxDbOrganization").value = influxDbConfig.organization;
+                    document.getElementById("influxDbBucket").value = influxDbConfig.bucket;
+                    document.getElementById("influxDbToken").value = influxDbConfig.token;
+                    document.getElementById("influxDbMeasurement").value = influxDbConfig.measurement;
+                    document.getElementById("influxDbFrequency").value = influxDbConfig.frequency;
+                    document.getElementById("influxDbUseSsl").checked = influxDbConfig.useSsl;
+
+                    toggleInfluxDbVersionSettings();
+
+                    // Load status separately
+                    loadInfluxDbStatus();
+
+                    // Start or stop auto-reload based on enabled status
+                    if (influxDbConfig.enabled) {
+                        startInfluxDbAutoReload();
+                    } else {
+                        stopInfluxDbAutoReload();
+                    }
+                })
+                .catch(error => {
+                    console.log("Error getting InfluxDB configuration. Response: " + error.message);
+                    updateInfluxDbStatusDisplay("Error loading configuration", "", false);
+                    stopInfluxDbAutoReload();
+                });
+        }
+
+        function loadInfluxDbStatus() {
+            energyApi.get('influxdb/status')
+                .then(data => {
+                    // Update status display with the latest status information
+                    updateInfluxDbStatusDisplay(data.status, data.statusTimestamp, influxDbConfig.enabled);
+                })
+                .catch(error => {
+                    console.log("Error getting InfluxDB status. Response: " + error.message);
+                    updateInfluxDbStatusDisplay("Error loading status", "", false);
+                });
+        }
+
+        function startInfluxDbAutoReload() {
+            if (influxDbAutoReloadInterval) {
+                clearInterval(influxDbAutoReloadInterval);
+            }
+            influxDbAutoReloadInterval = setInterval(() => {
+                if (influxDbConfig && influxDbConfig.enabled) {
+                    loadInfluxDbStatus();
+                }
+            }, AUTO_RELOAD_INTERVAL_MS);
+        }
+
+        function stopInfluxDbAutoReload() {
+            if (influxDbAutoReloadInterval) {
+                clearInterval(influxDbAutoReloadInterval);
+                influxDbAutoReloadInterval = null;
+            }
+        }
+
+        async function setInfluxDbConfiguration() {
+            const button = document.getElementById("setInfluxDbConfigurationButton");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus('influxDbConfigStatus', 'Setting InfluxDB configuration...', 'info');
+
+                var currentStatus = influxDbConfig ? influxDbConfig.lastConnectionStatus : "Unknown";
+                var currentTimestamp = influxDbConfig ? influxDbConfig.lastConnectionAttemptTimestamp : "";
+
+                var newInfluxDbConfig = {
+                    "enabled": document.getElementById("influxDbEnabled").checked,
+                    "server": document.getElementById("influxDbServer").value,
+                    "port": parseInt(document.getElementById("influxDbPort").value),
+                    "version": parseInt(document.getElementById("influxDbVersion").value),
+                    "database": document.getElementById("influxDbDatabase").value,
+                    "username": document.getElementById("influxDbUsername").value,
+                    "password": document.getElementById("influxDbPassword").value,
+                    "organization": document.getElementById("influxDbOrganization").value,
+                    "bucket": document.getElementById("influxDbBucket").value,
+                    "token": document.getElementById("influxDbToken").value,
+                    "measurement": document.getElementById("influxDbMeasurement").value,
+                    "frequency": Math.max(1, Math.min(3600, parseInt(document.getElementById("influxDbFrequency").value))),
+                    "useSsl": document.getElementById("influxDbUseSsl").checked,
+                    "lastConnectionStatus": currentStatus,
+                    "lastConnectionAttemptTimestamp": currentTimestamp
+                };
+
+                await energyApi.setInfluxDbConfig(newInfluxDbConfig);
+
+                showStatus('influxDbConfigStatus', 'InfluxDB configuration saved', 'success');
+
+                // Call to refresh the InfluxDB configuration after setting it
+                setTimeout(getInfluxDbConfiguration, 1000);
+                setTimeout(() => {
+                    getInfluxDbConfiguration(); // This will reload config and restart auto-reload if needed
+                }, 2000); // Wait 2 seconds for the device to process the new config
+            } catch (error) {
+                showStatus('influxDbConfigStatus', 'Error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
+        }
+
+        // ============================================================================
+        // MODBUS TCP REGISTER MAP DOWNLOAD
+        // ============================================================================
+
+        function downloadModbusRegisterMap() {
+            // Build register map data structure
+            const registerMap = [];
+
+            // General Registers (0-7)
+            registerMap.push({ offset: 0, count: 4, name: "Unix timestamp", dataType: "int64", unit: "seconds" });
+            registerMap.push({ offset: 4, count: 4, name: "System uptime", dataType: "uint64", unit: "milliseconds" });
+
+            // Meter Values (100-107)
+            registerMap.push({ offset: 100, count: 2, name: "Voltage", dataType: "float32", unit: "V" });
+            registerMap.push({ offset: 102, count: 2, name: "Grid frequency", dataType: "float32", unit: "Hz" });
+
+            // Aggregated Values (200-217)
+            registerMap.push({ offset: 200, count: 2, name: "Total active power", dataType: "float32", unit: "W" });
+            registerMap.push({ offset: 202, count: 2, name: "Total reactive power", dataType: "float32", unit: "VAR" });
+            registerMap.push({ offset: 204, count: 2, name: "Total apparent power", dataType: "float32", unit: "VA" });
+            registerMap.push({ offset: 206, count: 2, name: "Total power factor", dataType: "float32", unit: "" });
+            registerMap.push({ offset: 208, count: 2, name: "Active power without Ch0", dataType: "float32", unit: "W" });
+            registerMap.push({ offset: 210, count: 2, name: "Reactive power without Ch0", dataType: "float32", unit: "VAR" });
+            registerMap.push({ offset: 212, count: 2, name: "Apparent power without Ch0", dataType: "float32", unit: "VA" });
+            registerMap.push({ offset: 214, count: 2, name: "Power factor without Ch0", dataType: "float32", unit: "" });
+
+            // Per-Channel Registers (1000 + channel×100 + offset) for channels 0-16
+            for (let channel = 0; channel <= 16; channel++) {
+                const baseAddr = 1000 + (channel * 100);
+                registerMap.push({ offset: baseAddr, count: 2, name: `Ch${channel} Current`, dataType: "float32", unit: "A" });
+                registerMap.push({ offset: baseAddr + 2, count: 2, name: `Ch${channel} Active power`, dataType: "float32", unit: "W" });
+                registerMap.push({ offset: baseAddr + 4, count: 2, name: `Ch${channel} Reactive power`, dataType: "float32", unit: "VAR" });
+                registerMap.push({ offset: baseAddr + 6, count: 2, name: `Ch${channel} Apparent power`, dataType: "float32", unit: "VA" });
+                registerMap.push({ offset: baseAddr + 8, count: 2, name: `Ch${channel} Power factor`, dataType: "float32", unit: "" });
+                registerMap.push({ offset: baseAddr + 10, count: 2, name: `Ch${channel} Active energy imported`, dataType: "float32", unit: "Wh" });
+                registerMap.push({ offset: baseAddr + 12, count: 2, name: `Ch${channel} Active energy exported`, dataType: "float32", unit: "Wh" });
+                registerMap.push({ offset: baseAddr + 14, count: 2, name: `Ch${channel} Reactive energy imported`, dataType: "float32", unit: "VARh" });
+                registerMap.push({ offset: baseAddr + 16, count: 2, name: `Ch${channel} Reactive energy exported`, dataType: "float32", unit: "VARh" });
+                registerMap.push({ offset: baseAddr + 18, count: 2, name: `Ch${channel} Apparent energy`, dataType: "float32", unit: "VAh" });
+            }
+
+            // Generate CSV without excessive quotes
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Offset,Count,Name,DataType,Unit,Notes\n";
+            registerMap.forEach(item => {
+                const notes = item.name.includes("energy") ? "Internally double, transmitted as float32" : "";
+                csvContent += `${item.offset},${item.count},${item.name},${item.dataType},${item.unit},${notes}\n`;
+            });
+
+            // Download CSV
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "modbus_register_map.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showStatus('', 'Register map downloaded successfully', 'success');
+        }
+
+        // ============================================================================
+        // PAGE INITIALIZATION
+        // ============================================================================
+
+        async function loadConfigurationData() {
+            const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            const DELAY_BETWEEN_REQUESTS = 100;
+
+            try {
+                console.log("Loading integration configurations sequentially...");
+
+                await getCustomMqttConfiguration();
+                await delay(DELAY_BETWEEN_REQUESTS);
+
+                await getInfluxDbConfiguration();
+
+                console.log("Integration configurations loaded successfully");
+            } catch (error) {
+                console.error("Error loading configuration data:", error);
+                showStatus('', 'Error loading configuration data. Please refresh the page.', 'error', 10000);
+            }
+        }
+
+        function stopAllAutoReload() {
+            stopCustomMqttAutoReload();
+            stopInfluxDbAutoReload();
+        }
+
+        window.addEventListener('beforeunload', stopAllAutoReload);
+
+        document.addEventListener("DOMContentLoaded", function () {
+            loadConfigurationData();
+
+            // Add event listener for InfluxDB version change
+            document.getElementById("influxDbVersion").addEventListener("change", toggleInfluxDbVersionSettings);
+        });
+    </script>
+</body>
+
+</html>
