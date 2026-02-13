@@ -168,8 +168,6 @@
             const isChannel0 = index == 0;
             const activeCheckboxDisabled = isChannel0 ? 'disabled' : '';
             const activeChecked = isChannel0 ? 'checked' : (channel.active ? 'checked' : '');
-            const highPriorityCheckboxDisabled = isChannel0 ? 'disabled' : '';
-            const highPriorityChecked = isChannel0 ? 'checked' : (channel.highPriority ? 'checked' : '');
 
             box.innerHTML = `
                 <h3>Channel ${index}</h3>
@@ -193,11 +191,6 @@
                 <label>
                     <input type="checkbox" ${activeChecked} id="active${index}" onchange="queueChannelUpdate(${index})" ${activeCheckboxDisabled}>
                     Active
-                </label>
-                <div style="height: 10px;"></div>
-                <label>
-                    <input type="checkbox" ${highPriorityChecked} id="highPriority${index}" onchange="queueChannelUpdate(${index})" ${highPriorityCheckboxDisabled}>
-                    Priority Boost
                 </label>
                 <div style="height: 15px;"></div>
                 <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
@@ -343,7 +336,6 @@
             reverse: document.getElementById(`reverse${index}`).checked,
             phase: parseInt(document.getElementById(`phase${index}`).value),
             active: document.getElementById(`active${index}`).checked,
-            highPriority: document.getElementById(`highPriority${index}`).checked,
             // Grouping
             groupLabel: document.getElementById(`groupLabel${index}`).value,
             // Channel role
@@ -356,7 +348,6 @@
             channelData[index].label = channelUpdate.label;
             channelData[index].reverse = channelUpdate.reverse;
             channelData[index].phase = channelUpdate.phase;
-            channelData[index].highPriority = channelUpdate.highPriority;
             channelData[index].groupLabel = channelUpdate.groupLabel;
             channelData[index].role = channelUpdate.role;
         }

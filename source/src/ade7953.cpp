@@ -873,7 +873,6 @@ namespace Ade7953
         jsonDocument["index"] = channelData.index;
         jsonDocument["active"] = channelData.active;
         jsonDocument["reverse"] = channelData.reverse;
-        jsonDocument["highPriority"] = channelData.highPriority;
         jsonDocument["label"] = JsonString(channelData.label); // Ensure it is not a dangling pointer
         jsonDocument["phase"] = channelData.phase;
 
@@ -896,7 +895,6 @@ namespace Ade7953
             if (jsonDocument["index"].is<uint8_t>()) channelData.index = jsonDocument["index"].as<uint8_t>();
             if (jsonDocument["active"].is<bool>()) channelData.active = jsonDocument["active"].as<bool>();
             if (jsonDocument["reverse"].is<bool>()) channelData.reverse = jsonDocument["reverse"].as<bool>();
-            if (jsonDocument["highPriority"].is<bool>()) channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             if (jsonDocument["label"].is<const char*>()) {
                 snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             }
@@ -927,7 +925,6 @@ namespace Ade7953
             channelData.index = jsonDocument["index"].as<uint8_t>();
             channelData.active = jsonDocument["active"].as<bool>();
             channelData.reverse = jsonDocument["reverse"].as<bool>();
-            channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
 
@@ -2607,8 +2604,12 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         channelData.phase = static_cast<Phase>(preferences.getUChar(key, (uint8_t)(DEFAULT_CHANNEL_PHASE)));
 
-        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
-        channelData.highPriority = preferences.getBool(key, channelIndex == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY);
+        // Migrate legacy highPriority key (remove old NVS entry if present)
+        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY_LEGACY, channelIndex);
+        if (preferences.isKey(key)) {
+            preferences.remove(key);
+            LOG_DEBUG("Removed legacy highPriority key for channel %u", channelIndex);
+        }
 
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
@@ -2695,9 +2696,6 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         preferences.putUChar(key, (uint8_t)(channelData.phase));
 
-        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
-        preferences.putBool(key, channelData.highPriority);
-
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
         preferences.putFloat(key, channelData.ctSpecification.currentRating);
@@ -2742,7 +2740,6 @@ namespace Ade7953
         if (partial) {
             if (jsonDocument["active"].is<bool>()) return true;
             if (jsonDocument["reverse"].is<bool>()) return true;
-            if (jsonDocument["highPriority"].is<bool>()) return true;
             if (jsonDocument["label"].is<const char*>()) return true;
             if (jsonDocument["phase"].is<uint8_t>()) return true;
 
@@ -2771,7 +2768,6 @@ namespace Ade7953
             // Full validation - all fields must be present and valid
             if (!jsonDocument["active"].is<bool>()) { LOG_WARNING("active is missing or not bool"); return false; }
             if (!jsonDocument["reverse"].is<bool>()) { LOG_WARNING("reverse is missing or not bool"); return false; }
-            if (!jsonDocument["highPriority"].is<bool>()) { LOG_WARNING("highPriority is not bool"); return false; }
             if (!jsonDocument["label"].is<const char*>()) { LOG_WARNING("label is missing or not string"); return false; }
             if (!jsonDocument["phase"].is<uint8_t>()) { LOG_WARNING("phase is missing or not uint8_t"); return false; }
 
@@ -3994,7 +3990,6 @@ namespace Ade7953
      * - Power share: channels with higher absolute power get more sampling
      * - Variability: channels with rapidly changing power get more sampling
      * - Minimum base: every active channel gets a minimum weight to prevent starvation
-     * - Manual boost: highPriority flag adds a static weight boost
      */
     static void _recalculateWeights() {
         float totalAbsPower = 0.0f;
@@ -4028,10 +4023,6 @@ namespace Ade7953
             _channelWeight[i] = WEIGHT_POWER_SHARE * powerScore
                               + WEIGHT_VARIABILITY * variabilityScore
                               + WEIGHT_MIN_BASE;
-
-            if (_channelData[i].highPriority) {
-                _channelWeight[i] += WEIGHT_MANUAL_BOOST;
-            }
         }
 
         // Channel 0 is not scheduled (always read separately)
