@@ -3376,21 +3376,34 @@ namespace Ade7953
 
         }
 
-        // Discard negative readings for channels that should not have them
-        // Grid, Battery, and Inverter channels allow negatives; PV and Load do not
-        if (
-            activePower < 0.0f &&
-            (channelData.role == CHANNEL_ROLE_LOAD || channelData.role == CHANNEL_ROLE_PV)
-        ) {
-            LOG_DEBUG( // Just log as debug as it is not something critical
-                "%s (%d): Discarding negative reading (%.1fW)",
+        // Discard negative readings for Load channels (likely CT installed backwards)
+        if (activePower < 0.0f && channelData.role == CHANNEL_ROLE_LOAD) {
+            LOG_DEBUG(
+                "%s (%d): Discarding negative reading (%.1fW) (Load channel, likely CT installed backwards)",
                 channelData.label,
                 channelIndex,
                 activePower
             );
-            // Record the failure since it is a wrong reading
             _recordFailure();
             return false;
+        }
+
+        // Clamp negative readings to zero for PV channels (expected inverter standby consumption, so no record failure)
+        if (activePower < 0.0f && channelData.role == CHANNEL_ROLE_PV) {
+            LOG_DEBUG(
+                "%s (%d): Clamping negative reading (%.1fW) to 0 (PV channel, likely inverter standby consumption)",
+                channelData.label,
+                channelIndex,
+                activePower
+            );
+            activePower = 0.0f;
+            reactivePower = 0.0f;
+            apparentPower = 0.0f;
+            current = 0.0f;
+            powerFactor = 0.0f;
+            activeEnergy = 0.0f;
+            reactiveEnergy = 0.0f;
+            apparentEnergy = 0.0f;
         }
         
         // Enough checks, now we can set the values
