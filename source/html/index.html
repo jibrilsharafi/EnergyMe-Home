@@ -858,7 +858,6 @@
         });
         
         const excludeFromOther = ChannelCache.excludeFromOther;
-        const gridChannelIndex = ChannelCache.primaryGridIndex;
         const hasGridChannel = ChannelCache.hasGrid;
         const hasLoads = DataHelpers.hasLoadSubChannels(channelSequences, excludeFromOther);
         
@@ -877,10 +876,13 @@
             if (hourNum < 0 || hourNum > 23) return;
             
             if (hasGridChannel && hasLoads) {
-                consumption[hour]['Other'] = DataHelpers.calculateOtherConsumption(consumption[hour], excludeFromOther, gridChannelIndex);
+                consumption[hour]['Other'] = DataHelpers.calculateOtherConsumption(consumption[hour], excludeFromOther);
             }
             
             excludeFromOther.forEach(ch => delete consumption[hour][ch]);
+            if (exportData[hour]) {
+                excludeFromOther.forEach(ch => delete exportData[hour][ch]);
+            }
         });
         
         const filteredConsumption = {};
@@ -929,16 +931,16 @@
         const totalExported = { ...rawExported };
         
         const excludeFromOther = ChannelCache.excludeFromOther;
-        const gridChannelIndex = ChannelCache.primaryGridIndex;
         const hasGridChannel = ChannelCache.hasGrid;
         const hasLoads = DataHelpers.hasLoadSubChannels(totalConsumption, excludeFromOther);
         
-        if (hasGridChannel && totalConsumption[gridChannelIndex] && hasLoads) {
-            totalConsumption['Other'] = DataHelpers.calculateOtherConsumption(totalConsumption, excludeFromOther, gridChannelIndex);
+        if (hasGridChannel && hasLoads) {
+            totalConsumption['Other'] = DataHelpers.calculateOtherConsumption(totalConsumption, excludeFromOther);
         }
         
         excludeFromOther.forEach(ch => delete totalConsumption[ch]);
-        
+        excludeFromOther.forEach(ch => delete totalExported[ch]);
+
         return { imported: totalConsumption, exported: totalExported, rawImported: rawConsumption, rawExported: rawExported };
     }
 
