@@ -304,6 +304,8 @@
 /* Node colors */
 .pf-solar .pf-icon { border-color: #FF9800; color: #FF9800; }
 .pf-solar .pf-value { color: #FF9800; }
+.pf-inverter .pf-icon { border-color: #00BCD4; color: #00BCD4; }
+.pf-inverter .pf-value { color: #00BCD4; }
 .pf-grid .pf-icon { border-color: #2196F3; color: #2196F3; }
 .pf-grid .pf-value { color: #2196F3; }
 .pf-home .pf-icon { border-color: #4CAF50; color: #4CAF50; }
@@ -411,6 +413,7 @@
 
 /* Connector colors when active */
 .pf-solar .pf-connector { color: #FF9800; }
+.pf-inverter .pf-connector { color: #00BCD4; }
 .pf-grid .pf-connector { color: #2196F3; }
 .pf-home .pf-connector { color: #4CAF50; }
 .pf-battery .pf-connector { color: #9C27B0; }
@@ -488,6 +491,43 @@
     background: #fffdf0;
 }
 
+/* Load sharing bar */
+.load-sharing-bar {
+    margin-bottom: 10px;
+    display: none;
+}
+
+.load-bar-container {
+    display: flex;
+    height: 24px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #e0e0e0;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.load-bar-segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    transition: opacity 0.2s ease;
+    cursor: pointer;
+    position: relative;
+}
+
+.load-bar-segment:hover {
+    opacity: 0.8;
+}
+
+.load-bar-label {
+    font-size: 10px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    white-space: nowrap;
+}
+
 /* Sparkline tooltip */
 .sparkline-tooltip {
     position: fixed;
@@ -540,6 +580,145 @@
 .kpi-unit {
     font-size: 12px;
     color: #666;
+}
+
+/* Consumption Sharing Breakdown */
+.consumption-sharing-section {
+    margin-top: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+.sharing-header {
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    margin: 0 0 15px 0;
+    text-align: center;
+}
+
+.consumption-sharing-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sharing-bar-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.sharing-bar-label {
+    flex: 0 0 150px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #333;
+}
+
+.sharing-bar-icon {
+    font-size: 16px;
+}
+
+.sharing-bar-name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sharing-bar-container {
+    flex: 1;
+    height: 24px;
+    background: #e0e0e0;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+}
+
+.sharing-bar {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.sharing-bar-value {
+    flex: 0 0 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+.sharing-bar-percentage {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+}
+
+.sharing-bar-absolute {
+    font-size: 11px;
+    color: #666;
+}
+
+/* Balance KPI view (replaces chart in balance mode) */
+.balance-kpi-view {
+    padding: 20px 0;
+}
+
+.balance-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.balance-kpi-card {
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.balance-kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+}
+
+.balance-kpi-icon {
+    font-size: 36px;
+    margin-bottom: 8px;
+}
+
+.balance-kpi-label {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 8px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.balance-kpi-value {
+    font-size: 32px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.balance-kpi-unit {
+    font-size: 14px;
+    color: #999;
 }
 
 /* Hidden by default, shown when PV/Battery configured */
@@ -710,6 +889,67 @@
     .kpi-value {
         font-size: 16px;
     }
+    
+    /* Consumption sharing mobile */
+    .consumption-sharing-section {
+        padding: 10px;
+        margin-top: 15px;
+    }
+    
+    .sharing-header {
+        font-size: 14px;
+        margin-bottom: 10px;
+    }
+    
+    .sharing-bar-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        padding: 8px;
+    }
+    
+    .sharing-bar-label {
+        flex: 1;
+        font-size: 12px;
+    }
+    
+    .sharing-bar-container {
+        height: 20px;
+    }
+    
+    .sharing-bar-value {
+        flex: 1;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .sharing-bar-percentage {
+        font-size: 13px;
+    }
+    
+    .sharing-bar-absolute {
+        font-size: 10px;
+    }
+    
+    /* Balance KPI responsive */
+    .balance-kpi-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+        padding: 0 10px;
+    }
+    
+    .balance-kpi-card {
+        padding: 15px;
+    }
+    
+    .balance-kpi-icon {
+        font-size: 28px;
+    }
+    
+    .balance-kpi-value {
+        font-size: 24px;
+    }
 }
 
 @media (max-width: 480px) {
@@ -772,5 +1012,24 @@
         width: 160px;
         margin-left: -80px;
         font-size: 10px;
+    }
+    
+    /* Balance KPI responsive for small screens */
+    .balance-kpi-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 0 5px;
+    }
+    
+    .balance-kpi-card {
+        padding: 12px;
+    }
+    
+    .balance-kpi-icon {
+        font-size: 24px;
+    }
+    
+    .balance-kpi-value {
+        font-size: 20px;
     }
 }

@@ -114,6 +114,11 @@
                 <i class="fas fa-download"></i>
             </button>
         </div>
+        <!-- Consumption Sharing Breakdown -->
+        <div id="consumption-sharing-section" class="consumption-sharing-section" style="display: none;">
+            <h4 class="sharing-header">Energy Consumption Breakdown</h4>
+            <div id="consumption-sharing-bars" class="consumption-sharing-bars"></div>
+        </div>
         <div id="balance-chart" style="position: relative; display: none;">
             <div class="chart-loading">🔋 Calculating energy flows...</div>
             <canvas id="balance-chart-canvas" style="display: none;"></canvas>
@@ -121,7 +126,48 @@
                 <i class="fas fa-download"></i>
             </button>
         </div>
-        <!-- Energy KPIs -->
+        <!-- Balance KPIs -->
+        <div id="balance-kpis-section" class="energy-kpis" style="display: none;">
+            <div id="balance-kpi-grid-import" class="kpi-card">
+                <div class="kpi-label">🔌 Grid Import</div>
+                <div class="kpi-value" id="balance-kpi-grid-import-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="balance-kpi-grid-export" class="kpi-card">
+                <div class="kpi-label">⚡ Grid Export</div>
+                <div class="kpi-value" id="balance-kpi-grid-export-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="balance-kpi-production" class="kpi-card" style="display: none;">
+                <div class="kpi-label"><span id="balance-kpi-production-icon">☀️</span> <span id="balance-kpi-production-label">Production</span></div>
+                <div class="kpi-value" id="balance-kpi-production-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="balance-kpi-home" class="kpi-card">
+                <div class="kpi-label">🏠 Home Consumption</div>
+                <div class="kpi-value" id="balance-kpi-home-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="balance-kpi-self-consumption" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🏠 Self-Consumption</div>
+                <div class="kpi-value" id="balance-kpi-self-consumption-value">0%</div>
+            </div>
+            <div id="balance-kpi-autosufficiency" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🌱 Autosufficiency</div>
+                <div class="kpi-value" id="balance-kpi-autosufficiency-value">0%</div>
+            </div>
+            <div id="balance-kpi-battery-charge" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🔋 Battery Charged</div>
+                <div class="kpi-value" id="balance-kpi-battery-charge-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="balance-kpi-battery-discharge" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🔋 Battery Discharged</div>
+                <div class="kpi-value" id="balance-kpi-battery-discharge-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+        </div>
+        <!-- Energy KPIs (Consumption View) -->
         <div id="energy-kpis-section" class="energy-kpis" style="display: none;">
             <div id="kpi-grid-import" class="kpi-card">
                 <div class="kpi-label">🔌 Grid Import</div>
@@ -365,6 +411,9 @@
 
         document.getElementById('prev-period').addEventListener('click', navigatePrevious);
         document.getElementById('next-period').addEventListener('click', navigateNext);
+        
+        // Initialize view visibility (consumption by default)
+        switchChartType(currentChartType);
     }
     
     async function navigatePrevious() {
@@ -436,6 +485,21 @@
         
         document.getElementById('consumption-chart').style.display = chartType === 'consumption' ? 'block' : 'none';
         document.getElementById('balance-chart').style.display = chartType === 'balance' ? 'block' : 'none';
+        
+        // Toggle between consumption sharing and balance KPIs
+        const consumptionSharingSection = document.getElementById('consumption-sharing-section');
+        const balanceKpisSection = document.getElementById('balance-kpis-section');
+        const energyKpisSection = document.getElementById('energy-kpis-section');
+        
+        if (chartType === 'consumption') {
+            if (consumptionSharingSection) consumptionSharingSection.style.display = 'block';
+            if (balanceKpisSection) balanceKpisSection.style.display = 'none';
+            if (energyKpisSection) energyKpisSection.style.display = 'none';
+        } else {
+            if (consumptionSharingSection) consumptionSharingSection.style.display = 'none';
+            if (balanceKpisSection) balanceKpisSection.style.display = 'flex';
+            if (energyKpisSection) energyKpisSection.style.display = 'none';
+        }
         
         document.getElementById('main-chart-title').textContent = chartType === 'consumption' ? 'Energy Consumption' : 'Energy Balance';
     }
@@ -518,9 +582,10 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
         
         ChartHelpers.updateConsumptionChart(hourlyData.imported, 'daily', hourlyData.exported, channelData, currentChartType);
+        ChartHelpers.updateConsumptionSharing(hourlyData.imported, 'daily', channelData);
         hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(hourlyData.rawHourlyImport, 'daily', hourlyData.rawHourlyImport, hourlyData.rawHourlyExport, hasBalanceCapability);
-        ChartHelpers.updateEnergyKPIs(totalConsumption.rawImported, totalConsumption.rawExported, hasBalanceCapability);
+        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
         
         setupCsvDownload(hourlyData.imported, 'daily');
     }
@@ -586,9 +651,10 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
         
         ChartHelpers.updateConsumptionChart(dailyConsumptions, 'monthly', dailyExported, channelData, currentChartType);
+        ChartHelpers.updateConsumptionSharing(dailyConsumptions, 'monthly', channelData);
         hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(dailyRawImport, 'monthly', dailyRawImport, dailyRawExport, hasBalanceCapability);
-        ChartHelpers.updateEnergyKPIs(monthlyRawImported, monthlyRawExported, hasBalanceCapability);
+        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
         
         setupCsvDownload(dailyConsumptions, 'monthly');
     }
@@ -661,9 +727,10 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
         
         ChartHelpers.updateConsumptionChart(monthlyConsumptions, 'yearly', monthlyExported, channelData, currentChartType);
+        ChartHelpers.updateConsumptionSharing(monthlyConsumptions, 'yearly', channelData);
         hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(monthlyRawImport, 'yearly', monthlyRawImport, monthlyRawExport, hasBalanceCapability);
-        ChartHelpers.updateEnergyKPIs(yearlyRawImported, yearlyRawExported, hasBalanceCapability);
+        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
         
         setupCsvDownload(monthlyConsumptions, 'yearly');
     }
@@ -738,9 +805,10 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
 
         ChartHelpers.updateConsumptionChart(yearlyConsumptions, 'total', yearlyExported, channelData, currentChartType);
+        ChartHelpers.updateConsumptionSharing(yearlyConsumptions, 'total', channelData);
         hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(yearlyRawImport, 'total', yearlyRawImport, yearlyRawExport, hasBalanceCapability);
-        ChartHelpers.updateEnergyKPIs(totalRawImported, totalRawExported, hasBalanceCapability);
+        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
 
         setupCsvDownload(yearlyConsumptions, 'total');
     }

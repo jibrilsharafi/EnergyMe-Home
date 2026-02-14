@@ -652,6 +652,220 @@ const ChartHelpers = {
         }
     },
 
+    /**     * Update balance KPI view with energy metrics
+     */
+    updateBalanceKPIView(balanceData, hasBalanceCapability) {
+        if (!hasBalanceCapability || !balanceData) {
+            return;
+        }
+
+        const productionChannels = ChannelCache.production;
+        const batteryChannels = ChannelCache.battery;
+        const gridChannels = ChannelCache.grid;
+        const inverterChannels = ChannelCache.inverter;
+
+        const hasInverter = inverterChannels.length > 0;
+        const hasProduction = productionChannels.length > 0;
+        const hasBattery = batteryChannels.length > 0;
+
+        // Calculate totals from balance data
+        const gridImport = balanceData.grid.filter(v => v > 0).reduce((sum, v) => sum + v, 0);
+        const gridExport = Math.abs(balanceData.grid.filter(v => v < 0).reduce((sum, v) => sum + v, 0));
+        const production = balanceData.pv.reduce((sum, v) => sum + v, 0);
+        const homeConsumption = balanceData.homeConsumption.reduce((sum, v) => sum + v, 0);
+        
+        const batteryCharge = hasBattery ? Math.abs(balanceData.battery.filter(v => v < 0).reduce((sum, v) => sum + v, 0)) : 0;
+        const batteryDischarge = hasBattery ? balanceData.battery.filter(v => v > 0).reduce((sum, v) => sum + v, 0) : 0;
+
+        // Update grid KPIs
+        const gridImportEl = document.getElementById('balance-kpi-grid-import-value');
+        const gridExportEl = document.getElementById('balance-kpi-grid-export-value');
+        if (gridImportEl) gridImportEl.textContent = gridImport.toFixed(1);
+        if (gridExportEl) gridExportEl.textContent = gridExport.toFixed(1);
+
+        const gridExportCard = document.getElementById('balance-kpi-grid-export');
+        if (gridExportCard) gridExportCard.style.display = gridExport > 0 ? 'block' : 'none';
+
+        // Update production KPI
+        const productionCard = document.getElementById('balance-kpi-production');
+        const productionEl = document.getElementById('balance-kpi-production-value');
+        const productionIcon = document.getElementById('balance-kpi-production-icon');
+        const productionLabel = document.getElementById('balance-kpi-production-label');
+
+        if (hasProduction || hasInverter) {
+            if (productionCard) productionCard.style.display = 'block';
+            if (productionEl) productionEl.textContent = production.toFixed(1);
+            
+            // Set appropriate icon and label based on system type
+            if (hasInverter && !hasProduction) {
+                // Inverter only (DC-coupled PV + battery)
+                if (productionIcon) productionIcon.textContent = '🔋☀️';
+                if (productionLabel) productionLabel.textContent = 'Inverter Output';
+            } else if (hasInverter && hasProduction) {
+                // Mixed system (AC-PV + DC-inverter)
+                if (productionIcon) productionIcon.textContent = '🔋☀️';
+                if (productionLabel) productionLabel.textContent = 'Production';
+            } else {
+                // PV only (AC-coupled)
+                if (productionIcon) productionIcon.textContent = '☀️';
+                if (productionLabel) productionLabel.textContent = 'Solar Production';
+            }
+        } else {
+            if (productionCard) productionCard.style.display = 'none';
+        }
+
+        // Update home consumption KPI
+        const homeEl = document.getElementById('balance-kpi-home-value');
+        if (homeEl) homeEl.textContent = homeConsumption.toFixed(1);
+
+        // Update self-consumption and autosufficiency percentages
+        const selfConsumptionCard = document.getElementById('balance-kpi-self-consumption');
+        const selfConsumptionEl = document.getElementById('balance-kpi-self-consumption-value');
+        const autosufficiencyCard = document.getElementById('balance-kpi-autosufficiency');
+        const autosufficiencyEl = document.getElementById('balance-kpi-autosufficiency-value');
+
+        if ((hasProduction || hasInverter) && production > 0) {
+            const selfConsumed = Math.max(0, production - gridExport);
+            const selfConsumption = Math.min(100, (selfConsumed / production) * 100);
+            
+            if (selfConsumptionCard) selfConsumptionCard.style.display = 'block';
+            if (selfConsumptionEl) selfConsumptionEl.textContent = selfConsumption.toFixed(0) + '%';
+
+            if (homeConsumption > 0) {
+                const fromOwnProduction = Math.max(0, homeConsumption - gridImport);
+                const autosufficiency = Math.min(100, (fromOwnProduction / homeConsumption) * 100);
+                
+                if (autosufficiencyCard) autosufficiencyCard.style.display = 'block';
+                if (autosufficiencyEl) autosufficiencyEl.textContent = autosufficiency.toFixed(0) + '%';
+            } else {
+                if (autosufficiencyCard) autosufficiencyCard.style.display = 'none';
+            }
+        } else {
+            if (selfConsumptionCard) selfConsumptionCard.style.display = 'none';
+            if (autosufficiencyCard) autosufficiencyCard.style.display = 'none';
+        }
+
+        // Update battery KPIs
+        const batteryChargeCard = document.getElementById('balance-kpi-battery-charge');
+        const batteryChargeEl = document.getElementById('balance-kpi-battery-charge-value');
+        const batteryDischargeCard = document.getElementById('balance-kpi-battery-discharge');
+        const batteryDischargeEl = document.getElementById('balance-kpi-battery-discharge-value');
+
+        if (hasBattery) {
+            if (batteryChargeCard) batteryChargeCard.style.display = 'block';
+            if (batteryChargeEl) batteryChargeEl.textContent = batteryCharge.toFixed(1);
+            if (batteryDischargeCard) batteryDischargeCard.style.display = 'block';
+            if (batteryDischargeEl) batteryDischargeEl.textContent = batteryDischarge.toFixed(1);
+        } else {
+            if (batteryChargeCard) batteryChargeCard.style.display = 'none';
+            if (batteryDischargeCard) batteryDischargeCard.style.display = 'none';
+        }
+    },
+
+    /**
+     * Update consumption sharing breakdown
+     */
+    updateConsumptionSharing(consumptionData, viewType, channelData) {
+        const sharingSection = document.getElementById('consumption-sharing-section');
+        const sharingBars = document.getElementById('consumption-sharing-bars');
+        
+        if (!sharingSection || !sharingBars) return;
+
+        // Get special channel indices
+        const gridIndices = ChannelCache.grid.map(ch => ch.index);
+        const productionIndices = ChannelCache.production.map(ch => ch.index);
+        const batteryIndices = ChannelCache.battery.map(ch => ch.index);
+        const inverterIndices = ChannelCache.inverter.map(ch => ch.index);
+        const specialIndices = new Set([...gridIndices, ...productionIndices, ...batteryIndices, ...inverterIndices]);
+
+        // Aggregate data by channel (or group)
+        const channelTotals = {};
+        Object.keys(consumptionData).forEach(period => {
+            Object.entries(consumptionData[period]).forEach(([channelKey, value]) => {
+                const channelIndex = channelKey.startsWith('group_') ? null : parseInt(channelKey);
+                
+                // Skip special channels
+                if (channelIndex !== null && specialIndices.has(channelIndex)) return;
+                
+                if (!channelTotals[channelKey]) {
+                    channelTotals[channelKey] = 0;
+                }
+                channelTotals[channelKey] += value;
+            });
+        });
+
+        // Calculate total consumption
+        const totalConsumption = Object.values(channelTotals).reduce((sum, val) => sum + val, 0);
+
+        if (totalConsumption === 0) {
+            sharingSection.style.display = 'none';
+            return;
+        }
+
+        // Sort channels by consumption (highest first)
+        const sortedChannels = Object.entries(channelTotals)
+            .sort(([, a], [, b]) => b - a)
+            .filter(([, value]) => value > 0);
+
+        if (sortedChannels.length === 0) {
+            sharingSection.style.display = 'none';
+            return;
+        }
+
+        // Build HTML for sharing bars
+        let html = '';
+        sortedChannels.forEach(([channelKey, value]) => {
+            const percentage = (value / totalConsumption) * 100;
+            const label = this.getDisplayLabel(channelKey, channelData);
+            const color = this.getDisplayColor(channelKey);
+            const icon = this.getChannelIcon(channelKey, channelData);
+            
+            html += `
+                <div class="sharing-bar-item">
+                    <div class="sharing-bar-label">
+                        <span class="sharing-bar-icon">${icon}</span>
+                        <span class="sharing-bar-name">${label}</span>
+                    </div>
+                    <div class="sharing-bar-container">
+                        <div class="sharing-bar" style="width: ${percentage.toFixed(1)}%; background-color: ${color};"></div>
+                    </div>
+                    <div class="sharing-bar-value">
+                        <span class="sharing-bar-percentage">${percentage.toFixed(1)}%</span>
+                        <span class="sharing-bar-absolute">${value.toFixed(1)} kWh</span>
+                    </div>
+                </div>
+            `;
+        });
+
+        sharingBars.innerHTML = html;
+        sharingSection.style.display = 'block';
+    },
+
+    /**
+     * Get channel icon
+     */
+    getChannelIcon(channelKey, channelData) {
+        if (channelKey === 'Other') return '❓';
+        
+        if (channelKey.startsWith('group_')) {
+            const groupId = parseInt(channelKey.replace('group_', ''));
+            // Find first channel in this group
+            for (let i = 0; i < channelData.length; i++) {
+                if (channelData[i] && channelData[i].group === groupId) {
+                    return channelData[i].icon || '⚡';
+                }
+            }
+            return '⚡';
+        }
+        
+        const channelIndex = parseInt(channelKey);
+        if (channelData[channelIndex] && channelData[channelIndex].icon) {
+            return channelData[channelIndex].icon;
+        }
+        
+        return '⚡';
+    },
+
     /**
      * Generate chart HTML from config
      */

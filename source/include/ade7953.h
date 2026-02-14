@@ -288,7 +288,7 @@ enum Phase : uint32_t { // Not a class so that we can directly use it in JSON se
     PHASE_1 = 1,
     PHASE_2 = 2,
     PHASE_3 = 3,
-};
+}; // TODO: account for split phase systems here
 
 enum class Ade7953Channel{
     A,

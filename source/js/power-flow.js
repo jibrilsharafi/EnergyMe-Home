@@ -197,6 +197,8 @@ const PowerFlowHelpers = {
         const hasProduction = productionChannels.length > 0 || inverterChannels.length > 0;
         const hasBattery = batteryChannels.length > 0;
         const hasGrid = gridChannels.length > 0;
+        const hasInverter = inverterChannels.length > 0;
+        const hasPV = productionChannels.length > 0;
 
         // Always show energy flow section
         const flowSection = document.getElementById('energy-flow-section');
@@ -208,7 +210,21 @@ const PowerFlowHelpers = {
         const pfGrid = document.getElementById('pf-grid');
         const pfHome = document.getElementById('pf-home');
 
-        if (pfSolar) pfSolar.style.display = hasProduction ? 'flex' : 'none';
+        if (pfSolar) {
+            pfSolar.style.display = hasProduction ? 'flex' : 'none';
+            
+            // Update icon based on system type
+            const solarIcon = pfSolar.querySelector('.pf-icon');
+            if (solarIcon) {
+                if (hasInverter && !hasPV) {
+                    solarIcon.textContent = '🔋☀️';
+                } else if (hasInverter && hasPV) {
+                    solarIcon.textContent = '🔋☀️';
+                } else {
+                    solarIcon.textContent = '☀️';
+                }
+            }
+        }
         if (pfBattery) pfBattery.style.display = hasBattery ? 'flex' : 'none';
 
         // Calculate power values
