@@ -584,7 +584,7 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
         
         ChartHelpers.updateConsumptionChart(hourlyData.imported, 'daily', hourlyData.exported, channelData, currentChartType);
-        ChartHelpers.updateConsumptionSharing(hourlyData.imported, 'daily', channelData);
+        ChartHelpers.updateConsumptionSharing(hourlyData.imported, 'daily', channelData, currentChartType);
         hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(hourlyData.rawHourlyImport, 'daily', hourlyData.rawHourlyImport, hourlyData.rawHourlyExport, hasBalanceCapability);
         ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
@@ -653,7 +653,7 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
         
         ChartHelpers.updateConsumptionChart(dailyConsumptions, 'monthly', dailyExported, channelData, currentChartType);
-        ChartHelpers.updateConsumptionSharing(dailyConsumptions, 'monthly', channelData);
+        ChartHelpers.updateConsumptionSharing(dailyConsumptions, 'monthly', channelData, currentChartType);
         hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(dailyRawImport, 'monthly', dailyRawImport, dailyRawExport, hasBalanceCapability);
         ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
@@ -729,7 +729,7 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
         
         ChartHelpers.updateConsumptionChart(monthlyConsumptions, 'yearly', monthlyExported, channelData, currentChartType);
-        ChartHelpers.updateConsumptionSharing(monthlyConsumptions, 'yearly', channelData);
+        ChartHelpers.updateConsumptionSharing(monthlyConsumptions, 'yearly', channelData, currentChartType);
         hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(monthlyRawImport, 'yearly', monthlyRawImport, monthlyRawExport, hasBalanceCapability);
         ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
@@ -807,7 +807,7 @@
         ChartHelpers.restoreChartCanvases(currentChartType);
 
         ChartHelpers.updateConsumptionChart(yearlyConsumptions, 'total', yearlyExported, channelData, currentChartType);
-        ChartHelpers.updateConsumptionSharing(yearlyConsumptions, 'total', channelData);
+        ChartHelpers.updateConsumptionSharing(yearlyConsumptions, 'total', channelData, currentChartType);
         hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
         balanceData = ChartHelpers.updateBalanceChart(yearlyRawImport, 'total', yearlyRawImport, yearlyRawExport, hasBalanceCapability);
         ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);

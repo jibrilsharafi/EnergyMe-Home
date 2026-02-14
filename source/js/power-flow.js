@@ -194,38 +194,46 @@ const PowerFlowHelpers = {
         const batteryChannels = ChannelCache.battery;
         const inverterChannels = ChannelCache.inverter;
 
-        const hasProduction = productionChannels.length > 0 || inverterChannels.length > 0;
+        const hasPV = productionChannels.length > 0;
+        const hasInverter = inverterChannels.length > 0;
         const hasBattery = batteryChannels.length > 0;
         const hasGrid = gridChannels.length > 0;
-        const hasInverter = inverterChannels.length > 0;
-        const hasPV = productionChannels.length > 0;
 
         // Always show energy flow section
         const flowSection = document.getElementById('energy-flow-section');
         flowSection.classList.add('visible');
 
-        // Show/hide nodes (new simple IDs)
+        // Show/hide nodes
         const pfSolar = document.getElementById('pf-solar');
         const pfBattery = document.getElementById('pf-battery');
         const pfGrid = document.getElementById('pf-grid');
         const pfHome = document.getElementById('pf-home');
 
+        // Solar node: only show pure PV channels
         if (pfSolar) {
-            pfSolar.style.display = hasProduction ? 'flex' : 'none';
-            
-            // Update icon based on system type
+            pfSolar.style.display = hasPV ? 'flex' : 'none';
             const solarIcon = pfSolar.querySelector('.pf-icon');
-            if (solarIcon) {
-                if (hasInverter && !hasPV) {
-                    solarIcon.textContent = '🔋☀️';
-                } else if (hasInverter && hasPV) {
-                    solarIcon.textContent = '🔋☀️';
-                } else {
-                    solarIcon.textContent = '☀️';
-                }
+            if (solarIcon) solarIcon.textContent = '☀️';
+        }
+        
+        // Battery/Inverter node: show inverter if available, else battery if available
+        // Inverter replaces battery in the UI since it controls battery charging/discharging
+        if (pfBattery) {
+            const showBatteryNode = (hasInverter || hasBattery);
+            pfBattery.style.display = showBatteryNode ? 'flex' : 'none';
+            
+            // Update icon and value ID based on what we're showing
+            const batteryIcon = pfBattery.querySelector('.pf-icon');
+            const batteryValue = pfBattery.querySelector('.pf-value');
+            
+            if (hasInverter && batteryIcon) {
+                batteryIcon.textContent = '🔋☀️';
+                if (batteryValue) batteryValue.id = 'inverter-power';
+            } else if (hasBattery && batteryIcon) {
+                batteryIcon.textContent = '🔋';
+                if (batteryValue) batteryValue.id = 'battery-power';
             }
         }
-        if (pfBattery) pfBattery.style.display = hasBattery ? 'flex' : 'none';
 
         // Calculate power values
         let gridPower = 0;
@@ -234,50 +242,72 @@ const PowerFlowHelpers = {
             if (meter) gridPower += meter.data.activePower;
         });
 
+        // Pure PV production (absolute value, never negative)
         let solarPower = 0;
         productionChannels.forEach(ch => {
             const meter = meterData.find(m => m.index === ch.index);
             if (meter) solarPower += Math.abs(meter.data.activePower);
         });
-        // Inverter: only count positive output as production (negative = charging from grid)
+
+        // Inverter power (can be positive=discharging or negative=charging)
+        let inverterPower = 0;
         inverterChannels.forEach(ch => {
             const meter = meterData.find(m => m.index === ch.index);
-            if (meter) solarPower += Math.max(0, meter.data.activePower);
+            if (meter) inverterPower += meter.data.activePower;
         });
 
+        // Battery power (separate from inverter, if it exists)
         let batteryPower = 0;
         batteryChannels.forEach(ch => {
             const meter = meterData.find(m => m.index === ch.index);
             if (meter) batteryPower += meter.data.activePower;
         });
 
-        const homePower = gridPower + solarPower + batteryPower;
+        // Calculate home power based on what storage devices we have
+        let homePower;
+        if (hasInverter) {
+            // If inverter exists, it handles battery internally
+            // Home power = grid + solar + inverter output
+            homePower = gridPower + solarPower + inverterPower;
+        } else {
+            // Otherwise: grid + solar + battery
+            homePower = gridPower + solarPower + batteryPower;
+        }
 
         // Record history
         this.addToFlowHistory('solar', solarPower);
         this.addToFlowHistory('grid', gridPower);
-        this.addToFlowHistory('battery', batteryPower);
+        if (hasInverter) {
+            this.addToFlowHistory('battery', inverterPower);
+        } else {
+            this.addToFlowHistory('battery', batteryPower);
+        }
         this.addToFlowHistory('home', Math.max(0, homePower));
 
-        // Update display values (with null checks)
+        // Update display values
         const gridPowerEl = document.getElementById('grid-power');
         const homePowerEl = document.getElementById('home-power');
         const solarPowerEl = document.getElementById('solar-power');
-        const batteryPowerEl = document.getElementById('battery-power');
+        const storageValueId = hasInverter ? 'inverter-power' : 'battery-power';
+        const storagePowerEl = document.getElementById(storageValueId);
         
         if (gridPowerEl) gridPowerEl.textContent = this.formatPower(Math.abs(gridPower));
         if (homePowerEl) homePowerEl.textContent = this.formatPower(Math.max(0, homePower));
-        if (hasProduction && solarPowerEl) solarPowerEl.textContent = this.formatPower(solarPower);
-        if (hasBattery && batteryPowerEl) batteryPowerEl.textContent = this.formatPower(Math.abs(batteryPower));
+        if (hasPV && solarPowerEl) solarPowerEl.textContent = this.formatPower(solarPower);
+        if ((hasInverter || hasBattery) && storagePowerEl) {
+            const storagePower = hasInverter ? inverterPower : batteryPower;
+            storagePowerEl.textContent = this.formatPower(Math.abs(storagePower));
+        }
 
-        // Update connectors (simple CSS-based, no SVG)
-        this.updateConnector('pf-solar', solarPower, hasProduction);
+        // Update connectors
+        this.updateConnector('pf-solar', solarPower, hasPV);
         this.updateConnector('pf-grid', gridPower, true);
         this.updateConnector('pf-home', homePower, true);
-        this.updateConnector('pf-battery', batteryPower, hasBattery);
+        this.updateConnector('pf-battery', hasInverter ? inverterPower : batteryPower, hasInverter || hasBattery);
 
         // Update load breakdown
-        this.updateLoadBreakdown(hasGrid, hasProduction, hasBattery, gridPower, solarPower, batteryPower, homePower, meterData, channelData);
+        const storageNetPower = hasInverter ? inverterPower : batteryPower;
+        this.updateLoadBreakdown(hasGrid, hasPV, hasInverter || hasBattery, gridPower, solarPower, storageNetPower, homePower, meterData, channelData);
     },
 
     /**
@@ -299,7 +329,7 @@ const PowerFlowHelpers = {
     /**
      * Update load breakdown section (simple list)
      */
-    updateLoadBreakdown(hasGrid, hasProduction, hasBattery, gridPower, solarPower, batteryPower, homePower, meterData, channelData) {
+    updateLoadBreakdown(hasGrid, hasPV, hasStorage, gridPower, solarPower, storagePower, homePower, meterData, channelData) {
         const gridIndices = ChannelCache.grid.map(ch => ch.index);
         const productionIndices = ChannelCache.production.map(ch => ch.index);
         const batteryIndices = ChannelCache.battery.map(ch => ch.index);

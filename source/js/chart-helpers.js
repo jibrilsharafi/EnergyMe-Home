@@ -766,7 +766,7 @@ const ChartHelpers = {
     /**
      * Update consumption sharing breakdown with pie chart
      */
-    updateConsumptionSharing(consumptionData, viewType, channelData) {
+    updateConsumptionSharing(consumptionData, viewType, channelData, currentChartType) {
         const sharingSection = document.getElementById('consumption-sharing-section');
         
         if (!sharingSection) return;
@@ -876,7 +876,7 @@ const ChartHelpers = {
             }
         });
 
-        sharingSection.style.display = 'block';
+        sharingSection.style.display = currentChartType === 'balance' ? 'none' : 'block';
     },
 
     /**
@@ -954,6 +954,10 @@ const ChartHelpers = {
                 chartDiv.style.display = currentChartType === type ? 'block' : 'none';
             }
         });
+        const sharingSection = document.getElementById('consumption-sharing-section');
+        if (sharingSection) {
+            sharingSection.style.display = currentChartType === 'consumption' ? 'block' : 'none';
+        }
     }
 };
 
