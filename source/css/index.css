@@ -343,25 +343,7 @@
     background: #666;
 }
 
-/* Horizontal lines from center dot */
-.pf-center::before,
-.pf-center::after {
-    content: '';
-    position: absolute;
-    height: 3px;
-    width: 14px;
-    background: #ddd;
-    top: 50%;
-    transform: translateY(-50%);
-}
 
-.pf-center::before {
-    left: 0;
-}
-
-.pf-center::after {
-    right: 0;
-}
 
 /* Connectors - simple lines */
 .pf-connector {
@@ -371,16 +353,16 @@
 
 .pf-connector-bottom {
     width: 3px;
-    height: 20px;
-    bottom: -12px;
+    height: 38px;
+    bottom: -38px;
     left: 50%;
     transform: translateX(-50%);
 }
 
 .pf-connector-top {
     width: 3px;
-    height: 20px;
-    top: -12px;
+    height: 38px;
+    top: -38px;
     left: 50%;
     transform: translateX(-50%);
 }
@@ -691,6 +673,16 @@
 
     .pf-value {
         font-size: 12px;
+    }
+
+    .pf-connector-bottom {
+        height: 26px;
+        bottom: -26px;
+    }
+
+    .pf-connector-top {
+        height: 44px;
+        top: -44px;
     }
     
     .pf-loads {
