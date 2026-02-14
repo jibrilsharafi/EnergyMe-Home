@@ -227,7 +227,7 @@ const PowerFlowHelpers = {
             const batteryValue = pfBattery.querySelector('.pf-value');
             
             if (hasInverter && batteryIcon) {
-                batteryIcon.textContent = '🔋☀️';
+                batteryIcon.textContent = '⚙️';
                 if (batteryValue) batteryValue.id = 'inverter-power';
             } else if (hasBattery && batteryIcon) {
                 batteryIcon.textContent = '🔋';
