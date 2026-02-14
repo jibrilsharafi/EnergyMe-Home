@@ -588,87 +588,12 @@
     padding: 15px;
     background: #f8f9fa;
     border-radius: 10px;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
-.sharing-header {
-    font-size: 16px;
-    font-weight: 600;
-    color: #333;
-    margin: 0 0 15px 0;
-    text-align: center;
-}
-
-.consumption-sharing-bars {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.sharing-bar-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-.sharing-bar-label {
-    flex: 0 0 150px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    color: #333;
-}
-
-.sharing-bar-icon {
-    font-size: 16px;
-}
-
-.sharing-bar-name {
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.sharing-bar-container {
-    flex: 1;
-    height: 24px;
-    background: #e0e0e0;
-    border-radius: 4px;
-    overflow: hidden;
-    position: relative;
-}
-
-.sharing-bar {
-    height: 100%;
-    border-radius: 4px;
-    transition: width 0.3s ease;
-}
-
-.sharing-bar-value {
-    flex: 0 0 120px;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 2px;
-}
-
-.sharing-bar-percentage {
-    font-size: 14px;
-    font-weight: bold;
-    color: #333;
-}
-
-.sharing-bar-absolute {
-    font-size: 11px;
-    color: #666;
-}
-
-/* Balance KPI view (replaces chart in balance mode) */
+/* Share bar styles (keeping for backward compatibility if needed) */
 .balance-kpi-view {
     padding: 20px 0;
 }
@@ -894,18 +819,6 @@
     .consumption-sharing-section {
         padding: 10px;
         margin-top: 15px;
-    }
-    
-    .sharing-header {
-        font-size: 14px;
-        margin-bottom: 10px;
-    }
-    
-    .sharing-bar-item {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 6px;
-        padding: 8px;
     }
     
     .sharing-bar-label {

@@ -116,8 +116,10 @@
         </div>
         <!-- Consumption Sharing Breakdown -->
         <div id="consumption-sharing-section" class="consumption-sharing-section" style="display: none;">
-            <h4 class="sharing-header">Energy Consumption Breakdown</h4>
-            <div id="consumption-sharing-bars" class="consumption-sharing-bars"></div>
+            <div style="position: relative; height: 300px;">
+                <canvas id="consumption-pie-canvas" style="display: none;"></canvas>
+                <div class="chart-loading">📊 Loading breakdown...</div>
+            </div>
         </div>
         <div id="balance-chart" style="position: relative; display: none;">
             <div class="chart-loading">🔋 Calculating energy flows...</div>

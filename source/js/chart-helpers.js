@@ -61,6 +61,7 @@ const ChartConfig = {
 const ChartHelpers = {
     // Chart instances
     consumptionChart: null,
+    consumptionPieChart: null,
     balanceChart: null,
 
     // Sparkline configuration
@@ -763,13 +764,12 @@ const ChartHelpers = {
     },
 
     /**
-     * Update consumption sharing breakdown
+     * Update consumption sharing breakdown with pie chart
      */
     updateConsumptionSharing(consumptionData, viewType, channelData) {
         const sharingSection = document.getElementById('consumption-sharing-section');
-        const sharingBars = document.getElementById('consumption-sharing-bars');
         
-        if (!sharingSection || !sharingBars) return;
+        if (!sharingSection) return;
 
         // Get special channel indices
         const gridIndices = ChannelCache.grid.map(ch => ch.index);
@@ -812,32 +812,70 @@ const ChartHelpers = {
             return;
         }
 
-        // Build HTML for sharing bars
-        let html = '';
-        sortedChannels.forEach(([channelKey, value]) => {
-            const percentage = (value / totalConsumption) * 100;
-            const label = this.getDisplayLabel(channelKey, channelData);
-            const color = this.getDisplayColor(channelKey);
-            const icon = this.getChannelIcon(channelKey, channelData);
-            
-            html += `
-                <div class="sharing-bar-item">
-                    <div class="sharing-bar-label">
-                        <span class="sharing-bar-icon">${icon}</span>
-                        <span class="sharing-bar-name">${label}</span>
-                    </div>
-                    <div class="sharing-bar-container">
-                        <div class="sharing-bar" style="width: ${percentage.toFixed(1)}%; background-color: ${color};"></div>
-                    </div>
-                    <div class="sharing-bar-value">
-                        <span class="sharing-bar-percentage">${percentage.toFixed(1)}%</span>
-                        <span class="sharing-bar-absolute">${value.toFixed(1)} kWh</span>
-                    </div>
-                </div>
-            `;
+        // Prepare data for pie chart
+        const labels = sortedChannels.map(([channelKey]) => this.getDisplayLabel(channelKey, channelData));
+        const data = sortedChannels.map(([, value]) => parseFloat(value.toFixed(1)));
+        const colors = sortedChannels.map(([channelKey]) => this.getDisplayColor(channelKey));
+
+        // Render pie chart
+        const canvasElement = document.getElementById('consumption-pie-canvas');
+        if (!canvasElement) return;
+
+        // Show canvas and hide loading
+        const loadingEl = sharingSection.querySelector('.chart-loading');
+        if (loadingEl) loadingEl.style.display = 'none';
+        canvasElement.style.display = 'block';
+
+        // Destroy existing chart
+        if (this.consumptionPieChart) {
+            this.consumptionPieChart.destroy();
+        }
+
+        const ctx = canvasElement.getContext('2d');
+        this.consumptionPieChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderColor: '#ffffff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            font: { size: 12 },
+                            padding: 12,
+                            generateLabels: (chart) => {
+                                const data = chart.data;
+                                return data.labels.map((label, i) => ({
+                                    text: `${label}: ${data.datasets[0].data[i].toFixed(1)} kWh`,
+                                    fillStyle: data.datasets[0].backgroundColor[i],
+                                    hidden: false,
+                                    index: i
+                                }));
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.parsed;
+                                const percentage = ((value / totalConsumption) * 100).toFixed(1);
+                                return `${value.toFixed(1)} kWh (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
         });
 
-        sharingBars.innerHTML = html;
         sharingSection.style.display = 'block';
     },
 
