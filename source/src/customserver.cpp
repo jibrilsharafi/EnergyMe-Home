@@ -1927,6 +1927,12 @@ namespace CustomServer
                 if (Ade7953::setChannelDataFromJson(doc, isPartialUpdate, &roleChanged))
                 {
                     uint8_t channelIndex = doc["index"].as<uint8_t>();
+                    
+                    if (!isChannelValid(channelIndex)) {
+                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
+                        return;
+                    }
+                    
                     LOG_INFO("ADE7953 channel %u data %s via API", channelIndex, isPartialUpdate ? "partially updated" : "updated");
                     if (roleChanged) {
                         Ade7953::resetChannelEnergyValues(channelIndex);
