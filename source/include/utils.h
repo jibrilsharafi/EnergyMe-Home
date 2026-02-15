@@ -95,6 +95,22 @@ inline uint64_t micros64() {
 // Validation utilities
 inline bool isChannelValid(uint8_t channel) {return channel < CHANNEL_COUNT;}
 
+// String validation utilities
+inline bool isStringLengthValid(const char* str, size_t minLength, size_t maxLength) {
+    if (str == nullptr) return false;
+    size_t len = strlen(str);
+    return len >= minLength && len <= maxLength;
+}
+
+// Numeric range validation utilities
+inline bool isValueInRange(float value, float min, float max) {
+    return value > min && value <= max;
+}
+
+inline bool isValueInRange(int32_t value, int32_t min, int32_t max) {
+    return value >= min && value <= max;
+}
+
 // Mathematical utilities
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier);
 inline float roundToDecimals(float value, uint8_t decimals = 3) {

@@ -90,6 +90,14 @@
 #define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) and CRC change (bit 21) for line cycle end detection
 #define MINIMUM_SAMPLE_TIME 200ULL // The settling time of the ADE7953 is 200 ms, so reading faster than this makes little sense
 
+// Channel validation ranges
+#define VALIDATE_CT_CURRENT_RATING_MIN 0.0f
+#define VALIDATE_CT_CURRENT_RATING_MAX 10000.0f // In amperes. If EnergyMe - Home ends up being used for 10000+ A, we have bigger problems than the CT specification validation :)
+#define VALIDATE_CT_VOLTAGE_OUTPUT_MIN 0.0f
+#define VALIDATE_CT_VOLTAGE_OUTPUT_MAX 1.0f // In volts. Already exceeding the 0.5 V absolute limit is enough. More than 1V should be avoided at all costs (in any case, most CTs are up to 1V max)
+#define VALIDATE_CT_SCALING_FRACTION_MIN -10.0f // If you need to multiply more than 10x times the values you read, the issue is somewhere else
+#define VALIDATE_CT_SCALING_FRACTION_MAX 10.0f
+
 // Constant hardware-fixed values
 // Leaving 
 #define FULL_SCALE_LSB_FOR_RMS_VALUES 9032007 // Maximum value of RMS registers (24-bit unsigned) - current (channel A and B) and voltage

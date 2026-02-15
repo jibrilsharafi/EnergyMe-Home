@@ -229,7 +229,6 @@ namespace Ade7953
     static void _recordCriticalFailure();
     static void _checkForTooManyCriticalFailures();
     static bool _verifyLastSpiCommunication(uint16_t expectedAddress, uint8_t expectedBits, int32_t expectedData, bool signedData, bool wasWrite);
-    static bool _validateValue(float newValue, float min, float max);
     static bool _validateVoltage(float newValue);
     static bool _validateCurrent(float newValue);
     static bool _validatePower(float newValue);
@@ -2720,6 +2719,75 @@ namespace Ade7953
         return true;
     }
 
+    bool _isValidPhase(uint8_t phase) {
+        return (phase == PHASE_1 ||
+                phase == PHASE_2 ||
+                phase == PHASE_3 ||
+                phase == PHASE_SPLIT_240);
+    }
+
+    bool _validateStringField(const char* fieldName, const char* value, size_t maxLength) {
+        if (!isStringLengthValid(value, 1, maxLength - 1)) {
+            LOG_WARNING("%s length %u out of range (1-%u)", fieldName, strlen(value), maxLength - 1);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validateCtCurrentRating(float value) {
+        if (!isValueInRange(value, VALIDATE_CT_CURRENT_RATING_MIN, VALIDATE_CT_CURRENT_RATING_MAX)) {
+            LOG_WARNING("currentRating %.1fA out of range (%.1f-%.1f)",
+                       value, VALIDATE_CT_CURRENT_RATING_MIN, VALIDATE_CT_CURRENT_RATING_MAX);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validateCtVoltageOutput(float value) {
+        if (!isValueInRange(value, VALIDATE_CT_VOLTAGE_OUTPUT_MIN, VALIDATE_CT_VOLTAGE_OUTPUT_MAX)) {
+            LOG_WARNING("voltageOutput %.3fV out of range (%.3f-%.3f)",
+                       value, VALIDATE_CT_VOLTAGE_OUTPUT_MIN, VALIDATE_CT_VOLTAGE_OUTPUT_MAX);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validateCtScalingFraction(float value) {
+        if (value < VALIDATE_CT_SCALING_FRACTION_MIN || value > VALIDATE_CT_SCALING_FRACTION_MAX) {
+            LOG_WARNING("scalingFraction %.2f out of range (%.2f-%.2f)",
+                       value, VALIDATE_CT_SCALING_FRACTION_MIN, VALIDATE_CT_SCALING_FRACTION_MAX);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validateGroupRoleConsistency(const char* groupLabel, uint8_t channelIndex, ChannelRole role) {
+        // Acquire mutex to safely read other channels
+        if (!acquireMutex(&_channelDataMutex)) {
+            LOG_ERROR("Failed to acquire mutex for group validation");
+            return false;
+        }
+
+        // Check all other channels with same groupLabel
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            if (i == channelIndex) continue;  // Skip self
+
+            // If another channel has same groupLabel, roles must match
+            if (strcmp(_channelData[i].groupLabel, groupLabel) == 0) {
+                if (_channelData[i].role != role) {
+                    LOG_WARNING("Group '%s' role mismatch: channel %u is %s, but channel %u would be %s",
+                               groupLabel, i, channelRoleToString(_channelData[i].role),
+                               channelIndex, channelRoleToString(role));
+                    releaseMutex(&_channelDataMutex);
+                    return false;
+                }
+            }
+        }
+
+        releaseMutex(&_channelDataMutex);
+        return true;
+    }
+
     bool _validateChannelDataJson(const JsonDocument &jsonDocument, bool partial) {
         if (!jsonDocument.is<JsonObjectConst>()) {
             LOG_WARNING("JSON is not an object");
@@ -2738,51 +2806,182 @@ namespace Ade7953
         }
 
         if (partial) {
+            uint8_t channelIndex = jsonDocument["index"].as<uint8_t>();
+
             if (jsonDocument["active"].is<bool>()) return true;
             if (jsonDocument["reverse"].is<bool>()) return true;
-            if (jsonDocument["label"].is<const char*>()) return true;
-            if (jsonDocument["phase"].is<uint8_t>()) return true;
 
-            // CT Specification validation for partial updates
-            if (jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
-                if (jsonDocument["ctSpecification"]["currentRating"].is<float>()) return true;
-                if (jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) return true;
-                if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) return true;   
+            // Label validation
+            if (jsonDocument["label"].is<const char*>()) {
+                const char* label = jsonDocument["label"].as<const char*>();
+                if (!_validateStringField("label", label, NAME_BUFFER_SIZE)) {
+                    return false;
+                }
+                return true;
             }
 
-            // Channel grouping validation for partial updates
-            if (jsonDocument["groupLabel"].is<const char*>()) return true;
+            // Phase validation
+            if (jsonDocument["phase"].is<uint8_t>()) {
+                uint8_t phase = jsonDocument["phase"].as<uint8_t>();
+                if (!_isValidPhase(phase)) {
+                    LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
+                    return false;
+                }
+                return true;
+            }
 
-            // Channel role validation for partial updates
+            // CT Specification validation with ranges
+            if (jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
+                if (jsonDocument["ctSpecification"]["currentRating"].is<float>()) {
+                    float val = jsonDocument["ctSpecification"]["currentRating"].as<float>();
+                    if (!_validateCtCurrentRating(val)) return false;
+                    return true;
+                }
+                if (jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) {
+                    float val = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
+                    if (!_validateCtVoltageOutput(val)) return false;
+                    return true;
+                }
+                if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) {
+                    float val = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
+                    if (!_validateCtScalingFraction(val)) return false;
+                    return true;
+                }
+            }
+
+            // GroupLabel validation
+            if (jsonDocument["groupLabel"].is<const char*>()) {
+                const char* groupLabel = jsonDocument["groupLabel"].as<const char*>();
+                if (!_validateStringField("groupLabel", groupLabel, NAME_BUFFER_SIZE)) {
+                    return false;
+                }
+
+                // Group role consistency: get current or new role
+                ChannelRole role = _channelData[channelIndex].role;  // Default to current
+                if (jsonDocument["role"].is<const char*>()) {
+                    role = channelRoleFromString(jsonDocument["role"].as<const char*>());
+                }
+
+                if (!_validateGroupRoleConsistency(groupLabel, channelIndex, role)) {
+                    return false;
+                }
+                return true;
+            }
+
+            // Channel role validation
             if (jsonDocument["role"].is<const char*>()) {
                 if (!isValidChannelRoleString(jsonDocument["role"].as<const char*>())) {
                     LOG_WARNING("Invalid role value: %s", jsonDocument["role"].as<const char*>());
+                    return false;
+                }
+
+                // Group role consistency: check with current or new groupLabel
+                const char* groupLabel = _channelData[channelIndex].groupLabel;  // Default to current
+                if (jsonDocument["groupLabel"].is<const char*>()) {
+                    groupLabel = jsonDocument["groupLabel"].as<const char*>();
+                }
+
+                ChannelRole role = channelRoleFromString(jsonDocument["role"].as<const char*>());
+                if (!_validateGroupRoleConsistency(groupLabel, channelIndex, role)) {
                     return false;
                 }
                 return true;
             }
 
             LOG_WARNING("No valid fields found for partial update");
-            return false; // No valid fields found for partial update
+            return false;
         } else {
+            uint8_t channelIndex = jsonDocument["index"].as<uint8_t>();
+
             // Full validation - all fields must be present and valid
-            if (!jsonDocument["active"].is<bool>()) { LOG_WARNING("active is missing or not bool"); return false; }
-            if (!jsonDocument["reverse"].is<bool>()) { LOG_WARNING("reverse is missing or not bool"); return false; }
-            if (!jsonDocument["label"].is<const char*>()) { LOG_WARNING("label is missing or not string"); return false; }
-            if (!jsonDocument["phase"].is<uint8_t>()) { LOG_WARNING("phase is missing or not uint8_t"); return false; }
+            if (!jsonDocument["active"].is<bool>()) {
+                LOG_WARNING("active is missing or not bool");
+                return false;
+            }
+            if (!jsonDocument["reverse"].is<bool>()) {
+                LOG_WARNING("reverse is missing or not bool");
+                return false;
+            }
 
-            // CT Specification validation
-            if (!jsonDocument["ctSpecification"].is<JsonObjectConst>()) { LOG_WARNING("ctSpecification is missing or not object"); return false; }
-            if (!jsonDocument["ctSpecification"]["currentRating"].is<float>()) { LOG_WARNING("ctSpecification.currentRating is missing or not float"); return false; }
-            if (!jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) { LOG_WARNING("ctSpecification.voltageOutput is missing or not float"); return false; }
-            if (!jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) { LOG_WARNING("ctSpecification.scalingFraction is missing or not float"); return false; }
+            // Label validation with length check
+            if (!jsonDocument["label"].is<const char*>()) {
+                LOG_WARNING("label is missing or not string");
+                return false;
+            }
+            const char* label = jsonDocument["label"].as<const char*>();
+            if (!_validateStringField("label", label, NAME_BUFFER_SIZE)) {
+                return false;
+            }
 
-            // Channel grouping validation
-            if (!jsonDocument["groupLabel"].is<const char*>()) { LOG_WARNING("groupLabel is not string"); return false; }
+            // Phase validation with enum check
+            if (!jsonDocument["phase"].is<uint8_t>()) {
+                LOG_WARNING("phase is missing or not uint8_t");
+                return false;
+            }
+            uint8_t phase = jsonDocument["phase"].as<uint8_t>();
+            if (!_isValidPhase(phase)) {
+                LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
+                return false;
+            }
+
+            // CT Specification validation with ranges
+            if (!jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
+                LOG_WARNING("ctSpecification is missing or not object");
+                return false;
+            }
+
+            if (!jsonDocument["ctSpecification"]["currentRating"].is<float>()) {
+                LOG_WARNING("ctSpecification.currentRating is missing or not float");
+                return false;
+            }
+            float currentRating = jsonDocument["ctSpecification"]["currentRating"].as<float>();
+            if (!_validateCtCurrentRating(currentRating)) {
+                return false;
+            }
+
+            if (!jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) {
+                LOG_WARNING("ctSpecification.voltageOutput is missing or not float");
+                return false;
+            }
+            float voltageOutput = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
+            if (!_validateCtVoltageOutput(voltageOutput)) {
+                return false;
+            }
+
+            if (!jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) {
+                LOG_WARNING("ctSpecification.scalingFraction is missing or not float");
+                return false;
+            }
+            float scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
+            if (!_validateCtScalingFraction(scalingFraction)) {
+                return false;
+            }
+
+            // GroupLabel validation with length check
+            if (!jsonDocument["groupLabel"].is<const char*>()) {
+                LOG_WARNING("groupLabel is not string");
+                return false;
+            }
+            const char* groupLabel = jsonDocument["groupLabel"].as<const char*>();
+            if (!_validateStringField("groupLabel", groupLabel, NAME_BUFFER_SIZE)) {
+                return false;
+            }
 
             // Channel role validation
-            if (!jsonDocument["role"].is<const char*>()) { LOG_WARNING("role is not string"); return false; }
-            if (!isValidChannelRoleString(jsonDocument["role"].as<const char*>())) { LOG_WARNING("Invalid role value: %s", jsonDocument["role"].as<const char*>()); return false; }
+            if (!jsonDocument["role"].is<const char*>()) {
+                LOG_WARNING("role is not string");
+                return false;
+            }
+            if (!isValidChannelRoleString(jsonDocument["role"].as<const char*>())) {
+                LOG_WARNING("Invalid role value: %s", jsonDocument["role"].as<const char*>());
+                return false;
+            }
+
+            // Group role consistency validation
+            ChannelRole role = channelRoleFromString(jsonDocument["role"].as<const char*>());
+            if (!_validateGroupRoleConsistency(groupLabel, channelIndex, role)) {
+                return false;
+            }
 
             return true; // All fields validated successfully
         }
@@ -3921,41 +4120,40 @@ namespace Ade7953
         return true;
     }
 
-    bool _validateValue(float value, float min, float max) {
-        if (value < min || value > max) return false;
-        else return true;
-    }
-
     bool _validateVoltage(float value) {
-        if (!_validateValue(value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX)) {
+        if (!isValueInRange(value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX)) {
             LOG_WARNING("Voltage %.1f V out of range (%.1f - %.1f V)", value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
             return false;
         }
         return true;
     }
+
     bool _validateCurrent(float value) {
-        if (!_validateValue(value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX)) {
+        if (!isValueInRange(value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX)) {
             LOG_WARNING("Current %.3f A out of range (%.3f - %.3f A)", value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
             return false;
         }
         return true;
     }
+
     bool _validatePower(float value) {
-        if (!_validateValue(value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX)) {
+        if (!isValueInRange(value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX)) {
             LOG_WARNING("Power %.1f W out of range (%.1f - %.1f W)", value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
             return false;
         }
         return true;
     }
+
     bool _validatePowerFactor(float value) {
-        if (!_validateValue(value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX)) {
+        if (!isValueInRange(value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX)) {
             LOG_WARNING("Power factor %.3f out of range (%.3f - %.3f)", value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
             return false;
         }
         return true;
     }
+
     bool _validateGridFrequency(float value) {
-        if (!_validateValue(value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX)) {
+        if (!isValueInRange(value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX)) {
             LOG_WARNING("Grid frequency %.1f Hz out of range (%.1f - %.1f Hz)", value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
             return false;
         }
