@@ -12,6 +12,7 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Channel</title>
@@ -23,12 +24,16 @@
             justify-items: center;
         }
 
+        .channel-columns .section-box {
+            width: 80%;
+        }
+
         .channel-columns input[type="text"] {
             width: 90%;
             box-sizing: border-box;
         }
         
-        /* Mobile responsive styles */
+        /* Page-specific mobile styles */
         @media screen and (max-width: 768px) {
             .channel-columns {
                 grid-template-columns: 1fr;
@@ -38,12 +43,6 @@
             
             .channel-columns input[type="text"] {
                 width: 100%;
-                font-size: 16px; /* Prevents zoom on iOS */
-                padding: 12px;
-                margin: 8px 0;
-                border: 1px solid #ddd;
-                border-radius: 5px;
-                box-sizing: border-box;
             }
             
             .channel-item {
@@ -60,20 +59,13 @@
                 margin-bottom: 10px;
             }
             
-            .channel-item label {
-                display: block;
-                font-weight: bold;
-                margin-bottom: 5px;
-                font-size: 14px;
-            }
-            
             .power-display {
                 font-size: 16px;
                 font-weight: bold;
                 color: #333;
                 margin: 8px 0;
             }
-            
+
             #updateStatus {
                 font-size: 14px;
                 margin: 10px 0;
@@ -119,10 +111,11 @@
         <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
     </div>    <div id="channelContainer" class="section-box" style="text-align: center;">
         <h1>Channels</h1>
-        <div id="updateStatus" style="height: 20px; color: #666; font-style: italic;"></div>
+        <!-- TODO: add information boxes (standard across all Web UI) for helping the user -->
         <div class="channel-columns"></div>
     </div>
 </body>
+
 <script src="/js/api-client.js"></script>
 <script>
     var channelData = {};
@@ -134,17 +127,14 @@
     // Initialize the page
     async function initializePage() {
         try {
-            document.getElementById('updateStatus').textContent = 'Loading...';
-            
             // Load channel config only
             const channelResponse = await energyApi.getChannelConfig();
             channelData = channelResponse;
-            
+
             createChannelBoxes();
-            document.getElementById('updateStatus').textContent = '';
         } catch (error) {
             console.error('Error initializing page:', error);
-            document.getElementById('updateStatus').textContent = 'Error loading data: ' + error.message;
+            showStatus('Error loading data: ' + error.message, 'error');
         }
     }
 
@@ -165,16 +155,19 @@
             box.className = 'section-box';
             box.style.textAlign = 'center';
 
-            const phaseOptions = [1, 2, 3]
-                .map(phase => `<option value="${phase}" ${phase === channel.phase ? 'selected' : ''}>${phase}</option>`)
+            const phaseOptions = [
+                { value: 1, label: '1' },
+                { value: 2, label: '2' },
+                { value: 3, label: '3' },
+                { value: 4, label: '240V (Split Phase)' }
+            ]
+                .map(p => `<option value="${p.value}" ${p.value === channel.phase ? 'selected' : ''}>${p.label}</option>`)
                 .join('');
 
             // Check if this is channel 0 (main voltage channel)
             const isChannel0 = index == 0;
             const activeCheckboxDisabled = isChannel0 ? 'disabled' : '';
             const activeChecked = isChannel0 ? 'checked' : (channel.active ? 'checked' : '');
-            const highPriorityCheckboxDisabled = isChannel0 ? 'disabled' : '';
-            const highPriorityChecked = isChannel0 ? 'checked' : (channel.highPriority ? 'checked' : '');
 
             box.innerHTML = `
                 <h3>Channel ${index}</h3>
@@ -197,15 +190,36 @@
                 <div style="height: 10px;"></div>
                 <label>
                     <input type="checkbox" ${activeChecked} id="active${index}" onchange="queueChannelUpdate(${index})" ${activeCheckboxDisabled}>
-                    Active ${isChannel0 ? '(Main voltage - cannot be disabled)' : ''}
+                    Active
                 </label>
-                <div style="height: 10px;"></div>
+                <div style="height: 15px;"></div>
+                <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
+                <h4 style="margin: 10px 0;">Grouping</h4>
                 <label>
-                    <input type="checkbox" ${highPriorityChecked} id="highPriority${index}" onchange="queueChannelUpdate(${index})" ${highPriorityCheckboxDisabled}>
-                    High Priority ${isChannel0 ? '(Always read)' : '(Read more frequently)'}
+                    Group Label:
+                    <input type="text" value="${channel.groupLabel || ''}" id="groupLabel${index}" onchange="queueChannelUpdate(${index})">
+                </label>
+                <div style="height: 15px;"></div>
+                <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
+                <h4 style="margin: 10px 0;">Channel Role</h4>
+                <label>
+                    <select id="role${index}" onchange="queueChannelUpdate(${index})">
+                        <option value="load" ${channel.role === 'load' ? 'selected' : ''}>Load</option>
+                        <option value="grid" ${channel.role === 'grid' ? 'selected' : ''}>Grid (+ import, - export)</option>
+                        <option value="pv" ${channel.role === 'pv' ? 'selected' : ''}>PV / Solar (+ generation)</option>
+                        <option value="battery" ${channel.role === 'battery' ? 'selected' : ''}>Battery (+ discharge, - charge)</option>
+                        <option value="inverter" ${channel.role === 'inverter' ? 'selected' : ''}>Inverter (PV + Battery DC-coupled)</option>
+                    </select>
                 </label>
                 <div style="height: 10px;"></div>
                 <span id="power${index}" style="font-weight: bold; color: #333;"></span>
+                <div style="height: 15px;"></div>
+                <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
+                <button class="buttonForm" onclick="resetChannelEnergy(${index})"
+                    style="background-color: #dc3545; border-color: #dc3545; color: white; font-size: 0.85em; padding: 6px 12px;"
+                    onmouseover="this.style.backgroundColor='#c82333'" onmouseout="this.style.backgroundColor='#dc3545'">
+                    🗑️ Reset Energy
+                </button>
             `;
             container.appendChild(box);
 
@@ -272,10 +286,9 @@
     }
 
     function startPowerUpdate(index) {
-        // Individual channel power updates are now handled by the global update
-        // Just ensure the power display is visible for this channel
+        // Individual channel power updates are handled by the global update
         const powerElement = document.getElementById(`power${index}`);
-        if (powerElement && channelData[index] && channelData[index].active) {
+        if (powerElement) {
             powerElement.innerHTML = 'Loading...';
         }
     }
@@ -286,24 +299,47 @@
         if (powerElement) {
             powerElement.innerHTML = '';
         }
-    }    function queueChannelUpdate(index) {
+    }
+
+    function queueChannelUpdate(index) {
         // Prevent channel 0 from being disabled
         if (index == 0) {
             const activeCheckbox = document.getElementById(`active${index}`);
             if (activeCheckbox && !activeCheckbox.checked) {
                 activeCheckbox.checked = true;
-                alert('Channel 0 is the main voltage channel and cannot be disabled.');
+                showStatus('Channel 0 is the main voltage channel and cannot be disabled', 'error');
                 return;
             }
         }
 
+        // Detect role change BEFORE updating local data
+        const oldData = channelData[index];
+        const newRole = document.getElementById(`role${index}`).value;
+
+        const roleChanged = oldData && (oldData.role !== newRole);
+
+        if (roleChanged) {
+            if (!confirm('Changing the channel role will reset its energy values and delete its historical data. This cannot be undone.\n\nDo you want to continue?')) {
+                // Revert dropdown to original value
+                document.getElementById(`role${index}`).value = oldData.role;
+                return;
+            }
+        }
+
+        doQueueChannelUpdate(index);
+    }
+
+    function doQueueChannelUpdate(index) {
         const channelUpdate = {
             index: parseInt(index),
             label: document.getElementById(`label${index}`).value,
             reverse: document.getElementById(`reverse${index}`).checked,
             phase: parseInt(document.getElementById(`phase${index}`).value),
             active: document.getElementById(`active${index}`).checked,
-            highPriority: document.getElementById(`highPriority${index}`).checked
+            // Grouping
+            groupLabel: document.getElementById(`groupLabel${index}`).value,
+            // Channel role
+            role: document.getElementById(`role${index}`).value,
         };
 
         // Update local channelData immediately for UI responsiveness
@@ -312,12 +348,13 @@
             channelData[index].label = channelUpdate.label;
             channelData[index].reverse = channelUpdate.reverse;
             channelData[index].phase = channelUpdate.phase;
-            channelData[index].highPriority = channelUpdate.highPriority;
+            channelData[index].groupLabel = channelUpdate.groupLabel;
+            channelData[index].role = channelUpdate.role;
         }
 
         // Store in queue - this will overwrite any previous update for this channel
         updateQueue[index] = channelUpdate;
-        
+
         // Update UI responsiveness immediately
         if (channelUpdate.active) {
             startPowerUpdate(index);
@@ -342,47 +379,54 @@
         }
 
         try {
-            document.getElementById('updateStatus').textContent = 'Updating channels...';
-            
+            showStatus('Updating channels...', '');
+
             // Send all queued updates using PATCH for partial updates
             const updates = Object.values(updateQueue);
             updateQueue = {}; // Clear queue
-            
+
             for (const update of updates) {
-                await energyApi.patchChannelConfig(update.index, update);
+                await energyApi.patchChannelConfig(update);
             }
-            
-            document.getElementById('updateStatus').textContent = 'Channels updated successfully';
-            setTimeout(() => {
-                document.getElementById('updateStatus').textContent = '';
-            }, 2000);
-            
+
+            showStatus('Channels updated successfully', 'success');
+
         } catch (error) {
             console.error('Error updating channels:', error);
-            
+
             if (error.message.includes('Channel 0 cannot be disabled')) {
-                document.getElementById('updateStatus').textContent = 'Channel 0 cannot be disabled';
-                alert('Channel 0 is the main voltage channel and cannot be disabled.');
+                showStatus('Channel 0 cannot be disabled', 'error');
                 // Reset channel 0 to active in UI
                 const activeCheckbox = document.getElementById('active0');
                 if (activeCheckbox) {
                     activeCheckbox.checked = true;
                 }
             } else {
-                document.getElementById('updateStatus').textContent = 'Error: ' + error.message;
-                alert('Error updating channels: ' + error.message);
+                showStatus('Error: ' + error.message, 'error');
             }
-            
-            setTimeout(() => {
-                document.getElementById('updateStatus').textContent = '';
-            }, 5000);
         }
-        
+
         isProcessingUpdate = false;
-        
+
         // If there are new updates in queue, process them
         if (Object.keys(updateQueue).length > 0) {
             setTimeout(processChannelUpdates, 500);
+        }
+    }
+
+    async function resetChannelEnergy(channelIndex) {
+        const channel = channelData[channelIndex];
+        const label = channel ? channel.label : `Channel ${channelIndex}`;
+
+        if (!confirm(`Reset all energy values for "${label}" (Channel ${channelIndex}) to zero?\n\nThis will permanently delete all historical energy data for this channel.`)) {
+            return;
+        }
+
+        try {
+            await energyApi.resetEnergyValues(channelIndex);
+            showStatus(`Energy values reset for ${label}`, 'success');
+        } catch (error) {
+            showStatus('Error resetting energy: ' + error.message, 'error');
         }
     }</script>
 

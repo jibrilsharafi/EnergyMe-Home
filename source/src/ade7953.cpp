@@ -2,7 +2,6 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "ade7953.h"
-#include <set>
 
 namespace Ade7953
 {
@@ -21,10 +20,11 @@ namespace Ade7953
     // Timing and measurement variables
     static uint64_t _sampleTime; // in milliseconds, time between linecycles readings
     static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
-    static uint8_t _lastHighPriorityChannel = INVALID_CHANNEL; // Track last HP channel for round-robin
-    static uint8_t _lastLowPriorityChannel = INVALID_CHANNEL; // Track last LP channel for round-robin
-    static uint8_t _hpRunCount = 0;      // Tracks consecutive HP executions
-    static uint8_t _dynamicRatio = 1;    // Calculated ratio (HP slots per 1 LP slot)
+    // Dynamic channel scheduling state (Weighted Deficit Round-Robin)
+    static float _channelWeight[CHANNEL_COUNT] = {};     // Computed dynamic weight per channel
+    static float _channelDeficit[CHANNEL_COUNT] = {};    // Deficit counter for scheduling
+    static float _prevActivePower[CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
+    static float _powerVariability[CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
     static float _gridFrequency = 50.0f;
 
     // Failure tracking
@@ -65,6 +65,8 @@ namespace Ade7953
     
     static TaskHandle_t _hourlyCsvSaveTaskHandle = NULL;
     static bool _hourlyCsvSaveTaskShouldRun = false;
+
+    static SemaphoreHandle_t _historyClearMutex = NULL;
 
     // Waveform capture state and buffers
     static CaptureState _captureState = CaptureState::IDLE;
@@ -132,6 +134,10 @@ namespace Ade7953
     static void _stopHourlyCsvSaveTask();
     static void _hourlyCsvSaveTask(void* parameter);
 
+    static void _historyClearTask(void* parameter);
+    static void _spawnHistoryClearTask(uint8_t channelIndex);
+    static void _clearAllHistoricalData();
+
     // Configuration management
     static void _setConfigurationFromPreferences();
     static void _saveConfigurationToPreferences();
@@ -150,6 +156,7 @@ namespace Ade7953
     static void _saveEnergyToPreferences(uint8_t channelIndex, bool forceSave = false); // Needed for saving data anyway on first setup (energy is 0 and not saved otherwise)
     static void _saveHourlyEnergyToCsv(); // Not per channel so that we open the file only once
     static void _saveEnergyComplete();
+    static bool _clearChannelHistoricalData(uint8_t channelIndex);
 
     // Meter reading and processing
     static bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTime);
@@ -222,7 +229,6 @@ namespace Ade7953
     static void _recordCriticalFailure();
     static void _checkForTooManyCriticalFailures();
     static bool _verifyLastSpiCommunication(uint16_t expectedAddress, uint8_t expectedBits, int32_t expectedData, bool signedData, bool wasWrite);
-    static bool _validateValue(float newValue, float min, float max);
     static bool _validateVoltage(float newValue);
     static bool _validateCurrent(float newValue);
     static bool _validatePower(float newValue);
@@ -230,7 +236,8 @@ namespace Ade7953
     static bool _validateGridFrequency(float newValue);
 
     // Utility functions
-    static void _recalculateRatio();
+    static void _recalculateWeights();
+    static void _updateVariability(uint8_t channelIndex, float newActivePower);
     static uint8_t _findNextActiveChannel(uint8_t currentChannel);
     static Phase _getLaggingPhase(Phase phase);
     static Phase _getLeadingPhase(Phase phase);
@@ -703,7 +710,7 @@ namespace Ade7953
             return;
         }
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         getChannelData(channelData, channelIndex);
 
         snprintf(buffer, bufferSize, "%s", channelData.label); // Fallback is the default constructor value if getChannelData failed
@@ -725,11 +732,14 @@ namespace Ade7953
         return true;
     }
 
-bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
+    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
             return false;
         }
+
+        // Snapshot old role before applying new data (for role change detection)
+        ChannelRole oldRole = _channelData[channelIndex].role;
 
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
@@ -744,7 +754,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             _channelData[channelIndex] = channelData;
         }
 
-        _recalculateRatio();
+        _recalculateWeights();
 
         releaseMutex(&_channelDataMutex);
 
@@ -753,6 +763,14 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         #ifdef HAS_SECRETS
         Mqtt::requestChannelPublish();
         #endif
+
+        // Detect role change
+        bool detected = (oldRole != channelData.role);
+        if (detected) {
+            LOG_INFO("Channel %u role changed: %s -> %s",
+                     channelIndex, channelRoleToString(oldRole), channelRoleToString(channelData.role));
+        }
+        if (roleChanged) *roleChanged = detected;
 
         LOG_DEBUG("Successfully set channel data for channel %lu", channelIndex);
         return true;
@@ -779,7 +797,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             return false;
         }
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
             LOG_WARNING("Failed to get channel data as JSON for channel %lu", channelIndex);
             return false;
@@ -803,20 +821,38 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         else return false;
     }
 
-    bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial) {
+    uint32_t computeAllChannelDataHash() {
+        ChannelData allChannelData[CHANNEL_COUNT];
+
+        // Zero-initialize to ensure padding bytes and unused char array bytes are consistent
+        memset(allChannelData, 0, sizeof(allChannelData));
+
+        // Collect all channel data
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            if (!getChannelData(allChannelData[i], i)) {
+                LOG_WARNING("Failed to get channel data for hash computation (channel %u)", i);
+                return 0; // Return 0 on error to force fresh data
+            }
+        }
+
+        // Compute CRC32 hash using ESP32 hardware CRC
+        return crc32_le(0, (const uint8_t*)allChannelData, sizeof(allChannelData));
+    }
+
+    bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial, bool* roleChanged) {
         if (!_validateChannelDataJson(jsonDocument, partial)) {
             LOG_WARNING("Invalid channel data JSON. Skipping setting data");
             return false;
         }
 
         uint8_t channelIndex = jsonDocument["index"].as<uint8_t>();
-        
+
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Invalid channel index: %u. Skipping setting data", channelIndex);
             return false;
         }
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
             LOG_WARNING("Failed to get channel data from JSON for channel %u", channelIndex);
             return false;
@@ -824,7 +860,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         channelDataFromJson(jsonDocument, channelData, partial);
 
-        if (!setChannelData(channelData, channelIndex)) {
+        if (!setChannelData(channelData, channelIndex, roleChanged)) {
             LOG_WARNING("Failed to set channel data from JSON for channel %u", channelIndex);
             return false;
         }
@@ -836,13 +872,18 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         jsonDocument["index"] = channelData.index;
         jsonDocument["active"] = channelData.active;
         jsonDocument["reverse"] = channelData.reverse;
-        jsonDocument["highPriority"] = channelData.highPriority;
         jsonDocument["label"] = JsonString(channelData.label); // Ensure it is not a dangling pointer
         jsonDocument["phase"] = channelData.phase;
 
         jsonDocument["ctSpecification"]["currentRating"] = channelData.ctSpecification.currentRating;
         jsonDocument["ctSpecification"]["voltageOutput"] = channelData.ctSpecification.voltageOutput;
         jsonDocument["ctSpecification"]["scalingFraction"] = channelData.ctSpecification.scalingFraction;
+
+        // Channel grouping
+        jsonDocument["groupLabel"] = JsonString(channelData.groupLabel);
+
+        // Channel role
+        jsonDocument["role"] = channelRoleToString(channelData.role);
 
         LOG_VERBOSE("Successfully converted channel data to JSON for channel %u", channelData.index);
     }
@@ -853,7 +894,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             if (jsonDocument["index"].is<uint8_t>()) channelData.index = jsonDocument["index"].as<uint8_t>();
             if (jsonDocument["active"].is<bool>()) channelData.active = jsonDocument["active"].as<bool>();
             if (jsonDocument["reverse"].is<bool>()) channelData.reverse = jsonDocument["reverse"].as<bool>();
-            if (jsonDocument["highPriority"].is<bool>()) channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             if (jsonDocument["label"].is<const char*>()) {
                 snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             }
@@ -869,20 +909,77 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) {
                 channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
             }
+
+            // Channel grouping
+            if (jsonDocument["groupLabel"].is<const char*>()) {
+                snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", jsonDocument["groupLabel"].as<const char*>());
+            }
+
+            // Channel role
+            if (jsonDocument["role"].is<const char*>()) {
+                channelData.role = channelRoleFromString(jsonDocument["role"].as<const char*>());
+            }
         } else {
             // Full update - set all fields
             channelData.index = jsonDocument["index"].as<uint8_t>();
             channelData.active = jsonDocument["active"].as<bool>();
             channelData.reverse = jsonDocument["reverse"].as<bool>();
-            // highPriority is optional for backward compatibility (defaults to false if not provided)
-            channelData.highPriority = jsonDocument["highPriority"].as<bool>();
             snprintf(channelData.label, sizeof(channelData.label), "%s", jsonDocument["label"].as<const char*>());
             channelData.phase = static_cast<Phase>(jsonDocument["phase"].as<uint8_t>());
-            
+
             channelData.ctSpecification.currentRating = jsonDocument["ctSpecification"]["currentRating"].as<float>();
             channelData.ctSpecification.voltageOutput = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
             channelData.ctSpecification.scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
+
+            // Channel grouping
+            snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", jsonDocument["groupLabel"].as<const char*>());
+
+            // Channel role
+            channelData.role = channelRoleFromString(jsonDocument["role"].as<const char*>());
         }
+    }
+
+    ChannelRole getChannelRole(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) {
+            LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
+            return CHANNEL_ROLE_LOAD; // Default role
+        }
+
+        if (!acquireMutex(&_channelDataMutex)) {
+            LOG_ERROR("Failed to acquire mutex for channel data");
+            return CHANNEL_ROLE_LOAD; // Default role
+        }
+
+        ChannelRole role = _channelData[channelIndex].role;
+        releaseMutex(&_channelDataMutex);
+        return role;
+    }
+
+    const char* channelRoleToString(ChannelRole role) {
+        switch (role) {
+            case CHANNEL_ROLE_GRID:     return "grid";
+            case CHANNEL_ROLE_PV:       return "pv";
+            case CHANNEL_ROLE_BATTERY:  return "battery";
+            case CHANNEL_ROLE_INVERTER: return "inverter";
+            case CHANNEL_ROLE_LOAD:
+            default:                    return "load";
+        }
+    }
+
+    ChannelRole channelRoleFromString(const char* roleStr) {
+        if (strcmp(roleStr, "grid") == 0)     return CHANNEL_ROLE_GRID;
+        if (strcmp(roleStr, "pv") == 0)       return CHANNEL_ROLE_PV;
+        if (strcmp(roleStr, "battery") == 0)  return CHANNEL_ROLE_BATTERY;
+        if (strcmp(roleStr, "inverter") == 0) return CHANNEL_ROLE_INVERTER;
+        return CHANNEL_ROLE_LOAD; // Default
+    }
+
+    bool isValidChannelRoleString(const char* roleStr) {
+        return (strcmp(roleStr, "load") == 0 ||
+                strcmp(roleStr, "grid") == 0 ||
+                strcmp(roleStr, "pv") == 0 ||
+                strcmp(roleStr, "battery") == 0 ||
+                strcmp(roleStr, "inverter") == 0);
     }
 
     // Energy data management
@@ -896,11 +993,11 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         // Set all energy values to 0 (safe since we acquired the mutex)
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-            _meterValues[i].activeEnergyImported = 0.0f;
-            _meterValues[i].activeEnergyExported = 0.0f;
-            _meterValues[i].reactiveEnergyImported = 0.0f;
-            _meterValues[i].reactiveEnergyExported = 0.0f;
-            _meterValues[i].apparentEnergy = 0.0f;
+            _meterValues[i].activeEnergyImported = 0.0;
+            _meterValues[i].activeEnergyExported = 0.0;
+            _meterValues[i].reactiveEnergyImported = 0.0;
+            _meterValues[i].reactiveEnergyExported = 0.0;
+            _meterValues[i].apparentEnergy = 0.0;
         }
 
         releaseMutex(&_meterValuesMutex);
@@ -911,35 +1008,214 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         preferences.clear();
         preferences.end();
 
-        // Remove all CSV energy files from all subdirectories (daily, monthly, yearly)
-        const char* energyDirs[] = { ENERGY_CSV_DAILY_PREFIX, ENERGY_CSV_MONTHLY_PREFIX, ENERGY_CSV_YEARLY_PREFIX, ENERGY_CSV_PREFIX };
-        for (const char* dirPath : energyDirs) {
-            if (!LittleFS.exists(dirPath)) continue;
-            
-            File root = LittleFS.open(dirPath);
-            if (!root) continue;
-            
-            File file = root.openNextFile();
-            while (file) {
-                if (!file.isDirectory() && (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv"))) {
-                    char fullPathFile[NAME_BUFFER_SIZE];
-                    snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", dirPath, file.name());
-                    
-                    // We now need to close the file before removing it
-                    file.close();
-                    LittleFS.remove(fullPathFile);
-                    LOG_DEBUG("Removed energy CSV file: %s", fullPathFile);
-                } else {
-                    file.close();
-                }
-                file = root.openNextFile();
-            }
-            root.close();
-        }
-
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) _saveEnergyToPreferences(i);
 
-        LOG_INFO("Successfully reset energy values to 0");
+        // Offload heavy file I/O to background task
+        _spawnHistoryClearTask(CLEAR_ALL_CHANNELS_SENTINEL);
+
+        LOG_DEBUG("Started task for clearing history of all channels");
+    }
+
+    void resetChannelEnergyValues(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) {
+            LOG_ERROR("Invalid channel index: %u", channelIndex);
+            return;
+        }
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for meter values");
+            return;
+        }
+
+        _meterValues[channelIndex].activeEnergyImported = 0.0;
+        _meterValues[channelIndex].activeEnergyExported = 0.0;
+        _meterValues[channelIndex].reactiveEnergyImported = 0.0;
+        _meterValues[channelIndex].reactiveEnergyExported = 0.0;
+        _meterValues[channelIndex].apparentEnergy = 0.0;
+
+        releaseMutex(&_meterValuesMutex);
+
+        _saveEnergyToPreferences(channelIndex, true); // Force save zeroed values
+
+        // Offload heavy file I/O to background task
+        _spawnHistoryClearTask(channelIndex);
+
+        LOG_DEBUG("Started task for clearing history for channel %u", channelIndex);
+    }
+
+    bool _clearChannelHistoricalData(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) {
+            LOG_ERROR("Invalid channel index: %u", channelIndex);
+            return false;
+        }
+
+        LOG_INFO("Clearing historical data for channel %u...", channelIndex);
+
+        // Process all three energy directories (daily, monthly, yearly)
+        const char* energyDirs[] = { ENERGY_CSV_DAILY_PREFIX, ENERGY_CSV_MONTHLY_PREFIX, ENERGY_CSV_YEARLY_PREFIX };
+        uint32_t filesProcessed = 0;
+        uint32_t filesModified = 0;
+
+        for (const char* dirPath : energyDirs) {
+            if (!LittleFS.exists(dirPath)) continue;
+
+            File dir = LittleFS.open(dirPath);
+            if (!dir) continue;
+
+            // Collect filenames first (to avoid modifying while iterating)
+            // Skip temporary working files (TEMPORARY_FILE_PREFIX*) that may be left over from previous crashes
+            std::vector<char*> filenames;
+            File file = dir.openNextFile();
+            while (file) {
+                const char* filename = file.name();
+                // Skip temporary working files (TEMPORARY_FILE_PREFIX_decompressed.csv, TEMPORARY_FILE_PREFIX_filter.csv, etc.)
+                if (!file.isDirectory() && (endsWith(filename, ".csv") || endsWith(filename, ".csv.gz"))
+                    && strncmp(filename, TEMPORARY_FILE_PREFIX, strlen(TEMPORARY_FILE_PREFIX)) != 0) {
+                    char* nameCopy = (char*)ps_malloc(strlen(filename) + 1);
+                    if (nameCopy) {
+                        strcpy(nameCopy, filename);
+                        filenames.push_back(nameCopy);
+                    }
+                }
+                file.close();
+                file = dir.openNextFile();
+            }
+            dir.close();
+
+            // Process each file
+            for (const char* filename : filenames) {
+                char filepath[NAME_BUFFER_SIZE];
+                snprintf(filepath, sizeof(filepath), "%s/%s", dirPath, filename);
+                filesProcessed++;
+
+                bool isGzip = endsWith(filename, ".csv.gz");
+                char csvPath[NAME_BUFFER_SIZE];
+                char tempPath[NAME_BUFFER_SIZE];
+                snprintf(tempPath, sizeof(tempPath), "%s/%s_filter.csv", dirPath, TEMPORARY_FILE_PREFIX);
+
+                // If gzip, decompress first
+                if (isGzip) {
+                    snprintf(csvPath, sizeof(csvPath), "%s/%s_decompressed.csv", dirPath, TEMPORARY_FILE_PREFIX);
+
+                    LOG_DEBUG("Decompressing %s...", filepath);
+                    // Use GzUnpacker to decompress
+                    GzUnpacker *unpacker = new GzUnpacker();
+                    if (!unpacker) {
+                        LOG_ERROR("Failed to allocate GzUnpacker for %s", filepath);
+                        continue;
+                    }
+                    unpacker->haltOnError(false);
+                    bool decompressSuccess = unpacker->gzExpander(LittleFS, filepath, LittleFS, csvPath);
+                    delete unpacker;
+
+                    if (!decompressSuccess) {
+                        LOG_ERROR("Failed to decompress %s", filepath);
+                        LittleFS.remove(csvPath);
+                        continue;
+                    }
+                } else {
+                    snprintf(csvPath, sizeof(csvPath), "%s", filepath);
+                }
+
+                LOG_DEBUG("Filtering channel %u from %s...", channelIndex, filepath);
+                // Filter the CSV file - remove lines for the specified channel
+                File srcFile = LittleFS.open(csvPath, FILE_READ);
+                if (!srcFile) {
+                    LOG_ERROR("Failed to open source file: %s", csvPath);
+                    if (isGzip) LittleFS.remove(csvPath);
+                    continue;
+                }
+
+                File destFile = LittleFS.open(tempPath, FILE_WRITE);
+                if (!destFile) {
+                    LOG_ERROR("Failed to create temp file: %s", tempPath);
+                    srcFile.close();
+                    if (isGzip) LittleFS.remove(csvPath);
+                    continue;
+                }
+
+                // Read line by line and filter
+                char lineBuffer[256];
+                bool isFirstLine = true;
+                bool hasDataRemaining = false;
+                char channelStr[8];
+                snprintf(channelStr, sizeof(channelStr), ",%u,", channelIndex);
+
+                while (srcFile.available()) {
+                    size_t len = 0;
+                    char c;
+                    while (srcFile.available() && len < sizeof(lineBuffer) - 1) {
+                        c = static_cast<char>(srcFile.read());
+                        if (c == '\n') break;
+                        lineBuffer[len++] = c;
+                    }
+                    lineBuffer[len] = '\0';
+
+                    // Skip empty lines
+                    if (len == 0) continue;
+
+                    // Always keep the header
+                    if (isFirstLine) {
+                        destFile.println(lineBuffer);
+                        isFirstLine = false;
+                        continue;
+                    }
+
+                    // Check if this line belongs to the channel we want to remove
+                    // CSV format: timestamp,channel,active_imported,active_exported
+                    // We check for ",X," pattern where X is the channel number
+                    if (strstr(lineBuffer, channelStr) == nullptr) {
+                        destFile.println(lineBuffer);
+                        hasDataRemaining = true;
+                    }
+                }
+
+                srcFile.close();
+                destFile.close();
+
+                // Clean up decompressed temp file if we used gzip
+                if (isGzip) {
+                    LittleFS.remove(csvPath);
+                }
+
+                // Replace original file with filtered version
+                if (hasDataRemaining) {
+                    // Remove original and rename temp
+                    LittleFS.remove(filepath);
+                    
+                    if (isGzip) {
+                        // Recompress the filtered file
+                        char finalCsvPath[NAME_BUFFER_SIZE];
+                        // Remove the .gz extension to get the csv path for compression
+                        snprintf(finalCsvPath, sizeof(finalCsvPath), "%s", filepath);
+                        finalCsvPath[strlen(finalCsvPath) - 3] = '\0'; // Remove ".gz"
+                        
+                        LittleFS.rename(tempPath, finalCsvPath);
+
+                        LOG_DEBUG("Recompressing %s...", finalCsvPath);
+                        if (!compressFile(finalCsvPath)) {
+                            LOG_WARNING("Failed to recompress %s, keeping as CSV", finalCsvPath);
+                        }
+                    } else {
+                        LittleFS.rename(tempPath, filepath);
+                    }
+                    filesModified++;
+                } else {
+                    // No data remaining, remove the file entirely
+                    LittleFS.remove(filepath);
+                    LittleFS.remove(tempPath);
+                    filesModified++;
+                    LOG_DEBUG("Removed empty file after filtering: %s", filepath);
+                }
+            }
+
+            // Cleanup filename copies
+            for (char* name : filenames) free(name);
+        }
+
+        LOG_INFO("Cleared historical data for channel %u: %lu files processed, %lu files modified", 
+                 channelIndex, filesProcessed, filesModified);
+        return true;
     }
 
     bool setEnergyValues(
@@ -1017,7 +1293,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
             // Here we also ensure the channel has valid measurements since we have the "duty" to pass all the correct data
             if (isChannelActive(i) && hasChannelValidMeasurements(i)) {
-                ChannelData channelData;
+                ChannelData channelData(i);
                 if (!getChannelData(channelData, i)) {
                     LOG_WARNING("Failed to get channel data for channel %u", i);
                     continue;
@@ -1027,6 +1303,8 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                 _jsonChannel["index"] = i;
                 _jsonChannel["label"] = JsonString(channelData.label); // Ensure the string is not a dangling pointer
                 _jsonChannel["phase"] = channelData.phase;
+                _jsonChannel["groupLabel"] = JsonString(channelData.groupLabel); // Ensure the string is not a dangling pointer
+                _jsonChannel["role"] = channelRoleToString(channelData.role);
 
                 SpiRamAllocator allocator;
                 JsonDocument jsonData(&allocator);
@@ -1060,65 +1338,163 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
     // Aggregated power calculations 
     // =============================
 
-    float getAggregatedActivePower(bool includeChannel0) {
+    float getAggregatedActivePowerByRole(ChannelRole role) {
         float sum = 0.0f;
-        uint8_t activeChannelCount = 0;
 
         if (!acquireMutex(&_meterValuesMutex)) {
-            LOG_ERROR("Failed to acquire mutex for meter values");
-            return 0.0f; // Return 0 if mutex acquisition fails
-        }
-        for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
-            if (isChannelActive(i)) {
-                sum += _meterValues[i].activePower;
-                activeChannelCount++;
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].activePower;
+                }
             }
+            releaseMutex(&_meterValuesMutex);
         }
-        releaseMutex(&_meterValuesMutex);
-        return activeChannelCount > 0 ? sum : 0.0f;
+
+        return sum;
     }
 
-    float getAggregatedReactivePower(bool includeChannel0) {
+    float getAggregatedReactivePowerByRole(ChannelRole role) {
         float sum = 0.0f;
-        uint8_t activeChannelCount = 0;
 
         if (!acquireMutex(&_meterValuesMutex)) {
-            LOG_ERROR("Failed to acquire mutex for meter values");
-            return 0.0f; // Return 0 if mutex acquisition fails
-        }
-        for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
-            if (isChannelActive(i)) {
-                sum += _meterValues[i].reactivePower;
-                activeChannelCount++;
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].reactivePower;
+                }
             }
+            releaseMutex(&_meterValuesMutex);
         }
-        releaseMutex(&_meterValuesMutex);
-        return activeChannelCount > 0 ? sum : 0.0f;
+
+        return sum;
     }
 
-    float getAggregatedApparentPower(bool includeChannel0) {
+    float getAggregatedApparentPowerByRole(ChannelRole role) {
         float sum = 0.0f;
-        uint8_t activeChannelCount = 0;
 
         if (!acquireMutex(&_meterValuesMutex)) {
-            LOG_ERROR("Failed to acquire mutex for meter values");
-            return 0.0f; // Return 0 if mutex acquisition fails
-        }
-        for (uint8_t i = includeChannel0 ? 0 : 1; i < CHANNEL_COUNT; i++) {
-            if (isChannelActive(i)) {
-                sum += _meterValues[i].apparentPower;
-                activeChannelCount++;
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].apparentPower;
+                }
             }
+            releaseMutex(&_meterValuesMutex);
         }
-        releaseMutex(&_meterValuesMutex);
-        return activeChannelCount > 0 ? sum : 0.0f;
+
+        return sum;
     }
 
-    float getAggregatedPowerFactor(bool includeChannel0) {
-        float _aggregatedActivePower = getAggregatedActivePower(includeChannel0);
-        float _aggregatedApparentPower = getAggregatedApparentPower(includeChannel0);
+    float getAggregatedPowerFactorByRole(ChannelRole role) {
+        float sumActivePower = 0.0f;
+        float sumApparentPower = 0.0f;
 
-        return _aggregatedApparentPower > 0 ? _aggregatedActivePower / _aggregatedApparentPower : 0.0f;
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sumActivePower += _meterValues[i].activePower;
+                    sumApparentPower += _meterValues[i].apparentPower;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        if (sumApparentPower == 0.0f) return 0.0f;
+        else return sumActivePower / sumApparentPower;
+    }
+
+    // Aggregated energy calculations
+    // ===============================
+
+    float getAggregatedActiveEnergyImportedByRole(ChannelRole role) {
+        double sum = 0.0;
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].activeEnergyImported;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        return static_cast<float>(sum);
+    }
+
+    float getAggregatedActiveEnergyExportedByRole(ChannelRole role) {
+        double sum = 0.0;
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].activeEnergyExported;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        return static_cast<float>(sum);
+    }
+
+    float getAggregatedReactiveEnergyImportedByRole(ChannelRole role) {
+        double sum = 0.0;
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].reactiveEnergyImported;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        return static_cast<float>(sum);
+    }
+
+    float getAggregatedReactiveEnergyExportedByRole(ChannelRole role) {
+        double sum = 0.0;
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].reactiveEnergyExported;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        return static_cast<float>(sum);
+    }
+
+    float getAggregatedApparentEnergyByRole(ChannelRole role) {
+        double sum = 0.0;
+
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex");
+        } else {
+            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+                if (isChannelActive(i) && getChannelRole(i) == role) {
+                    sum += _meterValues[i].apparentEnergy;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+
+        return static_cast<float>(sum);
     }
 
     // Grid frequency
@@ -1260,7 +1636,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         _stopMeterReadingTask();
         _stopEnergySaveTask();
         _stopHourlyCsvSaveTask();
-        
+
         // Reset failure counters during cleanup
         _failureCount = 0;
         _firstFailureTime = 0;
@@ -1417,11 +1793,17 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             // until the next linecyc interrupt is received, which allows us to switch to the
             // next channel after we've completely read what we need to read (and in any case, the
             // next reading will be purged)
-            _currentChannel = _findNextActiveChannel(_currentChannel);
 
-            // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
-            // 1 (since channel 0 does not pass through the multiplexer)
-            Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
+            // Skip channel switching during OTA to avoid timing issues from CPU starvation
+            if (!Update.isRunning()) {
+                _currentChannel = _findNextActiveChannel(_currentChannel);
+
+                // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
+                // 1 (since channel 0 does not pass through the multiplexer)
+                Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
+            } else {
+                LOG_DEBUG("OTA in progress, skipping channel switching to avoid timing issues");
+            }
         }
         
         // Check for channel 0 waveform capture separately (channel 0 doesn't go through multiplexer rotation)
@@ -1443,7 +1825,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         _processChannelReading(0, linecycUnix);
     }
 
-    void _pollWaveformSamples() {
+    void _pollWaveformSamples() { // TODO: this could become something related to a websocket for real time visualization and similar
         // This function performs tight polling of instantaneous waveform registers with zero-crossing detection
         // to ensure capture of complete cycles only. We start on a positive-going voltage zero crossing and
         // stop after detecting the Nth positive-going zero crossing.
@@ -1642,12 +2024,8 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                         break;
                 }
             } else {
-                _recordCriticalFailure();
-                #ifdef ENV_DEV
                 LOG_DEBUG("No ADE7953 interrupt received within timeout, checking for stop notification");
-                #else
-                LOG_WARNING("No ADE7953 interrupt received within time expected, this indicates some problems.");
-                #endif
+                _recordCriticalFailure();
 
                 // Clear any interrupt flag to ensure we don't remain stuck
                 readRegister(RSTIRQSTATA_32, BIT_32, false);
@@ -1924,6 +2302,103 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         vTaskDelete(NULL);
     }
 
+    // History clear task - offloads heavy file I/O from HTTP handlers
+    // ==============================================================
+
+    void _spawnHistoryClearTask(uint8_t channelIndex) {
+        // Lazy-init the mutex that serializes concurrent clear operations
+        if (_historyClearMutex == NULL) {
+            _historyClearMutex = xSemaphoreCreateMutex();
+            if (_historyClearMutex == NULL) {
+                LOG_ERROR("Failed to create history clear mutex");
+                return;
+            }
+        }
+
+        // Allocate channel index on heap to pass to task
+        uint8_t* channelIndexPtr = (uint8_t*)malloc(sizeof(uint8_t));
+        if (channelIndexPtr == NULL) {
+            LOG_ERROR("Failed to allocate memory for history clear task parameter");
+            return;
+        }
+        *channelIndexPtr = channelIndex;
+
+        BaseType_t result = xTaskCreate(
+            _historyClearTask,
+            ADE7953_HISTORY_CLEAR_TASK_NAME,
+            ADE7953_HISTORY_CLEAR_TASK_STACK_SIZE,
+            channelIndexPtr,  // Pass channel index as parameter
+            ADE7953_HISTORY_CLEAR_TASK_PRIORITY,
+            NULL);  // No need to track the task handle
+
+        if (result != pdPASS) {
+            LOG_ERROR("Failed to spawn history clear task");
+            free(channelIndexPtr);
+        } else {
+            LOG_DEBUG("Spawned history clear task for %s",
+                channelIndex == CLEAR_ALL_CHANNELS_SENTINEL ? "all channels" : String(channelIndex).c_str());
+        }
+    }
+
+    void _clearAllHistoricalData() {
+        LOG_DEBUG("Clearing all historical energy data...");
+        const char* energyDirs[] = { ENERGY_CSV_DAILY_PREFIX, ENERGY_CSV_MONTHLY_PREFIX, ENERGY_CSV_YEARLY_PREFIX, ENERGY_CSV_PREFIX };
+        for (const char* dirPath : energyDirs) {
+            if (!LittleFS.exists(dirPath)) continue;
+
+            File root = LittleFS.open(dirPath);
+            if (!root) continue;
+
+            File file = root.openNextFile();
+            while (file) {
+                if (!file.isDirectory() && (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv"))) {
+                    char fullPathFile[NAME_BUFFER_SIZE];
+                    snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", dirPath, file.name());
+                    file.close();
+                    LittleFS.remove(fullPathFile);
+                    LOG_DEBUG("Removed energy CSV file: %s", fullPathFile);
+                } else {
+                    file.close();
+                }
+                file = root.openNextFile();
+            }
+            root.close();
+        }
+        LOG_INFO("Cleared all historical energy data");
+    }
+
+    void _historyClearTask(void* parameter) {
+        // Retrieve channel index from parameter
+        uint8_t* channelIndexPtr = (uint8_t*)parameter;
+        if (channelIndexPtr == NULL) {
+            LOG_ERROR("History clear task received NULL parameter");
+            vTaskDelete(NULL);
+            return;
+        }
+
+        uint8_t channelIndex = *channelIndexPtr;
+        free(channelIndexPtr);  // Free the allocated memory
+
+        // Serialize: GzUnpacker uses global static state (uzLibDecompressor),
+        // so concurrent decompression operations will corrupt memory.
+        if (xSemaphoreTake(_historyClearMutex, pdMS_TO_TICKS(60000)) != pdTRUE) {
+            LOG_WARNING("History clear timed out waiting for mutex, skipping");
+            vTaskDelete(NULL);
+            return;
+        }
+
+        // Perform the clearing operation
+        if (channelIndex == CLEAR_ALL_CHANNELS_SENTINEL) {
+            _clearAllHistoricalData();
+        } else {
+            _clearChannelHistoricalData(channelIndex);
+        }
+
+        xSemaphoreGive(_historyClearMutex);
+        LOG_DEBUG("History clear task completed");
+        vTaskDelete(NULL);  // Task deletes itself
+    }
+
     // Configuration management functions
     // ==================================
 
@@ -2097,7 +2572,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             return;
         }
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, true)) { // true = read-only
             LOG_ERROR("Failed to open Preferences for channel data");
@@ -2128,8 +2603,12 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         channelData.phase = static_cast<Phase>(preferences.getUChar(key, (uint8_t)(DEFAULT_CHANNEL_PHASE)));
 
-        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
-        channelData.highPriority = preferences.getBool(key, channelIndex == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY);
+        // Migrate legacy highPriority key (remove old NVS entry if present)
+        snprintf(key, sizeof(key), CHANNEL_HIGHPRI_KEY_LEGACY, channelIndex);
+        if (preferences.isKey(key)) {
+            preferences.remove(key);
+            LOG_DEBUG("Removed legacy highPriority key for channel %u", channelIndex);
+        }
 
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
@@ -2140,6 +2619,41 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         snprintf(key, sizeof(key), CHANNEL_CT_SCALING_FRACTION_KEY, channelIndex);
         channelData.ctSpecification.scalingFraction = preferences.getFloat(key, DEFAULT_CT_SCALING_FRACTION);
+
+        // Channel grouping
+        snprintf(key, sizeof(key), CHANNEL_GROUP_LABEL_KEY, channelIndex);
+        char defaultGroupLabel[NAME_BUFFER_SIZE];
+        snprintf(defaultGroupLabel, sizeof(defaultGroupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, 0);
+        preferences.getString(key, channelData.groupLabel, sizeof(channelData.groupLabel));
+        if (strlen(channelData.groupLabel) == 0) {
+            snprintf(channelData.groupLabel, sizeof(channelData.groupLabel), "%s", defaultGroupLabel);
+        }
+
+        // Channel role (with migration from old bool keys)
+        snprintf(key, sizeof(key), CHANNEL_ROLE_KEY, channelIndex);
+        if (preferences.isKey(key)) {
+            channelData.role = static_cast<ChannelRole>(preferences.getUChar(key, channelIndex == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE));
+        } else {
+            // Migration: read old bool keys and convert to enum
+            // Then delete to avoid overcrowding the NVS space with legacy keys
+            char oldKey[PREFERENCES_KEY_BUFFER_SIZE];
+            snprintf(oldKey, sizeof(oldKey), CHANNEL_IS_GRID_KEY_LEGACY, channelIndex);
+            bool wasGrid = preferences.getBool(oldKey, false);
+            preferences.remove(oldKey);
+            snprintf(oldKey, sizeof(oldKey), CHANNEL_IS_PRODUCTION_KEY_LEGACY, channelIndex);
+            bool wasProd = preferences.getBool(oldKey, false);
+            preferences.remove(oldKey);
+            snprintf(oldKey, sizeof(oldKey), CHANNEL_IS_BATTERY_KEY_LEGACY, channelIndex);
+            bool wasBatt = preferences.getBool(oldKey, false);
+            preferences.remove(oldKey);
+
+            if (wasGrid) channelData.role = CHANNEL_ROLE_GRID;
+            else if (wasProd) channelData.role = CHANNEL_ROLE_PV;
+            else if (wasBatt) channelData.role = CHANNEL_ROLE_BATTERY;
+            else channelData.role = (channelIndex == 0) ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE;
+
+            LOG_DEBUG("Migrated channel %u role from old bool keys: %s", channelIndex, channelRoleToString(channelData.role));
+        }
 
         preferences.end();
 
@@ -2162,7 +2676,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         char key[PREFERENCES_KEY_BUFFER_SIZE];
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
             LOG_WARNING("Failed to get channel data for channel %u", channelIndex);
             return false;
@@ -2181,9 +2695,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         preferences.putUChar(key, (uint8_t)(channelData.phase));
 
-        snprintf(key, sizeof(key), CHANNEL_HIGH_PRIORITY_KEY, channelIndex);
-        preferences.putBool(key, channelData.highPriority);
-
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
         preferences.putFloat(key, channelData.ctSpecification.currentRating);
@@ -2194,9 +2705,86 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         snprintf(key, sizeof(key), CHANNEL_CT_SCALING_FRACTION_KEY, channelIndex);
         preferences.putFloat(key, channelData.ctSpecification.scalingFraction);
 
+        // Channel grouping
+        snprintf(key, sizeof(key), CHANNEL_GROUP_LABEL_KEY, channelIndex);
+        preferences.putString(key, channelData.groupLabel);
+
+        // Channel role
+        snprintf(key, sizeof(key), CHANNEL_ROLE_KEY, channelIndex);
+        preferences.putUChar(key, static_cast<uint8_t>(channelData.role));
+
         preferences.end();
 
         LOG_DEBUG("Successfully saved channel data to Preferences for channel %lu", channelIndex);
+        return true;
+    }
+
+    bool _isValidPhase(uint8_t phase) {
+        return (phase == PHASE_1 ||
+                phase == PHASE_2 ||
+                phase == PHASE_3 ||
+                phase == PHASE_SPLIT_240);
+    }
+
+    bool _validateStringField(const char* fieldName, const char* value, size_t maxLength) {
+        if (!isStringLengthValid(value, 1, maxLength - 1)) {
+            LOG_WARNING("%s length %u out of range (1-%u)", fieldName, strlen(value), maxLength - 1);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validateCtCurrentRating(float value) {
+        if (!isValueInRange(value, VALIDATE_CT_CURRENT_RATING_MIN, VALIDATE_CT_CURRENT_RATING_MAX)) {
+            LOG_WARNING("currentRating %.1fA out of range (%.1f-%.1f)",
+                       value, VALIDATE_CT_CURRENT_RATING_MIN, VALIDATE_CT_CURRENT_RATING_MAX);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validateCtVoltageOutput(float value) {
+        if (!isValueInRange(value, VALIDATE_CT_VOLTAGE_OUTPUT_MIN, VALIDATE_CT_VOLTAGE_OUTPUT_MAX)) {
+            LOG_WARNING("voltageOutput %.3fV out of range (%.3f-%.3f)",
+                       value, VALIDATE_CT_VOLTAGE_OUTPUT_MIN, VALIDATE_CT_VOLTAGE_OUTPUT_MAX);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validateCtScalingFraction(float value) {
+        if (value < VALIDATE_CT_SCALING_FRACTION_MIN || value > VALIDATE_CT_SCALING_FRACTION_MAX) {
+            LOG_WARNING("scalingFraction %.2f out of range (%.2f-%.2f)",
+                       value, VALIDATE_CT_SCALING_FRACTION_MIN, VALIDATE_CT_SCALING_FRACTION_MAX);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validateGroupRoleConsistency(const char* groupLabel, uint8_t channelIndex, ChannelRole role) {
+        // Acquire mutex to safely read other channels
+        if (!acquireMutex(&_channelDataMutex)) {
+            LOG_ERROR("Failed to acquire mutex for group validation");
+            return false;
+        }
+
+        // Check all other channels with same groupLabel
+        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            if (i == channelIndex) continue;  // Skip self
+
+            // If another channel has same groupLabel, roles must match
+            if (strcmp(_channelData[i].groupLabel, groupLabel) == 0) {
+                if (_channelData[i].role != role) {
+                    LOG_WARNING("Group '%s' role mismatch: channel %u is %s, but channel %u would be %s",
+                               groupLabel, i, channelRoleToString(_channelData[i].role),
+                               channelIndex, channelRoleToString(role));
+                    releaseMutex(&_channelDataMutex);
+                    return false;
+                }
+            }
+        }
+
+        releaseMutex(&_channelDataMutex);
         return true;
     }
 
@@ -2218,38 +2806,193 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         }
 
         if (partial) {
-            if (jsonDocument["active"].is<bool>()) return true;
-            if (jsonDocument["reverse"].is<bool>()) return true;
-            if (jsonDocument["highPriority"].is<bool>()) return true;
-            if (jsonDocument["label"].is<const char*>()) return true;
-            if (jsonDocument["phase"].is<uint8_t>()) return true;
+            uint8_t channelIndex = jsonDocument["index"].as<uint8_t>();
+            bool hasValidField = false;
 
-            // CT Specification validation for partial updates
+            // Validate active field (no validation needed, just a boolean)
+            if (jsonDocument["active"].is<bool>()) {
+                hasValidField = true;
+            }
+
+            // Validate reverse field (no validation needed, just a boolean)
+            if (jsonDocument["reverse"].is<bool>()) {
+                hasValidField = true;
+            }
+
+            // Label validation
+            if (jsonDocument["label"].is<const char*>()) {
+                const char* label = jsonDocument["label"].as<const char*>();
+                if (!_validateStringField("label", label, NAME_BUFFER_SIZE)) {
+                    return false;
+                }
+                hasValidField = true;
+            }
+
+            // Phase validation
+            if (jsonDocument["phase"].is<uint8_t>()) {
+                uint8_t phase = jsonDocument["phase"].as<uint8_t>();
+                if (!_isValidPhase(phase)) {
+                    LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
+                    return false;
+                }
+                hasValidField = true;
+            }
+
+            // CT Specification validation with ranges
             if (jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
-                if (jsonDocument["ctSpecification"]["currentRating"].is<float>()) return true;
-                if (jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) return true;
-                if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) return true;   
+                if (jsonDocument["ctSpecification"]["currentRating"].is<float>()) {
+                    float val = jsonDocument["ctSpecification"]["currentRating"].as<float>();
+                    if (!_validateCtCurrentRating(val)) return false;
+                    hasValidField = true;
+                }
+                if (jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) {
+                    float val = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
+                    if (!_validateCtVoltageOutput(val)) return false;
+                    hasValidField = true;
+                }
+                if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) {
+                    float val = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
+                    if (!_validateCtScalingFraction(val)) return false;
+                    hasValidField = true;
+                }
             }
 
-            LOG_WARNING("No valid fields found for partial update");
-            return false; // No valid fields found for partial update
+            // GroupLabel validation
+            if (jsonDocument["groupLabel"].is<const char*>()) {
+                const char* groupLabel = jsonDocument["groupLabel"].as<const char*>();
+                if (!_validateStringField("groupLabel", groupLabel, NAME_BUFFER_SIZE)) {
+                    return false;
+                }
+
+                // Group role consistency: get current or new role
+                ChannelRole role = _channelData[channelIndex].role;  // Default to current
+                if (jsonDocument["role"].is<const char*>()) {
+                    role = channelRoleFromString(jsonDocument["role"].as<const char*>());
+                }
+
+                if (!_validateGroupRoleConsistency(groupLabel, channelIndex, role)) {
+                    return false;
+                }
+                hasValidField = true;
+            }
+
+            // Channel role validation
+            if (jsonDocument["role"].is<const char*>()) {
+                if (!isValidChannelRoleString(jsonDocument["role"].as<const char*>())) {
+                    LOG_WARNING("Invalid role value: %s", jsonDocument["role"].as<const char*>());
+                    return false;
+                }
+
+                // Group role consistency: check with current or new groupLabel
+                const char* groupLabel = _channelData[channelIndex].groupLabel;  // Default to current
+                if (jsonDocument["groupLabel"].is<const char*>()) {
+                    groupLabel = jsonDocument["groupLabel"].as<const char*>();
+                }
+
+                ChannelRole role = channelRoleFromString(jsonDocument["role"].as<const char*>());
+                if (!_validateGroupRoleConsistency(groupLabel, channelIndex, role)) {
+                    return false;
+                }
+                hasValidField = true;
+            }
+
+            if (!hasValidField) {
+                LOG_WARNING("No valid fields found for partial update");
+                return false;
+            }
+            return true;
         } else {
-            // Full validation - all fields must be present and valid
-            if (!jsonDocument["active"].is<bool>()) { LOG_WARNING("active is missing or not bool"); return false; }
-            if (!jsonDocument["reverse"].is<bool>()) { LOG_WARNING("reverse is missing or not bool"); return false; }
-            // highPriority is optional for backward compatibility (defaults to false)
-            if (jsonDocument["highPriority"].is<JsonVariant>() && !jsonDocument["highPriority"].is<bool>()) { 
-                LOG_WARNING("highPriority is not bool"); 
-                return false; 
-            }
-            if (!jsonDocument["label"].is<const char*>()) { LOG_WARNING("label is missing or not string"); return false; }
-            if (!jsonDocument["phase"].is<uint8_t>()) { LOG_WARNING("phase is missing or not uint8_t"); return false; }
+            uint8_t channelIndex = jsonDocument["index"].as<uint8_t>();
 
-            // CT Specification validation
-            if (!jsonDocument["ctSpecification"].is<JsonObjectConst>()) { LOG_WARNING("ctSpecification is missing or not object"); return false; }
-            if (!jsonDocument["ctSpecification"]["currentRating"].is<float>()) { LOG_WARNING("ctSpecification.currentRating is missing or not float"); return false; }
-            if (!jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) { LOG_WARNING("ctSpecification.voltageOutput is missing or not float"); return false; }
-            if (!jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) { LOG_WARNING("ctSpecification.scalingFraction is missing or not float"); return false; }
+            // Full validation - all fields must be present and valid
+            if (!jsonDocument["active"].is<bool>()) {
+                LOG_WARNING("active is missing or not bool");
+                return false;
+            }
+            if (!jsonDocument["reverse"].is<bool>()) {
+                LOG_WARNING("reverse is missing or not bool");
+                return false;
+            }
+
+            // Label validation with length check
+            if (!jsonDocument["label"].is<const char*>()) {
+                LOG_WARNING("label is missing or not string");
+                return false;
+            }
+            const char* label = jsonDocument["label"].as<const char*>();
+            if (!_validateStringField("label", label, NAME_BUFFER_SIZE)) {
+                return false;
+            }
+
+            // Phase validation with enum check
+            if (!jsonDocument["phase"].is<uint8_t>()) {
+                LOG_WARNING("phase is missing or not uint8_t");
+                return false;
+            }
+            uint8_t phase = jsonDocument["phase"].as<uint8_t>();
+            if (!_isValidPhase(phase)) {
+                LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
+                return false;
+            }
+
+            // CT Specification validation with ranges
+            if (!jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
+                LOG_WARNING("ctSpecification is missing or not object");
+                return false;
+            }
+
+            if (!jsonDocument["ctSpecification"]["currentRating"].is<float>()) {
+                LOG_WARNING("ctSpecification.currentRating is missing or not float");
+                return false;
+            }
+            float currentRating = jsonDocument["ctSpecification"]["currentRating"].as<float>();
+            if (!_validateCtCurrentRating(currentRating)) {
+                return false;
+            }
+
+            if (!jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) {
+                LOG_WARNING("ctSpecification.voltageOutput is missing or not float");
+                return false;
+            }
+            float voltageOutput = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
+            if (!_validateCtVoltageOutput(voltageOutput)) {
+                return false;
+            }
+
+            if (!jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) {
+                LOG_WARNING("ctSpecification.scalingFraction is missing or not float");
+                return false;
+            }
+            float scalingFraction = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
+            if (!_validateCtScalingFraction(scalingFraction)) {
+                return false;
+            }
+
+            // GroupLabel validation with length check
+            if (!jsonDocument["groupLabel"].is<const char*>()) {
+                LOG_WARNING("groupLabel is not string");
+                return false;
+            }
+            const char* groupLabel = jsonDocument["groupLabel"].as<const char*>();
+            if (!_validateStringField("groupLabel", groupLabel, NAME_BUFFER_SIZE)) {
+                return false;
+            }
+
+            // Channel role validation
+            if (!jsonDocument["role"].is<const char*>()) {
+                LOG_WARNING("role is not string");
+                return false;
+            }
+            if (!isValidChannelRoleString(jsonDocument["role"].as<const char*>())) {
+                LOG_WARNING("Invalid role value: %s", jsonDocument["role"].as<const char*>());
+                return false;
+            }
+
+            // Group role consistency validation
+            ChannelRole role = channelRoleFromString(jsonDocument["role"].as<const char*>());
+            if (!_validateGroupRoleConsistency(groupLabel, channelIndex, role)) {
+                return false;
+            }
 
             return true; // All fields validated successfully
         }
@@ -2629,11 +3372,11 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
     @param channel The channel to read the values from. Returns
     false if the data reading is not ready yet or valid.
     */
-    bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTimeMillis) { // TODO: add waveform data
+    bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTimeMillis) {
         uint64_t millisRead = millis64();
         uint64_t deltaMillis = millisRead - _meterValues[channelIndex].lastMillis;
 
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
             LOG_WARNING("Failed to get channel data for channel %u", channelIndex);
             _recordFailure();
@@ -2665,7 +3408,9 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         Phase basePhase = _channelData[0].phase; // Not using channelData since it is only accessed here and it is an integer so very low probability of race condition
 
-        if (channelData.phase == basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
+        // Split-phase 240V circuits use same-phase path (only 180° shift, so only the sign changes) so we can use the accurate energy registers, but accounting for a 2x multiplier
+        bool isSplitPhase240 = (channelData.phase == PHASE_SPLIT_240);
+        if (channelData.phase == basePhase || isSplitPhase240) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
             
             // These are the three most important (and only) values to read. All of the rest will be computed from these.
             // These are the most reliable since they are computed on the whole line cycle, thus they incorporate any harmonic.
@@ -2688,9 +3433,12 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                 }
             }
 
-            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1.0f : 1.0f);
-            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1.0f : 1.0f);
-            apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb;
+            // Apply 2x multiplier for split-phase 240V circuits (ADE7953 measures only 120V leg)
+            float voltageMultiplier = isSplitPhase240 ? 2.0f : 1.0f;
+
+            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1.0f : 1.0f) * voltageMultiplier;
+            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1.0f : 1.0f) * voltageMultiplier;
+            apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb * voltageMultiplier;
 
             // Set the handling just after reading the energy values, to ensure 100% consistency
             if (ade7953Channel == Ade7953Channel::A) _interruptHandledChannelA = true;
@@ -2699,13 +3447,13 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
             // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
             if (channelIndex == 0) {
-                voltage = float(_readVoltageRms()) * VOLT_PER_LSB;
+                voltage = float(_readVoltageRms()) * VOLT_PER_LSB * voltageMultiplier;
 
                 // Update grid frequency during channel 0 reading
                 float newGridFrequency = _readGridFrequency();
                 if (_validateGridFrequency(newGridFrequency)) _gridFrequency = newGridFrequency;
             } else {
-                voltage = _meterValues[0].voltage;
+                voltage = _meterValues[0].voltage * voltageMultiplier;
             }
             
             // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
@@ -2722,7 +3470,6 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
             current = voltage > 0.0f ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
         } else {
-            // TODO: understand how to aggregate three-phase measurements
             // We cannot use the energy registers as it would be too complicated (or impossible) to account both for the 120° shift and possible reverse current
             // Assume the voltage is the same as channel 0 (in amplitude) but shifted 120°
             // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
@@ -2843,6 +3590,36 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             }
 
         }
+
+        // Discard negative readings for Load channels (likely CT installed backwards)
+        if (activePower < 0.0f && channelData.role == CHANNEL_ROLE_LOAD) {
+            LOG_DEBUG(
+                "%s (%d): Discarding negative reading (%.1fW) (Load channel, likely CT installed backwards)",
+                channelData.label,
+                channelIndex,
+                activePower
+            );
+            _recordFailure();
+            return false;
+        }
+
+        // Clamp negative readings to zero for PV channels (expected inverter standby consumption, so no record failure)
+        if (activePower < 0.0f && channelData.role == CHANNEL_ROLE_PV) {
+            LOG_DEBUG(
+                "%s (%d): Clamping negative reading (%.1fW) to 0 (PV channel, likely inverter standby consumption)",
+                channelData.label,
+                channelIndex,
+                activePower
+            );
+            activePower = 0.0f;
+            reactivePower = 0.0f;
+            apparentPower = 0.0f;
+            current = 0.0f;
+            powerFactor = 0.0f;
+            activeEnergy = 0.0f;
+            reactiveEnergy = 0.0f;
+            apparentEnergy = 0.0f;
+        }
         
         // Enough checks, now we can set the values
         if (!acquireMutex(&_meterValuesMutex)) {
@@ -2913,6 +3690,12 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             _meterValues[channelIndex].current = 0.0f;
             _meterValues[channelIndex].apparentPower = 0.0f;
         }
+
+        // TODO: add here, after everything has been validated, the computation of the mean values over the last X values (with a simple exponential filter alpha = 0.3 - 0.5)
+
+        // Update dynamic scheduling: track power variability and recalculate channel weights
+        _updateVariability(channelIndex, _meterValues[channelIndex].activePower);
+        _recalculateWeights();
 
         // We actually set the timestamp of the channel (used for the energy calculations)
         // only if we actually reached the end. Otherwise it would mean the point had to be
@@ -3348,113 +4131,152 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
         return true;
     }
 
-    bool _validateValue(float newValue, float min, float max) {
-        if (newValue < min || newValue > max) {
-            LOG_WARNING("Value %f out of range (minimum: %f, maximum: %f)", newValue, min, max);
+    bool _validateVoltage(float value) {
+        if (!isValueInRange(value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX)) {
+            LOG_WARNING("Voltage %.1f V out of range (%.1f - %.1f V)", value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
             return false;
         }
         return true;
     }
 
-    bool _validateVoltage(float newValue) { return _validateValue(newValue, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX); }
-    bool _validateCurrent(float newValue) { return _validateValue(newValue, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX); }
-    bool _validatePower(float newValue) { return _validateValue(newValue, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX); }
-    bool _validatePowerFactor(float newValue) { return _validateValue(newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX); }
-    bool _validateGridFrequency(float newValue) { return _validateValue(newValue, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX); }
+    bool _validateCurrent(float value) {
+        if (!isValueInRange(value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX)) {
+            LOG_WARNING("Current %.3f A out of range (%.3f - %.3f A)", value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validatePower(float value) {
+        if (!isValueInRange(value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX)) {
+            LOG_WARNING("Power %.1f W out of range (%.1f - %.1f W)", value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validatePowerFactor(float value) {
+        if (!isValueInRange(value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX)) {
+            LOG_WARNING("Power factor %.3f out of range (%.3f - %.3f)", value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
+            return false;
+        }
+        return true;
+    }
+
+    bool _validateGridFrequency(float value) {
+        if (!isValueInRange(value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX)) {
+            LOG_WARNING("Grid frequency %.1f Hz out of range (%.1f - %.1f Hz)", value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
+            return false;
+        }
+        return true;
+    }
 
     // Utility functions
     // =================
 
-    static void _recalculateRatio() {
-        uint8_t activeHP = 0;
-        uint8_t activeLP = 0;
-
-        // Iterate 1 to CHANNEL_COUNT (skip 0)
-        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
-            if (_channelData[i].active) {
-                if (_channelData[i].highPriority) activeHP++;
-                else activeLP++;
-            }
+    /**
+     * Update the power variability tracker for a channel using exponential moving average.
+     * Called after each successful meter reading to track how much the power is changing.
+     */
+    static void _updateVariability(uint8_t channelIndex, float newActivePower) {
+        if (channelIndex >= CHANNEL_COUNT) return;
+        
+        // Skip variability computation on the very first reading (prevActivePower is 0 from init)
+        // to avoid inflating the variability score with the initial power value
+        if (_prevActivePower[channelIndex] == 0.0f && _powerVariability[channelIndex] == 0.0f) {
+            _prevActivePower[channelIndex] = newActivePower;
+            return;
         }
 
-        // Logic: Ratio = (HP_Count / LP_Count) * Bias
-        // This ensures that individually, an HP channel visits 'Bias' times more often than an LP.
-        if (activeLP > 0) {
-            // Ceiling division: (A + B - 1) / B
-            uint8_t baseRatio = (uint8_t)((activeHP + activeLP - 1) / activeLP);
-            if (baseRatio < 1) baseRatio = 1;
-            _dynamicRatio = baseRatio * PRIORITY_BIAS;
-        } else {
-            _dynamicRatio = 1; // Fallback
-        }
+        float delta = fabsf(newActivePower - _prevActivePower[channelIndex]);
+        _powerVariability[channelIndex] = VARIABILITY_EMA_ALPHA * delta + (1.0f - VARIABILITY_EMA_ALPHA) * _powerVariability[channelIndex];
+        _prevActivePower[channelIndex] = newActivePower;
     }
 
+    /**
+     * Recalculate dynamic weights for all channels based on power magnitude and variability.
+     * Uses a Weighted Deficit Round-Robin (WDRR) approach:
+     * - Power share: channels with higher absolute power get more sampling
+     * - Variability: channels with rapidly changing power get more sampling
+     * - Minimum base: every active channel gets a minimum weight to prevent starvation
+     */
+    static void _recalculateWeights() {
+        float totalAbsPower = 0.0f;
+        float totalVariability = 0.0f;
+
+        // Sum totals across active multiplexed channels (skip channel 0)
+        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+            if (_channelData[i].active) {
+                totalAbsPower += fabsf(_meterValues[i].activePower);
+                totalVariability += _powerVariability[i];
+            }
+        }
+
+        // Compute per-channel weights
+        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+            if (!_channelData[i].active) {
+                _channelWeight[i] = 0.0f;
+                continue;
+            }
+
+            float powerScore = 0.0f;
+            if (totalAbsPower > 0.0f) {
+                powerScore = fabsf(_meterValues[i].activePower) / totalAbsPower;
+            }
+
+            float variabilityScore = 0.0f;
+            if (totalVariability > 0.0f) {
+                variabilityScore = _powerVariability[i] / totalVariability;
+            }
+
+            _channelWeight[i] = WEIGHT_POWER_SHARE * powerScore
+                              + WEIGHT_VARIABILITY * variabilityScore
+                              + WEIGHT_MIN_BASE;
+        }
+
+        // Channel 0 is not scheduled (always read separately)
+        _channelWeight[0] = 0.0f;
+    }
+
+    /**
+     * Find the next active channel to read using Weighted Deficit Round-Robin (WDRR).
+     *
+     * Each channel accumulates a deficit proportional to its weight on every call.
+     * The channel with the highest deficit is selected, and its deficit is decremented.
+     * This naturally ensures higher-weight channels are read more frequently while
+     * every active channel is eventually serviced (no starvation thanks to the fact that)
+     * the deficit accumulates over time even for low-weight channels, so for "infinite"
+     * time, its weight will eventually surpass the one of hight priority channel
+     */
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
-        // 1. Analyze previous state
-        bool currentIsHighPriority = (currentChannel != INVALID_CHANNEL && currentChannel != 0) 
-                                      ? _channelData[currentChannel].highPriority 
-                                      : false;
+        (void)currentChannel; // No longer needed for state tracking
 
-        // 2. Update Consecutive Run Counters
-        if (currentIsHighPriority) {
-            _hpRunCount++;
-        } else {
-            _hpRunCount = 0; // Reset counter when we run an LP
-        }
-
-        // 3. Decide Priority Goal
-        // Default: Look for HP. Only switch to LP if we hit the ratio limit.
-        bool lookForHighPriority = true; 
-
-        if (currentIsHighPriority) {
-            // If we just ran HP, only continue if we haven't hit the quota
-            if (_hpRunCount >= _dynamicRatio) {
-                lookForHighPriority = false; // Quota met, allow one LP slot
-            }
-        } 
-        // Else: If we just ran LP, we automatically default to looking for HP next.
-
-        // 4. Setup Search Pointers
-        uint8_t& lastChannel = lookForHighPriority ? _lastHighPriorityChannel : _lastLowPriorityChannel;
-        uint8_t startSearch = (lastChannel == INVALID_CHANNEL) ? 0 : lastChannel;
-
-        // 5. Pass 1: Search for Desired Priority (Standard Wrap-around)
-        for (uint8_t i = startSearch + 1; i < CHANNEL_COUNT; i++) {
-            if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
-                if (lookForHighPriority) _lastHighPriorityChannel = i;
-                else _lastLowPriorityChannel = i;
-                return i;
-            }
-        }
-        for (uint8_t i = 1; i <= startSearch; i++) {
-            if (i != 0 && isChannelActive(i) && _channelData[i].highPriority == lookForHighPriority) {
-                if (lookForHighPriority) _lastHighPriorityChannel = i;
-                else _lastLowPriorityChannel = i;
-                return i;
+        // Add each channel's weight to its deficit
+        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+            if (_channelData[i].active) {
+                _channelDeficit[i] += _channelWeight[i];
+            } else {
+                _channelDeficit[i] = 0.0f;
             }
         }
 
-        // 6. Pass 2: Fallback (If desired priority not found, take ANY active channel)
-        // We must update the specific tracker for whatever channel type we actually find.
-        uint8_t& otherLastChannel = lookForHighPriority ? _lastLowPriorityChannel : _lastHighPriorityChannel;
-        uint8_t fallbackStart = (otherLastChannel == INVALID_CHANNEL) ? 0 : otherLastChannel;
+        // Select the channel with the highest deficit
+        uint8_t bestChannel = INVALID_CHANNEL;
+        float bestDeficit = -1e9f; // Use a very large negative value to ensure any active channel is selectable
 
-        for (uint8_t i = fallbackStart + 1; i < CHANNEL_COUNT; i++) {
-            if (i != 0 && isChannelActive(i)) {
-                if (_channelData[i].highPriority) _lastHighPriorityChannel = i;
-                else _lastLowPriorityChannel = i;
-                return i;
-            }
-        }
-        for (uint8_t i = 1; i <= fallbackStart; i++) {
-            if (i != 0 && isChannelActive(i)) {
-                if (_channelData[i].highPriority) _lastHighPriorityChannel = i;
-                else _lastLowPriorityChannel = i;
-                return i;
+        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+            if (_channelData[i].active && _channelDeficit[i] > bestDeficit) {
+                bestDeficit = _channelDeficit[i];
+                bestChannel = i;
             }
         }
 
-        return INVALID_CHANNEL; // No active channels found
+        // Decrement the selected channel's deficit
+        if (bestChannel != INVALID_CHANNEL) {
+            _channelDeficit[bestChannel] -= 1.0f;
+        }
+
+        return bestChannel;
     }
 
     // Poor man's phase shift (doing with modulus didn't work properly,
@@ -3470,6 +4292,8 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                 return PHASE_1;
             case PHASE_3:
                 return PHASE_2;
+            case PHASE_SPLIT_240:
+                return PHASE_SPLIT_240;  // Split-phase 240V doesn't rotate
             default:
                 return PHASE_1;
         }
@@ -3483,6 +4307,8 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
                 return PHASE_3;
             case PHASE_3:
                 return PHASE_1;
+            case PHASE_SPLIT_240:
+                return PHASE_SPLIT_240;  // Split-phase 240V doesn't rotate
             default:
                 return PHASE_1;
         }
@@ -3502,6 +4328,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             case PHASE_1: voltageAngle = 0.0f; break;      // Phase A: 0°
             case PHASE_2: voltageAngle = 120.0f; break;    // Phase B: 120°
             case PHASE_3: voltageAngle = -120.0f; break;   // Phase C: -120°
+            case PHASE_SPLIT_240: voltageAngle = 0.0f; break;  // Split-phase 240V: 0° (same reference as Phase 1)
             default: return 0.0f;  // Invalid phase
         }
         
@@ -3511,6 +4338,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             case PHASE_1: currentAngle = 0.0f; break;      // Phase A: 0°
             case PHASE_2: currentAngle = 120.0f; break;    // Phase B: 120°
             case PHASE_3: currentAngle = -120.0f; break;   // Phase C: -120°
+            case PHASE_SPLIT_240: currentAngle = 0.0f; break;  // Split-phase 240V: 0° (same reference as Phase 1)
             default: return 0.0f;  // Invalid phase
         }
         
@@ -3547,7 +4375,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
     void _printMeterValues(uint8_t channelIndex) {
         MeterValues meterValues;
-        ChannelData channelData;
+        ChannelData channelData(channelIndex);
         
         if (!getMeterValues(meterValues, channelIndex) ||
             !getChannelData(channelData, channelIndex)) 
@@ -3623,7 +4451,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
 
         _captureRequestedChannel = channelIndex;
         _captureState = CaptureState::ARMED;
-        LOG_INFO("Waveform capture armed for channel %u", channelIndex);
+        LOG_DEBUG("Waveform capture armed for channel %u", channelIndex);
         return true;
     }
 
@@ -3703,7 +4531,7 @@ bool setChannelData(const ChannelData &channelData, uint8_t channelIndex) {
             microsArray.add(_microsWaveformBuffer[i]);
         }
         
-        LOG_INFO("Serialized %u waveform samples to JSON for channel %u and cleared data", _captureSampleCount, _captureChannel);
+        LOG_DEBUG("Serialized %u waveform samples to JSON for channel %u and cleared data", _captureSampleCount, _captureChannel);
         
         // Data has been "consumed" by serializing it. Reset for the next capture.
         _captureState = CaptureState::IDLE;

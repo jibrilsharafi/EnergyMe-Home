@@ -12,6 +12,7 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Log</title>
@@ -235,7 +236,7 @@
         <a class="buttonNavigation" type="inner" href="/configuration">⚙️ Configuration</a>
     </div>
 
-    <div class="section-box-wide">
+    <div class="section-box wide">
         <div style="position: relative;">
             <h2>Log</h2>
             <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
@@ -293,6 +294,9 @@
 
             isLogFetchActive = true;
             lastFetchTime = now;
+            
+            // Show loading indicator
+            showStatus('Loading logs...', 'info');
 
             try {
                 const data = await window.energyApi.getLogs();
@@ -409,6 +413,7 @@
                     fragment.appendChild(row);
                 });
                 logBody.appendChild(fragment);
+                showStatus('Logs loaded successfully', 'success');
 
                 filterLogs();
             } catch (error) {

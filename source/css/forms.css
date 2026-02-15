@@ -1,0 +1,201 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright (C) 2025 Jibril Sharafi */
+
+/* Common form input styling */
+.config-input {
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+/* Warning/info boxes */
+.warning-box {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+}
+
+/* Status containers */
+.status-container {
+    display: flex;
+    align-items: center;
+    margin-top: 15px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+}
+
+.status-icon {
+    font-size: 1.5em;
+    margin-right: 10px;
+}
+
+/* Toast notification */
+#toast-container {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.toast {
+    padding: 14px 24px;
+    border-radius: 12px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: auto;
+    text-align: center;
+    max-width: min(400px, 90vw);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.12),
+        0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast.success {
+    background: rgba(16, 185, 129, 0.4);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.toast.error {
+    background: rgba(239, 68, 68, 0.4);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.toast.info {
+    background: rgba(59, 130, 246, 0.4);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+/* Button loading spinner */
+button.loading {
+    position: relative;
+    color: transparent;
+    pointer-events: none;
+}
+
+button.loading::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: button-spinner 0.6s linear infinite;
+}
+
+@keyframes button-spinner {
+    to { transform: rotate(360deg); }
+}
+
+/* Mobile-first responsive form styles */
+@media screen and (max-width: 768px) {
+    .config-input {
+        width: 100%;
+        max-width: 100%;
+        font-size: 16px; /* Prevents zoom on iOS */
+        padding: 12px;
+        margin: 8px 0;
+        box-sizing: border-box;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+    }
+    
+    label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 5px;
+        font-size: 14px;
+    }
+    
+    select.config-input {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+        background-position: right 12px center;
+        background-repeat: no-repeat;
+        background-size: 16px;
+        padding-right: 40px;
+    }
+    
+    .warning-box {
+        padding: 8px;
+        font-size: 13px;
+        margin: 8px 0;
+    }
+    
+    /* Table responsive styles */
+    table {
+        width: 100%;
+        font-size: 13px;
+        overflow-x: auto;
+        display: block;
+    }
+    
+    table thead,
+    table tbody,
+    table tr {
+        display: block;
+    }
+    
+    table td,
+    table th {
+        display: block;
+        width: 100%;
+        padding: 8px 5px;
+        border: none;
+        text-align: left;
+    }
+    
+    table th {
+        background-color: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    table tr {
+        border-bottom: 1px solid #ddd;
+        margin-bottom: 10px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .config-input {
+        font-size: 14px;
+        padding: 10px;
+    }
+    
+    label {
+        font-size: 13px;
+    }
+    
+    .warning-box {
+        font-size: 12px;
+    }
+}

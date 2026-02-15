@@ -12,461 +12,91 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
+    <link rel="stylesheet" type="text/css" href="/css/index.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-
-    <script src="/js/api-client.js"></script>
 
     <title>EnergyMe</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <style>
-        .header {
-            font-size: 96px;
-            margin-bottom: 10px;
-            text-align: center;
-        }
-
-        .subheader {
-            font-size: 32px;
-            margin-bottom: 20px;
-            text-align: center;
-            color: #808080;
-        }
-
-        .voltage-box {
-            text-align: center;
-            font-size: 20px;
-            margin-bottom: 20px;
-            margin-top: 5px;
-        }
-
-        .channels-box {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-around;
-        }
-
-        .channel-box {
-            width: 18%;
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            box-sizing: border-box;
-            background-color: white;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-            margin-bottom: 20px;
-            padding: 10px;
-            text-align: center;
-        }
-        
-        .channel-box.main-channel {
-            border: 3px solid #007bff;
-            background-color: #f8f9ff;
-        }
-        
-        .channel-box.other-channel {
-            border: 2px solid #ffc107;
-            background-color: #fffdf0;
-        }
-
-        .channel-label {
-            font-size: 24px;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }        .channel-value {
-            font-style: italic;
-            color: #808080;
-        }
-        
-        .chart-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding: 0 10px;
-        }
-        
-        .chart-header h3 {
-            margin: 0;
-            font-size: 24px;
-            color: #333;
-        }
-        
-        .chart-controls {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            align-items: flex-end;
-        }
-        
-        .view-selector {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .date-selector {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .chart-total {
-            font-size: 16px;
-            color: #666;
-            margin-bottom: 10px;
-            padding: 8px 0;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .chart-total .total-value {
-            font-weight: bold;
-            color: #333;
-        }
-        
-        .tooltip-container {
-            position: relative;
-            display: inline-block;
-        }
-        
-        .tooltip-container .tooltip-text {
-            visibility: hidden;
-            width: 280px;
-            background-color: #333;
-            color: #fff;
-            text-align: center;
-            border-radius: 6px;
-            padding: 8px;
-            font-size: 12px;
-            position: absolute;
-            z-index: 1000;
-            bottom: 125%;
-            left: 50%;
-            margin-left: -140px;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-        
-        .tooltip-container .tooltip-text::after {
-            content: "";
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            margin-left: -5px;
-            border-width: 5px;
-            border-style: solid;
-            border-color: #333 transparent transparent transparent;
-        }
-        
-        .tooltip-container:hover .tooltip-text {
-            visibility: visible;
-            opacity: 1;
-        }
-        
-        .info-icon {
-            color: #666;
-            font-size: 14px;
-            margin-left: 4px;
-            cursor: help;
-        }
-        
-        .date-selector {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .view-selector {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-        
-        .view-toggle {
-            background: #f8f9fa;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 8px 16px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.2s;
-        }
-        
-        .view-toggle.active {
-            background: #007bff;
-            color: white;
-            border-color: #007bff;
-        }
-        
-        .view-toggle:hover {
-            background: #e9ecef;
-        }
-        
-        .view-toggle.active:hover {
-            background: #0056b3;
-        }
-        
-        .nav-button {
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            padding: 8px 12px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background-color 0.2s;
-        }
-        
-        .nav-button:hover {
-            background: #0056b3;
-        }
-        
-        .nav-button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        
-        #date-picker {
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
-        }
-        
-        #consumption-chart {
-            position: relative;
-            width: 100%;
-            height: 400px; /* Fixed height for desktop */
-        }
-        
-        #consumption-chart canvas {
-            width: 100% !important;
-            height: 100% !important; /* Force canvas to fill container */
-        }
-        
-        /* Responsive design */
-        @media (max-width: 768px) {
-            .header {
-                font-size: 64px;
-                margin-bottom: 8px;
-            }
-            
-            .subheader {
-                font-size: 24px;
-                margin-bottom: 15px;
-            }
-            
-            .voltage-box {
-                font-size: 18px;
-                margin-bottom: 15px;
-            }
-            
-            .channels-box {
-                justify-content: center;
-            }
-            
-            .channel-box {
-                width: 45%;
-                margin-bottom: 15px;
-                padding: 8px;
-                min-width: 140px;
-            }
-            
-            .channel-label {
-                font-size: 18px;
-                margin-bottom: 4px;
-            }
-            
-            .chart-header {
-                flex-direction: column;
-                gap: 15px;
-                margin-bottom: 10px;
-                padding: 0 5px;
-                align-items: stretch;
-            }
-            
-            .chart-header h3 {
-                font-size: 20px;
-                text-align: center;
-                margin-bottom: 0;
-            }
-            
-            .chart-controls {
-                align-items: center;
-                gap: 15px;
-            }
-            
-            .view-selector {
-                justify-content: center;
-                gap: 8px;
-                order: 1;
-            }
-            
-            .date-selector {
-                justify-content: center;
-                gap: 8px;
-                order: 2;
-            }
-            
-            /* Chart container responsive sizing */
-            #consumption-chart {
-                height: 300px; /* Fixed height for mobile */
-            }
-            
-            .view-toggle {
-                padding: 6px 12px;
-                font-size: 13px;
-            }
-            
-            .nav-button {
-                padding: 6px 10px;
-                font-size: 14px;
-            }
-            
-            #date-picker,
-            #month-picker {
-                padding: 6px;
-                font-size: 13px;
-                width: 150px;
-            }
-            
-            #download-csv {
-                top: 5px;
-                right: 5px;
-                font-size: 12px;
-                padding: 4px;
-            }
-            
-            .chart-total {
-                text-align: center;
-                font-size: 14px;
-            }
-            
-            #pie-chart-canvas,
-            #total-pie-chart-canvas {
-                max-height: 300px !important;
-            }
-            
-            .tooltip-container .tooltip-text {
-                width: 200px;
-                margin-left: -100px;
-                font-size: 11px;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            .header {
-                font-size: 48px;
-                margin-bottom: 5px;
-            }
-            
-            .subheader {
-                font-size: 20px;
-                margin-bottom: 12px;
-            }
-            
-            .voltage-box {
-                font-size: 16px;
-                margin-bottom: 12px;
-            }
-            
-            .channel-box {
-                width: 90%;
-                margin-bottom: 12px;
-                padding: 6px;
-                min-width: auto;
-            }
-            
-            .channel-label {
-                font-size: 16px;
-            }
-            
-            .chart-header h3 {
-                font-size: 18px;
-            }
-            
-            .chart-total {
-                font-size: 13px;
-            }
-            
-            .view-toggle {
-                padding: 5px 10px;
-                font-size: 12px;
-            }
-            
-            .nav-button {
-                padding: 5px 8px;
-                font-size: 13px;
-            }
-            
-            #date-picker,
-            #month-picker {
-                width: 130px;
-                font-size: 12px;
-            }
-            
-            /* Chart container for very small screens */
-            #consumption-chart {
-                height: 250px; /* Smaller height for small screens */
-            }
-            
-            .view-toggle {
-                padding: 5px 10px;
-                font-size: 12px;
-            }
-            
-            .nav-button {
-                padding: 5px 8px;
-                font-size: 13px;
-            }
-            
-            #date-picker,
-            #month-picker {
-                width: 130px;
-                font-size: 12px;
-                padding: 5px;
-            }
-            
-            .chart-total {
-                font-size: 13px;
-            }
-            
-            #pie-chart-canvas,
-            #total-pie-chart-canvas {
-                max-height: 250px !important;
-            }
-            
-            .tooltip-container .tooltip-text {
-                width: 160px;
-                margin-left: -80px;
-                font-size: 10px;
-            }
-        }
-    </style>
 </head>
 
-<body>    <div class="header">EnergyMe</div>
+<body>
+    <div class="header">EnergyMe</div>
     <div class="subheader">Home</div>
     
     <div class="buttonNavigation-container">
         <a class="buttonNavigation" type="inner" href="/info">💡 Info</a>
         <a class="buttonNavigation" type="inner" href="/configuration">⚙️ Configuration</a>
+        <a class="buttonNavigation" type="inner" href="/integrations">🔗 Integrations</a>
         <a class="buttonNavigation" type="inner" href="/update">🚀 Update</a>
-        <a class="buttonNavigationExternal" type="inner" href="/swagger-ui" target="_blank">📚 API Docs</a>
     </div>
 
-    <div class="section-box">
-        <div id="voltage" class="voltage-box"></div>
-        <div id="channels" class="channels-box"></div>
+    <!-- Energy Flow Diagram - Simple Layout -->
+    <div id="energy-flow-section" class="section-box energy-flow-section">
+        <div class="power-flow">
+            <!-- Main flow area -->
+            <div class="power-flow-main">
+                <!-- Top: Solar (optional) -->
+                <div id="pf-solar" class="pf-node pf-solar" style="display: none;">
+                    <div class="pf-icon">☀️</div>
+                    <div class="pf-value" id="solar-power">0 W</div>
+                    <div class="pf-connector pf-connector-bottom"></div>
+                </div>
+                
+                <!-- Middle row: Grid - Center - Home -->
+                <div class="pf-middle-row">
+                    <div id="pf-grid" class="pf-node pf-grid">
+                        <div class="pf-icon">⚡</div>
+                        <div class="pf-value" id="grid-power">0 W</div>
+                        <div class="pf-connector pf-connector-right"></div>
+                    </div>
+                    
+                    <div class="pf-center">
+                        <div class="pf-center-dot"></div>
+                    </div>
+                    
+                    <div id="pf-home" class="pf-node pf-home">
+                        <div class="pf-connector pf-connector-left"></div>
+                        <div class="pf-icon">🏠</div>
+                        <div class="pf-value" id="home-power">0 W</div>
+                    </div>
+                </div>
+                
+                <!-- Bottom: Battery (optional) -->
+                <div id="pf-battery" class="pf-node pf-battery" style="display: none;">
+                    <div class="pf-connector pf-connector-top"></div>
+                    <div class="pf-icon">🔋</div>
+                    <div class="pf-value" id="battery-power">0 W</div>
+                </div>
+            </div>
+            
+            <!-- Loads panel (right side on desktop, below on mobile) -->
+            <div id="pf-loads" class="pf-loads" style="display: none;">
+                <div class="pf-loads-header">Loads</div>
+                <div id="pf-loads-list" class="pf-loads-list"></div>
+            </div>
+        </div>
+        
+        <!-- Sparkline tooltip -->
+        <div id="sparkline-tooltip" class="sparkline-tooltip">
+            <canvas id="sparkline-canvas" width="120" height="40"></canvas>
+        </div>
     </div>
 
+    <!-- Charts Section -->
     <div class="section-box">
         <div class="chart-header">
-            <h3>Energy Consumption</h3>
+            <h3 id="main-chart-title">Energy Consumption</h3>
             <div class="chart-controls">
+                <div class="view-selector" id="chart-type-selector" style="display: none;">
+                    <button id="consumption-view" class="view-toggle active">Consumption</button>
+                    <button id="balance-view" class="view-toggle">Balance</button>
+                </div>
                 <div class="view-selector">
-                    <button id="daily-view" class="view-toggle active">Daily View</button>
-                    <button id="monthly-view" class="view-toggle">Monthly View</button>
-                    <button id="yearly-view" class="view-toggle">Yearly View</button>
+                    <button id="daily-view" class="view-toggle active">Daily</button>
+                    <button id="monthly-view" class="view-toggle">Monthly</button>
+                    <button id="yearly-view" class="view-toggle">Yearly</button>
+                    <button id="total-view" class="view-toggle">Total</button>
                 </div>
                 <div class="date-selector">
                     <input type="date" id="date-picker" />
@@ -478,205 +108,137 @@
             </div>
         </div>
         <div id="consumption-chart" style="position: relative;">
-            <canvas id="consumption-chart-canvas"></canvas>
-            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
+            <div class="chart-loading">📊 Crunching the numbers...</div>
+            <canvas id="consumption-chart-canvas" style="display: none;"></canvas>
+            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px; display: none;">
                 <i class="fas fa-download"></i>
             </button>
         </div>
+        <!-- Consumption Sharing Breakdown -->
+        <div id="consumption-sharing-section" class="consumption-sharing-section" style="display: none;">
+            <div style="position: relative; height: 300px;">
+                <canvas id="consumption-pie-canvas" style="display: none;"></canvas>
+                <div class="chart-loading">📊 Loading breakdown...</div>
+            </div>
+        </div>
+        <div id="balance-chart" style="position: relative; display: none;">
+            <div class="chart-loading">🔋 Calculating energy flows...</div>
+            <canvas id="balance-chart-canvas" style="display: none;"></canvas>
+            <button id="download-balance-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px; display: none;">
+                <i class="fas fa-download"></i>
+            </button>
+        </div>
+        <!-- Balance KPIs -->
+        <div id="balance-kpis-section" class="energy-kpis" style="display: none;">
+            <div id="balance-kpi-grid-import" class="kpi-card">
+                <div class="kpi-label">🔌 Grid Import</div>
+                <div class="kpi-value" id="balance-kpi-grid-import-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="balance-kpi-grid-export" class="kpi-card">
+                <div class="kpi-label">⚡ Grid Export</div>
+                <div class="kpi-value" id="balance-kpi-grid-export-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="balance-kpi-production" class="kpi-card" style="display: none;">
+                <div class="kpi-label"><span id="balance-kpi-production-icon">☀️</span> <span id="balance-kpi-production-label">Production</span></div>
+                <div class="kpi-value" id="balance-kpi-production-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="balance-kpi-home" class="kpi-card">
+                <div class="kpi-label">🏠 Home Consumption</div>
+                <div class="kpi-value" id="balance-kpi-home-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="balance-kpi-self-consumption" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🏠 Self-Consumption</div>
+                <div class="kpi-value" id="balance-kpi-self-consumption-value">0%</div>
+            </div>
+            <div id="balance-kpi-autosufficiency" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🌱 Autosufficiency</div>
+                <div class="kpi-value" id="balance-kpi-autosufficiency-value">0%</div>
+            </div>
+            <div id="balance-kpi-battery-charge" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🔋 Battery Charged</div>
+                <div class="kpi-value" id="balance-kpi-battery-charge-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="balance-kpi-battery-discharge" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🔋 Battery Discharged</div>
+                <div class="kpi-value" id="balance-kpi-battery-discharge-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+        </div>
+        <!-- Energy KPIs (Consumption View) -->
+        <div id="energy-kpis-section" class="energy-kpis" style="display: none;">
+            <div id="kpi-grid-import" class="kpi-card">
+                <div class="kpi-label">🔌 Grid Import</div>
+                <div class="kpi-value" id="kpi-grid-import-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="kpi-grid-export" class="kpi-card">
+                <div class="kpi-label">⚡ Grid Export</div>
+                <div class="kpi-value" id="kpi-grid-export-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="kpi-production" class="kpi-card" style="display: none;">
+                <div class="kpi-label">☀️ Production</div>
+                <div class="kpi-value" id="kpi-production-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="kpi-self-consumption" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🏠 Self-Consumption</div>
+                <div class="kpi-value" id="kpi-self-consumption-value">0%</div>
+            </div>
+            <div id="kpi-autosufficiency" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🌱 Autosufficiency</div>
+                <div class="kpi-value" id="kpi-autosufficiency-value">0%</div>
+            </div>
+            <div id="kpi-battery-charge" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🔋 Battery Charged</div>
+                <div class="kpi-value" id="kpi-battery-charge-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+            <div id="kpi-battery-discharge" class="kpi-card" style="display: none;">
+                <div class="kpi-label">🔋 Battery Discharged</div>
+                <div class="kpi-value" id="kpi-battery-discharge-value">0</div>
+                <div class="kpi-unit">kWh</div>
+            </div>
+        </div>
     </div>
 
-    <div class="section-box">
-        <div class="chart-header">
-            <h3 id="pie-chart-title">Daily Energy Distribution</h3>
-        </div>
-        <div class="chart-total" id="pie-chart-total">
-            Total: <span class="total-value" id="pie-chart-total-value">0.0 kWh</span>
-        </div>
-        <div id="pie-chart">
-            <canvas id="pie-chart-canvas"></canvas>
-        </div>
-    </div>
-
-    <div class="section-box">
-        <div class="chart-header">
-            <h3>Total Energy Distribution (Since Installation)</h3>
-        </div>
-        <div class="chart-total" id="total-pie-chart-total">
-            Lifetime Total: <span class="total-value" id="total-pie-chart-total-value">0.0 kWh</span>
-        </div>
-        <div id="total-pie-chart">
-            <canvas id="total-pie-chart-canvas"></canvas>
-        </div>
-    </div>
-
+    <!-- External libraries -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+    
+    <!-- EnergyMe modules -->
+    <script src="/js/api-client.js"></script>
+    <script src="/js/data-helpers.js"></script>
+    <script src="/js/chart-helpers.js"></script>
+    <script src="/js/power-flow.js"></script>
 </body>
 
 <script>
-    var colors = [
-        'rgba(0,123,255,0.8)', 'rgba(255,0,0,0.8)', 'rgba(0,255,0,0.8)', 'rgba(255,255,0,0.8)', 'rgba(0,255,255,0.8)',
-        'rgba(123,0,255,0.8)', 'rgba(255,0,123,0.8)', 'rgba(0,255,123,0.8)', 'rgba(255,255,123,0.8)', 'rgba(123,255,0,0.8)',
-        'rgba(0,123,0,0.8)', 'rgba(123,0,0,0.8)', 'rgba(0,0,123,0.8)', 'rgba(123,123,123,0.8)', 'rgba(255,123,255,0.8)',
-        'rgba(0,0,255,0.8)', 'rgba(255,0,255,0.8)', 'rgba(255,123,0,0.8)'
-    ];
+    // ============================================================================
+    // PAGE STATE
+    // ============================================================================
+    let channelData = {};
+    let meterData = {};
+    let availableDates = [];
+    let availableMonths = [];
+    let availableYears = [];
+    let currentView = 'daily';
+    let currentChartType = 'consumption';
+    let currentDate = null;
+    let currentMonth = null;
+    let currentYear = null;
+    let hasBalanceCapability = false;
+    let meterDataUpdateInProgress = false;
+    let balanceData = null;
 
-    var channelData = {};
-    var meterData = {};
-    var availableDates = [];
-    var availableMonths = [];
-    var availableYears = [];
-    var currentDate = null;
-    var currentMonth = null;
-    var currentYear = null;
-    var currentView = 'daily'; // 'daily', 'monthly', or 'yearly'
-    var consumptionChart = null;
-    var pieChart = null;
-    var totalPieChart = null;
-    var meterDataUpdateInProgress = false;
-
-    // Function to decompress gzip data
-    async function decompressGzipFile(filename) {
-        try {
-            // Get the file as binary data
-            const response = await energyApi.apiCall(`files/${encodeURIComponent(filename)}`, { method: 'GET' });
-            if (!response.ok) {
-                throw new Error(`Failed to fetch ${filename}: ${response.status}`);
-            }
-            
-            // Get the response as array buffer
-            const gzipData = await response.arrayBuffer();
-            
-            // Decompress using pako
-            const decompressed = pako.inflate(new Uint8Array(gzipData), { to: 'string' });
-            
-            return decompressed;
-        } catch (error) {
-            console.error(`Error decompressing ${filename}:`, error);
-            throw error;
-        }
-    }
-
-    // Cache for archive data to avoid redundant downloads
-    var archiveCache = {
-        monthly: {},  // yearMonth -> csvData
-        yearly: {}    // year -> csvData
-    };
-    var dailyFilesSet = new Set(); // Set of dates available in daily folder
-
-    // Function to load daily CSV data (compressed or uncompressed)
-    // Smart lookup: daily folder (if file exists) -> monthly archive -> yearly archive
-    async function loadDailyCsvData(date) {
-        // Only try daily folder if we know the file exists there
-        if (dailyFilesSet.has(date)) {
-            const csvFilename = `energy/daily/${date}.csv`;
-            const gzFilename = `energy/daily/${date}.csv.gz`;
-            
-            // First we try the uncompressed file (which should be the only one present)
-            try {
-                const response = await energyApi.apiCall(`files/${encodeURIComponent(csvFilename)}`, { method: 'GET' });
-                if (response.ok) return await response.text();
-            } catch (e) { /* continue */ }
-            
-            // Safe fallback (should never happen)
-            try {
-                return await decompressGzipFile(gzFilename);
-            } catch (e) { /* continue */ }
-        }
-        
-        // Try monthly archive - use cache if available
-        const yearMonth = date.substring(0, 7);
-        let monthlyData = archiveCache.monthly[yearMonth];
-        if (!monthlyData) {
-            try {
-                monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
-                archiveCache.monthly[yearMonth] = monthlyData;
-            } catch (e) { /* continue */ }
-        }
-        if (monthlyData) {
-            const filtered = filterCsvByDate(monthlyData, date);
-            if (filtered) return filtered;
-        }
-        
-        // Try yearly archive - use cache if available
-        const year = date.substring(0, 4);
-        let yearlyData = archiveCache.yearly[year];
-        if (!yearlyData) {
-            try {
-                yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
-                archiveCache.yearly[year] = yearlyData;
-            } catch (e) { /* continue */ }
-        }
-        if (yearlyData) {
-            const filtered = filterCsvByDate(yearlyData, date);
-            if (filtered) return filtered;
-        }
-        
-        throw new Error(`No CSV data found for date ${date}`);
-    }
-    
-    // Helper function to filter CSV data by date prefix
-    function filterCsvByDate(csvText, datePrefix) {
-        const lines = csvText.trim().split('\n');
-        const header = lines[0];
-        const dataLines = lines.slice(1).filter(line => line.startsWith(datePrefix));
-        if (dataLines.length === 0) return null;
-        return header + '\n' + dataLines.join('\n');
-    }
-
-    // Function to load monthly consolidated CSV data
-    // Smart lookup: monthly archive -> yearly archive (with caching)
-    async function loadMonthlyCsvData(yearMonth) {
-        // Try monthly archive - use cache if available
-        let monthlyData = archiveCache.monthly[yearMonth];
-        if (!monthlyData) {
-            try {
-                monthlyData = await decompressGzipFile(`energy/monthly/${yearMonth}.csv.gz`);
-                archiveCache.monthly[yearMonth] = monthlyData;
-                return monthlyData;
-            } catch (e) { /* continue to yearly */ }
-        } else {
-            return monthlyData;
-        }
-        
-        // Try yearly archive - use cache if available
-        const year = yearMonth.substring(0, 4);
-        let yearlyData = archiveCache.yearly[year];
-        if (!yearlyData) {
-            try {
-                yearlyData = await decompressGzipFile(`energy/yearly/${year}.csv.gz`);
-                archiveCache.yearly[year] = yearlyData;
-            } catch (e) { /* continue */ }
-        }
-        if (yearlyData) {
-            const filtered = filterCsvByMonth(yearlyData, yearMonth);
-            if (filtered) return filtered;
-        }
-        
-        throw new Error(`No CSV data found for month ${yearMonth}`);
-    }
-    
-    // Helper function to filter CSV data by month prefix
-    function filterCsvByMonth(csvText, monthPrefix) {
-        const lines = csvText.trim().split('\n');
-        const header = lines[0];
-        const dataLines = lines.slice(1).filter(line => line.startsWith(monthPrefix));
-        if (dataLines.length === 0) return null;
-        return header + '\n' + dataLines.join('\n');
-    }
-
-    // Function to load yearly consolidated CSV data
-    async function loadYearlyCsvData(year) {
-        try {
-            const gzFilename = `energy/yearly/${year}.csv.gz`;
-            return await decompressGzipFile(gzFilename);
-        } catch (error) {
-            console.error(`Error loading yearly CSV data for ${year}:`, error);
-            throw error;
-        }
-    }
-
-    // Initialize page
+    // ============================================================================
+    // INITIALIZATION
+    // ============================================================================
     async function initializePage() {
         try {
             // Get channel configuration and current meter data
@@ -684,16 +246,36 @@
                 energyApi.getChannelConfig(),
                 energyApi.getMeterValues()
             ]);
+            
+            // Initialize modules with data
+            ChannelCache.setChannelData(channelData);
+            PowerFlowState.init();
 
-            // Update real-time displays
-            updateMeterData();
+            // Update real-time displays immediately
+            PowerFlowHelpers.updateEnergyFlow(meterData, channelData);
 
-            // Get available energy files
+            // Load charts in parallel
+            loadChartsAsync();
+
+            // Set up event listeners
+            setupEventListeners();
+
+        } catch (error) {
+            console.error('Error initializing page:', error);
+            ChartHelpers.showErrorMessage('Failed to load energy data');
+        }
+    }
+    
+    async function loadChartsAsync() {
+        try {
             await loadAvailableDates();
 
-            // Set up date picker with most recent date
             if (availableDates.length > 0) {
-                currentDate = availableDates[availableDates.length - 1];
+                // Prefer the most recent date with an actual daily file
+                const actualDailyDates = availableDates.filter(d => ArchiveCache.dailyFilesSet.has(d));
+                currentDate = actualDailyDates.length > 0 
+                    ? actualDailyDates[actualDailyDates.length - 1] 
+                    : availableDates[availableDates.length - 1];
                 currentMonth = availableMonths[availableMonths.length - 1];
                 currentYear = availableYears[availableYears.length - 1];
                 document.getElementById('date-picker').value = currentDate;
@@ -701,17 +283,12 @@
                 document.getElementById('year-picker').value = currentYear;
                 updateNavigationButtons();
                 await loadAndDisplayCharts();
-                await updateTotalPieChart();
             } else {
-                showNoDataMessage();
+                ChartHelpers.showNoDataMessage();
             }
-
-            // Set up event listeners
-            setupEventListeners();
-
         } catch (error) {
-            console.error('Error initializing page:', error);
-            showErrorMessage('Failed to load energy data');
+            console.error('Error loading charts:', error);
+            ChartHelpers.showErrorMessage('Failed to load chart data');
         }
     }
 
@@ -721,60 +298,81 @@
             const allMonths = new Set();
             const allYears = new Set();
             
-            // Load daily files and populate dailyFilesSet
+            // Load daily files
             const dailyFiles = await energyApi.getFileList('energy/daily') || {};
-            dailyFilesSet.clear();
+            ArchiveCache.dailyFilesSet.clear();
             Object.keys(dailyFiles)
                 .filter(filename => filename.endsWith('.csv.gz') || filename.endsWith('.csv'))
                 .map(filename => filename.replace('.csv.gz', '').replace('.csv', ''))
                 .forEach(date => {
-                    dailyFilesSet.add(date);
+                    ArchiveCache.dailyFilesSet.add(date);
                     allDates.add(date);
                     allMonths.add(date.substring(0, 7));
                     allYears.add(date.substring(0, 4));
                 });
             
-            // Load monthly archives and extract dates (cache the data)
+            // Load monthly archives
             const monthlyFiles = await energyApi.getFileList('energy/monthly') || {};
             for (const filename of Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz'))) {
                 const yearMonth = filename.replace('.csv.gz', '');
                 allMonths.add(yearMonth);
                 allYears.add(yearMonth.substring(0, 4));
                 
-                // Extract available dates from monthly archive and cache
-                try {
-                    const csvData = await decompressGzipFile(`energy/monthly/${filename}`);
-                    archiveCache.monthly[yearMonth] = csvData;
-                    extractDatesFromCsv(csvData).forEach(date => allDates.add(date));
-                } catch (e) {
-                    console.warn(`Could not read monthly archive ${filename}:`, e.message);
+                const [year, month] = yearMonth.split('-');
+                const now = new Date();
+                const archiveMonth = new Date(parseInt(year), parseInt(month) - 1, 1);
+                const currentMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
+
+                if (archiveMonth < currentMonthDate) {
+                    // Past month: generate all days
+                    const daysInMonth = new Date(parseInt(year), parseInt(month), 0).getDate();
+                    for (let day = 1; day <= daysInMonth; day++) {
+                        allDates.add(`${yearMonth}-${String(day).padStart(2, '0')}`);
+                    }
+                } else if (archiveMonth.getTime() === currentMonthDate.getTime()) {
+                    // Current month: generate days 1 through today
+                    const today = now.getDate();
+                    for (let day = 1; day <= today; day++) {
+                        allDates.add(`${yearMonth}-${String(day).padStart(2, '0')}`);
+                    }
                 }
             }
             
-            // Load yearly archives and extract dates/months (cache the data)
+            // Load yearly archives
             const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
             for (const filename of Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz'))) {
                 const year = filename.replace('.csv.gz', '');
+                const yearInt = parseInt(year);
                 allYears.add(year);
-                
-                // Extract available dates and months from yearly archive and cache
-                try {
-                    const csvData = await decompressGzipFile(`energy/yearly/${filename}`);
-                    archiveCache.yearly[year] = csvData;
-                    extractDatesFromCsv(csvData).forEach(date => {
-                        allDates.add(date);
-                        allMonths.add(date.substring(0, 7));
-                    });
-                } catch (e) {
-                    console.warn(`Could not read yearly archive ${filename}:`, e.message);
+
+                const now = new Date();
+                if (yearInt < now.getFullYear()) {
+                    // Past year: generate all 12 months and all dates
+                    for (let month = 1; month <= 12; month++) {
+                        const ym = `${year}-${String(month).padStart(2, '0')}`;
+                        allMonths.add(ym);
+                        const daysInMonth = new Date(yearInt, month, 0).getDate();
+                        for (let day = 1; day <= daysInMonth; day++) {
+                            allDates.add(`${ym}-${String(day).padStart(2, '0')}`);
+                        }
+                    }
+                } else if (yearInt === now.getFullYear()) {
+                    // Current year: generate completed months (1 through current_month - 1)
+                    const currentMonthNum = now.getMonth() + 1;
+                    for (let month = 1; month < currentMonthNum; month++) {
+                        const ym = `${year}-${String(month).padStart(2, '0')}`;
+                        allMonths.add(ym);
+                        const daysInMonth = new Date(yearInt, month, 0).getDate();
+                        for (let day = 1; day <= daysInMonth; day++) {
+                            allDates.add(`${ym}-${String(day).padStart(2, '0')}`);
+                        }
+                    }
                 }
             }
             
             availableDates = [...allDates].sort();
             availableMonths = [...allMonths].sort();
             availableYears = [...allYears].sort();
-            
-            console.log(`Loaded ${availableDates.length} dates, ${availableMonths.length} months, ${availableYears.length} years`);
         } catch (error) {
             console.error('Error loading available dates:', error);
             availableDates = [];
@@ -782,208 +380,188 @@
             availableYears = [];
         }
     }
-    
-    // Helper function to extract unique dates from CSV data
-    function extractDatesFromCsv(csvText) {
-        const lines = csvText.trim().split('\n');
-        const dates = new Set();
-        for (let i = 1; i < lines.length; i++) {
-            const timestamp = lines[i].split(',')[0];
-            if (timestamp && timestamp.length >= 10) {
-                dates.add(timestamp.substring(0, 10)); // YYYY-MM-DD
-            }
-        }
-        return dates;
-    }
 
+    // ============================================================================
+    // EVENT LISTENERS
+    // ============================================================================
     function setupEventListeners() {
-        // View toggle buttons
-        document.getElementById('daily-view').addEventListener('click', () => {
-            switchView('daily');
-        });
+        document.getElementById('consumption-view').addEventListener('click', () => switchChartType('consumption'));
+        document.getElementById('balance-view').addEventListener('click', () => switchChartType('balance'));
         
-        document.getElementById('monthly-view').addEventListener('click', () => {
-            switchView('monthly');
-        });
+        document.getElementById('daily-view').addEventListener('click', () => switchView('daily'));
+        document.getElementById('monthly-view').addEventListener('click', () => switchView('monthly'));
+        document.getElementById('yearly-view').addEventListener('click', () => switchView('yearly'));
+        document.getElementById('total-view').addEventListener('click', () => switchView('total'));
         
-        document.getElementById('yearly-view').addEventListener('click', () => {
-            switchView('yearly');
-        });
-        
-        // Date picker change
         document.getElementById('date-picker').addEventListener('change', async (e) => {
             currentDate = e.target.value;
             updateNavigationButtons();
             await loadAndDisplayCharts();
         });
         
-        // Month picker change
         document.getElementById('month-picker').addEventListener('change', async (e) => {
             currentMonth = e.target.value;
             updateNavigationButtons();
             await loadAndDisplayCharts();
         });
         
-        // Year picker change
         document.getElementById('year-picker').addEventListener('change', async (e) => {
             currentYear = e.target.value;
             updateNavigationButtons();
             await loadAndDisplayCharts();
         });
 
-        // Navigation buttons
-        document.getElementById('prev-period').addEventListener('click', async () => {
-            if (currentView === 'daily') {
-                const currentIndex = availableDates.indexOf(currentDate);
-                if (currentIndex > 0) {
-                    currentDate = availableDates[currentIndex - 1];
-                    document.getElementById('date-picker').value = currentDate;
-                    updateNavigationButtons();
-                    await loadAndDisplayCharts();
-                }
-            } else if (currentView === 'monthly') {
-                const currentIndex = availableMonths.indexOf(currentMonth);
-                if (currentIndex > 0) {
-                    currentMonth = availableMonths[currentIndex - 1];
-                    document.getElementById('month-picker').value = currentMonth;
-                    updateNavigationButtons();
-                    await loadAndDisplayCharts();
-                }
-            } else {
-                const currentIndex = availableYears.indexOf(currentYear);
-                if (currentIndex > 0) {
-                    currentYear = availableYears[currentIndex - 1];
-                    document.getElementById('year-picker').value = currentYear;
-                    updateNavigationButtons();
-                    await loadAndDisplayCharts();
-                }
-            }
-        });
-
-        document.getElementById('next-period').addEventListener('click', async () => {
-            if (currentView === 'daily') {
-                const currentIndex = availableDates.indexOf(currentDate);
-                if (currentIndex < availableDates.length - 1) {
-                    currentDate = availableDates[currentIndex + 1];
-                    document.getElementById('date-picker').value = currentDate;
-                    updateNavigationButtons();
-                    await loadAndDisplayCharts();
-                }
-            } else if (currentView === 'monthly') {
-                const currentIndex = availableMonths.indexOf(currentMonth);
-                if (currentIndex < availableMonths.length - 1) {
-                    currentMonth = availableMonths[currentIndex + 1];
-                    document.getElementById('month-picker').value = currentMonth;
-                    updateNavigationButtons();
-                    await loadAndDisplayCharts();
-                }
-            } else {
-                const currentIndex = availableYears.indexOf(currentYear);
-                if (currentIndex < availableYears.length - 1) {
-                    currentYear = availableYears[currentIndex + 1];
-                    document.getElementById('year-picker').value = currentYear;
-                    updateNavigationButtons();
-                    await loadAndDisplayCharts();
-                }
-            }
-        });
+        document.getElementById('prev-period').addEventListener('click', navigatePrevious);
+        document.getElementById('next-period').addEventListener('click', navigateNext);
+        
+        // Initialize view visibility (consumption by default)
+        switchChartType(currentChartType);
+    }
+    
+    async function navigatePrevious() {
+        if (currentView === 'total') return;
+        const lists = { daily: availableDates, monthly: availableMonths, yearly: availableYears };
+        const current = { daily: currentDate, monthly: currentMonth, yearly: currentYear };
+        const pickers = { daily: 'date-picker', monthly: 'month-picker', yearly: 'year-picker' };
+        
+        const list = lists[currentView];
+        const currentIndex = list.indexOf(current[currentView]);
+        
+        if (currentIndex > 0) {
+            const newValue = list[currentIndex - 1];
+            if (currentView === 'daily') currentDate = newValue;
+            else if (currentView === 'monthly') currentMonth = newValue;
+            else currentYear = newValue;
+            
+            document.getElementById(pickers[currentView]).value = newValue;
+            updateNavigationButtons();
+            await loadAndDisplayCharts();
+        }
+    }
+    
+    async function navigateNext() {
+        if (currentView === 'total') return;
+        const lists = { daily: availableDates, monthly: availableMonths, yearly: availableYears };
+        const current = { daily: currentDate, monthly: currentMonth, yearly: currentYear };
+        const pickers = { daily: 'date-picker', monthly: 'month-picker', yearly: 'year-picker' };
+        
+        const list = lists[currentView];
+        const currentIndex = list.indexOf(current[currentView]);
+        
+        if (currentIndex < list.length - 1) {
+            const newValue = list[currentIndex + 1];
+            if (currentView === 'daily') currentDate = newValue;
+            else if (currentView === 'monthly') currentMonth = newValue;
+            else currentYear = newValue;
+            
+            document.getElementById(pickers[currentView]).value = newValue;
+            updateNavigationButtons();
+            await loadAndDisplayCharts();
+        }
     }
     
     function switchView(view) {
         currentView = view;
         
-        // Update button states
         document.getElementById('daily-view').classList.toggle('active', view === 'daily');
         document.getElementById('monthly-view').classList.toggle('active', view === 'monthly');
         document.getElementById('yearly-view').classList.toggle('active', view === 'yearly');
+        document.getElementById('total-view').classList.toggle('active', view === 'total');
         
-        // Show/hide appropriate date pickers
         document.getElementById('date-picker').style.display = view === 'daily' ? 'block' : 'none';
         document.getElementById('month-picker').style.display = view === 'monthly' ? 'block' : 'none';
         document.getElementById('year-picker').style.display = view === 'yearly' ? 'block' : 'none';
         
-        // Update chart title
-        const titles = { 'daily': 'Daily Energy Distribution', 'monthly': 'Monthly Energy Distribution', 'yearly': 'Yearly Energy Distribution' };
-        document.getElementById('pie-chart-title').textContent = titles[view];
+        const dateSelector = document.querySelector('.date-selector');
+        dateSelector.style.display = view === 'total' ? 'none' : 'flex';
         
         updateNavigationButtons();
         loadAndDisplayCharts();
     }
-
-    function updateNavigationButtons() {
-        if (currentView === 'daily') {
-            const currentIndex = availableDates.indexOf(currentDate);
-            document.getElementById('prev-period').disabled = currentIndex <= 0;
-            document.getElementById('next-period').disabled = currentIndex >= availableDates.length - 1;
-        } else if (currentView === 'monthly') {
-            const currentIndex = availableMonths.indexOf(currentMonth);
-            document.getElementById('prev-period').disabled = currentIndex <= 0;
-            document.getElementById('next-period').disabled = currentIndex >= availableMonths.length - 1;
+    
+    function switchChartType(chartType) {
+        currentChartType = chartType;
+        
+        document.getElementById('consumption-view').classList.toggle('active', chartType === 'consumption');
+        document.getElementById('balance-view').classList.toggle('active', chartType === 'balance');
+        
+        document.getElementById('consumption-chart').style.display = chartType === 'consumption' ? 'block' : 'none';
+        document.getElementById('balance-chart').style.display = chartType === 'balance' ? 'block' : 'none';
+        
+        // Toggle between consumption sharing and balance KPIs
+        const consumptionSharingSection = document.getElementById('consumption-sharing-section');
+        const balanceKpisSection = document.getElementById('balance-kpis-section');
+        const energyKpisSection = document.getElementById('energy-kpis-section');
+        
+        if (chartType === 'consumption') {
+            if (consumptionSharingSection) consumptionSharingSection.style.display = 'block';
+            if (balanceKpisSection) balanceKpisSection.style.display = 'none';
+            if (energyKpisSection) energyKpisSection.style.display = 'none';
         } else {
-            const currentIndex = availableYears.indexOf(currentYear);
-            document.getElementById('prev-period').disabled = currentIndex <= 0;
-            document.getElementById('next-period').disabled = currentIndex >= availableYears.length - 1;
+            if (consumptionSharingSection) consumptionSharingSection.style.display = 'none';
+            if (balanceKpisSection) balanceKpisSection.style.display = 'flex';
+            if (energyKpisSection) energyKpisSection.style.display = 'none';
         }
+        
+        document.getElementById('main-chart-title').textContent = chartType === 'consumption' ? 'Energy Consumption' : 'Energy Balance';
     }
 
+    function updateNavigationButtons() {
+        const lists = { daily: availableDates, monthly: availableMonths, yearly: availableYears, total: [] };
+        const current = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: null };
+        
+        const list = lists[currentView];
+        const currentIndex = list.length > 0 ? list.indexOf(current[currentView]) : -1;
+        
+        document.getElementById('prev-period').disabled = currentIndex <= 0;
+        document.getElementById('next-period').disabled = currentIndex < 0 || currentIndex >= list.length - 1;
+    }
+
+    // ============================================================================
+    // CHART LOADING
+    // ============================================================================
     async function loadAndDisplayCharts() {
         if (currentView === 'daily' && !currentDate) return;
         if (currentView === 'monthly' && !currentMonth) return;
         if (currentView === 'yearly' && !currentYear) return;
 
         try {
-            showLoadingMessage();
+            ChartHelpers.showLoadingMessage(currentChartType);
             
-            if (currentView === 'daily') {
-                await loadDailyCharts();
-            } else if (currentView === 'monthly') {
-                await loadMonthlyCharts();
-            } else {
-                await loadYearlyCharts();
-            }
+            if (currentView === 'daily') await loadDailyCharts();
+            else if (currentView === 'monthly') await loadMonthlyCharts();
+            else if (currentView === 'yearly') await loadYearlyCharts();
+            else if (currentView === 'total') await loadTotalCharts();
             
         } catch (error) {
             console.error('Error loading charts:', error);
-            const periods = { 'daily': currentDate, 'monthly': currentMonth, 'yearly': currentYear };
-            showErrorMessage(`Failed to load energy data for ${periods[currentView]}`);
+            const periods = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all time' };
+            ChartHelpers.showErrorMessage(`Failed to load energy data for ${periods[currentView]}`);
         }
     }
     
     async function loadDailyCharts() {
-        // For local time display, we may need data from adjacent UTC dates
-        // E.g., if local is UTC+8, local midnight = 16:00 UTC previous day
         const selectedLocalDate = new Date(currentDate + 'T00:00:00');
-        const localStartOfDay = new Date(selectedLocalDate);
         const localEndOfDay = new Date(selectedLocalDate);
         localEndOfDay.setDate(localEndOfDay.getDate() + 1);
         
-        // Get UTC dates that cover the local day
         const utcDatesNeeded = new Set();
-        utcDatesNeeded.add(localStartOfDay.toISOString().substring(0, 10));
+        utcDatesNeeded.add(selectedLocalDate.toISOString().substring(0, 10));
         utcDatesNeeded.add(localEndOfDay.toISOString().substring(0, 10));
-        // Also add previous day in case timezone offset pushes us back
-        const prevDay = new Date(localStartOfDay);
+        const prevDay = new Date(selectedLocalDate);
         prevDay.setDate(prevDay.getDate() - 1);
         utcDatesNeeded.add(prevDay.toISOString().substring(0, 10));
         
-        // Load data from all needed UTC dates
         let allEnergyData = [];
         for (const utcDate of utcDatesNeeded) {
             try {
-                const csvData = await loadDailyCsvData(utcDate);
-                const dayData = parseCsvEnergyData(csvData);
-                allEnergyData = allEnergyData.concat(dayData);
-            } catch (e) {
-                // Date may not exist, that's OK
-            }
+                const csvData = await DataHelpers.loadDailyCsvData(utcDate);
+                allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+            } catch (e) { /* Date may not exist */ }
         }
         
-        if (allEnergyData.length === 0) {
-            throw new Error('No data available for selected date');
-        }
+        if (allEnergyData.length === 0) throw new Error('No data available');
         
-        // Filter data: include entries from selected local date AND first hour of next day
-        // (needed to calculate consumption for hour 23:00)
         const nextLocalDate = new Date(currentDate + 'T00:00:00');
         nextLocalDate.setDate(nextLocalDate.getDate() + 1);
         const nextLocalDateStr = nextLocalDate.toLocaleDateString('sv-SE');
@@ -991,228 +569,273 @@
         const energyData = allEnergyData.filter(entry => {
             const entryDate = new Date(entry.timestamp);
             const entryLocalDate = entryDate.toLocaleDateString('sv-SE');
-            const entryLocalHour = entryDate.getHours();
-            
-            // Include all entries from selected date
             if (entryLocalDate === currentDate) return true;
-            
-            // Include entries from hour 00 of next day (needed for hour 23 calculation)
-            if (entryLocalDate === nextLocalDateStr && entryLocalHour === 0) return true;
-            
+            if (entryLocalDate === nextLocalDateStr && entryDate.getHours() === 0) return true;
             return false;
         });
         
-        if (energyData.length === 0) {
-            throw new Error('No data available for selected date');
-        }
+        if (energyData.length === 0) throw new Error('No data available');
         
-        // Calculate hourly consumption and total consumption (in local time)
-        // Standard convention: bar at "16:00" = consumption during 16:00-16:59
-        const hourlyConsumption = calculateHourlyConsumption(energyData, currentDate);
+        const hourlyData = calculateHourlyConsumption(energyData, currentDate);
         const totalConsumption = calculateTotalConsumption(energyData.filter(entry => {
-            const entryDate = new Date(entry.timestamp);
-            return entryDate.toLocaleDateString('sv-SE') === currentDate;
+            return new Date(entry.timestamp).toLocaleDateString('sv-SE') === currentDate;
         }));
         
-        // Restore chart canvases before updating
-        restoreChartCanvases();
+        ChartHelpers.restoreChartCanvases(currentChartType);
         
-        // Update charts
-        updateConsumptionChart(hourlyConsumption, 'daily');
-        updatePieChart(totalConsumption);
+        ChartHelpers.updateConsumptionChart(hourlyData.imported, 'daily', hourlyData.exported, channelData, currentChartType);
+        ChartHelpers.updateConsumptionSharing(hourlyData.imported, 'daily', channelData, currentChartType);
+        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
+        balanceData = ChartHelpers.updateBalanceChart(hourlyData.rawHourlyImport, 'daily', hourlyData.rawHourlyImport, hourlyData.rawHourlyExport, hasBalanceCapability);
+        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
         
-        // Set up CSV download
-        setupCsvDownload(hourlyConsumption, 'daily');
+        setupCsvDownload(hourlyData.imported, 'daily');
     }
     
     async function loadMonthlyCharts() {
-        // Load data from consolidated monthly file + any remaining daily files
         let allEnergyData = [];
-        
-        // Try to load consolidated monthly file
+
+        // Load monthly archive (DataHelpers falls back to yearly archive)
         try {
-            const csvData = await loadMonthlyCsvData(currentMonth);
-            allEnergyData = parseCsvEnergyData(csvData);
-            console.log(`Loaded ${allEnergyData.length} records from monthly archive for ${currentMonth}`);
-        } catch (error) {
-            console.warn(`No consolidated monthly file for ${currentMonth}:`, error.message);
-        }
-        
-        // Also load daily files for current month (includes today's data not yet consolidated)
-        const monthDates = availableDates.filter(date => date.startsWith(currentMonth));
-        for (const date of monthDates) {
-            try {
-                const csvData = await loadDailyCsvData(date);
-                const dailyData = parseCsvEnergyData(csvData);
-                allEnergyData = allEnergyData.concat(dailyData);
-                console.log(`Loaded ${dailyData.length} records from daily file for ${date}`);
-            } catch (error) {
-                console.warn(`Failed to load data for ${date}:`, error.message);
+            const csvData = await DataHelpers.loadMonthlyCsvData(currentMonth);
+            allEnergyData = DataHelpers.parseCsvEnergyData(csvData);
+        } catch (error) { /* No data for this month */ }
+
+        // For current month: also load daily files for fresh intraday data
+        const now = new Date();
+        const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        if (currentMonth === currentYearMonth) {
+            for (const date of ArchiveCache.dailyFilesSet) {
+                if (date.startsWith(currentMonth)) {
+                    try {
+                        const csvData = await DataHelpers.loadDailyCsvData(date);
+                        allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+                    } catch (error) { /* Daily file may not exist */ }
+                }
             }
         }
+
+        if (allEnergyData.length === 0) throw new Error('No data available');
         
-        if (allEnergyData.length === 0) {
-            throw new Error('No data available for selected month');
-        }
-        
-        // Group data by day and calculate daily consumption
         const dailyConsumptions = {};
-        const monthlyData = {};
+        const monthlyRawImported = {};
+        const monthlyRawExported = {};
+        const dailyRawImport = {};
+        const dailyRawExport = {};
+        const dailyExported = {};
         
-        // Group by date
         const dataByDate = {};
         allEnergyData.forEach(entry => {
-            const date = entry.timestamp.substring(0, 10); // YYYY-MM-DD
+            const date = entry.timestamp.substring(0, 10);
             if (!dataByDate[date]) dataByDate[date] = [];
             dataByDate[date].push(entry);
         });
         
-        // Calculate consumption for each day
         Object.keys(dataByDate).sort().forEach(date => {
             const dayData = dataByDate[date];
-            const dailyConsumption = calculateTotalConsumption(dayData);
-            const day = date.substring(8, 10); // Extract day from YYYY-MM-DD
-            dailyConsumptions[day] = dailyConsumption;
+            const dailyData = calculateTotalConsumption(dayData);
+            const day = date.substring(8, 10);
+            dailyConsumptions[day] = dailyData.imported;
+            if (Object.keys(dailyData.exported).length > 0) dailyExported[day] = dailyData.exported;
+            dailyRawImport[day] = dailyData.rawImported;
+            dailyRawExport[day] = dailyData.rawExported;
             
-            // Add to monthly totals
-            Object.keys(dailyConsumption).forEach(channel => {
-                if (!monthlyData[channel]) monthlyData[channel] = 0;
-                monthlyData[channel] += dailyConsumption[channel];
+            Object.keys(dailyData.rawImported).forEach(channel => {
+                if (!monthlyRawImported[channel]) monthlyRawImported[channel] = 0;
+                monthlyRawImported[channel] += dailyData.rawImported[channel];
+            });
+            Object.keys(dailyData.rawExported).forEach(channel => {
+                if (!monthlyRawExported[channel]) monthlyRawExported[channel] = 0;
+                monthlyRawExported[channel] += dailyData.rawExported[channel];
             });
         });
         
-        // Restore chart canvases before updating
-        restoreChartCanvases();
+        ChartHelpers.restoreChartCanvases(currentChartType);
         
-        // Update charts
-        updateConsumptionChart(dailyConsumptions, 'monthly');
-        updatePieChart(monthlyData);
+        ChartHelpers.updateConsumptionChart(dailyConsumptions, 'monthly', dailyExported, channelData, currentChartType);
+        ChartHelpers.updateConsumptionSharing(dailyConsumptions, 'monthly', channelData, currentChartType);
+        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
+        balanceData = ChartHelpers.updateBalanceChart(dailyRawImport, 'monthly', dailyRawImport, dailyRawExport, hasBalanceCapability);
+        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
         
-        // Set up CSV download
         setupCsvDownload(dailyConsumptions, 'monthly');
     }
 
     async function loadYearlyCharts() {
-        // Load data from consolidated yearly file + any remaining monthly files
         let allEnergyData = [];
-        
-        // Try to load consolidated yearly file
+
+        // Load yearly archive (contains all completed months for this year)
         try {
-            const csvData = await loadYearlyCsvData(currentYear);
-            allEnergyData = parseCsvEnergyData(csvData);
-            console.log(`Loaded ${allEnergyData.length} records from yearly archive for ${currentYear}`);
-        } catch (error) {
-            console.warn(`No consolidated yearly file for ${currentYear}:`, error.message);
-        }
-        
-        // Also load monthly files for current year (includes current month not yet consolidated)
-        const yearMonths = availableMonths.filter(month => month.startsWith(currentYear));
-        for (const month of yearMonths) {
+            const csvData = await DataHelpers.loadYearlyCsvData(currentYear);
+            allEnergyData = DataHelpers.parseCsvEnergyData(csvData);
+        } catch (error) { /* No yearly archive */ }
+
+        // For current year: also load current month + today's daily file
+        const now = new Date();
+        if (parseInt(currentYear) === now.getFullYear()) {
+            const currentYearMonth = `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+            // Load monthly archive for current month
             try {
-                const csvData = await loadMonthlyCsvData(month);
-                const monthlyData = parseCsvEnergyData(csvData);
-                allEnergyData = allEnergyData.concat(monthlyData);
-                console.log(`Loaded ${monthlyData.length} records from monthly file for ${month}`);
-            } catch (error) {
-                console.warn(`Failed to load data for ${month}:`, error.message);
+                const csvData = await DataHelpers.loadMonthlyCsvData(currentYearMonth);
+                allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+            } catch (error) { /* No monthly file yet */ }
+
+            // Load today's daily files for fresh intraday data
+            for (const date of ArchiveCache.dailyFilesSet) {
+                if (date.startsWith(currentYearMonth)) {
+                    try {
+                        const csvData = await DataHelpers.loadDailyCsvData(date);
+                        allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+                    } catch (error) { /* Daily file may not exist */ }
+                }
             }
         }
+
+        if (allEnergyData.length === 0) throw new Error('No data available');
         
-        // Also load daily files for current month if exists
-        const currentMonthDates = availableDates.filter(date => date.startsWith(currentYear));
-        for (const date of currentMonthDates) {
-            try {
-                const csvData = await loadDailyCsvData(date);
-                const dailyData = parseCsvEnergyData(csvData);
-                allEnergyData = allEnergyData.concat(dailyData);
-                console.log(`Loaded ${dailyData.length} records from daily file for ${date}`);
-            } catch (error) {
-                console.warn(`Failed to load data for ${date}:`, error.message);
-            }
-        }
-        
-        if (allEnergyData.length === 0) {
-            throw new Error('No data available for selected year');
-        }
-        
-        // Group data by month and calculate monthly consumption
         const monthlyConsumptions = {};
-        const yearlyData = {};
+        const monthlyExported = {};
+        const yearlyRawImported = {};
+        const yearlyRawExported = {};
+        const monthlyRawImport = {};
+        const monthlyRawExport = {};
         
-        // Group by month
         const dataByMonth = {};
         allEnergyData.forEach(entry => {
-            const month = entry.timestamp.substring(5, 7); // MM from YYYY-MM-DD
+            const month = entry.timestamp.substring(5, 7);
             if (!dataByMonth[month]) dataByMonth[month] = [];
             dataByMonth[month].push(entry);
         });
         
-        // Calculate consumption for each month
         Object.keys(dataByMonth).sort().forEach(month => {
             const monthData = dataByMonth[month];
-            const monthConsumption = calculateTotalConsumption(monthData);
-            monthlyConsumptions[month] = monthConsumption;
+            const monthConsumptionData = calculateTotalConsumption(monthData);
+            monthlyConsumptions[month] = monthConsumptionData.imported;
+            if (Object.keys(monthConsumptionData.exported).length > 0) monthlyExported[month] = monthConsumptionData.exported;
+            monthlyRawImport[month] = monthConsumptionData.rawImported;
+            monthlyRawExport[month] = monthConsumptionData.rawExported;
             
-            // Add to yearly totals
-            Object.keys(monthConsumption).forEach(channel => {
-                if (!yearlyData[channel]) yearlyData[channel] = 0;
-                yearlyData[channel] += monthConsumption[channel];
+            Object.keys(monthConsumptionData.rawImported).forEach(channel => {
+                if (!yearlyRawImported[channel]) yearlyRawImported[channel] = 0;
+                yearlyRawImported[channel] += monthConsumptionData.rawImported[channel];
+            });
+            Object.keys(monthConsumptionData.rawExported).forEach(channel => {
+                if (!yearlyRawExported[channel]) yearlyRawExported[channel] = 0;
+                yearlyRawExported[channel] += monthConsumptionData.rawExported[channel];
             });
         });
         
-        // Restore chart canvases before updating
-        restoreChartCanvases();
+        ChartHelpers.restoreChartCanvases(currentChartType);
         
-        // Update charts
-        updateConsumptionChart(monthlyConsumptions, 'yearly');
-        updatePieChart(yearlyData);
+        ChartHelpers.updateConsumptionChart(monthlyConsumptions, 'yearly', monthlyExported, channelData, currentChartType);
+        ChartHelpers.updateConsumptionSharing(monthlyConsumptions, 'yearly', channelData, currentChartType);
+        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
+        balanceData = ChartHelpers.updateBalanceChart(monthlyRawImport, 'yearly', monthlyRawImport, monthlyRawExport, hasBalanceCapability);
+        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
         
-        // Set up CSV download
         setupCsvDownload(monthlyConsumptions, 'yearly');
     }
 
-    function parseCsvEnergyData(csvText) {
-        const lines = csvText.trim().split('\n');
-        const data = [];
-        
-        // Skip header line
-        for (let i = 1; i < lines.length; i++) {
-            const [timestamp, channel, activeImported, activeExported] = lines[i].split(',');
-            data.push({
-                timestamp: timestamp,
-                channel: parseInt(channel),
-                activeImported: parseFloat(activeImported),
-                activeExported: parseFloat(activeExported)
-            });
+    async function loadTotalCharts() {
+        let allEnergyData = [];
+
+        const now = new Date();
+        const currentYearStr = String(now.getFullYear());
+
+        for (const year of availableYears) {
+            // Load yearly archive
+            try {
+                const csvData = await DataHelpers.loadYearlyCsvData(year);
+                allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+            } catch (error) { /* No yearly archive for this year */ }
+
+            // For current year: also load current month + daily files
+            if (year === currentYearStr) {
+                const currentYearMonth = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+                try {
+                    const csvData = await DataHelpers.loadMonthlyCsvData(currentYearMonth);
+                    allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+                } catch (error) { /* No monthly file yet */ }
+
+                for (const date of ArchiveCache.dailyFilesSet) {
+                    if (date.startsWith(currentYearMonth)) {
+                        try {
+                            const csvData = await DataHelpers.loadDailyCsvData(date);
+                            allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
+                        } catch (error) { /* Daily file may not exist */ }
+                    }
+                }
+            }
         }
-        
-        return data;
+
+        if (allEnergyData.length === 0) throw new Error('No data available');
+
+        const yearlyConsumptions = {};
+        const yearlyExported = {};
+        const totalRawImported = {};
+        const totalRawExported = {};
+        const yearlyRawImport = {};
+        const yearlyRawExport = {};
+
+        const dataByYear = {};
+        allEnergyData.forEach(entry => {
+            const year = entry.timestamp.substring(0, 4);
+            if (!dataByYear[year]) dataByYear[year] = [];
+            dataByYear[year].push(entry);
+        });
+
+        Object.keys(dataByYear).sort().forEach(year => {
+            const yearData = dataByYear[year];
+            const yearConsumptionData = calculateTotalConsumption(yearData);
+            yearlyConsumptions[year] = yearConsumptionData.imported;
+            if (Object.keys(yearConsumptionData.exported).length > 0) yearlyExported[year] = yearConsumptionData.exported;
+            yearlyRawImport[year] = yearConsumptionData.rawImported;
+            yearlyRawExport[year] = yearConsumptionData.rawExported;
+
+            Object.keys(yearConsumptionData.rawImported).forEach(channel => {
+                if (!totalRawImported[channel]) totalRawImported[channel] = 0;
+                totalRawImported[channel] += yearConsumptionData.rawImported[channel];
+            });
+            Object.keys(yearConsumptionData.rawExported).forEach(channel => {
+                if (!totalRawExported[channel]) totalRawExported[channel] = 0;
+                totalRawExported[channel] += yearConsumptionData.rawExported[channel];
+            });
+        });
+
+        ChartHelpers.restoreChartCanvases(currentChartType);
+
+        ChartHelpers.updateConsumptionChart(yearlyConsumptions, 'total', yearlyExported, channelData, currentChartType);
+        ChartHelpers.updateConsumptionSharing(yearlyConsumptions, 'total', channelData, currentChartType);
+        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
+        balanceData = ChartHelpers.updateBalanceChart(yearlyRawImport, 'total', yearlyRawImport, yearlyRawExport, hasBalanceCapability);
+        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
+
+        setupCsvDownload(yearlyConsumptions, 'total');
     }
 
+    // ============================================================================
+    // DATA PROCESSING
+    // ============================================================================
     function calculateHourlyConsumption(energyData, targetLocalDate) {
-        // Sort all data chronologically first
         const sortedData = energyData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         
-        // Group data by channel and create chronological sequences
         const channelSequences = {};
         sortedData.forEach(entry => {
-            if (!channelSequences[entry.channel]) {
-                channelSequences[entry.channel] = [];
-            }
-            // Convert UTC timestamp to local date and hour
+            if (!channelSequences[entry.channel]) channelSequences[entry.channel] = [];
             const date = new Date(entry.timestamp);
-            const localDate = date.toLocaleDateString('sv-SE');
-            const localHour = date.getHours().toString().padStart(2, '0');
             channelSequences[entry.channel].push({
                 timestamp: entry.timestamp,
-                energy: entry.activeImported,
-                hour: localHour,
-                localDate: localDate
+                energyImported: entry.activeImported,
+                energyExported: entry.activeExported || 0,
+                hour: date.getHours().toString().padStart(2, '0'),
+                localDate: date.toLocaleDateString('sv-SE')
             });
         });
         
-        // Calculate hourly consumption by finding differences between consecutive readings
         const consumption = {};
+        const exportData = {};
         
         Object.keys(channelSequences).forEach(channel => {
             const sequence = channelSequences[channel];
@@ -1221,319 +844,115 @@
                 const current = sequence[i];
                 const previous = sequence[i - 1];
                 
-                // Only record consumption if the previous reading is from the target date
-                // This ensures bar at "16:00" represents consumption during hour 16 (16:xx to 17:xx)
                 if (targetLocalDate && previous.localDate !== targetLocalDate) continue;
                 
-                const hourlyConsumption = Math.max(0, (current.energy - previous.energy) / 1000); // Convert Wh to kWh
+                const hourlyImport = Math.max(0, (current.energyImported - previous.energyImported) / 1000);
+                const hourlyExport = Math.max(0, (current.energyExported - previous.energyExported) / 1000);
                 
-                // Assign consumption to the hour when it started (previous local hour)
-                // Standard convention: bar at "16:00" = consumption during 16:00-16:59
-                if (!consumption[previous.hour]) {
-                    consumption[previous.hour] = {};
-                }
-                consumption[previous.hour][channel] = hourlyConsumption;
+                if (!consumption[previous.hour]) consumption[previous.hour] = {};
+                if (!exportData[previous.hour]) exportData[previous.hour] = {};
+                
+                consumption[previous.hour][channel] = hourlyImport;
+                if (hourlyExport > 0) exportData[previous.hour][channel] = hourlyExport;
             }
         });
         
-        // Add "Other" consumption (channel 0 minus sum of all other channels)
-        // Only process hours 00-23 of the current day
+        const excludeFromOther = ChannelCache.excludeFromOther;
+        const hasGridChannel = ChannelCache.hasGrid;
+        const hasLoads = DataHelpers.hasLoadSubChannels(channelSequences, excludeFromOther);
+        
+        const rawHourlyImport = {};
+        const rawHourlyExport = {};
         Object.keys(consumption).forEach(hour => {
-            // Skip hours outside the current day (e.g., hour "00" of next day)
+            const hourNum = parseInt(hour);
+            if (hourNum >= 0 && hourNum <= 23) {
+                rawHourlyImport[hour] = { ...consumption[hour] };
+                rawHourlyExport[hour] = exportData[hour] ? { ...exportData[hour] } : {};
+            }
+        });
+        
+        Object.keys(consumption).forEach(hour => {
             const hourNum = parseInt(hour);
             if (hourNum < 0 || hourNum > 23) return;
             
-            const totalConsumption = consumption[hour][0] || 0;
-            let trackedConsumption = 0;
+            if (hasGridChannel && hasLoads) {
+                consumption[hour]['Other'] = DataHelpers.calculateOtherConsumption(consumption[hour], excludeFromOther);
+            }
             
-            Object.keys(consumption[hour]).forEach(channel => {
-                if (channel !== '0') {
-                    trackedConsumption += consumption[hour][channel];
-                }
-            });
-            
-            consumption[hour]['Other'] = Math.max(0, totalConsumption - trackedConsumption);
-            delete consumption[hour]['0']; // Remove total channel from display
+            excludeFromOther.forEach(ch => delete consumption[hour][ch]);
+            if (exportData[hour]) {
+                excludeFromOther.forEach(ch => delete exportData[hour][ch]);
+            }
         });
         
-        // Filter out any hours outside 00-23 range before returning
         const filteredConsumption = {};
+        const filteredExport = {};
+        
         Object.keys(consumption).forEach(hour => {
             const hourNum = parseInt(hour);
             if (hourNum >= 0 && hourNum <= 23) {
                 filteredConsumption[hour] = consumption[hour];
+                if (exportData[hour]) filteredExport[hour] = exportData[hour];
             }
         });
         
-        return filteredConsumption;
+        return { imported: filteredConsumption, exported: filteredExport, rawHourlyImport, rawHourlyExport };
     }
 
     function calculateTotalConsumption(energyData) {
         const latestData = {};
         const firstData = {};
+        const latestExportData = {};
+        const firstExportData = {};
         
-        // Find first and last reading for each channel
         energyData.forEach(entry => {
-            if (!firstData[entry.channel]) {
-                firstData[entry.channel] = entry.activeImported;
-            }
+            if (!firstData[entry.channel]) firstData[entry.channel] = entry.activeImported;
             latestData[entry.channel] = entry.activeImported;
+            
+            if (entry.activeExported !== undefined) {
+                if (!firstExportData[entry.channel]) firstExportData[entry.channel] = entry.activeExported;
+                latestExportData[entry.channel] = entry.activeExported;
+            }
         });
         
-        // Calculate total consumption for the day
-        const totalConsumption = {};
+        const rawConsumption = {};
         Object.keys(latestData).forEach(channel => {
-            const dailyConsumption = (latestData[channel] - (firstData[channel] || 0)) / 1000; // Convert to kWh
-            if (dailyConsumption > 0) {
-                totalConsumption[channel] = dailyConsumption;
-            }
+            const dailyConsumption = (latestData[channel] - (firstData[channel] || 0)) / 1000;
+            if (dailyConsumption > 0) rawConsumption[channel] = dailyConsumption;
         });
         
-        // Add "Other" consumption
-        if (totalConsumption[0]) {
-            const totalHouseConsumption = totalConsumption[0];
-            let trackedConsumption = 0;
-            
-            Object.keys(totalConsumption).forEach(channel => {
-                if (channel !== '0') {
-                    trackedConsumption += totalConsumption[channel];
-                }
-            });
-            
-            totalConsumption['Other'] = Math.max(0, totalHouseConsumption - trackedConsumption);
-            delete totalConsumption['0']; // Remove total channel
+        const rawExported = {};
+        Object.keys(latestExportData).forEach(channel => {
+            const dailyExport = (latestExportData[channel] - (firstExportData[channel] || 0)) / 1000;
+            if (dailyExport > 0) rawExported[channel] = dailyExport;
+        });
+        
+        const totalConsumption = { ...rawConsumption };
+        const totalExported = { ...rawExported };
+        
+        const excludeFromOther = ChannelCache.excludeFromOther;
+        const hasGridChannel = ChannelCache.hasGrid;
+        const hasLoads = DataHelpers.hasLoadSubChannels(totalConsumption, excludeFromOther);
+        
+        if (hasGridChannel && hasLoads) {
+            totalConsumption['Other'] = DataHelpers.calculateOtherConsumption(totalConsumption, excludeFromOther);
         }
         
-        return totalConsumption;
+        excludeFromOther.forEach(ch => delete totalConsumption[ch]);
+        excludeFromOther.forEach(ch => delete totalExported[ch]);
+
+        return { imported: totalConsumption, exported: totalExported, rawImported: rawConsumption, rawExported: rawExported };
     }
 
-    function updateConsumptionChart(consumptionData, viewType) {
-        const periods = Object.keys(consumptionData).sort();
-        
-        // Get all channels except 'Other' first, then add 'Other' at the end
-        const allChannels = new Set();
-        periods.forEach(period => {
-            Object.keys(consumptionData[period]).forEach(channel => {
-                if (channel !== 'Other') allChannels.add(channel);
-            });
-        });
-        const channels = [...allChannels].sort((a, b) => parseInt(a) - parseInt(b));
-        if (periods.some(period => consumptionData[period]['Other'])) {
-            channels.push('Other');
-        }
-        
-        // Create datasets
-        const datasets = channels.map((channel) => {
-            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
-            const data = periods.map(period => {
-                const value = consumptionData[period][channel] || 0;
-                return value.toFixed(3);
-            });
-            
-            const color = getChannelColor(channel);
-            
-            return {
-                label: label,
-                data: data,
-                backgroundColor: color,
-                borderColor: color.replace('0.8', '1'),
-                borderWidth: 1
-            };
-        });
-        
-        // Destroy existing chart
-        if (consumptionChart) {
-            consumptionChart.destroy();
-        }
-        
-        // Make sure canvas exists
-        const canvasElement = document.getElementById('consumption-chart-canvas');
-        if (!canvasElement) {
-            console.error('Canvas element not found');
-            return;
-        }
-        
-        // Format labels based on view type
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        let labels;
-        if (viewType === 'daily') {
-            labels = periods.map(hour => `${hour}:00`);
-        } else if (viewType === 'monthly') {
-            labels = periods.map(day => day);
-        } else {
-            labels = periods.map(month => monthNames[parseInt(month) - 1] || month);
-        }
-        
-        // Create new chart
-        const ctx = canvasElement.getContext('2d');
-        const isMobile = window.innerWidth <= 768;
-        const isSmallMobile = window.innerWidth <= 480;
-        
-        const xAxisLabels = { 'daily': 'Hour', 'monthly': 'Day', 'yearly': 'Month' };
-        
-        consumptionChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: datasets
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false, // Allow container to control height
-                scales: {
-                    x: {
-                        stacked: true,
-                        title: {
-                            display: true,
-                            text: xAxisLabels[viewType]
-                        },
-                        ticks: {
-                            font: {
-                                size: isMobile ? 10 : 12
-                            }
-                        }
-                    },
-                    y: {
-                        stacked: true,
-                        title: {
-                            display: true,
-                            text: 'Energy (kWh)'
-                        },
-                        ticks: {
-                            font: {
-                                size: isMobile ? 10 : 12
-                            }
-                        }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: true,
-                        position: 'top',
-                        labels: {
-                            font: {
-                                size: isMobile ? 10 : 12
-                            }
-                        }
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false
-                    }
-                }
-            }
-        });
-    }
-
-    function updatePieChart(totalConsumption) {
-        const channels = Object.keys(totalConsumption);
-        const values = Object.values(totalConsumption);
-        const total = values.reduce((sum, value) => sum + value, 0);
-        
-        // Update the total display
-        document.getElementById('pie-chart-total-value').textContent = `${total.toFixed(1)} kWh`;
-        
-        if (total === 0) {
-            showNoPieChartData();
-            return;
-        }
-        
-        // Create labels with percentages and consistent colors
-        const labels = channels.map((channel, i) => {
-            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
-            const percentage = ((values[i] / total) * 100).toFixed(1);
-            return `${label} (${percentage}%)`;
-        });
-        
-        const backgroundColors = channels.map(channel => getChannelColor(channel));
-        
-        // Destroy existing chart
-        if (pieChart) {
-            pieChart.destroy();
-        }
-        
-        // Make sure canvas exists
-        const canvasElement = document.getElementById('pie-chart-canvas');
-        if (!canvasElement) {
-            console.error('Pie chart canvas element not found');
-            return;
-        }
-        
-        // Create new chart
-        const ctx = canvasElement.getContext('2d');
-        pieChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: values,
-                    backgroundColor: backgroundColors,
-                    borderWidth: 2,
-                    borderColor: '#fff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right'
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = channels[context.dataIndex];
-                                const channelLabel = label === 'Other' ? 'Other (Untracked)' : getChannelLabel(label);
-                                const value = context.parsed.toFixed(2);
-                                const percentage = ((context.parsed / total) * 100).toFixed(1);
-                                return `${channelLabel}: ${value} kWh (${percentage}%)`;
-                            },
-                            afterLabel: function(context) {
-                                const label = channels[context.dataIndex];
-                                if (label === 'Other') {
-                                    return 'Total consumption minus monitored channels';
-                                }
-                                return '';
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    function getChannelLabel(channelIndex) {
-        if (channelIndex === 'Other') return 'Other';
-        const channel = channelData.find(ch => ch.index === parseInt(channelIndex));
-        return channel ? channel.label : `Channel ${channelIndex}`;
-    }
-
-    function getChannelColor(channelIndex) {
-        if (channelIndex === 'Other') {
-            // Always use the last color for "Other"
-            return colors[colors.length - 1];
-        }
-        
-        // Use channel index to consistently assign colors
-        const index = parseInt(channelIndex);
-        return colors[index % (colors.length - 1)]; // Reserve last color for "Other"
-    }
-
-    // Note: Data is stored in UTC, displayed in local time
-    // Future enhancement: Add timezone conversion for local display
-
+    // ============================================================================
+    // CSV DOWNLOAD
+    // ============================================================================
     function setupCsvDownload(consumptionData, viewType) {
         const downloadBtn = document.getElementById('download-csv');
         downloadBtn.onclick = function() {
             const periods = Object.keys(consumptionData).sort();
             const channels = new Set();
-            
-            // Get all channels
-            periods.forEach(period => {
-                Object.keys(consumptionData[period]).forEach(channel => {
-                    channels.add(channel);
-                });
-            });
+            periods.forEach(period => Object.keys(consumptionData[period]).forEach(ch => channels.add(ch)));
             
             const channelArray = [...channels].sort((a, b) => {
                 if (a === 'Other') return 1;
@@ -1541,273 +960,69 @@
                 return parseInt(a) - parseInt(b);
             });
             
-            // Create CSV content
             let csvContent = "data:text/csv;charset=utf-8,";
-            const periodLabel = viewType === 'daily' ? 'Hour' : 'Day';
-            csvContent += periodLabel + "," + channelArray.map(ch => getChannelLabel(ch)).join(",") + "\n";
+            const periodLabels = { daily: 'Hour', monthly: 'Day', yearly: 'Month', total: 'Year' };
+            const periodLabel = periodLabels[viewType] || 'Period';
+            csvContent += periodLabel + "," + channelArray.map(ch => ChartHelpers.getChannelLabel(ch, channelData)).join(",") + "\n";
             
             periods.forEach(period => {
                 const periodDisplay = viewType === 'daily' ? period + ":00" : period;
-                const row = [periodDisplay];
-                channelArray.forEach(channel => {
-                    row.push((consumptionData[period][channel] || 0).toFixed(3));
-                });
+                const row = [periodDisplay, ...channelArray.map(ch => (consumptionData[period][ch] || 0).toFixed(3))];
                 csvContent += row.join(",") + "\n";
             });
             
-            // Download file
-            const encodedUri = encodeURI(csvContent);
             const link = document.createElement("a");
-            const dateStr = viewType === 'daily' ? currentDate : currentMonth;
-            const filename = `energy_consumption_${viewType}_${dateStr}.csv`;
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", filename);
+            const dateStrs = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all' };
+            const dateStr = dateStrs[viewType] || 'data';
+            link.setAttribute("href", encodeURI(csvContent));
+            link.setAttribute("download", `energy_consumption_${viewType}_${dateStr}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+        
+        // Setup balance CSV download
+        const balanceDownloadBtn = document.getElementById('download-balance-csv');
+        balanceDownloadBtn.onclick = function() {
+            if (!balanceData) return;
+            
+            let csvContent = "data:text/csv;charset=utf-8,";
+            const balancePeriodLabels = { daily: 'Hour', monthly: 'Day', yearly: 'Month', total: 'Year' };
+            const periodLabel = balancePeriodLabels[viewType] || 'Period';
+            csvContent += [periodLabel, 'Grid (kWh)', 'PV (kWh)', 'Battery (kWh)', 'Home (kWh)'].join(",") + "\n";
+            
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            // For total view, use the sorted year keys from the consumption data
+            const balancePeriodKeys = viewType === 'total' ? Object.keys(consumptionData).sort() : null;
+            for (let i = 0; i < balanceData.grid.length; i++) {
+                let periodDisplay;
+                if (viewType === 'daily') periodDisplay = `${i}:00`;
+                else if (viewType === 'monthly') periodDisplay = String(i + 1).padStart(2, '0');
+                else if (viewType === 'total') periodDisplay = balancePeriodKeys ? balancePeriodKeys[i] : String(i);
+                else periodDisplay = monthNames[i] || String(i + 1);
+                
+                csvContent += [periodDisplay, balanceData.grid[i].toFixed(3), balanceData.pv[i].toFixed(3), 
+                    balanceData.battery[i].toFixed(3), balanceData.homeConsumption[i].toFixed(3)].join(",") + "\n";
+            }
+            
+            const link = document.createElement("a");
+            const balanceDateStrs = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all' };
+            const dateStr = balanceDateStrs[viewType] || 'data';
+            link.setAttribute("href", encodeURI(csvContent));
+            link.setAttribute("download", `energy_balance_${viewType}_${dateStr}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
         };
     }
-    
-    async function updateTotalPieChart() {
-        try {
-            // Get total energy from current meter values
-            const totalConsumption = {};
-            
-            meterData.forEach(channel => {
-                if (channel.index === 0) return; // Skip total channel
-                const totalEnergy = channel.data.activeEnergyImported / 1000; // Convert to kWh
-                if (totalEnergy > 0) {
-                    totalConsumption[channel.index] = totalEnergy;
-                }
-            });
-            
-            // Add "Other" consumption
-            const totalChannel = meterData.find(ch => ch.index === 0);
-            if (totalChannel) {
-                const totalHouseConsumption = totalChannel.data.activeEnergyImported / 1000;
-                let trackedConsumption = 0;
-                
-                Object.values(totalConsumption).forEach(consumption => {
-                    trackedConsumption += consumption;
-                });
-                
-                totalConsumption['Other'] = Math.max(0, totalHouseConsumption - trackedConsumption);
-            }
-            
-            // Update total pie chart
-            updateTotalPieChartDisplay(totalConsumption);
-            
-        } catch (error) {
-            console.error('Error updating total pie chart:', error);
-            document.getElementById("total-pie-chart").innerHTML = 
-                '<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ Failed to load total consumption data</div>';
-        }
-    }
-    
-    function updateTotalPieChartDisplay(totalConsumption) {
-        const channels = Object.keys(totalConsumption);
-        const values = Object.values(totalConsumption);
-        const total = values.reduce((sum, value) => sum + value, 0);
-        
-        // Update the total display
-        document.getElementById('total-pie-chart-total-value').textContent = `${total.toFixed(1)} kWh`;
-        
-        if (total === 0) {
-            document.getElementById("total-pie-chart").innerHTML = 
-                '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 No total consumption data available.</div>';
-            return;
-        }
-        
-        // Create labels with percentages and consistent colors
-        const labels = channels.map((channel, i) => {
-            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
-            const percentage = ((values[i] / total) * 100).toFixed(1);
-            return `${label} (${percentage}%)`;
-        });
-        
-        const backgroundColors = channels.map(channel => getChannelColor(channel));
-        
-        // Destroy existing chart
-        if (totalPieChart) {
-            totalPieChart.destroy();
-        }
-        
-        // Make sure canvas exists
-        const canvasElement = document.getElementById('total-pie-chart-canvas');
-        if (!canvasElement) {
-            console.error('Total pie chart canvas element not found');
-            return;
-        }
-        
-        // Create new chart
-        const ctx = canvasElement.getContext('2d');
-        totalPieChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: values,
-                    backgroundColor: backgroundColors,
-                    borderWidth: 2,
-                    borderColor: '#fff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right'
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = channels[context.dataIndex];
-                                const channelLabel = label === 'Other' ? 'Other (Untracked)' : getChannelLabel(label);
-                                const value = context.parsed.toFixed(1);
-                                const percentage = ((context.parsed / total) * 100).toFixed(1);
-                                return `${channelLabel}: ${value} kWh (${percentage}%)`;
-                            },
-                            afterLabel: function(context) {
-                                const label = channels[context.dataIndex];
-                                if (label === 'Other') {
-                                    return 'Total consumption minus monitored channels';
-                                }
-                                return '';
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
 
-    function updateMeterData() {
-        if (!meterData || meterData.length === 0) return;
-        
-        document.getElementById("voltage").innerHTML = meterData[0].data.voltage.toFixed(1) + ' V';
-
-        let powerDataHtml = '';
-        let totalPower = 0;
-        let trackedPower = 0;
-        let shouldRebuildChannels = false;
-        
-        // Check if we need to rebuild the entire channels section
-        const existingChannels = document.getElementById("channels").children.length;
-        const expectedChannels = meterData.length + 1; // +1 for "Other"
-        
-        if (existingChannels !== expectedChannels) {
-            shouldRebuildChannels = true;
-        }
-        
-        // First, add the main channel (channel 0) with special styling
-        const mainChannel = meterData.find(ch => ch.index === 0);
-        if (mainChannel) {
-            const mainPower = mainChannel.data.activePower.toFixed(0);
-            totalPower = parseFloat(mainPower);
-            
-            if (shouldRebuildChannels) {
-                powerDataHtml += '<div class="channel-box main-channel">';
-                powerDataHtml += '<div class="channel-label">' + mainChannel.label + ' (Total)</div>';
-                powerDataHtml += '<div class="channel-value" id="main-channel-value">' + mainPower + ' W</div>';
-                powerDataHtml += '</div>';
-            } else {
-                const mainValueElement = document.getElementById("main-channel-value");
-                if (mainValueElement) {
-                    mainValueElement.textContent = mainPower + ' W';
-                }
-            }
-        }
-        
-        // Then add all other channels (excluding channel 0)
-        meterData.forEach((channel, index) => {
-            if (channel.index === 0) return; // Skip total channel, already added above
-            
-            const activePower = channel.data.activePower.toFixed(0);
-            trackedPower += parseFloat(activePower);
-            
-            if (shouldRebuildChannels) {
-                powerDataHtml += '<div class="channel-box">';
-                powerDataHtml += '<div class="channel-label">' + channel.label + '</div>';
-                powerDataHtml += '<div class="channel-value" id="channel-' + channel.index + '-value">' + activePower + ' W</div>';
-                powerDataHtml += '</div>';
-            } else {
-                const channelValueElement = document.getElementById("channel-" + channel.index + "-value");
-                if (channelValueElement) {
-                    channelValueElement.textContent = activePower + ' W';
-                }
-            }
-        });
-        
-        // Finally, add or update the computed "Other" channel
-        const otherPower = Math.max(0, totalPower - trackedPower);
-        if (otherPower > 0 || totalPower > 0) { // Show Other channel if there's any power or if main channel exists
-            if (shouldRebuildChannels) {
-                powerDataHtml += '<div class="channel-box other-channel">';
-                powerDataHtml += '<div class="channel-label">';
-                powerDataHtml += '<span class="tooltip-container">';
-                powerDataHtml += 'Other';
-                powerDataHtml += '<i class="fas fa-info-circle info-icon"></i>';
-                powerDataHtml += '<span class="tooltip-text">Untracked consumption: Total house consumption minus sum of all monitored channels</span>';
-                powerDataHtml += '</span>';
-                powerDataHtml += '</div>';
-                powerDataHtml += '<div class="channel-value" id="other-channel-value">' + otherPower.toFixed(0) + ' W</div>';
-                powerDataHtml += '</div>';
-            } else {
-                const otherValueElement = document.getElementById("other-channel-value");
-                if (otherValueElement) {
-                    otherValueElement.textContent = otherPower.toFixed(0) + ' W';
-                }
-            }
-        }
-
-        // Only rebuild the entire HTML if needed
-        if (shouldRebuildChannels) {
-            document.getElementById("channels").innerHTML = powerDataHtml;
-        }
-    }
-
-    function showLoadingMessage() {
-        document.getElementById("consumption-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">📊 Loading energy data...</div>';
-        document.getElementById("pie-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 Loading energy distribution...</div>';
-    }
-
-    function showNoDataMessage() {
-        document.getElementById("consumption-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">📊 No energy data available.<br><br>Energy tracking files will appear here once data collection begins.</div>';
-        document.getElementById("pie-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 No energy data available.</div>';
-    }
-
-    function showNoPieChartData() {
-        document.getElementById("pie-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 No consumption data for this day.</div>';
-    }
-
-    function showErrorMessage(message) {
-        document.getElementById("consumption-chart").innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ ${message}</div>`;
-        document.getElementById("pie-chart").innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ ${message}</div>`;
-    }
-
-    function restoreChartCanvases() {
-        // Restore consumption chart canvas
-        const consumptionChartDiv = document.getElementById("consumption-chart");
-        consumptionChartDiv.innerHTML = `
-            <canvas id="consumption-chart-canvas"></canvas>
-            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
-                <i class="fas fa-download"></i>
-            </button>
-        `;
-        
-        // Restore pie chart canvas
-        const pieChartDiv = document.getElementById("pie-chart");
-        pieChartDiv.innerHTML = '<canvas id="pie-chart-canvas"></canvas>';
-        
-        // Note: Total pie chart is not restored here since it should only load once on page initialization
-        // and represents lifetime data that doesn't need to be redrawn during chart interactions
-    }
-
+    // ============================================================================
+    // STARTUP CHECKS
+    // ============================================================================
     async function fetchFirmwareUpdateInfo() {
         try {
             const data = await energyApi.getFirmwareUpdateInfo();
-            if (data.latest == false) {
+            if (data.isLatest === false) {
                 document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
             }
         } catch (error) {
@@ -1815,7 +1030,6 @@
         }
     }
 
-    // Check if user is using default password
     async function checkDefaultPassword() {
         try {
             const authStatus = await energyApi.getAuthStatus();
@@ -1827,26 +1041,26 @@
         }
     }
 
-    // Initialize page when DOM is loaded
+    // ============================================================================
+    // PAGE STARTUP
+    // ============================================================================
     document.addEventListener('DOMContentLoaded', async () => {
+        ChartHelpers.initSparkline();
+        
         await initializePage();
         await fetchFirmwareUpdateInfo();
         await checkDefaultPassword();
         
-        // Set up real-time meter data updates
+        PowerFlowHelpers.setupSparklineHovers(PowerFlowState.flowHistory, PowerFlowState.loadHistory, PowerFlowConfig.NODE_COLORS);
+        
+        // Real-time meter data updates
         setInterval(async () => {
-            // Skip if previous meter data update is still in progress
-            if (meterDataUpdateInProgress) {
-                console.log('Meter data update already in progress, skipping...');
-                return;
-            }
+            if (meterDataUpdateInProgress) return;
 
             try {
                 meterDataUpdateInProgress = true;
                 meterData = await energyApi.getMeterValues();
-                updateMeterData();
-                // Note: Total pie chart is only updated on page load, not in real-time
-                // since it represents lifetime consumption which changes slowly
+                PowerFlowHelpers.updateEnergyFlow(meterData, channelData);
             } catch (error) {
                 console.error('Error updating meter data:', error);
             } finally {
@@ -1854,7 +1068,6 @@
             }
         }, 1000);
     });
-
 </script>
 
 </html>

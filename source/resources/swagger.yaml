@@ -524,7 +524,7 @@ paths:
             Examples: `energy/daily`, `energy/monthly`, `energy/yearly`
           schema:
             type: string
-          example: "energy/daily"
+          example: ""
       responses:
         '200':
           description: List of files with their sizes
@@ -1699,7 +1699,6 @@ paths:
                     index: 0
                     active: true
                     reverse: false
-                    highPriority: false
                     label: "Main Circuit"
                     phase: "A"
                     ctSpecification:
@@ -1712,7 +1711,6 @@ paths:
                       - index: 0
                         active: true
                         reverse: false
-                        highPriority: false
                         label: "Main Circuit"
                         phase: "A"
                         ctSpecification:
@@ -1721,7 +1719,6 @@ paths:
                       - index: 1
                         active: false
                         reverse: false
-                        highPriority: false
                         label: "Kitchen"
                         phase: "A"
                         ctSpecification:
@@ -1782,6 +1779,14 @@ paths:
                   $ref: '#/components/schemas/Phase'
                 ctSpecification:
                   $ref: '#/components/schemas/CtSpecification'
+                groupLabel:
+                  type: string
+                  maxLength: 64
+                  description: Human-readable label for the group. Channels with the same groupLabel are aggregated together.
+                role:
+                  type: string
+                  enum: [load, grid, pv, battery, inverter]
+                  description: "Channel role: load, grid (+ import/- export), pv (+ generation), battery (+ discharge/- charge), inverter (PV + battery DC-coupled)"
               minProperties: 2
             examples:
               enable_channel:
@@ -1790,11 +1795,6 @@ paths:
                   index: 1
                   active: true
                   label: "Kitchen Circuit"
-              set_high_priority:
-                summary: Set channel as high-priority
-                value:
-                  index: 2
-                  highPriority: true
               ct_config:
                 summary: Update CT specifications
                 value:
@@ -1802,6 +1802,29 @@ paths:
                   ctSpecification:
                     currentRating: 50.0
                     voltageOutput: 1.0
+              three_phase_group:
+                summary: Configure three-phase grouping
+                value:
+                  index: 1
+                  groupLabel: "Main Three-Phase"
+              grid_channel:
+                summary: Mark as grid channel
+                value:
+                  index: 0
+                  role: "grid"
+                  label: "Grid"
+              solar_production:
+                summary: Mark as solar production channel
+                value:
+                  index: 5
+                  role: "pv"
+                  label: "Solar PV"
+              battery_channel:
+                summary: Mark as battery channel
+                value:
+                  index: 6
+                  role: "battery"
+                  label: "Battery System"
       responses:
         '200':
           description: Channel configuration updated successfully
@@ -1833,7 +1856,6 @@ paths:
               - index: 0
                 active: true
                 reverse: false
-                highPriority: false
                 label: "General"
                 phase: 1
                 ctSpecification:
@@ -1843,7 +1865,6 @@ paths:
               - index: 1
                 active: true
                 reverse: false
-                highPriority: true
                 label: "Luce prese"
                 phase: 1
                 ctSpecification:
@@ -1853,7 +1874,6 @@ paths:
               - index: 6
                 active: true
                 reverse: true
-                highPriority: false
                 label: "Boiler"
                 phase: 1
                 ctSpecification:
@@ -2045,7 +2065,22 @@ paths:
                   - type: object
                     description: All channels response
                     properties:
-                      channels:
+                      index:
+                        type: integer
+                        description: Channel index
+                      label:
+                        type: string
+                        description: Channel label
+                      phase:
+                        type: integer
+                        description: Channel phase (1, 2, 3, or 4 for 240V split-phase)
+                      groupLabel:
+                        type: string
+                        description: Channel group label (if configured)
+                      role:
+                        type: string
+                        description: Channel role (load, grid, pv, battery, inverter)
+                      data:
                         type: array
                         items:
                           $ref: '#/components/schemas/MeterValues'
@@ -2055,7 +2090,12 @@ paths:
                 all_channels:
                   summary: All channels response
                   value:
-                    channels:
+                    index: 0
+                    label: "Main Circuit"
+                    phase: 1
+                    groupLabel: "Group 0"
+                    role: "grid"
+                    data:
                       - voltage: 230.2
                         current: 5.45
                         activePower: 1254.6
@@ -2305,12 +2345,12 @@ paths:
                     example: 1200
                   voltagePhase:
                     type: integer
-                    description: Phase number of voltage reference (1=A, 2=B, 3=C)
+                    description: Phase number of voltage reference (1=A, 2=B, 3=C; 4 not applicable for waveform capture)
                     example: 3
                     enum: [1, 2, 3]
                   currentPhase:
                     type: integer
-                    description: Phase number of current measurement (1=A, 2=B, 3=C)
+                    description: Phase number of current measurement (1=A, 2=B, 3=C; 4 not applicable for waveform capture)
                     example: 1
                     enum: [1, 2, 3]
                   phaseShiftDegrees:
@@ -2339,7 +2379,7 @@ paths:
                       type: integer
                       format: int64
                     example: [20, 53, 87, 120]
-        '404':
+        '204':
           description: No complete waveform data available
           content:
             application/json:
@@ -2733,8 +2773,8 @@ components:
 
     Phase:
       type: integer
-      enum: [1, 2, 3]
-      description: Electrical phase assignment
+      enum: [1, 2, 3, 4]
+      description: Electrical phase assignment (1=Phase A, 2=Phase B, 3=Phase C, 4=240V Split Phase)
       example: 1
 
     CtSpecification:
@@ -2790,11 +2830,6 @@ components:
           type: boolean
           description: Whether to reverse the current direction measurement
           example: false
-        highPriority:
-          type: boolean
-          description: Whether the channel is high-priority (read more frequently in round-robin). Optional, defaults to false.
-          example: false
-          default: false
         label:
           type: string
           maxLength: 64
@@ -2804,6 +2839,17 @@ components:
           $ref: '#/components/schemas/Phase'
         ctSpecification:
           $ref: '#/components/schemas/CtSpecification'
+        groupLabel:
+          type: string
+          maxLength: 64
+          description: Human-readable label for the group. Channels with the same groupLabel are aggregated together in the UI.
+          example: "Main Three-Phase"
+        role:
+          type: string
+          enum: [load, grid, pv, battery, inverter]
+          description: "Channel role determining measurement behavior and sign convention"
+          example: "load"
+          default: "load"
 
     MeterValues:
       type: object

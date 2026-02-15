@@ -26,6 +26,10 @@ namespace CustomServer
     // API request synchronization
     static SemaphoreHandle_t _apiMutex = NULL;
 
+    // ETag for proper caching
+    static char _cachedEtag[MD5_BUFFER_SIZE + 3] = {0}; // +3 for quotes and null terminator
+    static bool _etagComputed = false;
+
     // Private functions declarations
     // ==============================
     // ==============================
@@ -109,6 +113,10 @@ namespace CustomServer
     static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength = 0);
     static bool _isPartialUpdate(AsyncWebServerRequest *request);
     
+    // ETag validation helper
+    static bool _checkEtagAndSend304(AsyncWebServerRequest *request, const char* etag);
+    static void _sendResponseWithEtag(AsyncWebServerRequest *request, AsyncWebServerResponse *response, const char* etag);
+    
     // Public functions
     // ================
     // ================
@@ -152,7 +160,7 @@ namespace CustomServer
         // Delete API mutex
         deleteMutex(&_apiMutex);
         
-        LOG_INFO("Web server stopped");
+        LOG_DEBUG("Web server stopped");
     }
 
     void updateAuthPasswordWithOneFromPreferences()
@@ -162,7 +170,7 @@ namespace CustomServer
         {
             digestAuth.setPassword(webPassword);
             digestAuth.generateHash(); // regenerate hash with new password
-            LOG_INFO("Authentication password updated");
+            LOG_DEBUG("Authentication password updated");
         }
         else
         {
@@ -172,7 +180,7 @@ namespace CustomServer
 
     bool resetWebPassword()
     {
-        LOG_INFO("Resetting web password to default");
+        LOG_DEBUG("Resetting web password to default");
         return _setWebPassword(WEBSERVER_DEFAULT_PASSWORD);
     }
 
@@ -572,14 +580,14 @@ namespace CustomServer
         // Check minimum length
         if (length < MIN_PASSWORD_LENGTH)
         {
-            LOG_WARNING("Password too short");
+            LOG_WARNING("Password too short (min %d characters)", MIN_PASSWORD_LENGTH);
             return false;
         }
 
         // Check maximum length
         if (length > MAX_PASSWORD_LENGTH)
         {
-            LOG_WARNING("Password too int32_t");
+            LOG_WARNING("Password too long (max %d characters)", MAX_PASSWORD_LENGTH);
             return false;
         }
         
@@ -603,38 +611,208 @@ namespace CustomServer
         _serveFileEndpoints();
     }
 
+    // ETag helper functions for caching
+    // =================================
+
+    /**
+     * Check ETag validity and send 304 Not Modified if matched
+     * Returns true if 304 was sent (caller should return), false otherwise (continue processing)
+     */
+    static bool _checkEtagAndSend304(AsyncWebServerRequest *request, const char* etag)
+    {
+        if (request->hasHeader("If-None-Match")) {
+            const String& clientEtag = request->header("If-None-Match");
+            if (clientEtag == etag) {
+                request->send(HTTP_CODE_NOT_MODIFIED);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Add ETag and Cache-Control headers, then send response
+     */
+    static void _sendResponseWithEtag(AsyncWebServerRequest *request, AsyncWebServerResponse *response, const char* etag)
+    {
+        response->addHeader("Cache-Control", "no-cache"); // Always validate with server
+        response->addHeader("ETag", etag);
+        request->send(response);
+    }
+
+    /**
+     * Get sketch MD5 hash as ETag for cache busting
+     * Cached in static variable - computed once on first call
+     * Returns ETag in format: "abc123def456..."
+     */
+    static const char* _getSketchEtag()
+    {        
+        if (!_etagComputed) {
+            snprintf(_cachedEtag, sizeof(_cachedEtag), "\"%s\"", ESP.getSketchMD5().c_str());
+            _etagComputed = true;
+            LOG_DEBUG("Sketch ETag created (and saved in static variable): %s", _cachedEtag);
+        }
+        
+        return _cachedEtag;
+    }
+
+    /**
+     * Generate ETag from file metadata
+     * Uses file size as primary identifier 
+     * Should be very accurate for append-only files like csv energy data and txt logs)
+     */
+    static const char* _generateFileEtag(const char* filename) {
+        File file = LittleFS.open(filename, "r");
+        if (!file) return "";
+        
+        size_t fileSize = file.size();
+        file.close();
+        
+        // Use file size as ETag - simple and effective for append-only files
+        // Format: "size-{bytes}" e.g. "size-59635"
+        static char etagBuffer[32];
+        snprintf(etagBuffer, sizeof(etagBuffer), "\"size-%u\"", (unsigned)fileSize);
+        return etagBuffer;
+    }
+
+    /**
+     * Send static content with ETag validation
+     * If client sends matching If-None-Match header, responds with 304 Not Modified (no body)
+     * Otherwise sends full content with ETag and Cache-Control headers
+     */
+    static void _sendStaticWithEtag(AsyncWebServerRequest *request, const char* contentType, const char* content, const char* etag)
+    {
+        // Check if client sent matching ETag
+        if (_checkEtagAndSend304(request, etag)) return;
+        
+        // ETag doesn't match or not provided - send full content
+        AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, contentType, content);
+        _sendResponseWithEtag(request, response, etag);
+    }
+
+    /**
+     * Send file with ETag validation
+     * If client sends matching If-None-Match header, responds with 304 Not Modified
+     * Otherwise streams file content with ETag and Cache-Control headers
+     */
+    static void _sendFileWithEtag(AsyncWebServerRequest *request, const char* filename, const char* contentType, bool forceDownload = false)
+    {
+        // Generate ETag from file metadata
+        const char* etag = _generateFileEtag(filename);
+        
+        if (strlen(etag) == 0) {
+            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to generate ETag");
+            return;
+        }
+        
+        // Check if client sent matching ETag
+        if (_checkEtagAndSend304(request, etag)) return;
+        
+        // ETag doesn't match or not provided - send full file
+        AsyncWebServerResponse *response = request->beginResponse(LittleFS, filename, contentType, forceDownload);
+        
+        if (!response) {
+            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to create response");
+            return;
+        }
+        
+        _sendResponseWithEtag(request, response, etag);
+    }
+
+    // === STATIC CONTENT SERVING ===
     static void _serveStaticContent()
     {
         // === STATIC CONTENT (no auth required) ===
+        // Cache strategy: "no-cache" with ETag validation
+        // - Browser always asks server before using cache
+        // - Server responds 304 Not Modified (no body) if ETag matches → fast
+        // - Server responds 200 OK with full content if ETag differs → always fresh
+        // When firmware is updated, sketch MD5 changes → ETag differs → fresh content
+
+        // This needs to be a solid pointer, so we need a static variable
+        // that will persist for the server's lifetime
+        const char* etag = _getSketchEtag();
 
         // CSS files
-        server.on("/css/styles.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", styles_css); });
-        server.on("/css/button.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", button_css); });
-        server.on("/css/section.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", section_css); });
-        server.on("/css/typography.css", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/css", typography_css); });
+        server.on("/css/button.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", button_css, etag);
+        });
+        server.on("/css/forms.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", forms_css, etag);
+        });
+        server.on("/css/index.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", index_css, etag);
+        });
+        server.on("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
+            _sendStaticWithEtag(request, "text/css", styles_css, etag);
+        });
+        server.on("/css/section.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", section_css, etag);
+        });
+        server.on("/css/typography.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", typography_css, etag);
+        });
 
         // JavaScript files
-        server.on("/js/api-client.js", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "application/javascript", api_client_js); });
+        server.on("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "application/javascript", api_client_js, etag);
+        });
+        server.on("/js/chart-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "application/javascript", chart_helpers_js, etag);
+        });
+        server.on("/js/data-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "application/javascript", data_helpers_js, etag);
+        });
+        server.on("/js/power-flow.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "application/javascript", power_flow_js, etag);
+        });
 
         // Resources
-        server.on("/favicon.svg", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "image/svg+xml", favicon_svg); });
+        server.on("/favicon.svg", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "image/svg+xml", favicon_svg, etag);
+        });
 
         // Main dashboard
-        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", index_html); });
+        server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", index_html, etag);
+        });
 
         // Configuration pages
-        server.on("/ade7953-tester", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", ade7953_tester_html); });
-        server.on("/configuration", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", configuration_html); });
-        server.on("/calibration", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", calibration_html); });
-        server.on("/channel", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", channel_html); });
-        server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", info_html); });
-        server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", log_html); });
-        server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", update_html); });
-        server.on("/waveform", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", waveform_html); });
+        server.on("/ade7953-tester", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", ade7953_tester_html, etag);
+        });
+        server.on("/configuration", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", configuration_html, etag);
+        });
+        server.on("/calibration", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", calibration_html, etag);
+        });
+        server.on("/channel", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", channel_html, etag);
+        });
+        server.on("/info", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", info_html, etag);
+        });
+        server.on("/integrations", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", integrations_html, etag);
+        });
+        server.on("/log", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", log_html, etag);
+        });
+        server.on("/update", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", update_html, etag);
+        });
+        server.on("/waveform", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", waveform_html, etag);
+        });
 
         // Swagger UI
-        server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", swagger_ui_html); });
-        server.on("/swagger.yaml", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/yaml", swagger_yaml); });
+        server.on("/swagger-ui", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", swagger_ui_html, etag);
+        });
+        server.on("/swagger.yaml", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/yaml", swagger_yaml, etag);
+        });
     }
 
     // === HEALTH ENDPOINTS ===
@@ -642,18 +820,15 @@ namespace CustomServer
     {
         server.on("/api/v1/health", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
-            
             SpiRamAllocator allocator;
-        JsonDocument doc(&allocator);
+            JsonDocument doc(&allocator);
             doc["status"] = "ok";
             doc["uptime"] = millis64();
             char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
             CustomTime::getTimestampIso(timestamp, sizeof(timestamp));
             doc["timestamp"] = timestamp;
-            
-            serializeJson(doc, *response);
-            request->send(response); 
+
+            _sendJsonResponse(request, doc);
         }).skipServerMiddlewares(); // For the health endpoint, no authentication or rate limiting
     }
 
@@ -669,11 +844,9 @@ namespace CustomServer
     {
         server.on("/api/v1/auth/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
-            
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
-            
+
             // Check if using default password
             char currentPassword[PASSWORD_BUFFER_SIZE];
             bool isDefault = true;
@@ -684,8 +857,7 @@ namespace CustomServer
             doc["usingDefaultPassword"] = isDefault;
             doc["username"] = WEBSERVER_DEFAULT_USERNAME;
             
-            serializeJson(doc, *response);
-            request->send(response); 
+            _sendJsonResponse(request, doc);
         });
     }
 
@@ -1132,6 +1304,7 @@ namespace CustomServer
         });
     }
 
+    // TODO: important, since we are going to embed the certs in the nvs of the device in v6, we can allow to update from github since the firmware will be unified regardless of the secrets compiled or not
     #ifndef HAS_SECRETS
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc) // Used only if no secrets are compiled
     {
@@ -1176,7 +1349,6 @@ namespace CustomServer
         // Find .bin asset
         JsonArray assets = doc["assets"];
         const char* downloadUrl = nullptr;
-        const char* md5Hash = nullptr;
         
         for (JsonObject asset : assets) {
             const char* name = asset["name"];
@@ -1193,7 +1365,6 @@ namespace CustomServer
         if (releaseDate) doc["releaseDate"] = releaseDate;
         if (downloadUrl) doc["updateUrl"] = downloadUrl;
         if (changelog) doc["changelogUrl"] = changelog;
-        if (md5Hash) doc["md5"] = md5Hash;
         
         // Compare versions to determine if update is available
         doc["isLatest"] = _compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
@@ -1238,7 +1409,7 @@ namespace CustomServer
             doc["buildTime"] = FIRMWARE_BUILD_TIME;
             
             #ifdef HAS_SECRETS
-            doc["isLatest"] = true; // TODO: actually implement a notification system on the device (maybe..)
+            doc["isLatest"] = true; // TODO: when with v6 the certs will be embedded, the HAS_SECRETS will be removed and this will work anyway
             #else
             // Fetch from GitHub API when no secrets are available
             if (!_fetchGitHubReleaseInfo(doc)) {
@@ -1423,7 +1594,7 @@ namespace CustomServer
                 doc.set(json);
 
                 // Validate required fields
-                if (!doc["ssid"].is<const char*>() || strlen(doc["ssid"].as<const char*>()) == 0)
+                if (!doc["ssid"].is<const char*>())
                 {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid 'ssid' field");
                     return;
@@ -1438,17 +1609,17 @@ namespace CustomServer
                 const char* ssid = doc["ssid"];
                 const char* password = doc["password"];
 
-                // Validate SSID length
-                if (strlen(ssid) >= WIFI_SSID_BUFFER_SIZE)
+                // Validate SSID length (1-31 characters)
+                if (!isStringLengthValid(ssid, 1, WIFI_SSID_BUFFER_SIZE - 1))
                 {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "SSID exceeds maximum length of 32 characters");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "SSID must be 1-31 characters");
                     return;
                 }
 
-                // Validate password length
-                if (strlen(password) >= WIFI_PASSWORD_BUFFER_SIZE)
+                // Validate password length (0-63 characters)
+                if (!isStringLengthValid(password, 0, WIFI_PASSWORD_BUFFER_SIZE - 1))
                 {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Password exceeds maximum length of 64 characters");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Password must be 0-63 characters");
                     return;
                 }
 
@@ -1699,21 +1870,43 @@ namespace CustomServer
                   {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
-            
+
             if (request->hasParam("index")) {
                 // Get single channel data
-                long indexValue = request->getParam("index")->value().toInt();
-                if (indexValue < 0 || indexValue > UINT8_MAX) {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
+                uint8_t channelIndex = (uint8_t)(request->getParam("index")->value().toInt());
+                if (!isChannelValid(channelIndex)) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
                 } else {
-                    uint8_t channelIndex = (uint8_t)(indexValue);
                     if (Ade7953::getChannelDataAsJson(doc, channelIndex)) _sendJsonResponse(request, doc);
                     else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching single channel data");
                 }
             } else {
-                // Get all channels data
-                if (Ade7953::getAllChannelDataAsJson(doc)) _sendJsonResponse(request, doc);
-                else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching all channels data");
+                // Get all channels data - with ETag caching
+                uint32_t configHash = Ade7953::computeAllChannelDataHash();
+                if (configHash == 0) {
+                    // Error computing hash, send data without caching
+                    if (Ade7953::getAllChannelDataAsJson(doc)) _sendJsonResponse(request, doc);
+                    else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching all channels data");
+                    return;
+                }
+
+                // Generate ETag
+                char etag[16];
+                snprintf(etag, sizeof(etag), "\"%08x\"", configHash); // It says the format is incorrect but it works in the end
+
+                // Check If-None-Match header and send 304 if matched
+                if (_checkEtagAndSend304(request, etag)) {
+                    return;
+                }
+
+                // Data has changed or no cached version, send full response with ETag
+                if (Ade7953::getAllChannelDataAsJson(doc)) {
+                    AsyncResponseStream *response = request->beginResponseStream("application/json");
+                    serializeJson(doc, *response);
+                    _sendResponseWithEtag(request, response, etag);
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching all channels data");
+                }
             }
         });
 
@@ -1729,10 +1922,21 @@ namespace CustomServer
                 JsonDocument doc(&allocator);
                 doc.set(json);
 
-                if (Ade7953::setChannelDataFromJson(doc, isPartialUpdate))
+                bool roleChanged = false;
+                if (Ade7953::setChannelDataFromJson(doc, isPartialUpdate, &roleChanged))
                 {
-                    uint32_t channelIndex = doc["index"].as<uint32_t>();
-                    LOG_INFO("ADE7953 channel %lu data %s via API", channelIndex, isPartialUpdate ? "partially updated" : "updated");
+                    uint8_t channelIndex = doc["index"].as<uint8_t>();
+                    
+                    if (!isChannelValid(channelIndex)) {
+                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
+                        return;
+                    }
+                    
+                    LOG_INFO("ADE7953 channel %u data %s via API", channelIndex, isPartialUpdate ? "partially updated" : "updated");
+                    if (roleChanged) {
+                        Ade7953::resetChannelEnergyValues(channelIndex);
+                        LOG_DEBUG("Auto-reset energy and cleared history for channel %u due to role change", channelIndex);
+                    }
                     _sendSuccessResponse(request, "ADE7953 channel data updated successfully");
                 }
                 else
@@ -1763,10 +1967,15 @@ namespace CustomServer
                 SpiRamAllocator channelAllocator;
                 JsonDocument channelDoc(&channelAllocator);
                 for (JsonDocument channelDoc : doc.as<JsonArrayConst>()) {
-
-                    if (!Ade7953::setChannelDataFromJson(channelDoc, false)) {
+                    bool roleChanged = false;
+                    if (!Ade7953::setChannelDataFromJson(channelDoc, false, &roleChanged)) {
                         _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel configuration in array");
                         return;
+                    }
+                    if (roleChanged) {
+                        uint8_t idx = channelDoc["index"].as<uint8_t>();
+                        Ade7953::resetChannelEnergyValues(idx);
+                        LOG_INFO("Auto-reset energy and cleared history for channel %u due to role change", idx);
                     }
                 }
 
@@ -1785,12 +1994,11 @@ namespace CustomServer
                 return;
             }
 
-            long indexValue = request->getParam("index")->value().toInt();
-            if (indexValue < 0 || indexValue > UINT8_MAX) {
-                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
+            uint8_t channelIndex = (uint8_t)(request->getParam("index")->value().toInt());
+            if (!isChannelValid(channelIndex)) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
                 return;
             }
-            uint8_t channelIndex = (uint8_t)(indexValue);
             Ade7953::resetChannelData(channelIndex);
 
             LOG_INFO("ADE7953 channel %u data reset via API", channelIndex);
@@ -1815,11 +2023,11 @@ namespace CustomServer
             int32_t addressValue = request->getParam("address")->value().toInt();
             int32_t bitsValue = request->getParam("bits")->value().toInt();
 
-            if (addressValue < 0 || addressValue > UINT16_MAX) {
+            if (!isValueInRange(addressValue, 0, (int32_t)UINT16_MAX)) {
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register address out of range (0-65535)");
                 return;
             }
-            if (bitsValue < 0 || bitsValue > UINT8_MAX) {
+            if (!isValueInRange(bitsValue, 0, (int32_t)UINT8_MAX)) {
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register bits out of range (0-255)");
                 return;
             }
@@ -1860,11 +2068,11 @@ namespace CustomServer
             int32_t addressValue = doc["address"].as<int32_t>();
             int32_t bitsValue = doc["bits"].as<int32_t>();
 
-            if (addressValue < 0 || addressValue > UINT16_MAX) {
+            if (!isValueInRange(addressValue, 0, (int32_t)UINT16_MAX)) {
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register address out of range (0-65535)");
                 return;
             }
-            if (bitsValue < 0 || bitsValue > UINT8_MAX) {
+            if (!isValueInRange(bitsValue, 0, (int32_t)UINT8_MAX)) {
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register bits out of range (0-255)");
                 return;
             }
@@ -1891,10 +2099,10 @@ namespace CustomServer
             if (request->hasParam("index")) {
                 // Get single channel meter values
                 long indexValue = request->getParam("index")->value().toInt();
-                if (indexValue < 0 || indexValue > UINT8_MAX) {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
+                uint8_t channelIndex = (uint8_t)(indexValue);
+                if (!isChannelValid(channelIndex)) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
                 } else {
-                    uint8_t channelIndex = (uint8_t)(indexValue);
                     if (Ade7953::singleMeterValuesToJson(doc, channelIndex)) _sendJsonResponse(request, doc);
                     else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching single meter values");
                 }
@@ -1919,15 +2127,26 @@ namespace CustomServer
         });
 
         // === ENERGY VALUES ENDPOINTS ===
-        
-        // Reset all energy values
+
+        // Reset energy values (all channels, or single channel with ?index=N)
         server.on("/api/v1/ade7953/energy/reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
             if (!_validateRequest(request, "POST")) return;
 
-            Ade7953::resetEnergyValues();
-            LOG_INFO("ADE7953 energy values reset via API");
-            _sendSuccessResponse(request, "ADE7953 energy values reset successfully");
+            if (request->hasParam("index")) {
+                uint8_t channelIndex = static_cast<uint8_t>(request->getParam("index")->value().toInt());
+                if (!isChannelValid(channelIndex)) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
+                    return;
+                }
+                Ade7953::resetChannelEnergyValues(channelIndex);
+                LOG_INFO("ADE7953 energy values reset for channel %u via API", channelIndex);
+                _sendSuccessResponse(request, "ADE7953 energy values reset for channel");
+            } else {
+                Ade7953::resetEnergyValues();
+                LOG_INFO("ADE7953 energy values reset via API");
+                _sendSuccessResponse(request, "ADE7953 energy values reset successfully");
+            }
         });
 
         // Set energy values for a specific channel
@@ -1947,6 +2166,22 @@ namespace CustomServer
                 }
 
                 uint8_t channel = doc["channel"].as<uint8_t>();
+
+                if (!isChannelValid(channel)) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
+                    return;
+                }
+
+                if (!doc["activeEnergyImported"].is<double>() ||
+                    !doc["activeEnergyExported"].is<double>() ||
+                    !doc["reactiveEnergyImported"].is<double>() ||
+                    !doc["reactiveEnergyExported"].is<double>() ||
+                    !doc["apparentEnergy"].is<double>()) 
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "All energy value fields must be present and of type double");
+                    return;
+                }
+
                 double activeEnergyImported = doc["activeEnergyImported"].as<double>();
                 double activeEnergyExported = doc["activeEnergyExported"].as<double>();
                 double reactiveEnergyImported = doc["reactiveEnergyImported"].as<double>();
@@ -2117,7 +2352,9 @@ namespace CustomServer
             Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
             
             if (state != Ade7953::CaptureState::COMPLETE) {
-                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No waveform data available");
+                JsonDocument doc;
+                doc["message"] = "Waveform capture data not available";
+                _sendJsonResponse(request, doc, HTTP_CODE_NO_CONTENT);
                 return;
             }
 
@@ -2316,6 +2553,7 @@ namespace CustomServer
     // === LED ENDPOINTS ===
     static void _serveLedEndpoints()
     {
+        // TODO: can we add a fun RGB LED control here? Of limited time of course, but it would allow for ha integrations
         // Get LED brightness
         server.on("/api/v1/led/brightness", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
@@ -2359,6 +2597,7 @@ namespace CustomServer
     }
 
     // === FILE OPERATION ENDPOINTS ===
+    // TODO: add full backup/restore endpoint (NVS + LittleFS in a single file) to allow data export and device restoration
     static void _serveFileEndpoints()
     {
         // List files in LittleFS. The endpoint cannot be only "files" as it conflicts with the file serving endpoint (defined below)
@@ -2383,16 +2622,16 @@ namespace CustomServer
 
         // GET - Download file from LittleFS
         server.on("/api/v1/files/*", HTTP_GET, [](AsyncWebServerRequest *request)
-                  {
+        {
             String url = request->url();
-            String filename = url.substring(url.indexOf("/api/v1/files/") + 14); // Remove "/api/v1/files/" prefix
+            String filename = url.substring(url.indexOf("/api/v1/files/") + 14);
             
             if (filename.length() == 0) {
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File path cannot be empty");
                 return;
             }
             
-            // URL decode the filename to handle encoded slashes properly
+            // URL decode the filename
             filename.replace("%2F", "/");
             filename.replace("%2f", "/");
             
@@ -2407,15 +2646,27 @@ namespace CustomServer
                 return;
             }
 
-            // Determine content type based on file extension
+            // Determine content type
             const char* contentType = getContentTypeFromFilename(filename.c_str());
 
-            // Check if download is forced via query parameter
+            // Check if download is forced
             bool forceDownload = request->hasParam("download");
 
-            // Serve the file directly from LittleFS with proper content type
-            request->send(LittleFS, filename, contentType, forceDownload);
+            // Determine if this file should use caching
+            bool shouldCache = filename.endsWith(".csv") || 
+                            filename.endsWith(".csv.gz") ||
+                            filename.startsWith("/energy/monthly/") ||
+                            filename.startsWith("/energy/yearly/");
+            
+            if (shouldCache) {
+                // Send with ETag caching
+                _sendFileWithEtag(request, filename.c_str(), contentType, forceDownload);
+            } else {
+                // Send directly without caching (for frequently changing files)
+                request->send(LittleFS, filename, contentType, forceDownload);
+            }
         });
+
 
         // POST - Upload file to LittleFS
         server.on("/api/v1/files/*", HTTP_POST, 
@@ -2428,8 +2679,7 @@ namespace CustomServer
         );
 
         // DELETE - Remove file from LittleFS
-        // HACK: using POST with JSON body to avoid wildcard DELETE issues with AsyncWebServer, and also
-        // not using the same endpoint as the * would catch files/delete
+        // HACK: using POST with JSON body to avoid wildcard DELETE issues with AsyncWebServer, and also not using the same endpoint as the * would catch files/delete
         static AsyncCallbackJsonWebHandler *deleteFileHandler = new AsyncCallbackJsonWebHandler(
             "/api/v1/delete-file",
             [](AsyncWebServerRequest *request, JsonVariant &json)

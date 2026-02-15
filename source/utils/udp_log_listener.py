@@ -30,6 +30,8 @@ Examples:
     python udp_log_listener.py --exclude-files src/ade7953.cpp          # Filter out all logs from ade7953.cpp
     python udp_log_listener.py --exclude-functions _printMeterValues    # Filter out _printMeterValues function logs
     python udp_log_listener.py --exclude-files src/ade7953.cpp src/utils.cpp --exclude-functions _printMeterValues printStatus  # Multiple filters
+    python udp_log_listener.py --device-ip 192.168.1.100                # Configure device to send logs to this PC
+    python udp_log_listener.py --device-ip 192.168.1.100 --device-port 8080  # Configure with custom port
 
 Device-specific logging:
     The listener automatically creates separate log files for each device in the logs/
@@ -51,8 +53,12 @@ import time
 import re
 import os
 import signal
+import requests
+import getpass
+from requests.auth import HTTPDigestAuth
 from datetime import datetime
 from typing import Optional, Dict, Any, TextIO
+
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -110,6 +116,76 @@ class LogFilter:
                     return False
         
         return True
+
+
+def get_local_ip(target_host: Optional[str] = None) -> str:
+    """
+    Get the local IP address that can reach the target device.
+    If no target is specified, returns the IP of the interface that would reach the internet.
+    """
+    try:
+        if target_host:
+            # Create a socket to the target device to determine local IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect((target_host, 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        else:
+            # Fallback: connect to a public DNS to get the local IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+    except Exception as e:
+        print(f"{Colors.WARNING}Warning: Could not determine local IP: {e}{Colors.RESET}")
+        return "127.0.0.1"
+
+
+def set_device_log_destination(device_ip: str, device_port: int, username: str, password: str, local_ip: str) -> bool:
+    """
+    Set the UDP log destination on the target device.
+    Returns True if successful, False otherwise.
+    """
+    try:
+        url = f"http://{device_ip}:{device_port}/api/v1/logs-udp-destination"
+        headers = {"Content-Type": "application/json"}
+        payload = {"destination": local_ip}
+
+        print(f"\n🌐 Configuring device to send logs to: {local_ip}")
+
+        response = requests.put(
+            url,
+            json=payload,
+            headers=headers,
+            auth=HTTPDigestAuth(username, password),
+            timeout=5
+        )
+
+        if response.status_code == 200:
+            print(f"{Colors.INFO}✓ Successfully configured device log destination{Colors.RESET}")
+            return True
+        else:
+            print(f"{Colors.ERROR}✗ Failed to configure device: HTTP {response.status_code}{Colors.RESET}")
+            try:
+                error_data = response.json()
+                if 'error' in error_data:
+                    print(f"  Error: {error_data['error']}")
+            except:
+                print(f"  Response: {response.text}")
+            return False
+
+    except requests.exceptions.ConnectionError:
+        print(f"{Colors.ERROR}✗ Failed to connect to device at {device_ip}:{device_port}{Colors.RESET}")
+        return False
+    except requests.exceptions.Timeout:
+        print(f"{Colors.ERROR}✗ Request timeout while connecting to device{Colors.RESET}")
+        return False
+    except Exception as e:
+        print(f"{Colors.ERROR}✗ Error setting device log destination: {e}{Colors.RESET}")
+        return False
+
 
 class SyslogParser:
     """Parse syslog-formatted messages from EnergyMe-Home"""
@@ -695,7 +771,19 @@ def main():
         action='store_true',
         help='Enable debug output for troubleshooting'
     )
-    
+
+    parser.add_argument(
+        '--device-ip',
+        help='IP address or hostname of the EnergyMe-Home device to configure as log destination'
+    )
+
+    parser.add_argument(
+        '--device-port',
+        type=int,
+        default=80,
+        help='Port of the EnergyMe-Home device (default: 80)'
+    )
+
     args = parser.parse_args()
     
     # Auto-generate log filename if not specified but logging requested
@@ -717,7 +805,26 @@ def main():
     
     # Determine auto device logs setting
     auto_device_logs = args.auto_device_logs and not args.no_auto_device_logs
-    
+
+    # Handle device IP configuration
+    if args.device_ip:
+        print(f"\n{Colors.BOLD}Device Configuration{Colors.RESET}")
+        print(f"Target device: {args.device_ip}:{args.device_port}")
+
+        # Get local IP
+        local_ip = get_local_ip(args.device_ip)
+        print(f"Local IP to send: {local_ip}")
+
+        # Prompt for credentials
+        username = input("Enter device username: ")
+        password = getpass.getpass("Enter device password: ")
+
+        # Attempt to set the log destination
+        if set_device_log_destination(args.device_ip, args.device_port, username, password, local_ip):
+            print(f"{Colors.INFO}Device will now send logs to {local_ip}{Colors.RESET}\n")
+        else:
+            print(f"{Colors.WARNING}Proceeding with listener despite device configuration error{Colors.RESET}\n")
+
     # Start listener
     listener = UDPLogListener(args.host, args.port, log_filter, args.log_file, args.log_format, multicast_group, auto_device_logs, args.debug)
     listener.start()

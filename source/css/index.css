@@ -1,0 +1,948 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright (C) 2025 Jibril Sharafi */
+
+/* Index page specific styles */
+
+.header {
+    font-size: 96px;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.subheader {
+    font-size: 32px;
+    margin-bottom: 20px;
+    text-align: center;
+    color: #808080;
+}
+
+.voltage-box {
+    text-align: center;
+    font-size: 20px;
+    margin-bottom: 20px;
+    margin-top: 5px;
+}
+
+/* Channel boxes */
+.channels-box {
+    display: none;
+    flex-wrap: wrap;
+    justify-content: space-around;
+}
+
+.channel-box {
+    width: 18%;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    box-sizing: border-box;
+    background-color: white;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    margin-bottom: 20px;
+    padding: 10px;
+    text-align: center;
+}
+
+.channel-box.main-channel {
+    border: 3px solid #007bff;
+    background-color: #f8f9ff;
+}
+
+.channel-box.grid-channel {
+    border: 3px solid #2196F3;
+    background-color: #f0f8ff;
+}
+
+.channel-box.other-channel {
+    border: 2px solid #ffc107;
+    background-color: #fffdf0;
+}
+
+.channel-label {
+    font-size: 24px;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.channel-value {
+    font-style: italic;
+    color: #808080;
+}
+
+/* Chart header and controls */
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding: 0 10px;
+}
+
+.chart-header h3 {
+    margin: 0;
+    font-size: 24px;
+    color: #333;
+}
+
+.chart-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.view-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.date-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.chart-total {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.chart-total .total-value {
+    font-weight: bold;
+    color: #333;
+}
+
+/* Tooltip container */
+.tooltip-container {
+    position: relative;
+    display: inline-block;
+}
+
+.tooltip-container .tooltip-text {
+    visibility: hidden;
+    width: 280px;
+    background-color: #333;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 12px;
+    position: absolute;
+    z-index: 1000;
+    bottom: 125%;
+    left: 50%;
+    margin-left: -140px;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.tooltip-container .tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #333 transparent transparent transparent;
+}
+
+.tooltip-container:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+.info-icon {
+    color: #666;
+    font-size: 14px;
+    margin-left: 4px;
+    cursor: help;
+}
+
+/* View toggle buttons */
+.view-toggle {
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.view-toggle.active {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.view-toggle:hover {
+    background: #e9ecef;
+}
+
+.view-toggle.active:hover {
+    background: #0056b3;
+}
+
+/* Navigation buttons */
+.nav-button {
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.2s;
+}
+
+.nav-button:hover {
+    background: #0056b3;
+}
+
+.nav-button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+#date-picker {
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+/* Chart containers */
+#consumption-chart {
+    position: relative;
+    width: 100%;
+    height: 400px;
+}
+
+#consumption-chart canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+#balance-chart {
+    position: relative;
+    width: 100%;
+    height: 400px;
+}
+
+#balance-chart canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Chart loading state */
+.chart-loading {
+    text-align: center;
+    padding: 60px 20px;
+    font-size: 18px;
+    color: #888;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
+/* ============================================================================
+   SIMPLE POWER FLOW DIAGRAM
+   ============================================================================ */
+
+.power-flow {
+    display: flex;
+    gap: 20px;
+    padding: 20px;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+.power-flow-main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    min-width: 240px;
+}
+
+/* Node styling */
+.pf-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    padding: 8px;
+}
+
+.pf-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    border: 3px solid;
+    background: white;
+    z-index: 2;
+}
+
+.pf-value {
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 4px;
+    z-index: 2;
+}
+
+/* Node colors */
+.pf-solar .pf-icon { border-color: #FF9800; color: #FF9800; }
+.pf-solar .pf-value { color: #FF9800; }
+.pf-inverter .pf-icon { border-color: #00BCD4; color: #00BCD4; }
+.pf-inverter .pf-value { color: #00BCD4; }
+.pf-grid .pf-icon { border-color: #2196F3; color: #2196F3; }
+.pf-grid .pf-value { color: #2196F3; }
+.pf-home .pf-icon { border-color: #4CAF50; color: #4CAF50; }
+.pf-home .pf-value { color: #4CAF50; }
+.pf-battery .pf-icon { border-color: #9C27B0; color: #9C27B0; }
+.pf-battery .pf-value { color: #9C27B0; }
+
+/* Middle row with grid - center - home */
+.pf-middle-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
+}
+
+.pf-middle-row .pf-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.pf-center {
+    width: 40px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    margin-top: 8px; /* Match .pf-node padding to align dot with icon center */
+}
+
+.pf-center-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #666;
+}
+
+
+
+/* Connectors - simple lines */
+.pf-connector {
+    position: absolute;
+    background: #ddd;
+}
+
+.pf-connector-bottom {
+    width: 3px;
+    height: 38px;
+    bottom: -38px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.pf-connector-top {
+    width: 3px;
+    height: 38px;
+    top: -38px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.pf-connector-right {
+    width: 20px;
+    height: 3px;
+    right: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-top: -11px; /* Offset for .pf-value height */
+}
+
+.pf-connector-left {
+    width: 20px;
+    height: 3px;
+    left: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-top: -11px; /* Offset for .pf-value height */
+}
+
+/* Active flow animation */
+.pf-connector.active {
+    background: linear-gradient(90deg, transparent 0%, currentColor 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: flowPulse 1s linear infinite;
+}
+
+.pf-connector-bottom.active,
+.pf-connector-top.active {
+    background: linear-gradient(180deg, transparent 0%, currentColor 50%, transparent 100%);
+    background-size: 100% 200%;
+    animation: flowPulseVertical 1s linear infinite;
+}
+
+@keyframes flowPulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+@keyframes flowPulseVertical {
+    0% { background-position: 0 200%; }
+    100% { background-position: 0 -200%; }
+}
+
+/* Connector colors when active */
+.pf-solar .pf-connector { color: #FF9800; }
+.pf-inverter .pf-connector { color: #00BCD4; }
+.pf-grid .pf-connector { color: #2196F3; }
+.pf-home .pf-connector { color: #4CAF50; }
+.pf-battery .pf-connector { color: #9C27B0; }
+
+/* Loads panel */
+.pf-loads {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 10px;
+    min-width: 180px;
+    max-width: 220px;
+    max-height: 280px;
+    display: flex;
+    flex-direction: column;
+}
+
+.pf-loads-header {
+    font-size: 12px;
+    font-weight: bold;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #ddd;
+}
+
+.pf-loads-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    flex: 1;
+    scrollbar-width: thin;
+    scrollbar-color: #ccc transparent;
+}
+
+.pf-loads-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.pf-loads-list::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 3px;
+}
+
+.pf-load-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    background: white;
+    border-radius: 6px;
+    border-left: 3px solid #4CAF50;
+}
+
+.pf-load-name {
+    flex: 1;
+    font-size: 11px;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pf-load-value {
+    font-size: 11px;
+    font-weight: bold;
+    color: #666;
+    white-space: nowrap;
+}
+
+.pf-load-item.other {
+    border-left-color: #ffc107;
+    background: #fffdf0;
+}
+
+/* Load sharing bar */
+.load-sharing-bar {
+    margin-bottom: 10px;
+    display: none;
+}
+
+.load-bar-container {
+    display: flex;
+    height: 24px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #e0e0e0;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.load-bar-segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    transition: opacity 0.2s ease;
+    cursor: pointer;
+    position: relative;
+}
+
+.load-bar-segment:hover {
+    opacity: 0.8;
+}
+
+.load-bar-label {
+    font-size: 10px;
+    font-weight: bold;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    white-space: nowrap;
+}
+
+/* Sparkline tooltip */
+.sparkline-tooltip {
+    position: fixed;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 1000;
+}
+
+.sparkline-tooltip.visible {
+    opacity: 1;
+}
+
+/* KPI styles */
+.energy-kpis {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 20px;
+    width: 100%;
+}
+
+.kpi-card {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 12px 20px;
+    text-align: center;
+    min-width: 140px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.kpi-label {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+.kpi-value {
+    font-size: 20px;
+    font-weight: bold;
+    color: #333;
+}
+
+.kpi-unit {
+    font-size: 12px;
+    color: #666;
+}
+
+/* Consumption Sharing Breakdown */
+.consumption-sharing-section {
+    margin-top: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Share bar styles (keeping for backward compatibility if needed) */
+.balance-kpi-view {
+    padding: 20px 0;
+}
+
+.balance-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.balance-kpi-card {
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.balance-kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+}
+
+.balance-kpi-icon {
+    font-size: 36px;
+    margin-bottom: 8px;
+}
+
+.balance-kpi-label {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 8px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.balance-kpi-value {
+    font-size: 32px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.balance-kpi-unit {
+    font-size: 14px;
+    color: #999;
+}
+
+/* Hidden by default, shown when PV/Battery configured */
+.energy-flow-section {
+    display: block;
+}
+
+.energy-flow-section.visible {
+    display: block;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .header {
+        font-size: 64px;
+        margin-bottom: 8px;
+    }
+    
+    .subheader {
+        font-size: 24px;
+        margin-bottom: 15px;
+    }
+    
+    .voltage-box {
+        font-size: 18px;
+        margin-bottom: 15px;
+    }
+    
+    .channels-box {
+        justify-content: center;
+    }
+    
+    .channel-box {
+        width: 45%;
+        margin-bottom: 15px;
+        padding: 8px;
+        min-width: 140px;
+    }
+    
+    .channel-label {
+        font-size: 18px;
+        margin-bottom: 4px;
+    }
+    
+    .chart-header {
+        flex-direction: column;
+        gap: 15px;
+        margin-bottom: 10px;
+        padding: 0 5px;
+        align-items: stretch;
+    }
+    
+    .chart-header h3 {
+        font-size: 20px;
+        text-align: center;
+        margin-bottom: 0;
+    }
+    
+    .chart-controls {
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .view-selector {
+        justify-content: center;
+        gap: 8px;
+        order: 1;
+    }
+    
+    .date-selector {
+        justify-content: center;
+        gap: 8px;
+        order: 2;
+    }
+    
+    #consumption-chart {
+        height: 300px;
+    }
+    
+    .view-toggle {
+        padding: 6px 12px;
+        font-size: 13px;
+    }
+    
+    .nav-button {
+        padding: 6px 10px;
+        font-size: 14px;
+    }
+    
+    #date-picker,
+    #month-picker {
+        padding: 6px;
+        font-size: 13px;
+        width: 150px;
+    }
+    
+    #download-csv {
+        top: 5px;
+        right: 5px;
+        font-size: 12px;
+        padding: 4px;
+    }
+    
+    .chart-total {
+        text-align: center;
+        font-size: 14px;
+    }
+    
+    .tooltip-container .tooltip-text {
+        width: 200px;
+        margin-left: -100px;
+        font-size: 11px;
+    }
+    
+    /* Power flow mobile: stack vertically */
+    .power-flow {
+        flex-direction: column;
+        align-items: center;
+        padding: 15px;
+    }
+    
+    .pf-icon {
+        width: 50px;
+        height: 50px;
+        font-size: 22px;
+    }
+
+    .pf-center {
+        height: 50px;
+    }
+
+    .pf-value {
+        font-size: 12px;
+    }
+
+    .pf-connector-bottom {
+        height: 26px;
+        bottom: -26px;
+    }
+
+    .pf-connector-top {
+        height: 44px;
+        top: -44px;
+    }
+    
+    .pf-loads {
+        max-width: 100%;
+        min-width: auto;
+        width: 100%;
+        max-height: none;
+    }
+    
+    .pf-loads-list {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    
+    .pf-load-item {
+        width: calc(50% - 3px);
+    }
+    
+    .kpi-card {
+        min-width: 100px;
+        padding: 8px 12px;
+    }
+    
+    .kpi-value {
+        font-size: 16px;
+    }
+    
+    /* Consumption sharing mobile */
+    .consumption-sharing-section {
+        padding: 10px;
+        margin-top: 15px;
+    }
+    
+    .sharing-bar-label {
+        flex: 1;
+        font-size: 12px;
+    }
+    
+    .sharing-bar-container {
+        height: 20px;
+    }
+    
+    .sharing-bar-value {
+        flex: 1;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .sharing-bar-percentage {
+        font-size: 13px;
+    }
+    
+    .sharing-bar-absolute {
+        font-size: 10px;
+    }
+    
+    /* Balance KPI responsive */
+    .balance-kpi-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+        padding: 0 10px;
+    }
+    
+    .balance-kpi-card {
+        padding: 15px;
+    }
+    
+    .balance-kpi-icon {
+        font-size: 28px;
+    }
+    
+    .balance-kpi-value {
+        font-size: 24px;
+    }
+}
+
+@media (max-width: 480px) {
+    .header {
+        font-size: 48px;
+        margin-bottom: 5px;
+    }
+    
+    .subheader {
+        font-size: 20px;
+        margin-bottom: 12px;
+    }
+    
+    .voltage-box {
+        font-size: 16px;
+        margin-bottom: 12px;
+    }
+    
+    .channel-box {
+        width: 90%;
+        margin-bottom: 12px;
+        padding: 6px;
+        min-width: auto;
+    }
+    
+    .channel-label {
+        font-size: 16px;
+    }
+    
+    .chart-header h3 {
+        font-size: 18px;
+    }
+    
+    .chart-total {
+        font-size: 13px;
+    }
+    
+    .view-toggle {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+    
+    .nav-button {
+        padding: 5px 8px;
+        font-size: 13px;
+    }
+    
+    #date-picker,
+    #month-picker {
+        width: 130px;
+        font-size: 12px;
+        padding: 5px;
+    }
+    
+    #consumption-chart {
+        height: 250px;
+    }
+    
+    .tooltip-container .tooltip-text {
+        width: 160px;
+        margin-left: -80px;
+        font-size: 10px;
+    }
+    
+    /* Balance KPI responsive for small screens */
+    .balance-kpi-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 0 5px;
+    }
+    
+    .balance-kpi-card {
+        padding: 12px;
+    }
+    
+    .balance-kpi-icon {
+        font-size: 24px;
+    }
+    
+    .balance-kpi-value {
+        font-size: 20px;
+    }
+}

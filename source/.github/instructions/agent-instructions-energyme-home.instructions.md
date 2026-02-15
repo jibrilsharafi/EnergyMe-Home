@@ -241,3 +241,15 @@ Provide project context and coding guidelines that AI should follow when generat
       if (!someBoolean) return;
       ```
     - Use `delay(X)` instead of `vTaskDelay(pdMS_TO_TICKS(X))` since they map to the same underlying FreeRTOS function and `delay()` is more readable in this context.
+
+14. **Git commits**:
+    - Use non-AI generated commits.
+    - Clear and concise. If it requires a long explanation, then it should be broken into multiple commits.
+    - Use the following types:
+      - feat: for new features
+      - fix: for bug fixes
+      - docs: for documentation changes
+      - style: for code style changes (formatting, missing semicolons, etc)
+      - refactor: for code changes that neither fix a bug nor add a feature
+      - test: for adding or updating tests
+      - chore: for maintenance tasks (build process, dependencies, etc)

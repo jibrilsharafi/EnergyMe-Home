@@ -12,6 +12,7 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Calibration</title>
@@ -291,8 +292,7 @@
 
     <div class="section-box">
         <h1>Current Transformer (CT) Calibration</h1>
-        <div id="updateStatus" style="height: 20px; color: #666; font-style: italic; margin-bottom: 15px;"></div>
-        
+
         <div class="calibration-container">
             <!-- Calibration Controls -->
             <div class="calibration-controls">
@@ -326,9 +326,9 @@
                 </div>
 
                 <div class="control-group">
+                    <div id="calibrationStatus" style="margin-bottom: 10px;"></div>
                     <div class="calibration-actions">
                         <button class="buttonForm" onclick="saveCalibration()" id="saveButton">💾 Save</button>
-                        <button class="buttonForm" onclick="resetCalibration()">🔄 Reset</button>
                     </div>
                 </div>
             </div>
@@ -363,18 +363,14 @@
         // Initialize the page
         async function initializePage() {
             try {
-                document.getElementById('updateStatus').textContent = 'Loading...';
-                
                 const channelResponse = await energyApi.getChannelConfig();
                 channelData = channelResponse;
-                
+
                 populateChannelDropdown();
                 startLiveMeterUpdates();
-                
-                document.getElementById('updateStatus').textContent = '';
             } catch (error) {
                 console.error('Error initializing page:', error);
-                document.getElementById('updateStatus').textContent = 'Error loading data: ' + error.message;
+                showStatus('Error loading data: ' + error.message, 'error');
             }
         }
 
@@ -452,18 +448,16 @@
 
         async function saveCalibration() {
             if (!selectedChannelIndex) {
-                alert('Please select a channel first');
+                showStatus('Please select a channel first', 'error');
                 return;
             }
 
             try {
-                // Block the button and show saving status
                 const saveButton = document.getElementById('saveButton');
-                saveButton.textContent = '💾 Saving...';
                 saveButton.disabled = true;
-                
-                document.getElementById('updateStatus').textContent = 'Saving calibration...';
-                document.getElementById('updateStatus').style.color = '#666';
+                saveButton.classList.add('loading');
+
+                showStatus('Saving calibration...', 'info');
 
                 const currentRating = parseInt(document.getElementById('currentRating').value);
                 const voltageOutput = parseFloat(document.getElementById('voltageOutput').value);
@@ -471,10 +465,6 @@
 
                 const channelUpdate = {
                     index: parseInt(selectedChannelIndex),
-                    label: channelData[selectedChannelIndex].label,
-                    phase: channelData[selectedChannelIndex].phase,
-                    reverse: channelData[selectedChannelIndex].reverse,
-                    active: channelData[selectedChannelIndex].active,
                     ctSpecification: {
                         currentRating: currentRating,
                         voltageOutput: voltageOutput,
@@ -482,69 +472,19 @@
                     }
                 };
 
-                await energyApi.setChannelConfig(channelUpdate);
-                
+                await energyApi.patchChannelConfig(channelUpdate);
+
                 // Update local data
                 channelData[selectedChannelIndex].ctSpecification = channelUpdate.ctSpecification;
 
-                // Show success status
-                document.getElementById('updateStatus').textContent = 'Calibration saved successfully!';
-                document.getElementById('updateStatus').style.color = '#28a745';
-                
-                saveButton.textContent = '✅ Saved';
-                
-                // Clear status and restore button after 3 seconds
-                setTimeout(() => {
-                    document.getElementById('updateStatus').textContent = '';
-                    saveButton.textContent = '💾 Save';
-                    saveButton.disabled = false;
-                }, 3000);
+                showStatus('Calibration saved successfully!', 'success');
 
             } catch (error) {
                 console.error('Error saving calibration:', error);
-                
-                // Show error status
-                document.getElementById('updateStatus').textContent = 'Error saving calibration: ' + error.message;
-                document.getElementById('updateStatus').style.color = '#dc3545';
-                
-                const saveButton = document.getElementById('saveButton');
-                saveButton.textContent = '❌ Error';
-                
-                // Clear status and restore button after 5 seconds for errors
-                setTimeout(() => {
-                    document.getElementById('updateStatus').textContent = '';
-                    saveButton.textContent = '💾 Save';
-                    saveButton.disabled = false;
-                }, 5000);
-            }
-        }
-
-        async function resetCalibration() {
-            if (!selectedChannelIndex) {
-                alert('Please select a channel first');
-                return;
-            }
-
-            const resetMessage = 'Reset calibration for this channel to defaults (30A/333mV)?\n\nWarning: This will also disable all channels except Channel 0.';
-            
-            if (confirm(resetMessage)) {
-                try {
-                    await energyApi.resetChannelConfig(selectedChannelIndex);
-                    
-                    // Reload channel data
-                    channelData = await energyApi.getChannelConfig();
-                    onChannelChange(); // Refresh the UI
-
-                    document.getElementById('calibrationStatus').innerHTML = `
-                        <div class="status-indicator status-good">
-                            🔄 Calibration reset to defaults
-                        </div>
-                    `;
-
-                } catch (error) {
-                    console.error('Error resetting calibration:', error);
-                    alert('Error resetting calibration: ' + error.message);
-                }
+                showStatus('Error saving calibration: ' + error.message, 'error');
+            } finally {
+                saveButton.disabled = false;
+                saveButton.classList.remove('loading');
             }
         }
 

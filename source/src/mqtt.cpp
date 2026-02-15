@@ -667,7 +667,7 @@ namespace Mqtt
                     case MqttState::SETTING_UP_CERTIFICATES: _handleSettingUpCertificatesState(); break;
                     case MqttState::CONNECTING:              _handleConnectingState(); break;
                     case MqttState::CONNECTED:               _handleConnectedState(); break;
-                }
+                    }
             }
             
             // If we receive a signal to stop the task, we try to publish all the data and flushing the queues so we avoid losing data
@@ -755,7 +755,7 @@ namespace Mqtt
     static void _setTopicChannel() { _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel, sizeof(_mqttTopicChannel)); }
     static void _setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
     static void _setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash, sizeof(_mqttTopicCrash)); }
-    static void _setTopicLog() { _constructMqttTopic(MQTT_TOPIC_LOG, _mqttTopicLog, sizeof(_mqttTopicLog)); }
+    static void _setTopicLog() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_LOG, MQTT_TOPIC_LOG, _mqttTopicLog, sizeof(_mqttTopicLog)); }
     static void _setTopicProvisioningRequest() { _constructMqttTopic(MQTT_TOPIC_PROVISIONING_REQUEST, _mqttTopicProvisioningRequest, sizeof(_mqttTopicProvisioningRequest)); }
 
     static void _subscribeToTopics() {
@@ -910,12 +910,10 @@ namespace Mqtt
 
             const char* certData = doc["encryptedCertificatePem"].as<const char*>();
             const char* keyData = doc["encryptedPrivateKey"].as<const char*>();
-            
-            size_t certLen = strlen(certData);
-            size_t keyLen = strlen(keyData);
-            
-            if (certLen >= CERTIFICATE_BUFFER_SIZE || keyLen >= CERTIFICATE_BUFFER_SIZE) {
-                LOG_ERROR("Provisioning payload too large (cert %zu, key %zu)", certLen, keyLen);
+
+            if (!isStringLengthValid(certData, 1, CERTIFICATE_BUFFER_SIZE - 1) ||
+                !isStringLengthValid(keyData, 1, CERTIFICATE_BUFFER_SIZE - 1)) {
+                LOG_ERROR("Provisioning payload invalid (cert or key too large or empty)");
                 return;
             }
 
@@ -923,15 +921,15 @@ namespace Mqtt
             preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false);
 
             size_t writtenSize = preferences.putString(PREFS_KEY_CERTIFICATE, certData);
-            if (writtenSize != certLen) {
-                LOG_ERROR("Failed to write encrypted certificate to preferences (%zu != %zu)", writtenSize, certLen);
+            if (writtenSize != strlen(certData)) {
+                LOG_ERROR("Failed to write encrypted certificate to preferences (%zu != %zu)", writtenSize, strlen(certData));
                 preferences.end();
                 return;
             }
 
             writtenSize = preferences.putString(PREFS_KEY_PRIVATE_KEY, keyData);
-            if (writtenSize != keyLen) {
-                LOG_ERROR("Failed to write encrypted private key to preferences (%zu != %zu)", writtenSize, keyLen);
+            if (writtenSize != strlen(keyData)) {
+                LOG_ERROR("Failed to write encrypted private key to preferences (%zu != %zu)", writtenSize, strlen(keyData));
                 preferences.end();
                 return;
             }
@@ -1033,7 +1031,7 @@ namespace Mqtt
         // Extract the DNS to test from the URL
         char host[URL_BUFFER_SIZE]; // Small since we don't have all the presigned stuff
         if (extractHost(_otaCurrentUrl, host, sizeof(host))) {
-            if (testClient.connect(host, 443)) { // Being HTTPS, the port is 443
+            if (testClient.connect(host, 443, 3000)) { // Being HTTPS, the port is 443, and timeout
                 LOG_DEBUG("DNS resolution successful");
                 testClient.stop();
             } else {
@@ -1334,12 +1332,8 @@ namespace Mqtt
             return;
         }
         
-        if (!_publishMeterJson()) {
-            LOG_ERROR("Failed to publish meter data");
-            return;
-        }
-
-        _lastMillisMeterPublished = millis64();
+        // Any error is already logged in _publishMeterJson()
+        if (_publishMeterJson()) _lastMillisMeterPublished = millis64();
     }
     
     static void _publishSystemStatic() {
@@ -1492,15 +1486,20 @@ namespace Mqtt
 
     static void _checkIfPublishMeterNeeded() {
         UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
+        size_t estimatedJsonSize = queueSize * MQTT_METER_ESTIMATED_PER_ENTRY + MQTT_METER_ESTIMATED_ENERGY_VOLTAGE_OVERHEAD_BYTES;
+        
+        // Publish if:
+        // 1. Queue reaches threshold (at least the billable size for efficiency) AND power data is enabled (trigger only), OR
+        // 2. Enough time has passed (for voltage/energy data, regardless of queue state)
+        // Real JSON size is checked during _publishMeterStreaming() with measureJson()
+        // It is better to underestimate here (thus, the real payload will be more than 5kB) so we use all of the billable size
+        // and only "risk" losing a few entries, which will just be published on the next cycle
         if (
-            (queueSize > 0) &&
-            (
-                ((queueSize > (MQTT_METER_QUEUE_SIZE * MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD)) && _sendPowerDataEnabled) || // Either we are sending power data and the queue is almost full
-                ((millis64() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH) // Or enought time has passed and we need to publish anyway (voltage and energy)
-            )
+            ((estimatedJsonSize >= AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE) && _sendPowerDataEnabled) ||
+            ((millis64() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH)
         ) {
             _publishMqtt.meter = true;
-            LOG_DEBUG("Set flag to publish %u meter data points", queueSize);
+            LOG_DEBUG("Set flag to publish meter data (queue: %u entries, real size checked during publish)", queueSize);
         }
     }
 
@@ -1731,8 +1730,8 @@ namespace Mqtt
             return false;
         }
 
-        if (!CustomWifi::isFullyConnected(true)) {
-            LOG_WARNING("WiFi not fully connected. Skipping streaming publish on %s", topic);
+        if (!CustomWifi::isFullyConnected()) { // No need to check for internet since connected() will do it anyway
+            LOG_WARNING("WiFi not connected. Skipping streaming publish on %s", topic);
             statistics.mqttMessagesPublishedError++;
             return false;
         }
@@ -1828,9 +1827,16 @@ namespace Mqtt
             }
         }
         
-        // Only add power data points if sendPowerDataEnabled is true
+        // Only add power data points if sendPowerDataEnabled is true and connected
+        // CRITICAL: Check connectivity BEFORE dequeuing to prevent data loss
         uint32_t entriesAdded = 0;
-        if (_sendPowerDataEnabled && _initializeMeterQueue()) {
+        if (
+            _sendPowerDataEnabled && // Send only if the send power data flag is enabled (to save on data)
+            _initializeMeterQueue() && 
+            // Ensure connectivity again!
+            CustomWifi::isFullyConnected() &&  // Fail fast
+            _clientMqtt.connected()
+        ) {
             PayloadMeter payloadMeter;
             uint32_t loops = 0;
             while ((uxQueueMessagesWaiting(_meterQueue) > 0) && loops < MAX_LOOP_ITERATIONS) {
@@ -1845,10 +1851,13 @@ namespace Mqtt
                 powerArray.add(roundToDecimals(payloadMeter.powerFactor, POWER_FACTOR_DECIMALS));
                 entriesAdded++;
 
-                // Check if we're approaching memory limits (using psram automatically)
-                if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * 0.95) {
-                    LOG_DEBUG("Meter data JSON size exceeds 95%% of AWS IoT Core MQTT payload limit, stopping queue processing");
-                    break; // Stop adding new entries if the buffer is nearly full
+                // Check if we're approaching the minimum billable size (optimize costs by staying just under)
+                if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) {
+                    LOG_DEBUG(
+                        "Meter data JSON approaching billable threshold (%u bytes, max %u), stopping queue processing (missing %d points)",
+                        measureJson(doc), AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE, uxQueueMessagesWaiting(_meterQueue)
+                    );
+                    break; // Remaining entries will be sent in the next publish
                 }
             }
         }
@@ -2215,6 +2224,8 @@ namespace Mqtt
     }
 
     static void _handleConnectingState() {
+        if (!CustomWifi::isFullyConnected()) return; // Fail fast if no WiFi/internet
+
         if (_clientMqtt.connected()) {
             _setState(MqttState::CONNECTED);
             return;
@@ -2235,15 +2246,19 @@ namespace Mqtt
             // Small delay to allow LWIP/SNTP operations to complete
             delay(100);
             
-            if (_connectMqtt() && _clientMqtt.connected()) { // Both connect and check immediately after
+            if (CustomWifi::isFullyConnected(true) && _connectMqtt() && _clientMqtt.connected()) { // Both internet, connect and check immediately after
                 _setState(MqttState::CONNECTED);
             }
         }
     }
 
     static void _handleConnectedState() {
-        if (!_clientMqtt.connected() || !_clientMqtt.loop()) { // Also process incoming messages with loop()
-            LOG_DEBUG("MQTT disconnected, transitioning to connecting state");
+        // MQTT connection check is sufficient - if TCP to AWS fails, we'll detect it here
+        if (!CustomWifi::isFullyConnected() || !_clientMqtt.connected() || !_clientMqtt.loop()) { // Also process incoming messages with loop()
+            LOG_DEBUG(
+                "MQTT disconnected, transitioning to connecting state (wifi: %d, connected: %d, loop: %d)", 
+                CustomWifi::isFullyConnected(), _clientMqtt.connected(), _clientMqtt.loop()
+            );
             statistics.mqttConnectionErrors++;
             _setState(MqttState::CONNECTING);
             return;
@@ -2421,7 +2436,7 @@ namespace Mqtt
             return;
         }
 
-        // Monitor for stability period
+        // Monitor for stability period (here we just wait, rollback will occur automatically on failure)
         while (millis64() - validationStartTime < OTA_VALIDATION_TIMEOUT) {
             LOG_DEBUG("OTA validation in progress - %llu ms remaining", OTA_VALIDATION_TIMEOUT + validationStartTime - millis64());
             delay(OTA_VALIDATION_CHECK_INTERVAL);

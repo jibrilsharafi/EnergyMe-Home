@@ -12,11 +12,13 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Configuration</title>
     <style>
+        /* Slider-specific styles */
         .slider {
             -webkit-appearance: none;
             appearance: none;
@@ -52,122 +54,23 @@
             cursor: pointer;
         }
         
-        /* Mobile responsive form styles */
+        /* Page-specific mobile styles */
         @media screen and (max-width: 768px) {
-            .config-input {
-                width: 100% !important;
-                max-width: 100% !important;
-                font-size: 16px !important; /* Prevents zoom on iOS */
-                padding: 12px !important;
-                margin: 8px 0 !important;
-                box-sizing: border-box !important;
-                border: 1px solid #ddd !important;
-                border-radius: 5px !important;
-            }
-            
-            label {
-                display: block;
-                font-weight: bold;
-                margin-bottom: 5px;
-                font-size: 14px;
-            }
-            
-            select.config-input {
-                -webkit-appearance: none;
-                -moz-appearance: none;
-                appearance: none;
-                background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
-                background-position: right 12px center;
-                background-repeat: no-repeat;
-                background-size: 16px;
-                padding-right: 40px;
-            }
-            
-            .warning-box {
-                padding: 8px !important;
-                font-size: 13px !important;
-                margin: 8px 0 !important;
-            }
-            
             .slider {
-                height: 20px !important;
-                margin: 10px 0 !important;
+                height: 20px;
+                margin: 10px 0;
             }
             
             .slider::-webkit-slider-thumb {
                 width: 30px;
                 height: 30px;
             }
-            
+
             .slider::-moz-range-thumb {
                 width: 30px;
                 height: 30px;
             }
-            
-            #influxDbStatusContainer {
-                flex-direction: column !important;
-                align-items: flex-start !important;
-            }
-            
-            #influxDbStatusIcon {
-                margin-bottom: 8px !important;
-                margin-right: 0 !important;
-            }
-            
-            #energyChannels .channel-container {
-                margin-bottom: 15px;
-                padding: 10px;
-                border: 1px solid #eee;
-                border-radius: 5px;
-                background-color: #f9f9f9;
-            }
-            
-            table {
-                width: 100% !important;
-                font-size: 13px !important;
-                overflow-x: auto !important;
-                display: block !important;
-            }
-            
-            table thead,
-            table tbody,
-            table tr {
-                display: block !important;
-            }
-            
-            table td,
-            table th {
-                display: block !important;
-                width: 100% !important;
-                padding: 8px 5px !important;
-                border: none !important;
-                text-align: left !important;
-            }
-            
-            table th {
-                background-color: #f5f5f5 !important;
-                font-weight: bold !important;
-            }
-            
-            table tr {
-                border-bottom: 1px solid #ddd !important;
-                margin-bottom: 10px !important;
-            }
-        }
-        
-        @media screen and (max-width: 480px) {
-            .config-input {
-                font-size: 14px !important;
-                padding: 10px !important;
-            }
-            
-            label {
-                font-size: 13px;
-            }
-            
-            .warning-box {
-                font-size: 12px !important;
-            }
+
         }
     </style>
 </head>
@@ -178,7 +81,7 @@
         <a class="buttonNavigation" type="inner" href="/calibration">⚖️ Calibration</a>
         <a class="buttonNavigation" type="inner" href="/channel">📺 Channel</a>
     </div>
-
+    
     <div class="section-box">
         <h2>Cloud Services</h2>
         <p><i>Cloud services are used to send data to the cloud. This is useful for monitoring the device
@@ -223,150 +126,10 @@
     </div>
 
     <div class="section-box">
-        <h2>Custom MQTT</h2>
-        <p><i>
-                Custom MQTT is used to send meter data to a custom MQTT server. This is useful for integrating the
-                device with your own IoT platform.
-                <br>
-                <br>
-                The payload content will be the same one returned by the REST API endpoint <a href="/api/v1/ade7953/meter-values"
-                    target="_blank">meter</a>
-                (<a href="/swagger-ui#/ADE7953/get_api_v1_ade7953_meter_values" target="_blank">swagger</a>).
-            </i></p>
-        <input type="checkbox" id="customMqttEnabled" class="config-input">
-        <label for="customMqttEnabled">Enable custom MQTT</label>
-        <div id="customMqttSettings">
-            <label for="customMqttServer">Server:</label>
-            <input type="text" id="customMqttServer" class="config-input" placeholder="e.g., mqtt.example.com">
-            <br>
-            <label for="customMqttPort">Port:</label>
-            <input type="number" id="customMqttPort" class="config-input" placeholder="e.g., 1883">
-            <br>
-            <label for="customMqttClientId">Client ID:</label>
-            <input type="text" id="customMqttClientId" class="config-input" placeholder="e.g., client123">
-            <br>
-            <label for="customMqttTopic">Topic:</label>
-            <input type="text" id="customMqttTopic" class="config-input" placeholder="e.g., home/sensor">
-            <br>
-            <label for="customMqttFrequency">Frequency (in seconds):</label>
-            <input type="number" id="customMqttFrequency" class="config-input" placeholder="e.g., 60" min="1"
-                max="86400">
-            <br>
-            <input type="checkbox" id="customMqttUseCredentials" class="config-input">
-            <label for="useCredentials">Use credentials</label>
-            <br>
-            <label for="customMqttUsername">Username:</label>
-            <input type="text" id="customMqttUsername" class="config-input" placeholder="Leave empty if not required">
-            <br>
-            <label for="customMqttPassword">Password:</label>
-            <input type="password" id="customMqttPassword" class="config-input"
-                placeholder="Leave empty if not required">
-        </div>
-        <div id="customMqttStatus"
-            style="margin-top: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
-            <div id="statusContainer" style="display: flex; align-items: center;">
-                <span id="statusIcon" style="font-size: 1.5em; margin-right: 10px;">⚪</span>
-                <div>
-                    <strong>Status: </strong><span id="lastConnectionStatus">Loading...</span><br>
-                    <span id="timestampContainer"><strong>Last Attempt: </strong><span
-                            id="lastConnectionAttemptTimestamp">Loading...</span></span>
-                </div>
-            </div>
-        </div> <button class="buttonForm" onclick="setCustomMqttConfiguration()"
-            id="setCustomMqttConfigurationButton">💾 Set
-            configuration</button>
-        <button class="buttonForm" onclick="getCustomMqttConfiguration()" id="reloadCustomMqttButton"
-            style="float: right;">🔄 Reload Status</button>
-    </div>
-
-    <div class="section-box">
-        <h2>InfluxDB</h2>
-        <p><i>
-                InfluxDB is used to send meter data to an InfluxDB time-series database. This is useful for storing
-                historical data and creating dashboards with tools like Grafana.
-                <br>
-                <br>
-                The data will be sent in InfluxDB Line Protocol format with all meter values as fields.
-            </i></p>
-        <input type="checkbox" id="influxDbEnabled" class="config-input">
-        <label for="influxDbEnabled">Enable InfluxDB</label>
-        <div id="influxDbSettings">
-            <label for="influxDbServer">Server:</label>
-            <input type="text" id="influxDbServer" class="config-input"
-                placeholder="e.g., localhost or influxdb.example.com">
-            <br>
-            <label for="influxDbPort">Port:</label>
-            <input type="number" id="influxDbPort" class="config-input" placeholder="e.g., 8086">
-            <br>
-            <label for="influxDbVersion">Version:</label>
-            <select id="influxDbVersion" class="config-input">
-                <option value="1">InfluxDB v1.x</option>
-                <option value="2">InfluxDB v2.x</option>
-            </select>
-            <br>
-            <input type="checkbox" id="influxDbUseSsl" class="config-input">
-            <label for="influxDbUseSsl">Use SSL (HTTPS)</label>
-            <br>
-            <div id="influxDbV1Settings">
-                <h4>InfluxDB v1.x Settings</h4>
-                <label for="influxDbDatabase">Database:</label>
-                <input type="text" id="influxDbDatabase" class="config-input" placeholder="e.g., energyme-home">
-                <br>
-                <label for="influxDbUsername">Username:</label>
-                <input type="text" id="influxDbUsername" class="config-input" placeholder="Leave empty if not required">
-                <br>
-                <label for="influxDbPassword">Password:</label>
-                <input type="password" id="influxDbPassword" class="config-input"
-                    placeholder="Leave empty if not required">
-            </div>
-            <div id="influxDbV2Settings">
-                <h4>InfluxDB v2.x Settings</h4>
-                <label for="influxDbOrganization">Organization:</label>
-                <input type="text" id="influxDbOrganization" class="config-input" placeholder="e.g., my-org">
-                <br>
-                <label for="influxDbBucket">Bucket:</label>
-                <input type="text" id="influxDbBucket" class="config-input" placeholder="e.g., energyme-home">
-                <br>
-                <label for="influxDbToken">Token:</label>
-                <input type="password" id="influxDbToken" class="config-input" placeholder="API token">
-            </div>
-            <label for="influxDbMeasurement">Measurement:</label>
-            <input type="text" id="influxDbMeasurement" class="config-input" placeholder="e.g., meter">
-            <br>
-            <label for="influxDbFrequency">Frequency (in seconds):</label>
-            <input type="number" id="influxDbFrequency" class="config-input" placeholder="e.g., 30" min="1" max="3600">
-        </div>
-        <div id="influxDbStatus"
-            style="margin-top: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
-            <div id="influxDbStatusContainer" style="display: flex; align-items: center;">
-                <span id="influxDbStatusIcon" style="font-size: 1.5em; margin-right: 10px;">⚪</span>
-                <div>
-                    <strong>Status: </strong><span id="influxDbLastConnectionStatus">Loading...</span><br>
-                    <span id="influxDbTimestampContainer"><strong>Last Attempt: </strong><span
-                            id="influxDbLastConnectionAttemptTimestamp">Loading...</span></span>
-                </div>
-            </div>
-        </div> <button class="buttonForm" onclick="setInfluxDbConfiguration()" id="setInfluxDbConfigurationButton">💾
-            Set
-            configuration</button>
-        <button class="buttonForm" onclick="getInfluxDbConfiguration()" id="reloadInfluxDbButton"
-            style="float: right;">🔄 Reload Status</button>
-    </div>
-
-    <div class="section-box">
-        <h2>Energy Management</h2>
-        <p><i>Manage energy counters for all channels. Changes will clear historical daily energy data.</i></p>
-
-        <div id="energyChannels">
-            <!-- Energy channels will be populated here -->
-        </div> <button class="buttonForm" onclick="loadEnergyValues()" id="loadEnergyButton">🔄 Load Current
-            Values</button>
-        <button class="buttonForm" onclick="setEnergyValues()" id="setEnergyButton">💾 Set Energy Values</button>
-        <button class="buttonForm" onclick="resetAllEnergy()" id="resetAllEnergyButton"
-            style="background-color: #dc3545; border-color: #dc3545; color: white; transition: background-color 0.3s ease;"
-            onmouseover="this.style.backgroundColor='#c82333'" onmouseout="this.style.backgroundColor='#dc3545'">🗑️
-            Reset
-            All to Zero</button>
+        <h2>Sync Time</h2>
+        <p><i>Sync the device time with your browser. Useful for devices without internet connectivity (static IP, isolated networks).</i></p>
+        <p id="currentDeviceTime">Device time: Loading...</p>
+        <button class="buttonForm" onclick="syncTime()" id="syncTime">🕐 Sync Time</button>
     </div>
 
     <div class="section-box">
@@ -386,8 +149,6 @@
                 <input type="password" id="confirmPassword" class="config-input" placeholder="Confirm new password" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
             </div>
         </div>
-        <div id="passwordError" style="color: #c62828; margin-bottom: 10px; display: none;"></div>
-        <div id="passwordSuccess" style="color: #2e7d32; margin-bottom: 10px; display: none;"></div>
         <button class="buttonForm" onclick="changePassword()" id="changePasswordButton">🔑 Change Password</button>
     </div>
 
@@ -395,13 +156,6 @@
         <h2>Restart Device</h2>
         <p><i>You already know that restarting a device magically fixes most issues. It will take 10 seconds.</i></p>
         <button class="buttonForm" onclick="restart()" id="restart">🔄 Restart</button>
-    </div>
-
-    <div class="section-box">
-        <h2>Sync Time</h2>
-        <p><i>Sync the device time with your browser. Useful for devices without internet connectivity (static IP, isolated networks).</i></p>
-        <p id="currentDeviceTime">Device time: Loading...</p>
-        <button class="buttonForm" onclick="syncTime()" id="syncTime">🕐 Sync Time</button>
     </div>
 
     <div class="section-box">
@@ -455,15 +209,6 @@
     <script src="/js/api-client.js"></script>
     <script>
         var logLevels = ["Verbose", "Debug", "Info", "Warning", "Error", "Fatal"];
-        var customMqttConfig;
-        var influxDbConfig;
-        var energyData = {};
-        var channelData = {};
-
-        // Auto-reload intervals
-        var customMqttAutoReloadInterval = null;
-        var influxDbAutoReloadInterval = null;
-        const AUTO_RELOAD_INTERVAL_MS = 5000; // 5 seconds
 
         function populateDropdown() {
             var printLogLevel = document.getElementById("printLogLevel");
@@ -486,55 +231,58 @@
             }
         }
 
-        function restart() {
-            var restartButton = document.getElementById("restart");
-            restartButton.innerHTML = "Restarting. You will be redirected to the home page in some seconds.";
+        async function restart() {
+            const restartButton = document.getElementById("restart");
             restartButton.disabled = true;
+            restartButton.classList.add('loading');
 
-            energyApi.restartSystem()
-                .then(response => {
-                    setTimeout(function () {
-                        window.location.href = "/";
-                    }, 12000);
-                })
-                .catch(error => {
-                    alert("Error restarting device. Response: " + error.message);
-                    restartButton.innerHTML = "🔄 Restart";
-                    restartButton.disabled = false;
-                });
+            try {
+                showStatus("Restarting device...", 'info');
+
+                await energyApi.restartSystem();
+
+                showStatus("Device restarting... You will be redirected in 12 seconds.", 'success', 12000);
+                setTimeout(function () {
+                    window.location.href = "/";
+                }, 12000);
+            } catch (error) {
+                showStatus("Error restarting device: " + error.message, 'error');
+                restartButton.disabled = false;
+                restartButton.classList.remove('loading');
+            }
         }
 
         function loadDeviceTime() {
             energyApi.getSystemTime()
-                .then(response => {
-                    const timeEl = document.getElementById("currentDeviceTime");
-                    const syncStatus = response.synced ? "✅ Synced" : "⚠️ Not synced";
-                    timeEl.innerHTML = `Device time: ${response.isoTime} (${syncStatus})`;
-                })
-                .catch(error => {
-                    document.getElementById("currentDeviceTime").innerHTML = "Device time: Error loading";
-                });
+            .then(response => {
+                const timeEl = document.getElementById("currentDeviceTime");
+                const syncStatus = response.synced ? "✅ Synced" : "⚠️ Not synced";
+                timeEl.innerHTML = `Device time: <i>${response.isoTime}</i> (${syncStatus})`;
+            })
+            .catch(error => {
+                document.getElementById("currentDeviceTime").innerHTML = "Device time: Error loading";
+            });
         }
 
-        function syncTime() {
+        async function syncTime() {
             const syncButton = document.getElementById("syncTime");
-            syncButton.innerHTML = "Syncing...";
             syncButton.disabled = true;
+            syncButton.classList.add('loading');
 
-            const unixSeconds = Math.floor(Date.now() / 1000);
+            try {
+                showStatus('Syncing time...', 'info');
 
-            energyApi.setSystemTime(unixSeconds)
-                .then(response => {
-                    syncButton.innerHTML = "🕐 Sync Time";
-                    syncButton.disabled = false;
-                    alert("Time synchronized successfully! New time: " + response.newTime);
-                    loadDeviceTime();
-                })
-                .catch(error => {
-                    syncButton.innerHTML = "🕐 Sync Time";
-                    syncButton.disabled = false;
-                    alert("Error syncing time: " + error.message);
-                });
+                const unixSeconds = Math.floor(Date.now() / 1000);
+                const response = await energyApi.setSystemTime(unixSeconds);
+
+                showStatus('Time synchronized successfully! New time: ' + response.newTime, 'success');
+                loadDeviceTime();
+            } catch (error) {
+                showStatus('Error syncing time: ' + error.message, 'error');
+            } finally {
+                syncButton.disabled = false;
+                syncButton.classList.remove('loading');
+            }
         }
 
         // Load device time on page load
@@ -542,182 +290,180 @@
             loadDeviceTime();
         });
         
-        function switchWifi() {
+        async function switchWifi() {
             const ssid = document.getElementById("newWifiSsid").value.trim();
             const password = document.getElementById("newWifiPassword").value;
 
             if (!ssid) {
-                alert("Please enter a WiFi network name (SSID).");
+                showStatus('Please enter a WiFi network name (SSID).', 'error');
                 return;
             }
 
-            var userConfirmed = window.confirm("Are you sure you want to switch to WiFi network '" + ssid + "'? The device will restart to apply the new credentials.");
+            const userConfirmed = window.confirm("Are you sure you want to switch to WiFi network '" + ssid + "'? The device will restart to apply the new credentials.");
             if (!userConfirmed) {
                 return;
             }
 
             const button = document.getElementById("switchWifi");
-            button.innerHTML = "Switching...";
             button.disabled = true;
+            button.classList.add('loading');
 
-            energyApi.setWifiCredentials(ssid, password)
-                .then(response => {
-                    button.innerHTML = "Credentials saved! Restarting...";
-                    alert("WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds, then reconnect to the new network.");
-                    // Clear the form
-                    document.getElementById("newWifiSsid").value = "";
-                    document.getElementById("newWifiPassword").value = "";
-                })
-                .catch(error => {
-                    button.innerHTML = "📶 Switch Network";
-                    button.disabled = false;
-                    alert("Error switching WiFi network: " + error.message);
-                });
+            try {
+                showStatus("Switching WiFi network...", 'info');
+
+                await energyApi.setWifiCredentials(ssid, password);
+
+                showStatus("WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds.", 'success', 15000);
+                // Clear the form
+                document.getElementById("newWifiSsid").value = "";
+                document.getElementById("newWifiPassword").value = "";
+                // Don't restore button - page will become unreachable after restart
+            } catch (error) {
+                button.disabled = false;
+                button.classList.remove('loading');
+                showStatus("Error switching WiFi network: " + error.message, 'error');
+            }
         }
 
-        function disconnectWifi() {
-            var confirm = window.confirm("Are you sure you want to disconnect from WiFi? You will lose access to the device until you reconnect it to WiFi.");
+        async function disconnectWifi() {
+            const confirm = window.confirm("Are you sure you want to disconnect from WiFi? You will lose access to the device until you reconnect it to WiFi.");
             if (!confirm) {
                 return;
             }
-            document.getElementById("disconnect").innerHTML = "Disconnecting...";
-            document.getElementById("disconnect").disabled = true;
 
-            energyApi.resetWifi()
-                .then(response => {
-                    alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1");
-                    document.getElementById("disconnect").innerHTML = "📶 Disconnect";
-                    document.getElementById("disconnect").disabled = false;
-                })
-                .catch(error => {
-                    // Treat "signal is aborted without reason" as successful (it means WiFi was reset)
-                    if (error.message && error.message.includes("signal is aborted without reason")) {
-                        alert("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1");
-                    } else {
-                        alert("Error disconnecting from WiFi. Response: " + error.message);
-                    }
-                    document.getElementById("disconnect").innerHTML = "📶 Disconnect";
-                    document.getElementById("disconnect").disabled = false;
-                });
+            const button = document.getElementById("disconnect");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus("Disconnecting from WiFi...", 'info');
+
+                await energyApi.resetWifi();
+
+                showStatus("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
+            } catch (error) {
+                // Treat "signal is aborted without reason" as successful (it means WiFi was reset)
+                if (error.message && error.message.includes("signal is aborted without reason")) {
+                    showStatus("Successfully disconnected from WiFi. Please connect to the WiFi network called 'EnergyMe' and navigate to http://192.168.4.1", 'success', 10000);
+                } else {
+                    showStatus("Error disconnecting from WiFi: " + error.message, 'error');
+                }
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         } 
         
-        function factoryReset() {
-            var confirm = window.confirm("Are you sure you want to reset the device to factory settings? All configurations and data will be lost.");
+        async function factoryReset() {
+            const confirm = window.confirm("Are you sure you want to reset the device to factory settings? All configurations and data will be lost.");
             if (!confirm) {
                 return;
             }
-            document.getElementById("factoryReset").innerHTML = "Waiting for response...";
-            document.getElementById("factoryReset").disabled = true;
 
-            energyApi.factoryReset()
-                .then(response => {
-                    document.getElementById("factoryReset").innerHTML = "Reset successful! You will be redirected to the home page in 15 seconds.";
-                    setTimeout(function () {
-                        window.location.href = "/";
-                    }, 15000);
-                })
-                .catch(error => {
-                    alert("Error resetting to factory settings. Response: " + error.message);
-                });
+            const button = document.getElementById("factoryReset");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus("Resetting to factory settings...", 'info');
+
+                await energyApi.factoryReset();
+
+                showStatus("Reset successful! You will be redirected to the home page in 15 seconds.", 'success', 15000);
+                setTimeout(function () {
+                    window.location.href = "/";
+                }, 15000);
+            } catch (error) {
+                showStatus("Error resetting to factory settings: " + error.message, 'error');
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         } 
         
-        function changePassword() {
+        async function changePassword() {
             const currentPassword = document.getElementById("currentPassword").value;
             const newPassword = document.getElementById("newPassword").value;
             const confirmPassword = document.getElementById("confirmPassword").value;
-            const errorDiv = document.getElementById("passwordError");
-            const successDiv = document.getElementById("passwordSuccess");
-
-            // Hide previous messages
-            errorDiv.style.display = "none";
-            successDiv.style.display = "none";
 
             // Validation
             if (!currentPassword) {
-                errorDiv.textContent = "Please enter your current password.";
-                errorDiv.style.display = "block";
+                showStatus('Please enter your current password.', 'error');
                 return;
             }
 
             if (!newPassword) {
-                errorDiv.textContent = "Please enter a new password.";
-                errorDiv.style.display = "block";
+                showStatus('Please enter a new password.', 'error');
                 return;
             }
 
             if (newPassword.length < 8) {
-                errorDiv.textContent = "New password must be at least 8 characters long.";
-                errorDiv.style.display = "block";
+                showStatus('New password must be at least 8 characters long.', 'error');
                 return;
             }
 
             if (newPassword !== confirmPassword) {
-                errorDiv.textContent = "New passwords do not match.";
-                errorDiv.style.display = "block";
+                showStatus('New passwords do not match.', 'error');
                 return;
             }
 
-            document.getElementById("changePasswordButton").innerHTML = "Changing password...";
-            document.getElementById("changePasswordButton").disabled = true;
+            const button = document.getElementById("changePasswordButton");
+            button.disabled = true;
+            button.classList.add('loading');
 
-            energyApi.changePassword(currentPassword, newPassword)
-                .then(response => {
-                    successDiv.textContent = "Password changed successfully! Please use your new password on next login.";
-                    successDiv.style.display = "block";
-                    // Clear the form
-                    document.getElementById("currentPassword").value = "";
-                    document.getElementById("newPassword").value = "";
-                    document.getElementById("confirmPassword").value = "";
-                    document.getElementById("changePasswordButton").innerHTML = "🔑 Change Password";
-                    document.getElementById("changePasswordButton").disabled = false;
-                })
-                .catch(error => {
-                    errorDiv.textContent = "Error changing password: " + error.message;
-                    errorDiv.style.display = "block";
-                    document.getElementById("changePasswordButton").innerHTML = "🔑 Change Password";
-                    document.getElementById("changePasswordButton").disabled = false;
-                });
+            try {
+                showStatus('Changing password...', 'info');
+
+                await energyApi.changePassword(currentPassword, newPassword);
+
+                showStatus('Password changed successfully! Please use your new password on next login.', 'success');
+                // Clear the form
+                document.getElementById("currentPassword").value = "";
+                document.getElementById("newPassword").value = "";
+                document.getElementById("confirmPassword").value = "";
+            } catch (error) {
+                showStatus('Error changing password: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
         
-        function setLogLevel() {
-            document.getElementById("setLogLevel").innerHTML = "Setting...";
-            document.getElementById("setLogLevel").disabled = true;
+        async function setLogLevel() {
+            const button = document.getElementById("setLogLevel");
+            button.disabled = true;
+            button.classList.add('loading');
 
-            var printLogLevel = document.getElementById("printLogLevel").value.toUpperCase();
-            var saveLogLevel = document.getElementById("saveLogLevel").value.toUpperCase();
+            try {
+                const printLogLevel = document.getElementById("printLogLevel").value.toUpperCase();
+                const saveLogLevel = document.getElementById("saveLogLevel").value.toUpperCase();
 
-            // API expects string values like "VERBOSE", "DEBUG", etc.
-            var validLevels = ["VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL"];
+                // API expects string values like "VERBOSE", "DEBUG", etc.
+                const validLevels = ["VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL"];
 
-            // Validate that the levels are valid
-            if (!validLevels.includes(printLogLevel) || !validLevels.includes(saveLogLevel)) {
-                alert("Invalid log level selected");
-                document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
-                document.getElementById("setLogLevel").disabled = false;
-                return;
-            }
+                // Validate that the levels are valid
+                if (!validLevels.includes(printLogLevel) || !validLevels.includes(saveLogLevel)) {
+                    showStatus('Invalid log level selected', 'error');
+                    button.disabled = false;
+                    button.classList.remove('loading');
+                    return;
+                }
 
-            console.log("Setting log levels:", { print: printLogLevel, save: saveLogLevel });
+                console.log("Setting log levels:", { print: printLogLevel, save: saveLogLevel });
 
-            energyApi.setLogLevels({
-                print: printLogLevel,
-                save: saveLogLevel
-            })
-                .then(response => {
-                    document.getElementById("setLogLevel").innerHTML = "Set success!";
-                    setTimeout(function () {
-                        document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
-                        document.getElementById("setLogLevel").disabled = false;
-                    }, 3000);
-                })
-                .catch(error => {
-                    alert("Error setting log level. Response: " + error.message);
-                    document.getElementById("setLogLevel").innerHTML = "Set failed!";
-                    setTimeout(function () {
-                        document.getElementById("setLogLevel").innerHTML = "📝 Set logging level";
-                        document.getElementById("setLogLevel").disabled = false;
-                    }, 3000);
+                showStatus('Setting log level...', 'info');
+
+                await energyApi.setLogLevels({
+                    print: printLogLevel,
+                    save: saveLogLevel
                 });
+
+                showStatus('Log level set successfully', 'success');
+            } catch (error) {
+                showStatus('Error setting log level: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
         
         function getLogLevel() {
@@ -742,29 +488,28 @@
                 });
         } 
         
-        function clearLogs() {
-            var confirm = window.confirm("Are you sure you want to clear the log?");
+        async function clearLogs() {
+            const confirm = window.confirm("Are you sure you want to clear the log?");
             if (!confirm) {
                 return;
             }
-            document.getElementById("clearLogs").innerHTML = "Clearing...";
-            document.getElementById("clearLogs").disabled = true;
 
-            energyApi.clearLogs()
-                .then(response => {
-                    document.getElementById("clearLogs").innerHTML = "Clear success";
-                    setTimeout(function () {
-                        document.getElementById("clearLogs").innerHTML = "🗑️ Clear log";
-                        document.getElementById("clearLogs").disabled = false;
-                    }, 3000);
-                })
-                .catch(error => {
-                    alert("Error clearing log. Response: " + error.message);
-                    setTimeout(function () {
-                        document.getElementById("clearLogs").innerHTML = "🗑️ Clear log";
-                        document.getElementById("clearLogs").disabled = false;
-                    }, 3000);
-                });
+            const button = document.getElementById("clearLogs");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus('Clearing logs...', 'info');
+
+                await energyApi.clearLogs();
+
+                showStatus('Log cleared successfully', 'success');
+            } catch (error) {
+                showStatus('Error clearing log: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
 
         function getCloudServices() {
@@ -777,42 +522,37 @@
                 });
         }
 
-        function setCloudServices() {
-            document.getElementById("setCloudServicesButton").innerHTML = "Setting...";
-            document.getElementById("setCloudServicesButton").disabled = true;
+        async function setCloudServices() {
+            const button = document.getElementById("setCloudServicesButton");
+            button.disabled = true;
+            button.classList.add('loading');
 
-            // First check secrets status
-            energyApi.getSystemSecrets()
-                .then(secretsResponse => {
-                    const isEnabled = document.getElementById("cloudServices").checked;
-                    
-                    // If no secrets but cloud services is checked, prevent that
-                    if (!secretsResponse.hasSecrets && isEnabled) {
-                        alert("Cannot enable cloud services: This firmware build does not include secrets.");
-                        document.getElementById("cloudServices").checked = false;
-                        throw new Error("No secrets available");
-                    }
+            try {
+                showStatus('Updating cloud services...', 'info');
 
-                    // Send the configuration
-                    return energyApi.setMqttCloudServices(isEnabled);
-                })
-                .then(data => {
-                    document.getElementById("setCloudServicesButton").innerHTML = "Set success!";
-                    setTimeout(function () {
-                        document.getElementById("setCloudServicesButton").innerHTML = "☁️ Set cloud services";
-                        document.getElementById("setCloudServicesButton").disabled = false;
-                    }, 3000);
-                })
-                .catch(error => {
-                    if (error.message !== "No secrets available") {
-                        alert("Error setting cloud services. Response: " + error.message);
-                    }
-                    document.getElementById("setCloudServicesButton").innerHTML = "Set failed!";
-                    setTimeout(function () {
-                        document.getElementById("setCloudServicesButton").innerHTML = "☁️ Set cloud services";
-                        document.getElementById("setCloudServicesButton").disabled = false;
-                    }, 3000);
-                });
+                // First check secrets status
+                const secretsResponse = await energyApi.getSystemSecrets();
+                const isEnabled = document.getElementById("cloudServices").checked;
+
+                // If no secrets but cloud services is checked, prevent that
+                if (!secretsResponse.hasSecrets && isEnabled) {
+                    showStatus('Cannot enable: firmware does not include secrets', 'error');
+                    document.getElementById("cloudServices").checked = false;
+                    button.disabled = false;
+                    button.classList.remove('loading');
+                    return;
+                }
+
+                // Send the configuration
+                await energyApi.setMqttCloudServices(isEnabled);
+
+                showStatus('Cloud services updated', 'success');
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
 
         function getLedBrightness() {
@@ -827,28 +567,24 @@
                 });
         }
 
-        function setLedBrightness() {
-            document.getElementById("setLedBrightnessButton").innerHTML = "Setting...";
-            document.getElementById("setLedBrightnessButton").disabled = true;
+        async function setLedBrightness() {
+            const button = document.getElementById("setLedBrightnessButton");
+            button.disabled = true;
+            button.classList.add('loading');
 
-            const brightness = parseInt(document.getElementById("ledBrightness").value);
+            try {
+                showStatus('Setting brightness...', 'info');
 
-            energyApi.setLedBrightness(brightness)
-                .then(data => {
-                    document.getElementById("setLedBrightnessButton").innerHTML = "Set success!";
-                    setTimeout(function () {
-                        document.getElementById("setLedBrightnessButton").innerHTML = "💡 Set brightness";
-                        document.getElementById("setLedBrightnessButton").disabled = false;
-                    }, 3000);
-                })
-                .catch(error => {
-                    alert("Error setting LED brightness. Response: " + error.message);
-                    document.getElementById("setLedBrightnessButton").innerHTML = "Set failed!";
-                    setTimeout(function () {
-                        document.getElementById("setLedBrightnessButton").innerHTML = "💡 Set brightness";
-                        document.getElementById("setLedBrightnessButton").disabled = false;
-                    }, 3000);
-                });
+                const brightness = parseInt(document.getElementById("ledBrightness").value);
+                await energyApi.setLedBrightness(brightness);
+
+                showStatus('Brightness set successfully', 'success');
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
         }
 
         function updateBrightnessValue() {
@@ -858,158 +594,6 @@
             slider.style.setProperty('--slider-value', percentage + '%');
             slider.title = percentage + "%";
             output.innerHTML = percentage + "%";
-        }
-
-        function getCustomMqttConfiguration() {
-            // Load configuration
-            energyApi.getCustomMqttConfig()
-                .then(data => {
-                    customMqttConfig = data;
-
-                    document.getElementById("customMqttEnabled").checked = customMqttConfig.enabled;
-                    document.getElementById("customMqttServer").value = customMqttConfig.server;
-                    document.getElementById("customMqttPort").value = customMqttConfig.port;
-                    document.getElementById("customMqttClientId").value = customMqttConfig.clientid;
-                    document.getElementById("customMqttTopic").value = customMqttConfig.topic;
-                    document.getElementById("customMqttFrequency").value = customMqttConfig.frequency;
-                    document.getElementById("customMqttUseCredentials").checked = customMqttConfig.useCredentials;
-                    document.getElementById("customMqttUsername").value = customMqttConfig.username;
-                    document.getElementById("customMqttPassword").value = customMqttConfig.password;
-
-                    // Load status separately
-                    loadCustomMqttStatus();
-
-                    // Start or stop auto-reload based on enabled status
-                    if (customMqttConfig.enabled) {
-                        startCustomMqttAutoReload();
-                    } else {
-                        stopCustomMqttAutoReload();
-                    }
-                })
-                .catch(error => {
-                    console.log("Error getting custom MQTT configuration. Response: " + error.message);
-                    updateStatusDisplay("Error loading configuration", "", false);
-                    stopCustomMqttAutoReload();
-                });
-        }
-
-        function loadCustomMqttStatus() {
-            energyApi.get('custom-mqtt/status')
-                .then(data => {
-                    // Update status display with the latest status information
-                    updateStatusDisplay(data.status, data.statusTimestamp, customMqttConfig.enabled);
-                })
-                .catch(error => {
-                    console.log("Error getting custom MQTT status. Response: " + error.message);
-                    updateStatusDisplay("Error loading status", "", false);
-                });
-        }
-
-        function startCustomMqttAutoReload() {
-            if (customMqttAutoReloadInterval) {
-                clearInterval(customMqttAutoReloadInterval);
-            }
-            customMqttAutoReloadInterval = setInterval(() => {
-                if (customMqttConfig && customMqttConfig.enabled) {
-                    loadCustomMqttStatus();
-                }
-            }, AUTO_RELOAD_INTERVAL_MS);
-        }
-
-        function stopCustomMqttAutoReload() {
-            if (customMqttAutoReloadInterval) {
-                clearInterval(customMqttAutoReloadInterval);
-                customMqttAutoReloadInterval = null;
-            }
-        }
-
-        function updateStatusDisplay(status, timestamp, isEnabled) {
-            const statusElement = document.getElementById("lastConnectionStatus");
-            const timestampElement = document.getElementById("lastConnectionAttemptTimestamp");
-            const timestampContainer = document.getElementById("timestampContainer");
-            const statusIcon = document.getElementById("statusIcon");
-            const statusContainer = document.getElementById("statusContainer");
-
-            // Reset styles
-            statusContainer.style.color = "";
-            statusElement.style.fontWeight = "";
-
-            // If MQTT is disabled, show disabled status
-            if (!isEnabled) {
-                statusElement.textContent = "Disabled";
-                timestampContainer.style.display = "none";
-                statusIcon.innerHTML = "⚫"; // Black circle for disabled
-                statusElement.style.color = "#757575"; // Gray color
-                return;
-            }
-
-            // If enabled, proceed with normal status display
-            statusElement.textContent = status || "N/A";
-            timestampElement.textContent = timestamp || "N/A";
-
-            // Show/hide timestamp based on connection status
-            if (status === "Connected") {
-                timestampContainer.style.display = "none";
-                statusIcon.innerHTML = "🟢"; // Green circle for connected
-                statusElement.style.color = "#2e7d32"; // Dark green
-                statusElement.style.fontWeight = "bold";
-            } else if (status === "Disconnected") {
-                timestampContainer.style.display = "block";
-                statusIcon.innerHTML = "🔴"; // Red circle for disconnected
-                statusElement.style.color = "#c62828"; // Dark red
-            } else if (status && status.startsWith("Error")) {
-                timestampContainer.style.display = "block";
-                statusIcon.innerHTML = "⚠️"; // Warning for errors
-                statusElement.style.color = "#e65100"; // Orange
-            } else {
-                timestampContainer.style.display = "block";
-                statusIcon.innerHTML = "⚪"; // Default neutral circle
-            }
-        }
-
-        function setCustomMqttConfiguration() {
-            document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Setting...";
-            document.getElementById("setCustomMqttConfigurationButton").disabled = true;
-
-            var currentStatus = customMqttConfig ? customMqttConfig.lastConnectionStatus : "Unknown";
-            var currentTimestamp = customMqttConfig ? customMqttConfig.lastConnectionAttemptTimestamp : "";
-
-            var newCustomMqttConfig = {
-                "enabled": document.getElementById("customMqttEnabled").checked,
-                "server": document.getElementById("customMqttServer").value,
-                "port": parseInt(document.getElementById("customMqttPort").value),
-                "clientid": document.getElementById("customMqttClientId").value,
-                "topic": document.getElementById("customMqttTopic").value,
-                "frequency": parseInt(document.getElementById("customMqttFrequency").value),
-                "useCredentials": document.getElementById("customMqttUseCredentials").checked,
-                "username": document.getElementById("customMqttUsername").value,
-                "password": document.getElementById("customMqttPassword").value,
-                "lastConnectionStatus": currentStatus,
-                "lastConnectionAttemptTimestamp": currentTimestamp
-            };
-
-            energyApi.setCustomMqttConfig(newCustomMqttConfig)
-                .then(data => {
-                    document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set success!";
-                    setTimeout(() => {
-                        getCustomMqttConfiguration(); // This will reload config and restart auto-reload if needed
-                    }, 2000); // Wait 2 seconds for the device to process the new config
-                    setTimeout(function () {
-                        document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
-                        document.getElementById("setCustomMqttConfigurationButton").disabled = false;
-                    }, 3000);
-                })
-                .catch(error => {
-                    alert("Error setting custom MQTT configuration. Response: " + error.message);
-                    document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set failed!";
-                    setTimeout(function () {
-                        document.getElementById("setCustomMqttConfigurationButton").innerHTML = "Set configuration";
-                        document.getElementById("setCustomMqttConfigurationButton").disabled = false;
-                    }, 3000);
-                });
-
-            // Call to refresh the custom MQTT configuration after setting it
-            setTimeout(getCustomMqttConfiguration, 1000);
         }
 
         function checkHasSecrets() {
@@ -1044,501 +628,36 @@
                 });
         }
 
-        function updateInfluxDbStatusDisplay(status, timestamp, isEnabled) {
-            const statusElement = document.getElementById("influxDbLastConnectionStatus");
-            const timestampElement = document.getElementById("influxDbLastConnectionAttemptTimestamp");
-            const timestampContainer = document.getElementById("influxDbTimestampContainer");
-            const statusIcon = document.getElementById("influxDbStatusIcon");
-            const statusContainer = document.getElementById("influxDbStatusContainer");
-
-            // Reset styles
-            statusContainer.style.color = "";
-            statusElement.style.fontWeight = "";
-
-            // If InfluxDB is disabled, show disabled status
-            if (!isEnabled) {
-                statusElement.textContent = "Disabled";
-                timestampContainer.style.display = "none";
-                statusIcon.innerHTML = "⚫"; // Black circle for disabled
-                statusElement.style.color = "#757575"; // Gray color
-                return;
-            }
-
-            // If enabled, proceed with normal status display
-            statusElement.textContent = status || "N/A";
-            timestampElement.textContent = timestamp || "N/A";
-
-            // Show/hide timestamp based on connection status
-            if (status === "Upload successful" || status === "Connection successful" || status === "Credentials valid" || status == "Data sent successfully") {
-                timestampContainer.style.display = "none"; // Hide timestamp for successful connections
-                statusIcon.innerHTML = "🟢"; // Green circle for successful
-                statusElement.style.color = "#2e7d32"; // Dark green
-                statusElement.style.fontWeight = "bold";
-            } else if (status && status.toLowerCase().includes("failed")) {
-                timestampContainer.style.display = "block";
-                statusIcon.innerHTML = "🔴"; // Red circle for failed
-                statusElement.style.color = "#c62828"; // Dark red
-            } else if (status && status.includes("Error")) {
-                timestampContainer.style.display = "block";
-                statusIcon.innerHTML = "⚠️"; // Warning for errors
-                statusElement.style.color = "#e65100"; // Orange
-            } else {
-                timestampContainer.style.display = "block";
-                statusIcon.innerHTML = "⚪"; // Default neutral circle
-            }
-        }
-
-        function toggleInfluxDbVersionSettings() {
-            const version = document.getElementById("influxDbVersion").value;
-            const v1Settings = document.getElementById("influxDbV1Settings");
-            const v2Settings = document.getElementById("influxDbV2Settings");
-
-            if (version === "1") {
-                v1Settings.style.display = "block";
-                v2Settings.style.display = "none";
-            } else {
-                v1Settings.style.display = "none";
-                v2Settings.style.display = "block";
-            }
-        }
-
-        function getInfluxDbConfiguration() {
-            energyApi.getInfluxDbConfig()
-                .then(data => {
-                    influxDbConfig = data;
-
-                    document.getElementById("influxDbEnabled").checked = influxDbConfig.enabled;
-                    document.getElementById("influxDbServer").value = influxDbConfig.server;
-                    document.getElementById("influxDbPort").value = influxDbConfig.port;
-                    document.getElementById("influxDbVersion").value = influxDbConfig.version;
-                    document.getElementById("influxDbDatabase").value = influxDbConfig.database;
-                    document.getElementById("influxDbUsername").value = influxDbConfig.username;
-                    document.getElementById("influxDbPassword").value = influxDbConfig.password;
-                    document.getElementById("influxDbOrganization").value = influxDbConfig.organization;
-                    document.getElementById("influxDbBucket").value = influxDbConfig.bucket;
-                    document.getElementById("influxDbToken").value = influxDbConfig.token;
-                    document.getElementById("influxDbMeasurement").value = influxDbConfig.measurement;
-                    document.getElementById("influxDbFrequency").value = influxDbConfig.frequency;
-                    document.getElementById("influxDbUseSsl").checked = influxDbConfig.useSsl;
-
-                    toggleInfluxDbVersionSettings();
-
-                    // Load status separately
-                    loadInfluxDbStatus();
-
-                    // Start or stop auto-reload based on enabled status
-                    if (influxDbConfig.enabled) {
-                        startInfluxDbAutoReload();
-                    } else {
-                        stopInfluxDbAutoReload();
-                    }
-                })
-                .catch(error => {
-                    console.log("Error getting InfluxDB configuration. Response: " + error.message);
-                    updateInfluxDbStatusDisplay("Error loading configuration", "", false);
-                    stopInfluxDbAutoReload();
-                });
-        }
-
-        function loadInfluxDbStatus() {
-            energyApi.get('influxdb/status')
-                .then(data => {
-                    // Update status display with the latest status information
-                    updateInfluxDbStatusDisplay(data.status, data.statusTimestamp, influxDbConfig.enabled);
-                })
-                .catch(error => {
-                    console.log("Error getting InfluxDB status. Response: " + error.message);
-                    updateInfluxDbStatusDisplay("Error loading status", "", false);
-                });
-        }
-
-        function startInfluxDbAutoReload() {
-            if (influxDbAutoReloadInterval) {
-                clearInterval(influxDbAutoReloadInterval);
-            }
-            influxDbAutoReloadInterval = setInterval(() => {
-                if (influxDbConfig && influxDbConfig.enabled) {
-                    loadInfluxDbStatus();
-                }
-            }, AUTO_RELOAD_INTERVAL_MS);
-        }
-
-        function stopInfluxDbAutoReload() {
-            if (influxDbAutoReloadInterval) {
-                clearInterval(influxDbAutoReloadInterval);
-                influxDbAutoReloadInterval = null;
-            }
-        }
-
-        function setInfluxDbConfiguration() {
-            document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Setting...";
-            document.getElementById("setInfluxDbConfigurationButton").disabled = true;
-
-            var currentStatus = influxDbConfig ? influxDbConfig.lastConnectionStatus : "Unknown";
-            var currentTimestamp = influxDbConfig ? influxDbConfig.lastConnectionAttemptTimestamp : "";
-
-            var newInfluxDbConfig = {
-                "enabled": document.getElementById("influxDbEnabled").checked,
-                "server": document.getElementById("influxDbServer").value,
-                "port": parseInt(document.getElementById("influxDbPort").value),
-                "version": parseInt(document.getElementById("influxDbVersion").value),
-                "database": document.getElementById("influxDbDatabase").value,
-                "username": document.getElementById("influxDbUsername").value,
-                "password": document.getElementById("influxDbPassword").value,
-                "organization": document.getElementById("influxDbOrganization").value,
-                "bucket": document.getElementById("influxDbBucket").value,
-                "token": document.getElementById("influxDbToken").value,
-                "measurement": document.getElementById("influxDbMeasurement").value,
-                "frequency": Math.max(1, Math.min(3600, parseInt(document.getElementById("influxDbFrequency").value))),
-                "useSsl": document.getElementById("influxDbUseSsl").checked,
-                "lastConnectionStatus": currentStatus,
-                "lastConnectionAttemptTimestamp": currentTimestamp
-            };
-
-            energyApi.setInfluxDbConfig(newInfluxDbConfig)
-                .then(data => {
-                    document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set success!";
-                    setTimeout(() => {
-                        getInfluxDbConfiguration(); // This will reload config and restart auto-reload if needed
-                    }, 2000); // Wait 2 seconds for the device to process the new config
-                    setTimeout(function () {
-                        document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
-                        document.getElementById("setInfluxDbConfigurationButton").disabled = false;
-                    }, 3000);
-                })
-                .catch(error => {
-                    alert("Error setting InfluxDB configuration. Response: " + error.message);
-                    document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set failed!";
-                    setTimeout(function () {
-                        document.getElementById("setInfluxDbConfigurationButton").innerHTML = "Set configuration";
-                        document.getElementById("setInfluxDbConfigurationButton").disabled = false;
-                    }, 3000);
-                });
-
-            // Call to refresh the InfluxDB configuration after setting it
-            setTimeout(getInfluxDbConfiguration, 1000);
-        }
-
-        function loadChannelData() {
-            return energyApi.getChannelConfig()
-                .then(data => {
-                    channelData = data;
-                    createEnergyChannelInputs();
-                    // Add a delay before loading energy values to prevent overwhelming ESP32
-                    return new Promise(resolve => setTimeout(resolve, 300));
-                })
-                .then(() => {
-                    return loadEnergyValues();
-                })
-                .catch(error => {
-                    console.log("Error getting channel data. Response: " + error.message);
-                    throw error; // Re-throw to handle in calling function
-                });
-        }
-
-        function createEnergyChannelInputs() {
-            const container = document.getElementById("energyChannels");
-            container.innerHTML = "";
-
-            for (let channelIndex in channelData) {
-                const channel = channelData[channelIndex];
-                if (channel.active) {
-                    const channelDiv = document.createElement("div");
-                    channelDiv.style.cssText = `
-                        margin-bottom: 24px;
-                        border: 1px solid #e1e5e9;
-                        border-radius: 12px;
-                        background: linear-gradient(145deg, #ffffff, #f8f9fa);
-                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
-                        padding: 20px;
-                        transition: all 0.2s ease;
-                    `;
-
-                    // Add hover effect
-                    channelDiv.addEventListener('mouseenter', function() {
-                        this.style.transform = 'translateY(-2px)';
-                        this.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08)';
-                    });
-                    channelDiv.addEventListener('mouseleave', function() {
-                        this.style.transform = 'translateY(0)';
-                        this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06)';
-                    });
-
-                    channelDiv.innerHTML = `
-                        <div style="margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e9ecef;">
-                            <h4 style="margin: 0; color: #2c3e50; font-size: 1.1em; font-weight: 600; display: flex; align-items: center;">
-                                <span style="display: inline-block; width: 8px; height: 8px; background: linear-gradient(45deg, #007bff, #0056b3); border-radius: 50%; margin-right: 8px;"></span>
-                                Channel ${channelIndex}: ${channel.label}
-                            </h4>
-                        </div>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
-                            <div style="display: flex; flex-direction: column;">
-                                <label for="activeEnergyImported_${channelIndex}" style="color: #495057; font-weight: 500; margin-bottom: 6px; font-size: 0.9em;">
-                                    <span style="color: #28a745;">⚡</span> Active Energy Imported (Wh)
-                                </label>
-                                <input type="number" step="0.001" id="activeEnergyImported_${channelIndex}" class="config-input" placeholder="0.000" 
-                                       style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
-                            </div>
-                            <div style="display: flex; flex-direction: column;">
-                                <label for="activeEnergyExported_${channelIndex}" style="color: #495057; font-weight: 500; margin-bottom: 6px; font-size: 0.9em;">
-                                    <span style="color: #ffc107;">⚡</span> Active Energy Exported (Wh)
-                                </label>
-                                <input type="number" step="0.001" id="activeEnergyExported_${channelIndex}" class="config-input" placeholder="0.000"
-                                       style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
-                            </div>
-                            <div style="display: flex; flex-direction: column;">
-                                <label for="reactiveEnergyImported_${channelIndex}" style="color: #495057; font-weight: 500; margin-bottom: 6px; font-size: 0.9em;">
-                                    <span style="color: #17a2b8;">🔄</span> Reactive Energy Imported (VArh)
-                                </label>
-                                <input type="number" step="0.001" id="reactiveEnergyImported_${channelIndex}" class="config-input" placeholder="0.000"
-                                       style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
-                            </div>
-                            <div style="display: flex; flex-direction: column;">
-                                <label for="reactiveEnergyExported_${channelIndex}" style="color: #495057; font-weight: 500; margin-bottom: 6px; font-size: 0.9em;">
-                                    <span style="color: #fd7e14;">🔄</span> Reactive Energy Exported (VArh)
-                                </label>
-                                <input type="number" step="0.001" id="reactiveEnergyExported_${channelIndex}" class="config-input" placeholder="0.000"
-                                       style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
-                            </div>
-                            <div style="display: flex; flex-direction: column;">
-                                <label for="apparentEnergy_${channelIndex}" style="color: #495057; font-weight: 500; margin-bottom: 6px; font-size: 0.9em;">
-                                    <span style="color: #6f42c1;">⚙️</span> Apparent Energy (VAh)
-                                </label>
-                                <input type="number" step="0.001" id="apparentEnergy_${channelIndex}" class="config-input" placeholder="0.000"
-                                       style="border: 1px solid #ced4da; border-radius: 6px; padding: 8px 12px; font-size: 0.9em; transition: all 0.2s ease;">
-                            </div>
-                        </div>
-                    `;
-
-                    // Add focus effects to inputs
-                    const inputs = channelDiv.querySelectorAll('input');
-                    inputs.forEach(input => {
-                        input.addEventListener('focus', function() {
-                            this.style.borderColor = '#007bff';
-                            this.style.boxShadow = '0 0 0 2px rgba(0, 123, 255, 0.25)';
-                        });
-                        input.addEventListener('blur', function() {
-                            this.style.borderColor = '#ced4da';
-                            this.style.boxShadow = 'none';
-                        });
-                    });
-
-                    container.appendChild(channelDiv);
-                }
-            }
-        }
-
-        function loadEnergyValues() {
-            document.getElementById("loadEnergyButton").innerHTML = "Loading...";
-            document.getElementById("loadEnergyButton").disabled = true;
-
-            return energyApi.getMeterValues()
-                .then(data => {
-                    energyData = data;
-
-                    // Populate the form with current values
-                    // API format: array of objects with index and data
-                    energyData.forEach(channel => {
-                        const channelIndex = channel.index;
-                        const channelData = channel.data;
-
-                        const activeImportedEl = document.getElementById(`activeEnergyImported_${channelIndex}`);
-                        if (activeImportedEl) activeImportedEl.value = channelData.activeEnergyImported || 0;
-
-                        const activeExportedEl = document.getElementById(`activeEnergyExported_${channelIndex}`);
-                        if (activeExportedEl) activeExportedEl.value = channelData.activeEnergyExported || 0;
-
-                        const reactiveImportedEl = document.getElementById(`reactiveEnergyImported_${channelIndex}`);
-                        if (reactiveImportedEl) reactiveImportedEl.value = channelData.reactiveEnergyImported || 0;
-
-                        const reactiveExportedEl = document.getElementById(`reactiveEnergyExported_${channelIndex}`);
-                        if (reactiveExportedEl) reactiveExportedEl.value = channelData.reactiveEnergyExported || 0;
-
-                        const apparentEl = document.getElementById(`apparentEnergy_${channelIndex}`);
-                        if (apparentEl) apparentEl.value = channelData.apparentEnergy || 0;
-                    });
-
-                    document.getElementById("loadEnergyButton").innerHTML = "✓ Values Loaded";
-                })
-                .catch(error => {
-                    alert("Error loading energy values. Response: " + error.message);
-                    document.getElementById("loadEnergyButton").innerHTML = "❌ Load Failed";
-                })
-                .finally(() => {
-                    setTimeout(function () {
-                        document.getElementById("loadEnergyButton").innerHTML = "🔄 Load Current Values";
-                        document.getElementById("loadEnergyButton").disabled = false;
-                    }, 3000);
-                });
-        }
-
-        function setEnergyValues() {
-            var confirm = window.confirm("Are you sure you want to set these energy values? This will permanently erase all historical daily energy data.");
-            if (!confirm) {
-                return;
-            }
-
-            document.getElementById("setEnergyButton").innerHTML = "Setting...";
-            document.getElementById("setEnergyButton").disabled = true;
-
-            var energyPayload = {};
-
-            // Collect values from all active channels
-            for (let channelIndex in channelData) {
-                const channel = channelData[channelIndex];
-                if (channel.active) {
-                    const activeImported = document.getElementById(`activeEnergyImported_${channelIndex}`);
-                    const activeExported = document.getElementById(`activeEnergyExported_${channelIndex}`);
-                    const reactiveImported = document.getElementById(`reactiveEnergyImported_${channelIndex}`);
-                    const reactiveExported = document.getElementById(`reactiveEnergyExported_${channelIndex}`);
-                    const apparent = document.getElementById(`apparentEnergy_${channelIndex}`);
-
-                    if (activeImported && activeImported.value !== "") {
-                        if (!energyPayload[channelIndex]) energyPayload[channelIndex] = {};
-                        energyPayload[channelIndex].activeEnergyImported = parseFloat(activeImported.value);
-                    }
-                    if (activeExported && activeExported.value !== "") {
-                        if (!energyPayload[channelIndex]) energyPayload[channelIndex] = {};
-                        energyPayload[channelIndex].activeEnergyExported = parseFloat(activeExported.value);
-                    }
-                    if (reactiveImported && reactiveImported.value !== "") {
-                        if (!energyPayload[channelIndex]) energyPayload[channelIndex] = {};
-                        energyPayload[channelIndex].reactiveEnergyImported = parseFloat(reactiveImported.value);
-                    }
-                    if (reactiveExported && reactiveExported.value !== "") {
-                        if (!energyPayload[channelIndex]) energyPayload[channelIndex] = {};
-                        energyPayload[channelIndex].reactiveEnergyExported = parseFloat(reactiveExported.value);
-                    }
-                    if (apparent && apparent.value !== "") {
-                        if (!energyPayload[channelIndex]) energyPayload[channelIndex] = {};
-                        energyPayload[channelIndex].apparentEnergy = parseFloat(apparent.value);
-                    }
-                }
-            }
-
-            // Send all energy updates in parallel
-            const updatePromises = [];
-            for (let channelIndex in energyPayload) {
-                const channel = energyPayload[channelIndex];
-                updatePromises.push(
-                    energyApi.setEnergyValues(
-                        parseInt(channelIndex),
-                        channel.activeEnergyImported || 0,
-                        channel.reactiveEnergyImported || 0,
-                        channel.apparentEnergy || 0
-                    )
-                );
-            }
-
-            Promise.all(updatePromises)
-                .then(results => {
-                    document.getElementById("setEnergyButton").innerHTML = "✓ Values Set";
-                })
-                .catch(error => {
-                    alert("Error setting energy values. Response: " + error.message);
-                    document.getElementById("setEnergyButton").innerHTML = "❌ Set Failed";
-                })
-                .finally(() => {
-                    setTimeout(function () {
-                        document.getElementById("setEnergyButton").innerHTML = "Set Energy Values";
-                        document.getElementById("setEnergyButton").disabled = false;
-                    }, 3000);
-                });
-        }
-
-        function resetAllEnergy() {
-            var confirm = window.confirm("Are you sure you want to reset ALL energy values to zero? This will permanently erase all historical data.");
-            if (!confirm) {
-                return;
-            }
-
-            document.getElementById("resetAllEnergyButton").innerHTML = "Resetting...";
-            document.getElementById("resetAllEnergyButton").disabled = true;
-
-            energyApi.resetEnergyValues()
-                .then(data => {
-                    document.getElementById("resetAllEnergyButton").innerHTML = "✓ Reset Complete";
-                    // Clear all input fields
-                    for (let channelIndex in channelData) {
-                        const channel = channelData[channelIndex];
-                        if (channel.active) {
-                            const inputs = [
-                                `activeEnergyImported_${channelIndex}`,
-                                `activeEnergyExported_${channelIndex}`,
-                                `reactiveEnergyImported_${channelIndex}`,
-                                `reactiveEnergyExported_${channelIndex}`,
-                                `apparentEnergy_${channelIndex}`
-                            ];
-                            inputs.forEach(id => {
-                                const el = document.getElementById(id);
-                                if (el) el.value = "0.000";
-                            });
-                        }
-                    }
-                })
-                .catch(error => {
-                    alert("Error resetting energy values. Response: " + error.message);
-                    document.getElementById("resetAllEnergyButton").innerHTML = "❌ Reset Failed";
-                })
-                .finally(() => {
-                    setTimeout(function () {
-                        document.getElementById("resetAllEnergyButton").innerHTML = "Reset All to Zero";
-                        document.getElementById("resetAllEnergyButton").disabled = false;
-                    }, 3000);
-                });
-        }
-
         // Sequential API loading to prevent overwhelming the ESP32
         async function loadConfigurationData() {
             const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
             const DELAY_BETWEEN_REQUESTS = 100;
-            
+
             try {
                 console.log("Loading configuration data sequentially...");
-                
+
                 await getCloudServices();
                 await delay(DELAY_BETWEEN_REQUESTS);
-                
+
                 await getLedBrightness();
                 await delay(DELAY_BETWEEN_REQUESTS);
-                
+
                 await getLogLevel();
                 await delay(DELAY_BETWEEN_REQUESTS);
-                
-                await getCustomMqttConfiguration();
-                await delay(DELAY_BETWEEN_REQUESTS);
-                
-                await getInfluxDbConfiguration();
-                await delay(DELAY_BETWEEN_REQUESTS);
-                
+
                 await checkHasSecrets();
-                await delay(DELAY_BETWEEN_REQUESTS);
-                
-                await loadChannelData();
-                
+
                 console.log("Configuration data loaded successfully");
-                
+
             } catch (error) {
                 console.error("Error loading configuration data:", error);
-                alert("Error loading configuration data. Please refresh the page.");
+                showStatus('Error loading configuration data. Please refresh the page.', 'error', 10000);
             }
         }
-
-        // Cleanup function to stop all auto-reload intervals
-        function stopAllAutoReload() {
-            stopCustomMqttAutoReload();
-            stopInfluxDbAutoReload();
-        }
-
-        // Stop auto-reload when page is unloaded
-        window.addEventListener('beforeunload', stopAllAutoReload);
 
         document.addEventListener("DOMContentLoaded", function () {
             // Load configuration data sequentially to prevent ESP32 overload
             loadConfigurationData();
-
-            // Add event listener for version change
-            document.getElementById("influxDbVersion").addEventListener("change", toggleInfluxDbVersionSettings);
         });
 
     </script>

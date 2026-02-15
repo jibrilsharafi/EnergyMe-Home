@@ -3,184 +3,380 @@
 
 #!/usr/bin/env python3
 """
-Simple mock server for EnergyMe HTML development
-Serves static files and provides basic mock API responses
+Development server for EnergyMe HTML development.
+Serves static files and API responses from JSON mock files.
+
+Usage:
+    python mock_server.py                              # Mock mode (from mocks/ folder)
+    python mock_server.py --proxy 192.168.2.75 pass   # Proxy mode (real device)
+    python mock_server.py --fetch 192.168.2.75 pass   # Fetch real data to mocks/
 """
 
+import argparse
 import http.server
 import socketserver
 from http import HTTPStatus
-import functools
-import itertools
 import json
 import os
-import random
 from datetime import datetime, timedelta
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, unquote
 import threading
 import time
-import math
+import urllib.request
+import urllib.error
 
 PORT = 8081
+PROXY_TARGET = None
+PROXY_PASSWORD = None
+MOCKS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'mocks')
+LITTLE_FS_DIR = os.path.join(MOCKS_DIR, 'little-fs')
 
-class SimpleHandler(http.server.SimpleHTTPRequestHandler):
+# All GET endpoints from swagger.yaml
+GET_ENDPOINTS = [
+    '/api/v1/health',
+    '/api/v1/auth/status',
+    '/api/v1/ota/status',
+    '/api/v1/system/info',
+    '/api/v1/system/statistics',
+    '/api/v1/system/safe-mode',
+    '/api/v1/system/secrets',
+    '/api/v1/system/time',
+    '/api/v1/firmware/update-info',
+    '/api/v1/list-files',
+    '/api/v1/crash/info',
+    '/api/v1/logs/level',
+    '/api/v1/logs',
+    '/api/v1/logs-udp-destination',
+    '/api/v1/custom-mqtt/config',
+    '/api/v1/custom-mqtt/status',
+    '/api/v1/mqtt/cloud-services',
+    '/api/v1/influxdb/config',
+    '/api/v1/influxdb/status',
+    '/api/v1/led/brightness',
+    '/api/v1/ade7953/config',
+    '/api/v1/ade7953/sample-time',
+    '/api/v1/ade7953/channel',
+    '/api/v1/ade7953/meter-values',
+    '/api/v1/ade7953/grid-frequency',
+    '/api/v1/ade7953/waveform/status',
+    '/api/v1/ade7953/waveform/data',
+]
+
+
+def get_mock_file_path(api_path: str) -> str:
+    """Convert API path to mock file path."""
+    # Remove leading slash and add .json extension
+    # /api/v1/system/info -> mocks/api/v1/system/info.json
+    relative_path = api_path.lstrip('/') + '.json'
+    return os.path.join(MOCKS_DIR, relative_path)
+
+
+def load_mock_response(api_path: str):
+    """Load mock response from JSON file."""
+    file_path = get_mock_file_path(api_path)
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+    except json.JSONDecodeError as e:
+        print(f"Error parsing {file_path}: {e}")
+        return None
+
+
+def save_mock_response(api_path: str, data):
+    """Save response data to mock JSON file."""
+    file_path = get_mock_file_path(api_path)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+    print(f"  Saved: {file_path}")
+
+
+def list_little_fs_files(folder = None):
+    """List files in mocks/little-fs directory, mimicking device's LittleFS.
+    
+    - Returns dict of {filepath: size}
+    - If folder specified, returns only filenames (not full paths) within that folder
+    - Paths are relative to little-fs root (no leading slash)
+    """
+    result = {}
+    
+    if not os.path.isdir(LITTLE_FS_DIR):
+        return result
+    
+    for root, dirs, files in os.walk(LITTLE_FS_DIR):
+        for filename in files:
+            full_path = os.path.join(root, filename)
+            rel_path = os.path.relpath(full_path, LITTLE_FS_DIR).replace('\\', '/')
+            
+            # Apply folder filter if specified
+            if folder:
+                if not rel_path.startswith(folder + '/'):
+                    continue
+                # Return just the filename when filtering by folder
+                rel_path = os.path.basename(rel_path)
+            
+            result[rel_path] = os.path.getsize(full_path)
+    
+    return result
+
+
+def fetch_data_files(opener, host: str):
+    """Fetch all data files (energy CSVs, logs) from device and save locally."""
+    print("\nFetching data files...")
+    print("-" * 40)
+    
+    # Get the file list first
+    try:
+        url = f"http://{host}/api/v1/list-files"
+        req = urllib.request.Request(url)
+        with opener.open(req, timeout=10) as response:
+            file_list = json.loads(response.read().decode('utf-8'))
+    except Exception as e:
+        print(f"  Failed to get file list: {e}")
+        return
+    
+    # Download each file
+    success_count = 0
+    fail_count = 0
+    
+    for file_path, file_size in file_list.items():
+        # Skip non-data files
+        if not (file_path.startswith('energy/') or file_path == 'log.txt'):
+            continue
+        
+        url = f"http://{host}/api/v1/files/{file_path}"
+        local_path = os.path.join(LITTLE_FS_DIR, file_path)
+        
+        try:
+            req = urllib.request.Request(url)
+            with opener.open(req, timeout=30) as response:
+                content = response.read()
+                
+            # Create directory structure
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            
+            # Write file (binary for .gz, text for others)
+            mode = 'wb' if file_path.endswith('.gz') else 'w'
+            with open(local_path, mode) as f:
+                if mode == 'wb':
+                    f.write(content)
+                else:
+                    f.write(content.decode('utf-8'))
+            
+            print(f"  Saved: {local_path} ({file_size} bytes)")
+            success_count += 1
+            
+        except urllib.error.HTTPError as e:
+            print(f"  Failed: {file_path} (HTTP {e.code})")
+            fail_count += 1
+        except Exception as e:
+            print(f"  Failed: {file_path} ({e})")
+            fail_count += 1
+    
+    print(f"Data files: Success: {success_count}, Failed: {fail_count}")
+
+
+def fetch_from_device(host: str, password: str):
+    """Fetch all GET endpoint responses from real device and save to mocks/."""
+    print(f"\nFetching data from http://{host}...")
+    print("=" * 50)
+    
+    # Set up digest auth
+    password_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+    password_mgr.add_password(None, f"http://{host}/", "admin", password)
+    auth_handler = urllib.request.HTTPDigestAuthHandler(password_mgr)
+    opener = urllib.request.build_opener(auth_handler)
+    
+    success_count = 0
+    fail_count = 0
+    
+    for endpoint in GET_ENDPOINTS:
+        url = f"http://{host}{endpoint}"
+        try:
+            req = urllib.request.Request(url)
+            with opener.open(req, timeout=10) as response:
+                content_type = response.headers.get('Content-Type', '')
+                
+                if 'application/json' in content_type:
+                    data = json.loads(response.read().decode('utf-8'))
+                    save_mock_response(endpoint, data)
+                    success_count += 1
+                elif 'text/plain' in content_type:
+                    # For text responses like /api/v1/logs, save as-is in a wrapper
+                    text = response.read().decode('utf-8')
+                    save_mock_response(endpoint, {"_text": text})
+                    success_count += 1
+                else:
+                    print(f"  Skipped: {endpoint} (content-type: {content_type})")
+                    
+        except urllib.error.HTTPError as e:
+            print(f"  Failed: {endpoint} (HTTP {e.code})")
+            fail_count += 1
+        except Exception as e:
+            print(f"  Failed: {endpoint} ({e})")
+            fail_count += 1
+    
+    print("=" * 50)
+    print(f"Done! Success: {success_count}, Failed: {fail_count}")
+    print(f"Mock files saved to: {MOCKS_DIR}")
+    
+    # Also fetch data files (energy CSVs, logs)
+    fetch_data_files(opener, host)
+
+
+class MockHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory='.', **kwargs)
     
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         super().end_headers()
+    
+    def log_message(self, format, *args):
+        # Suppress default logging, we'll do our own
+        pass
+    
+    def proxy_request(self, method='GET', body=None):
+        """Forward request to real device."""
+        parsed_path = urlparse(self.path)
+        target_url = f"http://{PROXY_TARGET}{parsed_path.path}"
+        if parsed_path.query:
+            target_url += f"?{parsed_path.query}"
+        
+        try:
+            assert PROXY_PASSWORD, "Proxy password not set"
+            password_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+            password_mgr.add_password(None, f"http://{PROXY_TARGET}/", "admin", PROXY_PASSWORD)
+            auth_handler = urllib.request.HTTPDigestAuthHandler(password_mgr)
+            opener = urllib.request.build_opener(auth_handler)
+            
+            req = urllib.request.Request(target_url, data=body, method=method)
+            req.add_header('Content-Type', self.headers.get('Content-Type', 'application/json'))
+            
+            with opener.open(req, timeout=10) as response:
+                content = response.read()
+                content_type = response.headers.get('Content-Type', 'application/octet-stream')
+                self.send_response(response.status)
+                self.send_header('Content-Type', content_type)
+                self.end_headers()
+                self.wfile.write(content)
+        except urllib.error.HTTPError as e:
+            self.send_response(e.code)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            try:
+                self.wfile.write(e.read())
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass  # Client disconnected
+            except:
+                try:
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                    pass  # Client disconnected
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            print(f"Proxy connection error: {e}")
+            try:
+                self.send_response(504)  # Gateway Timeout
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Device unreachable: {e}"}).encode())
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass  # Client disconnected
+        except Exception as e:
+            print(f"Proxy error: {e}")
+            try:
+                self.send_response(502)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Proxy failed: {e}"}).encode())
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass  # Client disconnected
+    
+    def send_json(self, data, status=200):
+        try:
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(data).encode())
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass  # Client disconnected, ignore
+    
+    def send_text(self, text, status=200):
+        try:
+            self.send_response(status)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(text.encode())
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass  # Client disconnected, ignore
     
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
     
     def do_POST(self):
-        # Handle POST requests with generic success responses
         parsed_path = urlparse(self.path)
         path = parsed_path.path
         
-        success_endpoints = [
-            '/api/v1/system/restart',
-            '/api/v1/system/factory-reset',
-            '/api/v1/network/wifi/reset',
-            '/api/v1/crash/clear',
-            '/api/v1/logs/clear',
-            '/api/v1/custom-mqtt/config/reset',
-            '/api/v1/influxdb/config/reset',
-            '/api/v1/ade7953/config/reset',
-            '/api/v1/ade7953/channel/reset',
-            '/api/v1/ade7953/energy/reset',
-            '/api/v1/auth/change-password',
-            '/api/v1/auth/reset-password',
-            '/api/v1/ota/rollback'
-        ]
+        if PROXY_TARGET and path.startswith('/api/'):
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length) if length > 0 else None
+            self.proxy_request('POST', body)
+            return
         
-        if path in success_endpoints:
+        # Mock mode: return success for all POST endpoints
+        if path.startswith('/api/'):
             self.send_json({"success": True, "message": "Operation completed"})
         else:
-            # Special-case waveform arm endpoint
-            if path == '/api/v1/ade7953/waveform/arm':
-                # Read body if present
-                try:
-                    length = int(self.headers.get('Content-Length', 0))
-                    body = self.rfile.read(length) if length > 0 else b''
-                    payload = json.loads(body) if body else {}
-                except Exception:
-                    payload = {}
-
-                channelIndex = payload.get('channelIndex', 0)
-                sample_rate_hz = int(payload.get('sampleRateHz', 25000))
-                capture_duration_ms = int(payload.get('durationMs', 40))
-
-                # If already capturing, return 409
-                current_state = getattr(self.server, 'waveform_state', 'idle')
-                if current_state in ('armed', 'capturing'):
-                    # send JSON with 409 status (send_json forces 200 so write manually)
-                    body = json.dumps({"success": False, "message": "Capture already in progress"}).encode()
-                    self.send_response(409)
-                    self.send_header('Content-Type', 'application/json')
-                    self.send_header('Content-Length', str(len(body)))
-                    self.end_headers()
-                    try:
-                        self.wfile.write(body)
-                    except BrokenPipeError:
-                        pass
-                    return
-
-                # Arm the capture and spawn simulator thread
-                self.server.waveform_state = 'armed'
-                self.server.waveform_channel = channelIndex
-
-                def simulate_capture(server, channel, sample_rate_hz_inner, capture_duration_ms_inner):
-                    # Wait a short random time to simulate waiting for line cycle
-                    server.waveform_state = 'capturing'
-                    # use provided parameters
-                    sample_interval_us = int(1_000_000 / sample_rate_hz_inner)
-                    sample_count = max(16, int((capture_duration_ms_inner * 1000) / sample_interval_us))
-
-                    # Build arrays: microsDelta cumulative, voltage (V), current (A)
-                    micros = []
-                    voltage = []
-                    current = []
-                    start_us = int(time.time() * 1_000_000)
-                    for n in range(sample_count):
-                        micros.append((n * sample_interval_us))
-                        # simple sine-like mock for voltage around 230V peak-to-peak small noise
-                        t = (n / sample_count) * 2.0 * 3.14159
-                        v = 230 + 5.0 * math.sin(t * 10) + random.uniform(-0.5, 0.5)
-                        i = 0.5 * math.sin(t * 10) + random.uniform(-0.02, 0.02)
-                        voltage.append(round(v, 3))
-                        current.append(round(i, 4))
-
-                    # Simulate a small processing delay
-                    time.sleep(capture_duration_ms_inner / 1000.0)
-
-                    server.waveform_data = {
-                        "channelIndex": channel,
-                        "state": "complete",
-                        "captureStartUnixMillis": int(time.time() * 1000) - capture_duration_ms_inner,
-                        "sampleCount": sample_count,
-                        "voltage": voltage,
-                        "current": current,
-                        "microsDelta": micros
-                    }
-                    server.waveform_state = 'complete'
-
-                thread = threading.Thread(
-                    target=simulate_capture,
-                    args=(self.server, channelIndex, sample_rate_hz, capture_duration_ms),
-                    daemon=True
-                )
-                thread.start()
-
-                self.send_json({"success": True, "message": "Capture armed"})
-                return
-
             self.send_response(404)
             self.end_headers()
     
     def do_PUT(self):
-        # Handle PUT requests with generic success responses
         parsed_path = urlparse(self.path)
         path = parsed_path.path
         
-        success_endpoints = [
-            '/api/v1/logs/level',
-            '/api/v1/custom-mqtt/config',
-            '/api/v1/influxdb/config',
-            '/api/v1/led/brightness',
-            '/api/v1/ade7953/config',
-            '/api/v1/ade7953/sample-time',
-            '/api/v1/ade7953/channel',
-            '/api/v1/ade7953/register',
-            '/api/v1/ade7953/energy',
-            '/api/v1/mqtt/cloud-services'
-        ]
+        if PROXY_TARGET and path.startswith('/api/'):
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length) if length > 0 else None
+            self.proxy_request('PUT', body)
+            return
         
-        if path in success_endpoints or path.startswith('/api/v1/ade7953/channel'):
+        if path.startswith('/api/'):
             self.send_json({"success": True, "message": "Configuration updated"})
         else:
             self.send_response(404)
             self.end_headers()
     
     def do_PATCH(self):
-        # Handle PATCH requests with generic success responses
         parsed_path = urlparse(self.path)
         path = parsed_path.path
         
-        success_endpoints = [
-            '/api/v1/logs/level',
-            '/api/v1/custom-mqtt/config',
-            '/api/v1/influxdb/config',
-            '/api/v1/ade7953/config',
-            '/api/v1/ade7953/channel'
-        ]
+        if PROXY_TARGET and path.startswith('/api/'):
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length) if length > 0 else None
+            self.proxy_request('PATCH', body)
+            return
         
-        if path in success_endpoints or path.startswith('/api/v1/ade7953/channel'):
+        if path.startswith('/api/'):
             self.send_json({"success": True, "message": "Configuration updated"})
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def do_DELETE(self):
+        parsed_path = urlparse(self.path)
+        path = parsed_path.path
+        
+        if PROXY_TARGET and path.startswith('/api/'):
+            self.proxy_request('DELETE')
+            return
+        
+        if path.startswith('/api/'):
+            self.send_json({"success": True, "message": "Deleted"})
         else:
             self.send_response(404)
             self.end_headers()
@@ -188,7 +384,7 @@ class SimpleHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed_path = urlparse(self.path)
         path = parsed_path.path
-
+        
         # Live-reload JS client
         if path == '/livereload.js':
             self.send_response(200)
@@ -207,25 +403,19 @@ class SimpleHandler(http.server.SimpleHTTPRequestHandler):
 
         # Server-Sent Events endpoint for live-reload
         if path == '/livereload':
-            # Send SSE headers and keep connection open
             self.send_response(HTTPStatus.OK)
             self.send_header('Content-Type', 'text/event-stream')
             self.send_header('Cache-Control', 'no-cache')
             self.send_header('Connection', 'keep-alive')
             self.end_headers()
-
-            # Register client writer
             clients = getattr(self.server, 'sse_clients', None)
             if clients is None:
                 clients = []
                 setattr(self.server, 'sse_clients', clients)
-
             clients.append(self.wfile)
             try:
-                # Keep the handler thread alive while client listens
                 while True:
                     time.sleep(1)
-                    # If server requests shutdown, break
                     if getattr(self.server, 'shutdown_requested', False):
                         break
             except Exception:
@@ -237,218 +427,85 @@ class SimpleHandler(http.server.SimpleHTTPRequestHandler):
                     pass
             return
         
-        # API endpoints
-        if path == '/api/v1/ade7953/channel':
-            self.send_json([
-                {"index": 0, "active": True, "label": "Total House", "multiplier": 1},
-                {"index": 1, "active": True, "label": "Kitchen", "multiplier": 1},
-                {"index": 2, "active": True, "label": "Living Room", "multiplier": 1},
-                {"index": 3, "active": True, "label": "Bedroom", "multiplier": 1},
-                {"index": 4, "active": True, "label": "Office", "multiplier": 1},
-                {"index": 5, "active": True, "label": "Bathroom", "multiplier": 1}
-            ])
+        # Proxy mode: forward API requests to real device
+        if PROXY_TARGET and path.startswith('/api/'):
+            self.proxy_request('GET')
+            return
         
-        elif path == '/api/v1/ade7953/meter-values':
-            self.send_json([
-                {
-                    "index": 0,
-                    "label": "Total House",
-                    "data": {
-                        "voltage": 235.2 + random.uniform(-2, 2),
-                        "activePower": random.uniform(800, 1500),
-                        "activeEnergyImported": random.uniform(50000, 100000)
-                    }
-                },
-                {
-                    "index": 1,
-                    "label": "Kitchen",
-                    "data": {
-                        "voltage": 235.2,
-                        "activePower": random.uniform(100, 400),
-                        "activeEnergyImported": random.uniform(8000, 15000)
-                    }
-                },
-                {
-                    "index": 2,
-                    "label": "Living Room", 
-                    "data": {
-                        "voltage": 235.2,
-                        "activePower": random.uniform(50, 200),
-                        "activeEnergyImported": random.uniform(6000, 12000)
-                    }
-                },
-                {
-                    "index": 3,
-                    "label": "Bedroom",
-                    "data": {
-                        "voltage": 235.2,
-                        "activePower": random.uniform(20, 100),
-                        "activeEnergyImported": random.uniform(3000, 8000)
-                    }
-                },
-                {
-                    "index": 4,
-                    "label": "Office",
-                    "data": {
-                        "voltage": 235.2,
-                        "activePower": random.uniform(80, 250),
-                        "activeEnergyImported": random.uniform(5000, 10000)
-                    }
-                },
-                {
-                    "index": 5,
-                    "label": "Bathroom",
-                    "data": {
-                        "voltage": 235.2,
-                        "activePower": random.uniform(10, 80),
-                        "activeEnergyImported": random.uniform(2000, 5000)
-                    }
-                }
-            ])
-        
-        elif path == '/api/v1/list-files':
-            # Generate some mock energy files
-            files = {}
-            for i in range(30):  # Last 30 days
-                date = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
-                files[f'energy/{date}.csv'] = f'energy_{date}.csv'
-            self.send_json(files)
-        
-        elif path.startswith('/api/v1/files/'):
-            # Handle file requests with URL decoding
-            import urllib.parse
-            filepath = urllib.parse.unquote(path.replace('/api/v1/files/', ''))
+        # Mock mode: load from JSON files
+        if path.startswith('/api/'):
+            # Handle file requests (/api/v1/files/...)
+            if path.startswith('/api/v1/files/'):
+                file_path = unquote(path.replace('/api/v1/files/', ''))
+                local_path = os.path.join(LITTLE_FS_DIR, file_path)
+                
+                if os.path.isfile(local_path):
+                    # Determine content type
+                    if file_path.endswith('.gz'):
+                        content_type = 'application/gzip'
+                    elif file_path.endswith('.csv'):
+                        content_type = 'text/csv'
+                    elif file_path.endswith('.txt'):
+                        content_type = 'text/plain'
+                    else:
+                        content_type = 'application/octet-stream'
+                    
+                    try:
+                        with open(local_path, 'rb') as f:
+                            content = f.read()
+                        self.send_response(200)
+                        self.send_header('Content-Type', content_type)
+                        self.send_header('Content-Length', str(len(content)))
+                        self.end_headers()
+                        self.wfile.write(content)
+                        return
+                    except Exception as e:
+                        print(f"Error serving file {local_path}: {e}")
+                        self.send_json({"error": f"Failed to read file: {e}"}, 500)
+                        return
+                else:
+                    self.send_json({
+                        "error": "File not found",
+                        "message": f"File not found: {file_path}",
+                        "hint": "Run with --fetch to download data files"
+                    }, 404)
+                    return
             
-            if filepath.startswith('energy/') and filepath.endswith('.csv'):
-                # Generate mock CSV data
-                date_str = filepath.split('/')[-1].replace('.csv', '')
-                csv_data = self.generate_mock_csv(date_str)
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/csv')
-                self.end_headers()
-                self.wfile.write(csv_data.encode())
-            else:
-                self.send_response(404)
-                self.end_headers()
-        
-        elif path == '/api/v1/firmware/update-info':
-            self.send_json({"latest": True, "version": "1.0.0"})
-        
-        elif path == '/api/v1/health':
-            self.send_json({"status": "healthy", "timestamp": datetime.now().isoformat()})
-        
-        elif path == '/api/v1/auth/status':
-            self.send_json({"authenticated": True, "user": "admin"})
-        
-        elif path == '/api/v1/system/info':
+            # Handle list-files with dynamic folder filtering
+            if path == '/api/v1/list-files':
+                folder = None
+                if '?' in self.path:
+                    query = self.path.split('?', 1)[1]
+                    for param in query.split('&'):
+                        if param.startswith('folder='):
+                            folder = unquote(param.split('=', 1)[1])
+                            break
+                
+                files = list_little_fs_files(folder)
+                self.send_json(files)
+                return
+            
+            # Try to load mock response
+            mock_data = load_mock_response(path)
+            
+            if mock_data is not None:
+                # Handle text responses (wrapped in {"_text": ...})
+                if isinstance(mock_data, dict) and "_text" in mock_data:
+                    self.send_text(mock_data["_text"])
+                else:
+                    self.send_json(mock_data)
+                return
+            
+            # No mock file found - return 404 with helpful message
             self.send_json({
-                "firmware": {"version": "1.0.0", "buildDate": "2025-08-16"},
-                "hardware": {"model": "ESP32-S3", "mac": "AA:BB:CC:DD:EE:FF"},
-                "uptime": 123456
-            })
-        
-        elif path == '/api/v1/system/statistics':
-            self.send_json({
-                "freeHeap": 200000,
-                "usedHeap": 100000,
-                "uptime": 123456,
-                "wifiRssi": -45
-            })
-        
-        elif path == '/api/v1/ota/status':
-            self.send_json({"currentVersion": "1.0.0", "status": "idle"})
-        
-        elif path == '/api/v1/crash/info':
-            self.send_json({"hasCoreDump": False, "lastResetReason": "Power on"})
-        
-        elif path == '/api/v1/logs/level':
-            self.send_json({"printLevel": "INFO", "saveLevel": "WARNING"})
-        
-        elif path == '/api/v1/logs':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            self.end_headers()
-            logs = "2025-08-16 10:00:00 [INFO] System started\n2025-08-16 10:00:01 [INFO] WiFi connected\n"
-            self.wfile.write(logs.encode())
-        
-        elif path == '/api/v1/custom-mqtt/config':
-            self.send_json({
-                "enabled": False,
-                "server": "localhost",
-                "port": 1883,
-                "username": "",
-                "password": "",
-                "useCredentials": False
-            })
-        
-        elif path == '/api/v1/custom-mqtt/status':
-            self.send_json({"status": "disconnected", "lastConnected": None})
-        
-        elif path == '/api/v1/influxdb/config':
-            self.send_json({
-                "enabled": False,
-                "server": "localhost",
-                "port": 8086,
-                "database": "energyme",
-                "username": "",
-                "password": "",
-                "useCredentials": False,
-                "useSsl": False
-            })
-        
-        elif path == '/api/v1/influxdb/status':
-            self.send_json({"status": "disconnected", "lastWrite": None})
-        
-        elif path == '/api/v1/led/brightness':
-            self.send_json({"brightness": 128})
-        
-        elif path == '/api/v1/ade7953/config':
-            self.send_json({
-                "aVGain": 1024,
-                "bVGain": 1024,
-                "aIGain": 1024,
-                "bIGain": 1024,
-                "phCalA": 0,
-                "phCalB": 0
-            })
-        
-        elif path == '/api/v1/ade7953/sample-time':
-            self.send_json({"sampleTime": 1000})
-        
-        elif path == '/api/v1/ade7953/grid-frequency':
-            self.send_json({"frequency": 50.0 + random.uniform(-0.1, 0.1)})
-
-        # Waveform capture simulation endpoints
-        elif path == '/api/v1/ade7953/waveform/status':
-            # Return simulated status stored on the server object
-            state = getattr(self.server, 'waveform_state', 'idle')
-            channel = getattr(self.server, 'waveform_channel', None)
-            self.send_json({
-                "state": state,
-                "channelIndex": channel
-            })
-
-        elif path == '/api/v1/ade7953/waveform/data':
-            # Return simulated waveform data if available
-            data = getattr(self.server, 'waveform_data', None)
-            if data is None:
-                self.send_response(404)
-                self.end_headers()
-            else:
-                self.send_json(data)
-
-            # Clear the stored data after serving
-            setattr(self.server, 'waveform_state', 'idle')
-            setattr(self.server, 'waveform_data', None)
-        
-        elif path == '/api/v1/mqtt/cloud-services':
-            self.send_json({"enabled": False})
-        
-        elif path == '/api/v1/system/secrets':
-            self.send_json({"hasSecrets": True})
+                "error": "No mock data",
+                "message": f"Create mock file: mocks{path}.json",
+                "hint": "Run with --fetch to capture real data"
+            }, 404)
+            return
         
         # HTML page routing
-        elif path == '/' or path == '/index':
+        if path == '/' or path == '/index':
             self.serve_html_file('html/index.html')
         elif path == '/info':
             self.serve_html_file('html/info.html')
@@ -460,30 +517,29 @@ class SimpleHandler(http.server.SimpleHTTPRequestHandler):
             self.serve_html_file('html/calibration.html')
         elif path == '/channel':
             self.serve_html_file('html/channel.html')
+        elif path == '/integrations':
+            self.serve_html_file('html/integrations.html')
         elif path == '/log':
             self.serve_html_file('html/log.html')
+        elif path == '/waveform':
+            self.serve_html_file('html/waveform.html')
         elif path == '/swagger-ui':
             self.serve_html_file('html/swagger.html')
         elif path == '/ade7953-tester':
             self.serve_html_file('html/ade7953-tester.html')
-        
+        elif path == '/swagger-ui':
+            self.serve_html_file('html/swagger.html')
+        elif path == '/swagger.yaml':
+            self.serve_html_file('resources/swagger.yaml')
         else:
-            # Serve static files
+            # Serve static files (CSS, JS, images)
             super().do_GET()
     
-    def send_json(self, data):
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
-    
     def serve_html_file(self, filename):
-        """Serve an HTML file from the current directory"""
+        """Serve an HTML file from the current directory."""
         try:
-            filepath = filename  # Remove the '../' prefix since we're in the correct directory
-            with open(filepath, 'r', encoding='utf-8') as f:
+            with open(filename, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.end_headers()
@@ -497,27 +553,7 @@ class SimpleHandler(http.server.SimpleHTTPRequestHandler):
             print(f"Error serving {filename}: {e}")
             self.send_response(500)
             self.end_headers()
-    
-    def generate_mock_csv(self, date_str):
-        """Generate realistic mock CSV energy data for a day"""
-        csv_lines = ["timestamp,channel,activeImported,activeExported"]
-        
-        # Generate hourly data for each channel
-        base_date = datetime.strptime(date_str, '%Y-%m-%d')
-        
-        for hour in range(24):
-            timestamp = (base_date + timedelta(hours=hour)).isoformat()
-            
-            # Channel 0 (total) - cumulative energy
-            total_energy = hour * random.uniform(0.5, 2.0) * 1000  # Wh
-            csv_lines.append(f"{timestamp},0,{total_energy:.1f},0")
-            
-            # Other channels - portions of total
-            for channel in range(1, 6):
-                channel_energy = hour * random.uniform(0.1, 0.5) * 1000  # Wh
-                csv_lines.append(f"{timestamp},{channel},{channel_energy:.1f},0")
-        
-        return '\n'.join(csv_lines)
+
 
 class FileWatcher(threading.Thread):
     def __init__(self, server, watch_paths, interval=0.5):
@@ -530,9 +566,9 @@ class FileWatcher(threading.Thread):
     def snapshot(self):
         snap = {}
         for root in self.watch_paths:
-            for dirpath, dirnames, filenames in os.walk(root):
+            for dirpath, _, filenames in os.walk(root):
                 for f in filenames:
-                    if f.endswith(('.html', '.js', '.css', '.py')):
+                    if f.endswith(('.html', '.js', '.css', '.json')):
                         p = os.path.join(dirpath, f)
                         try:
                             snap[p] = os.path.getmtime(p)
@@ -547,7 +583,6 @@ class FileWatcher(threading.Thread):
             new = self.snapshot()
             if new != self._snap:
                 self._snap = new
-                # notify SSE clients
                 clients = getattr(self.server, 'sse_clients', [])
                 for w in list(clients):
                     try:
@@ -560,17 +595,55 @@ class FileWatcher(threading.Thread):
                             pass
 
 
-if __name__ == '__main__':
-    print(f"Starting simple mock server on http://localhost:{PORT}")
-    print("Serving HTML files and mock APIs...")
-    print("Press Ctrl+C to stop")
+def main():
+    global PROXY_TARGET, PROXY_PASSWORD, PORT
     
-    # Use a threading server so SSE clients don't block other handlers
-    with socketserver.ThreadingTCPServer(("", PORT), SimpleHandler) as httpd:
-        # Start file watcher watching the repo root
-        watcher = FileWatcher(httpd, ['.'], interval=0.5)
+    parser = argparse.ArgumentParser(
+        description='EnergyMe development server',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python mock_server.py                              # Mock mode (uses mocks/ folder)
+  python mock_server.py --proxy 192.168.2.75 pass   # Proxy to real device
+  python mock_server.py --fetch 192.168.2.75 pass   # Fetch data from device to mocks/
+        """
+    )
+    parser.add_argument('--proxy', nargs=2, metavar=('HOST', 'PASSWORD'),
+                        help='Proxy API requests to real device')
+    parser.add_argument('--fetch', nargs=2, metavar=('HOST', 'PASSWORD'),
+                        help='Fetch all GET endpoint data from device and save to mocks/')
+    parser.add_argument('--port', type=int, default=PORT,
+                        help=f'Server port (default: {PORT})')
+    args = parser.parse_args()
+    
+    # Fetch mode: capture data and exit
+    if args.fetch:
+        fetch_from_device(args.fetch[0], args.fetch[1])
+        return
+    
+    # Set proxy mode
+    if args.proxy:
+        PROXY_TARGET = args.proxy[0]
+        PROXY_PASSWORD = args.proxy[1]
+    
+    PORT = args.port
+    
+    print(f"Starting server on http://localhost:{PORT}")
+    if PROXY_TARGET:
+        print(f"PROXY MODE: API requests → http://{PROXY_TARGET}")
+    else:
+        print(f"MOCK MODE: Loading responses from {MOCKS_DIR}")
+    print("Live-reload enabled (watches .html, .js, .css, .json files)")
+    print("Press Ctrl+C to stop\n")
+    
+    with socketserver.ThreadingTCPServer(("", PORT), MockHandler) as httpd:
+        watcher = FileWatcher(httpd, ['.', MOCKS_DIR], interval=0.5)
         watcher.start()
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\nServer stopped")
+
+
+if __name__ == '__main__':
+    main()

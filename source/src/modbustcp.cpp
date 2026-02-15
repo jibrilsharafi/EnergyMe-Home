@@ -28,7 +28,7 @@ namespace ModbusTcp
     {
         LOG_DEBUG("Stopping Modbus TCP server");
         _mbServer.stop();
-        LOG_INFO("Modbus TCP server stopped");
+        LOG_DEBUG("Modbus TCP server stopped");
     }
 
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request)
@@ -151,26 +151,106 @@ namespace ModbusTcp
                 case 102: return _getFloatBits(roundToDecimals(Ade7953::getGridFrequency(), GRID_FREQUENCY_DECIMALS), true);
                 case 103: return _getFloatBits(roundToDecimals(Ade7953::getGridFrequency(), GRID_FREQUENCY_DECIMALS), false);
 
-                // Aggregated values
-                // With channel 0
-                case 200: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePower(), POWER_DECIMALS), true);
-                case 201: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePower(), POWER_DECIMALS), false);
-                case 202: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePower(), POWER_DECIMALS), true);
-                case 203: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePower(), POWER_DECIMALS), false);
-                case 204: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPower(), POWER_DECIMALS), true);
-                case 205: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPower(), POWER_DECIMALS), false);
-                case 206: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactor(), POWER_FACTOR_DECIMALS), true);
-                case 207: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactor(), POWER_FACTOR_DECIMALS), false);
+                // Role-based aggregated values
+                // Grid aggregated (200-217)
+                case 200: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_GRID), POWER_DECIMALS), true);
+                case 201: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_GRID), POWER_DECIMALS), false);
+                case 202: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_GRID), POWER_DECIMALS), true);
+                case 203: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_GRID), POWER_DECIMALS), false);
+                case 204: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_GRID), POWER_DECIMALS), true);
+                case 205: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_GRID), POWER_DECIMALS), false);
+                case 206: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_GRID), POWER_FACTOR_DECIMALS), true);
+                case 207: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_GRID), POWER_FACTOR_DECIMALS), false);
+                case 208: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_GRID), ENERGY_DECIMALS), true);
+                case 209: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_GRID), ENERGY_DECIMALS), false);
+                case 210: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_GRID), ENERGY_DECIMALS), true);
+                case 211: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_GRID), ENERGY_DECIMALS), false);
+                case 212: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_GRID), ENERGY_DECIMALS), true);
+                case 213: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_GRID), ENERGY_DECIMALS), false);
+                case 214: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_GRID), ENERGY_DECIMALS), true);
+                case 215: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_GRID), ENERGY_DECIMALS), false);
+                case 216: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_GRID), ENERGY_DECIMALS), true);
+                case 217: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_GRID), ENERGY_DECIMALS), false);
 
-                // Without channel 0
-                case 210: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePower(false), POWER_DECIMALS), true);
-                case 211: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePower(false), POWER_DECIMALS), false);
-                case 212: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePower(false), POWER_DECIMALS), true);
-                case 213: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePower(false), POWER_DECIMALS), false);
-                case 214: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPower(false), POWER_DECIMALS), true);
-                case 215: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPower(false), POWER_DECIMALS), false);
-                case 216: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactor(false), POWER_FACTOR_DECIMALS), true);
-                case 217: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactor(false), POWER_FACTOR_DECIMALS), false);
+                // Load aggregated (300-317)
+                case 300: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_LOAD), POWER_DECIMALS), true);
+                case 301: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_LOAD), POWER_DECIMALS), false);
+                case 302: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_LOAD), POWER_DECIMALS), true);
+                case 303: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_LOAD), POWER_DECIMALS), false);
+                case 304: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_LOAD), POWER_DECIMALS), true);
+                case 305: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_LOAD), POWER_DECIMALS), false);
+                case 306: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_LOAD), POWER_FACTOR_DECIMALS), true);
+                case 307: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_LOAD), POWER_FACTOR_DECIMALS), false);
+                case 308: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_LOAD), ENERGY_DECIMALS), true);
+                case 309: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_LOAD), ENERGY_DECIMALS), false);
+                case 310: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_LOAD), ENERGY_DECIMALS), true);
+                case 311: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_LOAD), ENERGY_DECIMALS), false);
+                case 312: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_LOAD), ENERGY_DECIMALS), true);
+                case 313: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_LOAD), ENERGY_DECIMALS), false);
+                case 314: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_LOAD), ENERGY_DECIMALS), true);
+                case 315: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_LOAD), ENERGY_DECIMALS), false);
+                case 316: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_LOAD), ENERGY_DECIMALS), true);
+                case 317: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_LOAD), ENERGY_DECIMALS), false);
+
+                // PV aggregated (400-417)
+                case 400: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_PV), POWER_DECIMALS), true);
+                case 401: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_PV), POWER_DECIMALS), false);
+                case 402: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_PV), POWER_DECIMALS), true);
+                case 403: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_PV), POWER_DECIMALS), false);
+                case 404: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_PV), POWER_DECIMALS), true);
+                case 405: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_PV), POWER_DECIMALS), false);
+                case 406: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_PV), POWER_FACTOR_DECIMALS), true);
+                case 407: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_PV), POWER_FACTOR_DECIMALS), false);
+                case 408: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_PV), ENERGY_DECIMALS), true);
+                case 409: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_PV), ENERGY_DECIMALS), false);
+                case 410: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_PV), ENERGY_DECIMALS), true);
+                case 411: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_PV), ENERGY_DECIMALS), false);
+                case 412: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_PV), ENERGY_DECIMALS), true);
+                case 413: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_PV), ENERGY_DECIMALS), false);
+                case 414: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_PV), ENERGY_DECIMALS), true);
+                case 415: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_PV), ENERGY_DECIMALS), false);
+                case 416: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_PV), ENERGY_DECIMALS), true);
+                case 417: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_PV), ENERGY_DECIMALS), false);
+
+                // Battery aggregated (500-517)
+                case 500: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_BATTERY), POWER_DECIMALS), true);
+                case 501: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_BATTERY), POWER_DECIMALS), false);
+                case 502: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_BATTERY), POWER_DECIMALS), true);
+                case 503: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_BATTERY), POWER_DECIMALS), false);
+                case 504: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_BATTERY), POWER_DECIMALS), true);
+                case 505: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_BATTERY), POWER_DECIMALS), false);
+                case 506: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_BATTERY), POWER_FACTOR_DECIMALS), true);
+                case 507: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_BATTERY), POWER_FACTOR_DECIMALS), false);
+                case 508: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_BATTERY), ENERGY_DECIMALS), true);
+                case 509: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_BATTERY), ENERGY_DECIMALS), false);
+                case 510: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_BATTERY), ENERGY_DECIMALS), true);
+                case 511: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_BATTERY), ENERGY_DECIMALS), false);
+                case 512: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_BATTERY), ENERGY_DECIMALS), true);
+                case 513: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_BATTERY), ENERGY_DECIMALS), false);
+                case 514: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_BATTERY), ENERGY_DECIMALS), true);
+                case 515: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_BATTERY), ENERGY_DECIMALS), false);
+                case 516: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_BATTERY), ENERGY_DECIMALS), true);
+                case 517: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_BATTERY), ENERGY_DECIMALS), false);
+
+                // Inverter aggregated (600-617)
+                case 600: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_INVERTER), POWER_DECIMALS), true);
+                case 601: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_INVERTER), POWER_DECIMALS), false);
+                case 602: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_INVERTER), POWER_DECIMALS), true);
+                case 603: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_INVERTER), POWER_DECIMALS), false);
+                case 604: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_INVERTER), POWER_DECIMALS), true);
+                case 605: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_INVERTER), POWER_DECIMALS), false);
+                case 606: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_INVERTER), POWER_FACTOR_DECIMALS), true);
+                case 607: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_INVERTER), POWER_FACTOR_DECIMALS), false);
+                case 608: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), true);
+                case 609: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), false);
+                case 610: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), true);
+                case 611: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), false);
+                case 612: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), true);
+                case 613: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), false);
+                case 614: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), true);
+                case 615: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), false);
+                case 616: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), true);
+                case 617: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), false);
 
                 // Default case to handle unexpected addresses
                 default: return 0;
@@ -222,13 +302,30 @@ namespace ModbusTcp
 
     static bool _isValidRegister(uint32_t address) // Currently unused
     {
-        // Define valid ranges
-        return (
-            (address <= 7) ||  // General registers (64-bit values)
-            (address >= 100 && address <= 103) ||  // Voltage and grid frequency
-            (address >= 200 && address <= 207) ||  // Aggregated values with channel 0
-            (address >= 210 && address <= 217) ||  // Aggregated values without channel 0
-            (address >= LOWER_LIMIT_CHANNEL_REGISTERS && address < UPPER_LIMIT_CHANNEL_REGISTERS)  // Channel registers
-        );
+        // General registers: 0-7
+        if (address >= 0 && address <= 7) return true;
+
+        // Meter values: 100-103
+        if (address >= 100 && address <= 103) return true;
+
+        // Role-based aggregated values: 200-217, 300-317, 400-417, 500-517, 600-617
+        if ((address >= 200 && address <= 217) ||  // Grid
+            (address >= 300 && address <= 317) ||  // Load
+            (address >= 400 && address <= 417) ||  // PV
+            (address >= 500 && address <= 517) ||  // Battery
+            (address >= 600 && address <= 617)) {  // Inverter
+            return true;
+        }
+
+        // Per-channel values: 1000 + (channel * 100) + offset
+        // 17 channels (0-16), each with 20 registers (0-19)
+        if (address >= LOWER_LIMIT_CHANNEL_REGISTERS && address < UPPER_LIMIT_CHANNEL_REGISTERS) {
+            uint16_t channelOffset = address - LOWER_LIMIT_CHANNEL_REGISTERS;
+            uint8_t channel = channelOffset / STEP_CHANNEL_REGISTERS;
+            uint8_t registerOffset = channelOffset % STEP_CHANNEL_REGISTERS;
+            return channel < CHANNEL_COUNT && registerOffset < 20;
+        }
+
+        return false;
     }
 } // namespace ModbusTcp

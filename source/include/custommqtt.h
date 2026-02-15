@@ -51,8 +51,6 @@
 #define CUSTOM_MQTT_USERNAME_KEY "username"
 #define CUSTOM_MQTT_PASSWORD_KEY "password"
 #define CUSTOM_MQTT_CLIENT_ID_KEY "clientId"
-#define CUSTOM_MQTT_TOPIC_PREFIX_KEY "topicPrefix"
-#define CUSTOM_MQTT_PUBLISH_INTERVAL_KEY "publInterval"
 #define CUSTOM_MQTT_USE_CREDENTIALS_KEY "useCred"
 #define CUSTOM_MQTT_TOPIC_KEY "topic"
 #define CUSTOM_MQTT_FREQUENCY_KEY "frequency"

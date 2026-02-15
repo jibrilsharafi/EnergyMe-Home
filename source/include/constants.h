@@ -50,7 +50,6 @@
 
 // Logger
 #define LOG_PATH "/log.txt"
-#define MAX_LOG_LINES 1000
 #define MAXIMUM_LOG_FILE_SIZE (200 * 1024)
 
 // UDP Log configuration

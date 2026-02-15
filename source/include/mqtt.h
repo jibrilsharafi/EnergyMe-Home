@@ -35,8 +35,6 @@
 
 #define MQTT_LOG_QUEUE_SIZE (256 * 1024) // Generous log size (in bytes) thanks to PSRAM
 #define MQTT_METER_QUEUE_SIZE (64 * 1024) // Size in bytes to allocate to PSRAM
-#define MQTT_METER_QUEUE_ALMOST_FULL_THRESHOLD 0.10 // Threshold for publishing
-#define MQTT_METER_MAX_BATCHES 10 // Number of consecutive batches to publish before stopping to avoid infinite loop
 #define QUEUE_WAIT_TIMEOUT 100 // Amount of milliseconds to wait if the queue is full or busy
 
 // AWS IoT Jobs OTA constants
@@ -45,8 +43,6 @@
 #define OTA_TASK_PRIORITY 5
 #define OTA_STATUS_CHECK_INTERVAL (1 * 1000)
 #define OTA_HTTPS_BUFFER_SIZE_TX (2 * 1024)
-#define MQTT_OTA_TIMEOUT (60 * 1000)
-#define MINIMUM_MQTT_OTA_ALLOCABLE_HEAP (40 * 1024)
 #define OTA_PRESIGNED_URL_BUFFER_SIZE (4 * 1024) // The presigned S3 URL can be very long
 #define MQTT_OTA_SIZE_REPORT_UPDATE (128 * 1024)
 
@@ -65,10 +61,9 @@
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (32 * 1024) // PSRAM buffer for MQTT subscribe messages (reduced for efficiency)
 #define CERTIFICATE_BUFFER_SIZE (16 * 1024)   // PSRAM buffer for certificate storage (was 4KB)
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
-#define ENCRYPTION_KEY_BUFFER_SIZE 64 // For encryption keys (preshared key + device ID)
 #define CORE_DUMP_CHUNK_SIZE (4 * 1024) // Do not exceed 4kB to avoid stability issues
 
-#ifdef ENV_PROD
+#ifdef ENV_PROD // TODO: how should we handle the default value for this? With v6, the certs will be embedded in the device also
 #define DEFAULT_CLOUD_SERVICES_ENABLED true // In prod, enable by default
 #else
 #define DEFAULT_CLOUD_SERVICES_ENABLED false // Leave manual connection
@@ -77,8 +72,8 @@
 #define DEFAULT_MQTT_LOG_LEVEL_INT 2 // Default minimum log level for MQTT publishing (INFO = 2)
 
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
-#define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (15 * 60 * 1000) // The maximum interval between two system dynamic payloads
-#define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (15 * 60 * 1000) // The interval between two statistics publish
+#define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (60 * 60 * 1000)  // 1 hour since the data does not change frequently (and sent on reboot/reconnection anyway)
+#define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (6 * 60 * 60 * 1000)  // 6 hours since they are cumulative counters (and sent on reboot/reconnection anyway)
 
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
 
@@ -90,7 +85,11 @@
 
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_CLAIMING_INTERVAL (1 * 1000) // Interval between two MQTT claiming checks
-#define AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT (128 * 1024) // Limit of AWS. TODO: maybe this should be 5 kB since 5 kB increments count as multiple message, thus it has no advantage batching more than this?
+#define MQTT_METER_ESTIMATED_PER_ENTRY 35 // Estimated size in bytes of each meter entry (unix ms, channel, active power, pf)
+#define MQTT_METER_ESTIMATED_ENERGY_VOLTAGE_OVERHEAD_BYTES 500 // Estimated overhead in bytes for energy and voltage data in the payload
+#define AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE (5 * 1024) // This is the minimum billable size for AWS IoT Core, so it makes little sense to send smaller payloads
+#define AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT (128 * 1024) // Limit of AWS
+#define MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER 0.95 // Multiplier to avoid reaching exactly the limit
 
 #define MQTT_INITIAL_RETRY_INTERVAL (15 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds

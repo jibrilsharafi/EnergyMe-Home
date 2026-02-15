@@ -42,3 +42,6 @@ secrets
 
 # Mypy
 .mypy_cache/
+
+# CodeQL
+_codeql_detected_source_root

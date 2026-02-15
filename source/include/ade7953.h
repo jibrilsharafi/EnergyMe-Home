@@ -6,11 +6,14 @@
 #include <AdvancedLogger.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <Preferences.h>
-#include <SPI.h>
-#include <vector>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <set>
+#include <SPI.h>
+#include <Preferences.h>
+#include <rom/crc.h>
+#include <Update.h>
+#include <vector>
 
 #include "ade7953registers.h"
 #include "multiplexer.h"
@@ -40,12 +43,18 @@
 #define ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE (6 * 1024) // No more than 5 kB. A bit larger for safety
 #define ADE7953_HOURLY_CSV_SAVE_TASK_PRIORITY 1
 
+#define ADE7953_HISTORY_CLEAR_TASK_NAME "hist_clear"
+#define ADE7953_HISTORY_CLEAR_TASK_STACK_SIZE (6 * 1024) // Same as hourly CSV task (does similar gz work)
+#define ADE7953_HISTORY_CLEAR_TASK_PRIORITY 1
+#define CLEAR_ALL_CHANNELS_SENTINEL 0xFE
+
 // ENERGY_SAVING
 #define SAVE_ENERGY_INTERVAL (15 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory. In any case, this is part of the requirement. The other part is ENERGY_SAVE_THRESHOLD 
 #define ENERGY_CSV_PREFIX "/energy"
 #define ENERGY_CSV_DAILY_PREFIX ENERGY_CSV_PREFIX "/daily"
 #define ENERGY_CSV_MONTHLY_PREFIX ENERGY_CSV_PREFIX "/monthly"
 #define ENERGY_CSV_YEARLY_PREFIX ENERGY_CSV_PREFIX "/yearly"
+#define TEMPORARY_FILE_PREFIX "_temp_"
 #define DAILY_ENERGY_CSV_HEADER "timestamp,channel,active_imported,active_exported"
 #define DAILY_ENERGY_CSV_DIGITS 0 // Since the energy is in Wh, it is useless to go below 1 Wh, and we also save in space usage
 #define ENERGY_SAVE_THRESHOLD 100.0f // Threshold for saving energy data (in Wh) and in any case not more frequent than SAVE_ENERGY_INTERVAL
@@ -59,8 +68,14 @@
 #define ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS 5
 #define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500
 
-// Channel priority scheduling
-#define PRIORITY_BIAS 2 // Bias Factor: 2 means HP runs ~2x faster than LP
+// Dynamic channel scheduling (Weighted Deficit Round-Robin)
+// Weights are intentionally not normalized to 1.0 — the WDRR deficit counter
+// algorithm uses relative weights: a channel with weight 2x will be sampled ~2x
+// as often. The minimum base prevents starvation.
+#define WEIGHT_POWER_SHARE 0.4f      // Weight contribution from power magnitude share
+#define WEIGHT_VARIABILITY 0.4f      // Weight contribution from power variability share
+#define WEIGHT_MIN_BASE 0.1f         // Minimum base weight to prevent starvation
+#define VARIABILITY_EMA_ALPHA 0.3f   // Exponential moving average smoothing for variability (0-1, lower = smoother)
 
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
@@ -74,6 +89,14 @@
 #define DEFAULT_CONFIG_REGISTER 0b1000000100001100 // Enable bit 2, bit 3 (line accumulation for PF), 8 (CRC is enabled), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
 #define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) and CRC change (bit 21) for line cycle end detection
 #define MINIMUM_SAMPLE_TIME 200ULL // The settling time of the ADE7953 is 200 ms, so reading faster than this makes little sense
+
+// Channel validation ranges
+#define VALIDATE_CT_CURRENT_RATING_MIN 0.0f
+#define VALIDATE_CT_CURRENT_RATING_MAX 10000.0f // In amperes. If EnergyMe - Home ends up being used for 10000+ A, we have bigger problems than the CT specification validation :)
+#define VALIDATE_CT_VOLTAGE_OUTPUT_MIN 0.0f
+#define VALIDATE_CT_VOLTAGE_OUTPUT_MAX 1.0f // In volts. Already exceeding the 0.5 V absolute limit is enough. More than 1V should be avoided at all costs (in any case, most CTs are up to 1V max)
+#define VALIDATE_CT_SCALING_FRACTION_MIN -10.0f // If you need to multiply more than 10x times the values you read, the issue is somewhere else
+#define VALIDATE_CT_SCALING_FRACTION_MAX 10.0f
 
 // Constant hardware-fixed values
 // Leaving 
@@ -90,8 +113,8 @@
 // For embedded systems, multiplications are better than divisions, so we use a float constant which is VOLT_PER_LSB = 1 / 25779
 #define VOLT_PER_LSB 0.0000387922f
 #define VOLT_PER_LSB_INSTANTANEOUS 0.000076236f // Same calculations as above, but using 500mV as peak and 6500000 as full scale
-#define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet)
-#define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f 
+#define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet). Unused but left for reference
+#define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f. Unused but left for reference
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
 #define DEFAULT_FALLBACK_FREQUENCY 50 // Most of the world is 50 Hz
 
@@ -220,30 +243,37 @@
 #endif
 #define ADE7953_CRITICAL_FAILURE_RESET_TIMEOUT_MS (5 * 60 * 1000) // Reset counter after 5 minutes
 
-// Check for incorrect readings
-#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_ABSOLUTE 100.0f // Absolute difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
-#define MAXIMUM_CURRENT_VOLTAGE_DIFFERENCE_RELATIVE 0.20f // Relative difference between Vrms*Irms and the apparent power (computed from the energy registers) before the reading is discarded
-
 // Channel Preferences Keys
 #define CHANNEL_ACTIVE_KEY "active_%u" // Format: active_0 (9 chars)
 #define CHANNEL_REVERSE_KEY "reverse_%u" // Format: reverse_0 (10 chars)
 #define CHANNEL_LABEL_KEY "label_%u" // Format: label_0 (8 chars)
 #define CHANNEL_PHASE_KEY "phase_%u" // Format: phase_0 (9 chars)
-#define CHANNEL_HIGH_PRIORITY_KEY "highpri_%u" // Format: highpri_0 (10 chars)
+
+// Legacy key for migration (remove old NVS entries on load)
+#define CHANNEL_HIGHPRI_KEY_LEGACY "highpri_%u" // Format: highpri_0 (10 chars)
 
 // CT Specification keys
 #define CHANNEL_CT_CURRENT_RATING_KEY "ct_current_%u" // Format: ct_current_0 (12 chars)
 #define CHANNEL_CT_VOLTAGE_OUTPUT_KEY "ct_voltage_%u" // Format: ct_voltage_0 (12 chars)
 #define CHANNEL_CT_SCALING_FRACTION_KEY "ct_scaling_%u" // Format: ct_scaling_0 (12 chars)
 
+// Channel grouping keys
+#define CHANNEL_GROUP_LABEL_KEY "grp_label_%u" // Format: grp_label_0 (12 chars)
+
+// Channel role key
+#define CHANNEL_ROLE_KEY "role_%u" // Format: role_0 (7 chars)
+// Legacy role keys for migration
+#define CHANNEL_IS_GRID_KEY_LEGACY "is_grid_%u" // Format: is_grid_0 (10 chars)
+#define CHANNEL_IS_PRODUCTION_KEY_LEGACY "is_prod_%u" // Format: is_prod_0 (10 chars)
+#define CHANNEL_IS_BATTERY_KEY_LEGACY "is_batt_%u" // Format: is_batt_0 (10 chars)
+
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
 #define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
 #define DEFAULT_CHANNEL_REVERSE false
 #define DEFAULT_CHANNEL_PHASE PHASE_1
-#define DEFAULT_CHANNEL_HIGH_PRIORITY false
-#define DEFAULT_CHANNEL_0_HIGH_PRIORITY true // Channel 0 is always high priority - even though it has no real impact since it is on a dedicated ADE7953 channel
 #define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
+#define DEFAULT_CHANNEL_GROUP_LABEL_FORMAT "Group %u"
 
 // CT Specification defaults
 #define DEFAULT_CT_CURRENT_RATING_CHANNEL_0 50.0f   // 50A for channel 0 only as it is "standard" in EnergyMe Home
@@ -272,6 +302,7 @@ enum Phase : uint32_t { // Not a class so that we can directly use it in JSON se
     PHASE_1 = 1,
     PHASE_2 = 2,
     PHASE_3 = 3,
+    PHASE_SPLIT_240 = 4,  // North America split-phase 240V circuit (L1-L2), auto-applies 2x multiplier
 };
 
 enum class Ade7953Channel{
@@ -386,34 +417,56 @@ struct CtSpecification
       whLsb(1.0f), varhLsb(1.0f), vahLsb(1.0f) {}
 };
 
+// Channel role enum
+enum ChannelRole : uint8_t {
+    CHANNEL_ROLE_LOAD     = 0, // Default - regular load/consumption (negatives discarded)
+    CHANNEL_ROLE_GRID     = 1, // Grid meter (+ import, - export)
+    CHANNEL_ROLE_PV       = 2, // PV/Solar production (+ generation, negatives discarded)
+    CHANNEL_ROLE_BATTERY  = 3, // Battery (+ discharge, - charge)
+    CHANNEL_ROLE_INVERTER = 4, // Hybrid inverter: PV + battery DC-coupled, AC output (negatives allowed)
+    CHANNEL_ROLE_COUNT    = 5  // Total number of roles
+};
+
+#define DEFAULT_CHANNEL_ROLE CHANNEL_ROLE_LOAD
+#define DEFAULT_CHANNEL_0_ROLE CHANNEL_ROLE_GRID // Channel 0 is typically the grid meter
+
 struct ChannelData
 {
   uint8_t index;
   bool active;
   bool reverse;
-  bool highPriority;
   char label[NAME_BUFFER_SIZE];
   Phase phase;
   CtSpecification ctSpecification;
 
+  // Channel grouping (for 3-phase aggregation)
+  char groupLabel[NAME_BUFFER_SIZE];  // Label for the group (shared by channels in same group)
+
+  // Channel role
+  ChannelRole role;
+
   ChannelData()
-    : index(0), 
-      active(false), 
-      reverse(false), 
-      highPriority(false),
-      phase(PHASE_1), 
-      ctSpecification(CtSpecification()) {
+    : index(0),
+      active(false),
+      reverse(false),
+      phase(PHASE_1),
+      ctSpecification(CtSpecification()),
+      role(DEFAULT_CHANNEL_ROLE)
+    {
       snprintf(label, sizeof(label), "Channel");
+      snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, 0);
     }
-  
+
   ChannelData(uint8_t idx)
-    : index(idx), 
-      active(idx == 0 ? DEFAULT_CHANNEL_0_ACTIVE : DEFAULT_CHANNEL_ACTIVE), 
-      reverse(DEFAULT_CHANNEL_REVERSE), 
-      highPriority(idx == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY),
-      phase(DEFAULT_CHANNEL_PHASE), 
-      ctSpecification(CtSpecification()) {
+    : index(idx),
+      active(idx == 0 ? DEFAULT_CHANNEL_0_ACTIVE : DEFAULT_CHANNEL_ACTIVE),
+      reverse(DEFAULT_CHANNEL_REVERSE),
+      phase(DEFAULT_CHANNEL_PHASE),
+      ctSpecification(CtSpecification()),
+      role(idx == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE)
+    {
       snprintf(label, sizeof(label), DEFAULT_CHANNEL_LABEL_FORMAT, idx);
+      snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, idx);
     }
 };
 
@@ -520,18 +573,28 @@ namespace Ade7953
     bool hasChannelValidMeasurements(uint8_t channelIndex);
     void getChannelLabel(uint8_t channelIndex, char* buffer, size_t bufferSize); // No need for bool return, fallback is the default constructor value if getChannelData failed
     bool getChannelData(ChannelData &channelData, uint8_t channelIndex);
-    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex);
+    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged = nullptr);
     void resetChannelData(uint8_t channelIndex);
 
     // Channel data management - JSON operations
     bool getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex);
     bool getAllChannelDataAsJson(JsonDocument &jsonDocument);
-    bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial = false);
+    bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial = false, bool* roleChanged = nullptr);
     void channelDataToJson(const ChannelData &channelData, JsonDocument &jsonDocument);
     void channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);
 
+    // Channel data cache helpers
+    uint32_t computeAllChannelDataHash(); // Compute CRC32 hash of all channel data for ETag caching
+
+    // Channel role helpers
+    ChannelRole getChannelRole(uint8_t channelIndex);
+    const char* channelRoleToString(ChannelRole role);
+    ChannelRole channelRoleFromString(const char* roleStr);
+    bool isValidChannelRoleString(const char* roleStr);
+
     // Energy data management
     void resetEnergyValues();
+    void resetChannelEnergyValues(uint8_t channelIndex); // Resets energy counters and clears historical CSV data for a single channel
     bool setEnergyValues(
         uint8_t channelIndex,
         double activeEnergyImported,
@@ -546,11 +609,16 @@ namespace Ade7953
     bool fullMeterValuesToJson(JsonDocument &jsonDocument);
     bool getMeterValues(MeterValues &meterValues, uint8_t channelIndex);
 
-    // Aggregated power calculations 
-    float getAggregatedActivePower(bool includeChannel0 = true);
-    float getAggregatedReactivePower(bool includeChannel0 = true);
-    float getAggregatedApparentPower(bool includeChannel0 = true);
-    float getAggregatedPowerFactor(bool includeChannel0 = true);
+    // Role-based aggregated values
+    float getAggregatedActivePowerByRole(ChannelRole role);
+    float getAggregatedReactivePowerByRole(ChannelRole role);
+    float getAggregatedApparentPowerByRole(ChannelRole role);
+    float getAggregatedPowerFactorByRole(ChannelRole role);
+    float getAggregatedActiveEnergyImportedByRole(ChannelRole role);
+    float getAggregatedActiveEnergyExportedByRole(ChannelRole role);
+    float getAggregatedReactiveEnergyImportedByRole(ChannelRole role);
+    float getAggregatedReactiveEnergyExportedByRole(ChannelRole role);
+    float getAggregatedApparentEnergyByRole(ChannelRole role);
 
     // Grid frequency
     float getGridFrequency();

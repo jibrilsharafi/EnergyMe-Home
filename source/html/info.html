@@ -12,11 +12,12 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <script src="/js/api-client.js"></script>
 
-    <title>📊 Device Information</title>
+    <title>Device Information</title>
     <style>
         /* Modern Info Page Styles */
         .info-container {
@@ -131,23 +132,6 @@
         .progress-warning { background: linear-gradient(90deg, #ff9800, #ffb74d); }
         .progress-critical { background: linear-gradient(90deg, #f44336, #ef5350); }
 
-        .update-indicator {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #4caf50;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .update-indicator.show {
-            opacity: 1;
-        }
-
         .page-header {
             text-align: center;
             margin-bottom: 30px;
@@ -227,11 +211,6 @@
                 padding: 4px 8px;
                 font-size: 0.8rem;
             }
-            
-            .update-indicator {
-                font-size: 0.9rem;
-                padding: 8px 12px;
-            }
         }
         
         @media (max-width: 480px) {
@@ -274,10 +253,6 @@
 <body>
     <div class="buttonNavigation-container">
         <a class="buttonNavigation" type="home" href="/">🏠 Home</a>
-    </div>
-
-    <div class="update-indicator" id="updateIndicator">
-        ✅ Data Updated
     </div>
 
     <div class="info-container">
@@ -490,22 +465,6 @@
                 </div>
             </div>
 
-            <!-- SDK Information Card -->
-            <div class="info-card">
-                <div class="card-header">
-                    <div class="card-icon">⚙️</div>
-                    <h3 class="card-title">SDK Information</h3>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">📚</span>SDK Version</span>
-                    <span class="info-value" id="sdkVersion">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">🔧</span>Core Version</span>
-                    <span class="info-value" id="coreVersion">Loading...</span>
-                </div>
-            </div>
-
             <!-- ADE7953 Statistics Card -->
             <div class="info-card">
                 <div class="card-header">
@@ -589,42 +548,11 @@
                     <span class="info-value" id="logDropped">Loading...</span>
                 </div>
             </div>
-
-            <!-- System Task Stack Usage Card -->
-            <div class="info-card">
-                <div class="card-header">
-                    <div class="card-icon">⚙️</div>
-                    <h3 class="card-title">System Task Stack Usage</h3>
-                </div>
-                <div id="systemTaskStackContainer">
-                    <!-- System tasks will be dynamically added here -->
-                </div>
-            </div>
-
-            <!-- Application Task Stack Usage Card -->
-            <div class="info-card">
-                <div class="card-header">
-                    <div class="card-icon">🔧</div>
-                    <h3 class="card-title">Application Task Stack Usage</h3>
-                </div>
-                <div id="appTaskStackContainer">
-                    <!-- Application tasks will be dynamically added here -->
-                </div>
-            </div>
-        </div>
     </div>
 
     <script>
         // Global variables for system info
         let systemInfo = null;
-
-        function showUpdateIndicator() {
-            const indicator = document.getElementById('updateIndicator');
-            indicator.classList.add('show');
-            setTimeout(() => {
-                indicator.classList.remove('show');
-            }, 2000);
-        }
 
         async function fetchSystemInfo() {
             try {
@@ -637,7 +565,6 @@
                 systemInfo = systemInfoData;
                 displaySystemInfo(systemInfo);
                 displayStatistics(statisticsData);
-                showUpdateIndicator();
             } catch (error) {
                 console.error('Failed to fetch system info:', error);
                 // Show error state in UI
@@ -692,13 +619,6 @@
 
             // Network Information
             displayNetworkInfo(data.dynamic.network);
-
-            // Task Information
-            displayTaskInfo(data.dynamic.tasks);
-
-            // SDK Information
-            document.getElementById('sdkVersion').textContent = data.static.sdk.sdkVersion;
-            document.getElementById('coreVersion').textContent = data.static.sdk.coreVersion;
         }
 
         function displayStatistics(stats) {
@@ -811,83 +731,6 @@
             
             document.getElementById('wifiMacAddress').textContent = network.wifiMacAddress || 'N/A';
             document.getElementById('wifiGateway').textContent = network.wifiGatewayIp || 'N/A';
-        }
-
-        function displayTaskInfo(tasks) {
-            const systemContainer = document.getElementById('systemTaskStackContainer');
-            const appContainer = document.getElementById('appTaskStackContainer');
-            systemContainer.innerHTML = ''; // Clear existing content
-            appContainer.innerHTML = ''; // Clear existing content
-
-            // Filter and sort tasks - only show tasks with allocated stack > 0
-            const activeTasks = Object.entries(tasks)
-                .filter(([name, task]) => task.allocatedStack > 0)
-                .sort((a, b) => b[1].usedPercentage - a[1].usedPercentage); // Sort by usage percentage desc
-
-            // Define which tasks are system vs application
-            const systemTasks = ['customWifi', 'customServerHealthCheck', 'customServerOtaTimeout', 
-                               'led', 'crashMonitor', 'buttonHandler', 'udpLog', 'maintenance'];
-            
-            const systemTaskList = activeTasks.filter(([name]) => systemTasks.includes(name));
-            const appTaskList = activeTasks.filter(([name]) => !systemTasks.includes(name));
-
-            // Render system tasks
-            systemTaskList.forEach(([taskName, taskData], index) => {
-                const taskElement = document.createElement('div');
-                taskElement.innerHTML = `
-                    <div class="info-item">
-                        <span class="info-label"><span class="emoji">🔧</span>${getTaskDisplayName(taskName)}</span>
-                        <span class="info-value">${formatBytes(taskData.allocatedStack - taskData.minimumFreeStack)} / ${formatBytes(taskData.allocatedStack)} (${taskData.usedPercentage.toFixed(1)}% used)</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill ${getTaskProgressClass(taskData.usedPercentage)}" style="width: ${taskData.usedPercentage}%"></div>
-                    </div>
-                    ${index < systemTaskList.length - 1 ? '<div style="margin-bottom: 15px;"></div>' : ''}
-                `;
-                systemContainer.appendChild(taskElement);
-            });
-
-            // Render application tasks
-            appTaskList.forEach(([taskName, taskData], index) => {
-                const taskElement = document.createElement('div');
-                taskElement.innerHTML = `
-                    <div class="info-item">
-                        <span class="info-label"><span class="emoji">⚡</span>${getTaskDisplayName(taskName)}</span>
-                        <span class="info-value">${formatBytes(taskData.allocatedStack - taskData.minimumFreeStack)} / ${formatBytes(taskData.allocatedStack)} (${taskData.usedPercentage.toFixed(1)}% used)</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill ${getTaskProgressClass(taskData.usedPercentage)}" style="width: ${taskData.usedPercentage}%"></div>
-                    </div>
-                    ${index < appTaskList.length - 1 ? '<div style="margin-bottom: 15px;"></div>' : ''}
-                `;
-                appContainer.appendChild(taskElement);
-            });
-        }
-
-        function getTaskDisplayName(taskName) {
-            const taskNames = {
-                'mqtt': 'MQTT Client',
-                'customMqtt': 'Custom MQTT',
-                'customServerHealthCheck': 'Server Health Check',
-                'customServerOtaTimeout': 'OTA Timeout',
-                'led': 'LED Controller',
-                'influxDb': 'InfluxDB Client',
-                'crashMonitor': 'Crash Monitor',
-                'buttonHandler': 'Button Handler',
-                'udpLog': 'UDP Logger',
-                'customWifi': 'WiFi Manager',
-                'ade7953MeterReading': 'Energy Meter Reading',
-                'ade7953EnergySave': 'Energy Data Save',
-                'ade7953HourlyCsv': 'Hourly CSV Export',
-                'maintenance': 'System Maintenance'
-            };
-            return taskNames[taskName] || taskName;
-        }
-
-        function getTaskProgressClass(usedPercentage) {
-            if (usedPercentage < 50) return 'progress-good';
-            if (usedPercentage < 75) return 'progress-warning';
-            return 'progress-critical';
         }
 
         function formatUptime(milliseconds) {

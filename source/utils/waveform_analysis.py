@@ -18,8 +18,8 @@ class WaveformData:
     voltage: List[float]
     current: List[float]
     micros_delta: List[int]
-    voltage_phase: int = 1  # Phase number (1, 2, 3)
-    current_phase: int = 1  # Phase number (1, 2, 3)
+    voltage_phase: int = 1  # Phase number (1, 2, 3; 4 for split-phase)
+    current_phase: int = 1  # Phase number (1, 2, 3; 4 for split-phase)
     phase_shift_degrees: float = 0.0  # Pre-calculated phase shift from device
     
     @property
@@ -315,6 +315,7 @@ class WaveformAnalyzer:
         - Phase 1 (A) is reference (0°)
         - Phase 2 (B) lags by 120° (-120°)
         - Phase 3 (C) leads by 120° (+120°)
+        - Phase 4 is N/A for waveform analysis (split-phase uses same reference)
         
         Args:
             voltage_phase: Phase number (1, 2, 3) or letter ("A", "B", "C")

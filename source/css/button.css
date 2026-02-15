@@ -14,9 +14,10 @@
     gap: 10px;
 }
 
-.buttonNavigation {
+/* Base navigation button styles - shared between internal and external links */
+.buttonNavigation,
+.buttonNavigationExternal {
     background: transparent;
-    color: var(--blue);
     font-weight: bold;
     font-size: 1.2em;
     cursor: pointer;
@@ -25,20 +26,26 @@
     text-decoration: none;
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
     transition: all 0.1s ease;
-    /* Mobile responsive adjustments */
     white-space: nowrap;
-    flex: 0 1 auto; /* Allow natural sizing */
+    flex: 0 1 auto;
     text-align: center;
     min-width: fit-content;
 }
 
-.buttonNavigation:hover {
+.buttonNavigation:hover,
+.buttonNavigationExternal:hover {
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.6);
 }
 
-.buttonNavigation:active {
+.buttonNavigation:active,
+.buttonNavigationExternal:active {
     transform: scale(0.98);
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+}
+
+/* Navigation button color variants */
+.buttonNavigation {
+    color: var(--blue);
 }
 
 .buttonNavigation[type="home"] {
@@ -54,25 +61,7 @@
 }
 
 .buttonNavigationExternal {
-    background: transparent;
     color: #1bacdc;
-    font-weight: bold;
-    font-size: 1.2em;
-    cursor: pointer;
-    padding: 10px 20px;
-    border-radius: 50px;
-    text-decoration: none;
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
-    transition: all 0.1s ease;
-}
-
-.buttonNavigationExternal:hover {
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.6);
-}
-
-.buttonNavigationExternal:active {
-    transform: scale(0.98);
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
 }
 
 .buttonForm-container {
@@ -169,24 +158,15 @@
         gap: 15px;
     }
     
-    .buttonNavigation {
-        font-size: 1.0em;
-        padding: 12px 24px;
-        width: auto; /* Allow buttons to size to content */
-        max-width: 280px;
-        margin: 0;
-        min-width: fit-content; /* Ensure button fits content */
-        flex: 0 1 auto; /* Don't force equal flex sizing */
-    }
-    
+    .buttonNavigation,
     .buttonNavigationExternal {
         font-size: 1.0em;
         padding: 12px 24px;
-        width: auto; /* Allow buttons to size to content */
+        width: auto;
         max-width: 280px;
         margin: 0;
-        min-width: fit-content; /* Ensure button fits content */
-        flex: 0 1 auto; /* Don't force equal flex sizing */
+        min-width: fit-content;
+        flex: 0 1 auto;
     }
     
     .buttonForm-container {
@@ -200,11 +180,11 @@
     .buttonForm {
         font-size: 0.9em;
         padding: 12px 20px;
-        width: auto; /* Allow buttons to size to content */
+        width: auto;
         max-width: 250px;
         margin: 0;
-        min-width: fit-content; /* Ensure button fits content */
-        flex: 0 1 auto; /* Don't force equal flex sizing */
+        min-width: fit-content;
+        flex: 0 1 auto;
     }
     
     .tooltip .tooltiptext {
@@ -228,7 +208,7 @@
         font-size: 0.9em;
         padding: 10px 16px;
         max-width: none;
-        width: auto; /* Maintain auto sizing on small screens */
+        width: auto;
     }
     
     .buttonForm-container {
@@ -241,7 +221,7 @@
         font-size: 0.85em;
         padding: 10px 16px;
         max-width: none;
-        width: auto; /* Maintain auto sizing on small screens */
+        width: auto;
     }
     
     .tooltip .tooltiptext {

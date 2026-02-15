@@ -67,6 +67,11 @@ namespace CustomWifi
 
     LOG_DEBUG("Starting WiFi...");
 
+    // This has to be before everything else to ensure the hostname is actually set
+    char hostname[WIFI_SSID_BUFFER_SIZE];
+    snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_HOSTNAME_PREFIX, DEVICE_ID);
+    WiFi.setHostname(hostname); // Allow for easier identification in the router/network client list
+
     // Configure WiFi for better authentication reliability
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
@@ -75,9 +80,6 @@ namespace CustomWifi
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false); // Disable WiFi sleep to prevent handshake timeouts
 
-    char hostname[WIFI_SSID_BUFFER_SIZE];
-    snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_HOSTNAME_PREFIX, DEVICE_ID);
-    WiFi.setHostname(hostname); // Allow for easier identification in the router/network client list
     // TODO: add these functionalities (via config) to allow for channel and power settings
     // WiFi.setChannel(6);       // Optional - if user configured a specific channel
     // WiFi.setTxPower(WIFI_POWER_20dBm);  // Optional - regional compliance
@@ -517,8 +519,11 @@ namespace CustomWifi
 
     // Try initial connection with retries for handshake timeouts
     LOG_DEBUG("Attempt WiFi connection");
-      
-    if (!wifiManager->autoConnect(hostname)) { // HACK: actually handle this in such a way where we retry constantly, but without restarting the device. Closing the task has little utility
+
+    // If we don't manage to connect with WiFi Manager and the credentials are not provided, we might as well just restart.
+    // In the future, we could allow for full-offline functionality, but for now, we keep it simple.
+    // TODO: implement a full custom WiFi manager for better UX
+    if (!wifiManager->autoConnect(hostname)) {
       LOG_WARNING("WiFi connection failed, exiting wifi task");
       Led::blinkRedFast(Led::PRIO_URGENT);
       _taskShouldRun = false;
@@ -639,7 +644,7 @@ namespace CustomWifi
               _setupWiFiManager(*portalManager);
 
               // Try WiFiManager portal
-              if (!portalManager->startConfigPortal(hostname))
+              if (!portalManager->startConfigPortal(hostname)) // TODO: use the password if present in eFuse (or if not present, the device mac address all lower)
               {
                 LOG_ERROR("Portal failed - restarting device");
                 Led::blinkRedFast(Led::PRIO_URGENT);
@@ -721,15 +726,9 @@ namespace CustomWifi
   bool setCredentials(const char* ssid, const char* password)
   {
     // Validate inputs
-    if (!ssid || strlen(ssid) == 0)
+    if (!ssid || !isStringLengthValid(ssid, 1, WIFI_SSID_BUFFER_SIZE - 1))
     {
-      LOG_ERROR("Invalid SSID provided");
-      return false;
-    }
-
-    if (strlen(ssid) >= WIFI_SSID_BUFFER_SIZE)
-    {
-      LOG_ERROR("SSID exceeds maximum length of %d characters", WIFI_SSID_BUFFER_SIZE);
+      LOG_ERROR("Invalid SSID provided (must be 1-31 characters)");
       return false;
     }
 
@@ -739,9 +738,9 @@ namespace CustomWifi
       return false;
     }
 
-    if (strlen(password) >= WIFI_PASSWORD_BUFFER_SIZE)
+    if (!isStringLengthValid(password, 0, WIFI_PASSWORD_BUFFER_SIZE - 1))
     {
-      LOG_ERROR("Password exceeds maximum length of %d characters", WIFI_PASSWORD_BUFFER_SIZE);
+      LOG_ERROR("Password exceeds maximum length of %d characters", WIFI_PASSWORD_BUFFER_SIZE - 1);
       return false;
     }
 

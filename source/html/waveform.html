@@ -12,6 +12,7 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
@@ -257,8 +258,6 @@
                 </button>
             </div>
         </div>
-
-        <div id="messageContainer"></div>
     </section>
 
     <!-- Dynamic tab content will be inserted here -->
@@ -314,7 +313,7 @@
                     }
                 }
             } catch (error) {
-                showError('Failed to load channels: ' + error.message);
+                showStatus('Failed to load channels: ' + error.message, 'error');
             }
         }
 
@@ -372,11 +371,10 @@
          */
         async function armCapture() {
             if (activeChannelIndex === null) {
-                showError('Please select a channel first');
+                showStatus('Please select a channel first', 'error');
                 return;
             }
 
-            clearMessage();
             setLoading(true);
 
             try {
@@ -385,16 +383,16 @@
                 });
 
                 if (response.success === true) {
-                    showInfo(`Capture armed for channel ${activeChannelIndex}. Waiting for next line cycle...`);
+                    showStatus(`Capture armed for channel ${activeChannelIndex}. Waiting for next line cycle...`, 'info');
                     startStatusPolling();
                 } else {
-                    showError(response.message || 'Unexpected response from server');
+                    showStatus(response.message || 'Unexpected response from server', 'error');
                 }
             } catch (error) {
                 if (error.message.includes('409')) {
-                    showError('Capture already in progress. Wait for it to complete or refresh status.');
+                    showStatus('Capture already in progress. Wait for it to complete or refresh status.', 'error');
                 } else {
-                    showError('Failed to arm capture: ' + error.message);
+                    showStatus('Failed to arm capture: ' + error.message, 'error');
                 }
             } finally {
                 setLoading(false);
@@ -454,28 +452,27 @@
          */
         async function fetchWaveformData() {
             setLoading(true);
-            clearMessage();
 
             try {
                 const data = await api.get('ade7953/waveform/data');
                 const channelIndex = data.channelIndex;
-                
+
                 // Store data for this channel
                 channelWaveforms[channelIndex] = data;
-                
+
                 // Update tabs to show green indicator
                 updateAvailableChannelTabs();
-                
+
                 // Display the captured data
                 displayWaveform(data);
                 calculateStats(data);
-                
-                showInfo(`Waveform captured successfully for channel ${channelIndex}!`);
+
+                showStatus(`Waveform captured successfully for channel ${channelIndex}!`, 'success');
             } catch (error) {
                 if (error.message.includes('404')) {
-                    showError('No waveform data available. Please arm capture first.');
+                    showStatus('No waveform data available. Please arm capture first.', 'error');
                 } else {
-                    showError('Failed to fetch waveform data: ' + error.message);
+                    showStatus('Failed to fetch waveform data: ' + error.message, 'error');
                 }
             } finally {
                 setLoading(false);
@@ -802,19 +799,19 @@
         function downloadData(channelIndex) {
             const data = channelWaveforms[channelIndex];
             if (!data) {
-                showError('No waveform data to download');
+                showStatus('No waveform data to download', 'error');
                 return;
             }
 
             const dataStr = JSON.stringify(data, null, 2);
             const dataBlob = new Blob([dataStr], { type: 'application/json' });
             const url = URL.createObjectURL(dataBlob);
-            
+
             const link = document.createElement('a');
             link.href = url;
             link.download = `waveform_ch${channelIndex}_${new Date().getTime()}.json`;
             link.click();
-            
+
             URL.revokeObjectURL(url);
         }
 
@@ -830,20 +827,6 @@
                     panel.classList.remove('loading');
                 }
             }
-        }
-
-        function showError(message) {
-            const container = document.getElementById('messageContainer');
-            container.innerHTML = `<div class="error-message">${message}</div>`;
-        }
-
-        function showInfo(message) {
-            const container = document.getElementById('messageContainer');
-            container.innerHTML = `<div class="info-message">${message}</div>`;
-        }
-
-        function clearMessage() {
-            document.getElementById('messageContainer').innerHTML = '';
         }
 
         // Cleanup on page unload
