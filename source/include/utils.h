@@ -113,10 +113,12 @@ inline bool isValueInRange(int32_t value, int32_t min, int32_t max) {
 
 // Mathematical utilities
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier);
+
 inline float roundToDecimals(float value, uint8_t decimals = 3) {
     float factor = powf(10.0f, decimals);
     return roundf(value * factor) / factor;
 }
+
 inline double roundToDecimals(double value, uint8_t decimals = 3) {
     double factor = pow(10.0, decimals);
     return round(value * factor) / factor;
