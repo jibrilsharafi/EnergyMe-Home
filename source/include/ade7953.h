@@ -68,8 +68,14 @@
 #define ADE7953_MAX_VERIFY_COMMUNICATION_ATTEMPTS 5
 #define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500
 
-// Channel priority scheduling
-#define PRIORITY_BIAS 2 // Bias Factor: 2 means HP runs ~2x faster than LP
+// Dynamic channel scheduling (Weighted Deficit Round-Robin)
+// Weights are intentionally not normalized to 1.0 — the WDRR deficit counter
+// algorithm uses relative weights: a channel with weight 2x will be sampled ~2x
+// as often. The minimum base prevents starvation.
+#define WEIGHT_POWER_SHARE 0.4f      // Weight contribution from power magnitude share
+#define WEIGHT_VARIABILITY 0.4f      // Weight contribution from power variability share
+#define WEIGHT_MIN_BASE 0.1f         // Minimum base weight to prevent starvation
+#define VARIABILITY_EMA_ALPHA 0.3f   // Exponential moving average smoothing for variability (0-1, lower = smoother)
 
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
@@ -234,7 +240,9 @@
 #define CHANNEL_REVERSE_KEY "reverse_%u" // Format: reverse_0 (10 chars)
 #define CHANNEL_LABEL_KEY "label_%u" // Format: label_0 (8 chars)
 #define CHANNEL_PHASE_KEY "phase_%u" // Format: phase_0 (9 chars)
-#define CHANNEL_HIGH_PRIORITY_KEY "highpri_%u" // Format: highpri_0 (10 chars)
+
+// Legacy key for migration (remove old NVS entries on load)
+#define CHANNEL_HIGHPRI_KEY_LEGACY "highpri_%u" // Format: highpri_0 (10 chars)
 
 // CT Specification keys
 #define CHANNEL_CT_CURRENT_RATING_KEY "ct_current_%u" // Format: ct_current_0 (12 chars)
@@ -256,8 +264,6 @@
 #define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
 #define DEFAULT_CHANNEL_REVERSE false
 #define DEFAULT_CHANNEL_PHASE PHASE_1
-#define DEFAULT_CHANNEL_HIGH_PRIORITY false
-#define DEFAULT_CHANNEL_0_HIGH_PRIORITY true // Channel 0 is always high priority - even though it has no real impact since it is on a dedicated ADE7953 channel
 #define DEFAULT_CHANNEL_LABEL_FORMAT "Channel %u"
 #define DEFAULT_CHANNEL_GROUP_LABEL_FORMAT "Group %u"
 
@@ -421,7 +427,6 @@ struct ChannelData
   uint8_t index;
   bool active;
   bool reverse;
-  bool highPriority;
   char label[NAME_BUFFER_SIZE];
   Phase phase;
   CtSpecification ctSpecification;
@@ -436,7 +441,6 @@ struct ChannelData
     : index(0),
       active(false),
       reverse(false),
-      highPriority(false),
       phase(PHASE_1),
       ctSpecification(CtSpecification()),
       role(DEFAULT_CHANNEL_ROLE)
@@ -449,7 +453,6 @@ struct ChannelData
     : index(idx),
       active(idx == 0 ? DEFAULT_CHANNEL_0_ACTIVE : DEFAULT_CHANNEL_ACTIVE),
       reverse(DEFAULT_CHANNEL_REVERSE),
-      highPriority(idx == 0 ? DEFAULT_CHANNEL_0_HIGH_PRIORITY : DEFAULT_CHANNEL_HIGH_PRIORITY),
       phase(DEFAULT_CHANNEL_PHASE),
       ctSpecification(CtSpecification()),
       role(idx == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE)

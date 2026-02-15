@@ -1699,7 +1699,6 @@ paths:
                     index: 0
                     active: true
                     reverse: false
-                    highPriority: false
                     label: "Main Circuit"
                     phase: "A"
                     ctSpecification:
@@ -1712,7 +1711,6 @@ paths:
                       - index: 0
                         active: true
                         reverse: false
-                        highPriority: false
                         label: "Main Circuit"
                         phase: "A"
                         ctSpecification:
@@ -1721,7 +1719,6 @@ paths:
                       - index: 1
                         active: false
                         reverse: false
-                        highPriority: false
                         label: "Kitchen"
                         phase: "A"
                         ctSpecification:
@@ -1798,11 +1795,6 @@ paths:
                   index: 1
                   active: true
                   label: "Kitchen Circuit"
-              set_high_priority:
-                summary: Set channel as high-priority
-                value:
-                  index: 2
-                  highPriority: true
               ct_config:
                 summary: Update CT specifications
                 value:
@@ -1864,7 +1856,6 @@ paths:
               - index: 0
                 active: true
                 reverse: false
-                highPriority: false
                 label: "General"
                 phase: 1
                 ctSpecification:
@@ -1874,7 +1865,6 @@ paths:
               - index: 1
                 active: true
                 reverse: false
-                highPriority: true
                 label: "Luce prese"
                 phase: 1
                 ctSpecification:
@@ -1884,7 +1874,6 @@ paths:
               - index: 6
                 active: true
                 reverse: true
-                highPriority: false
                 label: "Boiler"
                 phase: 1
                 ctSpecification:
@@ -2841,11 +2830,6 @@ components:
           type: boolean
           description: Whether to reverse the current direction measurement
           example: false
-        highPriority:
-          type: boolean
-          description: Whether the channel is high-priority (read more frequently in round-robin). Optional, defaults to false.
-          example: false
-          default: false
         label:
           type: string
           maxLength: 64
