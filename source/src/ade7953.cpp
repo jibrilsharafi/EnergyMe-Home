@@ -4035,7 +4035,9 @@ namespace Ade7953
      * Each channel accumulates a deficit proportional to its weight on every call.
      * The channel with the highest deficit is selected, and its deficit is decremented.
      * This naturally ensures higher-weight channels are read more frequently while
-     * every active channel is eventually serviced (no starvation).
+     * every active channel is eventually serviced (no starvation thanks to the fact that)
+     * the deficit accumulates over time even for low-weight channels, so for "infinite"
+     * time, its weight will eventually surpass the one of hight priority channel
      */
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
         (void)currentChannel; // No longer needed for state tracking
