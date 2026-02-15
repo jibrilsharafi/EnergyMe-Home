@@ -104,7 +104,7 @@ inline bool isStringLengthValid(const char* str, size_t minLength, size_t maxLen
 
 // Numeric range validation utilities
 inline bool isValueInRange(float value, float min, float max) {
-    return value > min && value <= max;
+    return value >= min && value <= max;
 }
 
 inline bool isValueInRange(int32_t value, int32_t min, int32_t max) {
