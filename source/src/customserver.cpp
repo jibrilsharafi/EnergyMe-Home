@@ -1594,7 +1594,7 @@ namespace CustomServer
                 doc.set(json);
 
                 // Validate required fields
-                if (!doc["ssid"].is<const char*>() || strlen(doc["ssid"].as<const char*>()) == 0)
+                if (!doc["ssid"].is<const char*>())
                 {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid 'ssid' field");
                     return;
@@ -1609,17 +1609,17 @@ namespace CustomServer
                 const char* ssid = doc["ssid"];
                 const char* password = doc["password"];
 
-                // Validate SSID length
-                if (strlen(ssid) >= WIFI_SSID_BUFFER_SIZE)
+                // Validate SSID length (1-31 characters)
+                if (!isStringLengthValid(ssid, 1, WIFI_SSID_BUFFER_SIZE - 1))
                 {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "SSID exceeds maximum length of 32 characters");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "SSID must be 1-31 characters");
                     return;
                 }
 
-                // Validate password length
-                if (strlen(password) >= WIFI_PASSWORD_BUFFER_SIZE)
+                // Validate password length (0-63 characters)
+                if (!isStringLengthValid(password, 0, WIFI_PASSWORD_BUFFER_SIZE - 1))
                 {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Password exceeds maximum length of 64 characters");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Password must be 0-63 characters");
                     return;
                 }
 
@@ -1873,11 +1873,10 @@ namespace CustomServer
 
             if (request->hasParam("index")) {
                 // Get single channel data
-                long indexValue = request->getParam("index")->value().toInt();
-                if (indexValue < 0 || indexValue > UINT8_MAX) {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
+                uint8_t channelIndex = (uint8_t)(request->getParam("index")->value().toInt());
+                if (!isChannelValid(channelIndex)) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
                 } else {
-                    uint8_t channelIndex = (uint8_t)(indexValue);
                     if (Ade7953::getChannelDataAsJson(doc, channelIndex)) _sendJsonResponse(request, doc);
                     else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching single channel data");
                 }
@@ -1995,12 +1994,11 @@ namespace CustomServer
                 return;
             }
 
-            long indexValue = request->getParam("index")->value().toInt();
-            if (indexValue < 0 || indexValue > UINT8_MAX) {
-                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
+            uint8_t channelIndex = (uint8_t)(request->getParam("index")->value().toInt());
+            if (!isChannelValid(channelIndex)) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
                 return;
             }
-            uint8_t channelIndex = (uint8_t)(indexValue);
             Ade7953::resetChannelData(channelIndex);
 
             LOG_INFO("ADE7953 channel %u data reset via API", channelIndex);
@@ -2025,11 +2023,11 @@ namespace CustomServer
             int32_t addressValue = request->getParam("address")->value().toInt();
             int32_t bitsValue = request->getParam("bits")->value().toInt();
 
-            if (addressValue < 0 || addressValue > UINT16_MAX) {
+            if (!isValueInRange(addressValue, 0, (int32_t)UINT16_MAX)) {
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register address out of range (0-65535)");
                 return;
             }
-            if (bitsValue < 0 || bitsValue > UINT8_MAX) {
+            if (!isValueInRange(bitsValue, 0, (int32_t)UINT8_MAX)) {
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register bits out of range (0-255)");
                 return;
             }
@@ -2070,11 +2068,11 @@ namespace CustomServer
             int32_t addressValue = doc["address"].as<int32_t>();
             int32_t bitsValue = doc["bits"].as<int32_t>();
 
-            if (addressValue < 0 || addressValue > UINT16_MAX) {
+            if (!isValueInRange(addressValue, 0, (int32_t)UINT16_MAX)) {
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register address out of range (0-65535)");
                 return;
             }
-            if (bitsValue < 0 || bitsValue > UINT8_MAX) {
+            if (!isValueInRange(bitsValue, 0, (int32_t)UINT8_MAX)) {
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Register bits out of range (0-255)");
                 return;
             }
@@ -2101,10 +2099,10 @@ namespace CustomServer
             if (request->hasParam("index")) {
                 // Get single channel meter values
                 long indexValue = request->getParam("index")->value().toInt();
-                if (indexValue < 0 || indexValue > UINT8_MAX) {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Channel index out of range (0-255)");
+                uint8_t channelIndex = (uint8_t)(indexValue);
+                if (!isChannelValid(channelIndex)) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
                 } else {
-                    uint8_t channelIndex = (uint8_t)(indexValue);
                     if (Ade7953::singleMeterValuesToJson(doc, channelIndex)) _sendJsonResponse(request, doc);
                     else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Error fetching single meter values");
                 }

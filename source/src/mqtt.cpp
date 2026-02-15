@@ -910,12 +910,10 @@ namespace Mqtt
 
             const char* certData = doc["encryptedCertificatePem"].as<const char*>();
             const char* keyData = doc["encryptedPrivateKey"].as<const char*>();
-            
-            size_t certLen = strlen(certData);
-            size_t keyLen = strlen(keyData);
-            
-            if (certLen >= CERTIFICATE_BUFFER_SIZE || keyLen >= CERTIFICATE_BUFFER_SIZE) {
-                LOG_ERROR("Provisioning payload too large (cert %zu, key %zu)", certLen, keyLen);
+
+            if (!isStringLengthValid(certData, 1, CERTIFICATE_BUFFER_SIZE - 1) ||
+                !isStringLengthValid(keyData, 1, CERTIFICATE_BUFFER_SIZE - 1)) {
+                LOG_ERROR("Provisioning payload invalid (cert or key too large or empty)");
                 return;
             }
 
@@ -923,15 +921,15 @@ namespace Mqtt
             preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false);
 
             size_t writtenSize = preferences.putString(PREFS_KEY_CERTIFICATE, certData);
-            if (writtenSize != certLen) {
-                LOG_ERROR("Failed to write encrypted certificate to preferences (%zu != %zu)", writtenSize, certLen);
+            if (writtenSize != strlen(certData)) {
+                LOG_ERROR("Failed to write encrypted certificate to preferences (%zu != %zu)", writtenSize, strlen(certData));
                 preferences.end();
                 return;
             }
 
             writtenSize = preferences.putString(PREFS_KEY_PRIVATE_KEY, keyData);
-            if (writtenSize != keyLen) {
-                LOG_ERROR("Failed to write encrypted private key to preferences (%zu != %zu)", writtenSize, keyLen);
+            if (writtenSize != strlen(keyData)) {
+                LOG_ERROR("Failed to write encrypted private key to preferences (%zu != %zu)", writtenSize, strlen(keyData));
                 preferences.end();
                 return;
             }

@@ -726,15 +726,9 @@ namespace CustomWifi
   bool setCredentials(const char* ssid, const char* password)
   {
     // Validate inputs
-    if (!ssid || strlen(ssid) == 0)
+    if (!ssid || !isStringLengthValid(ssid, 1, WIFI_SSID_BUFFER_SIZE - 1))
     {
-      LOG_ERROR("Invalid SSID provided");
-      return false;
-    }
-
-    if (strlen(ssid) >= WIFI_SSID_BUFFER_SIZE)
-    {
-      LOG_ERROR("SSID exceeds maximum length of %d characters", WIFI_SSID_BUFFER_SIZE);
+      LOG_ERROR("Invalid SSID provided (must be 1-31 characters)");
       return false;
     }
 
@@ -744,9 +738,9 @@ namespace CustomWifi
       return false;
     }
 
-    if (strlen(password) >= WIFI_PASSWORD_BUFFER_SIZE)
+    if (!isStringLengthValid(password, 0, WIFI_PASSWORD_BUFFER_SIZE - 1))
     {
-      LOG_ERROR("Password exceeds maximum length of %d characters", WIFI_PASSWORD_BUFFER_SIZE);
+      LOG_ERROR("Password exceeds maximum length of %d characters", WIFI_PASSWORD_BUFFER_SIZE - 1);
       return false;
     }
 

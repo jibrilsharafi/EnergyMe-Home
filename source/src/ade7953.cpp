@@ -2807,9 +2807,17 @@ namespace Ade7953
 
         if (partial) {
             uint8_t channelIndex = jsonDocument["index"].as<uint8_t>();
+            bool hasValidField = false;
 
-            if (jsonDocument["active"].is<bool>()) return true;
-            if (jsonDocument["reverse"].is<bool>()) return true;
+            // Validate active field (no validation needed, just a boolean)
+            if (jsonDocument["active"].is<bool>()) {
+                hasValidField = true;
+            }
+
+            // Validate reverse field (no validation needed, just a boolean)
+            if (jsonDocument["reverse"].is<bool>()) {
+                hasValidField = true;
+            }
 
             // Label validation
             if (jsonDocument["label"].is<const char*>()) {
@@ -2817,7 +2825,7 @@ namespace Ade7953
                 if (!_validateStringField("label", label, NAME_BUFFER_SIZE)) {
                     return false;
                 }
-                return true;
+                hasValidField = true;
             }
 
             // Phase validation
@@ -2827,7 +2835,7 @@ namespace Ade7953
                     LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
                     return false;
                 }
-                return true;
+                hasValidField = true;
             }
 
             // CT Specification validation with ranges
@@ -2835,17 +2843,17 @@ namespace Ade7953
                 if (jsonDocument["ctSpecification"]["currentRating"].is<float>()) {
                     float val = jsonDocument["ctSpecification"]["currentRating"].as<float>();
                     if (!_validateCtCurrentRating(val)) return false;
-                    return true;
+                    hasValidField = true;
                 }
                 if (jsonDocument["ctSpecification"]["voltageOutput"].is<float>()) {
                     float val = jsonDocument["ctSpecification"]["voltageOutput"].as<float>();
                     if (!_validateCtVoltageOutput(val)) return false;
-                    return true;
+                    hasValidField = true;
                 }
                 if (jsonDocument["ctSpecification"]["scalingFraction"].is<float>()) {
                     float val = jsonDocument["ctSpecification"]["scalingFraction"].as<float>();
                     if (!_validateCtScalingFraction(val)) return false;
-                    return true;
+                    hasValidField = true;
                 }
             }
 
@@ -2865,7 +2873,7 @@ namespace Ade7953
                 if (!_validateGroupRoleConsistency(groupLabel, channelIndex, role)) {
                     return false;
                 }
-                return true;
+                hasValidField = true;
             }
 
             // Channel role validation
@@ -2885,11 +2893,14 @@ namespace Ade7953
                 if (!_validateGroupRoleConsistency(groupLabel, channelIndex, role)) {
                     return false;
                 }
-                return true;
+                hasValidField = true;
             }
 
-            LOG_WARNING("No valid fields found for partial update");
-            return false;
+            if (!hasValidField) {
+                LOG_WARNING("No valid fields found for partial update");
+                return false;
+            }
+            return true;
         } else {
             uint8_t channelIndex = jsonDocument["index"].as<uint8_t>();
 
