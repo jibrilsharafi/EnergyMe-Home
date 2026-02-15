@@ -732,11 +732,13 @@ namespace InfluxDbClient
 
         if (isEnergyData)
         {
+            const char* roleStr = Ade7953::channelRoleToString(Ade7953::getChannelRole(channel));
             snprintf(lineProtocolBuffer, lineProtocolBufferSize,
-                     "%s,channel=%u,label=%s,device_id=%s active_energy_imported=%.*f,active_energy_exported=%.*f,reactive_energy_imported=%.*f,reactive_energy_exported=%.*f,apparent_energy=%.*f %llu000000",
+                     "%s,channel=%u,label=%s,role=%s,device_id=%s active_energy_imported=%.*f,active_energy_exported=%.*f,reactive_energy_imported=%.*f,reactive_energy_exported=%.*f,apparent_energy=%.*f %llu000000",
                      measurement,
                      channel,
                      sanitizedLabel,
+                     roleStr,
                      deviceId,
                      ENERGY_DECIMALS, roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS),
                      ENERGY_DECIMALS, roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS),
@@ -747,11 +749,13 @@ namespace InfluxDbClient
         }
         else
         {
+            const char* roleStr = Ade7953::channelRoleToString(Ade7953::getChannelRole(channel));
             snprintf(lineProtocolBuffer, lineProtocolBufferSize,
-                     "%s,channel=%u,label=%s,device_id=%s voltage=%.*f,current=%.*f,active_power=%.*f,reactive_power=%.*f,apparent_power=%.*f,power_factor=%.*f %llu000000",
+                     "%s,channel=%u,label=%s,role=%s,device_id=%s voltage=%.*f,current=%.*f,active_power=%.*f,reactive_power=%.*f,apparent_power=%.*f,power_factor=%.*f %llu000000",
                      measurement,
                      channel,
                      sanitizedLabel,
+                     roleStr,
                      deviceId,
                      VOLTAGE_DECIMALS, roundToDecimals(meterValues.voltage, VOLTAGE_DECIMALS),
                      CURRENT_DECIMALS, roundToDecimals(meterValues.current, CURRENT_DECIMALS),
