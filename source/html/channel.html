@@ -154,8 +154,13 @@
             box.className = 'section-box';
             box.style.textAlign = 'center';
 
-            const phaseOptions = [1, 2, 3]
-                .map(phase => `<option value="${phase}" ${phase === channel.phase ? 'selected' : ''}>${phase}</option>`)
+            const phaseOptions = [
+                { value: 1, label: '1' },
+                { value: 2, label: '2' },
+                { value: 3, label: '3' },
+                { value: 4, label: '240V (Split Phase)' }
+            ]
+                .map(p => `<option value="${p.value}" ${p.value === channel.phase ? 'selected' : ''}>${p.label}</option>`)
                 .join('');
 
             // Check if this is channel 0 (main voltage channel)

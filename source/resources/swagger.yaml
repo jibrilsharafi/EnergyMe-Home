@@ -2084,7 +2084,7 @@ paths:
                         description: Channel label
                       phase:
                         type: integer
-                        description: Channel phase (1, 2, or 3)
+                        description: Channel phase (1, 2, 3, or 4 for 240V split-phase)
                       groupLabel:
                         type: string
                         description: Channel group label (if configured)
@@ -2356,12 +2356,12 @@ paths:
                     example: 1200
                   voltagePhase:
                     type: integer
-                    description: Phase number of voltage reference (1=A, 2=B, 3=C)
+                    description: Phase number of voltage reference (1=A, 2=B, 3=C; 4 not applicable for waveform capture)
                     example: 3
                     enum: [1, 2, 3]
                   currentPhase:
                     type: integer
-                    description: Phase number of current measurement (1=A, 2=B, 3=C)
+                    description: Phase number of current measurement (1=A, 2=B, 3=C; 4 not applicable for waveform capture)
                     example: 1
                     enum: [1, 2, 3]
                   phaseShiftDegrees:
@@ -2784,8 +2784,8 @@ components:
 
     Phase:
       type: integer
-      enum: [1, 2, 3]
-      description: Electrical phase assignment
+      enum: [1, 2, 3, 4]
+      description: Electrical phase assignment (1=Phase A, 2=Phase B, 3=Phase C, 4=240V Split Phase)
       example: 1
 
     CtSpecification:

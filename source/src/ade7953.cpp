@@ -3200,7 +3200,9 @@ namespace Ade7953
 
         Phase basePhase = _channelData[0].phase; // Not using channelData since it is only accessed here and it is an integer so very low probability of race condition
 
-        if (channelData.phase == basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
+        // Split-phase 240V circuits use same-phase path (only 180° shift, so only the sign changes) so we can use the accurate energy registers, but accounting for a 2x multiplier
+        bool isSplitPhase240 = (channelData.phase == PHASE_SPLIT_240);
+        if (channelData.phase == basePhase || isSplitPhase240) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
             
             // These are the three most important (and only) values to read. All of the rest will be computed from these.
             // These are the most reliable since they are computed on the whole line cycle, thus they incorporate any harmonic.
@@ -3223,9 +3225,12 @@ namespace Ade7953
                 }
             }
 
-            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1.0f : 1.0f);
-            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1.0f : 1.0f);
-            apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb;
+            // Apply 2x multiplier for split-phase 240V circuits (ADE7953 measures only 120V leg)
+            float voltageMultiplier = isSplitPhase240 ? 2.0f : 1.0f;
+
+            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1.0f : 1.0f) * voltageMultiplier;
+            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1.0f : 1.0f) * voltageMultiplier;
+            apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb * voltageMultiplier;
 
             // Set the handling just after reading the energy values, to ensure 100% consistency
             if (ade7953Channel == Ade7953Channel::A) _interruptHandledChannelA = true;
@@ -3234,13 +3239,13 @@ namespace Ade7953
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
             // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
             if (channelIndex == 0) {
-                voltage = float(_readVoltageRms()) * VOLT_PER_LSB;
+                voltage = float(_readVoltageRms()) * VOLT_PER_LSB * voltageMultiplier;
 
                 // Update grid frequency during channel 0 reading
                 float newGridFrequency = _readGridFrequency();
                 if (_validateGridFrequency(newGridFrequency)) _gridFrequency = newGridFrequency;
             } else {
-                voltage = _meterValues[0].voltage;
+                voltage = _meterValues[0].voltage * voltageMultiplier;
             }
             
             // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
@@ -4064,6 +4069,8 @@ namespace Ade7953
                 return PHASE_1;
             case PHASE_3:
                 return PHASE_2;
+            case PHASE_SPLIT_240:
+                return PHASE_SPLIT_240;  // Split-phase 240V doesn't rotate
             default:
                 return PHASE_1;
         }
@@ -4077,6 +4084,8 @@ namespace Ade7953
                 return PHASE_3;
             case PHASE_3:
                 return PHASE_1;
+            case PHASE_SPLIT_240:
+                return PHASE_SPLIT_240;  // Split-phase 240V doesn't rotate
             default:
                 return PHASE_1;
         }
@@ -4096,6 +4105,7 @@ namespace Ade7953
             case PHASE_1: voltageAngle = 0.0f; break;      // Phase A: 0°
             case PHASE_2: voltageAngle = 120.0f; break;    // Phase B: 120°
             case PHASE_3: voltageAngle = -120.0f; break;   // Phase C: -120°
+            case PHASE_SPLIT_240: voltageAngle = 0.0f; break;  // Split-phase 240V: 0° (same reference as Phase 1)
             default: return 0.0f;  // Invalid phase
         }
         
@@ -4105,6 +4115,7 @@ namespace Ade7953
             case PHASE_1: currentAngle = 0.0f; break;      // Phase A: 0°
             case PHASE_2: currentAngle = 120.0f; break;    // Phase B: 120°
             case PHASE_3: currentAngle = -120.0f; break;   // Phase C: -120°
+            case PHASE_SPLIT_240: currentAngle = 0.0f; break;  // Split-phase 240V: 0° (same reference as Phase 1)
             default: return 0.0f;  // Invalid phase
         }
         
