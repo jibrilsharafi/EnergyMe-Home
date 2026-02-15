@@ -521,7 +521,7 @@
             button.classList.add('loading');
 
             try {
-                showStatus('mqttConfigStatus', 'Setting MQTT configuration...', 'info');
+                showStatus('Setting MQTT configuration...', 'info');
 
                 var currentStatus = customMqttConfig ? customMqttConfig.lastConnectionStatus : "Unknown";
                 var currentTimestamp = customMqttConfig ? customMqttConfig.lastConnectionAttemptTimestamp : "";
@@ -542,7 +542,7 @@
 
                 await energyApi.setCustomMqttConfig(newCustomMqttConfig);
 
-                showStatus('mqttConfigStatus', 'MQTT configuration saved', 'success');
+                showStatus('MQTT configuration saved', 'success');
 
                 // Call to refresh the custom MQTT configuration after setting it
                 setTimeout(getCustomMqttConfiguration, 1000);
@@ -550,7 +550,7 @@
                     getCustomMqttConfiguration(); // This will reload config and restart auto-reload if needed
                 }, 2000); // Wait 2 seconds for the device to process the new config
             } catch (error) {
-                showStatus('mqttConfigStatus', 'Error: ' + error.message, 'error');
+                showStatus('Error: ' + error.message, 'error');
             } finally {
                 button.disabled = false;
                 button.classList.remove('loading');
@@ -693,7 +693,7 @@
             button.classList.add('loading');
 
             try {
-                showStatus('influxDbConfigStatus', 'Setting InfluxDB configuration...', 'info');
+                showStatus('Setting InfluxDB configuration...', 'info');
 
                 var currentStatus = influxDbConfig ? influxDbConfig.lastConnectionStatus : "Unknown";
                 var currentTimestamp = influxDbConfig ? influxDbConfig.lastConnectionAttemptTimestamp : "";
@@ -718,7 +718,7 @@
 
                 await energyApi.setInfluxDbConfig(newInfluxDbConfig);
 
-                showStatus('influxDbConfigStatus', 'InfluxDB configuration saved', 'success');
+                showStatus('InfluxDB configuration saved', 'success');
 
                 // Call to refresh the InfluxDB configuration after setting it
                 setTimeout(getInfluxDbConfiguration, 1000);
@@ -726,7 +726,7 @@
                     getInfluxDbConfiguration(); // This will reload config and restart auto-reload if needed
                 }, 2000); // Wait 2 seconds for the device to process the new config
             } catch (error) {
-                showStatus('influxDbConfigStatus', 'Error: ' + error.message, 'error');
+                showStatus('Error: ' + error.message, 'error');
             } finally {
                 button.disabled = false;
                 button.classList.remove('loading');

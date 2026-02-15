@@ -270,15 +270,15 @@
             syncButton.classList.add('loading');
 
             try {
-                showStatus('syncTimeStatus', 'Syncing time...', 'info');
+                showStatus('Syncing time...', 'info');
 
                 const unixSeconds = Math.floor(Date.now() / 1000);
                 const response = await energyApi.setSystemTime(unixSeconds);
 
-                showStatus('syncTimeStatus', 'Time synchronized successfully! New time: ' + response.newTime, 'success');
+                showStatus('Time synchronized successfully! New time: ' + response.newTime, 'success');
                 loadDeviceTime();
             } catch (error) {
-                showStatus('syncTimeStatus', 'Error syncing time: ' + error.message, 'error');
+                showStatus('Error syncing time: ' + error.message, 'error');
             } finally {
                 syncButton.disabled = false;
                 syncButton.classList.remove('loading');
@@ -313,7 +313,7 @@
 
                 await energyApi.setWifiCredentials(ssid, password);
 
-                showStatus("WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds.", 'success', 8000);
+                showStatus("WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds.", 'success', 15000);
                 // Clear the form
                 document.getElementById("newWifiSsid").value = "";
                 document.getElementById("newWifiPassword").value = "";
@@ -387,22 +387,22 @@
 
             // Validation
             if (!currentPassword) {
-                showStatus('passwordStatus', 'Please enter your current password.', 'error');
+                showStatus('Please enter your current password.', 'error');
                 return;
             }
 
             if (!newPassword) {
-                showStatus('passwordStatus', 'Please enter a new password.', 'error');
+                showStatus('Please enter a new password.', 'error');
                 return;
             }
 
             if (newPassword.length < 8) {
-                showStatus('passwordStatus', 'New password must be at least 8 characters long.', 'error');
+                showStatus('New password must be at least 8 characters long.', 'error');
                 return;
             }
 
             if (newPassword !== confirmPassword) {
-                showStatus('passwordStatus', 'New passwords do not match.', 'error');
+                showStatus('New passwords do not match.', 'error');
                 return;
             }
 
@@ -411,17 +411,17 @@
             button.classList.add('loading');
 
             try {
-                showStatus('passwordStatus', 'Changing password...', 'info');
+                showStatus('Changing password...', 'info');
 
                 await energyApi.changePassword(currentPassword, newPassword);
 
-                showStatus('passwordStatus', 'Password changed successfully! Please use your new password on next login.', 'success');
+                showStatus('Password changed successfully! Please use your new password on next login.', 'success');
                 // Clear the form
                 document.getElementById("currentPassword").value = "";
                 document.getElementById("newPassword").value = "";
                 document.getElementById("confirmPassword").value = "";
             } catch (error) {
-                showStatus('passwordStatus', 'Error changing password: ' + error.message, 'error');
+                showStatus('Error changing password: ' + error.message, 'error');
             } finally {
                 button.disabled = false;
                 button.classList.remove('loading');
@@ -442,7 +442,7 @@
 
                 // Validate that the levels are valid
                 if (!validLevels.includes(printLogLevel) || !validLevels.includes(saveLogLevel)) {
-                    showStatus('loggingStatus', 'Invalid log level selected', 'error');
+                    showStatus('Invalid log level selected', 'error');
                     button.disabled = false;
                     button.classList.remove('loading');
                     return;
@@ -450,16 +450,16 @@
 
                 console.log("Setting log levels:", { print: printLogLevel, save: saveLogLevel });
 
-                showStatus('loggingStatus', 'Setting log level...', 'info');
+                showStatus('Setting log level...', 'info');
 
                 await energyApi.setLogLevels({
                     print: printLogLevel,
                     save: saveLogLevel
                 });
 
-                showStatus('loggingStatus', 'Log level set successfully', 'success');
+                showStatus('Log level set successfully', 'success');
             } catch (error) {
-                showStatus('loggingStatus', 'Error setting log level: ' + error.message, 'error');
+                showStatus('Error setting log level: ' + error.message, 'error');
             } finally {
                 button.disabled = false;
                 button.classList.remove('loading');
@@ -499,13 +499,13 @@
             button.classList.add('loading');
 
             try {
-                showStatus('loggingStatus', 'Clearing logs...', 'info');
+                showStatus('Clearing logs...', 'info');
 
                 await energyApi.clearLogs();
 
-                showStatus('loggingStatus', 'Log cleared successfully', 'success');
+                showStatus('Log cleared successfully', 'success');
             } catch (error) {
-                showStatus('loggingStatus', 'Error clearing log: ' + error.message, 'error');
+                showStatus('Error clearing log: ' + error.message, 'error');
             } finally {
                 button.disabled = false;
                 button.classList.remove('loading');
@@ -528,7 +528,7 @@
             button.classList.add('loading');
 
             try {
-                showStatus('cloudServicesStatus', 'Updating cloud services...', 'info');
+                showStatus('Updating cloud services...', 'info');
 
                 // First check secrets status
                 const secretsResponse = await energyApi.getSystemSecrets();
@@ -536,7 +536,7 @@
 
                 // If no secrets but cloud services is checked, prevent that
                 if (!secretsResponse.hasSecrets && isEnabled) {
-                    showStatus('cloudServicesStatus', 'Cannot enable: firmware does not include secrets', 'error');
+                    showStatus('Cannot enable: firmware does not include secrets', 'error');
                     document.getElementById("cloudServices").checked = false;
                     button.disabled = false;
                     button.classList.remove('loading');
@@ -546,9 +546,9 @@
                 // Send the configuration
                 await energyApi.setMqttCloudServices(isEnabled);
 
-                showStatus('cloudServicesStatus', 'Cloud services updated', 'success');
+                showStatus('Cloud services updated', 'success');
             } catch (error) {
-                showStatus('cloudServicesStatus', 'Error: ' + error.message, 'error');
+                showStatus('Error: ' + error.message, 'error');
             } finally {
                 button.disabled = false;
                 button.classList.remove('loading');
@@ -573,14 +573,14 @@
             button.classList.add('loading');
 
             try {
-                showStatus('ledBrightnessStatus', 'Setting brightness...', 'info');
+                showStatus('Setting brightness...', 'info');
 
                 const brightness = parseInt(document.getElementById("ledBrightness").value);
                 await energyApi.setLedBrightness(brightness);
 
-                showStatus('ledBrightnessStatus', 'Brightness set successfully', 'success');
+                showStatus('Brightness set successfully', 'success');
             } catch (error) {
-                showStatus('ledBrightnessStatus', 'Error: ' + error.message, 'error');
+                showStatus('Error: ' + error.message, 'error');
             } finally {
                 button.disabled = false;
                 button.classList.remove('loading');
