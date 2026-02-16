@@ -105,7 +105,6 @@ namespace CustomServer
     static void _setupOtaMd5Verification(AsyncWebServerRequest *request);
     static bool _writeOtaChunk(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index);
     static void _finalizeOtaUpload(AsyncWebServerRequest *request);
-    static void _restoreTaskWatchdog();
     
     // Logging helper functions
     static bool _parseLogLevel(const char *levelStr, LogLevel &level);
@@ -490,12 +489,18 @@ namespace CustomServer
         while (client.connected() && (millis64() - startTime) < HEALTH_CHECK_TIMEOUT_MS && loops < MAX_LOOP_ITERATIONS)
         {
             loops++;
+
+            // Reset task watchdog periodically during HTTP wait
+            if (loops % 5 == 0) {
+                esp_task_wdt_reset();
+            }
+
             if (client.available())
             {
                 char line[HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE];
                 size_t bytesRead = client.readBytesUntil('\n', line, sizeof(line) - 1);
                 line[bytesRead] = '\0';
-                
+
                 if (strncmp(line, "HTTP/1.1 ", 9) == 0 && bytesRead >= 12)
                 {
                     // Extract status code from characters 9-11
@@ -948,13 +953,10 @@ namespace CustomServer
     {
         // Handle the completion of the upload
         if (request->getResponse()) return;  // Response already set due to error
-        
+
         // Stop OTA timeout task since OTA process is completing
         _stopOtaTimeoutTask();
-        
-        // Re-initialize task watchdog after OTA
-        _restoreTaskWatchdog();
-        
+
         if (Update.hasError()) {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
@@ -1015,31 +1017,6 @@ namespace CustomServer
         }
     }
 
-    static void _restoreTaskWatchdog()
-    {
-        // Re-initialize task watchdog after OTA (it was suspended during OTA flash operations)
-        LOG_DEBUG("Re-initializing task watchdog after OTA");
-        esp_task_wdt_config_t wdt_config = {
-            .timeout_ms = CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000,
-            .idle_core_mask = 0b11, // both cores are enabled (enable by setting the bit of the i core to 1)
-            .trigger_panic = true
-        };
-        
-        // Try to reconfigure first (in case deinit didn't fully stop it)
-        esp_err_t err = esp_task_wdt_reconfigure(&wdt_config);
-        if (err == ESP_ERR_INVALID_STATE) {
-            // Watchdog not initialized, initialize it fresh
-            LOG_DEBUG("Watchdog not active, initializing fresh");
-            err = esp_task_wdt_init(&wdt_config);
-        }
-        
-        if (err != ESP_OK) {
-            LOG_ERROR("Failed to restore task watchdog: %s", esp_err_to_name(err));
-        } else {
-            LOG_DEBUG("Task watchdog restored successfully");
-        }
-    }
-
     static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename)
     {
         LOG_INFO("Starting OTA update with file: %s", filename.c_str());
@@ -1077,19 +1054,13 @@ namespace CustomServer
         
         // Start OTA timeout watchdog task before beginning the actual OTA process
         _startOtaTimeoutTask();
-        
-        // Suspend task watchdog to prevent timeout during flash operations
-        // Flash writes disable interrupts/cache which prevents IDLE task from feeding watchdog
-        LOG_DEBUG("Suspending task watchdog for OTA flash operations");
-        esp_task_wdt_deinit(); // Deinitialize watchdog - will be re-initialized after OTA
-        
+
         // Begin OTA update with known size
         if (!Update.begin(contentLength, U_FLASH)) {
             LOG_ERROR("Failed to begin OTA update: %s", Update.errorString());
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Failed to begin update");
             Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
             _stopOtaTimeoutTask(); // Stop timeout task on failure
-            _restoreTaskWatchdog(); // Restore watchdog on failure
             return false;
         }
         
@@ -1133,16 +1104,19 @@ namespace CustomServer
 
     static bool _writeOtaChunk(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index)
     {
+        // Reset watchdog before flash write
+        esp_task_wdt_reset();
         size_t written = Update.write(data, len);
+        esp_task_wdt_reset();
+
         if (written != len) {
             LOG_ERROR("OTA write failed: expected %zu bytes, wrote %zu bytes", len, written);
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Write failed");
             Update.abort();
             _stopOtaTimeoutTask(); // Stop timeout task on write failure
-            _restoreTaskWatchdog(); // Restore watchdog on failure
             return false;
         }
-        
+
         // Log progress periodically
         static size_t lastProgressIndex = 0;
         if (index >= lastProgressIndex + SIZE_REPORT_UPDATE_OTA || index == 0) {
@@ -1150,14 +1124,14 @@ namespace CustomServer
             LOG_DEBUG("OTA progress: %.1f%% (%zu / %zu bytes)", progress, Update.progress(), Update.size());
             lastProgressIndex = index;
         }
-        
+
         return true;
     }
 
     static void _finalizeOtaUpload(AsyncWebServerRequest *request)
     {
         LOG_DEBUG("Finalizing OTA update...");
-        
+
         // Validate that we actually received data
         if (Update.progress() == 0) {
             LOG_ERROR("OTA finalization failed: No data received");
@@ -1166,7 +1140,7 @@ namespace CustomServer
             _stopOtaTimeoutTask(); // Stop timeout task on failure
             return;
         }
-        
+
         // Validate minimum size
         if (Update.progress() < MINIMUM_FIRMWARE_SIZE) {
             LOG_ERROR("OTA finalization failed: Firmware too small (%zu bytes)", Update.progress());
@@ -1175,8 +1149,13 @@ namespace CustomServer
             _stopOtaTimeoutTask(); // Stop timeout task on failure
             return;
         }
-        
-        if (!Update.end(true)) {
+
+        // Reset watchdog before flash verification and finalization
+        esp_task_wdt_reset();
+        bool success = Update.end(true);
+        esp_task_wdt_reset();
+
+        if (!success) {
             LOG_ERROR("OTA finalization failed: %s", Update.errorString());
             _stopOtaTimeoutTask(); // Stop timeout task on failure
             // Error response will be handled in the main handler
@@ -1233,7 +1212,11 @@ namespace CustomServer
         
         // Write data chunk
         if (len && uploadFile) {
+            // Reset watchdog before file write
+            esp_task_wdt_reset();
             size_t written = uploadFile.write(data, len);
+            esp_task_wdt_reset();
+
             if (written != len) {
                 LOG_ERROR("Failed to write data chunk at index %zu", index);
                 uploadFile.close();
@@ -1320,16 +1303,22 @@ namespace CustomServer
         http.begin(GITHUB_API_RELEASES_URL);
         http.addHeader("User-Agent", "EnergyMe-Home-ESP32");
         http.addHeader("Accept", "application/vnd.github.v3+json");
-        
+
+        // Reset watchdog before network call
+        esp_task_wdt_reset();
         int httpCode = http.GET();
+        esp_task_wdt_reset();
+
         if (httpCode != HTTP_CODE_OK) {
             LOG_WARNING("GitHub API request failed with code: %d", httpCode);
             http.end();
             return false;
         }
-        
-        // Parse GitHub API response
+
+        // Parse GitHub API response - reset before and after data fetch
+        esp_task_wdt_reset();
         String response = http.getString();
+        esp_task_wdt_reset();
         http.end();
 
         DeserializationError error = deserializeJson(doc, response);
