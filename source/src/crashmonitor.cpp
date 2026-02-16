@@ -521,7 +521,7 @@ namespace CrashMonitor
         LOG_WARNING("=== End Crash Analysis ===");
     }
 
-    bool getCoreDumpInfoJson(JsonDocument &doc) {
+    bool getCoreDumpInfoJson(JsonDocument &doc) { // TODO: this should instead save the binary blob to LittleFS with the unix timestamp of when it happened and the elf256 partial as name. THen later updated, but immediately cleared from partition
         // Basic crash information
         esp_reset_reason_t resetReason = esp_reset_reason();
         doc["resetReason"] = getResetReasonString(resetReason);

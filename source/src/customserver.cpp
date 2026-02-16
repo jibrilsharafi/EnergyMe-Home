@@ -2509,7 +2509,7 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             
-            if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) {
+            if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) { // TODO: this should be streamed instead, and the full data raw (no useless JSON)
                 _sendJsonResponse(request, doc);
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve core dump data");
@@ -2582,13 +2582,20 @@ namespace CustomServer
     {
         server.on("/api/v1/backup/configuration", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            SpiRamAllocator allocator;
-            JsonDocument doc(&allocator);
-
             // nvsDataToJson() resets watchdog periodically during iteration
-            nvsDataToJson(doc);
+            AsyncJsonResponse * response = new AsyncJsonResponse();
+            JsonObject doc = response->getRoot().to<JsonObject>();
 
-            _sendJsonResponse(request, doc);
+            if (!nvsDataToJson(doc)) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve NVS data");
+                LOG_ERROR("Failed to retrieve NVS data for backup request via API");
+                delete response;
+                return;
+            }
+
+            LOG_INFO("Configuration backup requested via API");
+            response->setLength();
+            request->send(response);
         });
 
         // LittleFS filesystem backup (tar) - streams directly to HTTP response, no temp files
@@ -2599,6 +2606,7 @@ namespace CustomServer
             RingBufferStream* stream = startStreamingBackup();
             if (!stream) {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to start backup stream");
+                LOG_ERROR("Failed to start LittleFS backup stream via API");
                 return;
             }
 
@@ -2632,9 +2640,8 @@ namespace CustomServer
                      deviceId, timestamp);
             response->addHeader("Content-Disposition", filename);
 
+            LOG_INFO("LittleFS backup streaming started: littlefs_backup_%s_%s.tar", deviceId, timestamp);
             request->send(response);
-            LOG_INFO("LittleFS backup streaming started: littlefs_backup_%s_%s.tar",
-                     deviceId, timestamp);
         });
     }
 

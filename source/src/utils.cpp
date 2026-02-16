@@ -1934,7 +1934,7 @@ bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth)
     return true;
 }
 
-void nvsDataToJson(JsonDocument &doc) { // TODO: make bool so we can spot failures
+bool nvsDataToJson(JsonObject &doc) {
     LOG_DEBUG("Exporting NVS data to JSON document");
 
     // Add metadata
@@ -1970,7 +1970,7 @@ void nvsDataToJson(JsonDocument &doc) { // TODO: make bool so we can spot failur
 
     if (err != ESP_OK) {
         LOG_ERROR("Could not initialize NVS iterator (error %d - %s)", err, esp_err_to_name(err));
-        return;
+        return false;
     }
 
     uint32_t entryCount = 0;
@@ -2008,37 +2008,46 @@ void nvsDataToJson(JsonDocument &doc) { // TODO: make bool so we can spot failur
         if (prefs.begin(info.namespace_name, true)) { // read-only
             switch(info.type) {
                 case NVS_TYPE_U8:
-                    doc["nvs"][info.namespace_name][info.key] = prefs.getUChar(info.key, 0);
+                    doc["nvs"][info.namespace_name][info.key]["type"] = "u8";
+                    doc["nvs"][info.namespace_name][info.key]["value"] = prefs.getUChar(info.key, 0);
                     break;
                 case NVS_TYPE_I8:
-                    doc["nvs"][info.namespace_name][info.key] = prefs.getChar(info.key, 0);
+                    doc["nvs"][info.namespace_name][info.key]["type"] = "i8";
+                    doc["nvs"][info.namespace_name][info.key]["value"] = prefs.getChar(info.key, 0);
                     break;
                 case NVS_TYPE_U16:
-                    doc["nvs"][info.namespace_name][info.key] = prefs.getUShort(info.key, 0);
+                    doc["nvs"][info.namespace_name][info.key]["type"] = "u16";
+                    doc["nvs"][info.namespace_name][info.key]["value"] = prefs.getUShort(info.key, 0);
                     break;
                 case NVS_TYPE_I16:
-                    doc["nvs"][info.namespace_name][info.key] = prefs.getShort(info.key, 0);
+                    doc["nvs"][info.namespace_name][info.key]["type"] = "i16";
+                    doc["nvs"][info.namespace_name][info.key]["value"] = prefs.getShort(info.key, 0);
                     break;
                 case NVS_TYPE_U32:
-                    doc["nvs"][info.namespace_name][info.key] = prefs.getUInt(info.key, 0);
+                    doc["nvs"][info.namespace_name][info.key]["type"] = "u32";
+                    doc["nvs"][info.namespace_name][info.key]["value"] = prefs.getUInt(info.key, 0);
                     break;
                 case NVS_TYPE_I32:
-                    doc["nvs"][info.namespace_name][info.key] = prefs.getInt(info.key, 0);
+                    doc["nvs"][info.namespace_name][info.key]["type"] = "i32";
+                    doc["nvs"][info.namespace_name][info.key]["value"] = prefs.getInt(info.key, 0);
                     break;
                 case NVS_TYPE_U64:
-                    doc["nvs"][info.namespace_name][info.key] = prefs.getULong64(info.key, 0);
+                    doc["nvs"][info.namespace_name][info.key]["type"] = "u64";
+                    doc["nvs"][info.namespace_name][info.key]["value"] = prefs.getULong64(info.key, 0);
                     break;
                 case NVS_TYPE_I64:
-                    doc["nvs"][info.namespace_name][info.key] = prefs.getLong64(info.key, 0);
+                    doc["nvs"][info.namespace_name][info.key]["type"] = "i64";
+                    doc["nvs"][info.namespace_name][info.key]["value"] = prefs.getLong64(info.key, 0);
                     break;
                 case NVS_TYPE_STR: {
                     char strBuffer[NVS_STRING_MAX_SIZE];
                     size_t strLen = prefs.getString(info.key, strBuffer, sizeof(strBuffer));
                     if (strLen > 0) {
-                        doc["nvs"][info.namespace_name][info.key] = strBuffer;
+                        doc["nvs"][info.namespace_name][info.key]["value"] = strBuffer;
                     } else {
-                        doc["nvs"][info.namespace_name][info.key] = "";
+                        doc["nvs"][info.namespace_name][info.key]["value"] = "";
                     }
+                    doc["nvs"][info.namespace_name][info.key]["type"] = "str";
                     break;
                 }
                 case NVS_TYPE_BLOB: {
@@ -2056,29 +2065,18 @@ void nvsDataToJson(JsonDocument &doc) { // TODO: make bool so we can spot failur
                                     // Interpret as float
                                     float value;
                                     memcpy(&value, blobData, sizeof(float));
-                                    doc["nvs"][info.namespace_name][info.key] = value;
+                                    doc["nvs"][info.namespace_name][info.key]["value"] = value;
+                                    doc["nvs"][info.namespace_name][info.key]["type"] = "float";
                                 } else if (readSize == sizeof(double)) {
                                     // Interpret as double
                                     double value;
                                     memcpy(&value, blobData, sizeof(double));
-                                    doc["nvs"][info.namespace_name][info.key] = value;
+                                    doc["nvs"][info.namespace_name][info.key]["value"] = value;
+                                    doc["nvs"][info.namespace_name][info.key]["type"] = "double";
                                 } else {
-                                    // Fall back to base64 encoding for other blob types
-                                    size_t base64Len = 0;
-                                    mbedtls_base64_encode(nullptr, 0, &base64Len, blobData, readSize);
-
-                                    if (base64Len > 0) {
-                                        uint8_t* base64Data = (uint8_t*)ps_malloc(base64Len + 1);
-                                        if (base64Data != nullptr) {
-                                            size_t actualLen = 0;
-                                            int ret = mbedtls_base64_encode(base64Data, base64Len, &actualLen, blobData, readSize);
-                                            if (ret == 0) {
-                                                base64Data[actualLen] = '\0';
-                                                doc["nvs"][info.namespace_name][info.key] = (const char*)base64Data;
-                                            }
-                                            free(base64Data);
-                                        }
-                                    }
+                                    // Not supported since it makes the JSON too large
+                                    LOG_WARNING("Skipping blob key %s in namespace %s due to unsupported size %zu bytes", 
+                                                info.key, info.namespace_name, readSize);
                                 }
                             }
                             free(blobData);
@@ -2097,7 +2095,7 @@ void nvsDataToJson(JsonDocument &doc) { // TODO: make bool so we can spot failur
 
         if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
             LOG_ERROR("Could not initialize NVS iterator (error %d - %s)", err, esp_err_to_name(err));
-            return;
+            return false;
         }
     }
 
@@ -2105,7 +2103,8 @@ void nvsDataToJson(JsonDocument &doc) { // TODO: make bool so we can spot failur
         nvs_release_iterator(it);
     }
 
-    LOG_DEBUG("Completed exporting %u NVS entries to JSON", entryCount);
+    LOG_DEBUG("Completed exporting %u NVS entries to JSON. Size of JSON: %zu bytes", entryCount, measureJson(doc));
+    return true;
 }
 
 // Background task that creates TAR data for streaming backup
