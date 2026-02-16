@@ -1945,6 +1945,7 @@ void nvsDataToJson(JsonDocument &doc) {
     doc["deviceId"] = deviceId;
 
     doc["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
+    doc["sketchMD5"] = ESP.getSketchMD5().c_str();
 
     char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
     CustomTime::getTimestampIso(timestamp, sizeof(timestamp));
@@ -1952,6 +1953,15 @@ void nvsDataToJson(JsonDocument &doc) {
 
     // Create nvs object
     doc["nvs"] = JsonObject();
+
+    // Namespaces to exclude from backup (sensitive, device-specific, or auto-generated data)
+    const char* excludedNamespaces[] = {
+        "auth_ns",        // Contains passwords
+        "nvs.net80211",   // WiFi credentials and BSSID info (device/network-specific)
+        "phy",            // Calibration data (auto-generated from ROM per device)
+        "certificates_ns" // MQTT AWS IoT Core certs for connecting (sensitive data)
+    };
+    const size_t excludedCount = sizeof(excludedNamespaces) / sizeof(excludedNamespaces[0]);
 
     // Iterate ALL NVS entries and populate
     nvs_iterator_t it = nullptr;
@@ -1974,6 +1984,19 @@ void nvsDataToJson(JsonDocument &doc) {
             TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
             LOG_DEBUG("Resetting task watchdog (entries: %d). Running on task: %s", entryCount, pcTaskGetName(currentTask));
             esp_task_wdt_reset();
+        }
+
+        // Skip excluded namespaces
+        bool isExcluded = false;
+        for (size_t i = 0; i < excludedCount; i++) {
+            if (strcmp(info.namespace_name, excludedNamespaces[i]) == 0) {
+                isExcluded = true;
+                break;
+            }
+        }
+        if (isExcluded) {
+            err = nvs_entry_next(&it);
+            continue;
         }
 
         // Auto-create namespace object if first time seeing it
@@ -2029,20 +2052,33 @@ void nvsDataToJson(JsonDocument &doc) {
                             size_t readSize = prefs.getBytes(info.key, blobData, blobSize);
 
                             if (readSize > 0) {
-                                // Base64 encode the blob
-                                size_t base64Len = 0;
-                                mbedtls_base64_encode(nullptr, 0, &base64Len, blobData, readSize);
+                                // Try to interpret common blob sizes as numeric types
+                                if (readSize == sizeof(float)) {
+                                    // Interpret as float
+                                    float value;
+                                    memcpy(&value, blobData, sizeof(float));
+                                    doc["nvs"][info.namespace_name][info.key] = value;
+                                } else if (readSize == sizeof(double)) {
+                                    // Interpret as double
+                                    double value;
+                                    memcpy(&value, blobData, sizeof(double));
+                                    doc["nvs"][info.namespace_name][info.key] = value;
+                                } else {
+                                    // Fall back to base64 encoding for other blob types
+                                    size_t base64Len = 0;
+                                    mbedtls_base64_encode(nullptr, 0, &base64Len, blobData, readSize);
 
-                                if (base64Len > 0) {
-                                    uint8_t* base64Data = (uint8_t*)ps_malloc(base64Len + 1);
-                                    if (base64Data != nullptr) {
-                                        size_t actualLen = 0;
-                                        int ret = mbedtls_base64_encode(base64Data, base64Len, &actualLen, blobData, readSize);
-                                        if (ret == 0) {
-                                            base64Data[actualLen] = '\0';
-                                            doc["nvs"][info.namespace_name][info.key] = (const char*)base64Data;
+                                    if (base64Len > 0) {
+                                        uint8_t* base64Data = (uint8_t*)ps_malloc(base64Len + 1);
+                                        if (base64Data != nullptr) {
+                                            size_t actualLen = 0;
+                                            int ret = mbedtls_base64_encode(base64Data, base64Len, &actualLen, blobData, readSize);
+                                            if (ret == 0) {
+                                                base64Data[actualLen] = '\0';
+                                                doc["nvs"][info.namespace_name][info.key] = (const char*)base64Data;
+                                            }
+                                            free(base64Data);
                                         }
-                                        free(base64Data);
                                     }
                                 }
                             }
