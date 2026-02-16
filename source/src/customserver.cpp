@@ -75,6 +75,7 @@ namespace CustomServer
     static void _serveInfluxDbEndpoints();
     static void _serveCrashEndpoints();
     static void _serveLedEndpoints();
+    static void _serveBackupEndpoints();
     static void _serveFileEndpoints();
     
     // Authentication endpoints
@@ -608,6 +609,7 @@ namespace CustomServer
         _serveInfluxDbEndpoints();
         _serveCrashEndpoints();
         _serveLedEndpoints();
+        _serveBackupEndpoints();
         _serveFileEndpoints();
     }
 
@@ -2596,8 +2598,22 @@ namespace CustomServer
         server.addHandler(setLedBrightnessHandler);
     }
 
+    // === BACKUP ENDPOINTS ===
+    static void _serveBackupEndpoints()
+    {
+        server.on("/api/v1/backup/configuration", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            // nvsDataToJson() resets watchdog periodically during iteration
+            nvsDataToJson(doc);
+
+            _sendJsonResponse(request, doc);
+        });
+    }
+
     // === FILE OPERATION ENDPOINTS ===
-    // TODO: add full backup/restore endpoint (NVS + LittleFS in a single file) to allow data export and device restoration
     static void _serveFileEndpoints()
     {
         // List files in LittleFS. The endpoint cannot be only "files" as it conflicts with the file serving endpoint (defined below)

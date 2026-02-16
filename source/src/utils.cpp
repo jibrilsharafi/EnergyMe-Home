@@ -1933,4 +1933,142 @@ bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth)
     return true;
 }
 
-// TODO: is it possible to add a standard way to retrieve all the NVS data as key value for a JSON?
+void nvsDataToJson(JsonDocument &doc) {
+    LOG_DEBUG("Exporting NVS data to JSON document");
+
+    // Add metadata
+    doc["version"] = 1;
+    doc["type"] = "configuration";
+
+    char deviceId[DEVICE_ID_BUFFER_SIZE];
+    getDeviceId(deviceId, sizeof(deviceId));
+    doc["deviceId"] = deviceId;
+
+    doc["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
+
+    char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
+    CustomTime::getTimestampIso(timestamp, sizeof(timestamp));
+    doc["timestamp"] = timestamp;
+
+    // Create nvs object
+    doc["nvs"] = JsonObject();
+
+    // Iterate ALL NVS entries and populate
+    nvs_iterator_t it = nullptr;
+    esp_err_t err = nvs_entry_find("nvs", nullptr, NVS_TYPE_ANY, &it);
+
+    if (err != ESP_OK) {
+        LOG_ERROR("Could not initialize NVS iterator (error %d - %s)", err, esp_err_to_name(err));
+        return;
+    }
+
+    uint32_t entryCount = 0;
+    while (err == ESP_OK) {
+        nvs_entry_info_t info;
+        nvs_entry_info(it, &info);
+        entryCount++;
+
+        // Reset task watchdog periodically to prevent timeout during long NVS iteration
+        // This is safe because we're making progress, not stuck
+        if (entryCount % 10 == 0) {
+            TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
+            LOG_DEBUG("Resetting task watchdog (entries: %d). Running on task: %s", entryCount, pcTaskGetName(currentTask));
+            esp_task_wdt_reset();
+        }
+
+        // Auto-create namespace object if first time seeing it
+        if (!doc["nvs"][info.namespace_name].is<JsonObject>()) {
+            doc["nvs"][info.namespace_name] = JsonObject();
+        }
+
+        // Read and store value based on type
+        Preferences prefs;
+        if (prefs.begin(info.namespace_name, true)) { // read-only
+            switch(info.type) {
+                case NVS_TYPE_U8:
+                    doc["nvs"][info.namespace_name][info.key] = prefs.getUChar(info.key, 0);
+                    break;
+                case NVS_TYPE_I8:
+                    doc["nvs"][info.namespace_name][info.key] = prefs.getChar(info.key, 0);
+                    break;
+                case NVS_TYPE_U16:
+                    doc["nvs"][info.namespace_name][info.key] = prefs.getUShort(info.key, 0);
+                    break;
+                case NVS_TYPE_I16:
+                    doc["nvs"][info.namespace_name][info.key] = prefs.getShort(info.key, 0);
+                    break;
+                case NVS_TYPE_U32:
+                    doc["nvs"][info.namespace_name][info.key] = prefs.getUInt(info.key, 0);
+                    break;
+                case NVS_TYPE_I32:
+                    doc["nvs"][info.namespace_name][info.key] = prefs.getInt(info.key, 0);
+                    break;
+                case NVS_TYPE_U64:
+                    doc["nvs"][info.namespace_name][info.key] = prefs.getULong64(info.key, 0);
+                    break;
+                case NVS_TYPE_I64:
+                    doc["nvs"][info.namespace_name][info.key] = prefs.getLong64(info.key, 0);
+                    break;
+                case NVS_TYPE_STR: {
+                    char strBuffer[NVS_STRING_MAX_SIZE];
+                    size_t strLen = prefs.getString(info.key, strBuffer, sizeof(strBuffer));
+                    if (strLen > 0) {
+                        doc["nvs"][info.namespace_name][info.key] = strBuffer;
+                    } else {
+                        doc["nvs"][info.namespace_name][info.key] = "";
+                    }
+                    break;
+                }
+                case NVS_TYPE_BLOB: {
+                    // Get blob size
+                    size_t blobSize = prefs.getBytesLength(info.key);
+                    if (blobSize > 0) {
+                        // Allocate buffer for blob data
+                        uint8_t* blobData = (uint8_t*)ps_malloc(blobSize);
+                        if (blobData != nullptr) {
+                            size_t readSize = prefs.getBytes(info.key, blobData, blobSize);
+
+                            if (readSize > 0) {
+                                // Base64 encode the blob
+                                size_t base64Len = 0;
+                                mbedtls_base64_encode(nullptr, 0, &base64Len, blobData, readSize);
+
+                                if (base64Len > 0) {
+                                    uint8_t* base64Data = (uint8_t*)ps_malloc(base64Len + 1);
+                                    if (base64Data != nullptr) {
+                                        size_t actualLen = 0;
+                                        int ret = mbedtls_base64_encode(base64Data, base64Len, &actualLen, blobData, readSize);
+                                        if (ret == 0) {
+                                            base64Data[actualLen] = '\0';
+                                            doc["nvs"][info.namespace_name][info.key] = (const char*)base64Data;
+                                        }
+                                        free(base64Data);
+                                    }
+                                }
+                            }
+                            free(blobData);
+                        }
+                    }
+                    break;
+                }
+                default:
+                    LOG_WARNING("Unknown NVS type %d for key %s in namespace %s", info.type, info.key, info.namespace_name);
+                    break;
+            }
+            prefs.end();
+        }
+
+        err = nvs_entry_next(&it);
+
+        if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+            LOG_ERROR("Could not initialize NVS iterator (error %d - %s)", err, esp_err_to_name(err));
+            return;
+        }
+    }
+
+    if (it != nullptr) {
+        nvs_release_iterator(it);
+    }
+
+    LOG_DEBUG("Completed exporting %u NVS entries to JSON", entryCount);
+}

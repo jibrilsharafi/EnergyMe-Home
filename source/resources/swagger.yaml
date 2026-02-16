@@ -690,6 +690,66 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  # Backup endpoints
+  /api/v1/backup/configuration:
+    get:
+      summary: Get configuration backup
+      description: Export the complete NVS configuration data as JSON for backup or transfer to another device
+      tags:
+        - Backup
+      responses:
+        '200':
+          description: Configuration backup data
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - version
+                  - type
+                  - deviceId
+                  - firmwareVersion
+                  - timestamp
+                  - nvs
+                properties:
+                  version:
+                    type: integer
+                    description: Backup format version
+                    example: 1
+                  type:
+                    type: string
+                    description: Backup type identifier
+                    example: "configuration"
+                  deviceId:
+                    type: string
+                    description: Unique device identifier
+                    example: "A1B2C3D4E5F6"
+                  firmwareVersion:
+                    type: string
+                    description: Current firmware version
+                    example: "00.11.09"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: Backup timestamp in ISO 8601 format
+                    example: "2025-02-15T10:30:45Z"
+                  nvs:
+                    type: object
+                    description: NVS data organized by namespace
+                    additionalProperties:
+                      type: object
+                      description: Namespace containing configuration keys and values
+                      additionalProperties: true
+                    example:
+                      "preferences":
+                        "sampleTime": 1000
+                        "enabled": true
+                      "mqtt":
+                        "server": "mqtt.example.com"
+                        "port": 1883
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   # Network Management endpoints
   /api/v1/network/wifi/reset:
     post:
@@ -2413,6 +2473,8 @@ tags:
     description: LED brightness control and status endpoints
   - name: Files
     description: LittleFS file system operations and management endpoints
+  - name: Backup
+    description: Configuration backup and export endpoints
 
 components:
   # Common response patterns

@@ -59,6 +59,9 @@
 // First boot
 #define IS_FIRST_BOOT_DONE_KEY "first_boot"
 
+// NVS to JSON
+#define NVS_STRING_MAX_SIZE 512 // Reasonable size for string values going in the JSON from the NVS
+
 // Stringify macro helper for BUILD_ENV_NAME - If you try to concatenate directly, it will crash the build
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -202,6 +205,10 @@ void migrateCsvToGzip(const char* dirPath, const char* excludePrefix = nullptr);
 bool migrateEnergyFilesToDailyFolder(); // One-time migration of existing /energy/*.csv.gz to /energy/daily/
 bool consolidateDailyFilesToMonthly(const char* yearMonth, const char* excludeDate = nullptr); // Consolidate daily files for YYYY-MM into monthly archive (optionally exclude a specific date)
 bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth = nullptr); // Consolidate monthly files for YYYY into yearly archive (optionally exclude a specific month)
+
+// Backup utilities
+void nvsDataToJson(JsonDocument &doc);
+void blobToBase64(Preferences &prefs, nvs_entry_info_t &info, ArduinoJson::V742PB22::JsonObject &namespaceObj, int &retFlag);
 
 // String utilities
 inline bool endsWith(const char* s, const char* suffix) {
