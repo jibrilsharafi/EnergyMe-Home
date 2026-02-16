@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <vector>
 #include <AdvancedLogger.h>
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
