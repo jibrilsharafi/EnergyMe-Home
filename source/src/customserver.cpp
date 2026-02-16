@@ -2591,59 +2591,50 @@ namespace CustomServer
             _sendJsonResponse(request, doc);
         });
 
-        // LittleFS filesystem backup (tar)
+        // LittleFS filesystem backup (tar) - streams directly to HTTP response, no temp files
         server.on("/api/v1/backup/filesystem", HTTP_GET, [](AsyncWebServerRequest *request) {
-            LOG_DEBUG("LittleFS backup requested");
+            LOG_DEBUG("LittleFS streaming backup requested");
 
-            // Build filename with device ID
+            // Start async TAR creation task
+            RingBufferStream* stream = startStreamingBackup();
+            if (!stream) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to start backup stream");
+                return;
+            }
+
+            // Set up chunked response that reads from RingBufferStream
+            // Use simpler callback to avoid compiler memory issues
+            AsyncWebServerResponse *response = request->beginChunkedResponse("application/x-tar",
+                [stream](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                    // Feed watchdog on every callback to prevent timeout during semaphore waits
+                    esp_task_wdt_reset();
+
+                    if (stream->hasError()) {
+                        delete stream;
+                        return 0;
+                    }
+                    size_t bytesRead = stream->readBytes(buffer, maxLen);
+                    if (bytesRead == 0) {
+                        delete stream;
+                    }
+                    return bytesRead;
+                }
+            );
+
+            // Add download headers with device ID and timestamp
             char deviceId[DEVICE_ID_BUFFER_SIZE];
             getDeviceId(deviceId, sizeof(deviceId));
             char timestamp[TIMESTAMP_BUFFER_SIZE];
             CustomTime::getTimestampIso(timestamp, sizeof(timestamp));
-            
-            // Create temporary backup file
-            char tempBackupPath[128];
-            snprintf(tempBackupPath, sizeof(tempBackupPath), "/littlefs_backup_%s_%s.tar", deviceId, timestamp);
 
-            // createLittleFsBackup() will resets periodically during the backup generation
-            if (!createLittleFsBackup(tempBackupPath)) {
-                LOG_ERROR("Failed to create LittleFS backup");
-                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to create backup");
-                return;
-            }
+            char filename[128];
+            snprintf(filename, sizeof(filename), "attachment; filename=\"littlefs_backup_%s_%s.tar\"",
+                     deviceId, timestamp);
+            response->addHeader("Content-Disposition", filename);
 
-            // Verify backup file exists before serving
-            if (!LittleFS.exists(tempBackupPath)) {
-                LOG_ERROR("Backup file not found after creation: %s", tempBackupPath);
-                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Backup file verification failed");
-                return;
-            }
-
-            // Get file size for logging
-            File backupFile = LittleFS.open(tempBackupPath, FILE_READ);
-            if (!backupFile) {
-                LOG_ERROR("Cannot open backup file for verification: %s", tempBackupPath);
-                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Cannot access backup file");
-                return;
-            }
-            size_t fileSize = backupFile.size();
-            backupFile.close();
-
-            if (fileSize == 0) {
-                LOG_ERROR("Backup file is empty: %s", tempBackupPath);
-                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Backup file is empty");
-                return;
-            }
-
-            LOG_DEBUG("Backup file verified: %zu bytes, preparing download", fileSize);
-
-            const char* contentType = getContentTypeFromFilename(tempBackupPath);
-            bool forceDownload = true;
-            request->send(LittleFS, tempBackupPath, contentType, forceDownload);
-
-            // TODO: Should we cleanup the backup after this? But how can we ensure we do it late enough after the async response?
-
-            LOG_INFO("LittleFS backup download started: %s (%zu bytes)", tempBackupPath, fileSize);
+            request->send(response);
+            LOG_INFO("LittleFS backup streaming started: littlefs_backup_%s_%s.tar",
+                     deviceId, timestamp);
         });
     }
 

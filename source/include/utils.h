@@ -38,6 +38,7 @@
 #include "led.h"
 #include "structs.h"
 #include "globals.h"
+#include "ringbufferstream.h"
 
 #define TASK_RESTART_NAME "restart_task"
 #define TASK_RESTART_STACK_SIZE (6 * 1024)
@@ -208,7 +209,8 @@ bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth 
 
 // Backup utilities
 void nvsDataToJson(JsonDocument &doc);
-bool createLittleFsBackup(const char* backupFilePath);
+RingBufferStream* startStreamingBackup();              // Start async TAR creation to RingBufferStream (no temp file, true streaming)
+bool createLittleFsBackup(const char* backupFilePath); // File-based backup (creates temp file, fails when LittleFS >50% full)
 void blobToBase64(Preferences &prefs, nvs_entry_info_t &info, ArduinoJson::V742PB22::JsonObject &namespaceObj, int &retFlag);
 
 // String utilities

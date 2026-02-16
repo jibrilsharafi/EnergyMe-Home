@@ -2108,86 +2108,81 @@ void nvsDataToJson(JsonDocument &doc) { // TODO: make bool so we can spot failur
     LOG_DEBUG("Completed exporting %u NVS entries to JSON", entryCount);
 }
 
-bool createLittleFsBackup(const char* backupFilePath) {
-    if (!backupFilePath) {
-        LOG_ERROR("Invalid backup file path");
-        return false;
-    }
+// Background task that creates TAR data for streaming backup
+static void tarPackerTask(void* param) {
+    RingBufferStream* stream = (RingBufferStream*)param;
 
-    LOG_DEBUG("Starting LittleFS backup to %s", backupFilePath);
+    LOG_DEBUG("TAR packing task started");
 
     // Collect all files and directories from root
     std::vector<TAR::dir_entity_t> dirEntities;
-    TarPacker::collectDirEntities(&dirEntities, &LittleFS, "/"); // All files and directories from root
+    TarPacker::collectDirEntities(&dirEntities, &LittleFS, "/");
 
-    // Callback mandatory for avoiding crashing due to async_tcp watchdog (plus progress update)
+    if (dirEntities.empty()) {
+        LOG_ERROR("No files found in LittleFS for backup");
+        stream->setError();
+        vTaskDelete(NULL);
+        return;
+    }
+
+    LOG_DEBUG("Collected %d entities for TAR packing", dirEntities.size());
+
+    // Set progress callback to feed watchdog during packing
     TarPacker::setProgressCallBack([](size_t packedBytes, size_t totalBytes) {
-        const size_t progressInterval = 1024 * 32;
+        const size_t progressInterval = 1024 * 32;  // Reset watchdog every 32KB
         if (packedBytes % progressInterval == 0 || packedBytes == totalBytes) {
             esp_task_wdt_reset();
-            LOG_DEBUG("Packing progress: %zu / %zu bytes (%.2f%%)", packedBytes, totalBytes, (double)packedBytes / totalBytes * 100);
+            LOG_DEBUG("TAR packing progress: %zu / %zu bytes (%.2f%%)",
+                     packedBytes, totalBytes, (double)packedBytes / totalBytes * 100);
         }
     });
 
-    if (dirEntities.empty()) {
-        LOG_WARNING("No files found in LittleFS for backup");
-        return false;
+    LOG_DEBUG("Starting TAR packing to stream");
+    size_t packed = TarPacker::pack_files(&LittleFS, dirEntities, stream);
+
+    // Clear progress callback
+    TarPacker::setProgressCallBack(nullptr);
+
+    if (packed > 0) {
+        LOG_INFO("TAR packing complete: %zu bytes", packed);
+        stream->setEOF(); // Signal consumer we're done
+    } else {
+        LOG_ERROR("TAR packing failed (error code: %zu)", packed);
+        stream->setError();
     }
 
-    LOG_DEBUG("Packing %d entities to tar", dirEntities.size());
+    LOG_DEBUG("Tar packer task exiting");
+    vTaskDelete(NULL); // Delete self
+}
 
-    // Remove any existing backup file
-    if (LittleFS.exists(backupFilePath)) {
-        LittleFS.remove(backupFilePath);
+// Start streaming backup (returns stream that caller must delete when done)
+RingBufferStream* startStreamingBackup() {
+    LOG_DEBUG("Starting streaming backup");
+
+    RingBufferStream* stream = new RingBufferStream();
+    if (!stream) {
+        LOG_ERROR("Failed to start streaming backup");
+        return nullptr;
     }
 
-    // Create tar file
-    File backupFile = LittleFS.open(backupFilePath, FILE_WRITE);
-    if (!backupFile) {
-        LOG_ERROR("Failed to open backup file for writing: %s", backupFilePath);
-        return false;
+    // Create producer task (8KB stack, priority 3, pinned to core 0)
+    // Priority 3 is same as maintenance task, lower than network/MQTT tasks
+    BaseType_t result = xTaskCreatePinnedToCore(
+        tarPackerTask,      // Task function
+        "tar_packer",       // Task name
+        8 * 1024,          // Stack size (8KB)
+        stream,            // Parameter (RingBufferStream pointer)
+        3,                 // Priority
+        nullptr,           // Task handle (not needed, task deletes itself)
+        0                  // Core 0 (same as main loop)
+    );
+
+    if (result != pdPASS) {
+        LOG_ERROR("Failed to create tar packer task");
+        delete stream;
+        return nullptr;
     }
 
-    // Compress and write directly to file
-    LOG_DEBUG("Starting packing of LittleFS to tar");
-    size_t packedSize = TarPacker::pack_files(&LittleFS, dirEntities, &backupFile);
-    LOG_DEBUG("Finished packing of LittleFS to tar, bytes written: %zu", packedSize);
-
-    // Flush and close file to ensure data is written to flash
-    backupFile.close();
-
-    // Verify the backup file was created successfully
-    if (packedSize <= 0) {
-        LOG_ERROR("LittleFS backup packing failed (error code: %zu)", packedSize);
-        LittleFS.remove(backupFilePath);
-        return false;
-    }
-    LOG_DEBUG("LittleFS backup file created successfully with %zu bytes", packedSize);
-
-    // Verify file actually exists and has data
-    if (!LittleFS.exists(backupFilePath)) {
-        LOG_ERROR("LittleFS backup file was not created: %s", backupFilePath);
-        return false;
-    }
-    LOG_DEBUG("LittleFS backup file exists: %s", backupFilePath);
-
-    File verifyFile = LittleFS.open(backupFilePath, FILE_READ);
-    if (!verifyFile) {
-        LOG_ERROR("Cannot open backup file for verification: %s", backupFilePath);
-        return false;
-    }
-    LOG_DEBUG("Opened backup file for verification: %s", backupFilePath);
-
-    size_t actualSize = verifyFile.size();
-    verifyFile.close();
-
-    if (actualSize != packedSize) {
-        LOG_WARNING("Backup file size mismatch: expected %zu bytes, got %zu bytes", packedSize, actualSize);
-    }
-    LOG_DEBUG("Verified backup file size: %zu bytes", actualSize);
-
-    LOG_INFO("LittleFS backup complete: %zu bytes written to %s (verified: %zu bytes on disk)",
-             packedSize, backupFilePath, actualSize);
-    
-    return true;
+    LOG_INFO("Streaming backup started: producer task running on core 0");
+    return stream;
 }

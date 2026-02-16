@@ -757,24 +757,45 @@ paths:
 
   /api/v1/backup/filesystem:
     get:
-      summary: Download LittleFS filesystem backup
-      description: Download a complete backup of the LittleFS filesystem as a tar.gz archive. Includes all energy data files, logs, and configuration files. The archive can be extracted on any system with tar/gzip support.
+      summary: Download LittleFS filesystem backup (no temporary files)
+      description: |
+        Downloads a complete backup of the LittleFS filesystem as a TAR archive.
+        Includes all energy data files, logs, and configuration files.
+
+        **Key Features:**
+        - **NO temporary files created in LittleFS** (works even when filesystem is >50% full)
+        - Streamed directly from source files to HTTP response
+        - Transfer typically completes in 1-2 seconds on local network
+        - Supports multiple concurrent downloads
+
+        **Extraction:**
+        Extract on any system with tar support:
+        ```bash
+        tar -xf littlefs_backup_<deviceId>_<timestamp>.tar
+        ```
+
+        **Compression:**
+        Archive is uncompressed TAR format (energy files are already .csv.gz).
+        To compress after download:
+        ```bash
+        gzip littlefs_backup_<deviceId>_<timestamp>.tar
+        ```
       tags:
         - Backup
       responses:
         '200':
-          description: Backup file streamed successfully
+          description: Backup streamed successfully
           content:
-            application/gzip:
+            application/x-tar:
               schema:
                 type: string
                 format: binary
           headers:
             Content-Disposition:
-              description: File download header with device-specific filename
+              description: File download header with device ID and ISO timestamp
               schema:
                 type: string
-              example: 'attachment; filename="littlefs_backup_588c81c47a50.tar.gz"'
+              example: 'attachment; filename="littlefs_backup_588c81c47a50_2026-02-16T13:01:54.177Z.tar"'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
