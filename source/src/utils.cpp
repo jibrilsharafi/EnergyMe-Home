@@ -2185,3 +2185,215 @@ RingBufferStream* startStreamingBackup() {
     LOG_INFO("Streaming backup started: producer task running on core 0");
     return stream;
 }
+
+// ========== RESTORE UTILITIES ==========
+
+// Check if configuration restore is pending (set by restore endpoint before restart)
+bool isNvsRestorePending() {
+    Preferences prefs;
+    if (!prefs.begin(PREFERENCES_NAMESPACE_GENERAL, true)) {
+        return false;
+    }
+    bool pending = prefs.getBool("restore_pending", false);
+    prefs.end();
+    return pending;
+}
+
+// Restore NVS from JSON document (inverse of nvsDataToJson)
+bool restoreNvsFromJson(JsonDocument &doc) {
+    LOG_INFO("Starting NVS configuration restore");
+
+    uint32_t totalKeys = 0;
+    uint32_t successKeys = 0;
+    uint32_t failedKeys = 0;
+
+    // Iterate namespaces
+    for (JsonPair nsPair : doc["nvs"].as<JsonObject>()) {
+        const char* ns = nsPair.key().c_str();
+        LOG_DEBUG("Restoring namespace: %s", ns);
+
+        Preferences prefs;
+        if (!prefs.begin(ns, false)) {
+            LOG_WARNING("Failed to open namespace: %s", ns);
+            continue;
+        }
+
+        // Iterate keys in namespace
+        for (JsonPair keyPair : nsPair.value().as<JsonObject>()) {
+            const char* key = keyPair.key().c_str();
+            JsonVariant keyData = keyPair.value();
+            totalKeys++;
+
+            bool success = false;
+
+            // Read type and value from new format: {"type": "u8", "value": 123}
+            if (!keyData.is<JsonObject>() || !keyData["type"].is<const char*>() || !keyData.containsKey("value")) {
+                LOG_WARNING("Invalid key format: %s/%s (missing type or value)", ns, key);
+                failedKeys++;
+                continue;
+            }
+
+            const char* typeStr = keyData["type"].as<const char*>();
+            JsonVariant valueVar = keyData["value"];
+
+            // Write based on explicit type metadata (no guessing needed!)
+            if (strcmp(typeStr, "u8") == 0) {
+                success = prefs.putUChar(key, (uint8_t)valueVar.as<int>());
+            } else if (strcmp(typeStr, "i8") == 0) {
+                success = prefs.putChar(key, (int8_t)valueVar.as<int>());
+            } else if (strcmp(typeStr, "u16") == 0) {
+                success = prefs.putUShort(key, (uint16_t)valueVar.as<int>());
+            } else if (strcmp(typeStr, "i16") == 0) {
+                success = prefs.putShort(key, (int16_t)valueVar.as<int>());
+            } else if (strcmp(typeStr, "u32") == 0) {
+                success = prefs.putUInt(key, (uint32_t)valueVar.as<unsigned long>());
+            } else if (strcmp(typeStr, "i32") == 0) {
+                success = prefs.putInt(key, (int32_t)valueVar.as<long>());
+            } else if (strcmp(typeStr, "u64") == 0) {
+                success = prefs.putULong64(key, (uint64_t)valueVar.as<unsigned long long>());
+            } else if (strcmp(typeStr, "i64") == 0) {
+                success = prefs.putLong64(key, (int64_t)valueVar.as<long long>());
+            } else if (strcmp(typeStr, "float") == 0) {
+                success = prefs.putFloat(key, valueVar.as<float>());
+            } else if (strcmp(typeStr, "str") == 0) {
+                success = prefs.putString(key, valueVar.as<const char*>());
+            } else if (strcmp(typeStr, "blob") == 0) {
+                // TODO: Handle base64-encoded blob data if needed
+                LOG_WARNING("BLOB type not yet supported during restore: %s/%s", ns, key);
+                failedKeys++;
+                continue;
+            } else {
+                LOG_WARNING("Unknown NVS type '%s' for key %s/%s", typeStr, ns, key);
+                failedKeys++;
+                continue;
+            }
+
+            if (success) {
+                successKeys++;
+            } else {
+                failedKeys++;
+                LOG_WARNING("Failed to restore key: %s/%s (type: %s)", ns, key, typeStr);
+            }
+        }
+
+        prefs.end();
+    }
+
+    LOG_INFO("NVS restore complete: %lu/%lu keys succeeded, %lu failed",
+             successKeys, totalKeys, failedKeys);
+
+    return totalKeys > 0 && successKeys > 0;
+}
+
+// Perform configuration restore from staged file (called during early boot, before services start)
+void performNvsRestore() {
+    LOG_INFO("Configuration restore pending flag detected");
+
+    // Clear flag immediately to prevent retry loops on failure
+    Preferences prefs;
+    if (prefs.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
+        prefs.putBool("restore_pending", false);
+        prefs.end();
+    }
+
+    // Check if restore file exists
+    if (!LittleFS.exists("/restore/nvs_restore.json")) {
+        LOG_ERROR("Restore file not found, skipping restore");
+        return;
+    }
+
+    // LED indicator: orange = restoring
+    Led::setOrange(Led::PRIO_CRITICAL);
+
+    // Read and parse restore file
+    File restoreFile = LittleFS.open("/restore/nvs_restore.json", FILE_READ);
+    if (!restoreFile) {
+        LOG_ERROR("Failed to open restore file");
+        LittleFS.remove("/restore/nvs_restore.json");
+        return;
+    }
+
+    SpiRamAllocator allocator;
+    JsonDocument doc(&allocator);
+    DeserializationError error = deserializeJson(doc, restoreFile);
+    restoreFile.close();
+
+    if (error) {
+        LOG_ERROR("Failed to parse restore JSON: %s", error.c_str());
+        LittleFS.remove("/restore/nvs_restore.json");
+        return;
+    }
+
+    // Perform restore
+    bool success = restoreNvsFromJson(doc);
+
+    // Clean up restore file
+    LittleFS.remove("/restore/nvs_restore.json");
+
+    if (success) {
+        LOG_INFO("Configuration restored successfully");
+        Led::setGreen(Led::PRIO_NORMAL);
+    } else {
+        LOG_ERROR("Configuration restore failed or incomplete");
+        Led::setRed(Led::PRIO_URGENT);
+    }
+
+    delay(2000); // Brief visual feedback
+}
+
+// Check if backup version is compatible with current firmware
+// Compatibility rule: backup can be restored if:
+// - Backup major version == current major version
+// - Backup version <= current version
+// This allows forward compatibility (1.0.0 backup on 1.5.0 firmware) but not backward (1.5.0 backup on 1.0.0)
+bool isBackupVersionCompatible(const char* backupVersion) {
+    if (!backupVersion) {
+        LOG_WARNING("Backup version is null, cannot check compatibility");
+        return false;
+    }
+
+    // Parse backup version (format: "X.Y.Z" or "X.Y.Z (dev)")
+    int backupMajor = 0, backupMinor = 0, backupPatch = 0;
+    if (sscanf(backupVersion, "%d.%d.%d", &backupMajor, &backupMinor, &backupPatch) < 3) {
+        LOG_WARNING("Invalid backup version format: %s", backupVersion);
+        return false;
+    }
+
+    // Get current firmware version from build info (defined in constants.h)
+    // The version string format: "X.Y.Z"
+    const char* currentVersionStr = FIRMWARE_BUILD_VERSION;
+    int currentMajor = 0, currentMinor = 0, currentPatch = 0;
+    if (sscanf(currentVersionStr, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch) < 3) {
+        LOG_WARNING("Invalid current firmware version format: %s", currentVersionStr);
+        return false;
+    }
+
+    LOG_DEBUG("Version check - Backup: %d.%d.%d, Current: %d.%d.%d",
+             backupMajor, backupMinor, backupPatch, currentMajor, currentMinor, currentPatch);
+
+    // Check major version match
+    if (backupMajor != currentMajor) {
+        LOG_WARNING("Version incompatible: backup major version %d != current major version %d",
+                   backupMajor, currentMajor);
+        return false;
+    }
+
+    // Check if backup version <= current version
+    if (backupMajor < currentMajor) return true;  // Should not reach here due to earlier check
+
+    if (backupMinor > currentMinor) {
+        LOG_WARNING("Version incompatible: backup minor version %d > current minor version %d",
+                   backupMinor, currentMinor);
+        return false;
+    }
+
+    if (backupMinor == currentMinor && backupPatch > currentPatch) {
+        LOG_WARNING("Version incompatible: backup patch version %d > current patch version %d",
+                   backupPatch, currentPatch);
+        return false;
+    }
+
+    LOG_DEBUG("Backup version compatible: %d.%d.%d <= %d.%d.%d (same major)",
+            backupMajor, backupMinor, backupPatch, currentMajor, currentMinor, currentPatch);
+    return true;
+}

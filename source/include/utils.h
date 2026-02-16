@@ -211,6 +211,12 @@ bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth 
 bool nvsDataToJson(JsonObject &doc);
 RingBufferStream* startStreamingBackup();              // Start async TAR creation to RingBufferStream (no temp file, true streaming)
 
+// Restore utilities
+bool isNvsRestorePending();                            // Check if configuration restore is pending (boot-time check)
+void performNvsRestore();                              // Perform configuration restore from staged file (boot-time)
+bool restoreNvsFromJson(JsonDocument &doc);            // Restore NVS from JSON document (inverse of nvsDataToJson)
+bool isBackupVersionCompatible(const char* backupVersion); // Check if backup version is compatible with current firmware
+
 // String utilities
 inline bool endsWith(const char* s, const char* suffix) {
     size_t ls = strlen(s), lsf = strlen(suffix);

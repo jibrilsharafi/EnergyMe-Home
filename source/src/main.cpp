@@ -66,6 +66,11 @@ void setup()
     return;
   }
 
+  // Check for pending configuration restore (BEFORE services start = natural "blocked state")
+  if (isNvsRestorePending()) {
+    performNvsRestore();
+  }
+
   Led::setYellow(Led::PRIO_NORMAL);
   AdvancedLogger::begin(LOG_PATH);
   LOG_DEBUG("AdvancedLogger initialized with log path: %s", LOG_PATH);
