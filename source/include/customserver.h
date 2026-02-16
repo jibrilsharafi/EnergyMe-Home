@@ -63,6 +63,7 @@
 
 // Buffer sizes
 #define HTTP_HEALTH_CHECK_RESPONSE_BUFFER_SIZE 256 // Only needed for health check HTTP response to own server
+#define CONTENT_DISPOSITION_BUFFER_SIZE 256
 
 // Content length validations
 #define HTTP_MAX_CONTENT_LENGTH_LOGS_LEVEL 64

@@ -208,6 +208,7 @@ bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth 
 
 // Backup utilities
 void nvsDataToJson(JsonDocument &doc);
+bool createLittleFsBackup(const char* backupFilePath);
 void blobToBase64(Preferences &prefs, nvs_entry_info_t &info, ArduinoJson::V742PB22::JsonObject &namespaceObj, int &retFlag);
 
 // String utilities

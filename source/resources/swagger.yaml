@@ -709,6 +709,7 @@ paths:
                   - type
                   - deviceId
                   - firmwareVersion
+                  - sketchMD5
                   - timestamp
                   - nvs
                 properties:
@@ -728,6 +729,10 @@ paths:
                     type: string
                     description: Current firmware version
                     example: "00.11.09"
+                  sketchMD5:
+                    type: string
+                    description: MD5 hash of the current firmware sketch
+                    example: "ad1783afd0b38f856d5010921712e2ed"
                   timestamp:
                     type: string
                     format: date-time
@@ -747,6 +752,29 @@ paths:
                       "mqtt":
                         "server": "mqtt.example.com"
                         "port": 1883
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/backup/filesystem:
+    get:
+      summary: Download LittleFS filesystem backup
+      description: Download a complete backup of the LittleFS filesystem as a tar.gz archive. Includes all energy data files, logs, and configuration files. The archive can be extracted on any system with tar/gzip support.
+      tags:
+        - Backup
+      responses:
+        '200':
+          description: Backup file streamed successfully
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              description: File download header with device-specific filename
+              schema:
+                type: string
+              example: 'attachment; filename="littlefs_backup_588c81c47a50.tar.gz"'
         '500':
           $ref: '#/components/responses/InternalServerError'
 

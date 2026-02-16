@@ -1192,6 +1192,7 @@ const char* getContentTypeFromFilename(const char* filename) {
     if (strcmp(extension, ".js") == 0) return "application/javascript";
     if (strcmp(extension, ".bin") == 0) return "application/octet-stream";
     if (strcmp(extension, ".gz") == 0) return "application/gzip";
+    if (strcmp(extension, ".tar") == 0) return "application/x-tar";
     
     return "application/octet-stream";
 }
@@ -1933,7 +1934,7 @@ bool consolidateMonthlyFilesToYearly(const char* year, const char* excludeMonth)
     return true;
 }
 
-void nvsDataToJson(JsonDocument &doc) {
+void nvsDataToJson(JsonDocument &doc) { // TODO: make bool so we can spot failures
     LOG_DEBUG("Exporting NVS data to JSON document");
 
     // Add metadata
@@ -1981,8 +1982,6 @@ void nvsDataToJson(JsonDocument &doc) {
         // Reset task watchdog periodically to prevent timeout during long NVS iteration
         // This is safe because we're making progress, not stuck
         if (entryCount % 10 == 0) {
-            TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
-            LOG_DEBUG("Resetting task watchdog (entries: %d). Running on task: %s", entryCount, pcTaskGetName(currentTask));
             esp_task_wdt_reset();
         }
 
@@ -2107,4 +2106,88 @@ void nvsDataToJson(JsonDocument &doc) {
     }
 
     LOG_DEBUG("Completed exporting %u NVS entries to JSON", entryCount);
+}
+
+bool createLittleFsBackup(const char* backupFilePath) {
+    if (!backupFilePath) {
+        LOG_ERROR("Invalid backup file path");
+        return false;
+    }
+
+    LOG_DEBUG("Starting LittleFS backup to %s", backupFilePath);
+
+    // Collect all files and directories from root
+    std::vector<TAR::dir_entity_t> dirEntities;
+    TarPacker::collectDirEntities(&dirEntities, &LittleFS, "/"); // All files and directories from root
+
+    // Callback mandatory for avoiding crashing due to async_tcp watchdog (plus progress update)
+    TarPacker::setProgressCallBack([](size_t packedBytes, size_t totalBytes) {
+        const size_t progressInterval = 1024 * 32;
+        if (packedBytes % progressInterval == 0 || packedBytes == totalBytes) {
+            esp_task_wdt_reset();
+            LOG_DEBUG("Packing progress: %zu / %zu bytes (%.2f%%)", packedBytes, totalBytes, (double)packedBytes / totalBytes * 100);
+        }
+    });
+
+    if (dirEntities.empty()) {
+        LOG_WARNING("No files found in LittleFS for backup");
+        return false;
+    }
+
+    LOG_DEBUG("Packing %d entities to tar", dirEntities.size());
+
+    // Remove any existing backup file
+    if (LittleFS.exists(backupFilePath)) {
+        LittleFS.remove(backupFilePath);
+    }
+
+    // Create tar file
+    File backupFile = LittleFS.open(backupFilePath, FILE_WRITE);
+    if (!backupFile) {
+        LOG_ERROR("Failed to open backup file for writing: %s", backupFilePath);
+        return false;
+    }
+
+    // Compress and write directly to file
+    LOG_DEBUG("Starting packing of LittleFS to tar");
+    size_t packedSize = TarPacker::pack_files(&LittleFS, dirEntities, &backupFile);
+    LOG_DEBUG("Finished packing of LittleFS to tar, bytes written: %zu", packedSize);
+
+    // Flush and close file to ensure data is written to flash
+    backupFile.close();
+
+    // Verify the backup file was created successfully
+    if (packedSize <= 0) {
+        LOG_ERROR("LittleFS backup packing failed (error code: %zu)", packedSize);
+        LittleFS.remove(backupFilePath);
+        return false;
+    }
+    LOG_DEBUG("LittleFS backup file created successfully with %zu bytes", packedSize);
+
+    // Verify file actually exists and has data
+    if (!LittleFS.exists(backupFilePath)) {
+        LOG_ERROR("LittleFS backup file was not created: %s", backupFilePath);
+        return false;
+    }
+    LOG_DEBUG("LittleFS backup file exists: %s", backupFilePath);
+
+    File verifyFile = LittleFS.open(backupFilePath, FILE_READ);
+    if (!verifyFile) {
+        LOG_ERROR("Cannot open backup file for verification: %s", backupFilePath);
+        return false;
+    }
+    LOG_DEBUG("Opened backup file for verification: %s", backupFilePath);
+
+    size_t actualSize = verifyFile.size();
+    verifyFile.close();
+
+    if (actualSize != packedSize) {
+        LOG_WARNING("Backup file size mismatch: expected %zu bytes, got %zu bytes", packedSize, actualSize);
+    }
+    LOG_DEBUG("Verified backup file size: %zu bytes", actualSize);
+
+    LOG_INFO("LittleFS backup complete: %zu bytes written to %s (verified: %zu bytes on disk)",
+             packedSize, backupFilePath, actualSize);
+    
+    return true;
 }

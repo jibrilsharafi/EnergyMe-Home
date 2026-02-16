@@ -491,7 +491,7 @@ namespace CustomServer
             loops++;
 
             // Reset task watchdog periodically during HTTP wait
-            if (loops % 5 == 0) {
+            if (loops % 50 == 0) {
                 esp_task_wdt_reset();
             }
 
@@ -1105,9 +1105,7 @@ namespace CustomServer
     static bool _writeOtaChunk(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index)
     {
         // Reset watchdog before flash write
-        esp_task_wdt_reset();
         size_t written = Update.write(data, len);
-        esp_task_wdt_reset();
 
         if (written != len) {
             LOG_ERROR("OTA write failed: expected %zu bytes, wrote %zu bytes", len, written);
@@ -1120,6 +1118,7 @@ namespace CustomServer
         // Log progress periodically
         static size_t lastProgressIndex = 0;
         if (index >= lastProgressIndex + SIZE_REPORT_UPDATE_OTA || index == 0) {
+            esp_task_wdt_reset(); // Only do it once in a while
             float progress = Update.size() > 0UL ? (float)Update.progress() / (float)Update.size() * 100.0f : 0.0f;
             LOG_DEBUG("OTA progress: %.1f%% (%zu / %zu bytes)", progress, Update.progress(), Update.size());
             lastProgressIndex = index;
@@ -1151,9 +1150,7 @@ namespace CustomServer
         }
 
         // Reset watchdog before flash verification and finalization
-        esp_task_wdt_reset();
         bool success = Update.end(true);
-        esp_task_wdt_reset();
 
         if (!success) {
             LOG_ERROR("OTA finalization failed: %s", Update.errorString());
@@ -1212,10 +1209,7 @@ namespace CustomServer
         
         // Write data chunk
         if (len && uploadFile) {
-            // Reset watchdog before file write
-            esp_task_wdt_reset();
             size_t written = uploadFile.write(data, len);
-            esp_task_wdt_reset();
 
             if (written != len) {
                 LOG_ERROR("Failed to write data chunk at index %zu", index);
@@ -1305,9 +1299,7 @@ namespace CustomServer
         http.addHeader("Accept", "application/vnd.github.v3+json");
 
         // Reset watchdog before network call
-        esp_task_wdt_reset();
         int httpCode = http.GET();
-        esp_task_wdt_reset();
 
         if (httpCode != HTTP_CODE_OK) {
             LOG_WARNING("GitHub API request failed with code: %d", httpCode);
@@ -1316,9 +1308,7 @@ namespace CustomServer
         }
 
         // Parse GitHub API response - reset before and after data fetch
-        esp_task_wdt_reset();
         String response = http.getString();
-        esp_task_wdt_reset();
         http.end();
 
         DeserializationError error = deserializeJson(doc, response);
@@ -2599,6 +2589,61 @@ namespace CustomServer
             nvsDataToJson(doc);
 
             _sendJsonResponse(request, doc);
+        });
+
+        // LittleFS filesystem backup (tar)
+        server.on("/api/v1/backup/filesystem", HTTP_GET, [](AsyncWebServerRequest *request) {
+            LOG_DEBUG("LittleFS backup requested");
+
+            // Build filename with device ID
+            char deviceId[DEVICE_ID_BUFFER_SIZE];
+            getDeviceId(deviceId, sizeof(deviceId));
+            char timestamp[TIMESTAMP_BUFFER_SIZE];
+            CustomTime::getTimestampIso(timestamp, sizeof(timestamp));
+            
+            // Create temporary backup file
+            char tempBackupPath[128];
+            snprintf(tempBackupPath, sizeof(tempBackupPath), "/littlefs_backup_%s_%s.tar", deviceId, timestamp);
+
+            // createLittleFsBackup() will resets periodically during the backup generation
+            if (!createLittleFsBackup(tempBackupPath)) {
+                LOG_ERROR("Failed to create LittleFS backup");
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to create backup");
+                return;
+            }
+
+            // Verify backup file exists before serving
+            if (!LittleFS.exists(tempBackupPath)) {
+                LOG_ERROR("Backup file not found after creation: %s", tempBackupPath);
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Backup file verification failed");
+                return;
+            }
+
+            // Get file size for logging
+            File backupFile = LittleFS.open(tempBackupPath, FILE_READ);
+            if (!backupFile) {
+                LOG_ERROR("Cannot open backup file for verification: %s", tempBackupPath);
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Cannot access backup file");
+                return;
+            }
+            size_t fileSize = backupFile.size();
+            backupFile.close();
+
+            if (fileSize == 0) {
+                LOG_ERROR("Backup file is empty: %s", tempBackupPath);
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Backup file is empty");
+                return;
+            }
+
+            LOG_DEBUG("Backup file verified: %zu bytes, preparing download", fileSize);
+
+            const char* contentType = getContentTypeFromFilename(tempBackupPath);
+            bool forceDownload = true;
+            request->send(LittleFS, tempBackupPath, contentType, forceDownload);
+
+            // TODO: Should we cleanup the backup after this? But how can we ensure we do it late enough after the async response?
+
+            LOG_INFO("LittleFS backup download started: %s (%zu bytes)", tempBackupPath, fileSize);
         });
     }
 
