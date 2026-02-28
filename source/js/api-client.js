@@ -49,10 +49,9 @@ class EnergyMeAPI {
 
         const config = {
             ...options,
-            headers: {
-                ...this.defaultHeaders,
-                ...options.headers
-            }
+            headers: options.headers !== undefined
+                ? { ...options.headers }           // Caller-provided headers only (e.g. {} for multipart)
+                : { ...this.defaultHeaders }       // Default headers for normal JSON calls
         };
 
         try {
@@ -621,6 +620,88 @@ class EnergyMeAPI {
      */
     async getWaveformData() {
         return this.get('ade7953/waveform/data');
+    }
+
+    /**
+     * Download configuration backup as JSON file
+     * @returns {Promise<Blob>} - JSON backup file blob
+     */
+    async downloadConfigurationBackup() {
+        const response = await this.apiCall('backup/configuration', {
+            method: 'GET'
+        }, this.getTimeoutMs);
+
+        if (!response.ok) {
+            throw new Error(`Configuration backup failed: ${response.status}`);
+        }
+
+        return response.blob();
+    }
+
+    /**
+     * Download filesystem backup as TAR file
+     * @returns {Promise<Blob>} - TAR backup file blob
+     */
+    async downloadFilesystemBackup() {
+        const response = await this.apiCall('backup/filesystem', {
+            method: 'GET'
+        }, this.otherTimeoutMs); // May take longer for large filesystems
+
+        if (!response.ok) {
+            throw new Error(`Filesystem backup failed: ${response.status}`);
+        }
+
+        return response.blob();
+    }
+
+    /**
+     * Restore configuration from JSON backup file
+     * @param {File|Blob} file - JSON backup file
+     * @param {boolean} force - Skip device ID validation (allows cross-device restore)
+     */
+    async restoreConfiguration(file, force = false) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const url = force ? 'restore/configuration?force=true' : 'restore/configuration';
+
+        const response = await this.apiCall(url, {
+            method: 'POST',
+            body: formData,
+            headers: {} // Let browser set Content-Type with boundary
+        }, this.otherTimeoutMs);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Configuration restore failed: ${response.status} - ${errorText}`);
+        }
+
+        return response.json().catch(() => ({}));
+    }
+
+    /**
+     * Restore filesystem from TAR backup file
+     * @param {File|Blob} file - TAR backup file
+     * @param {boolean} restart - Restart device after successful restore
+     */
+    async restoreFilesystem(file, restart = false) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const url = restart ? 'restore/filesystem?restart=true' : 'restore/filesystem';
+
+        const response = await this.apiCall(url, {
+            method: 'POST',
+            body: formData,
+            headers: {} // Let browser set Content-Type with boundary
+        }, this.otherTimeoutMs);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Filesystem restore failed: ${response.status} - ${errorText}`);
+        }
+
+        return response.json().catch(() => ({}));
     }
 }
 

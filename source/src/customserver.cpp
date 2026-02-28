@@ -101,11 +101,6 @@ namespace CustomServer
     static void _handleFileUploadData(AsyncWebServerRequest *request, const String& filename,
                                     size_t index, uint8_t *data, size_t len, bool final);
 
-    // Filesystem restore handlers (stream directly to extraction, no LittleFS buffering)
-    static void _handleFilesystemRestoreComplete(AsyncWebServerRequest *request);
-    static void _handleFilesystemRestoreData(AsyncWebServerRequest *request, const String& filename,
-                                            size_t index, uint8_t *data, size_t len, bool final);
-
     // OTA helper functions
     static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename);
     static void _setupOtaMd5Verification(AsyncWebServerRequest *request);
@@ -2675,7 +2670,7 @@ namespace CustomServer
                     if (*success) {
                         _sendSuccessResponse(request, "Configuration restore initiated. Device will restart.");
                     } else {
-                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Failed to process backup file");
+                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Failed to process backup file. Check logs");
                     }
                     delete success;
                     request->_tempObject = nullptr;
@@ -2866,138 +2861,104 @@ namespace CustomServer
             }
         );
 
-        // POST - Restore filesystem from TAR file upload (streams directly to extraction, no LittleFS buffering)
-        server.on("/api/v1/restore/filesystem", HTTP_POST, // FIXME: this returns 501, check in other places how we did it.
-            _handleFilesystemRestoreComplete,
-            _handleFilesystemRestoreData);
-    }
-
-    // Filesystem restore handlers - complete handler (sends response after upload finishes)
-    static void _handleFilesystemRestoreComplete(AsyncWebServerRequest *request) {
-        if (request->_tempObject) {
-            bool* success = (bool*)request->_tempObject;
-            if (*success) {
-                _sendSuccessResponse(request, "Filesystem restored successfully");
-            } else {
-                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR,
-                    "Filesystem restore failed");
-            }
-            delete success;
-            request->_tempObject = nullptr;
-        }
-    }
-
-    // Filesystem restore handlers - data handler (buffers TAR in memory, extracts using stream)
-    static void _handleFilesystemRestoreData(AsyncWebServerRequest *request, const String& filename,
-                                             size_t index, uint8_t *data, size_t len, bool final) {
-
-        // Context to hold buffered TAR data
-        struct RestoreContext {
-            std::vector<uint8_t> buffer;  // Buffer TAR data in memory (will use PSRAM if available)
-            bool isValid;
-        };
-
-        if (!index) {
-            // First chunk - initialize buffer
-            LOG_INFO("Starting filesystem restore upload: %s", filename.c_str());
-
-            RestoreContext* ctx = new RestoreContext();
-            ctx->isValid = true;
-            request->_tempObject = ctx;
-            // Vector will grow dynamically as we append chunks - no need to pre-allocate
-        }
-
-        // Get context
-        RestoreContext* ctx = (RestoreContext*)request->_tempObject;
-        if (!ctx || !ctx->isValid) {
-            return;
-        }
-
-        // Append chunk to buffer
-        if (len > 0) {
-            ctx->buffer.insert(ctx->buffer.end(), data, data + len);
-            LOG_DEBUG("Buffered %zu bytes (total: %zu bytes)", len, ctx->buffer.size());
-        }
-
-        // Final chunk - extract from memory buffer stream
-        if (final && ctx->isValid && ctx->buffer.size() > 0) {
-            LOG_INFO("TAR upload complete (%zu bytes), starting stream extraction", ctx->buffer.size());
-
-            bool extractSuccess = false;
-
-            // Create a memory stream wrapper that implements Stream interface
-            // This allows TarUnpacker::tarStreamExpander to read directly from the buffer
-            class MemoryStream : public Stream {
-            private:
-                const uint8_t* data;
-                size_t size;
-                size_t position;
-            public:
-                MemoryStream(const uint8_t* buf, size_t len) : data(buf), size(len), position(0) {}
-
-                int available() override {
-                    return (int)(size - position);
-                }
-
-                int read() override {
-                    if (position >= size) return -1;
-                    return data[position++];
-                }
-
-                int peek() override {
-                    if (position >= size) return -1;
-                    return data[position];
-                }
-
-                size_t readBytes(uint8_t *buf, size_t length) override {
-                    if (!buf || length == 0) return 0;
-                    size_t remaining = size - position;
-                    size_t toRead = (length < remaining) ? length : remaining;
-                    if (toRead > 0) {
-                        memcpy(buf, data + position, toRead);
-                        position += toRead;
+        // POST - Restore filesystem from TAR file upload (saves to LittleFS then extracts)
+        server.on("/api/v1/restore/filesystem", HTTP_POST,
+            [](AsyncWebServerRequest *request) {
+                // Final response after file upload completes
+                if (request->_tempObject) {
+                    bool* success = (bool*)request->_tempObject;
+                    if (*success) {
+                        _sendSuccessResponse(request, "Filesystem restored successfully");
+                    } else {
+                        _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR,
+                            "Filesystem restore failed");
                     }
-                    return toRead;
+                    delete success;
+                    request->_tempObject = nullptr;
+                }
+            },
+            [](AsyncWebServerRequest *request, const String& filename,
+               size_t index, uint8_t *data, size_t len, bool final) {
+
+                static File restoreFile;
+                static String tempPath = "/restore/filesystem_restore.tar";
+                static bool isValid = true;
+
+                if (!index) {
+                    // First chunk - create restore directory and file
+                    LOG_INFO("Starting filesystem restore upload: %s", filename.c_str());
+
+                    if (!LittleFS.exists("/restore")) {
+                        LittleFS.mkdir("/restore");
+                    }
+
+                    // Remove old temp file if exists
+                    if (LittleFS.exists(tempPath)) {
+                        LittleFS.remove(tempPath);
+                    }
+
+                    restoreFile = LittleFS.open(tempPath, FILE_WRITE);
+                    if (!restoreFile) {
+                        LOG_ERROR("Failed to create temp restore file");
+                        isValid = false;
+                        _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR,
+                            "Failed to create restore file");
+                        return;
+                    }
+                    isValid = true;
                 }
 
-                void flush() override {}
-                int availableForWrite() override { return 0; }
-                size_t write(uint8_t) override { return 0; }
-            };
+                // Write chunk
+                if (len && isValid && restoreFile) {
+                    size_t written = restoreFile.write(data, len);
+                    if (written != len) {
+                        LOG_ERROR("Failed to write restore file chunk");
+                        isValid = false;
+                        restoreFile.close();
+                        LittleFS.remove(tempPath);
+                        _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR,
+                            "Failed to write restore data");
+                        return;
+                    }
+                }
 
-            // Create and use stream for extraction
-            MemoryStream memStream(ctx->buffer.data(), ctx->buffer.size());
+                // Final chunk - extract TAR to filesystem
+                if (final && isValid && restoreFile) {
+                    restoreFile.close();
+                    LOG_DEBUG("TAR file upload complete, extracting...");
 
-            TarUnpacker *tarUnpacker = new TarUnpacker();
-            tarUnpacker->haltOnError(true);
-            tarUnpacker->setTarVerify(false);  // Skip verification for speed
+                    bool extractSuccess = false;
 
-            // Extract directly from memory stream using tarStreamExpander
-            if (tarUnpacker->tarStreamExpander((Stream*)&memStream, ctx->buffer.size(), LittleFS, "/")) {
-                LOG_INFO("Filesystem restore extraction successful (%zu bytes)", ctx->buffer.size());
-                extractSuccess = true;
-            } else {
-                LOG_ERROR("TAR extraction failed with error code: %d", tarUnpacker->tarGzGetError());
+                    TarUnpacker *tarUnpacker = new TarUnpacker();
+                    tarUnpacker->haltOnError(true);
+                    tarUnpacker->setTarVerify(false);  // Skip verification for speed
+
+                    // Extract: sourceFS, sourcePath, destFS, destPath
+                    if (tarUnpacker->tarExpander(LittleFS, tempPath.c_str(), LittleFS, "/")) {
+                        LOG_INFO("Filesystem restore extraction successful");
+                        extractSuccess = true;
+                    } else {
+                        LOG_ERROR("TAR extraction failed with error code: %d", tarUnpacker->tarGzGetError());
+                    }
+
+                    delete tarUnpacker;
+
+                    // Clean up temp file
+                    LittleFS.remove(tempPath);
+
+                    // Store result for completion handler
+                    bool* result = new bool(extractSuccess);
+                    request->_tempObject = result;
+
+                    // Optional restart after restore
+                    bool restartAfter = request->hasParam("restart") &&
+                                       request->getParam("restart")->value() == "true";
+                    if (restartAfter && extractSuccess) {
+                        setRestartSystem("Filesystem restored");
+                    }
+                }
             }
-
-            delete tarUnpacker;
-
-            // Clean up buffer
-            ctx->buffer.clear();
-            ctx->buffer.shrink_to_fit();
-            delete ctx;
-
-            // Store result for completion handler
-            bool* result = new bool(extractSuccess);
-            request->_tempObject = result;
-
-            // Optional restart after restore
-            bool restartAfter = request->hasParam("restart") &&
-                               request->getParam("restart")->value() == "true";
-            if (restartAfter && extractSuccess) {
-                setRestartSystem("Filesystem restored");
-            }
-        }
+        );
     }
 
     // === FILE OPERATION ENDPOINTS ===

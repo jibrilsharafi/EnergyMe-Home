@@ -840,7 +840,7 @@ paths:
         - Backup must be from same major firmware version (e.g., 1.x.x can restore on 1.y.z where y.z >= x.x)
         - Restores values exactly as they were backed up (type-safe with explicit type metadata)
         - Skips sensitive namespaces: auth_ns, nvs.net80211, phy, certificates_ns
-        - Device will restart automatically after ~3 seconds
+        - Device will restart automatically
         - Cross-device restore is blocked by default (use ?force=true to override)
         - Partial restore continues even if some keys fail to restore
 
@@ -871,7 +871,7 @@ paths:
                   description: Configuration backup JSON file (must include version, type, firmwareVersion, and nvs fields)
       responses:
         '200':
-          description: Configuration restore initiated (device will restart in 3 seconds)
+          description: Configuration restore initiated (device will restart)
           content:
             application/json:
               schema:
@@ -882,7 +882,7 @@ paths:
                     example: "success"
                   message:
                     type: string
-                    example: "Configuration restore initiated. Device will restart in 3 seconds."
+                    example: "Configuration restore initiated. Device will restart."
         '400':
           description: Invalid backup format, version mismatch, or device mismatch
           content:
@@ -907,27 +907,21 @@ paths:
 
         **Process:**
         1. Validates available storage space
-        2. Receives and temporarily stores TAR file
-        3. Extracts TAR archive to LittleFS
-        4. Optionally restarts device after extraction
+        2. Receives and saves TAR file to temporary location in LittleFS
+        3. Extracts TAR archive to LittleFS root (overwrites existing files)
+        4. Removes temporary TAR file
+        5. Optionally restarts device after extraction
 
         **Query Parameters:**
-        - `clear=true` - Clear existing files before extraction (optional)
         - `restart=true` - Restart device after successful restore (optional)
 
         **Important Notes:**
-        - Extraction overwrites existing files with same names by default
-        - Requires sufficient free space to hold both TAR and extracted files temporarily
-        - Partial extraction may occur if storage fills during process
+        - Extraction overwrites existing files with same names
+        - Requires sufficient free space to temporarily store the TAR file
         - All timestamps and permissions are normalized during extraction
       tags:
         - Restore
       parameters:
-        - name: clear
-          in: query
-          schema:
-            type: boolean
-          description: Clear existing files before extraction
         - name: restart
           in: query
           schema:
