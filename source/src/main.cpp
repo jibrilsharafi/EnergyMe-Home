@@ -68,7 +68,9 @@ void setup()
 
   // Check for pending configuration restore (BEFORE services start = natural "blocked state")
   if (isNvsRestorePending()) {
+    LOG_DEBUG("Pending configuration restore detected. Starting restore process...");
     performNvsRestore();
+    LOG_INFO("Configuration restore process completed");
   }
 
   Led::setYellow(Led::PRIO_NORMAL);

@@ -560,7 +560,7 @@ static void _startFailsafeTimer() {
 static void _restartTask(void* parameter) {
     bool factoryReset = (bool)(uintptr_t)parameter;
 
-    LOG_DEBUG("Restart task started (factory reset: %s)", factoryReset ? "true" : "false");
+    LOG_DEBUG("Restart task started%s", factoryReset ? " (factory reset)" : "");
 
     // 1. Visual indicator
     Led::setBrightness(max(Led::getBrightness(), (uint8_t)1));
@@ -580,7 +580,7 @@ static void _restartTask(void* parameter) {
     AdvancedLogger::end();
 
     // 4. Factory reset if requested
-    LOG_INFO("Restarting system.%s", factoryReset ? " Factory reset requested" : "");
+    LOG_INFO("Restarting system%s", factoryReset ? ". Factory reset requested" : "");
     if (factoryReset) { _factoryReset(); }
 
     // 5. Normal restart - if we get here, great. If not, failsafe timer handles it.
