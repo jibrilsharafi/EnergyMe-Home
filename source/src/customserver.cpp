@@ -2931,7 +2931,13 @@ namespace CustomServer
 
                     TarUnpacker *tarUnpacker = new TarUnpacker();
                     tarUnpacker->haltOnError(true);
-                    tarUnpacker->setTarVerify(false);  // Skip verification for speed
+                    tarUnpacker->setTarVerify(true);
+
+                    // Feed watchdog on each file extracted to prevent HTTP timeout during long extraction
+                    tarUnpacker->setTarStatusProgressCallback([](const char* name, size_t size, size_t total_unpacked) {
+                        esp_task_wdt_reset();
+                        LOG_DEBUG("Extracting: %s (%zu bytes, total unpacked: %zu)", name, size, total_unpacked);
+                    });
 
                     // Extract: sourceFS, sourcePath, destFS, destPath
                     if (tarUnpacker->tarExpander(LittleFS, tempPath.c_str(), LittleFS, "/")) {

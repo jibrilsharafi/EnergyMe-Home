@@ -12,8 +12,9 @@ class EnergyMeAPI {
             'Content-Type': 'application/json',
             'Connection': 'close'  // Prevent keep-alive to reduce ESP32 load
         };
-        this.getTimeoutMs = 3000;
-        this.otherTimeoutMs = 5000;
+        this.getTimeoutMs = 5000;
+        this.otherTimeoutMs = 10000;
+        this.longTimeoutMs = 30000; // For operations that may take longer (e.g. backups)
     }
 
     /**
@@ -669,7 +670,7 @@ class EnergyMeAPI {
             method: 'POST',
             body: formData,
             headers: {} // Let browser set Content-Type with boundary
-        }, this.otherTimeoutMs);
+        }, this.longTimeoutMs);
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -694,7 +695,7 @@ class EnergyMeAPI {
             method: 'POST',
             body: formData,
             headers: {} // Let browser set Content-Type with boundary
-        }, this.otherTimeoutMs);
+        }, this.longTimeoutMs);
 
         if (!response.ok) {
             const errorText = await response.text();

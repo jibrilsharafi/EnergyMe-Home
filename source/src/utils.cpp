@@ -591,7 +591,7 @@ static void _restartTask(void* parameter) {
 }
 
 bool setRestartSystem(const char* reason, bool factoryReset) {
-    LOG_INFO("Restart required for reason: %s. Factory reset: %s", reason, factoryReset ? "true" : "false");
+    LOG_INFO("Restart required for reason: %s%s", reason, factoryReset ? ". Factory reset required" : "");
 
     // Check if we can restart now (safe mode protection)
     if (!CrashMonitor::canRestartNow()) {
@@ -2088,16 +2088,13 @@ RingBufferStream* startStreamingBackup() {
         return nullptr;
     }
 
-    // Create producer task (8KB stack, priority 3, pinned to core 0)
-    // Priority 3 is same as maintenance task, lower than network/MQTT tasks
-    BaseType_t result = xTaskCreatePinnedToCore(
-        tarPackerTask,      // Task function
-        "tar_packer",       // Task name
-        8 * 1024,          // Stack size (8KB)
-        stream,            // Parameter (RingBufferStream pointer)
-        3,                 // Priority
-        nullptr,           // Task handle (not needed, task deletes itself)
-        0                  // Core 0 (same as main loop)
+    BaseType_t result = xTaskCreate(
+        tarPackerTask,
+        TASK_TAR_PACKER_NAME,
+        TASK_TAR_PACKER_STACK_SIZE,
+        stream,
+        TASK_TAR_PACKER_PRIORITY,
+        nullptr
     );
 
     if (result != pdPASS) {
@@ -2106,7 +2103,7 @@ RingBufferStream* startStreamingBackup() {
         return nullptr;
     }
 
-    LOG_INFO("Streaming backup started: producer task running on core 0");
+    LOG_DEBUG("Streaming backup started successfully");
     return stream;
 }
 

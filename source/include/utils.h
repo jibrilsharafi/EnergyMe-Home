@@ -49,6 +49,10 @@
 #define TASK_MAINTENANCE_PRIORITY 3
 #define MAINTENANCE_CHECK_INTERVAL (60 * 1000)
 
+#define TASK_TAR_PACKER_NAME "tar_packer"
+#define TASK_TAR_PACKER_STACK_SIZE (8 * 1024)
+#define TASK_TAR_PACKER_PRIORITY 3
+
 // System restart thresholds
 #define MINIMUM_FREE_HEAP_SIZE (1 * 1024) // Below this value (in bytes), the system will restart. This value can get very low due to the presence of the PSRAM to support
 #define MINIMUM_FREE_PSRAM_SIZE (10 * 1024) // Below this value (in bytes), the system will restart

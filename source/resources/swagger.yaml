@@ -930,10 +930,14 @@ paths:
       requestBody:
         required: true
         content:
-          application/x-tar:
+          multipart/form-data:
             schema:
-              type: string
-              format: binary
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: LittleFS TAR backup file
       responses:
         '200':
           description: Filesystem restored successfully
