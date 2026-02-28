@@ -683,15 +683,12 @@ class EnergyMeAPI {
     /**
      * Restore filesystem from TAR backup file
      * @param {File|Blob} file - TAR backup file
-     * @param {boolean} restart - Restart device after successful restore
      */
-    async restoreFilesystem(file, restart = false) {
+    async restoreFilesystem(file) {
         const formData = new FormData();
         formData.append('file', file);
 
-        const url = restart ? 'restore/filesystem?restart=true' : 'restore/filesystem';
-
-        const response = await this.apiCall(url, {
+        const response = await this.apiCall('restore/filesystem', {
             method: 'POST',
             body: formData,
             headers: {} // Let browser set Content-Type with boundary

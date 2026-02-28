@@ -910,10 +910,6 @@ paths:
         2. Receives and saves TAR file to temporary location in LittleFS
         3. Extracts TAR archive to LittleFS root (overwrites existing files)
         4. Removes temporary TAR file
-        5. Optionally restarts device after extraction
-
-        **Query Parameters:**
-        - `restart=true` - Restart device after successful restore (optional)
 
         **Important Notes:**
         - Extraction overwrites existing files with same names
@@ -921,12 +917,6 @@ paths:
         - All timestamps and permissions are normalized during extraction
       tags:
         - Restore
-      parameters:
-        - name: restart
-          in: query
-          schema:
-            type: boolean
-          description: Restart device after successful restore
       requestBody:
         required: true
         content:

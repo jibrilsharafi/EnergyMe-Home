@@ -258,10 +258,6 @@
         <form method='POST' action='/api/v1/restore/filesystem' enctype='multipart/form-data' onsubmit="return restoreFilesystemSubmitted(event)">
             <input type='file' id='filesystem-file' name='file' accept='.tar' required
                 title="Select the filesystem backup TAR file">
-            <label style="display: block; margin: 10px 0;">
-                <input type='checkbox' id='restart-after-restore' name='restart'>
-                Restart device after successful restore
-            </label>
             <input type='submit' id='restore-filesystem-submit' value='📥 Restore Filesystem' title="Click to restore filesystem from backup">
         </form>
     </div>
@@ -697,13 +693,9 @@
         async function restoreFilesystemSubmitted(event) {
             event.preventDefault();
 
-            const restart = document.getElementById('restart-after-restore').checked;
-            if (!confirm(`Are you sure you want to restore the filesystem${restart ? ' and restart' : ''}? This will overwrite existing files.`)) {
+            if (!confirm('Are you sure you want to restore the filesystem? This will overwrite existing files.')) {
                 return false;
             }
-
-            const resultMessageBox = document.getElementById('result-message');
-            resultMessageBox.style.display = 'none';
 
             const submitBtn = document.getElementById('restore-filesystem-submit');
             submitBtn.disabled = true;
@@ -724,44 +716,20 @@
             try {
                 showStatus('Restoring filesystem...', 'info');
 
-                const data = await energyApi.restoreFilesystem(file, restart);
+                await energyApi.restoreFilesystem(file);
 
                 document.getElementById('loading-overlay').style.display = 'none';
-                resultMessageBox.style.display = 'block';
-                resultMessageBox.style.backgroundColor = '#d4edda';
-                resultMessageBox.style.color = '#155724';
-
-                if (restart) {
-                    resultMessageBox.innerHTML = 'Filesystem restored! Device is restarting...';
-
-                    // Wait for restart
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 5000);
-                } else {
-                    resultMessageBox.innerHTML = 'Filesystem restored successfully!';
-
-                    setTimeout(() => {
-                        resultMessageBox.style.display = 'none';
-                        submitBtn.disabled = false;
-                        submitBtn.classList.remove('loading');
-                    }, 5000);
-                }
-            } catch (error) {
-                console.error('Filesystem restore failed:', error);
-                document.getElementById('loading-overlay').style.display = 'none';
-
-                resultMessageBox.style.backgroundColor = '#f8d7da';
-                resultMessageBox.style.color = '#721c24';
-                resultMessageBox.innerHTML = 'Restore failed: ' + error.message;
-                resultMessageBox.style.display = 'block';
+                showStatus('Filesystem restored successfully!', 'success');
 
                 submitBtn.disabled = false;
                 submitBtn.classList.remove('loading');
+            } catch (error) {
+                console.error('Filesystem restore failed:', error);
+                document.getElementById('loading-overlay').style.display = 'none';
+                showStatus('Restore failed: ' + error.message, 'error');
 
-                setTimeout(() => {
-                    resultMessageBox.style.display = 'none';
-                }, 5000);
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('loading');
             }
 
             return false;

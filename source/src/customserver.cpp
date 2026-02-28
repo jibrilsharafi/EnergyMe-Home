@@ -2955,13 +2955,6 @@ namespace CustomServer
                     // Store result for completion handler
                     bool* result = new bool(extractSuccess);
                     request->_tempObject = result;
-
-                    // Optional restart after restore
-                    bool restartAfter = request->hasParam("restart") &&
-                                       request->getParam("restart")->value() == "true";
-                    if (restartAfter && extractSuccess) {
-                        setRestartSystem("Filesystem restored");
-                    }
                 }
             }
         );
