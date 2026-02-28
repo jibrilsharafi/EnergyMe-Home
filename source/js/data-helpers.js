@@ -359,21 +359,22 @@ const DataHelpers = {
 
     /**
      * Calculate "Other" consumption for a period's data
-     * Other = total available energy (grid + solar + battery/inverter) - tracked loads
-     * Matches real-time power flow logic in power-flow.js
+     * Other = total available energy (grid import - grid export + solar + battery/inverter) - tracked loads
+     * Matches real-time power flow logic in power-flow.js and chart-helpers balance formula
      */
-    calculateOtherConsumption(periodData, excludeFromOther) {
+    calculateOtherConsumption(periodData, excludeFromOther, periodExportData = {}) {
         const gridImport = ChannelCache.grid.reduce((sum, ch) => sum + (periodData[ch.index] || 0), 0);
+        const gridExport = ChannelCache.grid.reduce((sum, ch) => sum + (periodExportData[ch.index] || 0), 0);
         const solarImport = ChannelCache.production.reduce((sum, ch) => sum + (periodData[ch.index] || 0), 0);
         const hasInverter = ChannelCache.inverter.length > 0;
 
         let totalAvailable;
         if (hasInverter) {
             const inverterImport = ChannelCache.inverter.reduce((sum, ch) => sum + (periodData[ch.index] || 0), 0);
-            totalAvailable = gridImport + solarImport + inverterImport;
+            totalAvailable = gridImport - gridExport + solarImport + inverterImport;
         } else {
             const batteryImport = ChannelCache.battery.reduce((sum, ch) => sum + (periodData[ch.index] || 0), 0);
-            totalAvailable = gridImport + solarImport + batteryImport;
+            totalAvailable = gridImport - gridExport + solarImport + batteryImport;
         }
 
         let trackedLoadConsumption = 0;

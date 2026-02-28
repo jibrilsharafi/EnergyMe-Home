@@ -876,7 +876,7 @@
             if (hourNum < 0 || hourNum > 23) return;
             
             if (hasGridChannel && hasLoads) {
-                consumption[hour]['Other'] = DataHelpers.calculateOtherConsumption(consumption[hour], excludeFromOther);
+                consumption[hour]['Other'] = DataHelpers.calculateOtherConsumption(consumption[hour], excludeFromOther, exportData[hour] || {});
             }
             
             excludeFromOther.forEach(ch => delete consumption[hour][ch]);
@@ -935,7 +935,7 @@
         const hasLoads = DataHelpers.hasLoadSubChannels(totalConsumption, excludeFromOther);
         
         if (hasGridChannel && hasLoads) {
-            totalConsumption['Other'] = DataHelpers.calculateOtherConsumption(totalConsumption, excludeFromOther);
+            totalConsumption['Other'] = DataHelpers.calculateOtherConsumption(totalConsumption, excludeFromOther, rawExported);
         }
         
         excludeFromOther.forEach(ch => delete totalConsumption[ch]);
