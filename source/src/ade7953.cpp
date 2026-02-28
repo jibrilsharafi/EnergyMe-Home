@@ -767,7 +767,7 @@ namespace Ade7953
         // Detect role change
         bool detected = (oldRole != channelData.role);
         if (detected) {
-            LOG_INFO("Channel %u role changed: %s -> %s",
+            LOG_DEBUG("Channel %u role changed: %s -> %s",
                      channelIndex, channelRoleToString(oldRole), channelRoleToString(channelData.role));
         }
         if (roleChanged) *roleChanged = detected;

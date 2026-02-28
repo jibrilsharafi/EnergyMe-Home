@@ -335,6 +335,7 @@ namespace CrashMonitor
             return;
         }
 
+        // TODO: if we find a crash dump, save it immediately to LittleFS (how? binary blob?) in a folder with the current datetime ISO, in the folder the binary blob anad a JSON with metadata
         LOG_INFO("Core dump found from previous crash, retrieving summary...");
         
         // Log only essential crash data for analysis
