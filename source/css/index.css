@@ -411,6 +411,13 @@
     100% { background-position: 0 -200%; }
 }
 
+/* Reversed flow direction (export, charging) */
+.pf-connector.active.reversed,
+.pf-connector-bottom.active.reversed,
+.pf-connector-top.active.reversed {
+    animation-direction: reverse;
+}
+
 /* Connector colors when active */
 .pf-solar .pf-connector { color: #FF9800; }
 .pf-inverter .pf-connector { color: #00BCD4; }

@@ -291,12 +291,12 @@ const PowerFlowHelpers = {
         const storageValueId = hasInverter ? 'inverter-power' : 'battery-power';
         const storagePowerEl = document.getElementById(storageValueId);
         
-        if (gridPowerEl) gridPowerEl.textContent = this.formatPower(Math.abs(gridPower));
+        if (gridPowerEl) gridPowerEl.textContent = this.formatPower(gridPower);
         if (homePowerEl) homePowerEl.textContent = this.formatPower(Math.max(0, homePower));
         if (hasPV && solarPowerEl) solarPowerEl.textContent = this.formatPower(solarPower);
         if ((hasInverter || hasBattery) && storagePowerEl) {
             const storagePower = hasInverter ? inverterPower : batteryPower;
-            storagePowerEl.textContent = this.formatPower(Math.abs(storagePower));
+            storagePowerEl.textContent = this.formatPower(storagePower);
         }
 
         // Update connectors
@@ -316,14 +316,26 @@ const PowerFlowHelpers = {
     updateConnector(nodeId, power, isVisible) {
         const node = document.getElementById(nodeId);
         if (!node) return;
-        
+
         const connector = node.querySelector('.pf-connector');
         if (!connector) return;
-        
+
         if (!isVisible) return;
-        
+
         const isActive = Math.abs(power) > PowerFlowConfig.ACTIVE_LINE_THRESHOLD;
         connector.classList.toggle('active', isActive);
+
+        // Grid: positive=import (normal dir), negative=export (reversed)
+        // Battery (pf-connector-top): base dir is center→battery (charge).
+        //   Discharge (positive) needs reversed.
+        // Solar and Home: single direction, no reversal needed.
+        if (nodeId === 'pf-grid') {
+            connector.classList.toggle('reversed', isActive && power < 0);
+        } else if (nodeId === 'pf-battery') {
+            connector.classList.toggle('reversed', isActive && power > 0);
+        } else {
+            connector.classList.remove('reversed');
+        }
     },
 
     /**
