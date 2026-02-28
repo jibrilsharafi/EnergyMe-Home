@@ -2682,8 +2682,18 @@ namespace CustomServer
                 static File restoreFile;
                 static String tempPath = "/restore/nvs_restore_upload.json";
                 static bool isValid = true;
+                static bool restoreInProgress = false;
 
                 if (!index) {
+                    // First chunk - check if restore already in progress
+                    if (restoreInProgress) {
+                        LOG_WARNING("Configuration restore already in progress, rejecting new request");
+                        _sendErrorResponse(request, HTTP_CODE_CONFLICT,
+                            "Restore already in progress. Please wait for current restore to complete.");
+                        return;
+                    }
+                    restoreInProgress = true;
+
                     // First chunk - create restore directory and file
                     LOG_INFO("Starting configuration restore upload");
 
@@ -2700,6 +2710,7 @@ namespace CustomServer
                     if (!restoreFile) {
                         LOG_ERROR("Failed to create temp restore file");
                         isValid = false;
+                        restoreInProgress = false;
                         _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR,
                             "Failed to create restore file");
                         return;
@@ -2715,6 +2726,7 @@ namespace CustomServer
                         isValid = false;
                         restoreFile.close();
                         LittleFS.remove(tempPath);
+                        restoreInProgress = false;
                         _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR,
                             "Failed to write restore data");
                         return;
@@ -2723,6 +2735,7 @@ namespace CustomServer
 
                 // Final chunk - validate and process JSON
                 if (final && isValid && restoreFile) {
+                    restoreInProgress = false;
                     restoreFile.close();
                     LOG_DEBUG("Backup file upload complete, validating...");
 
@@ -2855,7 +2868,6 @@ namespace CustomServer
                     request->_tempObject = result;
 
                     // Trigger restart after response sent
-                    delay(3000);
                     setRestartSystem("Configuration restore");
                 }
             }
@@ -2883,8 +2895,18 @@ namespace CustomServer
                 static File restoreFile;
                 static String tempPath = "/restore/filesystem_restore.tar";
                 static bool isValid = true;
+                static bool restoreInProgress = false;
 
                 if (!index) {
+                    // First chunk - check if restore already in progress
+                    if (restoreInProgress) {
+                        LOG_WARNING("Filesystem restore already in progress, rejecting new request");
+                        _sendErrorResponse(request, HTTP_CODE_CONFLICT,
+                            "Restore already in progress. Please wait for current restore to complete.");
+                        return;
+                    }
+                    restoreInProgress = true;
+
                     // First chunk - create restore directory and file
                     LOG_INFO("Starting filesystem restore upload: %s", filename.c_str());
 
@@ -2901,6 +2923,7 @@ namespace CustomServer
                     if (!restoreFile) {
                         LOG_ERROR("Failed to create temp restore file");
                         isValid = false;
+                        restoreInProgress = false;
                         _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR,
                             "Failed to create restore file");
                         return;
@@ -2916,6 +2939,7 @@ namespace CustomServer
                         isValid = false;
                         restoreFile.close();
                         LittleFS.remove(tempPath);
+                        restoreInProgress = false;
                         _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR,
                             "Failed to write restore data");
                         return;
@@ -2924,6 +2948,7 @@ namespace CustomServer
 
                 // Final chunk - extract TAR to filesystem
                 if (final && isValid && restoreFile) {
+                    restoreInProgress = false;
                     restoreFile.close();
                     LOG_DEBUG("TAR file upload complete, extracting...");
 

@@ -1877,7 +1877,7 @@ bool nvsDataToJson(JsonObject &doc) {
     doc["timestamp"] = timestamp;
 
     // Create nvs object
-    doc["nvs"] = JsonObject();
+    doc["nvs"].to<JsonObject>();
 
     // Namespaces to exclude from backup (sensitive, device-specific, or auto-generated data)
     const char* excludedNamespaces[] = {
@@ -1924,7 +1924,7 @@ bool nvsDataToJson(JsonObject &doc) {
 
         // Auto-create namespace object if first time seeing it
         if (!doc["nvs"][info.namespace_name].is<JsonObject>()) {
-            doc["nvs"][info.namespace_name] = JsonObject();
+            doc["nvs"][info.namespace_name].to<JsonObject>();
         }
 
         // Read and store value based on type
@@ -2018,7 +2018,7 @@ bool nvsDataToJson(JsonObject &doc) {
         err = nvs_entry_next(&it);
 
         if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
-            LOG_ERROR("Could not initialize NVS iterator (error %d - %s)", err, esp_err_to_name(err));
+            LOG_ERROR("Could not advance NVS iterator (error %d - %s)", err, esp_err_to_name(err));
             return false;
         }
     }
@@ -2177,7 +2177,8 @@ bool restoreNvsFromJson(JsonDocument &doc) {
             } else if (strcmp(typeStr, "float") == 0) {
                 success = prefs.putFloat(key, valueVar.as<float>());
             } else if (strcmp(typeStr, "str") == 0) {
-                success = prefs.putString(key, valueVar.as<const char*>());
+                size_t len = prefs.putString(key, valueVar.as<const char*>()); // This returns the length of the string stored, not true/false
+                success = strlen(valueVar.as<const char*>()) == len;
             } else if (strcmp(typeStr, "blob") == 0) {
                 // TODO: Handle base64-encoded blob data if needed
                 LOG_WARNING("BLOB type not yet supported during restore: %s/%s", ns, key);

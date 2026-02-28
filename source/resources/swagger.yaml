@@ -638,15 +638,6 @@ paths:
           $ref: '#/components/responses/Success'
         '400':
           $ref: '#/components/responses/BadRequest'
-        '507':
-          description: Insufficient storage space
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                success: false
-                error: "Insufficient storage space"
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -758,7 +749,7 @@ paths:
                           value: 1000
                         "enabled":
                           type: u8
-                          value: true
+                          value: 1
                       "mqtt":
                         "server":
                           type: str
@@ -955,19 +946,6 @@ paths:
                   message:
                     type: string
                     example: "Invalid TAR format"
-        '507':
-          description: Insufficient storage space
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: "error"
-                  message:
-                    type: string
-                    example: "Insufficient storage for restore"
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -2696,7 +2674,9 @@ tags:
     description: LittleFS file system operations and management endpoints
   - name: Backup
     description: Configuration backup and export endpoints
-
+  - name: Restore
+    description: Configuration restore and import endpoints
+    
 components:
   # Common response patterns
   responses:
