@@ -521,7 +521,8 @@ const ChartHelpers = {
             pointRadius: 0,
             pointHoverRadius: 4,
             fill: false,
-            tension: 0.3
+            tension: 0.3,
+            order: -1
         });
 
         this.balanceChart = new Chart(ctx, {
