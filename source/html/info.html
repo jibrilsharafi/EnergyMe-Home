@@ -13,6 +13,7 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="stylesheet" type="text/css" href="/css/forms.css">
+    <link rel="stylesheet" type="text/css" href="/css/tooltip.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <script src="/js/api-client.js"></script>
@@ -484,7 +485,15 @@
                     <span class="info-value" id="ade7953Readings">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">❌</span>Failed Readings</span>
+                    <span class="info-label">
+                        <span class="emoji">❌</span>Failed Readings
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this)" aria-label="More info about failed readings">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                A failed reading occurs when the ADE7953 energy meter chip does not respond correctly over SPI. A small number is normal on startup; persistently high counts may indicate hardware or wiring issues.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="ade7953ReadingFailures">Loading...</span>
                 </div>
             </div>
@@ -789,6 +798,7 @@
             setInterval(fetchSystemInfo, 5000); // Update every 5 seconds
         });
     </script>
+    <script src="/js/tooltip.js"></script>
 </body>
 
 </html>
