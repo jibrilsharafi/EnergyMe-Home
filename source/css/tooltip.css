@@ -41,7 +41,9 @@
 .info-tooltip-icon:hover,
 .info-tooltip-icon:focus {
     color: #555;
-    outline: none;
+    outline: 2px solid #999;
+    outline-offset: 2px;
+    border-radius: 2px;
 }
 
 /* The floating popover — positioned via JS using position:fixed

@@ -10,7 +10,9 @@
 
 let _activeTooltip = null;
 
-function toggleTooltip(iconButton) {
+function toggleTooltip(iconButton, event) {
+    if (event) event.stopPropagation();
+
     const popover = iconButton.nextElementSibling;
     if (!popover || !popover.classList.contains('info-tooltip-popover')) return;
 

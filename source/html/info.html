@@ -488,7 +488,7 @@
                     <span class="info-label">
                         <span class="emoji">❌</span>Failed Readings
                         <span class="info-tooltip">
-                            <button class="info-tooltip-icon" onclick="toggleTooltip(this)" aria-label="More info about failed readings">ⓘ</button>
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about failed readings">ⓘ</button>
                             <div class="info-tooltip-popover" role="tooltip">
                                 A failed reading occurs when the ADE7953 energy meter chip does not respond correctly over SPI. A small number is normal on startup; persistently high counts may indicate hardware or wiring issues.
                             </div>
