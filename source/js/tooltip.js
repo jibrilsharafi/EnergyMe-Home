@@ -43,6 +43,7 @@ function _positionTooltip(popover, anchor) {
     const popoverHeight = popover.offsetHeight || 80;
     popover.style.display = '';
     popover.style.visibility = '';
+    popover.style.opacity = '';
 
     // Prefer above the icon
     let top = rect.top - popoverHeight - gap;
