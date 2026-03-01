@@ -15,6 +15,9 @@
 let _activePopover = null;
 let _activeSource  = null;
 
+const MOBILE_BREAKPOINT = 480;
+const POPOVER_ARROW_THRESHOLD = 120;
+
 function toggleTooltip(iconButton, event) {
     if (event) event.stopPropagation();
 
@@ -47,14 +50,14 @@ function toggleTooltip(iconButton, event) {
 }
 
 function _positionTooltip(popover, anchor) {
-    const popoverWidth = 260;
+    const popoverWidth = 260; // Should match max-width in .info-tooltip-popover in tooltip.css
     const gap = 8;
 
     // Mobile: CSS bottom-sheet rules handle layout
-    if (window.innerWidth <= 480) return;
+    if (window.innerWidth <= MOBILE_BREAKPOINT) return;
 
     const rect = anchor.getBoundingClientRect();
-    const arrowUp = rect.top < 120;
+    const arrowUp = rect.top < POPOVER_ARROW_THRESHOLD;
 
     let left = rect.left + rect.width / 2 - popoverWidth / 2;
     left = Math.max(8, Math.min(left, window.innerWidth - popoverWidth - 8));
