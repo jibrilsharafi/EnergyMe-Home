@@ -1,0 +1,114 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright (C) 2025 Jibril Sharafi */
+
+/* ───────────────────────────────────────────
+   Info Tooltip Component
+   Usage:
+     <span class="info-tooltip">
+       <button class="info-tooltip-icon"
+               onclick="toggleTooltip(this)"
+               aria-label="More info">ⓘ</button>
+       <div class="info-tooltip-popover" role="tooltip">
+         Explanation text here.
+       </div>
+     </span>
+   ─────────────────────────────────────────── */
+
+.info-tooltip {
+    display: inline-flex;
+    align-items: center;
+    position: relative;
+    margin-left: 5px;
+    vertical-align: middle;
+}
+
+.info-tooltip-icon {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    color: #aaa;
+    transition: color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+}
+
+.info-tooltip-icon:hover,
+.info-tooltip-icon:focus {
+    color: #555;
+    outline: none;
+}
+
+/* The floating popover — positioned via JS using position:fixed
+   so it is never clipped by overflow:hidden parent containers */
+.info-tooltip-popover {
+    position: fixed;
+    z-index: 9000;
+    background-color: #333;
+    color: #fff;
+    font-size: 13px;
+    font-family: 'Trebuchet MS', sans-serif;
+    line-height: 1.5;
+    padding: 10px 14px;
+    border-radius: 6px;
+    max-width: 260px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    /* Ensure text wraps cleanly */
+    white-space: normal;
+    word-wrap: break-word;
+}
+
+.info-tooltip-popover.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+/* Small arrow pointing down toward the icon (default: popover above icon) */
+.info-tooltip-popover::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: #333;
+}
+
+/* When popover is below the icon, arrow points up */
+.info-tooltip-popover.arrow-up::after {
+    top: auto;
+    bottom: 100%;
+    border-top-color: transparent;
+    border-bottom-color: #333;
+}
+
+/* Mobile: full-width bottom sheet style instead of floating */
+@media screen and (max-width: 480px) {
+    .info-tooltip-popover {
+        position: fixed !important;
+        left: 12px !important;
+        right: 12px !important;
+        bottom: 20px !important;
+        top: auto !important;
+        max-width: none;
+        width: auto;
+        border-radius: 10px;
+        font-size: 14px;
+        padding: 14px 16px;
+    }
+
+    /* Hide arrow on mobile bottom sheet */
+    .info-tooltip-popover::after {
+        display: none;
+    }
+}
