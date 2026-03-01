@@ -5,77 +5,81 @@
  * Shared info-tooltip logic.
  * Included in every page alongside tooltip.css.
  *
- * toggleTooltip(iconButton) — call from onclick="toggleTooltip(this)"
+ * Usage: onclick="toggleTooltip(this, event)"
+ *
+ * The popover is cloned into <body> on open so that position:fixed
+ * is always relative to the viewport, regardless of any CSS transform
+ * on ancestor elements (e.g. .info-card hover animation).
  */
 
-let _activeTooltip = null;
+let _activePopover = null;
+let _activeSource  = null;
 
 function toggleTooltip(iconButton, event) {
     if (event) event.stopPropagation();
 
-    const popover = iconButton.nextElementSibling;
-    if (!popover || !popover.classList.contains('info-tooltip-popover')) return;
+    const source = iconButton.nextElementSibling;
+    if (!source || !source.classList.contains('info-tooltip-popover')) return;
 
-    const isOpen = popover.classList.contains('open');
-
-    // Close any currently open tooltip first
-    _closeAllTooltips();
-
-    if (!isOpen) {
-        _positionTooltip(popover, iconButton);
-        popover.classList.add('open');
-        _activeTooltip = popover;
+    // Clicking the same icon again → close
+    if (_activeSource === source) {
+        _closeTooltip();
+        return;
     }
+
+    _closeTooltip();
+
+    // Clone into <body> to escape any transformed ancestor
+    const clone = source.cloneNode(true);
+    clone.classList.add('open');
+    document.body.appendChild(clone);
+
+    _positionTooltip(clone, iconButton);
+
+    _activePopover = clone;
+    _activeSource  = source;
+
+    // Register close listeners on the next tick so this click doesn't immediately close
+    setTimeout(function () {
+        document.addEventListener('click',  _closeTooltip, { capture: true, once: true });
+        document.addEventListener('scroll', _closeTooltip, { capture: true, once: true });
+    }, 0);
 }
 
 function _positionTooltip(popover, anchor) {
-    // On mobile (<= 480px) CSS handles positioning via bottom-sheet rules
+    const popoverWidth = 260;
+    const gap = 8;
+
+    // Mobile: CSS bottom-sheet rules handle layout
     if (window.innerWidth <= 480) return;
 
     const rect = anchor.getBoundingClientRect();
-    const popoverWidth = 260; // matches max-width in CSS
-    const gap = 8; // space between icon and popover
+    const arrowUp = rect.top < 120;
 
-    // Temporarily make visible (off-screen) to measure height
-    popover.style.visibility = 'hidden';
-    popover.style.opacity = '0';
-    popover.style.display = 'block';
-    const popoverHeight = popover.offsetHeight || 80;
-    popover.style.display = '';
-    popover.style.visibility = '';
-    popover.style.opacity = '';
-
-    // Prefer above the icon
-    let top = rect.top - popoverHeight - gap;
-    let arrowUp = false;
-
-    // If not enough room above, show below
-    if (top < 8) {
-        top = rect.bottom + gap;
-        arrowUp = true;
-    }
-
-    // Horizontal: center on icon, clamp to viewport
     let left = rect.left + rect.width / 2 - popoverWidth / 2;
     left = Math.max(8, Math.min(left, window.innerWidth - popoverWidth - 8));
 
-    popover.style.top = top + 'px';
-    popover.style.left = left + 'px';
+    popover.style.width = popoverWidth + 'px';
+    popover.style.left  = left + 'px';
+
+    if (arrowUp) {
+        popover.style.top       = (rect.bottom + gap) + 'px';
+        popover.style.transform = '';
+    } else {
+        popover.style.top       = (rect.top - gap) + 'px';
+        popover.style.transform = 'translateY(-100%)';
+    }
+
     popover.classList.toggle('arrow-up', arrowUp);
 }
 
-function _closeAllTooltips() {
-    document.querySelectorAll('.info-tooltip-popover.open').forEach(p => {
-        p.classList.remove('open');
-    });
-    _activeTooltip = null;
-}
-
-// Close on outside click / scroll
-document.addEventListener('click', function (e) {
-    if (_activeTooltip && !e.target.closest('.info-tooltip')) {
-        _closeAllTooltips();
+function _closeTooltip() {
+    if (_activePopover) {
+        _activePopover.remove();
+        _activePopover = null;
+        _activeSource  = null;
     }
-});
-
-document.addEventListener('scroll', _closeAllTooltips, true);
+    // Clean up listeners (safe to call even if already removed)
+    document.removeEventListener('click',  _closeTooltip, { capture: true });
+    document.removeEventListener('scroll', _closeTooltip, { capture: true });
+}
