@@ -13,6 +13,7 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="stylesheet" type="text/css" href="/css/forms.css">
+    <link rel="stylesheet" type="text/css" href="/css/tooltip.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Update</title>
@@ -243,6 +244,12 @@
             <label style="display: block; margin: 10px 0;">
                 <input type='checkbox' id='force-restore' name='force'>
                 Force restore (skip device ID check for cross-device restore)
+                <span class="info-tooltip">
+                    <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about force restore">ⓘ</button>
+                    <div class="info-tooltip-popover" role="tooltip">
+                        By default, a configuration backup can only be restored to the same device that created it (verified by device ID). Enable this to restore a backup from a different device — useful when replacing hardware with an identical unit.
+                    </div>
+                </span>
             </label>
             <input type='submit' id='restore-config-submit' value='📥 Restore Configuration' title="Click to restore configuration from backup">
         </form>
@@ -264,6 +271,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
     <script src="/js/api-client.js"></script>
+    <script src="/js/tooltip.js"></script>
     <script>
         var file_size = 341760; // Default to ESP32 firmware size to avoid division by zero
         const UPDATE_PROGRESS_INTERVAL = 2000; // Lower values than 2000ms may overload the device

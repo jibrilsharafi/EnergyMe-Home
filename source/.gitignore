@@ -34,3 +34,4 @@ mocks/
 # AI stuff
 .playwright*
 .claude
+docs/plans

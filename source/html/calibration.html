@@ -13,6 +13,7 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="stylesheet" type="text/css" href="/css/forms.css">
+    <link rel="stylesheet" type="text/css" href="/css/tooltip.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Calibration</title>
@@ -304,25 +305,37 @@
                 </div>
 
                 <div class="control-group">
-                    <label for="voltageOutput">CT Voltage Output (V RMS):</label>
+                    <label for="voltageOutput">CT Voltage Output (V RMS):<span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about CT Voltage Output">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            The AC voltage the CT outputs at its rated primary current. Do not exceed (at your expected maximum current) 0.5 V absolute to avoid damaging the ADE7953. For instance, if your maximum expected current is 30 A, a CT rated for 75A/1V may work.
+                        </div>
+                    </span></label>
                     <input type="number" id="voltageOutput" min="0.001" max="10" step="0.001" value="0.333" onchange="onCalibrationChange()" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                    <small style="color: #666;">RMS voltage output at rated current</small>
                 </div>
 
                 <div class="control-group">
-                    <label for="currentRating">CT Current Rating (A RMS):</label>
+                    <label for="currentRating">CT Current Rating (A RMS):<span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about CT Current Rating">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            The maximum primary (measured) current the CT is rated for, as printed on the CT body or datasheet (e.g. 30 A, 100 A). Must match your installed CT exactly.
+                        </div>
+                    </span></label>
                     <input type="number" id="currentRating" min="1" max="2000" step="1" value="30" onchange="onCalibrationChange()" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                    <small style="color: #666;">Maximum primary current rating (RMS)</small>
                 </div>
 
                 <div class="control-group">
-                    <label for="scalingPercentage">Scaling Factor (%):</label>
+                    <label for="scalingPercentage">Scaling Factor (%):<span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Scaling Factor">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            Fine-tune correction applied on top of the base calibration (%). Use this to adjust for minor discrepancies, checking the current and active power against a known reference.
+                        </div>
+                    </span></label>
                     <div class="scaling-controls">
                         <button class="scaling-btn" onclick="adjustScaling(-1)">-</button>
                         <span class="scaling-value" id="scalingValue">0.0%</span>
                         <button class="scaling-btn" onclick="adjustScaling(1)">+</button>
                     </div>
-                    <small style="color: #666;">Fine adjustment: -50% to +50%</small>
                 </div>
 
                 <div class="control-group">
@@ -352,6 +365,7 @@
     </div>
 
     <script src="/js/api-client.js"></script>
+    <script src="/js/tooltip.js"></script>
     <script>
         var channelData = {};
         var meterData = [];
@@ -512,12 +526,40 @@
             table.innerHTML = `
                 <tr>
                     <th>Channel</th>
-                    <th>Voltage (V)</th>
-                    <th>Current (A)</th>
-                    <th>Active Power (W)</th>
-                    <th>Apparent Power (VA)</th>
-                    <th>Reactive Power (VAR)</th>
-                    <th>Power Factor</th>
+                    <th>Voltage (V)<span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Voltage">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            RMS voltage.
+                        </div>
+                    <th>Current (A)<span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Current">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            RMS current.
+                        </div>
+                    <th>Active Power (W)<span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Active Power">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            Real power actually consumed or generated, in watts. This is what your electricity meter bills. Always less than or equal to Apparent Power.
+                        </div>
+                    </span></th>
+                    <th>Apparent Power (VA)<span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Apparent Power">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            Total power drawn from the supply including reactive power, in volt-amperes. Apparent = Voltage × Current (without regard to phase). Always positive, and greater than or equal to Active Power.
+                        </div>
+                    </span></th>
+                    <th>Reactive Power (VAR)<span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Reactive Power">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            Power oscillating between source and inductive/capacitive load without doing useful work, in volt-ampere-reactive. Inductive loads (motors, transformers) have positive reactive power; capacitive loads have negative. You (usually) don't pay for this.
+                        </div>
+                    </span></th>
+                    <th>Power Factor<span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Power Factor">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            Ratio of Active Power to Apparent Power (0 to 1 or 0% to 100%). A value of 1.0 means purely resistive load (heaters, incandescent bulbs). Low values (&lt; 0.8) indicate significant inductive or capacitive loading (motors, switching power supplies).
+                        </div>
+                    </span></th>
                 </tr>
             `;
 

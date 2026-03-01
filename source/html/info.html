@@ -353,7 +353,15 @@
                     <span class="info-value" id="psramSize">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🌡️</span>Temperature</span>
+                    <span class="info-label">
+                        <span class="emoji">🌡️</span>Temperature
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about temperature">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Internal chip temperature. If you see values above 100°C, your house is probably on fire. RUN! 
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="temperature">Loading...</span>
                 </div>
             </div>
@@ -373,11 +381,25 @@
                     <span class="info-value" id="currentTime">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🔄</span>Reset Count</span>
+                    <span class="info-label"><span class="emoji">🔄</span>Reset Count
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about reset count">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Total restarts since power-up. A reset is consecutive if it happens in less than 180 secondsafter the previous one. A high number of consecutive resets indicate a potential system instability.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="resetCount">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">💥</span>Crash Count</span>
+                    <span class="info-label"><span class="emoji">💥</span>Crash Count
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about crash count">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Firmware panics or exceptions that caused an uncontrolled restart. Even one crash is worth investigating via the log page.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="crashCount">Loading...</span>
                 </div>
                 <div class="info-item">
@@ -397,7 +419,14 @@
                     <h3 class="card-title">Memory Usage</h3>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📊</span>Heap Memory</span>
+                    <span class="info-label"><span class="emoji">📊</span>Heap Memory
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about heap memory">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Do not worry if this gets too low - the firmware will automatically handle restarts.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="heapMemory">Loading...</span>
                 </div>
                 <div class="progress-bar">
@@ -419,7 +448,14 @@
                     <h3 class="card-title">Storage Usage</h3>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📁</span>LittleFS</span>
+                    <span class="info-label"><span class="emoji">📁</span>LittleFS
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about LittleFS">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Flash filesystem storing energy data, and log files. Logs have a maximum set size of around 200 kB, but in the long run the energy data may fill up the storage. You can interact with this via API.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="littlefsStorage">Loading...</span>
                 </div>
                 <div class="progress-bar">
@@ -473,15 +509,36 @@
                     <h3 class="card-title">ADE7953 Energy Meter</h3>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📊</span>Total Interrupts</span>
+                    <span class="info-label"><span class="emoji">📊</span>Total Interrupts
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about total interrupts">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                The ADE7953 energy meter chip signals the ESP32S3 via an interrupt pin approximately every 200 ms when new measurement data is ready.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="ade7953TotalInterrupts">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">✅</span>Handled Interrupts</span>
+                    <span class="info-label"><span class="emoji">✅</span>Handled Interrupts
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about handled interrupts">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Interrupts that were successfully read before the next one arrived. Should equal Total Interrupts. A gap means the ESP32S3 was too busy and missed readings.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="ade7953HandledInterrupts">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📈</span>Successful Readings</span>
+                    <span class="info-label"><span class="emoji">📈</span>Successful Readings
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about successful readings">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Valid energy measurements accepted and processed. A reading is considered successful when SPI communication is verified and the measured values are within expected ranges. For each 2 interrupts we have 3 readings (two for channel 0, one for the other channels).
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="ade7953Readings">Loading...</span>
                 </div>
                 <div class="info-item">
@@ -490,7 +547,7 @@
                         <span class="info-tooltip">
                             <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about failed readings">ⓘ</button>
                             <div class="info-tooltip-popover" role="tooltip">
-                                A failed reading occurs when the ADE7953 energy meter chip does not respond correctly over SPI. A small number is normal on startup; persistently high counts may indicate hardware or wiring issues.
+                                A failed reading occurs when the measurements are invalid (e.g. negative power for loads or PV) or when the SPI communication verification identifies a mismatch. A very small percentage of failed readings is expected due to the thorough verification process.
                             </div>
                         </span>
                     </span>
@@ -505,23 +562,47 @@
                     <h3 class="card-title">Communication Statistics</h3>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📤</span>MQTT Messages</span>
-                    <span class="info-value" id="mqttMessages">Loading...</span>
+                    <span class="info-label"><span class="emoji">📤</span>MQTT Messages
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about MQTT messages">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Total custom MQTT messages published since boot. Errors indicate messages that could not be delivered to the broker (connection lost, broker rejected, etc.). Check the logs for details on MQTT publish errors.
+                            </div>
+                        </span>
+                    </span>
+                    <span class="info-value" id="customMqttMessages">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🔗</span>MQTT Connections</span>
-                    <span class="info-value" id="mqttConnections">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label"><span class="emoji">🌐</span>Web Requests</span>
+                    <span class="info-label"><span class="emoji">🌐</span>Web Requests
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about web requests">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                HTTP requests received by the ESP32S3 from other devices on the network. Errors indicate unauthorized or malformed requests, or unsupported endpoints. Check the logs for details on request errors.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="webServerRequests">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📊</span>InfluxDB Uploads</span>
+                    <span class="info-label"><span class="emoji">📊</span>InfluxDB Uploads
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about InfluxDB uploads">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Measurement batches sent to InfluxDB. Errors indicate upload failures (network issue, wrong token, bucket not found). The device retries on the next interval. Check the logs for more details.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="influxdbUploads">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">🔧</span>Modbus Requests</span>
+                    <span class="info-label"><span class="emoji">🔧</span>Modbus Requests
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Modbus requests">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Modbus TCP requests received from other devices on the network. Errors indicate malformed requests or unsupported function codes. Check the logs for details on request errors.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="modbusRequests">Loading...</span>
                 </div>
             </div>
@@ -553,7 +634,14 @@
                     <span class="info-value" id="logFatal">Loading...</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label"><span class="emoji">📉</span>Dropped Messages</span>
+                    <span class="info-label"><span class="emoji">📉</span>Dropped Messages
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about dropped messages">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Log entries lost because the internal log buffer was full. A non-zero count means the device could not keep up with the logging rate.
+                            </div>
+                        </span>
+                    </span>
                     <span class="info-value" id="logDropped">Loading...</span>
                 </div>
             </div>
@@ -642,8 +730,7 @@
             ade7953FailureElement.style.color = ade7953Failures > 0 ? '#f44336' : '#4caf50';
 
             // Communication Statistics
-            document.getElementById('mqttMessages').textContent = `${formatNumber(stats.mqtt.messagesPublished)} (${stats.mqtt.messagesPublishedError} errors)`;
-            document.getElementById('mqttConnections').textContent = `${formatNumber(stats.mqtt.connections)} (${stats.mqtt.connectionErrors} errors)`;
+            document.getElementById('customMqttMessages').textContent = `${formatNumber(stats.customMqtt.messagesPublished)} (${stats.customMqtt.messagesPublishedError} errors)`;
             document.getElementById('webServerRequests').textContent = `${formatNumber(stats.webServer.requests)} (${stats.webServer.requestsError} errors)`;
             document.getElementById('influxdbUploads').textContent = `${formatNumber(stats.influxdb.uploadCount)} (${stats.influxdb.uploadCountError} errors)`;
             document.getElementById('modbusRequests').textContent = `${formatNumber(stats.modbus.requests)} (${stats.modbus.requestsError} errors)`;

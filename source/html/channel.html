@@ -13,6 +13,7 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="stylesheet" type="text/css" href="/css/forms.css">
+    <link rel="stylesheet" type="text/css" href="/css/tooltip.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Channel</title>
@@ -111,12 +112,12 @@
         <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
     </div>    <div id="channelContainer" class="section-box" style="text-align: center;">
         <h1>Channels</h1>
-        <!-- TODO: add information boxes (standard across all Web UI) for helping the user -->
         <div class="channel-columns"></div>
     </div>
 </body>
 
 <script src="/js/api-client.js"></script>
+<script src="/js/tooltip.js"></script>
 <script>
     var channelData = {};
     var powerUpdateInterval = null;
@@ -177,7 +178,13 @@
                 </label>
                 <div style="height: 10px;"></div>
                 <label>
-                    Phase:
+                    Phase
+                    <span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Phase">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            The AC phase this CT is measuring. For single-phase or standard split-phase loads use Phase 1. For 3-phase installations, assign each CT to its matching phase so voltage and current are in sync. <strong>240V (Split Phase)</strong> is for North American 240V circuits spanning both L1 and L2 legs — the firmware automatically applies a ×2 voltage multiplier.
+                        </div>
+                    </span>
                     <select id="phase${index}" onchange="queueChannelUpdate(${index})">
                         ${phaseOptions}
                     </select>
@@ -186,6 +193,12 @@
                 <label>
                     <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="queueChannelUpdate(${index})">
                     Reverse
+                    <span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Reverse">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            Inverted CT readings? Do not worry: software comes to the rescue! Check "Reverse" to flip the sign of all readings from this channel.
+                        </div>
+                    </span>
                 </label>
                 <div style="height: 10px;"></div>
                 <label>
@@ -194,14 +207,32 @@
                 </label>
                 <div style="height: 15px;"></div>
                 <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
-                <h4 style="margin: 10px 0;">Grouping</h4>
+                <h4 style="margin: 10px 0;">Grouping
+                    <span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Grouping">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            Channels sharing the same group label are combined into one card on the home dashboard. Use this for multi-phase loads — e.g. set all three phase CTs of your oven to "Oven" and the dashboard will show total power for the whole appliance.
+                        </div>
+                    </span>
+                </h4>
                 <label>
-                    Group Label:
-                    <input type="text" value="${channel.groupLabel || ''}" id="groupLabel${index}" onchange="queueChannelUpdate(${index})">
+                    <input type="text" value="${channel.groupLabel || ''}" id="groupLabel${index}" onchange="queueChannelUpdate(${index})" placeholder="Group label (optional)">
                 </label>
                 <div style="height: 15px;"></div>
                 <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
-                <h4 style="margin: 10px 0;">Channel Role</h4>
+                <h4 style="margin: 10px 0;">Role
+                    <span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Channel Role">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            Controls how this channel appears on the home dashboard and how its energy is counted:<br>
+                            <strong>Load</strong> — regular consumption; only positive values stored (negative discarded).<br>
+                            <strong>Grid</strong> — utility connection; positive = importing (buying), negative = exporting (selling).<br>
+                            <strong>PV / Solar</strong> — generation; only positive values stored.<br>
+                            <strong>Battery</strong> — storage; positive = discharging, negative = charging.<br>
+                            <strong>Inverter</strong> — DC-coupled hybrid (PV + Battery share one inverter); both signs kept.
+                        </div>
+                    </span>
+                </h4>
                 <label>
                     <select id="role${index}" onchange="queueChannelUpdate(${index})">
                         <option value="load" ${channel.role === 'load' ? 'selected' : ''}>Load</option>

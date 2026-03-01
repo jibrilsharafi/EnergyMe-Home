@@ -126,10 +126,10 @@
     </div>
 
     <div class="section-box">
-        <h2>Sync Time</h2>
-        <p><i>Sync the device time with your browser. Useful for devices without internet connectivity (static IP, isolated networks).</i></p>
+        <h2>Time</h2>
+        <p><i>Sync the device time with your browser. Useful for devices without internet connectivity (isolated networks).</i></p>
         <p id="currentDeviceTime">Device time: Loading...</p>
-        <button class="buttonForm" onclick="syncTime()" id="syncTime">🕐 Sync Time</button>
+        <button class="buttonForm" onclick="syncTime()" id="syncTime">🕐 Sync Time with browser</button>
     </div>
 
     <div class="section-box">
@@ -255,12 +255,13 @@
         function loadDeviceTime() {
             energyApi.getSystemTime()
             .then(response => {
-                const timeEl = document.getElementById("currentDeviceTime");
-                const syncStatus = response.synced ? "✅ Synced" : "⚠️ Not synced";
-                timeEl.innerHTML = `Device time: <i>${response.isoTime}</i> (${syncStatus})`;
+            const timeEl = document.getElementById("currentDeviceTime");
+            const syncStatus = response.synced ? "✅ Synced" : "⚠️ Not synced";
+            const localTime = new Date(response.unixTime * 1000).toLocaleString();
+            timeEl.innerHTML = `Device time: <strong>${localTime}</strong> <span style="color: #888;">(${response.isoTime} UTC)</span> ${syncStatus}`;
             })
             .catch(error => {
-                document.getElementById("currentDeviceTime").innerHTML = "Device time: Error loading";
+            document.getElementById("currentDeviceTime").innerHTML = "Device time: Error loading";
             });
         }
 
