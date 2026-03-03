@@ -5,8 +5,8 @@ This document provides detailed hardware specifications and technical informatio
 ## Hardware Specifications
 
 **Board Information:**
-
-- **Hardware Revision:** v5
+TODO: Update with v6.0
+- **Hardware Revision:** v5 
 - **PCB Layers:** 4 layers
 - **Board Dimensions:** 87 mm x 50 mm. Height with components around 15 mm
 - **Power Consumption:** ~100 mA @ 3.3V typical (< 1W AC consumption)
@@ -42,13 +42,13 @@ For improved module compatibility in future revisions, consider relocating pins 
 
 *HLK-PM03* AC/DC module providing 3.3V DC from universal AC input (100-240 VAC, 50-60 Hz). Includes 470µF bulk capacitor and protection components (fuse, varistor, PCB slots).
 
-![Power Supply](Schematics/Schematics_page_1.png)
+![Power Supply](pcb/Schematics_page_1.png)
 
 ### 2. Microcontroller (ESP32-S3)
 
 *ESP32-S3-WROOM-1-N16R2*: the central processing unit managing all digital logic, SPI communication with ADE7953, multiplexer control, LED control, and wireless connectivity.
 
-![ESP32-S3](Schematics/Schematics_page_2.png)
+![ESP32-S3](pcb/Schematics_page_2.png)
 
 ### 3. Energy Measurement (ADE7953)
 
@@ -59,15 +59,15 @@ High-precision 24-bit energy metering IC (*ADE7953ACPZ-RL*) with dual current ch
 - **Channel B:** Multiplexed input from 16 branch circuits
 - **Communication:** SPI interface to ESP32-S3
 
-![ADE7953](Schematics/Schematics_page_3.png)
+![ADE7953](pcb/Schematics_page_3.png)
 
-![ADE7953 signal inputs](Schematics/Schematics_page_4.png)
+![ADE7953 signal inputs](pcb/Schematics_page_4.png)
 
 ### 4. Analog Multiplexing
 
 *74HC4067PW,118* multiplexer routes one of 16 CT signals to ADE7953 Channel B. ESP32-S3 controls select lines (S0-S3) for sequential measurement.
 
-![Multiplexer](Schematics/Schematics_page_2.png)
+![Multiplexer](pcb/Schematics_page_2.png)
 
 ### 5. CT Interface & Other Inputs
 
@@ -79,7 +79,7 @@ The programming header is a standard 2x5 2.54mm pin header, comprising of 3V3, G
 
 Two more headers are available for expanding the CT inputs up to 17 total channels (the bare board has 8 channels).
 
-![CT Interface](Schematics/Schematics_page_5.png)
+![CT Interface](pcb/Schematics_page_5.png)
 
 ## PCB Layout & Design
 
@@ -113,14 +113,14 @@ The main board features a **4-layer PCB** design optimized for mixed-signal oper
 - Solder mask: Required (typically green)
 - Silkscreen: Component designators and polarity markings
 
-![PCB Layout](Schematics/PCB%20-%20Main%20board.pdf)
+![PCB Layout](pcb/PCB%20-%20Main%20board.pdf)
 
 ## Design Files & Resources
 
 - **EasyEDA Project:** [Multiple Channel Energy Meter](https://oshwlab.com/jabrillo/multiple-channel-energy-meter)
-- **Schematics:** Available in `Schematics/` directory
-- **BOM:** `Schematics/BOM.csv`
-- **Gerber Files:** Multiple board variants in `Schematics/`
+- **Schematics:** Available in `pcb/` directory
+- **BOM:** `pcb/BOM.csv`
+- **Gerber Files:** Multiple board variants in `pcb/`
 - **Component Datasheets:** Available in `Components/` directory
 
 ## Safety & Assembly Notes
