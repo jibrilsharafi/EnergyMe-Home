@@ -3093,6 +3093,7 @@ namespace Ade7953
         bool needsMigration = false;
 
         snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
+        // This may trigger getBytes(): not enough space in buffer: 4 < 8, but we will handle that by checking the returned value 
         double doubleValue = preferences.getDouble(key, -1.0); // Use -1.0 as sentinel (energy can't be negative)
         float floatValue = preferences.getFloat(key, -1.0f);
         LOG_DEBUG("Ch %d activeEnergyImported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
@@ -3547,15 +3548,16 @@ namespace Ade7953
         // Sometimes the power factor is very close to 1 but above 1. If so, clamp it to 1 as the measure is still valid
         if (abs(powerFactor) > VALIDATE_POWER_FACTOR_MAX && abs(powerFactor) < MAXIMUM_POWER_FACTOR_CLAMP) {
             LOG_VERBOSE(
-                "%s (%d): Power factor %.3f is above %.3f, clamping it", 
+                "%s (%d): Power factor %.3f (in absolute terms) is above %.3f (but below %.3f), clamping it", 
                 channelData.label, 
                 channelIndex, 
                 powerFactor,
+                VALIDATE_POWER_FACTOR_MAX,
                 MAXIMUM_POWER_FACTOR_CLAMP
             );
             powerFactor = (powerFactor > 0) ? VALIDATE_POWER_FACTOR_MAX : VALIDATE_POWER_FACTOR_MIN; // Keep the sign of the power factor
-            activePower = apparentPower; // Recompute active power based on the clamped power factor
-            reactivePower = 0.0f; // Small approximation leaving out distorted power
+            activePower = apparentPower * (activePower > 0 ? 1.0f : -1.0f); // Recompute active power based on the clamped power factor, keeping the sign of the original active power
+            reactivePower = 0.0f; // Small approximation leaving out distorted power, but since the PF is 1.0, it makes sense
         }    
         
         if (
