@@ -25,8 +25,8 @@ This document provides detailed hardware specifications and technical informatio
 
 The design uses ESP32-S3-WROOM-1-N16R2 with quad PSRAM (2MB). Other ESP32-S3 variants may work with `platformio.ini` and partition adjustments, but note:
 
-- **N16R8 (8MB Octal PSRAM)**: ⚠️ **Not compatible** - Octal PSRAM uses GPIOs 35, 36, 37 which conflict with ADE7953 SPI (MISO=35, SCK=36, IRQ=37)
-- **N16R0, N8R0, N4R0 (No PSRAM)**: May work but not recommended - PSRAM used for queues and JSON documents throughout the code
+- **N16R8 (8MB Octal PSRAM)**: Octal PSRAM uses GPIOs 35, 36, 37 and such pins are not used for this exact reason.
+- **N16R0, N8R0, N4R0 (No PSRAM)**: May work but not tested - PSRAM used for queues and JSON documents throughout the code
 - **N16R2, N8R2, N4R2 (2MB Quad PSRAM)**: Should work with partition table adjustments. Compiled firmware ~2MB (see [issue #21](https://github.com/jibrilsharafi/EnergyMe-Home/issues/21))
 
 **Future Hardware Revision Considerations:**
