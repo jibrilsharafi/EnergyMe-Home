@@ -5,20 +5,20 @@ This document provides detailed hardware specifications and technical informatio
 ## Hardware Specifications
 
 **Board Information:**
-TODO: Update with v6.0
-- **Hardware Revision:** v5 
+
+- **Hardware Revision:** v6.0
 - **PCB Layers:** 4 layers
 - **Board Dimensions:** 87 mm x 50 mm. Height with components around 15 mm
-- **Power Consumption:** ~100 mA @ 3.3V typical (< 1W AC consumption)
+- **Power Consumption:** ~200 mA @ 3.3V typical (~ 1W AC consumption)
 
 **Key Components:**
 
 - **Main Microcontroller:** ESP32-S3-WROOM-1-N16R2 (dual-core, WiFi 2.4 GHz, 16MB Flash, 2MB PSRAM)
 - **Energy Measurement IC:** Analog Devices ADE7953ACPZ-RL (single-phase, dual-channel)
-- **ADE7953 Crystal:** 3.58 MHz oscillator (S1C35800ZWJAC)
+- **ADE7953 Oscillator:** 3.58 MHz active SMD oscillator (RO03579043) — more compact than a crystal+load-cap pair and requires no additional passive components
 - **Analog Multiplexer:** 74HC4067PW,118 (16-channel, TSSOP-24)
-- **CT Inputs:** 17× PJ-3133-5A 3.5mm stereo jacks (1 direct + 16 multiplexed)
-- **Voltage Divider:** 1000:1 ratio (1 MΩ / 1 kΩ) for AC mains reference
+- **CT Inputs:** 17× PJ-3200 3.5mm stereo jacks (1 direct + 16 multiplexed) — plastic housing prevents shorts when stacking the expansion boards on top of the main board
+- **Voltage Transformer:** ZMPT107-1 for AC mains reference with full galvanic isolation
 - **Power Supply:** HLK-PM03 AC/DC module (100-240 VAC to 3.3 VDC, 1A max)
 
 **ESP32-S3 Module Compatibility Notes:**
@@ -40,46 +40,46 @@ For improved module compatibility in future revisions, consider relocating pins 
 
 ### 1. Power Supply Unit
 
-*HLK-PM03* AC/DC module providing 3.3V DC from universal AC input (100-240 VAC, 50-60 Hz). Includes 470µF bulk capacitor and protection components (fuse, varistor, PCB slots).
+*HLK-PM03* AC/DC module providing 3.3V DC from universal AC input (100-240 VAC, 50-60 Hz). Includes protection components (fuse, varistor, PCB slots), a Class X2 100nF film capacitor (C1) across the AC line for mains EMI suppression, and a large 3300µF bulk capacitor on the DC rail. The oversized DC capacitance provides enough hold-up time after a grid loss for the ADE7953 to detect the missing voltage reference and for the firmware to dispatch a last-gasp MQTT message before power fails.
 
-![Power Supply](pcb/Schematics_page_1.png)
+![Power Supply](pcb/schematics_page_1.png)
 
 ### 2. Microcontroller (ESP32-S3)
 
-*ESP32-S3-WROOM-1-N16R2*: the central processing unit managing all digital logic, SPI communication with ADE7953, multiplexer control, LED control, and wireless connectivity.
+*ESP32-S3-WROOM-1-N16R2*: the central processing unit managing all digital logic, SPI communication with ADE7953, multiplexer control, LED control, and wireless connectivity. *The beast*.
 
-![ESP32-S3](pcb/Schematics_page_2.png)
+![ESP32-S3](pcb/schematics_page_2.png)
 
 ### 3. Energy Measurement (ADE7953)
 
-High-precision 24-bit energy metering IC (*ADE7953ACPZ-RL*) with dual current channels, clocked by 3.58 MHz crystal:
+High-precision 24-bit energy metering IC (*ADE7953ACPZ-RL*) with dual current channels, clocked by a 3.58 MHz active SMD oscillator, and low-pass filters on all analog inputs (1 kΩ / 33 nF). Key features:
 
+- **Voltage Input:** AC mains reference via ZMPT107-1 voltage transformer (full galvanic isolation); a 1nF capacitor (C24) on the secondary side stitches the floating output to analog ground to suppress common-mode noise introduced by the isolation barrier
 - **Channel A:** Direct CT input for main circuit monitoring
-- **Voltage Input:** AC mains reference via 1000:1 voltage divider (1 MΩ / 1 kΩ)
 - **Channel B:** Multiplexed input from 16 branch circuits
-- **Communication:** SPI interface to ESP32-S3
+- **Communication:** SPI interface to ESP32-S3 at 2 MHz, with an interrupt line for data-ready notifications
 
-![ADE7953](pcb/Schematics_page_3.png)
+![ADE7953](pcb/schematics_page_3.png)
 
-![ADE7953 signal inputs](pcb/Schematics_page_4.png)
+![ADE7953 signal inputs](pcb/schematics_page_4.png)
 
 ### 4. Analog Multiplexing
 
-*74HC4067PW,118* multiplexer routes one of 16 CT signals to ADE7953 Channel B. ESP32-S3 controls select lines (S0-S3) for sequential measurement.
+*74HC4067PW,118* multiplexer routes one of 16 CT signals to ADE7953 Channel B. ESP32-S3 controls select lines (S0-S3) for sequential measurement. Supports +- 0.5 V relative to ground, which is sufficient for voltage-output CTs (max 333 mV).
 
-![Multiplexer](pcb/Schematics_page_2.png)
+![Multiplexer](pcb/schematics_page_2.png)
 
 ### 5. CT Interface & Other Inputs
 
-All 17 CT inputs use PJ-3133-5A 3.5mm stereo jacks with direct connection through low-pass filters (1 kΩ / 33 nF). **Maximum CT output: 333 mV**. No burden resistors are present on the board.
+All 17 CT inputs use PJ-3200 3.5mm stereo jacks with direct connection through low-pass filters (1 kΩ / 33 nF). **Maximum CT output: 333 mV**. No burden resistors are present on the board. The PJ-3200 plastic housing is important when stacking the top expansion boards on top of the main board, as it prevents accidental shorts between the jack body and the board above.
 
-The line voltage is fed via a 2.54mm 2-pin screw terminal block, rated for 300V/3A.
+The line voltage is fed to the ZMPT107-1 voltage transformer via a 2.54mm 2-pin screw terminal block, rated for 300V/3A.
 
-The programming header is a standard 2x5 2.54mm pin header, comprising of 3V3, GND, EN, IO0, TX, RX pins.
+The programming header is a standard 2x4 2.54mm pin header, comprising of 3V3, GND, EN, IO0, TX, RX, D+, D- pins.
 
 Two more headers are available for expanding the CT inputs up to 17 total channels (the bare board has 8 channels).
 
-![CT Interface](pcb/Schematics_page_5.png)
+![CT Interface](pcb/schematics_page_5.png)
 
 ## PCB Layout & Design
 
@@ -94,12 +94,13 @@ The main board features a **4-layer PCB** design optimized for mixed-signal oper
 
 **Component Placement:**
 
-- **Power section** isolated on top-left side with HLK-PM03 AC/DC module (though no galvanic isolation is provided as the neutral line is connected to the board ground)
-- **ESP32-S3** positioned on the left side, leaving a slot under the the PCB antenna on the module to improve WiFi performance
+- **Power section** isolated on top-left side with HLK-PM03 AC/DC module and ZMPT107-1 voltage transformer
+- **ESP32-S3** positioned on the left side, leaving a slot under the PCB antenna on the module to improve WiFi performance
 - **ADE7953** placed close to the ESP32-S3 to minimize SPI trace lengths
 - **Multiplexer** positioned close to the ADE7953 to reduce analog signal path lengths
 - **CT jacks** arranged in rows along board edges for easy access
 - **RGB LED** near the center for status indication
+- **Tactile buttons** for user input located at the center for easy access
 - **Programming header** located at the center for easier access
 - **Expansion headers** near the CT jacks for additional channels
 
@@ -113,15 +114,20 @@ The main board features a **4-layer PCB** design optimized for mixed-signal oper
 - Solder mask: Required (typically green)
 - Silkscreen: Component designators and polarity markings
 
-![PCB Layout](pcb/PCB%20-%20Main%20board.pdf)
+**Main Board Layout:**
+
+![PCB Top](pcb/main_board/pcb_top.png)
+
+![PCB Bottom](pcb/main_board/pcb_bottom.png)
 
 ## Design Files & Resources
 
 - **EasyEDA Project:** [Multiple Channel Energy Meter](https://oshwlab.com/jabrillo/multiple-channel-energy-meter)
-- **Schematics:** Available in `pcb/` directory
-- **BOM:** `pcb/BOM.csv`
-- **Gerber Files:** Multiple board variants in `pcb/`
-- **Component Datasheets:** Available in `Components/` directory
+- **Schematics:** `pcb/schematics.pdf` (PNG pages: `pcb/schematics_page_1.png` … `pcb/schematics_page_5.png`)
+- **BOM:** `pcb/main_board/BOM_EnergyMe-Home - Main board.csv`, `pcb/top_board_1/BOM_EnergyMe-Home - Top board 1.csv`, `pcb/top_board_2/BOM_EnergyMe-Home - Top board 2.csv`
+- **Gerber Files:** `pcb/main_board/`, `pcb/top_board_1/`, `pcb/top_board_2/`
+- **Pick-and-Place Files:** `pcb/main_board/`, `pcb/top_board_1/`, `pcb/top_board_2/`
+- **Component Datasheets:** Available in `components/` directory
 
 ## Safety & Assembly Notes
 
@@ -137,18 +143,42 @@ This device interfaces with AC mains voltage. Construction and installation must
 
 ## Hardware Images
 
-**Bare PCB:**
+**Top view (bare PCB):**
 
-![Bare PCB](<../resources/Bare PCB.jpg>)
+![Top bare](images/top_bare.jpg)
 
-**Assembled Board:**
+**Bottom view (bare PCB):**
 
-![Assembled PCB](<../resources/PCB top view.jpg>)
+![Bottom bare](images/bottom_bare.jpg)
 
-**Enclosure:**
+**Top view (assembled):**
 
-![Enclosure](../resources/case.jpg)
+![Top assembled](images/top.jpg)
 
-**Installation:**
+**Bottom view (assembled):**
 
-![Installation](../resources/installed_2.jpg)
+![Bottom assembled](images/bottom.jpg)
+
+**Front:**
+
+![Front](images/front.jpg)
+
+**Back:**
+
+![Back](images/back.jpg)
+
+**Left:**
+
+![Left](images/left.jpg)
+
+**Right:**
+
+![Right](images/right.jpg)
+
+**With CTs connected:**
+
+![With CTs](images/top_with_ct.jpg)
+
+**CT jack detail:**
+
+![CT jack](images/ct.jpg)
