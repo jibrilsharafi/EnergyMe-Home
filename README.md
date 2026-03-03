@@ -47,16 +47,17 @@ EnergyMe-Home is compatible with various electrical systems worldwide:
 
 ![PCB](resources/PCB%20top%20view.jpg)
 
-The hardware (currently at **v5**) consists of both the PCB design and the components used to build the energy monitoring system.
+The hardware (currently at **v6.0**) consists of both the PCB design and the components used to build the energy monitoring system.
 
 The key components include:
 
 - ESP32-S3: the brain of the project
 - ADE7953: single-phase energy measurement IC
+- ZMPT107-1: voltage transformer providing **full galvanic isolation** between the AC mains and the low-voltage measurement circuitry — no direct connection between mains and the board's ground
 - Multiplexers: used to monitor multiple circuits at once
 - 3.5 mm jack connectors: used to easily connect current transformers
 
-PCB schematics and BOMs are available in the `documentation/Schematics` directory, while datasheets for key components are in the `documentation/Components` directory. Additional hardware specifications and technical details can be found in the [`documentation/README.md`](documentation/README.md).
+PCB schematics and BOMs are available in the `documentation/pcb` directory, while datasheets for key components are in the `documentation/components` directory. Additional hardware specifications and technical details can be found in the [`documentation/README.md`](documentation/README.md).
 
 The project is published on *EasyEDA* for easy access to the PCB design files. You can find the project on [EasyEDA OSHWLab](https://oshwlab.com/jabrillo/multiple-channel-energy-meter).
 
@@ -87,7 +88,7 @@ EnergyMe-Home offers multiple integration options:
 - **InfluxDB**: Support for both v1.x and v2.x with SSL/TLS and buffering
 - **Home Assistant**: Dedicated custom integration ([homeassistant-energyme](https://github.com/jibrilsharafi/homeassistant-energyme))
 
-For detailed integration guides and implementation details, see the [documentation](documentation/README.md).
+For detailed integration guides and implementation details, see the [source README](source/README.md).
 
 ## Home Assistant Integration
 
@@ -103,8 +104,8 @@ Get started at [homeassistant-energyme](https://github.com/jibrilsharafi/homeass
 
 ## Getting Started
 
-1. **Order the PCB**: Download the design files from the [Schematics folder](documentation/Schematics/) and order from your preferred PCB manufacturer
-2. **Populate the board**: Solder all components using the BOM in `documentation/Schematics`
+1. **Order the PCB**: Download the design files from the [Schematics folder](documentation/pcb/) and order from your preferred PCB manufacturer
+2. **Populate the board**: Solder all components using the BOMs in `documentation/pcb/main_board/`, `documentation/pcb/top_board_1/`, and `documentation/pcb/top_board_2/`
 3. **Flash the firmware**: Connect a USB-to-UART adapter to the UART pins and flash using PlatformIO
 4. **Configure WiFi**: Power on the device and connect to the captive portal to set up WiFi credentials
 5. **Start monitoring**: Access the web interface at `http://energyme.local` (default credentials: *admin*/*energyme*)
