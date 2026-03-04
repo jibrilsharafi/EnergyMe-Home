@@ -11,7 +11,7 @@ Take a look at these beautiful renderings of the PCB design before diving into t
 
 **Board Information:**
 
-- **Hardware Revision:** v6.0
+- **Hardware Revision:** v6.1
 - **PCB Layers:** 4 layers
 - **Board Dimensions:** 87 mm x 50 mm. Height with components around 15 mm
 - **Power Consumption:** ~200 mA @ 3.3V typical (~ 1W AC consumption)
@@ -76,13 +76,13 @@ High-precision 24-bit energy metering IC (*ADE7953ACPZ-RL*) with dual current ch
 
 ### 5. CT Interface & Other Inputs
 
-All 17 CT inputs use PJ-3200 3.5mm stereo jacks with direct connection through low-pass filters (1 kΩ / 33 nF). **Maximum CT output: 333 mV**. No burden resistors are present on the board. The PJ-3200 plastic housing is important when stacking the top expansion boards on top of the main board, as it prevents accidental shorts between the jack body and the board above.
+All 16 CT inputs use PJ-3200 3.5mm stereo jacks with direct connection through low-pass filters (1 kΩ / 33 nF). **Maximum CT output: 333 mV**. No burden resistors are present on the board. Three 1 MΩ resistors (R18, R19, R20) are placed on the CT inputs to guarantee 0 V readings on the ADE7953 when no CT is connected, preventing floating inputs from causing spurious measurements. The PJ-3200 plastic housing is important when stacking the top expansion boards on top of the main board, as it prevents accidental shorts between the jack body and the board above.
 
 The line voltage is fed to the ZMPT107-1 voltage transformer via a 2.54mm 2-pin screw terminal block, rated for 300V/3A.
 
 The programming header is a standard 2x4 2.54mm pin header, comprising of 3V3, GND, EN, IO0, TX, RX, D+, D- pins.
 
-Two more headers are available for expanding the CT inputs up to 17 total channels (the bare board has 8 channels).
+Two more headers are available for expanding the CT inputs up to 16 total channels (the bare board has 8 channels).
 
 ![CT Interface](pcb/schematics_page_5.png)
 
@@ -129,9 +129,11 @@ The main board features a **4-layer PCB** design optimized for mixed-signal oper
 
 - **EasyEDA Project:** [Multiple Channel Energy Meter](https://oshwlab.com/jabrillo/multiple-channel-energy-meter)
 - **Schematics:** `pcb/schematics.pdf` (PNG pages: `pcb/schematics_page_1.png` … `pcb/schematics_page_5.png`)
-- **BOM:** `pcb/main_board/BOM_EnergyMe-Home - Main board.csv`, `pcb/top_board_1/BOM_EnergyMe-Home - Top board 1.csv`, `pcb/top_board_2/BOM_EnergyMe-Home - Top board 2.csv`
-- **Gerber Files:** `pcb/main_board/`, `pcb/top_board_1/`, `pcb/top_board_2/`
-- **Pick-and-Place Files:** `pcb/main_board/`, `pcb/top_board_1/`, `pcb/top_board_2/`
+- **BOM:** `pcb/main_board/bom_main_board.csv`, `pcb/top_board_1/bom_top_board_1.csv`, `pcb/top_board_2/bom_top_board_2.csv`
+- **Gerber Files:** `pcb/main_board/gerber_main_board.zip`, `pcb/top_board_1/gerber_top_board_1.zip`, `pcb/top_board_2/gerber_top_board_2.zip`
+- **PCB Layout PDFs:** `pcb/main_board/pcb_main_board_top.pdf`, `pcb/main_board/pcb_main_board_bottom.pdf`, `pcb/top_board_1/pcb_top_board_1_top.pdf`, `pcb/top_board_1/pcb_top_board_1_bottom.pdf`, `pcb/top_board_2/pcb_top_board_2_top.pdf`, `pcb/top_board_2/pcb_top_board_2_bottom.pdf`
+- **Pick-and-Place Files:** `pcb/main_board/pick_and_place_main_board.csv`, `pcb/top_board_1/pick_and_place_top_board_1.csv`, `pcb/top_board_2/pick_and_place_top_board_2.csv`
+- **EasyEDA Backup:** `pcb/backup_easy_eda/` (schematic and PCB JSON files)
 - **Component Datasheets:** Available in `components/` directory
 
 ## Safety & Assembly Notes

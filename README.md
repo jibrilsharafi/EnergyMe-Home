@@ -14,7 +14,7 @@
 
 ![Homepage](resources/homepage.png)
 
-EnergyMe-Home is an open-source energy monitoring system for home use, capable of monitoring up to 17 circuits. It integrates with any platform through REST API, MQTT, Modbus TCP, and InfluxDB.
+EnergyMe-Home is an open-source energy monitoring system for home use, capable of monitoring up to 16 circuits. It integrates with any platform through REST API, MQTT, Modbus TCP, and InfluxDB.
 
 Built for makers and DIY enthusiasts who want to track their home's energy consumption. The hardware uses ESP32-S3 and ADE7953 energy measurement IC, while the firmware is written in C++ with PlatformIO and Arduino framework. You can build and customize it yourself - all hardware designs and software are open-source.
 
@@ -37,7 +37,7 @@ EnergyMe-Home is compatible with various electrical systems worldwide:
 
 **Monitoring Capacity:**
 
-- Up to **17 circuits** simultaneously
+- Up to **16 circuits** simultaneously
 - 1× main circuit (typically 50A CT), sampled at high frequency for accurate total energy measurement
 - 16× branch circuits (typically 30A CTs), multiplexed for individual monitoring
 
@@ -47,7 +47,7 @@ EnergyMe-Home is compatible with various electrical systems worldwide:
 
 ![PCB](resources/PCB%20top%20view.jpg)
 
-The hardware (currently at **v6.0**) consists of both the PCB design and the components used to build the energy monitoring system.
+The hardware (currently at **v6.1**) consists of both the PCB design and the components used to build the energy monitoring system.
 
 The key components include:
 
