@@ -121,7 +121,7 @@ The main board features a **4-layer PCB** design. The components, present only o
 
 ## Design Files & Resources
 
-All design files (PCB layouts, BOMs, Gerber files, Pick-and-Place files) are grouped by boardm while the schematics are in a single PDF.
+All design files (PCB layouts, BOMs, Gerber files, Pick-and-Place files) are grouped by board (main_board, top_board_1, top_board_2), while the schematics are provided in a single PDF.
 
 - **EasyEDA Project:** [OSHWLAB | EnergyMe - Home](https://oshwlab.com/jabrillo/multiple-channel-energy-meter)
 - **Schematics:** `pcb/schematics.pdf` (PNG pages: `pcb/schematics_page_1.png` … `pcb/schematics_page_5.png`)
