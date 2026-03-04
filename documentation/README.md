@@ -2,6 +2,11 @@
 
 This document provides detailed hardware specifications and technical information for the EnergyMe-Home PCB design. For general project information, software features, and integrations, see the [main README](../README.md).
 
+Take a look at these beautiful renderings of the PCB design before diving into the technical details:
+
+![3D View Top](pcb/3d_view_top.png)
+![3D View Bottom](pcb/3d_view_bottom.png)
+
 ## Hardware Specifications
 
 **Board Information:**
