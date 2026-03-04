@@ -39,7 +39,7 @@ EnergyMe-Home is compatible with various electrical systems worldwide:
 
 - Up to **16 circuits** simultaneously
 - 1× main circuit (typically 50A CT), sampled at high frequency for accurate total energy measurement
-- 16× branch circuits (typically 30A CTs), multiplexed for individual monitoring
+- 15× branch circuits (typically 30A CTs), multiplexed for individual monitoring
 
 ⚠️ **Important**: Installation requires working with your main electrical panel. Always consult a qualified electrician if you're not experienced with electrical installations. The user is responsible for ensuring compliance with local electrical codes and regulations, and assumes all risks associated with the installation and use of this device.
 
