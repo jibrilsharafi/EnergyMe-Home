@@ -1027,7 +1027,7 @@
             let csvContent = "data:text/csv;charset=utf-8,";
             const balancePeriodLabels = { daily: 'Hour', monthly: 'Day', yearly: 'Month', total: 'Year' };
             const periodLabel = balancePeriodLabels[viewType] || 'Period';
-            csvContent += [periodLabel, 'Grid Import (kWh)', 'Grid Export (kWh)', 'PV (kWh)', 'Battery (kWh)', 'Home (kWh)'].join(",") + "\n";
+            csvContent += [periodLabel, 'Grid Import (kWh)', 'Grid Export (kWh)', 'PV (kWh)', 'Battery Discharge (kWh)', 'Battery Charge (kWh)', 'Home (kWh)'].join(",") + "\n";
             
             const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             // For total view, use the sorted year keys from the consumption data
@@ -1040,7 +1040,7 @@
                 else periodDisplay = monthNames[i] || String(i + 1);
                 
                 csvContent += [periodDisplay, balanceData.gridImport[i].toFixed(3), balanceData.gridExport[i].toFixed(3), balanceData.pv[i].toFixed(3), 
-                    balanceData.battery[i].toFixed(3), balanceData.homeConsumption[i].toFixed(3)].join(",") + "\n";
+                    balanceData.batteryDischarge[i].toFixed(3), balanceData.batteryCharge[i].toFixed(3), balanceData.homeConsumption[i].toFixed(3)].join(",") + "\n";
             }
             
             const link = document.createElement("a");

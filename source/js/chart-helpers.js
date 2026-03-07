@@ -436,7 +436,8 @@ const ChartHelpers = {
             gridImport: [],
             gridExport: [],
             pv: [],
-            battery: [],
+            batteryCharge: [],
+            batteryDischarge: [],
             homeConsumption: []
         };
 
@@ -465,7 +466,8 @@ const ChartHelpers = {
                 battCharge += periodData[idx] || 0;
                 battDischarge += (periodExport[idx] || 0);
             });
-            balanceData.battery.push(battDischarge - battCharge);
+            balanceData.batteryCharge.push(battCharge);
+            balanceData.batteryDischarge.push(battDischarge);
 
             const home = gridImport + pvProd + battDischarge - gridExport - battCharge;
             balanceData.homeConsumption.push(Math.max(0, home));
@@ -514,9 +516,16 @@ const ChartHelpers = {
 
         if (hasBattery) {
             datasets.push({
-                label: '🔋 Battery',
-                data: balanceData.battery,
-                backgroundColor: 'rgba(156, 39, 176, 0.7)',
+                label: '🔋 Battery Discharge',
+                data: balanceData.batteryDischarge,
+                backgroundColor: 'rgba(156, 39, 176, 0.8)',
+                stack: 'energy'
+            });
+
+            datasets.push({
+                label: '🔋 Battery Charge',
+                data: balanceData.batteryCharge.map(v => -v),
+                backgroundColor: 'rgba(156, 39, 176, 0.35)',
                 stack: 'energy'
             });
         }
@@ -685,8 +694,8 @@ const ChartHelpers = {
         const production = balanceData.pv.reduce((sum, v) => sum + v, 0);
         const homeConsumption = balanceData.homeConsumption.reduce((sum, v) => sum + v, 0);
         
-        const batteryCharge = hasBattery ? Math.abs(balanceData.battery.filter(v => v < 0).reduce((sum, v) => sum + v, 0)) : 0;
-        const batteryDischarge = hasBattery ? balanceData.battery.filter(v => v > 0).reduce((sum, v) => sum + v, 0) : 0;
+        const batteryCharge = hasBattery ? balanceData.batteryCharge.reduce((sum, v) => sum + v, 0) : 0;
+        const batteryDischarge = hasBattery ? balanceData.batteryDischarge.reduce((sum, v) => sum + v, 0) : 0;
 
         // Update grid KPIs
         const gridImportEl = document.getElementById('balance-kpi-grid-import-value');
