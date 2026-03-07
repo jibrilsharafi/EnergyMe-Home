@@ -433,7 +433,8 @@ const ChartHelpers = {
         const periods = Object.keys(hourlyData).sort();
 
         const balanceData = {
-            grid: [],
+            gridImport: [],
+            gridExport: [],
             pv: [],
             battery: [],
             homeConsumption: []
@@ -445,7 +446,8 @@ const ChartHelpers = {
 
             const gridImport = periodData[gridChannelKey] || 0;
             const gridExport = periodExport[gridChannelKey] || 0;
-            balanceData.grid.push(gridImport - gridExport);
+            balanceData.gridImport.push(gridImport);
+            balanceData.gridExport.push(gridExport);
 
             let pvProd = 0;
             productionIndices.forEach(idx => {
@@ -497,9 +499,16 @@ const ChartHelpers = {
         }
 
         datasets.push({
-            label: '🔌 Grid',
-            data: balanceData.grid,
-            backgroundColor: 'rgba(33, 150, 243, 0.7)',
+            label: '🔌 Grid Import',
+            data: balanceData.gridImport,
+            backgroundColor: 'rgba(33, 150, 243, 0.8)',
+            stack: 'energy'
+        });
+
+        datasets.push({
+            label: '⚡ Grid Export',
+            data: balanceData.gridExport.map(v => -v),
+            backgroundColor: 'rgba(33, 150, 243, 0.35)',
             stack: 'energy'
         });
 
@@ -671,8 +680,8 @@ const ChartHelpers = {
         const hasBattery = batteryChannels.length > 0;
 
         // Calculate totals from balance data
-        const gridImport = balanceData.grid.filter(v => v > 0).reduce((sum, v) => sum + v, 0);
-        const gridExport = Math.abs(balanceData.grid.filter(v => v < 0).reduce((sum, v) => sum + v, 0));
+        const gridImport = balanceData.gridImport.reduce((sum, v) => sum + v, 0);
+        const gridExport = balanceData.gridExport.reduce((sum, v) => sum + v, 0);
         const production = balanceData.pv.reduce((sum, v) => sum + v, 0);
         const homeConsumption = balanceData.homeConsumption.reduce((sum, v) => sum + v, 0);
         
