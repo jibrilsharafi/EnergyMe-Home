@@ -816,8 +816,12 @@ const ChartHelpers = {
         // Calculate total consumption
         const totalConsumption = Object.values(channelTotals).reduce((sum, val) => sum + val, 0);
 
+        const totalRowEl = document.getElementById('consumption-total-row');
+        const valueEl = document.getElementById('consumption-total-value');
+
         if (totalConsumption === 0) {
             sharingSection.style.display = 'none';
+            if (totalRowEl) totalRowEl.style.display = 'none';
             return;
         }
 
@@ -828,6 +832,7 @@ const ChartHelpers = {
 
         if (sortedChannels.length === 0) {
             sharingSection.style.display = 'none';
+            if (totalRowEl) totalRowEl.style.display = 'none';
             return;
         }
 
@@ -896,6 +901,11 @@ const ChartHelpers = {
         });
 
         sharingSection.style.display = currentChartType === 'balance' ? 'none' : 'block';
+
+        if (totalRowEl && valueEl) {
+            valueEl.textContent = totalConsumption.toFixed(1);
+            totalRowEl.style.display = currentChartType === 'balance' ? 'none' : 'block';
+        }
     },
 
     /**
