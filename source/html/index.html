@@ -534,12 +534,15 @@
         const balanceKpisSection = document.getElementById('balance-kpis-section');
         const energyKpisSection = document.getElementById('energy-kpis-section');
         
+        const consumptionTotalRow = document.getElementById('consumption-total-row');
         if (chartType === 'consumption') {
             if (consumptionSharingSection) consumptionSharingSection.style.display = 'block';
+            if (consumptionTotalRow && consumptionTotalRow.dataset.ready) consumptionTotalRow.style.display = 'block';
             if (balanceKpisSection) balanceKpisSection.style.display = 'none';
             if (energyKpisSection) energyKpisSection.style.display = 'none';
         } else {
             if (consumptionSharingSection) consumptionSharingSection.style.display = 'none';
+            if (consumptionTotalRow) consumptionTotalRow.style.display = 'none';
             if (balanceKpisSection) balanceKpisSection.style.display = 'flex';
             if (energyKpisSection) energyKpisSection.style.display = 'none';
         }

@@ -904,6 +904,7 @@ const ChartHelpers = {
 
         if (totalRowEl && valueEl) {
             valueEl.textContent = totalConsumption.toFixed(1);
+            totalRowEl.dataset.ready = '1';
             totalRowEl.style.display = currentChartType === 'balance' ? 'none' : 'block';
         }
     },
