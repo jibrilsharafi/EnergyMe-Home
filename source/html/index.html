@@ -14,6 +14,7 @@
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="stylesheet" type="text/css" href="/css/forms.css">
     <link rel="stylesheet" type="text/css" href="/css/index.css">
+    <link rel="stylesheet" type="text/css" href="/css/tooltip.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>EnergyMe</title>
@@ -120,6 +121,9 @@
                 <canvas id="consumption-pie-canvas" style="display: none;"></canvas>
                 <div class="chart-loading">📊 Loading breakdown...</div>
             </div>
+            <div id="consumption-total-row" style="display: none; text-align: center; margin-top: 8px;">
+                <span class="kpi-label">🏠 Total: </span><span id="consumption-total-value" class="kpi-value" style="font-size: 16px;"></span><span class="kpi-unit"> kWh</span>
+            </div>
         </div>
         <div id="balance-chart" style="position: relative; display: none;">
             <div class="chart-loading">🔋 Calculating energy flows...</div>
@@ -151,11 +155,29 @@
                 <div class="kpi-unit">kWh</div>
             </div>
             <div id="balance-kpi-self-consumption" class="kpi-card" style="display: none;">
-                <div class="kpi-label">🏠 Self-Consumption</div>
+                <div class="kpi-label">🏠 Self-Consumption
+                    <span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Self-Consumption">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            <strong>Self-Consumption</strong> = share of solar production used directly on-site.<br><br>
+                            Formula: (Production − Grid Export) ÷ Production<br><br>
+                            100 % means all generated energy was consumed locally; 0 % means everything was exported to the grid.
+                        </div>
+                    </span>
+                </div>
                 <div class="kpi-value" id="balance-kpi-self-consumption-value">0%</div>
             </div>
             <div id="balance-kpi-autosufficiency" class="kpi-card" style="display: none;">
-                <div class="kpi-label">🌱 Autosufficiency</div>
+                <div class="kpi-label">🌱 Autosufficiency
+                    <span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Autosufficiency">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            <strong>Autosufficiency</strong> = share of home consumption covered by own production (solar / battery).<br><br>
+                            Formula: (Home Consumption − Grid Import) ÷ Home Consumption<br><br>
+                            100 % means the home was fully self-powered; 0 % means all energy came from the grid.
+                        </div>
+                    </span>
+                </div>
                 <div class="kpi-value" id="balance-kpi-autosufficiency-value">0%</div>
             </div>
             <div id="balance-kpi-battery-charge" class="kpi-card" style="display: none;">
@@ -187,11 +209,29 @@
                 <div class="kpi-unit">kWh</div>
             </div>
             <div id="kpi-self-consumption" class="kpi-card" style="display: none;">
-                <div class="kpi-label">🏠 Self-Consumption</div>
+                <div class="kpi-label">🏠 Self-Consumption
+                    <span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Self-Consumption">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            <strong>Self-Consumption</strong> = share of solar production used directly on-site.<br><br>
+                            Formula: (Production − Grid Export) ÷ Production<br><br>
+                            100 % means all generated energy was consumed locally; 0 % means everything was exported to the grid.
+                        </div>
+                    </span>
+                </div>
                 <div class="kpi-value" id="kpi-self-consumption-value">0%</div>
             </div>
             <div id="kpi-autosufficiency" class="kpi-card" style="display: none;">
-                <div class="kpi-label">🌱 Autosufficiency</div>
+                <div class="kpi-label">🌱 Autosufficiency
+                    <span class="info-tooltip">
+                        <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Autosufficiency">ⓘ</button>
+                        <div class="info-tooltip-popover" role="tooltip">
+                            <strong>Autosufficiency</strong> = share of home consumption covered by own production (solar / battery).<br><br>
+                            Formula: (Home Consumption − Grid Import) ÷ Home Consumption<br><br>
+                            100 % means the home was fully self-powered; 0 % means all energy came from the grid.
+                        </div>
+                    </span>
+                </div>
                 <div class="kpi-value" id="kpi-autosufficiency-value">0%</div>
             </div>
             <div id="kpi-battery-charge" class="kpi-card" style="display: none;">
@@ -216,6 +256,7 @@
     <script src="/js/data-helpers.js"></script>
     <script src="/js/chart-helpers.js"></script>
     <script src="/js/power-flow.js"></script>
+    <script src="/js/tooltip.js"></script>
 </body>
 
 <script>
@@ -493,12 +534,15 @@
         const balanceKpisSection = document.getElementById('balance-kpis-section');
         const energyKpisSection = document.getElementById('energy-kpis-section');
         
+        const consumptionTotalRow = document.getElementById('consumption-total-row');
         if (chartType === 'consumption') {
             if (consumptionSharingSection) consumptionSharingSection.style.display = 'block';
+            if (consumptionTotalRow && consumptionTotalRow.dataset.ready) consumptionTotalRow.style.display = 'block';
             if (balanceKpisSection) balanceKpisSection.style.display = 'none';
             if (energyKpisSection) energyKpisSection.style.display = 'none';
         } else {
             if (consumptionSharingSection) consumptionSharingSection.style.display = 'none';
+            if (consumptionTotalRow) consumptionTotalRow.style.display = 'none';
             if (balanceKpisSection) balanceKpisSection.style.display = 'flex';
             if (energyKpisSection) energyKpisSection.style.display = 'none';
         }
@@ -989,20 +1033,20 @@
             let csvContent = "data:text/csv;charset=utf-8,";
             const balancePeriodLabels = { daily: 'Hour', monthly: 'Day', yearly: 'Month', total: 'Year' };
             const periodLabel = balancePeriodLabels[viewType] || 'Period';
-            csvContent += [periodLabel, 'Grid (kWh)', 'PV (kWh)', 'Battery (kWh)', 'Home (kWh)'].join(",") + "\n";
+            csvContent += [periodLabel, 'Grid Import (kWh)', 'Grid Export (kWh)', 'PV (kWh)', 'Battery Discharge (kWh)', 'Battery Charge (kWh)', 'Home (kWh)'].join(",") + "\n";
             
             const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             // For total view, use the sorted year keys from the consumption data
             const balancePeriodKeys = viewType === 'total' ? Object.keys(consumptionData).sort() : null;
-            for (let i = 0; i < balanceData.grid.length; i++) {
+            for (let i = 0; i < balanceData.gridImport.length; i++) {
                 let periodDisplay;
                 if (viewType === 'daily') periodDisplay = `${i}:00`;
                 else if (viewType === 'monthly') periodDisplay = String(i + 1).padStart(2, '0');
                 else if (viewType === 'total') periodDisplay = balancePeriodKeys ? balancePeriodKeys[i] : String(i);
                 else periodDisplay = monthNames[i] || String(i + 1);
                 
-                csvContent += [periodDisplay, balanceData.grid[i].toFixed(3), balanceData.pv[i].toFixed(3), 
-                    balanceData.battery[i].toFixed(3), balanceData.homeConsumption[i].toFixed(3)].join(",") + "\n";
+                csvContent += [periodDisplay, balanceData.gridImport[i].toFixed(3), balanceData.gridExport[i].toFixed(3), balanceData.pv[i].toFixed(3), 
+                    balanceData.batteryDischarge[i].toFixed(3), balanceData.batteryCharge[i].toFixed(3), balanceData.homeConsumption[i].toFixed(3)].join(",") + "\n";
             }
             
             const link = document.createElement("a");
