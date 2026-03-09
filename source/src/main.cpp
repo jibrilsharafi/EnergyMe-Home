@@ -10,7 +10,7 @@
 #include "constants.h"
 #include "structs.h"
 #include "utils.h"
-#include "pins.h"
+#include "hardware_profile.h"
 
 #include "ade7953.h"
 #include "buttonhandler.h"
@@ -43,11 +43,15 @@ void setup()
   getDeviceId(DEVICE_ID, sizeof(DEVICE_ID));
   Serial.printf("Device ID: %s\n", DEVICE_ID);
 
+  // Must be first: reads eFuse, selects hardware profile (pins, voltage ratios, mux map),
+  // sets globalHwProfile and globalCommunityMode before any hardware is initialized.
+  initHardwareProfile();
+
   // Need to call this once and at begin to ensure PSRAM is used for all mbedtls (both for OTA and MQTT connection. and maybe InfluxDB)
   mbedtls_platform_set_calloc_free(ota_calloc_psram, ota_free_psram);
 
   Serial.println("Setting up LED...");
-  Led::begin(LED_RED_PIN, LED_GREEN_PIN, LED_BLUE_PIN);
+  Led::begin(globalHwProfile->ledRedPin, globalHwProfile->ledGreenPin, globalHwProfile->ledBluePin);
   Serial.println("LED setup done");
 
   Led::setWhite(Led::PRIO_NORMAL);
@@ -106,25 +110,25 @@ void setup()
   Led::setPurple(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up multiplexer...");
   Multiplexer::begin(
-      MULTIPLEXER_S0_PIN,
-      MULTIPLEXER_S1_PIN,
-      MULTIPLEXER_S2_PIN,
-      MULTIPLEXER_S3_PIN);
+      globalHwProfile->muxS0Pin,
+      globalHwProfile->muxS1Pin,
+      globalHwProfile->muxS2Pin,
+      globalHwProfile->muxS3Pin);
   LOG_INFO("Multiplexer setup done");
 
   LOG_DEBUG("Setting up button handler...");
-  ButtonHandler::begin(BUTTON_GPIO0_PIN);
+  ButtonHandler::begin(globalHwProfile->buttonPin);
   LOG_INFO("Button handler setup done");
 
   LOG_DEBUG("Setting up ADE7953...");
   if (
     Ade7953::begin(
-      ADE7953_SS_PIN,
-      ADE7953_SCK_PIN,
-      ADE7953_MISO_PIN,
-      ADE7953_MOSI_PIN,
-      ADE7953_RESET_PIN,
-      ADE7953_INTERRUPT_PIN
+      globalHwProfile->ade7953SsPin,
+      globalHwProfile->ade7953SckPin,
+      globalHwProfile->ade7953MisoPin,
+      globalHwProfile->ade7953MosiPin,
+      globalHwProfile->ade7953ResetPin,
+      globalHwProfile->ade7953InterruptPin
     )
   ) LOG_INFO("ADE7953 setup done");
   else LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
