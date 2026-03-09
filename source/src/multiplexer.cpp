@@ -26,7 +26,7 @@ namespace Multiplexer {
     }
 
     void setChannel(uint8_t channel) {
-        if (channel > HW_PROFILE_MAX_MUX_CHANNELS - 1) return;
+        if (channel >= globalHwProfile->muxChipChannels) return;
 
         // Truth table for the multiplexer
         // Enable pin (E) is always 0 at the hardware level
