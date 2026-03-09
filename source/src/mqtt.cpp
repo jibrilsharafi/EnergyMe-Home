@@ -709,11 +709,12 @@ namespace Mqtt
         snprintf(
             topicBuffer,
             topicBufferSize,
-            "%s/%s/%s/%s/%s/%s",
+            "%s/%s/%s/%s/%s/%s/%s",
             MQTT_BASIC_INGEST,
             ruleName,
             MQTT_TOPIC_1,
             MQTT_TOPIC_2,
+            MQTT_TOPIC_VERSION,
             DEVICE_ID,
             finalTopic
         );
@@ -725,9 +726,10 @@ namespace Mqtt
         snprintf(
             topicBuffer,
             topicBufferSize,
-            "%s/%s/%s/%s",
+            "%s/%s/%s/%s/%s",
             MQTT_TOPIC_1,
             MQTT_TOPIC_2,
+            MQTT_TOPIC_VERSION,
             DEVICE_ID,
             finalTopic
         );

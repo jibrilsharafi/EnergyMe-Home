@@ -3,12 +3,40 @@
 
 #pragma once
 
-// Can be public. If the endpoint will change, it justn need to be updated here and an OTA deployed.
-constexpr const char* AWS_IOT_CORE_ENDPOINT = "a4c07oxnykeeh-ats.iot.eu-central-1.amazonaws.com"; // TODO: migrate to custom DNS name for easier migration in the future (and now to EnergyMe company)
+// AWS Configuration Storage Policy
+// =================================
+// All constants in this file are intentionally compile-time. They are fleet-wide infrastructure
+// values that always require a coordinated change on both firmware and cloud side simultaneously.
+// Storing them in NVS would add load/validate/fallback complexity with no practical benefit —
+// any endpoint or topic migration requires an OTA anyway to ensure all devices switch atomically.
+//
+// The only device-specific cloud config is certificates, which are pre-loaded into the factory
+// NVS partition at manufacturing (see docs/plans/2026-03-09-aws-config-storage-policy.md).
+//
+// To change the endpoint or rules: update here and deploy an OTA.
 
-// The name of the IoT Core rule that will route messages to the right place using the Basic Ingest functionality (allowing for cheaper MQTT messages).
-constexpr const char* AWS_IOT_CORE_RULE_METER = "energyme_home_meter"; // TODO: should these be dictated by the "cloud" in some ways? Better than hardcoded?
+// Connection
+// TODO: migrate to custom DNS name for easier migration in the future
+#ifdef ENV_DEV
+constexpr const char* AWS_IOT_CORE_ENDPOINT = "a4c07oxnykeeh-ats.iot.eu-central-1.amazonaws.com";
+#else
+constexpr const char* AWS_IOT_CORE_ENDPOINT = "a4c07oxnykeeh-ats.iot.eu-central-1.amazonaws.com"; // TODO: change to production endpoint once ready
+#endif
+#define AWS_IOT_CORE_PORT 8883
+
+// IoT Core Basic Ingest rule names — routes messages server-side, enabling cheaper MQTT ingestion.
+constexpr const char* AWS_IOT_CORE_RULE_METER = "energyme_home_meter";
 constexpr const char* AWS_IOT_CORE_RULE_LOG = "energyme_home_log_v1";
+
+// AWS reserved topic prefixes
+#define AWS_TOPIC "$aws"
+#define MQTT_BASIC_INGEST AWS_TOPIC "/rules"
+#define MQTT_THINGS       AWS_TOPIC "/things"
+
+// EnergyMe-Home topic namespace (fleet-wide; change requires OTA + cloud-side update)
+#define MQTT_TOPIC_1       "energyme"
+#define MQTT_TOPIC_2       "home"
+#define MQTT_TOPIC_VERSION "v1"
 
 // Amazon Root CA 1 - can be public
 // https://www.amazontrust.com/repository/AmazonRootCA1.pem

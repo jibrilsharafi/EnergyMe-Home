@@ -94,22 +94,11 @@
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 #define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
 
-// Cloud services
-// --------------------
-// Reserved topics
-#define AWS_TOPIC "$aws"
-#define MQTT_BASIC_INGEST AWS_TOPIC "/rules"
-#define MQTT_THINGS AWS_TOPIC "/things"
-
-// Certificates path
+// Certificates NVS keys
 #define PREFS_KEY_CERTIFICATE "certificate"
 #define PREFS_KEY_PRIVATE_KEY "private_key"
 
-// EnergyMe - Home | Custom MQTT topics
-// Base topics
-#define MQTT_TOPIC_1 "energyme"
-#define MQTT_TOPIC_2 "home"
-
+// MQTT topic suffixes (application-level; see awsconfig.h for the namespace prefix)
 // Publish topics
 #define MQTT_TOPIC_METER "meter"
 #define MQTT_TOPIC_SYSTEM_STATIC "system/static"
@@ -125,9 +114,6 @@
 #define MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE "provisioning/response"
 #define MQTT_TOPIC_SUBSCRIBE_JOBS "jobs"
 #define MQTT_TOPIC_SUBSCRIBE_QOS 1
-
-// AWS IoT Core endpoint
-#define AWS_IOT_CORE_PORT 8883
 
 struct PublishMqtt
 {
