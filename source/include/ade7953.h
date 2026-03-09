@@ -23,7 +23,7 @@
 #include "constants.h"
 #include "structs.h"
 #include "utils.h"
-#include "pins.h" // For the voltage divider
+#include "hardware_profile.h"
 
 // SPI
 #define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz

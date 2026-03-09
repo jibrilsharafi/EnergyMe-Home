@@ -3045,7 +3045,7 @@ namespace Ade7953
         // First, we compute the full scale current RMS, which is simply the CT current rating.
         float fullScaleCurrentRms = ctSpec.currentRating;
         // Then we compute the full scale voltage RMS, which is the maximum ADC input RMS scaled by the voltage divider ratio.
-        float voltageDivideRatio = 1 / (VOLTAGE_DIVIDER_R2 / (VOLTAGE_DIVIDER_R1 + VOLTAGE_DIVIDER_R2));
+        float voltageDivideRatio = 1 / (globalHwProfile->voltageDividerR2 / (globalHwProfile->voltageDividerR1 + globalHwProfile->voltageDividerR2));
         float fullScaleVoltageRms = maximumAdcChannelInputRms * voltageDivideRatio;
         // The full scale power is simply the product of the full scale current and voltage RMS values (assuming cos phi = 1 for simplicity).
         float fullScalePower = fullScaleCurrentRms * fullScaleVoltageRms;
