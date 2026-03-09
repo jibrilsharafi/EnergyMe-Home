@@ -801,7 +801,7 @@ namespace CustomWifi
       MDNS.addServiceTxt("modbus", "tcp", "vendor", COMPANY_NAME);
       MDNS.addServiceTxt("modbus", "tcp", "model", PRODUCT_NAME);
       MDNS.addServiceTxt("modbus", "tcp", "version", FIRMWARE_BUILD_VERSION);
-      MDNS.addServiceTxt("modbus", "tcp", "channels", "17");
+      MDNS.addServiceTxt("modbus", "tcp", "channels", "16"); // Cannot use constant since that is a number, not a string
 
       LOG_INFO("mDNS setup done: %s.local", MDNS_HOSTNAME);
       return true;

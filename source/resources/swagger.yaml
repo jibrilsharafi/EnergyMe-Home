@@ -2109,7 +2109,7 @@ paths:
               items:
                 $ref: '#/components/schemas/ChannelData'
               minItems: 1
-              maxItems: 17
+              maxItems: 16
               uniqueItems: true
             example:
               - index: 0
@@ -2179,7 +2179,7 @@ paths:
                   summary: Too many channels
                   value:
                     success: false
-                    error: "Too many channels in array (maximum: 17)"
+                    error: "Too many channels in array (maximum: 16)"
 
   /api/v1/ade7953/channel/reset:
     post:
