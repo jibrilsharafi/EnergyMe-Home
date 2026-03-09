@@ -3703,7 +3703,7 @@ namespace Ade7953
             _meterValues[channelIndex].apparentPower = 0.0f;
         }
 
-        // TODO: add here, after everything has been validated, the computation of the mean values over the last X values (with a simple exponential filter alpha = 0.3 - 0.5)
+        // TODO: add here, after everything has been validated, the computation of the mean values over the last X values (with a simple exponential filter alpha = 0.3 - 0.5). Allowing for automations, led lights, with more smoothness compared to raw values
 
         // Update dynamic scheduling: track power variability and recalculate channel weights
         _updateVariability(channelIndex, _meterValues[channelIndex].activePower);

@@ -62,11 +62,7 @@
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
 #define CORE_DUMP_CHUNK_SIZE (4 * 1024) // Do not exceed 4kB to avoid stability issues
 
-#ifdef ENV_PROD // TODO: how should we handle the default value for this? With v6, the certs will be embedded in the device also
-#define DEFAULT_CLOUD_SERVICES_ENABLED true // In prod, enable by default
-#else
-#define DEFAULT_CLOUD_SERVICES_ENABLED false // Leave manual connection
-#endif
+#define DEFAULT_CLOUD_SERVICES_ENABLED false // Always off by default, and enabled only explicitly by the user
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
 #define DEFAULT_MQTT_LOG_LEVEL_INT 2 // Default minimum log level for MQTT publishing (INFO = 2)
 

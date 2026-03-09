@@ -2145,7 +2145,6 @@ bool restoreNvsFromJson(JsonDocument &doc) {
                 size_t len = prefs.putString(key, valueVar.as<const char*>()); // This returns the length of the string stored, not true/false
                 success = strlen(valueVar.as<const char*>()) == len;
             } else if (strcmp(typeStr, "blob") == 0) {
-                // TODO: Handle base64-encoded blob data if needed
                 LOG_WARNING("BLOB type not yet supported during restore: %s/%s", ns, key);
                 failedKeys++;
                 continue;

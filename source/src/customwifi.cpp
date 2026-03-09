@@ -84,6 +84,8 @@ namespace CustomWifi
     // WiFi.setChannel(6);       // Optional - if user configured a specific channel
     // WiFi.setTxPower(WIFI_POWER_20dBm);  // Optional - regional compliance
 
+    // TODO: add a way to set a static IP (save to NVS the config, and with the button we can revert the WiFi connection credentials and to DHCP)
+
     // Start WiFi connection task
     _startWifiTask();
     

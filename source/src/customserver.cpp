@@ -1289,8 +1289,7 @@ namespace CustomServer
         });
     }
 
-    // TODO: important, since we are going to embed the certs in the nvs of the device in v6, we can allow to update from github since the firmware will be unified regardless of the secrets compiled or not
-    static bool _fetchGitHubReleaseInfo(JsonDocument &doc) // Used in community mode (GitHub OTA updates)
+    static bool _fetchGitHubReleaseInfo(JsonDocument &doc)
     {
         // Check internet connectivity before attempting API call
         if (!CustomWifi::isFullyConnected(true)) {
@@ -1316,24 +1315,29 @@ namespace CustomServer
         String response = http.getString();
         http.end();
 
-        DeserializationError error = deserializeJson(doc, response);
+
+        // Create the JSON document for parsing the response (different from the function argument doc)
+        SpiRamAllocator allocator;
+        JsonDocument responseDoc(&allocator);
+
+        DeserializationError error = deserializeJson(responseDoc, response);
         if (error) {
             LOG_WARNING("Failed to parse GitHub API response: %s", error.c_str());
             return false;
         }
         
         // Extract release information
-        if (!doc["tag_name"].is<const char*>()) {
+        if (!responseDoc["tag_name"].is<const char*>()) {
             LOG_WARNING("Invalid GitHub API response: missing tag_name");
             return false;
         }
         
-        const char* tagName = doc["tag_name"];
-        const char* releaseDate = doc["published_at"].as<const char*>();
-        const char* changelog = doc["html_url"].as<const char*>();
+        const char* tagName = responseDoc["tag_name"];
+        const char* releaseDate = responseDoc["published_at"].as<const char*>();
+        const char* changelog = responseDoc["html_url"].as<const char*>();
         
         // Find .bin asset
-        JsonArray assets = doc["assets"];
+        JsonArray assets = responseDoc["assets"];
         const char* downloadUrl = nullptr;
         
         for (JsonObject asset : assets) {
@@ -1391,17 +1395,25 @@ namespace CustomServer
             // Get current firmware info
             doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
             doc["buildDate"] = FIRMWARE_BUILD_DATE;
-            doc["buildTime"] = FIRMWARE_BUILD_TIME;
             
-            if (globalCommunityMode) {
-                // Fetch from GitHub API in community mode
-                if (!_fetchGitHubReleaseInfo(doc)) {
-                    doc["isLatest"] = true; // Assume latest if we can't check
-                    LOG_WARNING("Failed to fetch GitHub release info, assuming current version is latest");
+            // Check internet connectivity before checking anything
+            if (CustomWifi::isFullyConnected(true)) {            
+                // If the cloud services are enabled, it means the OTA updates will be handled via the app
+                // or automatically. Otherwise GitHub releases can be used to check for updates
+                if (Mqtt::isCloudServicesEnabled()) {
+                    doc["isLatest"] = true;
+                } else {
+                    // Fetch from GitHub API in community mode
+                    bool githubInfoFetched = _fetchGitHubReleaseInfo(doc);
+                    // If we could not fetch the data, set manually the isLatest field to true
+                    if (!githubInfoFetched) {
+                        doc["isLatest"] = true; // Assume latest since we can't check
+                        LOG_WARNING("Failed to fetch GitHub release info, assuming current version is latest"); // Here we log the warning since internet should be present
+                    }
                 }
             } else {
-                // TODO: cloud OTA — check for updates via cloud service
-                doc["isLatest"] = true;
+                doc["isLatest"] = true; // Assume latest since we can't check
+                LOG_DEBUG("No internet connectivity, cannot check for firmware updates"); // Only debug since internet may not be available
             }
 
             _sendJsonResponse(request, doc);
@@ -2504,7 +2516,7 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             
-            if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) { // TODO: this should be streamed instead, and the full data raw (no useless JSON)
+            if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) {
                 _sendJsonResponse(request, doc);
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve core dump data");

@@ -483,18 +483,22 @@ paths:
                     type: string
                     description: Firmware build date
                     example: "Aug  3 2025"
-                  buildTime:
-                    type: string
-                    description: Firmware build time
-                    example: "14:30:25"
                   availableVersion:
                     type: string
                     description: Available firmware version for update (if available)
                     example: "00.11.10"
+                  releaseDate:
+                    type: string
+                    description: Release date of the available version (from GitHub)
+                    example: "2025-08-10T14:30:00Z"
                   updateUrl:
                     type: string
                     description: URL for firmware update download (if available)
                     example: "https://github.com/jibrilsharafi/EnergyMe-Home/releases/download/v00.11.10/firmware.bin"
+                  changelogUrl:
+                    type: string
+                    description: URL to the GitHub release page with changelog (if available)
+                    example: "https://github.com/jibrilsharafi/EnergyMe-Home/releases/tag/v00.11.10"
                   isLatest:
                     type: boolean
                     description: Whether the latest firmware version is installed
