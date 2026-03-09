@@ -161,11 +161,11 @@ void setup()
   ModbusTcp::begin();
   LOG_INFO("Modbus TCP setup done");
 
-  #ifdef HAS_SECRETS
-  LOG_DEBUG("Setting up MQTT client...");
-  Mqtt::begin();
-  LOG_INFO("MQTT client setup done");
-  #endif
+  if (!globalCommunityMode) {
+    LOG_DEBUG("Setting up MQTT client...");
+    Mqtt::begin();
+    LOG_INFO("MQTT client setup done");
+  }
 
   LOG_DEBUG("Setting up Custom MQTT client...");
   CustomMqtt::begin();

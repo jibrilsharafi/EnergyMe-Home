@@ -772,9 +772,7 @@ namespace Ade7953
 
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
-        #ifdef HAS_SECRETS
-        Mqtt::requestChannelPublish();
-        #endif
+        if (!globalCommunityMode) Mqtt::requestChannelPublish();
 
         // Detect role change
         bool detected = (oldRole != channelData.role);
@@ -3745,7 +3743,7 @@ namespace Ade7953
     }
 
     void _addMeterDataToPayload(uint8_t channelIndex) {
-        #ifdef HAS_SECRETS
+        if (globalCommunityMode) return;
 
         LOG_VERBOSE("Adding meter data to payload for channel %u", channelIndex);
 
@@ -3768,7 +3766,6 @@ namespace Ade7953
                 meterValues.powerFactor
             )
         );
-        #endif
     }
 
     // ADE7953 register writing functions

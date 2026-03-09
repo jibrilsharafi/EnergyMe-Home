@@ -88,10 +88,8 @@ namespace CustomServer
     static void _serveOtaUploadEndpoint();
     static void _serveOtaStatusEndpoint();
     static void _serveOtaRollbackEndpoint();
-    #ifndef HAS_SECRETS
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc);
     static int _compareVersions(const char* current, const char* available);
-    #endif
     static void _serveFirmwareStatusEndpoint();
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request);
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
@@ -1292,8 +1290,7 @@ namespace CustomServer
     }
 
     // TODO: important, since we are going to embed the certs in the nvs of the device in v6, we can allow to update from github since the firmware will be unified regardless of the secrets compiled or not
-    #ifndef HAS_SECRETS
-    static bool _fetchGitHubReleaseInfo(JsonDocument &doc) // Used only if no secrets are compiled
+    static bool _fetchGitHubReleaseInfo(JsonDocument &doc) // Used in community mode (GitHub OTA updates)
     {
         // Check internet connectivity before attempting API call
         if (!CustomWifi::isFullyConnected(true)) {
@@ -1382,7 +1379,6 @@ namespace CustomServer
         if (currentMinor != availableMinor) return currentMinor - availableMinor;
         return currentPatch - availablePatch;
     }
-    #endif
 
     static void _serveFirmwareStatusEndpoint()
     {
@@ -1397,16 +1393,16 @@ namespace CustomServer
             doc["buildDate"] = FIRMWARE_BUILD_DATE;
             doc["buildTime"] = FIRMWARE_BUILD_TIME;
             
-            #ifdef HAS_SECRETS
-            doc["isLatest"] = true; // TODO: when with v6 the certs will be embedded, the HAS_SECRETS will be removed and this will work anyway
-            #else
-            // Fetch from GitHub API when no secrets are available
-            if (!_fetchGitHubReleaseInfo(doc)) {
-                // If GitHub fetch fails, just return current version info
-                doc["isLatest"] = true; // Assume latest if we can't check
-                LOG_WARNING("Failed to fetch GitHub release info, assuming current version is latest");
+            if (globalCommunityMode) {
+                // Fetch from GitHub API in community mode
+                if (!_fetchGitHubReleaseInfo(doc)) {
+                    doc["isLatest"] = true; // Assume latest if we can't check
+                    LOG_WARNING("Failed to fetch GitHub release info, assuming current version is latest");
+                }
+            } else {
+                // TODO: cloud OTA — check for updates via cloud service
+                doc["isLatest"] = true;
             }
-            #endif
 
             _sendJsonResponse(request, doc);
         });
@@ -1496,11 +1492,7 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
 
-            #ifdef HAS_SECRETS // Like this it returns true or false, otherwise it returns 1 or 0
-            doc["hasSecrets"] = true;
-            #else
-            doc["hasSecrets"] = false;
-            #endif
+            doc["hasSecrets"] = !globalCommunityMode;
             _sendJsonResponse(request, doc); });
 
         // Get system time
@@ -2367,11 +2359,7 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             
-            #ifdef HAS_SECRETS
-            doc["enabled"] = Mqtt::isCloudServicesEnabled();
-            #else
-            doc["enabled"] = false; // If no secrets, cloud services are not enabled
-            #endif
+            doc["enabled"] = !globalCommunityMode && Mqtt::isCloudServicesEnabled();
 
             _sendJsonResponse(request, doc);
         });
@@ -2381,29 +2369,28 @@ namespace CustomServer
             "/api/v1/mqtt/cloud-services",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                #ifdef HAS_SECRETS
+                if (globalCommunityMode) {
+                    _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Cloud services are not available in community mode");
+                    return;
+                }
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_MQTT_CLOUD_SERVICES)) return;
-                
+
                 SpiRamAllocator allocator;
                 JsonDocument doc(&allocator);
                 doc.set(json);
-                
+
                 // Validate JSON structure
                 if (!doc.is<JsonObject>() || !doc["enabled"].is<bool>())
                 {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"enabled\": true/false}");
                     return;
                 }
-                
+
                 bool enabled = doc["enabled"];
                 Mqtt::setCloudServicesEnabled(enabled);
-                
+
                 LOG_INFO("Cloud services %s via API", enabled ? "enabled" : "disabled");
                 _sendSuccessResponse(request, enabled ? "Cloud services enabled successfully" : "Cloud services disabled successfully");
-                #else
-                _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Cloud services are not available without secrets");
-                return;
-                #endif
             });
         server.addHandler(setCloudServicesHandler);
     }

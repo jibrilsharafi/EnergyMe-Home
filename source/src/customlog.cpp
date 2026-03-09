@@ -177,9 +177,7 @@ namespace CustomLog
 
     static void _callbackMqtt(const LogEntry& entry)
     {
-        #ifdef HAS_SECRETS
-        Mqtt::pushLog(entry);
-        #endif
+        if (!globalCommunityMode) Mqtt::pushLog(entry);
     }
 
     static void _callbackUdp(const LogEntry& entry)

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Jibril Sharafi
 
-#ifdef HAS_SECRETS
 #include "mqtt.h"
 
 namespace Mqtt
@@ -1454,6 +1453,9 @@ namespace Mqtt
         }
     }
 
+    // TODO: provisioning — the entire provisioning flow (request/response/cert storage) needs to be
+    // rethought for v2.0.0. With factory NVS partition, device certs are pre-loaded at manufacturing.
+    // The cloud provisioning path (claim certs → NVS) will be replaced or removed.
     static bool _publishProvisioningRequest() {
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
@@ -2496,4 +2498,3 @@ namespace Mqtt
         vTaskDelete(nullptr);
     }
 }
-#endif

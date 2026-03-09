@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Jibril Sharafi
 
-#ifdef HAS_SECRETS
 #pragma once
 
 #include <AdvancedLogger.h>
@@ -174,4 +173,3 @@ namespace Mqtt
     TaskInfo getMqttTaskInfo();
     TaskInfo getMqttOtaTaskInfo();
 }
-#endif

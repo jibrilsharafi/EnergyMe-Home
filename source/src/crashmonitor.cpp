@@ -153,9 +153,7 @@ namespace CrashMonitor
         }
 
         // Regardless if last crash was due to a reset or crash, send this data if available (maybe previously we didn't have time to send it to the cloud)
-        #ifdef HAS_SECRETS // MQTT is not available without secrets
-        if (hasCoreDump()) Mqtt::requestCrashPublish();
-        #endif
+        if (!globalCommunityMode && hasCoreDump()) Mqtt::requestCrashPublish();
 
         // Increment reset count (always)
         _resetCount++;

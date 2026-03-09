@@ -160,10 +160,10 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
 
     // Tasks
-    #ifdef HAS_SECRETS
-    info.mqttTaskInfo = Mqtt::getMqttTaskInfo();
-    info.mqttOtaTaskInfo = Mqtt::getMqttOtaTaskInfo();
-    #endif
+    if (!globalCommunityMode) {
+        info.mqttTaskInfo = Mqtt::getMqttTaskInfo();
+        info.mqttOtaTaskInfo = Mqtt::getMqttOtaTaskInfo();
+    }
     info.customMqttTaskInfo = CustomMqtt::getTaskInfo();
     info.customServerHealthCheckTaskInfo = CustomServer::getHealthCheckTaskInfo();
     info.customServerOtaTimeoutTaskInfo = CustomServer::getOtaTimeoutTaskInfo();
@@ -571,9 +571,7 @@ static void _restartTask(void* parameter) {
     CustomServer::stop();
     Ade7953::stop();
     ModbusTcp::stop();
-    #ifdef HAS_SECRETS
-    Mqtt::stop();
-    #endif
+    if (!globalCommunityMode) Mqtt::stop();
     LOG_DEBUG("Services stopped");
 
     // 3. Close log file (if this blocks, failsafe timer will restart us)
