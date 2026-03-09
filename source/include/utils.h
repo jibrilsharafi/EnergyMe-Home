@@ -101,7 +101,7 @@ inline uint64_t micros64() {
 }
 
 // Validation utilities
-inline bool isChannelValid(uint8_t channel) {return channel < CHANNEL_COUNT;}
+inline bool isChannelValid(uint8_t channel) { return channel < (uint8_t)(globalHwProfile->muxChannelCount + 1); }
 
 // String validation utilities
 inline bool isStringLengthValid(const char* str, size_t minLength, size_t maxLength) {
@@ -134,7 +134,6 @@ inline double roundToDecimals(double value, uint8_t decimals = 3) {
 
 // Device identification
 void getDeviceId(char* deviceId, size_t maxLength);
-bool readEfuseProvisioningData(EfuseProvisioningData& data);
 
 // System information and monitoring
 void populateSystemStaticInfo(SystemStaticInfo& info);

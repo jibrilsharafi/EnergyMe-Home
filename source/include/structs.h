@@ -213,15 +213,6 @@ struct SystemDynamicInfo {
     }
 };
 
-struct EfuseProvisioningData {
-    bool isProvisioned;
-    uint32_t serial;
-    uint64_t manufacturingDate;
-    uint16_t hardwareVersion;
-
-    EfuseProvisioningData() : isProvisioned(false), serial(0), manufacturingDate(0), hardwareVersion(0) {}
-};
-
 struct PayloadMeter
 {
   uint32_t channel;

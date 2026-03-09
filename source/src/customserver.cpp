@@ -1940,7 +1940,7 @@ namespace CustomServer
             "/api/v1/ade7953/channels",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA * CHANNEL_COUNT)) return;
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA * MAX_CHANNEL_COUNT)) return;
 
                 SpiRamAllocator allocator;
                 JsonDocument doc(&allocator);

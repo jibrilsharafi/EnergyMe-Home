@@ -3,6 +3,9 @@
 
 #include "hardware_profile.h"
 
+#include <esp_efuse.h>
+#include <esp_efuse_table.h>
+
 // Known PCB hardware profiles.
 // To add support for a new PCB version: add a new entry here. No other changes needed.
 const HardwareProfile PCB_PROFILES[] = {
@@ -70,6 +73,32 @@ const HardwareProfile PCB_PROFILES[] = {
 
 const HardwareProfile* globalHwProfile = nullptr;
 bool globalCommunityMode = false;
+
+bool readEfuseProvisioningData(EfuseProvisioningData& data) {
+    uint8_t efuseData[32];
+
+    esp_err_t err = esp_efuse_read_field_blob(ESP_EFUSE_USER_DATA, efuseData, sizeof(efuseData) * 8);
+    if (err != ESP_OK) {
+        LOG_DEBUG("Failed to read eFuse user data: %s", esp_err_to_name(err));
+        data.isProvisioned = false;
+        return false;
+    }
+
+    if (efuseData[0] != 0x01) {
+        LOG_DEBUG("Device not provisioned (flag: 0x%02X)", efuseData[0]);
+        data.isProvisioned = false;
+        return false;
+    }
+
+    data.isProvisioned = true;
+    data.serial = *((uint32_t*)&efuseData[4]);            // Bytes 4-7: Serial (little-endian)
+    data.manufacturingDate = *((uint64_t*)&efuseData[8]); // Bytes 8-15: Manufacturing date (little-endian)
+    data.hardwareVersion = *((uint16_t*)&efuseData[16]);  // Bytes 16-17: Hardware version (little-endian)
+
+    LOG_DEBUG("eFuse data: serial=0x%08X, mfgDate=%llu, hwVer=%u",
+              data.serial, data.manufacturingDate, data.hardwareVersion);
+    return true;
+}
 
 void initHardwareProfile() {
     EfuseProvisioningData efuseData;

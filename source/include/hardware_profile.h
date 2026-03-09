@@ -8,7 +8,6 @@
 #include <stddef.h>
 
 #include "structs.h"
-#include "utils.h"
 
 // Physical 74HC4067 chip maximum: 16 channels (Y0-Y15).
 // Used for muxChannelMap array sizing — do not use for runtime iteration.
@@ -62,6 +61,8 @@ struct HardwareProfile {
     // Example: v6.1 uses 74HC4067 (16 physical) but Y1 is absent, so muxChannelCount = 15 → 16 total.
     uint8_t muxChannelCount;
 
+    // TODO: add "helper" channelCount directly, so we don't have to keep adding 1 everywhere
+
     // Maps a logical mux index (0-based) to the physical 74HC4067 channel number (0-15).
     //
     // The physical mux channel is what gets passed to Multiplexer::setChannel(). It determines
@@ -87,12 +88,27 @@ struct HardwareProfile {
     bool hasFactoryPartition;
 };
 
+struct EfuseProvisioningData {
+    bool isProvisioned;
+    uint32_t serial;
+    uint64_t manufacturingDate;
+    uint16_t hardwareVersion;
+
+    EfuseProvisioningData() : isProvisioned(false), serial(0), manufacturingDate(0), hardwareVersion(0) {}
+};
+
 // Active hardware profile, set once by initHardwareProfile(). Always valid after that call.
 extern const HardwareProfile* globalHwProfile;
 
 // True when the device eFuse is not provisioned (community/open-source use).
 // In community mode, cloud (MQTT/AWS) is disabled. All local integrations still work.
 extern bool globalCommunityMode;
+
+// Read device provisioning data from eFuse USER_DATA block.
+// Returns false if the block is unreadable or the device is not provisioned.
+// Owned here because eFuse data is hardware data — version, serial, and manufacturing date
+// are all PCB-specific. Any module needing eFuse data should call this function.
+bool readEfuseProvisioningData(EfuseProvisioningData& data);
 
 // Read eFuse, select the matching hardware profile, and set globalHwProfile and globalCommunityMode.
 // Must be called before any hardware initialization in setup().

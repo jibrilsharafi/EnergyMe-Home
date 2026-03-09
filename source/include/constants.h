@@ -84,10 +84,6 @@
 #define TASK_STOPPING_CHECK_INTERVAL 100
 #define CONFIG_MUTEX_TIMEOUT_MS (1 * 1000) // Generic timeout for configuration mutexes. Long timeouts cause wdt crash (like in async tcp)
 
-// Channel configuration
-#define MULTIPLEXER_CHANNEL_COUNT 16
-#define CHANNEL_COUNT (MULTIPLEXER_CHANNEL_COUNT + 1) // All the 16 of the multiplexer + 1 directly going to channel A of ADE7953 
-
 // Server used ports (here to ensure no conflicts)
 #define MODBUS_TCP_PORT 502
 #define WEBSERVER_PORT 80

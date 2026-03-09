@@ -323,7 +323,7 @@ namespace ModbusTcp
             uint16_t channelOffset = address - LOWER_LIMIT_CHANNEL_REGISTERS;
             uint8_t channel = channelOffset / STEP_CHANNEL_REGISTERS;
             uint8_t registerOffset = channelOffset % STEP_CHANNEL_REGISTERS;
-            return channel < CHANNEL_COUNT && registerOffset < 20;
+            return channel < (uint8_t)(globalHwProfile->muxChannelCount + 1) && registerOffset < 20;
         }
 
         return false;

@@ -1320,7 +1320,7 @@ namespace Mqtt
         bool hasChannelData = false;
         
         // Check if any channels have valid data (always include energy data)
-        for (uint8_t i = 0; i < CHANNEL_COUNT && !hasChannelData; i++) {
+        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1) && !hasChannelData; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 hasChannelData = true;
             }
@@ -1462,14 +1462,6 @@ namespace Mqtt
         doc["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
         doc["sketchMD5"] = ESP.getSketchMD5();
         doc["chipId"] = ESP.getEfuseMac();
-
-        // Read eFuse provisioning data if available
-        EfuseProvisioningData efuseData;
-        if (readEfuseProvisioningData(efuseData)) {
-            doc["serialNumber"] = efuseData.serial;
-            doc["manufacturingDate"] = efuseData.manufacturingDate;
-            doc["hardwareVersion"] = efuseData.hardwareVersion;
-        }
 
         return _publishJsonStreaming(doc, _mqttTopicProvisioningRequest);
     }
@@ -1807,7 +1799,7 @@ namespace Mqtt
         }
 
         // Always add channel energy data (independent of sendPowerDataEnabled)
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 MeterValues meterValues;
 
