@@ -27,6 +27,10 @@ namespace Ade7953
     static float _powerVariability[CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
     static float _gridFrequency = 50.0f;
 
+    // Voltage-to-LSB conversion factors, computed once in begin() from globalHwProfile voltage divider.
+    static float _voltPerLsb = 0.0f;
+    static float _voltPerLsbInstantaneous = 0.0f;
+
     // Failure tracking
     static uint32_t _failureCount = 0;
     static uint64_t _firstFailureTime = 0;
@@ -282,7 +286,13 @@ namespace Ade7953
       
         _setHardwarePins(ssPin, sckPin, misoPin, mosiPin, resetPin, interruptPin);
         LOG_DEBUG("Successfully set up hardware pins");
-     
+
+        // Compute voltage-per-LSB from the hardware profile's voltage divider values.
+        // ratio = R2 / (R1 + R2) — the fraction of the mains voltage seen by the ADE7953 input.
+        const float ratio = globalHwProfile->voltageDividerR2 / (globalHwProfile->voltageDividerR1 + globalHwProfile->voltageDividerR2);
+        _voltPerLsb             = (MAXIMUM_ADC_CHANNEL_INPUT / 1.41421356f) / ratio / static_cast<float>(FULL_SCALE_LSB_FOR_RMS_VALUES);
+        _voltPerLsbInstantaneous = MAXIMUM_ADC_CHANNEL_INPUT / ratio / static_cast<float>(FULL_SCALE_LSB_FOR_INSTANTANEOUS_VALUES);
+
         if (!_verifyCommunication()) {
             LOG_ERROR("Failed to communicate with ADE7953");
             return false;
@@ -295,6 +305,8 @@ namespace Ade7953
         _setDefaultParameters();
         LOG_DEBUG("Set default parameters");
 
+        // TODO: factory partition — on first boot (or reset-to-factory), if globalHwProfile->hasFactoryPartition,
+        // seed calibration_ns from factory NVS partition before loading. Fallback: hardcoded defaults (DEFAULT_CONFIG_AV_GAIN etc.)
         _setConfigurationFromPreferences();
         LOG_DEBUG("Done setting configuration from Preferences");
 
@@ -3448,7 +3460,7 @@ namespace Ade7953
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
             // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
             if (channelIndex == 0) {
-                voltage = float(_readVoltageRms()) * VOLT_PER_LSB * voltageMultiplier;
+                voltage = float(_readVoltageRms()) * _voltPerLsb * voltageMultiplier;
 
                 // Update grid frequency during channel 0 reading
                 float newGridFrequency = _readGridFrequency();
@@ -4527,7 +4539,7 @@ namespace Ade7953
         
         // Populate the arrays with scaled values only (leaner JSON)
         for (uint16_t i = 0; i < _captureSampleCount; i++) {
-            voltageArray.add(roundToDecimals(float(_voltageWaveformBuffer[i]) * VOLT_PER_LSB_INSTANTANEOUS, VOLTAGE_DECIMALS));
+            voltageArray.add(roundToDecimals(float(_voltageWaveformBuffer[i]) * _voltPerLsbInstantaneous, VOLTAGE_DECIMALS));
             // HACK: computing the actual value needed for the real current instantaneous values is long. Times 2 is close enough
             currentArray.add(roundToDecimals(float(_currentWaveformBuffer[i]) * _channelData[_captureChannel].ctSpecification.aLsb * 2, CURRENT_DECIMALS));
             microsArray.add(_microsWaveformBuffer[i]);

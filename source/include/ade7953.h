@@ -99,20 +99,18 @@
 #define VALIDATE_CT_SCALING_FRACTION_MAX 10.0f
 
 // Constant hardware-fixed values
-// Leaving 
 #define FULL_SCALE_LSB_FOR_RMS_VALUES 9032007 // Maximum value of RMS registers (24-bit unsigned) - current (channel A and B) and voltage
+#define FULL_SCALE_LSB_FOR_INSTANTANEOUS_VALUES 6500000 // Maximum value of waveform registers (23-bit signed, ±6500000 at ±0.5V input)
 #define MAXIMUM_ADC_CHANNEL_INPUT 0.5f // Maximum voltage in volts (absolute) for all ADC channels in ADE7953 (both current and voltage)
 #define ENERGY_ACCUMULATION_FREQUENCY 206900 // At full input scale, an LSB is added every this frequency to the energy register
 
-// This is a hardcoded value since the voltage divider implemented (in v5 is 990 kOhm to 1 kOhm) yields this volts per LSB constant
-// The computation is as follows:
-// The maximum value of register VRMS is 9032007 (24-bit unsigned) with full scale inputs (0.5V absolute, 0.3536V rms).
-// The voltage divider ratio is 1000/(990000+1000) =0.001009
-// The maximum RMS voltage in input is 0.3536 / 0.001009 = 350.4 V
-// The LSB per volt is therefore 9032007 / 350.4 = 25779
-// For embedded systems, multiplications are better than divisions, so we use a float constant which is VOLT_PER_LSB = 1 / 25779
-#define VOLT_PER_LSB 0.0000387922f
-#define VOLT_PER_LSB_INSTANTANEOUS 0.000076236f // Same calculations as above, but using 500mV as peak and 6500000 as full scale
+// _voltPerLsb and _voltPerLsbInstantaneous are computed at runtime in Ade7953::begin() from
+// globalHwProfile->voltageDividerR1 and voltageDividerR2 (see hardware_profile.h).
+// Formulas:
+//   _voltPerLsb             = (MAXIMUM_ADC_CHANNEL_INPUT / sqrt(2)) / ratio / FULL_SCALE_LSB_FOR_RMS_VALUES
+//   _voltPerLsbInstantaneous = MAXIMUM_ADC_CHANNEL_INPUT / ratio / FULL_SCALE_LSB_FOR_INSTANTANEOUS_VALUES
+// where ratio = R2 / (R1 + R2).
+// Computed once at begin(), stored as static floats in ade7953.cpp — no per-measurement overhead.
 #define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet). Unused but left for reference
 #define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f. Unused but left for reference
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
