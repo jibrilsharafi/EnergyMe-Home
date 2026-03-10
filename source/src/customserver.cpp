@@ -575,6 +575,7 @@ namespace CustomServer
 
         return res > 0 && res < bufferSize; // Ensure we don't return true if the password is actually null or too long
     }
+    
     // Only check length - there is no need to be picky here
     static bool _validatePasswordStrength(const char *password)
     {
@@ -2830,7 +2831,7 @@ namespace CustomServer
                     }
 
                     // Validate namespace exclusions (ensure no sensitive data)
-                    const char* excludedNamespaces[] = {PREFERENCES_NAMESPACE_AUTH, PREFERENCES_DEFAULT_NAMESPACE_WIFI, PREFERENCES_DEFAULT_NAMESPACE_PHY, PREFERENCES_NAMESPACE_FACTORY};
+                    const char* excludedNamespaces[] = {EXCLUDED_NVS_NAMESPACES_LIST};
                     for (JsonPair nsPair : doc["nvs"].as<JsonObject>()) {
                         for (const char* excluded : excludedNamespaces) {
                             if (strcmp(nsPair.key().c_str(), excluded) == 0) {

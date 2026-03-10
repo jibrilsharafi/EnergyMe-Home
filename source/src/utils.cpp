@@ -842,7 +842,7 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     Led::setBrightness(max(Led::getBrightness(), (uint8_t)1)); // Show a faint light even if it is off
     Led::blinkRedFast(Led::PRIO_CRITICAL);
 
-    clearAllPreferences(false);
+    clearAllPreferences();
 
     Serial.println("[WARNING] Formatting LittleFS. This will take some time.");
     LittleFS.format();
@@ -873,50 +873,74 @@ void setFirstBootDone() { // No arguments because the only way to set first boot
 }
 
 void createAllNamespaces() {
-    Preferences preferences;
+    // Initialize all known app namespaces on first boot
+    const char* namespacesToCreate[] = {TO_INITIALIZE_NVS_NAMESPACES_LIST};
 
-    preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_MQTT, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_TIME, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_FACTORY, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.end();
+    Preferences preferences;
+    for (const char* ns : namespacesToCreate) {
+        preferences.begin(ns, false);
+        preferences.end();
+    }
 
     LOG_DEBUG("All namespaces created");
 }
 
-void clearAllPreferences(bool nuclearOption) {
+void clearAllPreferences() {
+    // Clear all app namespaces during factory reset, skipping only critical ones
+    // Critical namespaces: factory-provisioned data (certs, calibration) and device-specific data
+    const char* excludedNamespaces[] = {EXCLUDED_NVS_NAMESPACES_LIST};
+
+    nvs_iterator_t it = nullptr;
+    esp_err_t err = nvs_entry_find("nvs", nullptr, NVS_TYPE_ANY, &it);
+
+    if (err != ESP_OK) {
+        LOG_WARNING("Could not initialize NVS iterator for clearing preferences (error %d)", err);
+        return;
+    }
+
     Preferences preferences;
+    uint32_t clearedCount = 0;
 
-    preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_MQTT, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_TIME, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.clear(); preferences.end();
-    // NOTE: PREFERENCES_NAMESPACE_FACTORY is intentionally excluded — factory-provisioned
-    // data (certs, calibration) must survive factory reset.
-    preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.clear(); preferences.end();
-    
-    if (nuclearOption) nvs_flash_erase(); // Nuclear solution. In development, the NVS can get overcrowded with test data, so we clear it completely (losing also WiFi credentials, etc.)
+    while (err == ESP_OK) {
+        nvs_entry_info_t info;
+        nvs_entry_info(it, &info);
 
-    LOG_WARNING("Cleared all preferences");
+        // Skip system namespaces (handled separately by ESP)
+        // Most likely they would be already handled by excludedNamespaces, but better safe than sorry
+        if (strncmp(info.namespace_name, "nvs.", 4) == 0) {
+            err = nvs_entry_next(&it);
+            continue;
+        }
+
+        // Check if this namespace should be skipped (critical data)
+        bool isExcluded = false;
+        for (const char* excluded : excludedNamespaces) {
+            if (strcmp(info.namespace_name, excluded) == 0) {
+                isExcluded = true;
+                break;
+            }
+        }
+
+        // Clear non-critical namespaces
+        if (!isExcluded && preferences.begin(info.namespace_name, false)) {
+            preferences.clear();
+            preferences.end();
+            clearedCount++;
+        }
+
+        err = nvs_entry_next(&it);
+
+        if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+            LOG_ERROR("Could not advance NVS iterator (error %d)", err);
+            break;
+        }
+    }
+
+    if (it != nullptr) {
+        nvs_release_iterator(it);
+    }
+
+    LOG_WARNING("Cleared %ld preferences (factory/device-specific data preserved)", clearedCount);
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {
@@ -1846,12 +1870,7 @@ bool nvsDataToJson(JsonObject &doc) {
     doc["nvs"].to<JsonObject>();
 
     // Namespaces to exclude from backup (sensitive, device-specific, or auto-generated data)
-    const char* excludedNamespaces[] = {
-        PREFERENCES_NAMESPACE_AUTH,             // Contains passwords
-        PREFERENCES_DEFAULT_NAMESPACE_WIFI,     // WiFi credentials and BSSID info (device/network-specific)
-        PREFERENCES_DEFAULT_NAMESPACE_PHY,      // Calibration data (auto-generated from ROM per device)
-        PREFERENCES_NAMESPACE_FACTORY           // Factory-provisioned certs and calibration (device-specific, must not be restored)
-    };
+    const char* excludedNamespaces[] = {EXCLUDED_NVS_NAMESPACES_LIST};
     const size_t excludedCount = sizeof(excludedNamespaces) / sizeof(excludedNamespaces[0]);
 
     // Iterate ALL NVS entries and populate
@@ -2098,7 +2117,18 @@ bool restoreNvsFromJson(JsonDocument &doc) {
     for (JsonPair nsPair : doc["nvs"].as<JsonObject>()) {
         const char* ns = nsPair.key().c_str();
 
-        // TODO: skip sensitive namespaces (maybe use a global or similar define)
+        // Skip excluded namespaces (should not be present in restore file, but safety check)
+        const char* excludedNamespaces[] = {EXCLUDED_NVS_NAMESPACES_LIST};
+        bool isExcluded = false;
+        for (const char* excluded : excludedNamespaces) {
+            if (strcmp(ns, excluded) == 0) {
+                LOG_WARNING("Skipping excluded namespace in restore: %s (security/device-specific data)", ns);
+                isExcluded = true;
+                break;
+            }
+        }
+        if (isExcluded) continue;
+
         LOG_DEBUG("Restoring namespace: %s", ns);
 
         Preferences prefs;

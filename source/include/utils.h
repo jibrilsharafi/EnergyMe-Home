@@ -196,7 +196,7 @@ bool safeSerializeJson(JsonDocument &jsonDocument, char* buffer, size_t bufferSi
 bool isFirstBootDone();
 void setFirstBootDone();
 void createAllNamespaces();
-void clearAllPreferences(bool nuclearOption = false); // No real function passes true to this function, but maybe it will be useful in the future
+void clearAllPreferences();
 
 // LittleFS file operations
 bool listLittleFsFiles(JsonDocument &doc, const char* folderPath = nullptr); // Optional folder path to filter files
