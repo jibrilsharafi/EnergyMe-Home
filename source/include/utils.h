@@ -101,7 +101,7 @@ inline uint64_t micros64() {
 }
 
 // Validation utilities
-inline bool isChannelValid(uint8_t channel) { return channel < (uint8_t)(globalHwProfile->muxChannelCount + 1); }
+inline bool isChannelValid(uint8_t channel) { return channel < globalHwProfile->totalChannelCount; }
 
 // String validation utilities
 inline bool isStringLengthValid(const char* str, size_t minLength, size_t maxLength) {

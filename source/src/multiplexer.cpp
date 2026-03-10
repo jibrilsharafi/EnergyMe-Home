@@ -20,8 +20,7 @@ namespace Multiplexer {
         pinMode(_s2Pin, OUTPUT);
         pinMode(_s3Pin, OUTPUT);
 
-        // At boot, set the multiplexer to channel 1 (channel 0 of the multiplexer)
-        // To avoid incorrect first readings 
+        // At boot, pre-select physical channel Y0 to avoid floating select lines
         setChannel(0);
     }
 

@@ -1240,7 +1240,7 @@ namespace Mqtt
         bool hasChannelData = false;
         
         // Check if any channels have valid data (always include energy data)
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1) && !hasChannelData; i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount && !hasChannelData; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 hasChannelData = true;
             }
@@ -1621,7 +1621,7 @@ namespace Mqtt
         }
 
         // Always add channel energy data (independent of sendPowerDataEnabled)
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
                 MeterValues meterValues;
 

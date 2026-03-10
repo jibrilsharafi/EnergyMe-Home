@@ -313,12 +313,12 @@ namespace Ade7953
         _setSampleTimeFromPreferences();
         LOG_DEBUG("Done setting sample time from Preferences");
 
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _setChannelDataFromPreferences(i);
         }
         LOG_DEBUG("Done setting channel data from Preferences");
 
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _setEnergyFromPreferences(i);
         }
         LOG_DEBUG("Done setting energy from Preferences");
@@ -817,7 +817,7 @@ namespace Ade7953
     }
 
     bool getAllChannelDataAsJson(JsonDocument &jsonDocument) {
-        for (uint8_t channelIndex = 0; channelIndex < (uint8_t)(globalHwProfile->muxChannelCount + 1); channelIndex++) {
+        for (uint8_t channelIndex = 0; channelIndex < globalHwProfile->totalChannelCount; channelIndex++) {
             SpiRamAllocator allocator;
             JsonDocument channelDoc(&allocator);
             if (!getChannelDataAsJson(channelDoc, channelIndex)) {
@@ -838,7 +838,7 @@ namespace Ade7953
         memset(allChannelData, 0, sizeof(allChannelData));
 
         // Collect all channel data
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (!getChannelData(allChannelData[i], i)) {
                 LOG_WARNING("Failed to get channel data for hash computation (channel %u)", i);
                 return 0; // Return 0 on error to force fresh data
@@ -1002,7 +1002,7 @@ namespace Ade7953
         }
 
         // Set all energy values to 0 (safe since we acquired the mutex)
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _meterValues[i].activeEnergyImported = 0.0;
             _meterValues[i].activeEnergyExported = 0.0;
             _meterValues[i].reactiveEnergyImported = 0.0;
@@ -1018,7 +1018,7 @@ namespace Ade7953
         preferences.clear();
         preferences.end();
 
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) _saveEnergyToPreferences(i);
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) _saveEnergyToPreferences(i);
 
         // Offload heavy file I/O to background task
         _spawnHistoryClearTask(CLEAR_ALL_CHANNELS_SENTINEL);
@@ -1300,7 +1300,7 @@ namespace Ade7953
 
 
     bool fullMeterValuesToJson(JsonDocument &jsonDocument) {
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             // Here we also ensure the channel has valid measurements since we have the "duty" to pass all the correct data
             if (isChannelActive(i) && hasChannelValidMeasurements(i)) {
                 ChannelData channelData(i);
@@ -1354,7 +1354,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].activePower;
                 }
@@ -1371,7 +1371,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].reactivePower;
                 }
@@ -1388,7 +1388,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].apparentPower;
                 }
@@ -1406,7 +1406,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sumActivePower += _meterValues[i].activePower;
                     sumApparentPower += _meterValues[i].apparentPower;
@@ -1428,7 +1428,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].activeEnergyImported;
                 }
@@ -1445,7 +1445,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].activeEnergyExported;
                 }
@@ -1462,7 +1462,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].reactiveEnergyImported;
                 }
@@ -1479,7 +1479,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].reactiveEnergyExported;
                 }
@@ -1496,7 +1496,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].apparentEnergy;
                 }
@@ -1808,9 +1808,10 @@ namespace Ade7953
             if (!Update.isRunning()) {
                 _currentChannel = _findNextActiveChannel(_currentChannel);
 
-                // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
-                // 1 (since channel 0 does not pass through the multiplexer)
-                Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
+                // Channel 0 is the direct ADE7953 input (not routed through the mux).
+                // For channels 1+, look up the physical mux channel via muxChannelMap
+                // (logical index _currentChannel - 1 → physical Y-channel on the 74HC4067).
+                if (_currentChannel > 0) Multiplexer::setChannel(globalHwProfile->muxChannelMap[_currentChannel - 1]);
             } else {
                 LOG_DEBUG("OTA in progress, skipping channel switching to avoid timing issues");
             }
@@ -2084,7 +2085,7 @@ namespace Ade7953
 
         _energySaveTaskShouldRun = true;
         while (_energySaveTaskShouldRun) {
-            for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i)) _saveEnergyToPreferences(i);
             }
 
@@ -2858,7 +2859,7 @@ namespace Ade7953
         }
 
         // Check all other channels with same groupLabel
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (i == channelIndex) continue;  // Skip self
 
             // If another channel has same groupLabel, roles must match
@@ -3374,7 +3375,7 @@ namespace Ade7953
         }
         
         // Write data for each active channel
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (isChannelActive(i)) {
                 LOG_VERBOSE("Saving hourly energy data for channel %d: %s", i, _channelData[i].label);
 
@@ -3408,7 +3409,7 @@ namespace Ade7953
     }
 
     void _saveEnergyComplete() {
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (isChannelActive(i)) _saveEnergyToPreferences(i, true); // Force save to ensure all values are saved
         }
         if (CustomTime::isNowCloseToHour()) _saveHourlyEnergyToCsv(); // If we are not close to the hour, we avoid saving since we will save at the hour anyway on the next reboot
@@ -4269,7 +4270,7 @@ namespace Ade7953
      * Called after each successful meter reading to track how much the power is changing.
      */
     static void _updateVariability(uint8_t channelIndex, float newActivePower) {
-        if (channelIndex >= (uint8_t)(globalHwProfile->muxChannelCount + 1)) return;
+        if (channelIndex >= globalHwProfile->totalChannelCount) return;
         
         // Skip variability computation on the very first reading (prevActivePower is 0 from init)
         // to avoid inflating the variability score with the initial power value
@@ -4295,7 +4296,7 @@ namespace Ade7953
         float totalVariability = 0.0f;
 
         // Sum totals across active multiplexed channels (skip channel 0)
-        for (uint8_t i = 1; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (_channelData[i].active) {
                 totalAbsPower += fabsf(_meterValues[i].activePower);
                 totalVariability += _powerVariability[i];
@@ -4303,7 +4304,7 @@ namespace Ade7953
         }
 
         // Compute per-channel weights
-        for (uint8_t i = 1; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (!_channelData[i].active) {
                 _channelWeight[i] = 0.0f;
                 continue;
@@ -4342,7 +4343,7 @@ namespace Ade7953
         (void)currentChannel; // No longer needed for state tracking
 
         // Add each channel's weight to its deficit
-        for (uint8_t i = 1; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (_channelData[i].active) {
                 _channelDeficit[i] += _channelWeight[i];
             } else {
@@ -4354,7 +4355,7 @@ namespace Ade7953
         uint8_t bestChannel = INVALID_CHANNEL;
         float bestDeficit = -1e9f; // Use a very large negative value to ensure any active channel is selectable
 
-        for (uint8_t i = 1; i < (uint8_t)(globalHwProfile->muxChannelCount + 1); i++) {
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (_channelData[i].active && _channelDeficit[i] > bestDeficit) {
                 bestDeficit = _channelDeficit[i];
                 bestChannel = i;

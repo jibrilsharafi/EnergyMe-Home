@@ -15,7 +15,7 @@
 
 // Compile-time maximum total channels across all PCB versions.
 // Use this ONLY for static array sizing (e.g. _meterValues[MAX_CHANNEL_COUNT]).
-// For runtime iteration always use globalHwProfile->muxChannelCount + 1.
+// For runtime iteration use globalHwProfile->totalChannelCount.
 #define MAX_CHANNEL_COUNT (HW_PROFILE_MAX_MUX_CHANNELS + 1)
 
 // Hardware profile for a specific PCB version.
@@ -56,12 +56,15 @@ struct HardwareProfile {
     uint8_t muxChipChannels;
 
     // Number of multiplexer channels actually connected on this PCB version.
-    // Must be <= muxChipChannels. Total active channels = muxChannelCount + 1
-    // (channel 0 is always the direct ADE7953 input, not routed through the mux).
-    // Example: v6.1 uses 74HC4067 (16 physical) but Y1 is absent, so muxChannelCount = 15 → 16 total.
+    // Must be <= muxChipChannels.
+    // Example: v6.1 uses 74HC4067 (16 physical) but Y1 is absent, so muxChannelCount = 15.
     uint8_t muxChannelCount;
 
-    // TODO: add "helper" channelCount directly, so we don't have to keep adding 1 everywhere
+    // Total active software channels = muxChannelCount + 1.
+    // Channel 0 is always the direct ADE7953 input (not routed through the mux).
+    // Use this for all runtime iteration and bounds checks.
+    // Example: v6.1 → totalChannelCount = 16 (channels 0-15).
+    uint8_t totalChannelCount;
 
     // Maps a logical mux index (0-based) to the physical 74HC4067 channel number (0-15).
     //
@@ -80,7 +83,6 @@ struct HardwareProfile {
     //
     // Only the first muxChannelCount entries are valid. Array sized to HW_PROFILE_MAX_MUX_CHANNELS.
     uint8_t muxChannelMap[HW_PROFILE_MAX_MUX_CHANNELS];
-
 };
 
 struct EfuseProvisioningData {

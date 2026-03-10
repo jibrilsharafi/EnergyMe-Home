@@ -562,7 +562,7 @@ namespace InfluxDbClient
         size_t remaining = PAYLOAD_BUFFER_SIZE;
         bool bufferFull = false;
 
-        for (uint8_t i = 0; i < (uint8_t)(globalHwProfile->muxChannelCount + 1) && !bufferFull; i++)
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount && !bufferFull; i++)
         {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i))
             {

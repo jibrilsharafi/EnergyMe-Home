@@ -44,8 +44,9 @@ const HardwareProfile PCB_PROFILES[] = {
         // There is no CT2 jack on v6.1. Software channels are renumbered to fill the gap:
         // CT3 becomes channel 2, CT4 becomes channel 3, and so on.
         // 15 mux channels remain: Y0, Y2-Y15 → CT1, CT3-CT16.
-        .muxChipChannels = 16, // 74HC4067: 16 physical channels (Y0-Y15)
-        .muxChannelCount = 15, // Y1 absent on v6.1 PCB → 15 connected mux channels
+        .muxChipChannels   = 16, // 74HC4067: 16 physical channels (Y0-Y15)
+        .muxChannelCount   = 15, // Y1 absent on v6.1 PCB → 15 connected mux channels
+        .totalChannelCount = 16, // muxChannelCount + 1 (channel 0 = direct ADE7953 input)
         .muxChannelMap = {
             //  logical  physical  CT label
             0,  //   0       Y0     CT1
