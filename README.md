@@ -12,7 +12,7 @@
 <a href="https://certification.oshwa.org/it000025.html"><img src="resources/certification-mark-IT000025-wide.svg" alt="OSHWA Certified Open Source Hardware IT000025" height="40" style="background:#ffffff;"></a>
 <a href="https://www.tindie.com/stores/energyme/?ref=offsite_badges&utm_source=sellers_jabrillo&utm_medium=badges&utm_campaign=badge_small"><img src="https://d2ss6ovg47m0r5.cloudfront.net/badges/tindie-smalls.png" alt="I sell on Tindie" height="42"></a>
 
-![Homepage](resources/homepage.png)
+![Homepage](resources/homepage.gif)
 
 EnergyMe-Home is an open-source energy monitoring system for home use, capable of monitoring up to 17 circuits. It integrates with any platform through REST API, MQTT, Modbus TCP, and InfluxDB.
 
