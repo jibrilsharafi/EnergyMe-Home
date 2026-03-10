@@ -235,13 +235,9 @@ Username: `admin` | Password: `energyme`
 
 ## AWS IoT Integration (Optional)
 
-Requires files in `secrets/` directory:
+Device certificates and calibration data are provisioned at manufacturing time into the `factory_ns` NVS namespace. The firmware reads them transparently at boot — no build-time secrets required.
 
-- `ca.pem`, `certclaim.pem`, `privateclaim.pem` (X.509 certificates)
-- `endpoint.txt`, `rulemeter.txt` (AWS IoT config)
-- `encryptionkey.txt` (local encryption key)
-
-System works without these using local MQTT brokers via CustomMqtt.
+Devices without factory provisioning (community builds) run in local-only mode. All local integrations (Modbus TCP, CustomMqtt, InfluxDB) remain fully functional.
 
 ## Development
 
