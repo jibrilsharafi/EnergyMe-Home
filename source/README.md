@@ -1,7 +1,20 @@
 # EnergyMe - Home | Source Code
 
-**Platform:** ESP32-S3 with Arduino 3.x Framework  
-**Hardware Revision:** See `include/pins.h`
+**Platform:** ESP32-S3 with Arduino 3.x Framework
+**Hardware Revision:** PCB v5
+
+## Hardware Compatibility
+
+> **⚠️ Legacy branch — PCB v5 only**
+>
+> This branch (`legacy/pcb-v5`) targets **PCB revision v5 exclusively** and is in **maintenance mode**: only critical bugfixes will be backported. No new features will be added here.
+>
+> For PCB v6.1 and later, use the [`main`](https://github.com/jibrilsharafi/EnergyMe-Home) branch (firmware v2.0.0+).
+
+| PCB Version | Firmware Line | Branch | Status |
+|---|---|---|---|
+| PCB v6.1+ | v2.x | `main` | Active development |
+| PCB v5 | v1.x | `legacy/pcb-v5` | Maintenance — critical fixes only |
 
 ## System Overview
 
