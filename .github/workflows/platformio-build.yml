@@ -1,16 +1,16 @@
-name: PlatformIO Build
+name: PlatformIO Build (Legacy PCB v5)
 
 on:
   push:
-    branches: [ development, main, legacy/pcb-v5 ]
+    branches: [ legacy/pcb-v5 ]
   pull_request:
-    branches: [ development, main, legacy/pcb-v5 ]
+    branches: [ legacy/pcb-v5 ]
 
 jobs:
-  # Job 1: Validation build with dummy secrets (only runs on PRs to give a quicker feedback)
+  # Job 1: Quick validation build on PRs — nosecrets only, no secrets injection needed
   build-check:
     runs-on: ubuntu-latest
-    name: Build Check (Dummy Secrets)
+    name: Build Check
     if: github.event_name == 'pull_request'
 
     steps:
@@ -20,7 +20,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.11.7' # Same version as PlatformIO installs on its own via VSCode extension
+        python-version: '3.11.7'
 
     - name: Cache PlatformIO
       uses: actions/cache@v4
@@ -43,80 +43,33 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "📌 Detected version: $VERSION"
 
-    - name: Determine build environments
-      id: envs
-      run: |
-        if [[ "${{ github.base_ref }}" == "main" || "${{ github.head_ref }}" == *"main"* ]]; then
-          echo "ENV1=esp32s3-prod" >> $GITHUB_OUTPUT
-          echo "ENV2=esp32s3-prod-nosecrets" >> $GITHUB_OUTPUT
-          echo "ENV_TYPE=prod" >> $GITHUB_OUTPUT
-          echo "📦 Building PRODUCTION environments"
-        else
-          echo "ENV1=esp32s3-dev" >> $GITHUB_OUTPUT
-          echo "ENV2=esp32s3-dev-nosecrets" >> $GITHUB_OUTPUT
-          echo "ENV_TYPE=dev" >> $GITHUB_OUTPUT
-          echo "📦 Building DEVELOPMENT environments"
-        fi
-
-    - name: Create dummy secrets
+    - name: Build firmware (esp32s3-prod-nosecrets)
       working-directory: source
       run: |
-        mkdir -p secrets
-        echo "dummy" > secrets/privateclaim.pem
-        echo "dummy" > secrets/certclaim.pem
-        echo "dummy" > secrets/encryptionkey.txt
+        echo "🏗️ Building esp32s3-prod-nosecrets..."
+        pio run -e esp32s3-prod-nosecrets
+        echo "✅ Build check passed!"
 
-    - name: Build firmware (${{ steps.envs.outputs.ENV1 }})
+    - name: Prepare artifacts
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV1 }} with dummy secrets..."
-        pio run -e ${{ steps.envs.outputs.ENV1 }}
-        echo "✅ Build completed for ${{ steps.envs.outputs.ENV1 }}!"
+        mkdir -p artifacts
+        cp .pio/build/esp32s3-prod-nosecrets/firmware.bin artifacts/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.bin
+        cp .pio/build/esp32s3-prod-nosecrets/partitions.bin artifacts/partitions.bin
+        cp .pio/build/esp32s3-prod-nosecrets/bootloader.bin artifacts/bootloader.bin
 
-    - name: Build firmware (${{ steps.envs.outputs.ENV2 }})
-      working-directory: source
-      run: |
-        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV2 }}..."
-        pio run -e ${{ steps.envs.outputs.ENV2 }}
-        echo "✅ Build completed for ${{ steps.envs.outputs.ENV2 }}!"
-
-    - name: Prepare artifacts (${{ steps.envs.outputs.ENV1 }})
-      working-directory: source
-      run: |
-        mkdir -p artifacts/${{ steps.envs.outputs.ENV1 }}
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/firmware.bin artifacts/${{ steps.envs.outputs.ENV1 }}/energyme_home_${{ steps.version.outputs.VERSION }}.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/firmware.elf artifacts/${{ steps.envs.outputs.ENV1 }}/energyme_home_${{ steps.version.outputs.VERSION }}.elf
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/partitions.bin artifacts/${{ steps.envs.outputs.ENV1 }}/partitions.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV1 }}/bootloader.bin
-
-    - name: Prepare artifacts (${{ steps.envs.outputs.ENV2 }})
-      working-directory: source
-      run: |
-        mkdir -p artifacts/${{ steps.envs.outputs.ENV2 }}
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/firmware.bin artifacts/${{ steps.envs.outputs.ENV2 }}/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/firmware.elf artifacts/${{ steps.envs.outputs.ENV2 }}/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.elf
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/partitions.bin artifacts/${{ steps.envs.outputs.ENV2 }}/partitions.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV2 }}/bootloader.bin
-
-    - name: Upload artifacts (${{ steps.envs.outputs.ENV1 }})
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: firmware-${{ steps.envs.outputs.ENV1 }}-check-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
-        path: source/artifacts/${{ steps.envs.outputs.ENV1 }}/
+        name: firmware-check-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
+        path: source/artifacts/
         retention-days: 7
 
-    - name: Upload artifacts (${{ steps.envs.outputs.ENV2 }})
-      uses: actions/upload-artifact@v4
-      with:
-        name: firmware-${{ steps.envs.outputs.ENV2 }}-check-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
-        path: source/artifacts/${{ steps.envs.outputs.ENV2 }}/
-        retention-days: 7
-
-  # Job 2: Production build with real secrets (only runs on push to main/development to also provide the binary)
-  build-with-secrets:
+  # Job 2: Full release build on push — prod with real secrets (private) + nosecrets (public)
+  build-release:
     runs-on: ubuntu-latest
-    name: Build with Real Secrets (Private)
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
+    name: Build Release
+    if: github.event_name == 'push'
 
     steps:
     - name: Checkout code
@@ -125,7 +78,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.11.7' # Same version as PlatformIO installs on its own via VSCode extension
+        python-version: '3.11.7'
 
     - name: Cache PlatformIO
       uses: actions/cache@v4
@@ -148,114 +101,88 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "📌 Detected version: $VERSION"
 
-    - name: Determine build environments
-      id: envs
-      run: |
-        if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-          echo "ENV1=esp32s3-prod" >> $GITHUB_OUTPUT
-          echo "ENV2=esp32s3-prod-nosecrets" >> $GITHUB_OUTPUT
-          echo "ENV_TYPE=prod" >> $GITHUB_OUTPUT
-          echo "📦 Building PRODUCTION environments"
-        else
-          echo "ENV1=esp32s3-dev" >> $GITHUB_OUTPUT
-          echo "ENV2=esp32s3-dev-nosecrets" >> $GITHUB_OUTPUT
-          echo "ENV_TYPE=dev" >> $GITHUB_OUTPUT
-          echo "📦 Building DEVELOPMENT environments"
-        fi
-
-    - name: Create secrets directory
-      working-directory: source
-      run: mkdir -p secrets
-
     - name: Inject real secrets
-      working-directory: source/secrets
+      working-directory: source
       env:
         PRIVATE_CLAIM_PEM: ${{ secrets.PRIVATE_CLAIM_PEM }}
         CERT_CLAIM_PEM: ${{ secrets.CERT_CLAIM_PEM }}
         ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
       run: |
         echo "🔐 Injecting real secrets..."
-        printf "%s" "$PRIVATE_CLAIM_PEM" > privateclaim.pem
-        printf "%s" "$CERT_CLAIM_PEM" > certclaim.pem
-        printf "%s" "$ENCRYPTION_KEY" > encryptionkey.txt
+        mkdir -p secrets
+        printf "%s" "$PRIVATE_CLAIM_PEM" > secrets/privateclaim.pem
+        printf "%s" "$CERT_CLAIM_PEM" > secrets/certclaim.pem
+        printf "%s" "$ENCRYPTION_KEY" > secrets/encryptionkey.txt
         echo "✅ Secrets injected successfully"
 
-    - name: Build firmware with real secrets (${{ steps.envs.outputs.ENV1 }})
+    - name: Build firmware (esp32s3-prod — with secrets)
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV1 }} with REAL secrets..."
-        pio run -e ${{ steps.envs.outputs.ENV1 }}
-        echo "✅ Build completed for ${{ steps.envs.outputs.ENV1 }}!"
+        echo "🏗️ Building esp32s3-prod with real secrets..."
+        pio run -e esp32s3-prod
+        echo "✅ Build completed!"
 
-    - name: Build firmware (${{ steps.envs.outputs.ENV2 }})
+    - name: Build firmware (esp32s3-prod-nosecrets)
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV2 }}..."
-        pio run -e ${{ steps.envs.outputs.ENV2 }}
-        echo "✅ Build completed for ${{ steps.envs.outputs.ENV2 }}!"
-
-    - name: Prepare artifacts (${{ steps.envs.outputs.ENV1 }})
-      working-directory: source
-      run: |
-        mkdir -p artifacts/${{ steps.envs.outputs.ENV1 }}
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/firmware.bin artifacts/${{ steps.envs.outputs.ENV1 }}/energyme_home_${{ steps.version.outputs.VERSION }}.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/firmware.elf artifacts/${{ steps.envs.outputs.ENV1 }}/energyme_home_${{ steps.version.outputs.VERSION }}.elf
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/partitions.bin artifacts/${{ steps.envs.outputs.ENV1 }}/partitions.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV1 }}/bootloader.bin
-
-    - name: Prepare artifacts (${{ steps.envs.outputs.ENV2 }})
-      working-directory: source
-      run: |
-        mkdir -p artifacts/${{ steps.envs.outputs.ENV2 }}
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/firmware.bin artifacts/${{ steps.envs.outputs.ENV2 }}/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/firmware.elf artifacts/${{ steps.envs.outputs.ENV2 }}/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.elf
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/partitions.bin artifacts/${{ steps.envs.outputs.ENV2 }}/partitions.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV2 }}/bootloader.bin
-
-    - name: Upload private firmware artifact (${{ steps.envs.outputs.ENV1 }})
-      uses: actions/upload-artifact@v4
-      with:
-        name: firmware-${{ steps.envs.outputs.ENV1 }}-private-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
-        path: source/artifacts/${{ steps.envs.outputs.ENV1 }}/
-        retention-days: 30
-
-    - name: Upload firmware artifact (${{ steps.envs.outputs.ENV2 }})
-      uses: actions/upload-artifact@v4
-      with:
-        name: firmware-${{ steps.envs.outputs.ENV2 }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
-        path: source/artifacts/${{ steps.envs.outputs.ENV2 }}/
-        retention-days: 30
+        echo "🏗️ Building esp32s3-prod-nosecrets..."
+        pio run -e esp32s3-prod-nosecrets
+        echo "✅ Build completed!"
 
     - name: Cleanup secrets
-      if: always()  # Always run, even if build fails
+      if: always()
+      working-directory: source
+      run: rm -rf secrets/
+
+    - name: Prepare private artifact
       working-directory: source
       run: |
-        echo "🧹 Cleaning up secrets..."
-        rm -rf secrets/
-        echo "✅ Secrets cleaned up"
+        mkdir -p artifacts/private
+        cp .pio/build/esp32s3-prod/firmware.bin artifacts/private/energyme_home_${{ steps.version.outputs.VERSION }}.bin
+        cp .pio/build/esp32s3-prod/firmware.elf artifacts/private/energyme_home_${{ steps.version.outputs.VERSION }}.elf
+        cp .pio/build/esp32s3-prod/partitions.bin artifacts/private/partitions.bin
+        cp .pio/build/esp32s3-prod/bootloader.bin artifacts/private/bootloader.bin
+
+    - name: Prepare public artifact (nosecrets)
+      working-directory: source
+      run: |
+        mkdir -p artifacts/public
+        cp .pio/build/esp32s3-prod-nosecrets/firmware.bin artifacts/public/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.bin
+        cp .pio/build/esp32s3-prod-nosecrets/firmware.elf artifacts/public/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.elf
+        cp .pio/build/esp32s3-prod-nosecrets/partitions.bin artifacts/public/partitions.bin
+        cp .pio/build/esp32s3-prod-nosecrets/bootloader.bin artifacts/public/bootloader.bin
+
+    - name: Upload private artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-private-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
+        path: source/artifacts/private/
+        retention-days: 30
+
+    - name: Upload public artifact (nosecrets)
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-nosecrets-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
+        path: source/artifacts/public/
+        retention-days: 30
 
     - name: Build summary
       run: |
         echo "### 🎉 Build Successful!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Version**: \`${{ steps.version.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**Environment Type**: \`${{ steps.envs.outputs.ENV_TYPE }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch**: \`legacy/pcb-v5\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "#### 🔐 Private Build (${{ steps.envs.outputs.ENV1 }})" >> $GITHUB_STEP_SUMMARY
-        echo "✅ Firmware built with real secrets" >> $GITHUB_STEP_SUMMARY
-        echo "📦 Artifact: \`firmware-${{ steps.envs.outputs.ENV1 }}-private-${{ steps.version.outputs.VERSION }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "📄 Files:" >> $GITHUB_STEP_SUMMARY
+        echo "#### 🔐 Private Build (with secrets)" >> $GITHUB_STEP_SUMMARY
+        echo "📦 Artifact: \`firmware-private-${{ steps.version.outputs.VERSION }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`partitions.bin\`" >> $GITHUB_STEP_SUMMARY
-        echo "🔒 **This artifact is PRIVATE** - only accessible to repository members" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`partitions.bin\` + \`bootloader.bin\`" >> $GITHUB_STEP_SUMMARY
+        echo "🔒 Accessible to repository members only — retained 30 days" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "#### 🌐 Public Build (${{ steps.envs.outputs.ENV2 }})" >> $GITHUB_STEP_SUMMARY
-        echo "✅ Firmware built without embedded secrets" >> $GITHUB_STEP_SUMMARY
-        echo "📦 Artifact: \`firmware-${{ steps.envs.outputs.ENV2 }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "📄 Files:" >> $GITHUB_STEP_SUMMARY
+        echo "#### 🌐 Public Build (nosecrets)" >> $GITHUB_STEP_SUMMARY
+        echo "📦 Artifact: \`firmware-nosecrets-${{ steps.version.outputs.VERSION }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.elf\`" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`partitions.bin\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "⏱️ Retention: 30 days" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`partitions.bin\` + \`bootloader.bin\`" >> $GITHUB_STEP_SUMMARY
+        echo "⏱️ Retained 30 days" >> $GITHUB_STEP_SUMMARY
