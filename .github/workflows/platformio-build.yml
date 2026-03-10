@@ -2,9 +2,9 @@ name: PlatformIO Build
 
 on:
   push:
-    branches: [ development, main ]
+    branches: [ development, main, legacy/pcb-v5 ]
   pull_request:
-    branches: [ development, main ]
+    branches: [ development, main, legacy/pcb-v5 ]
 
 jobs:
   # Job 1: Validation build with dummy secrets (only runs on PRs to give a quicker feedback)
