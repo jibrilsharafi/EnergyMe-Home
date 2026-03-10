@@ -24,16 +24,7 @@ namespace Mqtt
     static uint8_t* _logQueueStorage = nullptr;
     static uint8_t* _meterQueueStorage = nullptr;
 
-    // MQTT State Machine
-    enum class MqttState {
-        IDLE,
-        SETTING_UP_CERTIFICATES,
-        CONNECTING,
-        CONNECTED
-    };
-    
-    // State variables
-    static MqttState _currentState = MqttState::IDLE;
+    // Connection attempt tracking
     static uint32_t _mqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
 
@@ -174,19 +165,15 @@ namespace Mqtt
     
     // Certificate management
     static bool _isDeviceCertificatesPresent();
-    static void _clearCertificates();
+    static void _clearCertificatesRuntime();
     static bool _validateCertificateFormat(const char* cert, const char* certType);
 
-    // State machine management
-    static void _setState(MqttState newState);
-    static void _handleIdleState();
-    static void _handleSettingUpCertificatesState();
-    static void _handleConnectingState();
+    // Connection handling
+    static void _handleConnecting();
     static void _handleConnectedState();
 
     // Utilities
     static const char* _getMqttStateReason(int32_t state);
-    static const char* _getMqttStateMachineName(MqttState state);
     static void _sha256ToHex(const uint8_t sha256[32], char hexOut[65]);
     bool extractHost(const char* url, char* buffer, size_t bufferSize);
 
@@ -248,9 +235,14 @@ namespace Mqtt
             }
         }
 
+        // Eager certificate loading — certs are factory-provisioned and permanent
+        if (!_setupMqttWithDeviceCertificates()) {
+            LOG_ERROR("Failed to load device certificates in begin(). Cloud services will not connect.");
+        }
+
         if (_cloudServicesEnabled) _startTask();
         else LOG_DEBUG("Cloud services are disabled, MQTT task will not start");
-        
+
         LOG_DEBUG("MQTT client setup complete");
     }
 
@@ -646,31 +638,28 @@ namespace Mqtt
 
         while (_taskShouldRun)
         {
-            // Skip processing if WiFi is not connected
             if (CustomWifi::isFullyConnected()) {
-                switch (_currentState) {
-                    case MqttState::IDLE:                    _handleIdleState(); break;
-                    case MqttState::SETTING_UP_CERTIFICATES: _handleSettingUpCertificatesState(); break;
-                    case MqttState::CONNECTING:              _handleConnectingState(); break;
-                    case MqttState::CONNECTED:               _handleConnectedState(); break;
-                    }
+                if (_clientMqtt.connected()) {
+                    _handleConnectedState();
+                } else {
+                    _handleConnecting();
+                }
             }
-            
+
             // If we receive a signal to stop the task, we try to publish all the data and flushing the queues so we avoid losing data
             if (_lastLoopToPublishData) {
                 _lastLoopToPublishData = false;
                 _taskShouldRun = false;
-            } else if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL)) > 0) { 
-                _lastLoopToPublishData = true; 
+            } else if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL)) > 0) {
+                _lastLoopToPublishData = true;
                 _publishMqtt.meter = true;
                 _publishMqtt.systemDynamic = true;
                 _publishMqtt.statistics = true;
-                break; 
+                break;
             }
         }
-        
+
         _clientMqtt.disconnect();
-        _setState(MqttState::IDLE);
         LOG_DEBUG("MQTT task stopping");
         _taskHandle = nullptr;
         vTaskDelete(nullptr);
@@ -1475,14 +1464,10 @@ namespace Mqtt
             statistics.mqttConnectionErrors++;
 
             if (currentState == MQTT_CONNECT_BAD_CREDENTIALS || currentState == MQTT_CONNECT_UNAUTHORIZED) {
-                LOG_ERROR("MQTT connection failed due to authorization error (%d). Clearing certificates", currentState);
-                _clearCertificates();
-
-                // Hold the MQTT task for a bit before going again at the whole process
-                uint64_t backoffDelay = calculateExponentialBackoff(_mqttConnectionAttempt, MQTT_INITIAL_RETRY_INTERVAL, MQTT_MAX_RETRY_INTERVAL, MQTT_RETRY_MULTIPLIER);
-                delay((uint32_t)backoffDelay);
-                
-                _setState(MqttState::IDLE); // Error state so we restart whole MQTT provisioning process (maybe certs expired?)
+                LOG_ERROR("MQTT connection failed due to authorization error (%s, %d). Stopping MQTT task — check factory certificates",
+                          _getMqttStateReason(currentState), currentState);
+                _taskShouldRun = false; // Signal the task loop to exit (cannot call _stopTask from inside the task — it would deadlock)
+                return false;
             } else {
                 if (currentState != 0) {
                     LOG_ERROR("MQTT connection failed with error: %s (%d)", _getMqttStateReason(currentState), currentState);
@@ -1529,7 +1514,7 @@ namespace Mqtt
             !_validateCertificateFormat(_awsIotCoreCert, "device cert") ||
             !_validateCertificateFormat(_awsIotCorePrivateKey, "private key")) {
             LOG_ERROR("Invalid device certificates in factory namespace");
-            _clearCertificates();
+            _clearCertificatesRuntime();
             return false;
         }
 
@@ -1829,16 +1814,7 @@ namespace Mqtt
     // Certificates management
     // =======================
 
-    static bool _isDeviceCertificatesPresent() {
-        Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_FACTORY, true)) return false;
-        bool certExists = preferences.isKey(PREFS_KEY_CERTIFICATE);
-        bool keyExists = preferences.isKey(PREFS_KEY_PRIVATE_KEY);
-        preferences.end();
-        return certExists && keyExists;
-    }
-
-    static void _clearCertificates() {
+    static void _clearCertificatesRuntime() {
         if (_awsIotCoreCert) memset(_awsIotCoreCert, 0, CERTIFICATE_BUFFER_SIZE);
         if (_awsIotCorePrivateKey) memset(_awsIotCorePrivateKey, 0, CERTIFICATE_BUFFER_SIZE);
         LOG_INFO("In-memory certificates cleared");
@@ -1863,54 +1839,21 @@ namespace Mqtt
         return true;
     }
 
-    // State machine management
-    // ========================
+    // Connection handling
+    // ===================
 
-    static void _setState(MqttState newState) { // TODO: actually remove the state machine; it is useless without provisioning
-        if (_currentState != newState) {
-            LOG_DEBUG("MQTT state transition: %s -> %s", _getMqttStateMachineName(_currentState), _getMqttStateMachineName(newState));
-            _currentState = newState;
-        }
-    }
-
-    static void _handleIdleState() {
-        _setState(MqttState::SETTING_UP_CERTIFICATES);
-    }
-
-    static void _handleSettingUpCertificatesState() {
-        if (_setupMqttWithDeviceCertificates()) {
-            _setState(MqttState::CONNECTING);
-        } else {
-            _setState(MqttState::IDLE);
-        }
-    }
-
-    static void _handleConnectingState() {
-        if (!CustomWifi::isFullyConnected()) return; // Fail fast if no WiFi/internet
-
-        if (_clientMqtt.connected()) {
-            _setState(MqttState::CONNECTED);
-            return;
-        }
-        
+    static void _handleConnecting() {
         // Wait for time sync before attempting connection to avoid LWIP lock conflicts
         if (!CustomTime::isTimeSynched()) {
-            static uint64_t lastTimeSyncWarning = 0;
-            if (millis64() - lastTimeSyncWarning > 10000) {
-                LOG_DEBUG("Waiting for time sync before MQTT connection");
-                lastTimeSyncWarning = millis64();
-            }
-            delay(1000);
+            delay(5000);
+            LOG_DEBUG("Waiting for time sync before MQTT connection");
             return;
         }
-        
+
         if (millis64() >= _nextMqttConnectionAttemptMillis) {
             // Small delay to allow LWIP/SNTP operations to complete
             delay(100);
-            
-            if (CustomWifi::isFullyConnected(true) && _connectMqtt() && _clientMqtt.connected()) { // Both internet, connect and check immediately after
-                _setState(MqttState::CONNECTED);
-            }
+            if (CustomWifi::isFullyConnected(true)) _connectMqtt();
         }
     }
 
@@ -1923,11 +1866,10 @@ namespace Mqtt
 
         if (!wifiOk || !mqttConnected || !mqttLoopOk) {
             LOG_DEBUG(
-                "MQTT disconnected, transitioning to connecting state (wifi: %d, connected: %d, loop: %d)", 
+                "MQTT disconnected, will reconnect next loop (wifi: %d, connected: %d, loop: %d)",
                 wifiOk, mqttConnected, mqttLoopOk
             );
             statistics.mqttConnectionErrors++;
-            _setState(MqttState::CONNECTING);
             return;
         }
 
@@ -1969,18 +1911,6 @@ namespace Mqtt
             case 4: return "MQTT_CONNECT_BAD_CREDENTIALS";
             case 5: return "MQTT_CONNECT_UNAUTHORIZED";
             default: return "Unknown MQTT state";
-        }
-    }
-
-    static const char* _getMqttStateMachineName(MqttState state)
-    {
-        switch (state)
-        {
-            case MqttState::IDLE: return "IDLE";
-            case MqttState::SETTING_UP_CERTIFICATES: return "SETTING_UP_CERTIFICATES";
-            case MqttState::CONNECTING: return "CONNECTING";
-            case MqttState::CONNECTED: return "CONNECTED";
-            default: return "Unknown";
         }
     }
 
@@ -2118,13 +2048,13 @@ namespace Mqtt
             return;
         }
         
-        char expectedSHA256[65];
-        memset(expectedSHA256, 0, sizeof(expectedSHA256));
-        prefs.getString(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY, expectedSHA256, sizeof(expectedSHA256));
+        char expectedSha256[65];
+        memset(expectedSha256, 0, sizeof(expectedSha256));
+        prefs.getString(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY, expectedSha256, sizeof(expectedSha256));
         prefs.end();
         
-        if (strlen(expectedSHA256) != 64) {
-            LOG_ERROR("Invalid expected SHA256 in preferences (length: %d)", strlen(expectedSHA256));
+        if (strlen(expectedSha256) != 64) {
+            LOG_ERROR("Invalid expected SHA256 in preferences (length: %d)", strlen(expectedSha256));
             _clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
             vTaskDelete(nullptr);
@@ -2143,12 +2073,12 @@ namespace Mqtt
         }
         
         // Convert current SHA256 to hex string
-        char currentSHA256[65];
-        _sha256ToHex(current_app_desc.app_elf_sha256, currentSHA256);
+        char currentSha256[65];
+        _sha256ToHex(current_app_desc.app_elf_sha256, currentSha256);
         
         // Compare SHA256 hashes
-        if (strcmp(expectedSHA256, currentSHA256) != 0) {
-            LOG_ERROR("OTA validation failed - SHA256 mismatch (expected: %s, current: %s) - firmware rolled back", expectedSHA256, currentSHA256);
+        if (strcmp(expectedSha256, currentSha256) != 0) {
+            LOG_ERROR("OTA validation failed - SHA256 mismatch (expected: %s, current: %s) - firmware rolled back", expectedSha256, currentSha256);
             _publishOtaStatus(_otaCurrentJobId, "FAILED", "sha256_mismatch_firmware_rollback");
             _clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
@@ -2156,7 +2086,7 @@ namespace Mqtt
             return;
         }
         
-        LOG_INFO("OTA validation successful - SHA256 verified: %s", currentSHA256);
+        LOG_INFO("OTA validation successful - SHA256 verified: %s", currentSha256);
         _publishOtaStatus(_otaCurrentJobId, "SUCCEEDED", "validated after successful boot and stability period");
         _clearOtaPendingState();
         LOG_INFO("OTA update completed and validated successfully");
