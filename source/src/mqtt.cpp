@@ -164,7 +164,6 @@ namespace Mqtt
     static bool _publishOtaJobsRequestJson();
     
     // Certificate management
-    static bool _isDeviceCertificatesPresent();
     static void _clearCertificatesRuntime();
     static bool _validateCertificateFormat(const char* cert, const char* certType);
 
