@@ -2830,7 +2830,7 @@ namespace CustomServer
                     }
 
                     // Validate namespace exclusions (ensure no sensitive data)
-                    const char* excludedNamespaces[] = {"auth_ns", "nvs.net80211", "phy", "certificates_ns"};
+                    const char* excludedNamespaces[] = {PREFERENCES_NAMESPACE_AUTH, PREFERENCES_DEFAULT_NAMESPACE_WIFI, PREFERENCES_DEFAULT_NAMESPACE_PHY, PREFERENCES_NAMESPACE_FACTORY};
                     for (JsonPair nsPair : doc["nvs"].as<JsonObject>()) {
                         for (const char* excluded : excludedNamespaces) {
                             if (strcmp(nsPair.key().c_str(), excluded) == 0) {

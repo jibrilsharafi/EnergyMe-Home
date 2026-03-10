@@ -143,6 +143,7 @@ namespace Ade7953
     static void _clearAllHistoricalData();
 
     // Configuration management
+    static void _seedConfigurationFromFactory();
     static void _setConfigurationFromPreferences();
     static void _saveConfigurationToPreferences();
     static void _applyConfiguration(const Ade7953Configuration &config); // Apply all the single register values from the configuration
@@ -305,8 +306,7 @@ namespace Ade7953
         _setDefaultParameters();
         LOG_DEBUG("Set default parameters");
 
-        // TODO: factory partition — on first boot (or reset-to-factory), if globalHwProfile->hasFactoryPartition,
-        // seed calibration_ns from factory NVS partition before loading. Fallback: hardcoded defaults (DEFAULT_CONFIG_AV_GAIN etc.)
+        _seedConfigurationFromFactory();
         _setConfigurationFromPreferences();
         LOG_DEBUG("Done setting configuration from Preferences");
 
@@ -2411,6 +2411,85 @@ namespace Ade7953
 
     // Configuration management functions
     // ==================================
+
+    void _seedConfigurationFromFactory() {
+        // On provisioned devices, seed ade7953_ns from the factory namespace if ade7953_ns
+        // has not been written yet. This copies factory calibration coefficients (written at
+        // manufacturing) into the runtime namespace so _setConfigurationFromPreferences()
+        // picks them up instead of using hardcoded defaults. User calibration changes later
+        // overwrite ade7953_ns, so this seeding only happens once.
+        if (globalCommunityMode) return;
+
+        Preferences adePrefs;
+        if (!adePrefs.begin(PREFERENCES_NAMESPACE_ADE7953, true)) return;
+
+        // Try to read any value from ade7953_ns to check if it's already been seeded
+        // If the value is found, it means it has already been seeded or user-calibrated
+        // so we can skip seeding from factory namespace to avoid overwriting existing calibration with factory values  
+        bool alreadySeeded = adePrefs.isKey(CONFIG_AV_GAIN_KEY);
+        adePrefs.end();
+        if (alreadySeeded) return;
+
+        Preferences factoryPrefs;
+        if (!factoryPrefs.begin(PREFERENCES_NAMESPACE_FACTORY, true)) return;
+
+        // In theory, provisioned device should have the AV gain factory calibration value at least
+        // We use it as proxy to determine if factory calibration values are present - if not, we skip
+        bool hasFactoryCalibration = factoryPrefs.isKey(CONFIG_AV_GAIN_KEY);
+        if (!hasFactoryCalibration) {
+            factoryPrefs.end();
+            LOG_WARNING("Factory calibration namespace found, but values not found, skipping ADE7953 configuration seeding");
+            return;
+        }
+
+        // Read factory calibration values
+        Ade7953Configuration factoryCfg;
+        factoryCfg.aVGain  = factoryPrefs.getLong(CONFIG_AV_GAIN_KEY, DEFAULT_CONFIG_AV_GAIN);
+        factoryCfg.aIGain  = factoryPrefs.getLong(CONFIG_AI_GAIN_KEY, DEFAULT_CONFIG_AI_GAIN);
+        factoryCfg.bIGain  = factoryPrefs.getLong(CONFIG_BI_GAIN_KEY, DEFAULT_CONFIG_BI_GAIN);
+        factoryCfg.aIRmsOs = factoryPrefs.getLong(CONFIG_AIRMS_OS_KEY, DEFAULT_CONFIG_AIRMS_OS);
+        factoryCfg.bIRmsOs = factoryPrefs.getLong(CONFIG_BIRMS_OS_KEY, DEFAULT_CONFIG_BIRMS_OS);
+        factoryCfg.aWGain  = factoryPrefs.getLong(CONFIG_AW_GAIN_KEY, DEFAULT_CONFIG_AW_GAIN);
+        factoryCfg.bWGain  = factoryPrefs.getLong(CONFIG_BW_GAIN_KEY, DEFAULT_CONFIG_BW_GAIN);
+        factoryCfg.aWattOs = factoryPrefs.getLong(CONFIG_AWATT_OS_KEY, DEFAULT_CONFIG_AWATT_OS);
+        factoryCfg.bWattOs = factoryPrefs.getLong(CONFIG_BWATT_OS_KEY, DEFAULT_CONFIG_BWATT_OS);
+        factoryCfg.aVarGain = factoryPrefs.getLong(CONFIG_AVAR_GAIN_KEY, DEFAULT_CONFIG_AVAR_GAIN);
+        factoryCfg.bVarGain = factoryPrefs.getLong(CONFIG_BVAR_GAIN_KEY, DEFAULT_CONFIG_BVAR_GAIN);
+        factoryCfg.aVarOs  = factoryPrefs.getLong(CONFIG_AVAR_OS_KEY, DEFAULT_CONFIG_AVAR_OS);
+        factoryCfg.bVarOs  = factoryPrefs.getLong(CONFIG_BVAR_OS_KEY, DEFAULT_CONFIG_BVAR_OS);
+        factoryCfg.aVaGain = factoryPrefs.getLong(CONFIG_AVA_GAIN_KEY, DEFAULT_CONFIG_AVA_GAIN);
+        factoryCfg.bVaGain = factoryPrefs.getLong(CONFIG_BVA_GAIN_KEY, DEFAULT_CONFIG_BVA_GAIN);
+        factoryCfg.aVaOs   = factoryPrefs.getLong(CONFIG_AVA_OS_KEY, DEFAULT_CONFIG_AVA_OS);
+        factoryCfg.bVaOs   = factoryPrefs.getLong(CONFIG_BVA_OS_KEY, DEFAULT_CONFIG_BVA_OS);
+        factoryCfg.phCalA  = factoryPrefs.getLong(CONFIG_PHCAL_A_KEY, DEFAULT_CONFIG_PHCAL_A);
+        factoryCfg.phCalB  = factoryPrefs.getLong(CONFIG_PHCAL_B_KEY, DEFAULT_CONFIG_PHCAL_B);
+        factoryPrefs.end();
+
+        // Write to ade7953_ns so later _setConfigurationFromPreferences picks them up
+        if (!adePrefs.begin(PREFERENCES_NAMESPACE_ADE7953, false)) return;
+        adePrefs.putLong(CONFIG_AV_GAIN_KEY, factoryCfg.aVGain);
+        adePrefs.putLong(CONFIG_AI_GAIN_KEY, factoryCfg.aIGain);
+        adePrefs.putLong(CONFIG_BI_GAIN_KEY, factoryCfg.bIGain);
+        adePrefs.putLong(CONFIG_AIRMS_OS_KEY, factoryCfg.aIRmsOs);
+        adePrefs.putLong(CONFIG_BIRMS_OS_KEY, factoryCfg.bIRmsOs);
+        adePrefs.putLong(CONFIG_AW_GAIN_KEY, factoryCfg.aWGain);
+        adePrefs.putLong(CONFIG_BW_GAIN_KEY, factoryCfg.bWGain);
+        adePrefs.putLong(CONFIG_AWATT_OS_KEY, factoryCfg.aWattOs);
+        adePrefs.putLong(CONFIG_BWATT_OS_KEY, factoryCfg.bWattOs);
+        adePrefs.putLong(CONFIG_AVAR_GAIN_KEY, factoryCfg.aVarGain);
+        adePrefs.putLong(CONFIG_BVAR_GAIN_KEY, factoryCfg.bVarGain);
+        adePrefs.putLong(CONFIG_AVAR_OS_KEY, factoryCfg.aVarOs);
+        adePrefs.putLong(CONFIG_BVAR_OS_KEY, factoryCfg.bVarOs);
+        adePrefs.putLong(CONFIG_AVA_GAIN_KEY, factoryCfg.aVaGain);
+        adePrefs.putLong(CONFIG_BVA_GAIN_KEY, factoryCfg.bVaGain);
+        adePrefs.putLong(CONFIG_AVA_OS_KEY, factoryCfg.aVaOs);
+        adePrefs.putLong(CONFIG_BVA_OS_KEY, factoryCfg.bVaOs);
+        adePrefs.putLong(CONFIG_PHCAL_A_KEY, factoryCfg.phCalA);
+        adePrefs.putLong(CONFIG_PHCAL_B_KEY, factoryCfg.phCalB);
+        adePrefs.end();
+
+        LOG_INFO("Seeded ADE7953 calibration from factory namespace");
+    }
 
     void _setConfigurationFromPreferences() {
         Preferences preferences;

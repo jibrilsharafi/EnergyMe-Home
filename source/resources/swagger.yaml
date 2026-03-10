@@ -834,7 +834,7 @@ paths:
         **Important Notes:**
         - Backup must be from same major firmware version (e.g., 1.x.x can restore on 1.y.z where y.z >= x.x)
         - Restores values exactly as they were backed up (type-safe with explicit type metadata)
-        - Skips sensitive namespaces: auth_ns, nvs.net80211, phy, certificates_ns
+        - Skips sensitive namespaces: auth_ns, nvs.net80211, phy, factory_ns
         - Device will restart automatically
         - Cross-device restore is blocked by default (use ?force=true to override)
         - Partial restore continues even if some keys fail to restore

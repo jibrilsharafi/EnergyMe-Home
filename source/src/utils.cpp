@@ -887,7 +887,7 @@ void createAllNamespaces() {
     preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_TIME, false); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); preferences.end();
+    preferences.begin(PREFERENCES_NAMESPACE_FACTORY, false); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.end();
 
@@ -909,7 +909,8 @@ void clearAllPreferences(bool nuclearOption) {
     preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); preferences.clear(); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_TIME, false); preferences.clear(); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); preferences.clear(); preferences.end();
+    // NOTE: PREFERENCES_NAMESPACE_FACTORY is intentionally excluded — factory-provisioned
+    // data (certs, calibration) must survive factory reset.
     preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.clear(); preferences.end();
     preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.clear(); preferences.end();
     
@@ -1846,10 +1847,10 @@ bool nvsDataToJson(JsonObject &doc) {
 
     // Namespaces to exclude from backup (sensitive, device-specific, or auto-generated data)
     const char* excludedNamespaces[] = {
-        "auth_ns",        // Contains passwords
-        "nvs.net80211",   // WiFi credentials and BSSID info (device/network-specific)
-        "phy",            // Calibration data (auto-generated from ROM per device)
-        "certificates_ns" // MQTT AWS IoT Core certs for connecting (sensitive data)
+        PREFERENCES_NAMESPACE_AUTH,             // Contains passwords
+        PREFERENCES_DEFAULT_NAMESPACE_WIFI,     // WiFi credentials and BSSID info (device/network-specific)
+        PREFERENCES_DEFAULT_NAMESPACE_PHY,      // Calibration data (auto-generated from ROM per device)
+        PREFERENCES_NAMESPACE_FACTORY           // Factory-provisioned certs and calibration (device-specific, must not be restored)
     };
     const size_t excludedCount = sizeof(excludedNamespaces) / sizeof(excludedNamespaces[0]);
 
@@ -2096,6 +2097,8 @@ bool restoreNvsFromJson(JsonDocument &doc) {
     // Iterate namespaces
     for (JsonPair nsPair : doc["nvs"].as<JsonObject>()) {
         const char* ns = nsPair.key().c_str();
+
+        // TODO: skip sensitive namespaces (maybe use a global or similar define)
         LOG_DEBUG("Restoring namespace: %s", ns);
 
         Preferences prefs;

@@ -65,9 +65,6 @@ const HardwareProfile PCB_PROFILES[] = {
             15, //  14       Y15    CT16
             0,  //  15       (unused padding to reach HW_PROFILE_MAX_MUX_CHANNELS)
         },
-
-        // TODO: factory partition — set to true when factory NVS partition is flashed at production
-        .hasFactoryPartition = false,
     },
 };
 
@@ -91,9 +88,9 @@ bool readEfuseProvisioningData(EfuseProvisioningData& data) {
     }
 
     data.isProvisioned = true;
-    data.serial = *((uint32_t*)&efuseData[4]);            // Bytes 4-7: Serial (little-endian)
-    data.manufacturingDate = *((uint64_t*)&efuseData[8]); // Bytes 8-15: Manufacturing date (little-endian)
-    data.hardwareVersion = *((uint16_t*)&efuseData[16]);  // Bytes 16-17: Hardware version (little-endian)
+    data.serial = *((uint32_t*)&efuseData[4]);              // Bytes 4-7: Serial (little-endian)
+    data.manufacturingDate = *((uint64_t*)&efuseData[8]);   // Bytes 8-15: Manufacturing date (little-endian)
+    data.hardwareVersion = *((uint8_t*)&efuseData[16]);     // Byte 16: Hardware version (little-endian)
 
     LOG_DEBUG("eFuse data: serial=0x%08X, mfgDate=%llu, hwVer=%u",
               data.serial, data.manufacturingDate, data.hardwareVersion);

@@ -21,7 +21,7 @@
 // Hardware profile for a specific PCB version.
 // Add a new entry to PCB_PROFILES[] in hardware_profile.cpp to support a new version.
 struct HardwareProfile {
-    uint16_t version; // PCB version number (e.g. 61 for v6.1)
+    uint8_t version; // PCB version number (e.g. 61 for v6.1)
 
     // RGB LED pins
     uint8_t ledRedPin;
@@ -81,18 +81,13 @@ struct HardwareProfile {
     // Only the first muxChannelCount entries are valid. Array sized to HW_PROFILE_MAX_MUX_CHANNELS.
     uint8_t muxChannelMap[HW_PROFILE_MAX_MUX_CHANNELS];
 
-    // TODO: factory partition — when factory NVS partition is implemented, set this true
-    // for PCB versions that have factory calibration (ADE7953 gains/offsets) and certs
-    // pre-programmed into the factory_data NVS partition at production time.
-    // Controls calibration seeding on first boot and the reset-to-factory path.
-    bool hasFactoryPartition;
 };
 
 struct EfuseProvisioningData {
     bool isProvisioned;
     uint32_t serial;
     uint64_t manufacturingDate;
-    uint16_t hardwareVersion;
+    uint8_t hardwareVersion;
 
     EfuseProvisioningData() : isProvisioned(false), serial(0), manufacturingDate(0), hardwareVersion(0) {}
 };

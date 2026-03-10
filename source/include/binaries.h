@@ -40,9 +40,3 @@ extern const char waveform_html[] asm("_binary_html_waveform_html_start");
 extern const char swagger_yaml[] asm("_binary_resources_swagger_yaml_start");
 extern const char favicon_svg[] asm("_binary_resources_favicon_svg_start");
 
-// AWS IoT Core claim certificates (shared provisioning certs, always embedded)
-// TODO: these will be removed and directly stored in NVS partition
-// --------------------------------------------------
-extern const char aws_iot_core_cert_certclaim[] asm("_binary_secrets_certclaim_pem_start");
-extern const char aws_iot_core_cert_privateclaim[] asm("_binary_secrets_privateclaim_pem_start");
-extern const char preshared_encryption_key[] asm("_binary_secrets_encryptionkey_txt_start");

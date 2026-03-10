@@ -43,10 +43,14 @@
 #define PREFERENCES_NAMESPACE_WIFI "wifi_ns"
 #define PREFERENCES_NAMESPACE_TIME "time_ns"
 #define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor_ns"
-#define PREFERENCES_NAMESPACE_CERTIFICATES "certificates_ns"
+#define PREFERENCES_NAMESPACE_FACTORY "factory_ns"
 #define PREFERENCES_NAMESPACE_LED "led_ns"
 #define PREFERENCES_NAMESPACE_AUTH "auth_ns" 
 #define PREFERENCES_NAMESPACE_UDP_LOG "udp_log_ns"
+
+// Default ESP32 NVS spaces (only for reference - should never be touched)
+#define PREFERENCES_DEFAULT_NAMESPACE_PHY "phy"
+#define PREFERENCES_DEFAULT_NAMESPACE_WIFI "nvs.net80211"
 
 // Logger
 #define LOG_PATH "/log.txt"

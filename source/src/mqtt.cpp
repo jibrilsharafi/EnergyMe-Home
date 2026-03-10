@@ -27,7 +27,6 @@ namespace Mqtt
     // MQTT State Machine
     enum class MqttState {
         IDLE,
-        CLAIMING_CERTIFICATES,
         SETTING_UP_CERTIFICATES,
         CONNECTING,
         CONNECTED
@@ -49,7 +48,7 @@ namespace Mqtt
     static uint8_t _mqttLogLevelInt = DEFAULT_MQTT_LOG_LEVEL_INT;
     static LogLevel _mqttMinLogLevel = LogLevel::INFO;
 
-    // Certificates storage (decrypted) - allocated in PSRAM
+    // Certificates storage (loaded from factory NVS) - allocated in PSRAM
     static char *_awsIotCoreCert = nullptr;
     static char *_awsIotCorePrivateKey = nullptr;
     
@@ -61,7 +60,6 @@ namespace Mqtt
     static char _mqttTopicStatistics[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicCrash[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicLog[MQTT_TOPIC_BUFFER_SIZE];
-    static char _mqttTopicProvisioningRequest[MQTT_TOPIC_BUFFER_SIZE];
 
     // Task variables
     static TaskHandle_t _taskHandle = nullptr;
@@ -116,13 +114,11 @@ namespace Mqtt
     static void _setTopicStatistics();
     static void _setTopicCrash();
     static void _setTopicLog();
-    static void _setTopicProvisioningRequest();
 
     // Subscription management
     static void _subscribeToTopics();
     static bool _subscribeToTopic(const char* topicSuffix);
     static void _subscribeCommand();
-    static void _subscribeProvisioningResponse();
     static void _subscribeAwsIotJobs();
     
     // Subscription callback handler
@@ -130,8 +126,6 @@ namespace Mqtt
     static void _handleCommandMessage(const char* message);
     static void _handleAwsIotJobMessage(const char* message, const char* topic);
     static void _handleRestartMessage();
-    static void _handleProvisioningResponseMessage(const char* message);
-    static void _handleEraseCertificatesMessage();
     static void _handleSetSendPowerDataMessage(JsonDocument &dataDoc);
     static void _handleSetMqttLogLevelMessage(JsonDocument &dataDoc);
     
@@ -158,7 +152,6 @@ namespace Mqtt
     static void _publishStatistics();
     static void _publishCrash();
     static void _publishLog(const LogEntry& entry);
-    static bool _publishProvisioningRequest();
     static void _publishOtaJobsRequest();
     
     static void _checkPublishMqtt();
@@ -170,7 +163,6 @@ namespace Mqtt
     static bool _setCertificatesFromPreferences();
     static bool _setupMqttWithDeviceCertificates();
     static bool _connectMqtt();
-    static bool _claimProcess();
     static bool _publishJsonStreaming(JsonDocument &jsonDocument, const char* topic, bool retain = false);
 
     // Queue processing and streaming
@@ -181,17 +173,13 @@ namespace Mqtt
     static bool _publishOtaJobsRequestJson();
     
     // Certificate management
-    static void _readEncryptedPreferences(const char* preference_key, const char* preshared_encryption_key, char* decryptedData, size_t decryptedDataSize);
     static bool _isDeviceCertificatesPresent();
     static void _clearCertificates();
-    static void _decryptData(const char* encryptedDataBase64, const char* presharedKey, char* decryptedData, size_t decryptedDataSize);
-    static void _deriveKey_SHA256(const char* presharedKey, const char* deviceId, uint8_t outKey32[32]);
     static bool _validateCertificateFormat(const char* cert, const char* certType);
 
     // State machine management
     static void _setState(MqttState newState);
     static void _handleIdleState();
-    static void _handleClaimingState();
     static void _handleSettingUpCertificatesState();
     static void _handleConnectingState();
     static void _handleConnectedState();
@@ -662,7 +650,6 @@ namespace Mqtt
             if (CustomWifi::isFullyConnected()) {
                 switch (_currentState) {
                     case MqttState::IDLE:                    _handleIdleState(); break;
-                    case MqttState::CLAIMING_CERTIFICATES:   _handleClaimingState(); break;
                     case MqttState::SETTING_UP_CERTIFICATES: _handleSettingUpCertificatesState(); break;
                     case MqttState::CONNECTING:              _handleConnectingState(); break;
                     case MqttState::CONNECTED:               _handleConnectedState(); break;
@@ -745,7 +732,6 @@ namespace Mqtt
         _setTopicStatistics();
         _setTopicCrash();
         _setTopicLog();
-        _setTopicProvisioningRequest();
 
         LOG_DEBUG("MQTT topics setup complete");
     }
@@ -757,11 +743,9 @@ namespace Mqtt
     static void _setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
     static void _setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash, sizeof(_mqttTopicCrash)); }
     static void _setTopicLog() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_LOG, MQTT_TOPIC_LOG, _mqttTopicLog, sizeof(_mqttTopicLog)); }
-    static void _setTopicProvisioningRequest() { _constructMqttTopic(MQTT_TOPIC_PROVISIONING_REQUEST, _mqttTopicProvisioningRequest, sizeof(_mqttTopicProvisioningRequest)); }
 
     static void _subscribeToTopics() {
         _subscribeCommand();
-        _subscribeProvisioningResponse();
         _subscribeAwsIotJobs();
 
         LOG_DEBUG("Subscribed to topics");
@@ -781,8 +765,7 @@ namespace Mqtt
     }
 
     static void _subscribeCommand() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_COMMAND); }
-    static void _subscribeProvisioningResponse() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE); }
-    
+
     static void _subscribeAwsIotJobs() {
         char jobNotifyTopic[MQTT_TOPIC_BUFFER_SIZE];
         _constructMqttTopicReservedThings("jobs/notify-next", jobNotifyTopic, sizeof(jobNotifyTopic));
@@ -839,7 +822,6 @@ namespace Mqtt
         LOG_DEBUG("Received MQTT message from %s", topic);
 
         if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_COMMAND)) _handleCommandMessage(message);
-        else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE)) _handleProvisioningResponseMessage(message);
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_JOBS)) _handleAwsIotJobMessage(message, topic);
         else LOG_WARNING("Unknown MQTT topic received: %s", topic);
         
@@ -872,8 +854,6 @@ namespace Mqtt
 
         if (strcmp(command, "restart") == 0) {
             _handleRestartMessage();
-        } else if (strcmp(command, "erase_certificates") == 0) {
-            _handleEraseCertificatesMessage();
         } else if (strcmp(command, "set_send_power_data") == 0) {
             _handleSetSendPowerDataMessage(docCommandMessage);
         } else if (strcmp(command, "set_mqtt_log_level") == 0) {
@@ -886,67 +866,6 @@ namespace Mqtt
     static void _handleRestartMessage()
     {
         setRestartSystem("Restart requested from MQTT");
-    }
-
-    static void _handleProvisioningResponseMessage(const char* message)
-    {
-        // Expected JSON format: {"status": "success", "encryptedCertificatePem": "...", "encryptedPrivateKey": "..."}
-        SpiRamAllocator allocator;
-        JsonDocument doc(&allocator);
-        DeserializationError error = deserializeJson(doc, message);
-        if (error) {
-            LOG_ERROR("Failed to parse provisioning response JSON message (%s): %s", error.c_str(), message);
-            return;
-        }
-
-        if (doc["status"] == "success")
-        {
-            // Validate that certificate fields exist and are strings
-            if (!doc["encryptedCertificatePem"].is<const char*>() || 
-                !doc["encryptedPrivateKey"].is<const char*>()) 
-            {
-                LOG_ERROR("Invalid provisioning response: missing or invalid certificate fields");
-                return;
-            }
-
-            const char* certData = doc["encryptedCertificatePem"].as<const char*>();
-            const char* keyData = doc["encryptedPrivateKey"].as<const char*>();
-
-            if (!isStringLengthValid(certData, 1, CERTIFICATE_BUFFER_SIZE - 1) ||
-                !isStringLengthValid(keyData, 1, CERTIFICATE_BUFFER_SIZE - 1)) {
-                LOG_ERROR("Provisioning payload invalid (cert or key too large or empty)");
-                return;
-            }
-
-            Preferences preferences;
-            preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false);
-
-            size_t writtenSize = preferences.putString(PREFS_KEY_CERTIFICATE, certData);
-            if (writtenSize != strlen(certData)) {
-                LOG_ERROR("Failed to write encrypted certificate to preferences (%zu != %zu)", writtenSize, strlen(certData));
-                preferences.end();
-                return;
-            }
-
-            writtenSize = preferences.putString(PREFS_KEY_PRIVATE_KEY, keyData);
-            if (writtenSize != strlen(keyData)) {
-                LOG_ERROR("Failed to write encrypted private key to preferences (%zu != %zu)", writtenSize, strlen(keyData));
-                preferences.end();
-                return;
-            }
-
-            preferences.end();
-        } else {
-            char buffer[STATUS_BUFFER_SIZE];
-            safeSerializeJson(doc, buffer, sizeof(buffer), true);
-            LOG_ERROR("Provisioning failed: %s", buffer);
-        }
-    }
-
-    static void _handleEraseCertificatesMessage()
-    {
-        _clearCertificates();
-        _setState(MqttState::IDLE);
     }
 
     static void _handleSetSendPowerDataMessage(JsonDocument &dataDoc)
@@ -1455,21 +1374,6 @@ namespace Mqtt
         }
     }
 
-    // TODO: provisioning — the entire provisioning flow (request/response/cert storage) needs to be
-    // rethought for v2.0.0. With factory NVS partition, device certs are pre-loaded at manufacturing.
-    // The cloud provisioning path (claim certs → NVS) will be replaced or removed.
-    static bool _publishProvisioningRequest() {
-        SpiRamAllocator allocator;
-        JsonDocument doc(&allocator);
-
-        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        doc["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
-        doc["sketchMD5"] = ESP.getSketchMD5();
-        doc["chipId"] = ESP.getEfuseMac();
-
-        return _publishJsonStreaming(doc, _mqttTopicProvisioningRequest);
-    }
-
     static void _checkPublishMqtt() {
         if (_publishMqtt.meter) {_publishMeter();}
         if (_publishMqtt.systemStatic) {_publishSystemStatic();}
@@ -1602,121 +1506,35 @@ namespace Mqtt
     }
 
     static bool _setCertificatesFromPreferences() {
-        // Check if certificate buffers are allocated
         if (_awsIotCoreCert == nullptr || _awsIotCorePrivateKey == nullptr) {
             LOG_ERROR("Certificate buffers not allocated");
             return false;
         }
-        
-        // Ensure the certificates are clean
+
         memset(_awsIotCoreCert, 0, CERTIFICATE_BUFFER_SIZE);
         memset(_awsIotCorePrivateKey, 0, CERTIFICATE_BUFFER_SIZE);
 
-        _readEncryptedPreferences(PREFS_KEY_CERTIFICATE, preshared_encryption_key, _awsIotCoreCert, CERTIFICATE_BUFFER_SIZE);
-        _readEncryptedPreferences(PREFS_KEY_PRIVATE_KEY, preshared_encryption_key, _awsIotCorePrivateKey, CERTIFICATE_BUFFER_SIZE);
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_FACTORY, true)) {
+            LOG_ERROR("Failed to open factory namespace");
+            return false;
+        }
 
-        // Ensure the certs are valid by looking for the PEM header
-        if (
-            strlen(_awsIotCoreCert) == 0 || 
-            strlen(_awsIotCorePrivateKey) == 0 ||
-            !strstr(_awsIotCoreCert, "-----BEGIN CERTIFICATE-----") ||
-            (
-                !strstr(_awsIotCorePrivateKey, "-----BEGIN PRIVATE KEY-----") &&
-                !strstr(_awsIotCorePrivateKey, "-----BEGIN RSA PRIVATE KEY-----")
-            )
-        ) {
-            LOG_ERROR("Invalid device certificates");
+        size_t maxLenCertRetrieval = CERTIFICATE_BUFFER_SIZE - 1; // Leave space for null terminator
+        preferences.getString(PREFS_KEY_CERTIFICATE, _awsIotCoreCert, maxLenCertRetrieval);
+        preferences.getString(PREFS_KEY_PRIVATE_KEY, _awsIotCorePrivateKey, maxLenCertRetrieval);
+        preferences.end();
+
+        if (strlen(_awsIotCoreCert) == 0 || strlen(_awsIotCorePrivateKey) == 0 ||
+            !_validateCertificateFormat(_awsIotCoreCert, "device cert") ||
+            !_validateCertificateFormat(_awsIotCorePrivateKey, "private key")) {
+            LOG_ERROR("Invalid device certificates in factory namespace");
             _clearCertificates();
             return false;
         }
 
-        LOG_DEBUG("Certificates set and validated");
+        LOG_DEBUG("Certificates loaded from factory namespace");
         return true;
-    }
-
-    static bool _claimProcess() {
-        LOG_DEBUG("Claiming certificates...");
-
-        _net.setCACert(AWS_IOT_CORE_CA_CERT);
-        _net.setCertificate(aws_iot_core_cert_certclaim);
-        _net.setPrivateKey(aws_iot_core_cert_privateclaim);
-
-        LOG_DEBUG("MQTT setup for claiming certificates complete");
-
-        // Connect with controlled attempts + backoff
-        for (int32_t connectionAttempt = 0; connectionAttempt < MQTT_CLAIM_MAX_CONNECTION_PUBLISH_ATTEMPT; ++connectionAttempt) {
-            LOG_DEBUG("Attempting to connect to MQTT for claiming certificates (%d/%d)...", connectionAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_PUBLISH_ATTEMPT);
-
-            if (_clientMqtt.connect(DEVICE_ID)) {
-                LOG_DEBUG("Connected to MQTT for claiming certificates");
-                statistics.mqttConnections++;
-                break;
-            }
-
-            LOG_WARNING("Failed to connect to MQTT for claiming certificates (attempt %d). Reason: %s", connectionAttempt + 1, _getMqttStateReason(_clientMqtt.state()));
-            statistics.mqttConnectionErrors++;
-
-            uint64_t backoffDelay = calculateExponentialBackoff(connectionAttempt, MQTT_CLAIM_INITIAL_RETRY_INTERVAL, MQTT_CLAIM_MAX_RETRY_INTERVAL, MQTT_CLAIM_RETRY_MULTIPLIER);
-            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(backoffDelay)) > 0) { _taskShouldRun = false; return false; }
-
-            if (connectionAttempt == MQTT_CLAIM_MAX_CONNECTION_PUBLISH_ATTEMPT - 1) {
-                LOG_ERROR("Failed to connect to MQTT for claiming certificates after %d attempts", MQTT_CLAIM_MAX_CONNECTION_PUBLISH_ATTEMPT);
-                return false;
-            }
-        }
-
-        // We are connected. Now subscribe to the provisioning response topic (only one needed now)
-        _subscribeProvisioningResponse();
-
-        // Publish provisioning request (limited retries)
-        for (int32_t publishAttempt = 0; publishAttempt < MQTT_CLAIM_MAX_CONNECTION_PUBLISH_ATTEMPT; ++publishAttempt) {
-            LOG_DEBUG("Attempting to publish provisioning request (%d/%d)...", publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_PUBLISH_ATTEMPT);
-
-            if (_publishProvisioningRequest()) {
-                LOG_DEBUG("Provisioning request published");
-                break;
-            }
-            
-            LOG_WARNING("Failed to publish provisioning request (%d/%d)", publishAttempt + 1, MQTT_CLAIM_MAX_CONNECTION_PUBLISH_ATTEMPT);
-            statistics.mqttMessagesPublishedError++;
-
-            uint64_t backoffDelay = calculateExponentialBackoff(publishAttempt, MQTT_CLAIM_INITIAL_RETRY_INTERVAL, MQTT_CLAIM_MAX_RETRY_INTERVAL, MQTT_CLAIM_RETRY_MULTIPLIER);
-            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(backoffDelay)) > 0) { _taskShouldRun = false; return false; }
-
-            if (publishAttempt == MQTT_CLAIM_MAX_CONNECTION_PUBLISH_ATTEMPT - 1) {
-                return false;
-            }
-        }
-
-        // We published, now we wait for response or presence of certs
-        LOG_DEBUG("Waiting for provisioning response...");
-        uint64_t deadline = millis64() + MQTT_CLAIM_TIMEOUT;
-
-        while (millis64() < deadline) {
-            if (!_clientMqtt.loop()) {
-                LOG_WARNING("MQTT loop failed");
-                break;
-            }
-
-            LOG_DEBUG("Waiting for provisioning response (%llu ms remaining)...", deadline - millis64());
-
-            if (_isDeviceCertificatesPresent()) {
-                LOG_DEBUG("Certificates provisioning confirmed");
-                break;
-            }
-
-            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_CLAIMING_INTERVAL)) > 0) { _taskShouldRun = false; return false; }
-        }
-
-        // Always disconnect the claim session before switching state
-        _clientMqtt.disconnect();
-
-        if (_isDeviceCertificatesPresent()) { // Last check to ensure we have the certs
-            return true;
-        }
-
-        LOG_WARNING("Provisioning response timeout. Will retry later");
-        return false;
     }
 
     static bool _publishJsonStreaming(JsonDocument &jsonDocument, const char* topic, bool retain) {
@@ -2011,162 +1829,19 @@ namespace Mqtt
     // Certificates management
     // =======================
 
-    static void _readEncryptedPreferences(const char* preferenceKey, const char* presharedEncryptionKey, char* decryptedData, size_t decryptedDataSize) {
-        if (preferenceKey == nullptr || presharedEncryptionKey == nullptr || decryptedData == nullptr || decryptedDataSize == 0) {
-            if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
-            return;
-        }
-
-        Preferences preferences;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) {
-            LOG_ERROR("Failed to open preferences");
-            if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
-            return;
-        }
-
-        // Avoid NOT_FOUND spam by checking key existence first
-        if (!preferences.isKey(preferenceKey)) {
-            preferences.end();
-            if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
-            return;
-        }
-
-        char *encryptedData = (char*)ps_malloc(CERTIFICATE_BUFFER_SIZE);
-        if (!encryptedData) {
-            LOG_ERROR("Failed to allocate encrypted data buffer in PSRAM");
-            preferences.end();
-            return;
-        }
-        
-        memset(encryptedData, 0, CERTIFICATE_BUFFER_SIZE); // Clear before setting
-        preferences.getString(preferenceKey, encryptedData, CERTIFICATE_BUFFER_SIZE);
-        preferences.end();
-
-        if (strlen(encryptedData) == 0) {
-            LOG_DEBUG("No encrypted data found for key %s", preferenceKey);
-            free(encryptedData);
-            return;
-        }
-
-        // Use GCM decrypt with SHA256(preshared||DEVICE_ID)
-        _decryptData(encryptedData, presharedEncryptionKey, decryptedData, decryptedDataSize);
-        free(encryptedData);
-    }
-
     static bool _isDeviceCertificatesPresent() {
         Preferences preferences;
-
-        if (!preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, true)) {
-            return false;
-        }
-
-        // Avoid NOT_FOUND spam by checking key presence only
-        bool deviceCertExists = preferences.isKey(PREFS_KEY_CERTIFICATE);
-        bool privateKeyExists = preferences.isKey(PREFS_KEY_PRIVATE_KEY);
+        if (!preferences.begin(PREFERENCES_NAMESPACE_FACTORY, true)) return false;
+        bool certExists = preferences.isKey(PREFS_KEY_CERTIFICATE);
+        bool keyExists = preferences.isKey(PREFS_KEY_PRIVATE_KEY);
         preferences.end();
-        
-        return deviceCertExists && privateKeyExists;
+        return certExists && keyExists;
     }
 
     static void _clearCertificates() {
-        Preferences preferences;
-        
-        preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false);
-        preferences.clear();
-        preferences.end();
-        
-        LOG_INFO("Certificates for cloud services cleared");
-    }
-
-    static void _deriveKey_SHA256(const char* presharedKey, const char* deviceId, uint8_t outKey32[32]) {
-        mbedtls_sha256_context sha;
-        mbedtls_sha256_init(&sha);
-        mbedtls_sha256_starts(&sha, 0);
-        mbedtls_sha256_update(&sha, reinterpret_cast<const unsigned char*>(presharedKey), strlen(presharedKey));
-        mbedtls_sha256_update(&sha, reinterpret_cast<const unsigned char*>(deviceId), strlen(deviceId));
-        mbedtls_sha256_finish(&sha, outKey32);
-        mbedtls_sha256_free(&sha);
-    }
-
-    void _decryptData(const char* encryptedDataBase64, const char* presharedKey, char* decryptedData, size_t decryptedDataSize) {
-        if (encryptedDataBase64 == nullptr || presharedKey == nullptr || decryptedData == nullptr || decryptedDataSize == 0) {
-            if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
-            LOG_WARNING("Invalid parameters for decryption");
-            return;
-        }
-
-        size_t inputLength = strlen(encryptedDataBase64);
-        if (inputLength == 0) {
-            if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
-            return;
-        }
-
-        // Base64 decode
-        uint8_t *decoded = (uint8_t*)ps_malloc(CERTIFICATE_BUFFER_SIZE);
-        if (!decoded) {
-            LOG_ERROR("Failed to allocate decoded buffer in PSRAM");
-            if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
-            return;
-        }
-        
-        size_t decodedLen = 0;
-        int ret = mbedtls_base64_decode(decoded, CERTIFICATE_BUFFER_SIZE, &decodedLen,
-                                        reinterpret_cast<const unsigned char*>(encryptedDataBase64), inputLength);
-        if (ret != 0 || decodedLen < (12 + 16)) { // must at least contain IV + TAG
-            if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
-            LOG_ERROR("Failed to decode base64 or data too short (%u)", (unsigned)decodedLen);
-            free(decoded);
-            return;
-        }
-
-        const size_t IV_LEN = 12;
-        const size_t TAG_LEN = 16;
-        const uint8_t* iv  = decoded;
-        const uint8_t* tag = decoded + decodedLen - TAG_LEN;
-        const uint8_t* ct  = decoded + IV_LEN;
-        size_t ctLen = decodedLen - IV_LEN - TAG_LEN;
-
-        uint8_t key[32];
-        _deriveKey_SHA256(presharedKey, DEVICE_ID, key);
-
-        mbedtls_gcm_context gcm;
-        mbedtls_gcm_init(&gcm);
-        if (mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, key, 256) != 0) {
-            if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
-            mbedtls_gcm_free(&gcm);
-            memset(key, 0, sizeof(key));
-            free(decoded);
-            LOG_ERROR("Failed to set AES-GCM key");
-            return;
-        }
-
-        // Decrypt+auth
-        int dec = mbedtls_gcm_auth_decrypt(&gcm,
-                                           ctLen,
-                                           iv, IV_LEN,
-                                           nullptr, 0, // AAD (none)
-                                           tag, TAG_LEN,
-                                           ct,
-                                           reinterpret_cast<uint8_t*>(decryptedData));
-        mbedtls_gcm_free(&gcm);
-        // wipe key
-        memset(key, 0, sizeof(key));
-
-        if (dec != 0) {
-            if (decryptedData != nullptr && decryptedDataSize > 0) decryptedData[0] = '\0';
-            free(decoded);
-            LOG_ERROR("AES-GCM auth decrypt failed (%d)", dec);
-            return;
-        }
-
-        // Ensure null termination (certificate is ASCII PEM)
-        if (ctLen >= decryptedDataSize) ctLen = decryptedDataSize - 1;
-        decryptedData[ctLen] = '\0';
-        // Clear sensitive buffers
-        memset(decoded, 0, CERTIFICATE_BUFFER_SIZE);
-        free(decoded);
-
-        LOG_DEBUG("Decrypted data successfully");
+        if (_awsIotCoreCert) memset(_awsIotCoreCert, 0, CERTIFICATE_BUFFER_SIZE);
+        if (_awsIotCorePrivateKey) memset(_awsIotCorePrivateKey, 0, CERTIFICATE_BUFFER_SIZE);
+        LOG_INFO("In-memory certificates cleared");
     }
 
     static bool _validateCertificateFormat(const char* cert, const char* certType) {
@@ -2191,7 +1866,7 @@ namespace Mqtt
     // State machine management
     // ========================
 
-    static void _setState(MqttState newState) {
+    static void _setState(MqttState newState) { // TODO: actually remove the state machine; it is useless without provisioning
         if (_currentState != newState) {
             LOG_DEBUG("MQTT state transition: %s -> %s", _getMqttStateMachineName(_currentState), _getMqttStateMachineName(newState));
             _currentState = newState;
@@ -2199,16 +1874,7 @@ namespace Mqtt
     }
 
     static void _handleIdleState() {
-        if (_isDeviceCertificatesPresent()) {
-            _setState(MqttState::SETTING_UP_CERTIFICATES);
-        } else {
-            _setState(MqttState::CLAIMING_CERTIFICATES);
-        }
-    }
-
-    static void _handleClaimingState() {
-        if (_claimProcess()) _setState(MqttState::SETTING_UP_CERTIFICATES);
-        else _setState(MqttState::IDLE); // Reset to idle if claiming failed
+        _setState(MqttState::SETTING_UP_CERTIFICATES);
     }
 
     static void _handleSettingUpCertificatesState() {
@@ -2311,7 +1977,6 @@ namespace Mqtt
         switch (state)
         {
             case MqttState::IDLE: return "IDLE";
-            case MqttState::CLAIMING_CERTIFICATES: return "CLAIMING_CERTIFICATES";
             case MqttState::SETTING_UP_CERTIFICATES: return "SETTING_UP_CERTIFICATES";
             case MqttState::CONNECTING: return "CONNECTING";
             case MqttState::CONNECTED: return "CONNECTED";
