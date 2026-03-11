@@ -335,7 +335,6 @@ namespace CrashMonitor
             return;
         }
 
-        // TODO: if we find a crash dump, save it immediately to LittleFS (how? binary blob?) in a folder with the current datetime ISO, in the folder the binary blob anad a JSON with metadata
         LOG_INFO("Core dump found from previous crash, retrieving summary...");
         
         // Log only essential crash data for analysis
@@ -522,7 +521,7 @@ namespace CrashMonitor
         LOG_WARNING("=== End Crash Analysis ===");
     }
 
-    bool getCoreDumpInfoJson(JsonDocument &doc) { // TODO: this should instead save the binary blob to LittleFS with the unix timestamp of when it happened and the elf256 partial as name. THen later updated, but immediately cleared from partition
+    bool getCoreDumpInfoJson(JsonDocument &doc) {
         // Basic crash information
         esp_reset_reason_t resetReason = esp_reset_reason();
         doc["resetReason"] = getResetReasonString(resetReason);

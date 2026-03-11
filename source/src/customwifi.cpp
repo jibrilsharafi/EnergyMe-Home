@@ -80,10 +80,6 @@ namespace CustomWifi
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false); // Disable WiFi sleep to prevent handshake timeouts
 
-    // TODO: add these functionalities (via config) to allow for channel and power settings
-    // WiFi.setChannel(6);       // Optional - if user configured a specific channel
-    // WiFi.setTxPower(WIFI_POWER_20dBm);  // Optional - regional compliance
-
     // Start WiFi connection task
     _startWifiTask();
     
@@ -522,7 +518,6 @@ namespace CustomWifi
 
     // If we don't manage to connect with WiFi Manager and the credentials are not provided, we might as well just restart.
     // In the future, we could allow for full-offline functionality, but for now, we keep it simple.
-    // TODO: implement a full custom WiFi manager for better UX
     if (!wifiManager->autoConnect(hostname)) {
       LOG_WARNING("WiFi connection failed, exiting wifi task");
       Led::blinkRedFast(Led::PRIO_URGENT);
@@ -644,7 +639,7 @@ namespace CustomWifi
               _setupWiFiManager(*portalManager);
 
               // Try WiFiManager portal
-              if (!portalManager->startConfigPortal(hostname)) // TODO: use the password if present in eFuse (or if not present, the device mac address all lower)
+              if (!portalManager->startConfigPortal(hostname))
               {
                 LOG_ERROR("Portal failed - restarting device");
                 Led::blinkRedFast(Led::PRIO_URGENT);

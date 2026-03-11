@@ -1825,7 +1825,7 @@ namespace Ade7953
         _processChannelReading(0, linecycUnix);
     }
 
-    void _pollWaveformSamples() { // TODO: this could become something related to a websocket for real time visualization and similar
+    void _pollWaveformSamples() {
         // This function performs tight polling of instantaneous waveform registers with zero-crossing detection
         // to ensure capture of complete cycles only. We start on a positive-going voltage zero crossing and
         // stop after detecting the Nth positive-going zero crossing.
@@ -3692,8 +3692,6 @@ namespace Ade7953
             _meterValues[channelIndex].current = 0.0f;
             _meterValues[channelIndex].apparentPower = 0.0f;
         }
-
-        // TODO: add here, after everything has been validated, the computation of the mean values over the last X values (with a simple exponential filter alpha = 0.3 - 0.5)
 
         // Update dynamic scheduling: track power variability and recalculate channel weights
         _updateVariability(channelIndex, _meterValues[channelIndex].activePower);

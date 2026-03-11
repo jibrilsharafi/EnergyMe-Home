@@ -1291,7 +1291,6 @@ namespace CustomServer
         });
     }
 
-    // TODO: important, since we are going to embed the certs in the nvs of the device in v6, we can allow to update from github since the firmware will be unified regardless of the secrets compiled or not
     #ifndef HAS_SECRETS
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc) // Used only if no secrets are compiled
     {
@@ -2517,7 +2516,7 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             
-            if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) { // TODO: this should be streamed instead, and the full data raw (no useless JSON)
+            if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) {
                 _sendJsonResponse(request, doc);
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve core dump data");
@@ -2542,7 +2541,6 @@ namespace CustomServer
     // === LED ENDPOINTS ===
     static void _serveLedEndpoints()
     {
-        // TODO: can we add a fun RGB LED control here? Of limited time of course, but it would allow for ha integrations
         // Get LED brightness
         server.on("/api/v1/led/brightness", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
