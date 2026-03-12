@@ -1333,11 +1333,13 @@ namespace CustomServer
         // Parse the current firmware's major version (e.g. "1" → 1)
         int currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
 
-        // Find the first (newest) release whose major version matches ours.
-        // We require a full X.Y.Z parse (sscanf returns 3) to skip non-semver
-        // tags like "beta" or "v1-rc1" that would otherwise falsely match.
+        // Find the first (newest) stable release whose major version matches
+        // ours. We skip drafts and prereleases to avoid advertising unstable
+        // builds, and require a full X.Y.Z parse (sscanf returns 3) to skip
+        // non-semver tags like "beta" or "v1-rc1" that would otherwise match.
         JsonObject matchedRelease;
         for (JsonObject release : listDoc.as<JsonArray>()) {
+            if (release["draft"].as<bool>() || release["prerelease"].as<bool>()) continue;
             const char* tag = release["tag_name"];
             if (!tag) continue;
             // Strip leading 'v' if present
