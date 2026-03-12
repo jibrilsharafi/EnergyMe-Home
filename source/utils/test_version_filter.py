@@ -145,5 +145,54 @@ def run_tests():
         print("All tests passed.")
 
 
+def run_live_api_test(current_major: int = 1):
+    """
+    Fetch the real GitHub releases list and verify the filtering logic
+    against live data. Requires internet access.
+
+    Usage: python test_version_filter.py --live [--major N]
+    """
+    import urllib.request
+    import json
+
+    url = "https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases?per_page=20"
+    print(f"\n--- Live API test (major={current_major}) ---")
+    print(f"Fetching: {url}")
+
+    req = urllib.request.Request(url, headers={"User-Agent": "EnergyMe-Home-test-script"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        releases = json.loads(resp.read())
+
+    print(f"Got {len(releases)} release(s): {[r['tag_name'] for r in releases]}")
+
+    matched = find_latest_release_for_major(releases, current_major)
+    if matched is None:
+        print(f"No release found matching major={current_major} — this may be expected if none exist yet.")
+        return
+
+    tag = matched["tag_name"]
+    major = parse_major(tag)
+    assert major == current_major, f"Matched release {tag!r} has major={major}, expected {current_major}"
+
+    # Check that a .bin asset exists
+    bin_assets = [
+        a["name"] for a in matched.get("assets", [])
+        if "energyme_home" in a["name"] and a["name"].endswith(".bin")
+    ]
+
+    print(f"Matched release : {tag}")
+    print(f"Published at    : {matched.get('published_at', 'N/A')}")
+    print(f"Firmware assets : {bin_assets if bin_assets else '(none yet)'}")
+    print(f"PASS: live API filter works correctly for major={current_major}")
+
+
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Test version filter logic")
+    parser.add_argument("--live", action="store_true", help="Also run live GitHub API test")
+    parser.add_argument("--major", type=int, default=1, help="Major version to filter for in live test (default: 1)")
+    args = parser.parse_args()
+
     run_tests()
+    if args.live:
+        run_live_api_test(current_major=args.major)

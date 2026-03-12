@@ -1356,6 +1356,10 @@ namespace CustomServer
         }
 
         const char* tagName    = matchedRelease["tag_name"];
+        if (!tagName) {
+            LOG_WARNING("Matched release has no tag_name");
+            return false;
+        }
         const char* releaseDate = matchedRelease["published_at"].as<const char*>();
         const char* changelog  = matchedRelease["html_url"].as<const char*>();
 
@@ -1372,17 +1376,19 @@ namespace CustomServer
             }
         }
 
-        // Populate the output document
-        doc["availableVersion"] = tagName;
+        // Populate the output document — strip leading 'v' from tag to match
+        // FIRMWARE_BUILD_VERSION format (e.g. "1.1.1", not "v1.1.1")
+        const char* tagNameNormalized = (tagName[0] == 'v') ? tagName + 1 : tagName;
+        doc["availableVersion"] = tagNameNormalized;
         if (releaseDate) doc["releaseDate"] = releaseDate;
         if (downloadUrl) doc["updateUrl"]   = downloadUrl;
         if (changelog)   doc["changelogUrl"] = changelog;
 
         // Compare versions to determine if update is available
-        doc["isLatest"] = _compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
+        doc["isLatest"] = _compareVersions(FIRMWARE_BUILD_VERSION, tagNameNormalized) >= 0;
 
         LOG_DEBUG("GitHub release info fetched (major=%d): version=%s, isLatest=%s",
-                  currentMajor, tagName, doc["isLatest"].as<bool>() ? "true" : "false");
+                  currentMajor, tagNameNormalized, doc["isLatest"].as<bool>() ? "true" : "false");
 
         return true;
     }
@@ -1421,7 +1427,7 @@ namespace CustomServer
             doc["buildTime"] = FIRMWARE_BUILD_TIME;
             
             #ifdef HAS_SECRETS
-            doc["isLatest"] = true; // TODO: when with v6 the certs will be embedded, the HAS_SECRETS will be removed and this will work anyway
+            doc["isLatest"] = true;
             #else
             // Fetch from GitHub API when no secrets are available
             if (!_fetchGitHubReleaseInfo(doc)) {
