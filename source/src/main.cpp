@@ -134,7 +134,7 @@ void setup()
   CustomWifi::begin();
   LOG_INFO("WiFi setup done");
 
-  while (!CustomWifi::isFullyConnected()) // TODO: maybe we can move this and everything related to wifi connection to the wifi itself and handle it async
+  while (!CustomWifi::isFullyConnected())
   {
     LOG_DEBUG("Waiting for full WiFi connection...");
     delay(1000);
