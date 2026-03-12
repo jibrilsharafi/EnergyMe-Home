@@ -1301,11 +1301,10 @@ namespace CustomServer
         }
 
         HTTPClient http;
-        http.begin(GITHUB_API_RELEASES_URL);
+        http.begin(GITHUB_API_RELEASES_URL); // fetches a list, not a single release
         http.addHeader("User-Agent", "EnergyMe-Home-ESP32");
         http.addHeader("Accept", "application/vnd.github.v3+json");
 
-        // Reset watchdog before network call
         int httpCode = http.GET();
 
         if (httpCode != HTTP_CODE_OK) {
@@ -1314,52 +1313,77 @@ namespace CustomServer
             return false;
         }
 
-        // Parse GitHub API response - reset before and after data fetch
         String response = http.getString();
         http.end();
 
-        DeserializationError error = deserializeJson(doc, response);
+        // Parse as array
+        SpiRamAllocator allocator;
+        JsonDocument listDoc(&allocator);
+        DeserializationError error = deserializeJson(listDoc, response);
         if (error) {
             LOG_WARNING("Failed to parse GitHub API response: %s", error.c_str());
             return false;
         }
-        
-        // Extract release information
-        if (!doc["tag_name"].is<const char*>()) {
-            LOG_WARNING("Invalid GitHub API response: missing tag_name");
+
+        if (!listDoc.is<JsonArray>()) {
+            LOG_WARNING("Unexpected GitHub API response: expected array");
             return false;
         }
-        
-        const char* tagName = doc["tag_name"];
-        const char* releaseDate = doc["published_at"].as<const char*>();
-        const char* changelog = doc["html_url"].as<const char*>();
-        
+
+        // Parse the current firmware's major version (e.g. "1" → 1)
+        int currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
+
+        // Find the first (newest) release whose major version matches ours.
+        // We require a full X.Y.Z parse (sscanf returns 3) to skip non-semver
+        // tags like "beta" or "v1-rc1" that would otherwise falsely match.
+        JsonObject matchedRelease;
+        for (JsonObject release : listDoc.as<JsonArray>()) {
+            const char* tag = release["tag_name"];
+            if (!tag) continue;
+            // Strip leading 'v' if present
+            const char* tagStr = (tag[0] == 'v') ? tag + 1 : tag;
+            int major = 0, minor = 0, patch = 0;
+            if (sscanf(tagStr, "%d.%d.%d", &major, &minor, &patch) != 3) continue;
+            if (major == currentMajor) {
+                matchedRelease = release;
+                break;
+            }
+        }
+
+        if (matchedRelease.isNull()) {
+            LOG_WARNING("No GitHub release found matching major version %d", currentMajor);
+            return false;
+        }
+
+        const char* tagName    = matchedRelease["tag_name"];
+        const char* releaseDate = matchedRelease["published_at"].as<const char*>();
+        const char* changelog  = matchedRelease["html_url"].as<const char*>();
+
         // Find .bin asset
-        JsonArray assets = doc["assets"];
+        JsonArray assets = matchedRelease["assets"];
         const char* downloadUrl = nullptr;
-        
+
         for (JsonObject asset : assets) {
             const char* name = asset["name"];
-            // We must ensure we are not taking bootloader.bin or similar files.
-            // The firmware name is always like energyme_home_vX.Y.Z.bin.
+            // Firmware name is always like energyme_home_vX.Y.Z.bin
             if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
                 downloadUrl = asset["browser_download_url"];
                 break;
             }
         }
-        
-        // Set response fields
+
+        // Populate the output document
         doc["availableVersion"] = tagName;
         if (releaseDate) doc["releaseDate"] = releaseDate;
-        if (downloadUrl) doc["updateUrl"] = downloadUrl;
-        if (changelog) doc["changelogUrl"] = changelog;
-        
+        if (downloadUrl) doc["updateUrl"]   = downloadUrl;
+        if (changelog)   doc["changelogUrl"] = changelog;
+
         // Compare versions to determine if update is available
         doc["isLatest"] = _compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
-        
-        LOG_DEBUG("GitHub release info fetched: version=%s, isLatest=%s", 
-                 tagName, doc["isLatest"].as<bool>() ? "true" : "false");
-        
+
+        LOG_DEBUG("GitHub release info fetched (major=%d): version=%s, isLatest=%s",
+                  currentMajor, tagName, doc["isLatest"].as<bool>() ? "true" : "false");
+
         return true;
     }
 
