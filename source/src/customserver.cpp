@@ -1343,7 +1343,10 @@ namespace CustomServer
             // Strip leading 'v' if present
             const char* tagStr = (tag[0] == 'v') ? tag + 1 : tag;
             int major = 0, minor = 0, patch = 0;
-            if (sscanf(tagStr, "%d.%d.%d", &major, &minor, &patch) != 3) continue;
+            int consumed = 0;
+            // Require exact "X.Y.Z" with no suffix (e.g. reject "1.2.3-rc1")
+            if (sscanf(tagStr, "%d.%d.%d%n", &major, &minor, &patch, &consumed) != 3) continue;
+            if (tagStr[consumed] != '\0') continue;
             if (major == currentMajor) {
                 matchedRelease = release;
                 break;
