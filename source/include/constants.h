@@ -20,7 +20,7 @@
 #define FULL_PRODUCT_NAME "EnergyMe - Home"
 #define PRODUCT_DESCRIPTION "An open-source energy monitoring system for home use, capable of monitoring up to 17 circuits."
 #define GITHUB_URL "https://github.com/jibrilsharafi/EnergyMe-Home"
-#define GITHUB_API_RELEASES_URL "https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases?per_page=20"
+#define GITHUB_API_RELEASES_URL "https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases?per_page=100"
 #define AUTHOR "Jibril Sharafi"
 #define AUTHOR_EMAIL "jibril.sharafi@gmail.com"
 
