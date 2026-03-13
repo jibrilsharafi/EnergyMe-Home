@@ -483,26 +483,26 @@ paths:
                     type: string
                     description: Firmware build date
                     example: "Aug  3 2025"
+                  isLatest:
+                    type: boolean
+                    description: Whether the current firmware is the latest release for this major version
+                    example: false
                   availableVersion:
                     type: string
-                    description: Available firmware version for update (if available)
-                    example: "00.11.10"
+                    description: Latest available version for this major version (only present when isLatest is false)
+                    example: "2.0.1"
                   releaseDate:
                     type: string
-                    description: Release date of the available version (from GitHub)
+                    description: Release date of the available version (only present when isLatest is false)
                     example: "2025-08-10T14:30:00Z"
                   updateUrl:
                     type: string
-                    description: URL for firmware update download (if available)
-                    example: "https://github.com/jibrilsharafi/EnergyMe-Home/releases/download/v00.11.10/firmware.bin"
+                    description: Direct download URL for the firmware binary (only present when isLatest is false)
+                    example: "https://github.com/jibrilsharafi/EnergyMe-Home/releases/download/v2.0.1/energyme_home_2.0.1.bin"
                   changelogUrl:
                     type: string
-                    description: URL to the GitHub release page with changelog (if available)
-                    example: "https://github.com/jibrilsharafi/EnergyMe-Home/releases/tag/v00.11.10"
-                  isLatest:
-                    type: boolean
-                    description: Whether the latest firmware version is installed
-                    example: false
+                    description: GitHub release page URL with changelog (only present when isLatest is false)
+                    example: "https://github.com/jibrilsharafi/EnergyMe-Home/releases/tag/v2.0.1"
 
   # File Operations endpoints
   /api/v1/list-files:

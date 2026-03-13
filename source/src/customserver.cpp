@@ -1326,43 +1326,67 @@ namespace CustomServer
             LOG_WARNING("Failed to parse GitHub API response: %s", error.c_str());
             return false;
         }
-        
-        // Extract release information
-        if (!responseDoc["tag_name"].is<const char*>()) {
-            LOG_WARNING("Invalid GitHub API response: missing tag_name");
+
+        if (!responseDoc.is<JsonArray>()) {
+            LOG_WARNING("Invalid GitHub API response: expected array");
             return false;
         }
-        
-        const char* tagName = responseDoc["tag_name"];
-        const char* releaseDate = responseDoc["published_at"].as<const char*>();
-        const char* changelog = responseDoc["html_url"].as<const char*>();
-        
-        // Find .bin asset
-        JsonArray assets = responseDoc["assets"];
+
+        // Find the latest non-prerelease release matching the current major version
+        const char* tagName = nullptr;
+        const char* releaseDate = nullptr;
+        const char* changelog = nullptr;
         const char* downloadUrl = nullptr;
-        
-        for (JsonObject asset : assets) {
-            const char* name = asset["name"];
-            // We must ensure we are not taking bootloader.bin or similar files.
-            // The firmware name is always like energyme_home_vX.Y.Z.bin.
-            if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
-                downloadUrl = asset["browser_download_url"];
-                break;
+
+        for (JsonObject release : responseDoc.as<JsonArray>()) {
+            if (release["prerelease"].as<bool>() || release["draft"].as<bool>()) continue;
+
+            const char* tag = release["tag_name"].as<const char*>();
+            if (!tag) continue;
+
+            // Parse major version from tag (strip leading 'v' if present)
+            const char* tagStr = (tag[0] == 'v') ? tag + 1 : tag;
+            int major = 0;
+            sscanf(tagStr, "%d", &major);
+
+            // Only consider releases matching the current firmware major version
+            if (major != atoi(FIRMWARE_BUILD_VERSION_MAJOR)) continue;
+
+            // Releases are returned newest-first, so the first match is the latest
+            tagName = tag;
+            releaseDate = release["published_at"].as<const char*>();
+            changelog = release["html_url"].as<const char*>();
+
+            for (JsonObject asset : release["assets"].as<JsonArray>()) {
+                const char* name = asset["name"].as<const char*>();
+                if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
+                    downloadUrl = asset["browser_download_url"].as<const char*>();
+                    break;
+                }
             }
+            break;
         }
-        
-        // Set response fields
-        doc["availableVersion"] = tagName;
-        if (releaseDate) doc["releaseDate"] = releaseDate;
-        if (downloadUrl) doc["updateUrl"] = downloadUrl;
-        if (changelog) doc["changelogUrl"] = changelog;
-        
+
+        if (!tagName) {
+            LOG_WARNING("No matching release found for major version %s", FIRMWARE_BUILD_VERSION_MAJOR);
+            return false;
+        }
+
         // Compare versions to determine if update is available
-        doc["isLatest"] = _compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
-        
-        LOG_DEBUG("GitHub release info fetched: version=%s, isLatest=%s", 
-                 tagName, doc["isLatest"].as<bool>() ? "true" : "false");
-        
+        bool isLatest = _compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
+        doc["isLatest"] = isLatest;
+
+        // Only populate update fields when a newer version is available
+        if (!isLatest) {
+            doc["availableVersion"] = tagName;
+            if (releaseDate) doc["releaseDate"] = releaseDate;
+            if (downloadUrl) doc["updateUrl"] = downloadUrl;
+            if (changelog) doc["changelogUrl"] = changelog;
+        }
+
+        LOG_DEBUG("GitHub release info fetched: version=%s, isLatest=%s",
+                 tagName, isLatest ? "true" : "false");
+
         return true;
     }
 
@@ -1396,21 +1420,17 @@ namespace CustomServer
             // Get current firmware info
             doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
             doc["buildDate"] = FIRMWARE_BUILD_DATE;
-            
-            // Check internet connectivity before checking anything
-            if (CustomWifi::isFullyConnected(true)) {            
-                // If the cloud services are enabled, it means the OTA updates will be handled via the app
-                // or automatically. Otherwise GitHub releases can be used to check for updates
-                if (Mqtt::isCloudServicesEnabled()) {
-                    doc["isLatest"] = true;
-                } else {
-                    // Fetch from GitHub API in community mode
-                    bool githubInfoFetched = _fetchGitHubReleaseInfo(doc);
-                    // If we could not fetch the data, set manually the isLatest field to true
-                    if (!githubInfoFetched) {
-                        doc["isLatest"] = true; // Assume latest since we can't check
-                        LOG_WARNING("Failed to fetch GitHub release info, assuming current version is latest"); // Here we log the warning since internet should be present
-                    }
+
+            // In non-community mode, we assume updates are handled via app/cloud, so we consider it always up to date            
+            if (!globalCommunityMode) doc["isLatest"] = true; 
+            else if (CustomWifi::isFullyConnected(true)) { // Check internet connectivity before checking anything            
+                // Fetch from GitHub API in community mode
+                bool githubInfoFetched = _fetchGitHubReleaseInfo(doc);
+                
+                if (!githubInfoFetched) {
+                    doc["isLatest"] = true; // Assume latest since we can't check
+                    // Here we log the warning since internet should be present, but most likely GitHub/the logic broke
+                    LOG_WARNING("Failed to fetch GitHub release info, assuming current version is latest");
                 }
             } else {
                 doc["isLatest"] = true; // Assume latest since we can't check
