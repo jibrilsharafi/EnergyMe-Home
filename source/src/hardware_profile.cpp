@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025 Jibril Sharafi
+// Copyright (C) 2026 Jibril Sharafi
 
 #include "hardware_profile.h"
 
