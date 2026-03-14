@@ -147,11 +147,11 @@
 #define CONFIG_PHCAL_B_KEY "phcal_b"
 
 // Energy Preferences Keys (max 15 chars)
-#define ENERGY_ACTIVE_IMP_KEY "ch%u_actImp"    // Format: ch17_actImp (11 chars)
-#define ENERGY_ACTIVE_EXP_KEY "ch%u_actExp"    // Format: ch17_actExp (11 chars)
-#define ENERGY_REACTIVE_IMP_KEY "ch%u_reactImp" // Format: ch17_reactImp (13 chars)
-#define ENERGY_REACTIVE_EXP_KEY "ch%u_reactExp" // Format: ch17_reactExp (13 chars)
-#define ENERGY_APPARENT_KEY "ch%u_apparent"   // Format: ch17_apparent (13 chars)
+#define ENERGY_ACTIVE_IMP_KEY "ch%u_actImp"    // Format: ch16_actImp (11 chars)
+#define ENERGY_ACTIVE_EXP_KEY "ch%u_actExp"    // Format: ch16_actExp (11 chars)
+#define ENERGY_REACTIVE_IMP_KEY "ch%u_reactImp" // Format: ch16_reactImp (13 chars)
+#define ENERGY_REACTIVE_EXP_KEY "ch%u_reactExp" // Format: ch16_reactExp (13 chars)
+#define ENERGY_APPARENT_KEY "ch%u_apparent"   // Format: ch16_apparent (13 chars)
 
 // Default configuration values
 #define DEFAULT_SAMPLE_TIME 200ULL // Will be converted to integer line cycles (so at 50Hz, 200ms = 10 cycles)
@@ -316,7 +316,7 @@ inline const char* ADE7953_CHANNEL_TO_STRING(Ade7953Channel channel) {
     }
 }
 
-// We don't have an enum for 17 channels since having them as unsigned int is more flexible
+// We don't have an enum for 16 channels since having them as unsigned int is more flexible
 
 enum class MeasurementType{
     VOLTAGE,

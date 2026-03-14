@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-EnergyMe-Home is an open-source energy monitoring system for home use, capable of monitoring up to 17 circuits. It's an embedded firmware project built for ESP32-S3 microcontrollers with the following key characteristics:
+EnergyMe-Home is an open-source energy monitoring system for home use, capable of monitoring up to 16 circuits. It's an embedded firmware project built for ESP32-S3 microcontrollers with the following key characteristics:
 
 - **Hardware**: ESP32-S3-N16R2 with 16MB Flash and 2MB PSRAM
 - **Framework**: Arduino 3.x framework with PlatformIO build system

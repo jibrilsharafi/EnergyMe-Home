@@ -12,7 +12,7 @@ Provide project context and coding guidelines that AI should follow when generat
 
 1. **Project Context**:
     - EnergyMe-Home is an open-source ESP32-based energy monitoring system using the Arduino framework with PlatformIO
-    - Monitors up to 17 circuits (1 direct + 16 multiplexed) via ADE7953 energy meter IC
+    - Monitors up to 16 circuits (1 direct + 15 multiplexed) via ADE7953 energy meter IC
     - Primary interfaces: Web UI, MQTT, InfluxDB, Modbus TCP
     - Uses Preferences for configuration storage and LittleFS for historical data (compressed CSV)
     - Most processing is handled by the ADE7953 IC - ESP32S3 mainly handles communication and data routing
