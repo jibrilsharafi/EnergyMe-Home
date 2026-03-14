@@ -1076,7 +1076,9 @@ namespace Ade7953
             // Skip temporary working files (TEMPORARY_FILE_PREFIX*) that may be left over from previous crashes
             std::vector<char*> filenames;
             File file = dir.openNextFile();
-            while (file) {
+            uint32_t loops = 0;
+            while (file && loops < MAX_LOOP_ITERATIONS) {
+                loops++;
                 const char* filename = file.name();
                 // Skip temporary working files (TEMPORARY_FILE_PREFIX_decompressed.csv, TEMPORARY_FILE_PREFIX_filter.csv, etc.)
                 if (!file.isDirectory() && (endsWith(filename, ".csv") || endsWith(filename, ".csv.gz"))
@@ -1151,7 +1153,9 @@ namespace Ade7953
                 char channelStr[8];
                 snprintf(channelStr, sizeof(channelStr), ",%u,", channelIndex);
 
-                while (srcFile.available()) {
+                uint32_t loops = 0;
+                while (srcFile.available() && loops < MAX_LOOP_ITERATIONS) {
+                    loops++;
                     size_t len = 0;
                     char c;
                     while (srcFile.available() && len < sizeof(lineBuffer) - 1) {
@@ -2164,7 +2168,9 @@ namespace Ade7953
             File dailyDir = LittleFS.open(ENERGY_CSV_DAILY_PREFIX);
             if (dailyDir) {
                 File file = dailyDir.openNextFile();
-                while (file) {
+                uint32_t loops = 0;
+                while (file && loops < MAX_LOOP_ITERATIONS) {
+                    loops++;
                     const char* filename = file.name();
                     // Check for files like YYYY-MM-DD.csv.gz from previous months
                     if (endsWith(filename, ".csv.gz") && strlen(filename) >= 10) {
@@ -2195,7 +2201,9 @@ namespace Ade7953
             File monthlyDir = LittleFS.open(ENERGY_CSV_MONTHLY_PREFIX);
             if (monthlyDir) {
                 File file = monthlyDir.openNextFile();
-                while (file) {
+                uint32_t loops = 0;
+                while (file && loops < MAX_LOOP_ITERATIONS) {
+                    loops++;
                     const char* filename = file.name();
                     // Check for files like YYYY-MM.csv.gz from previous years
                     if (endsWith(filename, ".csv.gz") && strlen(filename) >= 7) {
@@ -2361,7 +2369,9 @@ namespace Ade7953
             if (!root) continue;
 
             File file = root.openNextFile();
-            while (file) {
+            uint32_t loops = 0;
+            while (file && loops < MAX_LOOP_ITERATIONS) {
+                loops++;
                 if (!file.isDirectory() && (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv"))) {
                     char fullPathFile[NAME_BUFFER_SIZE];
                     snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", dirPath, file.name());

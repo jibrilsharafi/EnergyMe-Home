@@ -901,7 +901,9 @@ void clearAllPreferences() {
     Preferences preferences;
     uint32_t clearedCount = 0;
 
-    while (err == ESP_OK) {
+    uint32_t loops = 0;
+    while (err == ESP_OK && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
         nvs_entry_info_t info;
         nvs_entry_info(it, &info);
 
@@ -1208,7 +1210,9 @@ void migrateCsvToGzip(const char* dirPath, const char* excludePrefix) {
     dir.rewindDirectory();
 
     File file = dir.openNextFile();
-    while (file) {
+    uint32_t loops = 0;
+    while (file && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
         if (!file.isDirectory()) {
             const char* path = file.name();
             char fullPath[NAME_BUFFER_SIZE];
@@ -1289,15 +1293,19 @@ static bool _appendFileToFile(const char* srcPath, File &destFile, bool skipHead
     // Skip header line if requested
     if (skipHeader && srcFile.available()) {
         // Read and discard the first line (header)
-        while (srcFile.available()) {
+        uint32_t loops = 0;
+        while (srcFile.available() && loops < MAX_LOOP_ITERATIONS) {
+            loops++;
             int c = srcFile.read();
             if (c == '\n') break;
         }
     }
-    
+
     // Copy remaining content
     uint8_t buffer[512];
-    while (srcFile.available()) {
+    uint32_t loops = 0;
+    while (srcFile.available() && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
         size_t bytesRead = srcFile.read(buffer, sizeof(buffer));
         if (bytesRead > 0) {
             destFile.write(buffer, bytesRead);
@@ -1883,7 +1891,7 @@ bool nvsDataToJson(JsonObject &doc) {
     }
 
     uint32_t entryCount = 0;
-    while (err == ESP_OK) {
+    while (err == ESP_OK && entryCount < MAX_LOOP_ITERATIONS) {
         nvs_entry_info_t info;
         nvs_entry_info(it, &info);
         entryCount++;

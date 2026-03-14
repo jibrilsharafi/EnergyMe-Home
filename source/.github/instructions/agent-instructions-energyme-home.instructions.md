@@ -31,6 +31,14 @@ Provide project context and coding guidelines that AI should follow when generat
     - Use `sizeof(buffer)` instead of hardcoded sizes in function calls
     - Only optimize memory usage in frequently called or critical functions (understand from context)
 
+    **Loop Safety:**
+    - Every `while(...)` loop MUST be bounded by `MAX_LOOP_ITERATIONS` (defined in `constants.h`), except:
+      - Task loops that run until a `_taskShouldRun` flag is cleared
+      - `while(true)` / `while(1)` loops
+      - Loops already bounded by a size/length variable that physically cannot exceed a safe count
+    - Use `uint32_t loops = 0;` before the loop, `loops++` at the top of the body, and add `loops < MAX_LOOP_ITERATIONS` to the condition
+    - If a loop legitimately needs more iterations than `MAX_LOOP_ITERATIONS`, increase the constant value in `constants.h` with a comment explaining why
+
     **Error Handling:**
     - Never use try-catch blocks - they are not supported in the Arduino framework
     - Log errors and warnings appropriately using the logger

@@ -1715,7 +1715,9 @@ namespace Mqtt
         uint32_t chunkIndex = 0;
         uint32_t totalChunks = (coreDumpSize + CORE_DUMP_CHUNK_SIZE - 1) / CORE_DUMP_CHUNK_SIZE; // Calculate total chunks
 
-        while (offset < coreDumpSize) {
+        uint32_t loops = 0;
+        while (offset < coreDumpSize && loops < MAX_LOOP_ITERATIONS) {
+            loops++;
             size_t thisChunkSize = (coreDumpSize - offset) < CORE_DUMP_CHUNK_SIZE ? (coreDumpSize - offset) : CORE_DUMP_CHUNK_SIZE;
 
             SpiRamAllocator allocatorChunk;

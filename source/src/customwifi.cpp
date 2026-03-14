@@ -317,7 +317,11 @@ namespace CustomWifi
             if (fileSize > maxLogSize) {
               logFile.seek(fileSize - maxLogSize);
               // Skip to next newline to avoid partial line
-              while (logFile.available() && logFile.read() != '\n') {}
+              uint32_t loops = 0;
+              while (logFile.available() && loops < MAX_LOOP_ITERATIONS * 10) { // Increase the limit since logs may be long
+                loops++;
+                if (logFile.read() == '\n') break;
+              }
             }
             while (logFile.available() && pos < PAGE_BUFFER_SIZE - 10) { // Leave margin for closing tags
               int c = logFile.read();
