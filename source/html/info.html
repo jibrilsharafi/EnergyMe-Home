@@ -854,8 +854,8 @@
         }
 
         function getMemoryProgressClass(freePercentage) {
-            if (freePercentage > 50) return 'progress-good';
-            if (freePercentage > 25) return 'progress-warning';
+            if (freePercentage > 25) return 'progress-good';
+            if (freePercentage > 10) return 'progress-warning';
             return 'progress-critical';
         }
 
