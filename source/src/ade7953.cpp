@@ -3018,7 +3018,7 @@ namespace Ade7953
         // General helping values
         // The datasheet provides the absolute maximum input voltage for the ADE7953, 
         // but for convenience we will do all the calculations based on the RMS values
-        float maximumAdcChannelInputRms = MAXIMUM_ADC_CHANNEL_INPUT / sqrt(2.0f);
+        float maximumAdcChannelInputRms = MAXIMUM_ADC_CHANNEL_INPUT / sqrt(2.0f); // Constant value of 0.3535534
 
         // Current constant calculation
         // ----------------------------
@@ -3027,23 +3027,28 @@ namespace Ade7953
         // The usable voltage for the current is related to the CT voltage output, which is typically 333mV for a 30A CT.
         // This value can be exceeded with caution (for instance, using 100A 1V output CTs, given a load that never exceeds
         // 30A).
-        float usableAdcChannelInputRms = ctSpec.voltageOutput / maximumAdcChannelInputRms;
+        float usableFractionAdcChannelInputRms = ctSpec.voltageOutput / maximumAdcChannelInputRms;
         // We need the usable voltage to calculate the usable LSB because if the voltage output is lower than the maximum ADC input,
-        // we will have less LSB to work with, and thus we need to scale everything.
-        float usableLsbRms = FULL_SCALE_LSB_FOR_RMS_VALUES / usableAdcChannelInputRms;
+        // we will have less LSB to work with, and thus we need to scale everything down. Previously we miscompute this
+        // by dividing by usableFractionAdcChannelInputRms instead of multiplying. We must always ensure the usableLsbRms is less than or equal to 
+        // FULL_SCALE_LSB_FOR_RMS_VALUES, since we cannot have more resolution than the maximum allowed by the ADC. If this happens (like with the)
+        // above mentioned 100A 1V output CTs, we will log a warning and proceed with the calculation, but the user should be aware that they are risk
+        // of saturating the ADC if the CT voltage output exceeds the maximum ADC input.
+        float usableLsbRms = FULL_SCALE_LSB_FOR_RMS_VALUES * usableFractionAdcChannelInputRms;
+        if (usableLsbRms > FULL_SCALE_LSB_FOR_RMS_VALUES) {
+            LOG_WARNING("Usable LSB for RMS values (%.0f) exceeds full scale LSB (%ld). Ensure the CT voltage output is within limits.", usableLsbRms, FULL_SCALE_LSB_FOR_RMS_VALUES);
+        }
         // Finally, we can calculate the LSB for the current channel by dividing the current rating (in A RMS) by the usable LSB,
         // remembering to include the scaling fraction.
         ctSpec.aLsb = ctSpec.currentRating / usableLsbRms * (1 + ctSpec.scalingFraction);
 
-        // ctSpec.wLsb = 1.0f / 462.59f;
-        // ctSpec.varLsb = 1.0f / 462.59f;
-        // ctSpec.vaLsb = 1.0f / 462.59f;
-
         // Energy constant calculation
         // ---------------------------
         // This is more tricky since we need to consider the full scale current and voltage ratings
-        // First, we compute the full scale current RMS, which is simply the CT current rating.
-        float fullScaleCurrentRms = ctSpec.currentRating;
+        // First, we compute the possible full scale current RMS, which is based on the theoretical maximum ADC input at the current channel
+        // but with out CT (so most likely with 30A/333mV it will be > 30A). This makes sense because we are not using the full scale (only 333mV RMS/353mV RMS)
+        // so the maximum theoretical full scale current is sligthly higher. The same principle applies to the voltage
+        float fullScaleCurrentRms = ctSpec.currentRating / usableFractionAdcChannelInputRms;
         // Then we compute the full scale voltage RMS, which is the maximum ADC input RMS scaled by the voltage divider ratio.
         float voltageDivideRatio = 1 / (VOLTAGE_DIVIDER_R2 / (VOLTAGE_DIVIDER_R1 + VOLTAGE_DIVIDER_R2));
         float fullScaleVoltageRms = maximumAdcChannelInputRms * voltageDivideRatio;
