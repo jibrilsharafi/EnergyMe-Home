@@ -15,7 +15,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
     - name: Set up Python
       uses: actions/setup-python@v6
@@ -23,7 +23,7 @@ jobs:
         python-version: '3.11.7'
 
     - name: Cache PlatformIO
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.platformio
@@ -59,7 +59,7 @@ jobs:
         cp .pio/build/esp32s3-prod-nosecrets/bootloader.bin artifacts/bootloader.bin
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: firmware-check-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
         path: source/artifacts/
@@ -73,7 +73,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
     - name: Set up Python
       uses: actions/setup-python@v6
@@ -81,7 +81,7 @@ jobs:
         python-version: '3.11.7'
 
     - name: Cache PlatformIO
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.platformio
@@ -153,14 +153,14 @@ jobs:
         cp .pio/build/esp32s3-prod-nosecrets/bootloader.bin artifacts/public/bootloader.bin
 
     - name: Upload private artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: firmware-private-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
         path: source/artifacts/private/
         retention-days: 30
 
     - name: Upload public artifact (nosecrets)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: firmware-nosecrets-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
         path: source/artifacts/public/
