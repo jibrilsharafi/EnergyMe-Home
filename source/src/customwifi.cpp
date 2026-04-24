@@ -55,6 +55,7 @@ namespace CustomWifi
   static void _forceReconnectInternal();
   static bool _isPowerReset();
   static void _sendOpenSourceTelemetry();
+  static void _resolveApPassword(char* out, size_t outSize);
   static bool _telemetrySent = false; // Ensures telemetry is sent only once per boot
 
   bool begin()
@@ -529,7 +530,9 @@ namespace CustomWifi
     // If we don't manage to connect with WiFi Manager and the credentials are not provided, we might as well just restart.
     // In the future, we could allow for full-offline functionality, but for now, we keep it simple.
     // TODO: implement a full custom WiFi manager for better UX
-    if (!wifiManager->autoConnect(hostname)) {
+    char apPassword[WIFI_PASSWORD_BUFFER_SIZE];
+    _resolveApPassword(apPassword, sizeof(apPassword));
+    if (!wifiManager->autoConnect(hostname, apPassword)) {
       LOG_WARNING("WiFi connection failed, exiting wifi task");
       Led::blinkRedFast(Led::PRIO_URGENT);
       _taskShouldRun = false;
@@ -649,8 +652,10 @@ namespace CustomWifi
               }
               _setupWiFiManager(*portalManager);
 
-              // Try WiFiManager portal
-              if (!portalManager->startConfigPortal(hostname)) // TODO: use the password if present in eFuse (or if not present, the device mac address all lower)
+              // Try WiFiManager portal (WPA2-protected; password from factory NVS or MAC fallback)
+              char fallbackApPassword[WIFI_PASSWORD_BUFFER_SIZE];
+              _resolveApPassword(fallbackApPassword, sizeof(fallbackApPassword));
+              if (!portalManager->startConfigPortal(hostname, fallbackApPassword))
               {
                 LOG_ERROR("Portal failed - restarting device");
                 Led::blinkRedFast(Led::PRIO_URGENT);
@@ -915,6 +920,26 @@ namespace CustomWifi
     // ESP_RST_BROWNOUT: Brownout reset (power supply voltage dropped below minimum)
     esp_reset_reason_t resetReason = esp_reset_reason();
     return resetReason == ESP_RST_POWERON || resetReason == ESP_RST_BROWNOUT;
+  }
+
+  // Load the SoftAP password used by the WiFi config portal. Prefers the factory-provisioned
+  // value (NVS factory_ns::ap_password); falls back to DEVICE_ID, which is already part of
+  // the portal SSID so users connecting to the AP can read it off the network name.
+  // DEVICE_ID is 12 hex chars, which satisfies WPA2's 8-character minimum.
+  static void _resolveApPassword(char* out, size_t outSize)
+  {
+    if (out == nullptr || outSize == 0) return;
+    out[0] = '\0';
+
+    Preferences prefs;
+    if (prefs.begin(PREFERENCES_NAMESPACE_FACTORY, true)) {
+      prefs.getString(FACTORY_KEY_AP_PASSWORD, out, outSize);
+      prefs.end();
+    }
+
+    if (strlen(out) < 8) {
+      snprintf(out, outSize, "%s", DEVICE_ID);
+    }
   }
 
   static void _sendOpenSourceTelemetry()

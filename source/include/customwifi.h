@@ -16,6 +16,7 @@
 
 #include "awsconfig.h"
 #include "constants.h"
+#include "factory_keys.h"
 #include "globals.h"
 #include "led.h"
 #include "utils.h"
