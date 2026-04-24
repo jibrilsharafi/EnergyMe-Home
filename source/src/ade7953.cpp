@@ -2446,7 +2446,7 @@ namespace Ade7953
 
         // In theory, provisioned device should have the AV gain factory calibration value at least
         // We use it as proxy to determine if factory calibration values are present - if not, we skip
-        bool hasFactoryCalibration = factoryPrefs.isKey(CONFIG_AV_GAIN_KEY);
+        bool hasFactoryCalibration = factoryPrefs.isKey(FACTORY_KEY_AV_GAIN);
         if (!hasFactoryCalibration) {
             factoryPrefs.end();
             LOG_WARNING("Factory calibration namespace found, but values not found, skipping ADE7953 configuration seeding");
@@ -2455,25 +2455,25 @@ namespace Ade7953
 
         // Read factory calibration values
         Ade7953Configuration factoryCfg;
-        factoryCfg.aVGain  = factoryPrefs.getLong(CONFIG_AV_GAIN_KEY, DEFAULT_CONFIG_AV_GAIN);
-        factoryCfg.aIGain  = factoryPrefs.getLong(CONFIG_AI_GAIN_KEY, DEFAULT_CONFIG_AI_GAIN);
-        factoryCfg.bIGain  = factoryPrefs.getLong(CONFIG_BI_GAIN_KEY, DEFAULT_CONFIG_BI_GAIN);
-        factoryCfg.aIRmsOs = factoryPrefs.getLong(CONFIG_AIRMS_OS_KEY, DEFAULT_CONFIG_AIRMS_OS);
-        factoryCfg.bIRmsOs = factoryPrefs.getLong(CONFIG_BIRMS_OS_KEY, DEFAULT_CONFIG_BIRMS_OS);
-        factoryCfg.aWGain  = factoryPrefs.getLong(CONFIG_AW_GAIN_KEY, DEFAULT_CONFIG_AW_GAIN);
-        factoryCfg.bWGain  = factoryPrefs.getLong(CONFIG_BW_GAIN_KEY, DEFAULT_CONFIG_BW_GAIN);
-        factoryCfg.aWattOs = factoryPrefs.getLong(CONFIG_AWATT_OS_KEY, DEFAULT_CONFIG_AWATT_OS);
-        factoryCfg.bWattOs = factoryPrefs.getLong(CONFIG_BWATT_OS_KEY, DEFAULT_CONFIG_BWATT_OS);
-        factoryCfg.aVarGain = factoryPrefs.getLong(CONFIG_AVAR_GAIN_KEY, DEFAULT_CONFIG_AVAR_GAIN);
-        factoryCfg.bVarGain = factoryPrefs.getLong(CONFIG_BVAR_GAIN_KEY, DEFAULT_CONFIG_BVAR_GAIN);
-        factoryCfg.aVarOs  = factoryPrefs.getLong(CONFIG_AVAR_OS_KEY, DEFAULT_CONFIG_AVAR_OS);
-        factoryCfg.bVarOs  = factoryPrefs.getLong(CONFIG_BVAR_OS_KEY, DEFAULT_CONFIG_BVAR_OS);
-        factoryCfg.aVaGain = factoryPrefs.getLong(CONFIG_AVA_GAIN_KEY, DEFAULT_CONFIG_AVA_GAIN);
-        factoryCfg.bVaGain = factoryPrefs.getLong(CONFIG_BVA_GAIN_KEY, DEFAULT_CONFIG_BVA_GAIN);
-        factoryCfg.aVaOs   = factoryPrefs.getLong(CONFIG_AVA_OS_KEY, DEFAULT_CONFIG_AVA_OS);
-        factoryCfg.bVaOs   = factoryPrefs.getLong(CONFIG_BVA_OS_KEY, DEFAULT_CONFIG_BVA_OS);
-        factoryCfg.phCalA  = factoryPrefs.getLong(CONFIG_PHCAL_A_KEY, DEFAULT_CONFIG_PHCAL_A);
-        factoryCfg.phCalB  = factoryPrefs.getLong(CONFIG_PHCAL_B_KEY, DEFAULT_CONFIG_PHCAL_B);
+        factoryCfg.aVGain  = factoryPrefs.getLong(FACTORY_KEY_AV_GAIN, DEFAULT_CONFIG_AV_GAIN);
+        factoryCfg.aIGain  = factoryPrefs.getLong(FACTORY_KEY_AI_GAIN, DEFAULT_CONFIG_AI_GAIN);
+        factoryCfg.bIGain  = factoryPrefs.getLong(FACTORY_KEY_BI_GAIN, DEFAULT_CONFIG_BI_GAIN);
+        factoryCfg.aIRmsOs = factoryPrefs.getLong(FACTORY_KEY_AIRMS_OS, DEFAULT_CONFIG_AIRMS_OS);
+        factoryCfg.bIRmsOs = factoryPrefs.getLong(FACTORY_KEY_BIRMS_OS, DEFAULT_CONFIG_BIRMS_OS);
+        factoryCfg.aWGain  = factoryPrefs.getLong(FACTORY_KEY_AW_GAIN, DEFAULT_CONFIG_AW_GAIN);
+        factoryCfg.bWGain  = factoryPrefs.getLong(FACTORY_KEY_BW_GAIN, DEFAULT_CONFIG_BW_GAIN);
+        factoryCfg.aWattOs = factoryPrefs.getLong(FACTORY_KEY_AWATT_OS, DEFAULT_CONFIG_AWATT_OS);
+        factoryCfg.bWattOs = factoryPrefs.getLong(FACTORY_KEY_BWATT_OS, DEFAULT_CONFIG_BWATT_OS);
+        factoryCfg.aVarGain = factoryPrefs.getLong(FACTORY_KEY_AVAR_GAIN, DEFAULT_CONFIG_AVAR_GAIN);
+        factoryCfg.bVarGain = factoryPrefs.getLong(FACTORY_KEY_BVAR_GAIN, DEFAULT_CONFIG_BVAR_GAIN);
+        factoryCfg.aVarOs  = factoryPrefs.getLong(FACTORY_KEY_AVAR_OS, DEFAULT_CONFIG_AVAR_OS);
+        factoryCfg.bVarOs  = factoryPrefs.getLong(FACTORY_KEY_BVAR_OS, DEFAULT_CONFIG_BVAR_OS);
+        factoryCfg.aVaGain = factoryPrefs.getLong(FACTORY_KEY_AVA_GAIN, DEFAULT_CONFIG_AVA_GAIN);
+        factoryCfg.bVaGain = factoryPrefs.getLong(FACTORY_KEY_BVA_GAIN, DEFAULT_CONFIG_BVA_GAIN);
+        factoryCfg.aVaOs   = factoryPrefs.getLong(FACTORY_KEY_AVA_OS, DEFAULT_CONFIG_AVA_OS);
+        factoryCfg.bVaOs   = factoryPrefs.getLong(FACTORY_KEY_BVA_OS, DEFAULT_CONFIG_BVA_OS);
+        factoryCfg.phCalA  = factoryPrefs.getLong(FACTORY_KEY_PHCAL_A, DEFAULT_CONFIG_PHCAL_A);
+        factoryCfg.phCalB  = factoryPrefs.getLong(FACTORY_KEY_PHCAL_B, DEFAULT_CONFIG_PHCAL_B);
         factoryPrefs.end();
 
         // Write to ade7953_ns so later _setConfigurationFromPreferences picks them up

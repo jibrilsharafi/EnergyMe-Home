@@ -21,6 +21,7 @@
 #include "mqtt.h"
 #include "binaries.h"
 #include "constants.h"
+#include "factory_keys.h"
 #include "structs.h"
 #include "utils.h"
 #include "hardware_profile.h"
