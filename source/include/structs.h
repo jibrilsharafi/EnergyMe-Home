@@ -106,7 +106,12 @@ struct SystemStaticInfo {
     
     // Device configuration
     char deviceId[DEVICE_ID_BUFFER_SIZE];
-    
+
+    // Factory provisioning (written at manufacturing time into NVS factory_ns;
+    // defaults to "Unknown" / 0 on community / unprovisioned devices).
+    char serialNumber[NAME_BUFFER_SIZE];
+    uint64_t manufacturingUnixTs;
+
     SystemStaticInfo() {
         // Initialize with safe defaults
         memset(this, 0, sizeof(*this));
@@ -127,6 +132,8 @@ struct SystemStaticInfo {
         snprintf(coreVersion, sizeof(coreVersion), "Unknown");
         snprintf(lastResetReasonString, sizeof(lastResetReasonString), "Unknown");
         snprintf(deviceId, sizeof(deviceId), "Unknown");
+        snprintf(serialNumber, sizeof(serialNumber), "Unknown");
+        manufacturingUnixTs = 0;
     }
 };
 

@@ -27,6 +27,7 @@
 #include "binaries.h"
 #include "buttonhandler.h"
 #include "constants.h"
+#include "factory_keys.h"
 #include "customlog.h"
 #include "customtime.h"
 #include "customwifi.h"

@@ -68,6 +68,17 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     // Device ID
     getDeviceId(info.deviceId, sizeof(info.deviceId));
 
+    // Factory provisioning data (written at manufacturing time; defaults kept otherwise)
+    Preferences factoryPrefs;
+    if (factoryPrefs.begin(PREFERENCES_NAMESPACE_FACTORY, true)) {
+        factoryPrefs.getString(FACTORY_KEY_SERIAL_NUMBER, info.serialNumber, sizeof(info.serialNumber));
+        if (strlen(info.serialNumber) == 0) {
+            snprintf(info.serialNumber, sizeof(info.serialNumber), "Unknown");
+        }
+        info.manufacturingUnixTs = factoryPrefs.getULong(FACTORY_KEY_MFG_TS, 0);
+        factoryPrefs.end();
+    }
+
     LOG_DEBUG("Static system info populated");
 }
 
@@ -227,6 +238,10 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument &doc) {
     
     // Device
     doc["device"]["id"] = info.deviceId;
+
+    // Factory provisioning (Unknown / 0 when the device was not factory-provisioned)
+    doc["factory"]["serialNumber"] = info.serialNumber;
+    doc["factory"]["manufacturingUnixTs"] = info.manufacturingUnixTs;
 
     LOG_DEBUG("Static system info converted to JSON");
 }

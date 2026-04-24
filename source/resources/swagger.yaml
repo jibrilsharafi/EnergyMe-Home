@@ -220,7 +220,11 @@ paths:
                 properties:
                   static:
                     type: object
-                    description: Static system information (hardware, firmware version, etc.)
+                    description: |
+                      Static system information (hardware, firmware version, etc.).
+                      Groups: `product`, `firmware`, `hardware`, `sdk`, `monitoring`, `device`, `factory`.
+                      `factory.serialNumber` and `factory.manufacturingUnixTs` come from NVS `factory_ns`
+                      and default to `"Unknown"` / `0` on community (unprovisioned) devices.
                   dynamic:
                     type: object
                     description: Dynamic system information (uptime, memory usage, temperature, etc.)

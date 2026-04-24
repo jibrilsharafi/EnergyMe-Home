@@ -410,6 +410,14 @@
                     <span class="info-label"><span class="emoji">🆔</span>Device ID</span>
                     <span class="info-value" id="deviceId">Loading...</span>
                 </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🏷️</span>Serial Number</span>
+                    <span class="info-value" id="serialNumber">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📅</span>Manufactured</span>
+                    <span class="info-value" id="manufacturingDate">Loading...</span>
+                </div>
             </div>
 
             <!-- Memory Information Card -->
@@ -707,6 +715,14 @@
             document.getElementById('crashCount').textContent = `${data.static.monitoring.crashCount} (${data.static.monitoring.consecutiveCrashCount} consecutive)`;
             document.getElementById('lastResetReason').textContent = data.static.monitoring.lastResetReasonString;
             document.getElementById('deviceId').textContent = data.static.device.id;
+
+            // Factory provisioning (shows "Unknown" when the device is not factory-provisioned)
+            const factory = data.static.factory || {};
+            document.getElementById('serialNumber').textContent = factory.serialNumber || 'Unknown';
+            const mfgTs = Number(factory.manufacturingUnixTs) || 0;
+            document.getElementById('manufacturingDate').textContent = mfgTs > 0
+                ? new Date(mfgTs * 1000).toLocaleDateString()
+                : 'Unknown';
 
             // Memory Information
             displayMemoryInfo(data.dynamic.memory);
