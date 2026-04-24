@@ -17,9 +17,9 @@ const HardwareProfile PCB_PROFILES[] = {
         .version = 61, // v6.1
 
         // RGB LED
-        .ledRedPin   = 39,
-        .ledGreenPin = 40,
-        .ledBluePin  = 41,
+        .ledRedPin   = 40,
+        .ledGreenPin = 41,
+        .ledBluePin  = 39,
 
         // Button
         .buttonPin = 0,
@@ -74,9 +74,9 @@ const HardwareProfile PCB_PROFILES[] = {
         .version = 60, // v6.0
 
         // RGB LED
-        .ledRedPin   = 39,
-        .ledGreenPin = 40,
-        .ledBluePin  = 41,
+        .ledRedPin   = 40,
+        .ledGreenPin = 41,
+        .ledBluePin  = 39,
 
         // Button
         .buttonPin = 0,
