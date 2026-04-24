@@ -1505,8 +1505,8 @@ namespace Mqtt
         }
 
         size_t maxLenCertRetrieval = CERTIFICATE_BUFFER_SIZE - 1; // Leave space for null terminator
-        preferences.getString(PREFS_KEY_CERTIFICATE, _awsIotCoreCert, maxLenCertRetrieval);
-        preferences.getString(PREFS_KEY_PRIVATE_KEY, _awsIotCorePrivateKey, maxLenCertRetrieval);
+        preferences.getString(FACTORY_KEY_CERT_PEM, _awsIotCoreCert, maxLenCertRetrieval);
+        preferences.getString(FACTORY_KEY_KEY_PEM, _awsIotCorePrivateKey, maxLenCertRetrieval);
         preferences.end();
 
         if (strlen(_awsIotCoreCert) == 0 || strlen(_awsIotCorePrivateKey) == 0 ||

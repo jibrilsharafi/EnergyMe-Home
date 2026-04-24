@@ -16,6 +16,7 @@
 #include "ade7953.h"
 #include "awsconfig.h"
 #include "constants.h"
+#include "factory_keys.h"
 #include "customtime.h"
 #include "customwifi.h"
 #include "customlog.h"
@@ -81,10 +82,6 @@
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 #define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
-
-// Certificates NVS keys
-#define PREFS_KEY_CERTIFICATE "certificate"
-#define PREFS_KEY_PRIVATE_KEY "private_key"
 
 // MQTT topic suffixes (application-level; see awsconfig.h for the namespace prefix)
 // Publish topics
