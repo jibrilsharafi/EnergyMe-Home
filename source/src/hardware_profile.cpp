@@ -70,6 +70,44 @@ const HardwareProfile PCB_PROFILES[] = {
             0,  //  15       (unused padding to reach HW_PROFILE_MAX_MUX_CHANNELS)
         },
     },
+    {
+        .version = 60, // v6.0
+
+        // RGB LED
+        .ledRedPin   = 39,
+        .ledGreenPin = 40,
+        .ledBluePin  = 41,
+
+        // Button
+        .buttonPin = 0,
+
+        // Analog multiplexer (74HC4067) select lines
+        .muxS0Pin = 48,
+        .muxS1Pin = 38,
+        .muxS2Pin = 21,
+        .muxS3Pin = 47,
+
+        // ADE7953 SPI
+        .ade7953SsPin        = 10,
+        .ade7953SckPin       = 13,
+        .ade7953MisoPin      = 12,
+        .ade7953MosiPin      = 11,
+        .ade7953ResetPin     = 9,
+        .ade7953InterruptPin = 14,
+
+        // Voltage sensing (same network as v6.1)
+        .voltageDividerR1 = 153000.0f,
+        .voltageDividerR2 = 180.0f,
+
+        // v6.0: all 16 mux channels populated (Y0-Y15 -> CT1-CT16), identity map.
+        .muxChipChannels   = 16,
+        .muxChannelCount   = 16,
+        .totalChannelCount = 17, // muxChannelCount + 1 (channel 0 = direct ADE7953 input)
+        .muxChannelMap = {
+            0, 1, 2, 3, 4, 5, 6, 7,
+            8, 9, 10, 11, 12, 13, 14, 15,
+        },
+    },
 };
 
 static const size_t PCB_PROFILES_COUNT = sizeof(PCB_PROFILES) / sizeof(PCB_PROFILES[0]);
