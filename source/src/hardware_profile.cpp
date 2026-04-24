@@ -3,13 +3,16 @@
 
 #include "hardware_profile.h"
 
-#include <esp_efuse.h>
-#include <esp_efuse_table.h>
+#include <Preferences.h>
+#include <stdio.h>
+
+#include "constants.h"
+#include "factory_keys.h"
 
 // Known PCB hardware profiles.
-// To add support for a new PCB version: add a new entry here. No other changes needed.
+// To add support for a new PCB version: add a new entry on top of the array.
+// The first entry is treated as the "latest" and used as the ultimate fallback.
 const HardwareProfile PCB_PROFILES[] = {
-    // NOTE: always add new ones on top, so the fallback solutions (using index 0) always use the latest profile.
     {
         .version = 61, // v6.1
 
@@ -43,9 +46,9 @@ const HardwareProfile PCB_PROFILES[] = {
         // removed to make space. The proper sequence/mapping will be handled in software.").
         // There is no CT2 jack on v6.1. Software channels are renumbered to fill the gap:
         // CT3 becomes channel 2, CT4 becomes channel 3, and so on.
-        // 15 mux channels remain: Y0, Y2-Y15 → CT1, CT3-CT16.
+        // 15 mux channels remain: Y0, Y2-Y15 -> CT1, CT3-CT16.
         .muxChipChannels   = 16, // 74HC4067: 16 physical channels (Y0-Y15)
-        .muxChannelCount   = 15, // Y1 absent on v6.1 PCB → 15 connected mux channels
+        .muxChannelCount   = 15, // Y1 absent on v6.1 PCB -> 15 connected mux channels
         .totalChannelCount = 16, // muxChannelCount + 1 (channel 0 = direct ADE7953 input)
         .muxChannelMap = {
             //  logical  physical  CT label
@@ -69,57 +72,85 @@ const HardwareProfile PCB_PROFILES[] = {
     },
 };
 
+static const size_t PCB_PROFILES_COUNT = sizeof(PCB_PROFILES) / sizeof(PCB_PROFILES[0]);
+
 const HardwareProfile* globalHwProfile = nullptr;
 bool globalCommunityMode = false;
 
-bool readEfuseProvisioningData(EfuseProvisioningData& data) {
-    uint8_t efuseData[32];
-
-    esp_err_t err = esp_efuse_read_field_blob(ESP_EFUSE_USER_DATA, efuseData, sizeof(efuseData) * 8);
-    if (err != ESP_OK) {
-        LOG_DEBUG("Failed to read eFuse user data: %s", esp_err_to_name(err));
-        data.isProvisioned = false;
-        return false;
-    }
-
-    if (efuseData[0] != 0x01) {
-        LOG_DEBUG("Device not provisioned (flag: 0x%02X)", efuseData[0]);
-        data.isProvisioned = false;
-        return false;
-    }
-
-    data.isProvisioned = true;
-    data.serial = *((uint32_t*)&efuseData[4]);              // Bytes 4-7: Serial (little-endian)
-    data.manufacturingDate = *((uint64_t*)&efuseData[8]);   // Bytes 8-15: Manufacturing date (little-endian)
-    data.hardwareVersion = *((uint8_t*)&efuseData[16]);     // Byte 16: Hardware version (little-endian)
-
-    LOG_DEBUG("eFuse data: serial=0x%08X, mfgDate=%llu, hwVer=%u",
-              data.serial, data.manufacturingDate, data.hardwareVersion);
+// Parse a pcb_revision string of the form "vMAJOR.MINOR" (e.g. "v6.1") into the
+// packed uint8_t used by HardwareProfile::version (major * 10 + minor).
+// Returns true on success; false on any parse/format error.
+static bool parsePcbRevision(const char* s, uint8_t& versionOut) {
+    if (s == nullptr || s[0] != 'v') return false;
+    unsigned int major = 0;
+    unsigned int minor = 0;
+    int matched = sscanf(s, "v%u.%u", &major, &minor);
+    if (matched != 2) return false;
+    if (major > 25 || minor > 9) return false; // keep (major*10+minor) within uint8_t
+    versionOut = static_cast<uint8_t>(major * 10 + minor);
     return true;
 }
 
-void initHardwareProfile() {
-    EfuseProvisioningData efuseData;
-    bool provisioned = readEfuseProvisioningData(efuseData);
+static const HardwareProfile* findProfileByVersion(uint8_t version) {
+    for (size_t i = 0; i < PCB_PROFILES_COUNT; i++) {
+        if (PCB_PROFILES[i].version == version) return &PCB_PROFILES[i];
+    }
+    return nullptr;
+}
 
-    if (!provisioned || !efuseData.isProvisioned) {
+// Select the profile used in community (unprovisioned) mode. Honours the optional
+// PCB_VERSION_FALLBACK compile-time flag; otherwise returns the latest profile.
+static const HardwareProfile* pickCommunityFallback() {
+#ifdef PCB_VERSION_FALLBACK
+    const HardwareProfile* p = findProfileByVersion(static_cast<uint8_t>(PCB_VERSION_FALLBACK));
+    if (p != nullptr) {
+        LOG_INFO("Community mode: using PCB_VERSION_FALLBACK=v%u", p->version);
+        return p;
+    }
+    LOG_WARNING("PCB_VERSION_FALLBACK=%d does not match any known profile - using PCB_PROFILES[0] (v%u)",
+                (int)PCB_VERSION_FALLBACK, PCB_PROFILES[0].version);
+#endif
+    return &PCB_PROFILES[0];
+}
+
+void initHardwareProfile() {
+    Preferences prefs;
+    if (!prefs.begin(PREFERENCES_NAMESPACE_FACTORY, true)) {
         globalCommunityMode = true;
-        globalHwProfile = &PCB_PROFILES[0]; // Just use the first one as fallback
-        LOG_INFO("eFuse not provisioned — running in community mode, cloud disabled");
+        globalHwProfile = pickCommunityFallback();
+        LOG_INFO("Factory NVS not available - running in community mode, cloud disabled");
         return;
     }
 
-    const size_t PCB_PROFILES_COUNT = sizeof(PCB_PROFILES) / sizeof(PCB_PROFILES[0]);
+    String pcbRevision = prefs.getString(FACTORY_KEY_PCB_REVISION, "");
+    prefs.end();
 
-    for (size_t i = 0; i < PCB_PROFILES_COUNT; i++) {
-        if (PCB_PROFILES[i].version == efuseData.hardwareVersion) {
-            globalHwProfile = &PCB_PROFILES[i];
-            LOG_INFO("Hardware profile selected: v%u", efuseData.hardwareVersion);
-            return;
-        }
+    if (pcbRevision.length() == 0) {
+        globalCommunityMode = true;
+        globalHwProfile = pickCommunityFallback();
+        LOG_INFO("pcb_revision not set in factory NVS - running in community mode, cloud disabled");
+        return;
     }
 
-    // Unknown hardware version: default to first profile (v6.1) and warn
-    globalHwProfile = &PCB_PROFILES[0];
-    LOG_WARNING("Unknown hardware version %u in eFuse, defaulting to v%u", efuseData.hardwareVersion, PCB_PROFILES[0].version);
+    uint8_t version = 0;
+    if (!parsePcbRevision(pcbRevision.c_str(), version)) {
+        globalCommunityMode = true;
+        globalHwProfile = pickCommunityFallback();
+        LOG_WARNING("Malformed pcb_revision \"%s\" in factory NVS - running in community mode",
+                    pcbRevision.c_str());
+        return;
+    }
+
+    const HardwareProfile* profile = findProfileByVersion(version);
+    if (profile == nullptr) {
+        globalCommunityMode = true;
+        globalHwProfile = pickCommunityFallback();
+        LOG_WARNING("Unknown pcb_revision \"%s\" (v%u) - running in community mode, cloud disabled",
+                    pcbRevision.c_str(), version);
+        return;
+    }
+
+    globalHwProfile = profile;
+    globalCommunityMode = false;
+    LOG_INFO("Hardware profile selected: v%u (pcb_revision=\"%s\")", version, pcbRevision.c_str());
 }
