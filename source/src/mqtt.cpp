@@ -42,6 +42,7 @@ namespace Mqtt
     // Certificates storage (loaded from factory NVS) - allocated in PSRAM
     static char *_awsIotCoreCert = nullptr;
     static char *_awsIotCorePrivateKey = nullptr;
+    static bool _certificatesLoaded = false;
     
     // Topic buffers
     static char _mqttTopicMeter[MQTT_TOPIC_BUFFER_SIZE];
@@ -235,11 +236,13 @@ namespace Mqtt
         }
 
         // Eager certificate loading — certs are factory-provisioned and permanent
-        if (!_setupMqttWithDeviceCertificates()) {
+        _certificatesLoaded = _setupMqttWithDeviceCertificates();
+        if (!_certificatesLoaded) {
             LOG_ERROR("Failed to load device certificates in begin(). Cloud services will not connect.");
         }
 
-        if (_cloudServicesEnabled) _startTask();
+        if (_cloudServicesEnabled && _certificatesLoaded) _startTask();
+        else if (_cloudServicesEnabled && !_certificatesLoaded) LOG_WARNING("Cloud services enabled but certificates not loaded - reprovision required");
         else LOG_DEBUG("Cloud services are disabled, MQTT task will not start");
 
         LOG_DEBUG("MQTT client setup complete");
@@ -314,7 +317,8 @@ namespace Mqtt
         _cloudServicesEnabled = enabled;
         _saveCloudServicesEnabledToPreferences(enabled);
 
-        if (_cloudServicesEnabled) _startTask();
+        if (_cloudServicesEnabled && _certificatesLoaded) _startTask();
+        else if (_cloudServicesEnabled && !_certificatesLoaded) LOG_WARNING("Cannot start MQTT task: device certificates not loaded - reprovision required");
         
         releaseMutex(&_configMutex);
 
