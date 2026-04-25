@@ -1812,10 +1812,10 @@ namespace Ade7953
             if (!Update.isRunning()) {
                 _currentChannel = _findNextActiveChannel(_currentChannel);
 
-                // Channel 0 is the direct ADE7953 input (not routed through the mux).
+                // Channel 0 is the direct ADE7953 input (not routed through the mux). So it will never be chosen as actual _currentChannel value
                 // For channels 1+, look up the physical mux channel via muxChannelMap
                 // (logical index _currentChannel - 1 → physical Y-channel on the 74HC4067).
-                if (_currentChannel > 0) Multiplexer::setChannel(globalHwProfile->muxChannelMap[_currentChannel - 1]);
+                if (_currentChannel != INVALID_CHANNEL) Multiplexer::setChannel(globalHwProfile->muxChannelMap[_currentChannel - 1]);
             } else {
                 LOG_DEBUG("OTA in progress, skipping channel switching to avoid timing issues");
             }
