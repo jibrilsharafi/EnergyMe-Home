@@ -16,17 +16,21 @@
 // To change the endpoint or rules: update here and deploy an OTA.
 
 // Connection
-// TODO: migrate to custom DNS name for easier migration in the future
 #ifdef ENV_DEV
-constexpr const char* AWS_IOT_CORE_ENDPOINT = "a4c07oxnykeeh-ats.iot.eu-central-1.amazonaws.com";
+constexpr const char* AWS_IOT_CORE_ENDPOINT = "a19ey2oqxgfcyh-ats.iot.eu-west-1.amazonaws.com";
 #else
-constexpr const char* AWS_IOT_CORE_ENDPOINT = "a4c07oxnykeeh-ats.iot.eu-central-1.amazonaws.com"; // TODO: change to production endpoint once ready
+constexpr const char* AWS_IOT_CORE_ENDPOINT = "a26zjeqaj9a3xc-ats.iot.eu-west-1.amazonaws.com";
 #endif
 #define AWS_IOT_CORE_PORT 8883
 
-// IoT Core Basic Ingest rule names — routes messages server-side, enabling cheaper MQTT ingestion.
-constexpr const char* AWS_IOT_CORE_RULE_METER = "energyme_home_meter";
-constexpr const char* AWS_IOT_CORE_RULE_LOG = "energyme_home_log_v1";
+// IoT Core Basic Ingest rule names - routes messages server-side, enabling cheaper MQTT ingestion.
+#ifdef ENV_DEV
+constexpr const char* AWS_IOT_CORE_RULE_METER = "energyme_home_dev_rule_meter";
+constexpr const char* AWS_IOT_CORE_RULE_LOG   = "energyme_home_dev_rule_log";
+#else
+constexpr const char* AWS_IOT_CORE_RULE_METER = "energyme_home_prod_rule_meter";
+constexpr const char* AWS_IOT_CORE_RULE_LOG   = "energyme_home_prod_rule_log";
+#endif
 
 // AWS reserved topic prefixes
 #define AWS_TOPIC "$aws"

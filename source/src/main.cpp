@@ -98,7 +98,7 @@ void setup()
     FIRMWARE_BUILD_DATE, 
     FIRMWARE_BUILD_TIME, 
     DEVICE_ID
-  );
+  ); // When changing this, be careful as it is used as parsing method to validate firmware version and environment; always align with manufacturing repo
   
   Led::setOrange(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up crash monitor...");
