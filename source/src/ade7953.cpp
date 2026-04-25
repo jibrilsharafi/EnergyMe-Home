@@ -4237,9 +4237,11 @@ namespace Ade7953
         return true;
     }
 
+    // LOG_DEBUG in these validate functions since while the value may be out of boundaries, there could be a reason
+    // (e.g. low currents) that make the error handled. So the actual LOG_WARNING or similar will be handled one level up
     bool _validateVoltage(float value) {
         if (!isValueInRange(value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX)) {
-            LOG_WARNING("Voltage %.1f V out of range (%.1f - %.1f V)", value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
+            LOG_DEBUG("Voltage %.1f V out of range (%.1f - %.1f V)", value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
             return false;
         }
         return true;
@@ -4247,7 +4249,7 @@ namespace Ade7953
 
     bool _validateCurrent(float value) {
         if (!isValueInRange(value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX)) {
-            LOG_WARNING("Current %.3f A out of range (%.3f - %.3f A)", value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
+            LOG_DEBUG("Current %.3f A out of range (%.3f - %.3f A)", value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
             return false;
         }
         return true;
@@ -4255,7 +4257,7 @@ namespace Ade7953
 
     bool _validatePower(float value) {
         if (!isValueInRange(value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX)) {
-            LOG_WARNING("Power %.1f W out of range (%.1f - %.1f W)", value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
+            LOG_DEBUG("Power %.1f W out of range (%.1f - %.1f W)", value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
             return false;
         }
         return true;
@@ -4263,7 +4265,7 @@ namespace Ade7953
 
     bool _validatePowerFactor(float value) {
         if (!isValueInRange(value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX)) {
-            LOG_WARNING("Power factor %.3f out of range (%.3f - %.3f)", value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
+            LOG_DEBUG("Power factor %.3f out of range (%.3f - %.3f)", value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
             return false;
         }
         return true;
@@ -4271,7 +4273,7 @@ namespace Ade7953
 
     bool _validateGridFrequency(float value) {
         if (!isValueInRange(value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX)) {
-            LOG_WARNING("Grid frequency %.1f Hz out of range (%.1f - %.1f Hz)", value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
+            LOG_DEBUG("Grid frequency %.1f Hz out of range (%.1f - %.1f Hz)", value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
             return false;
         }
         return true;
