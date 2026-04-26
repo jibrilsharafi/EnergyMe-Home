@@ -152,10 +152,15 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     // Performance
     info.temperatureCelsius = temperatureRead();
 
-    // CPU load per core (auto-calibrated by TaskProfiler::sample())
-    info.cpuCore0Percent = TaskProfiler::getCoreLoadPercent(0);
-    info.cpuCore1Percent = TaskProfiler::getCoreLoadPercent(1);
-    info.cpuSampleWindowMs = TaskProfiler::getLastSampleWindowMs();
+    // CPU stats over a window matching the system_dynamic publish cadence.
+    // ENV_DEV: last 60 s; ENV_PROD: full 3600 s ring.
+#ifdef ENV_DEV
+    static constexpr uint32_t CPU_STATS_WINDOW_SECONDS = 60;
+#else
+    static constexpr uint32_t CPU_STATS_WINDOW_SECONDS = 0; // 0 = full ring
+#endif
+    info.cpuCore0Stats = TaskProfiler::getCpuStats(0, CPU_STATS_WINDOW_SECONDS);
+    info.cpuCore1Stats = TaskProfiler::getCpuStats(1, CPU_STATS_WINDOW_SECONDS);
 
     // Network (if connected)
     if (CustomWifi::isFullyConnected()) {
@@ -297,10 +302,22 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     // Performance
     doc["performance"]["temperatureCelsius"] = info.temperatureCelsius;
 
-    // CPU load (per core, auto-calibrated by TaskProfiler)
-    doc["cpu"]["core0Percent"] = info.cpuCore0Percent;
-    doc["cpu"]["core1Percent"] = info.cpuCore1Percent;
-    doc["cpu"]["sampleWindowMs"] = info.cpuSampleWindowMs;
+    // CPU stats (per core, spike-aware ring buffer)
+    auto addCpuCore = [&](const char* key, const TaskProfiler::CpuStats& s) {
+        doc["cpu"][key]["current"]               = s.current;
+        doc["cpu"][key]["min"]                   = s.min;
+        doc["cpu"][key]["max"]                   = s.max;
+        doc["cpu"][key]["avg"]                   = s.avg;
+        doc["cpu"][key]["p50"]                   = s.p50;
+        doc["cpu"][key]["p90"]                   = s.p90;
+        doc["cpu"][key]["p95"]                   = s.p95;
+        doc["cpu"][key]["p99"]                   = s.p99;
+        doc["cpu"][key]["samplesInWindow"]        = s.samplesInWindow;
+        doc["cpu"][key]["samplesAboveThreshold"]  = s.samplesAboveThreshold;
+        doc["cpu"][key]["windowSeconds"]          = s.windowSeconds;
+    };
+    addCpuCore("core0", info.cpuCore0Stats);
+    addCpuCore("core1", info.cpuCore1Stats);
 
     // Network
     doc["network"]["wifiConnected"] = info.wifiConnected;

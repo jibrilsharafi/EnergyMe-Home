@@ -6,6 +6,7 @@
 #include <Arduino.h>
 
 #include "constants.h"
+#include "taskprofiler.h"
 
 struct Statistics { // This will be global and we accept the very small race condition as we only do ++ or read the value (almost atomic?)
   uint64_t ade7953TotalInterrupts;
@@ -200,12 +201,10 @@ struct SystemDynamicInfo {
     // Performance
     float temperatureCelsius;
 
-    // CPU load per core (0..100), produced by TaskProfiler. 0 if profiler
-    // hasn't sampled yet or registration failed (in which case heartbeats
-    // are still meaningful and stack/memory still reported).
-    uint8_t cpuCore0Percent;
-    uint8_t cpuCore1Percent;
-    uint32_t cpuSampleWindowMs;
+    // Per-core CPU stats (current + percentiles) from TaskProfiler ring buffer.
+    // Zero-initialized until begin()+sample() have run.
+    TaskProfiler::CpuStats cpuCore0Stats;
+    TaskProfiler::CpuStats cpuCore1Stats;
     
     // Network status
     int32_t wifiRssi;
