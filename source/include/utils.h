@@ -160,14 +160,18 @@ void stopMaintenanceTask();
 size_t getLogFileSize();
 
 // Task information utilities
-inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize)
+inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize, const TaskHeartbeat* heartbeat = nullptr)
 {
     // Defensive check against corrupted or invalid task handles
     if (taskHandle != NULL && eTaskGetState(taskHandle) != eInvalid) {
-        return TaskInfo(stackSize, uxTaskGetStackHighWaterMark(taskHandle));
-    } else {
-        return TaskInfo(); // Return empty/default TaskInfo if task is not running or invalid
+        TaskInfo info(stackSize, uxTaskGetStackHighWaterMark(taskHandle));
+        if (heartbeat) {
+            info.lastTickMillis = heartbeat->lastTickMillis;
+            info.loopCount = heartbeat->loopCount;
+        }
+        return info;
     }
+    return TaskInfo(); // Return empty/default TaskInfo if task is not running or invalid
 }
 TaskInfo getMaintenanceTaskInfo();
 
