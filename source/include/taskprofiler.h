@@ -10,33 +10,63 @@
 // Lightweight task-load profiler.
 //
 // - Per-core CPU%: one FreeRTOS idle hook per core increments a counter; a 1 Hz
-//   sampler (driven by the existing maintenance task) computes load against an
-//   auto-calibrated baseline (the highest idle-rate ever observed).
+//   sampler drives load% computation against an auto-calibrated baseline.
+// - Spike-aware ring buffer: 1 hour of 1 Hz samples in PSRAM; on-demand
+//   percentile (p50/p90/p95/p99) + min/max/avg computed via in-place histogram.
 // - Per-task heartbeat: each task writes lastTickMillis + loopCount via the
-//   TASK_HEARTBEAT macro at the top of its main loop. A stale heartbeat means
-//   the task is starved or stuck.
+//   TASK_HEARTBEAT macro at the top of its main loop.
 //
-// Works under framework=arduino with no sdkconfig changes (uses
-// esp_register_freertos_idle_hook_for_cpu, available out of the box).
+// Works under framework=arduino with no sdkconfig changes.
 
 namespace TaskProfiler
 {
     // Register idle hooks on both cores. Call once from setup() before any task
-    // is created. Safe to call multiple times (no-op after the first success).
+    // is created. Also allocates the PSRAM ring buffer.
     void begin();
 
-    // Sample idle deltas and update per-core load percentages. Call ~once per
-    // second from a long-lived task (the maintenance task in this firmware).
+    // Sample idle deltas, update per-core load%, and push one entry to the ring.
+    // Call ~once per second from the maintenance task.
     void sample();
 
-    // Returns 0..100. Returns 0 if begin() has not been called or if not enough
+    // Returns 0..100. Returns 0 if begin() has not been called or not enough
     // samples are available yet (first sample establishes the baseline).
     uint8_t getCoreLoadPercent(uint8_t coreId);
 
-    // Wall-clock milliseconds covered by the most recent sample window. Useful
-    // for sanity-checking the value (sample() called too rarely → window too
-    // long → values smoothed).
+    // Wall-clock milliseconds covered by the most recent sample window.
     uint32_t getLastSampleWindowMs();
+
+    static constexpr size_t   CPU_RING_CAPACITY_SECONDS     = 3600; // 1 hour at 1 Hz
+    static constexpr uint8_t  CPU_SPIKE_THRESHOLD           = 80;   // % above which a sample counts as a spike
+    static constexpr uint32_t CPU_DEFAULT_FETCH_LAST_SECONDS = 600; // default window for getRawSamples
+    static constexpr uint32_t RING_MUTEX_TIMEOUT_MS         = 50;
+
+    // One ring entry: 8 bytes, written once per second by sample().
+    struct CpuSample {
+        uint32_t epochSecond;  // Unix timestamp of the sample
+        uint8_t  core0Percent;
+        uint8_t  core1Percent;
+        uint16_t _reserved;   // padding to 8 bytes
+    };
+
+    // Aggregated stats for one core over a window of samples.
+    struct CpuStats {
+        uint8_t  current;              // most recent instantaneous value
+        uint8_t  min, max, avg;
+        uint8_t  p50, p90, p95, p99;
+        uint16_t samplesInWindow;
+        uint16_t samplesAboveThreshold; // samples where value >= CPU_SPIKE_THRESHOLD
+        uint32_t windowSeconds;        // actual seconds covered by the window
+    };
+
+    // Returns aggregated stats for coreId over the last lastSeconds seconds of
+    // ring history. lastSeconds=0 means use the full ring (up to
+    // CPU_RING_CAPACITY_SECONDS). Returns zero-initialized struct on error.
+    CpuStats getCpuStats(uint8_t coreId, uint32_t lastSeconds = 0);
+
+    // Copies up to maxCount raw samples (oldest-first within the window) into
+    // out[]. Returns actual count written. lastSeconds=0 means full ring.
+    size_t getRawSamples(CpuSample* out, size_t maxCount,
+                         uint32_t lastSeconds = CPU_DEFAULT_FETCH_LAST_SECONDS);
 }
 
 // Heartbeat helper. Place at the very top of each task loop body so that
