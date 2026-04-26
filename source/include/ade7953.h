@@ -226,6 +226,7 @@
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_CURRENT_FOR_VALIDATION 0.02f // Below this current threshold, skip invalidating the reading as measurements are unreliable (noise dominates)
 #define MINIMUM_POWER_FACTOR 0.10f // Measuring such low power factors is virtually impossible with such CTs
+#define AUTO_POLARITY_MIN_POWER_W 5.0f // Below this absolute active power, the auto-polarity check stays armed (avoids flipping on noise / idle circuits)
 #define ADE7953_MIN_LINECYC 10UL // Below this the readings are unstable (200 ms)
 #define ADE7953_MAX_LINECYC 1000UL // Above this too much time passes (20 seconds)
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
@@ -444,13 +445,23 @@ struct ChannelData
   // Channel role
   ChannelRole role;
 
+  // Transient runtime flags (NOT persisted to NVS, NOT exported to JSON).
+  // Set on inactive->active transition (and on role change for the polarity check).
+  // Used by the scheduler / meter task to give a freshly activated channel a
+  // single priority slot and to auto-detect a reversed CT clamp on the first
+  // meaningful reading.
+  bool _pendingPriorityRead;
+  bool _pendingPolarityCheck;
+
   ChannelData()
     : index(0),
       active(false),
       reverse(false),
       phase(PHASE_1),
       ctSpecification(CtSpecification()),
-      role(DEFAULT_CHANNEL_ROLE)
+      role(DEFAULT_CHANNEL_ROLE),
+      _pendingPriorityRead(false),
+      _pendingPolarityCheck(false)
     {
       snprintf(label, sizeof(label), "Channel");
       snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, 0);
@@ -462,7 +473,9 @@ struct ChannelData
       reverse(DEFAULT_CHANNEL_REVERSE),
       phase(DEFAULT_CHANNEL_PHASE),
       ctSpecification(CtSpecification()),
-      role(idx == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE)
+      role(idx == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE),
+      _pendingPriorityRead(false),
+      _pendingPolarityCheck(false)
     {
       snprintf(label, sizeof(label), DEFAULT_CHANNEL_LABEL_FORMAT, idx);
       snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, idx);

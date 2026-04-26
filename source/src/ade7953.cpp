@@ -2,9 +2,14 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "ade7953.h"
+#include "taskprofiler.h"
 
 namespace Ade7953
 {
+    static TaskHeartbeat _meterReadingHeartbeat;
+    static TaskHeartbeat _energySaveHeartbeat;
+    static TaskHeartbeat _hourlyCsvHeartbeat;
+
     // Static variables
     // =========================================================
     // =========================================================
@@ -26,6 +31,11 @@ namespace Ade7953
     static float _prevActivePower[MAX_CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
     static float _powerVariability[MAX_CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
     static float _gridFrequency = 50.0f;
+
+    // Set by the meter task when an auto-polarity flip flips the persisted reverse flag.
+    // Drained by the energy save task (internal-RAM stack, flash-capable) since the meter
+    // task runs on a PSRAM stack and cannot perform NVS writes.
+    static volatile bool _pendingPolaritySave[MAX_CHANNEL_COUNT] = {};
 
     // Voltage-to-LSB conversion factors, computed once in begin() from globalHwProfile voltage divider.
     static float _voltPerLsb = 0.0f;
@@ -750,8 +760,9 @@ namespace Ade7953
             return false;
         }
 
-        // Snapshot old role before applying new data (for role change detection)
+        // Snapshot old role and active state before applying new data
         ChannelRole oldRole = _channelData[channelIndex].role;
+        bool wasInactive = !_channelData[channelIndex].active;
 
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
@@ -764,6 +775,19 @@ namespace Ade7953
             _channelData[channelIndex].active = true;
         } else {
             _channelData[channelIndex] = channelData;
+        }
+
+        // Arm transient flags on inactive->active transition. Polarity check runs for
+        // every channel (including channel 0); the priority slot is meaningful only
+        // for mux-routed channels (channel 0 bypasses the rotation entirely).
+        if (wasInactive && _channelData[channelIndex].active) {
+            _channelData[channelIndex]._pendingPolarityCheck = true;
+            if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+        }
+        // Re-arm polarity check on role change while channel is active (sign convention
+        // can legitimately differ between roles; let the next reading re-validate).
+        if (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role) {
+            _channelData[channelIndex]._pendingPolarityCheck = true;
         }
 
         _recalculateWeights();
@@ -899,6 +923,10 @@ namespace Ade7953
     }
 
     void channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial) {
+        // Transient flags are runtime-only and never carried in/out via JSON.
+        channelData._pendingPriorityRead = false;
+        channelData._pendingPolarityCheck = false;
+
         if (partial) {
             // Update only fields that are present in JSON
             if (jsonDocument["index"].is<uint8_t>()) channelData.index = jsonDocument["index"].as<uint8_t>();
@@ -2003,6 +2031,8 @@ namespace Ade7953
         
         while (_meterReadingTaskShouldRun)
         {
+            TASK_HEARTBEAT(_meterReadingHeartbeat);
+
             // Wait for interrupt signal with timeout
             if (
                 _ade7953InterruptSemaphore != NULL &&
@@ -2089,8 +2119,20 @@ namespace Ade7953
 
         _energySaveTaskShouldRun = true;
         while (_energySaveTaskShouldRun) {
+            TASK_HEARTBEAT(_energySaveHeartbeat);
+
             for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i)) _saveEnergyToPreferences(i);
+            }
+
+            // Drain pending polarity-flip persistence (queued by the meter task on PSRAM
+            // stack, which cannot itself touch NVS). Clear the flag before saving so that
+            // a concurrent re-set from the meter task is picked up on the next iteration.
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+                if (_pendingPolaritySave[i]) {
+                    _pendingPolaritySave[i] = false;
+                    _saveChannelDataToPreferences(i);
+                }
             }
 
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_ENERGY_INTERVAL)) > 0) {
@@ -2231,6 +2273,8 @@ namespace Ade7953
 
         _hourlyCsvSaveTaskShouldRun = true;
         while (_hourlyCsvSaveTaskShouldRun) {
+            TASK_HEARTBEAT(_hourlyCsvHeartbeat);
+
             // Calculate milliseconds until next hour using CustomTime
             uint64_t msUntilNextHour = CustomTime::getMillisecondsUntilNextHour();
             LOG_DEBUG("Waiting for %llu ms until next hour to save the hourly energy", msUntilNextHour);
@@ -3698,6 +3742,28 @@ namespace Ade7953
 
         }
 
+        // Auto-detect a reversed CT clamp on the first meaningful reading after activation
+        // (or after a role change). If the active power is negative, toggle the persisted
+        // reverse flag, queue the NVS write for the energy save task, re-arm the priority
+        // slot so the corrected reading lands on the very next linecyc, and discard this
+        // reading. The threshold avoids flipping on noise when the circuit is essentially idle.
+        if (_channelData[channelIndex]._pendingPolarityCheck && abs(activePower) >= AUTO_POLARITY_MIN_POWER_W) {
+            if (activePower < 0.0f) {
+                _channelData[channelIndex].reverse = !_channelData[channelIndex].reverse;
+                _pendingPolaritySave[channelIndex] = true;
+                if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+                _channelData[channelIndex]._pendingPolarityCheck = false;
+                LOG_WARNING(
+                    "%s (%u): auto-detected reversed CT (raw P=%.1fW, role=%s); reverse flag now %d, discarding this reading",
+                    channelData.label, channelIndex, activePower,
+                    channelRoleToString(channelData.role), _channelData[channelIndex].reverse
+                );
+                _recordFailure();
+                return false;
+            }
+            _channelData[channelIndex]._pendingPolarityCheck = false;
+        }
+
         // Discard negative readings for Load channels (likely CT installed backwards)
         if (activePower < 0.0f && channelData.role == CHANNEL_ROLE_LOAD) {
             LOG_DEBUG(
@@ -4359,6 +4425,16 @@ namespace Ade7953
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
         (void)currentChannel; // No longer needed for state tracking
 
+        // One-shot priority override: a freshly activated channel jumps the WDRR queue
+        // for exactly one read so the user gets immediate data (and so the auto-polarity
+        // check runs without waiting for the channel to win a normal slot).
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
+            if (_channelData[i].active && _channelData[i]._pendingPriorityRead) {
+                _channelData[i]._pendingPriorityRead = false;
+                return i;
+            }
+        }
+
         // Add each channel's weight to its deficit
         for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (_channelData[i].active) {
@@ -4511,29 +4587,17 @@ namespace Ade7953
 
     TaskInfo getMeterReadingTaskInfo()
     {
-        if (_meterReadingTaskHandle != NULL) {
-            return TaskInfo(ADE7953_METER_READING_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_meterReadingTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_meterReadingTaskHandle, ADE7953_METER_READING_TASK_STACK_SIZE, &_meterReadingHeartbeat);
     }
 
     TaskInfo getEnergySaveTaskInfo()
     {
-        if (_energySaveTaskHandle != NULL) {
-            return TaskInfo(ADE7953_ENERGY_SAVE_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_energySaveTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_energySaveTaskHandle, ADE7953_ENERGY_SAVE_TASK_STACK_SIZE, &_energySaveHeartbeat);
     }
 
     TaskInfo getHourlyCsvTaskInfo()
     {
-        if (_hourlyCsvSaveTaskHandle != NULL) {
-            return TaskInfo(ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_hourlyCsvSaveTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_hourlyCsvSaveTaskHandle, ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE, &_hourlyCsvHeartbeat);
     }
 
     // Waveform capture API
