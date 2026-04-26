@@ -63,8 +63,15 @@
 #define DEFAULT_MQTT_LOG_LEVEL_INT 2 // Default minimum log level for MQTT publishing (INFO = 2)
 
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
+#ifdef ENV_DEV
+// In dev: send system_dynamic and statistics every minute so post-mortem
+// telemetry has the resolution needed to investigate behavior.
+#define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (60 * 1000)
+#define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (60 * 1000)
+#else
 #define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (60 * 60 * 1000)  // 1 hour since the data does not change frequently (and sent on reboot/reconnection anyway)
 #define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (6 * 60 * 60 * 1000)  // 6 hours since they are cumulative counters (and sent on reboot/reconnection anyway)
+#endif
 
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
 
