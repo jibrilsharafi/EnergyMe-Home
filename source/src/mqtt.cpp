@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "mqtt.h"
+#include "taskprofiler.h"
 
 namespace Mqtt
 {
+    static TaskHeartbeat _mqttHeartbeat;
+
     // Static variables
     // ================
     // ================
@@ -363,7 +366,7 @@ namespace Mqtt
 
     TaskInfo getMqttTaskInfo()
     {
-        return getTaskInfoSafely(_taskHandle, MQTT_TASK_STACK_SIZE);
+        return getTaskInfoSafely(_taskHandle, MQTT_TASK_STACK_SIZE, &_mqttHeartbeat);
     }
 
     TaskInfo getMqttOtaTaskInfo()
@@ -641,6 +644,8 @@ namespace Mqtt
 
         while (_taskShouldRun)
         {
+            TASK_HEARTBEAT(_mqttHeartbeat);
+
             if (CustomWifi::isFullyConnected()) {
                 if (_clientMqtt.connected()) {
                     _handleConnectedState();
@@ -1253,7 +1258,8 @@ namespace Mqtt
         JsonDocument doc(&allocator);
         doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
 
-        JsonDocument docSystemStatic;
+        SpiRamAllocator allocatorSystemStatic;
+        JsonDocument docSystemStatic(&allocatorSystemStatic);
         SystemStaticInfo systemStaticInfo;
         populateSystemStaticInfo(systemStaticInfo);
         systemStaticInfoToJson(systemStaticInfo, docSystemStatic);
@@ -1272,7 +1278,8 @@ namespace Mqtt
         JsonDocument doc(&allocator);
         doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
 
-        JsonDocument docSystemDynamic;
+        SpiRamAllocator allocatorSystemDynamic;
+        JsonDocument docSystemDynamic(&allocatorSystemDynamic);
         SystemDynamicInfo systemDynamicInfo;
         populateSystemDynamicInfo(systemDynamicInfo);
         systemDynamicInfoToJson(systemDynamicInfo, docSystemDynamic);
