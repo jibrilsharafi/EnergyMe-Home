@@ -24,6 +24,7 @@
 #include "influxdbclient.h"
 #include "multiplexer.h"
 #include "customlog.h"
+#include "taskprofiler.h"
 
 // Global variables
 // --------------------
@@ -46,6 +47,11 @@ void setup()
   // Must be first: reads eFuse, selects hardware profile (pins, voltage ratios, mux map),
   // sets globalHwProfile and globalCommunityMode before any hardware is initialized.
   initHardwareProfile();
+
+  // Register per-core idle hooks before any task is created so the baseline is
+  // measured against a still-quiet system. Failure here is non-fatal (CPU% will
+  // report 0; heartbeats and stack info still work).
+  TaskProfiler::begin();
 
   // Need to call this once and at begin to ensure PSRAM is used for all mbedtls (both for OTA and MQTT connection. and maybe InfluxDB)
   mbedtls_platform_set_calloc_free(ota_calloc_psram, ota_free_psram);
