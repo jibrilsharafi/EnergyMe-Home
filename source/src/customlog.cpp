@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customlog.h"
+#include "taskprofiler.h"
 
 namespace CustomLog
 {
+    static TaskHeartbeat _heartbeat;
+
     // Static variables - all internal to this module
     static QueueHandle_t _udpLogQueue = nullptr;
     static StaticQueue_t _udpLogQueueStruct;
@@ -225,6 +228,7 @@ namespace CustomLog
         _udpTaskShouldRun = true;
 
         while (_udpTaskShouldRun) {
+            TASK_HEARTBEAT(_heartbeat);
             if (!_initializeQueue()) continue;
 
             // Block waiting for a log entry, but wake up periodically to allow shutdown
@@ -299,7 +303,7 @@ namespace CustomLog
 
     TaskInfo getTaskInfo()
     {
-        return getTaskInfoSafely(_udpTaskHandle, UDP_LOG_TASK_STACK_SIZE);
+        return getTaskInfoSafely(_udpTaskHandle, UDP_LOG_TASK_STACK_SIZE, &_heartbeat);
     }
 
     // UDP Destination Management

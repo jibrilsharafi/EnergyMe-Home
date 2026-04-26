@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "taskprofiler.h"
 
 namespace CustomServer
 {
+    static TaskHeartbeat _healthCheckHeartbeat;
+
     // Private variables
     // ==============================
     // ==============================
@@ -421,6 +424,8 @@ namespace CustomServer
         _healthCheckTaskShouldRun = true;
         while (_healthCheckTaskShouldRun)
         {
+            TASK_HEARTBEAT(_healthCheckHeartbeat);
+
             // Perform health check
             if (_performHealthCheck())
             {
@@ -3145,7 +3150,7 @@ namespace CustomServer
 
     TaskInfo getHealthCheckTaskInfo()
     {
-        return getTaskInfoSafely(_healthCheckTaskHandle, HEALTH_CHECK_TASK_STACK_SIZE);
+        return getTaskInfoSafely(_healthCheckTaskHandle, HEALTH_CHECK_TASK_STACK_SIZE, &_healthCheckHeartbeat);
     }
 
     TaskInfo getOtaTimeoutTaskInfo()
