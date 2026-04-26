@@ -1476,6 +1476,53 @@ namespace CustomServer
             statisticsToJson(statistics, doc);
             _sendJsonResponse(request, doc); });
 
+        // Raw CPU ring samples - forensic timeline endpoint
+        // Query params: lastSeconds (default 600, max 3600), core (0|1|both, default both)
+        server.on("/api/v1/system/cpu/samples", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            uint32_t lastSeconds = TaskProfiler::CPU_DEFAULT_FETCH_LAST_SECONDS;
+            if (request->hasParam("lastSeconds")) {
+                lastSeconds = (uint32_t)request->getParam("lastSeconds")->value().toInt();
+                if (lastSeconds > TaskProfiler::CPU_RING_CAPACITY_SECONDS)
+                    lastSeconds = TaskProfiler::CPU_RING_CAPACITY_SECONDS;
+            }
+
+            bool wantCore0 = true, wantCore1 = true;
+            if (request->hasParam("core")) {
+                const String& coreParam = request->getParam("core")->value();
+                if (coreParam == "0")    { wantCore1 = false; }
+                else if (coreParam == "1") { wantCore0 = false; }
+            }
+
+            // Allocate temp buffer on heap (max 3600 entries x 8 B = 28.8 KB)
+            size_t maxSamples = lastSeconds > 0 ? lastSeconds : TaskProfiler::CPU_RING_CAPACITY_SECONDS;
+            TaskProfiler::CpuSample* buf = (TaskProfiler::CpuSample*)ps_malloc(maxSamples * sizeof(TaskProfiler::CpuSample));
+            if (buf == nullptr) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Out of PSRAM");
+                return;
+            }
+
+            size_t count = TaskProfiler::getRawSamples(buf, maxSamples, lastSeconds);
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc["intervalSeconds"] = 1;
+            doc["fromEpoch"] = count > 0 ? buf[0].epochSecond : 0;
+            doc["toEpoch"]   = count > 0 ? buf[count - 1].epochSecond : 0;
+            doc["samplesReturned"] = count;
+
+            if (wantCore0) {
+                JsonArray a0 = doc["core0"].to<JsonArray>();
+                for (size_t i = 0; i < count; i++) a0.add(buf[i].core0Percent);
+            }
+            if (wantCore1) {
+                JsonArray a1 = doc["core1"].to<JsonArray>();
+                for (size_t i = 0; i < count; i++) a1.add(buf[i].core1Percent);
+            }
+
+            free(buf);
+            _sendJsonResponse(request, doc); });
+
         // System restart
         server.on("/api/v1/system/restart", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
