@@ -358,7 +358,7 @@
             </ul>
 
             <h4>Per-Channel Registers (1000 + channel×100 + offset)</h4>
-            <p>For each channel 0-16, registers are organized as follows:</p>
+            <p>For each active channel (0 to N-1, where N is the device's channel count - 16 on PCB v6.1), registers are organized as follows:</p>
             <ul>
                 <li><code>+0-1</code>: Current (float32)</li>
                 <li><code>+2-3</code>: Active power (float32)</li>
@@ -840,8 +840,8 @@
             registerMap.push({ offset: 614, count: 2, name: "Inverter reactive energy exported", dataType: "float32", unit: "VARh" });
             registerMap.push({ offset: 616, count: 2, name: "Inverter apparent energy", dataType: "float32", unit: "VAh" });
 
-            // Per-Channel Registers (1000 + channel×100 + offset) for channels 0-16
-            for (let channel = 0; channel <= 16; channel++) {
+            // Per-Channel Registers (1000 + channel×100 + offset). MAX_CHANNEL_COUNT = 17 is the firmware-side compile-time max; v6.1 advertises 16 active channels via mDNS and Modbus only validates 0..totalChannelCount-1.
+            for (let channel = 0; channel <= 15; channel++) {
                 const baseAddr = 1000 + (channel * 100);
                 registerMap.push({ offset: baseAddr, count: 2, name: `Ch${channel} Current`, dataType: "float32", unit: "A" });
                 registerMap.push({ offset: baseAddr + 2, count: 2, name: `Ch${channel} Active power`, dataType: "float32", unit: "W" });

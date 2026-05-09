@@ -148,6 +148,6 @@ You can now:
 
 - **Documentation**: [github.com/jibrilsharafi/EnergyMe-Home](https://github.com/jibrilsharafi/EnergyMe-Home)
 - **Project updates**: [energyme.net](https://energyme.net)
-- **Support**: <jibril.sharafi@gmail.com>
+- **Support**: <support@energyme.net>
 
 **Thank you for choosing EnergyMe!** 🎉

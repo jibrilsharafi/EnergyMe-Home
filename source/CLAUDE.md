@@ -1,6 +1,6 @@
 # EnergyMe-Home firmware (CLAUDE.md)
 
-Firmware for the EnergyMe Home energy monitor. ESP32-S3-N16R2 (16 MB flash, 2 MB PSRAM), Arduino 3.x framework via PlatformIO (pioarduino fork). Talks to an ADE7953 energy-measurement IC over SPI; 1 direct channel + up to 16 multiplexed channels (74HC4067). Primary interfaces: web UI, MQTT (AWS IoT + local broker), InfluxDB, Modbus TCP.
+Firmware for the EnergyMe Home energy monitor. ESP32-S3-N16R2 (16 MB flash, 2 MB PSRAM), Arduino 3.x framework via PlatformIO (pioarduino fork). Talks to an ADE7953 energy-measurement IC over SPI; 1 direct channel plus up to 16 multiplexed inputs on the 74HC4067 (v6.1 wires 15, for 16 active channels). `MAX_CHANNEL_COUNT = 17` is the compile-time array size; runtime iteration must use `globalHwProfile->totalChannelCount`. Primary interfaces: web UI, MQTT (AWS IoT + local broker), InfluxDB, Modbus TCP.
 
 ## Build
 

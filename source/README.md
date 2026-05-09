@@ -1,7 +1,7 @@
 # EnergyMe - Home | Source Code
 
 **Platform:** ESP32-S3 with Arduino 3.x Framework  
-**Hardware Revision:** See `include/pins.h`
+**Hardware Revision:** Selected at runtime via `globalHwProfile` (see `src/hardware_profile.cpp` and `include/hardware_profile.h`).
 
 ## System Overview
 
@@ -213,7 +213,7 @@ Swagger documentation at `/swagger.html` covers authentication, system managemen
 
 **MQTT:**  
 
-- AWS IoT Core (requires secrets)
+- AWS IoT Core (certificates loaded from the `factory_ns` NVS partition; no build-time secrets)
 - Local broker support with configurable authentication
 - TLS/SSL with certificates
 
@@ -235,7 +235,7 @@ Username: `admin` | Password: `energyme`
 
 ## AWS IoT Integration (Optional)
 
-Device certificates and calibration data are provisioned at manufacturing time into the `factory_ns` NVS namespace. The firmware reads them transparently at boot — no build-time secrets required.
+Device certificates and calibration data are provisioned at manufacturing time into the `factory_ns` NVS namespace. The firmware reads them transparently at boot. No build-time secrets are required.
 
 Devices without factory provisioning (community builds) run in local-only mode. All local integrations (Modbus TCP, CustomMqtt, InfluxDB) remain fully functional.
 

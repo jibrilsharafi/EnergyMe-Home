@@ -193,7 +193,7 @@ def fetch_from_device(host: str, password: str):
     fail_count = 0
     
     for endpoint in GET_ENDPOINTS:
-        # Skip /api/v1/logs — log content is served from little-fs/log.txt
+        # Skip /api/v1/logs (log content is served from little-fs/log.txt)
         if endpoint == '/api/v1/logs':
             print(f"  Skipped: {endpoint} (served from little-fs/log.txt)")
             continue

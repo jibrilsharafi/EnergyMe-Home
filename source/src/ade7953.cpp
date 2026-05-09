@@ -299,7 +299,7 @@ namespace Ade7953
         LOG_DEBUG("Successfully set up hardware pins");
 
         // Compute voltage-per-LSB from the hardware profile's voltage divider values.
-        // ratio = R2 / (R1 + R2) — the fraction of the mains voltage seen by the ADE7953 input.
+        // ratio = R2 / (R1 + R2), the fraction of the mains voltage seen by the ADE7953 input.
         const float ratio = globalHwProfile->voltageDividerR2 / (globalHwProfile->voltageDividerR1 + globalHwProfile->voltageDividerR2);
         _voltPerLsb             = (MAXIMUM_ADC_CHANNEL_INPUT / 1.41421356f) / ratio / static_cast<float>(FULL_SCALE_LSB_FOR_RMS_VALUES);
         _voltPerLsbInstantaneous = MAXIMUM_ADC_CHANNEL_INPUT / ratio / static_cast<float>(FULL_SCALE_LSB_FOR_INSTANTANEOUS_VALUES);

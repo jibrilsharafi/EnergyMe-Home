@@ -70,7 +70,7 @@
 #define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500
 
 // Dynamic channel scheduling (Weighted Deficit Round-Robin)
-// Weights are intentionally not normalized to 1.0 — the WDRR deficit counter
+// Weights are intentionally not normalized to 1.0. The WDRR deficit counter
 // algorithm uses relative weights: a channel with weight 2x will be sampled ~2x
 // as often. The minimum base prevents starvation.
 #define WEIGHT_POWER_SHARE 0.4f      // Weight contribution from power magnitude share
@@ -111,7 +111,7 @@
 //   _voltPerLsb             = (MAXIMUM_ADC_CHANNEL_INPUT / sqrt(2)) / ratio / FULL_SCALE_LSB_FOR_RMS_VALUES
 //   _voltPerLsbInstantaneous = MAXIMUM_ADC_CHANNEL_INPUT / ratio / FULL_SCALE_LSB_FOR_INSTANTANEOUS_VALUES
 // where ratio = R2 / (R1 + R2).
-// Computed once at begin(), stored as static floats in ade7953.cpp — no per-measurement overhead.
+// Computed once at begin(), stored as static floats in ade7953.cpp, with no per-measurement overhead.
 #define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet). Unused but left for reference
 #define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f. Unused but left for reference
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E

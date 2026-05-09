@@ -26,9 +26,9 @@ Now, take a look at these beautiful renderings of the PCB design before diving i
 
 - **Main Microcontroller:** ESP32-S3-WROOM-1-N16R2 (dual-core, WiFi 2.4 GHz, 16MB Flash, 2MB PSRAM)
 - **Energy Measurement IC:** Analog Devices ADE7953ACPZ-RL (single-phase, dual-channel)
-- **ADE7953 Oscillator:** 3.58 MHz active SMD oscillator (RO03579043) — more compact than a crystal+load-cap pair and requires no additional passive components
+- **ADE7953 Oscillator:** 3.58 MHz active SMD oscillator (RO03579043), more compact than a crystal+load-cap pair and requiring no additional passive components
 - **Analog Multiplexer:** 74HC4067PW,118 (16-channel, TSSOP-24)
-- **CT Inputs:** 16× PJ-3200 3.5mm stereo jacks (1 direct + 15 multiplexed) — plastic housing prevents shorts when stacking the expansion boards on top of the main board
+- **CT Inputs:** 16× PJ-3200 3.5mm stereo jacks (1 direct + 15 multiplexed). The plastic housing prevents shorts when stacking the expansion boards on top of the main board.
 - **Voltage Transformer:** ZMPT107-1 for AC mains reference with full galvanic isolation
 - **Power Supply:** HLK-PM03 AC/DC module (100-240 VAC to 3.3 VDC, 1A max)
 
@@ -130,7 +130,7 @@ The main board features a **4-layer PCB** design. The components, present only o
 All design files (PCB layouts, BOMs, Gerber files, Pick-and-Place files) are grouped by board (main_board, top_board_1, top_board_2), while the schematics are provided in a single PDF.
 
 - **EasyEDA Project:** [OSHWLAB | EnergyMe - Home](https://oshwlab.com/jabrillo/multiple-channel-energy-meter)
-- **Schematics:** `pcb/schematics.pdf` (PNG pages: `pcb/schematics_page_1.png` … `pcb/schematics_page_5.png`)
+- **Schematics:** `pcb/schematics.pdf` (PNG pages: `pcb/schematics_page_1.png` to `pcb/schematics_page_5.png`)
 - **BOM:** `pcb/main_board/bom_main_board.csv`, `pcb/top_board_1/bom_top_board_1.csv`, `pcb/top_board_2/bom_top_board_2.csv`
 - **Gerber Files:** `pcb/main_board/gerber_main_board.zip`, `pcb/top_board_1/gerber_top_board_1.zip`, `pcb/top_board_2/gerber_top_board_2.zip`
 - **PCB Layout PDFs:** `pcb/main_board/pcb_main_board_top.pdf`, `pcb/main_board/pcb_main_board_bottom.pdf`, `pcb/top_board_1/pcb_top_board_1_top.pdf`, `pcb/top_board_1/pcb_top_board_1_bottom.pdf`, `pcb/top_board_2/pcb_top_board_2_top.pdf`, `pcb/top_board_2/pcb_top_board_2_bottom.pdf`
@@ -138,7 +138,15 @@ All design files (PCB layouts, BOMs, Gerber files, Pick-and-Place files) are gro
 - **EasyEDA Backup:** `pcb/backup_easy_eda/` (schematic and PCB JSON files)
 - **Component Datasheets:** Available in `components/` directory
 
-## Safety & Assembly Notes
+## Hardware Versions and Compatibility
+
+Firmware 2.0.0 selects its hardware profile at runtime from the NVS key `factory_ns::pcb_revision`, matched against the entries in `source/src/hardware_profile.cpp::PCB_PROFILES[]`.
+
+- **v6.1** (current production): 16 channels (1 direct + 15 multiplexed via 74HC4067), ZMPT107-1 voltage transformer.
+- **v5 and earlier**: not supported by 2.0.x firmware. Existing v5 devices stay on the 1.x line; critical fixes are cherry-picked to the `legacy/v5` branch.
+- **Community / self-built boards** (no factory NVS provisioning): the firmware falls back to the profile selected by the `-DPCB_VERSION_FALLBACK` build flag in `platformio.ini` (or to `PCB_PROFILES[0]` if unset) and starts in **community mode**: cloud services are disabled, all local integrations (REST API, Modbus TCP, custom MQTT, InfluxDB) remain fully functional.
+
+## Safety Notes
 
 ⚠️ **ELECTRICAL SAFETY WARNING**
 

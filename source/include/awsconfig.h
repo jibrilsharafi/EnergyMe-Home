@@ -7,7 +7,7 @@
 // =================================
 // All constants in this file are intentionally compile-time. They are fleet-wide infrastructure
 // values that always require a coordinated change on both firmware and cloud side simultaneously.
-// Storing them in NVS would add load/validate/fallback complexity with no practical benefit —
+// Storing them in NVS would add load/validate/fallback complexity with no practical benefit:
 // any endpoint or topic migration requires an OTA anyway to ensure all devices switch atomically.
 //
 // The only device-specific cloud config is certificates, which are pre-loaded into the factory

@@ -238,7 +238,7 @@ namespace Mqtt
             }
         }
 
-        // Eager certificate loading — certs are factory-provisioned and permanent
+        // Eager certificate loading: certs are factory-provisioned and permanent
         _certificatesLoaded = _setupMqttWithDeviceCertificates();
         if (!_certificatesLoaded) {
             LOG_ERROR("Failed to load device certificates in begin(). Cloud services will not connect.");
@@ -1474,9 +1474,9 @@ namespace Mqtt
             statistics.mqttConnectionErrors++;
 
             if (currentState == MQTT_CONNECT_BAD_CREDENTIALS || currentState == MQTT_CONNECT_UNAUTHORIZED) {
-                LOG_ERROR("MQTT connection failed due to authorization error (%s, %d). Stopping MQTT task — check factory certificates",
+                LOG_ERROR("MQTT connection failed due to authorization error (%s, %d). Stopping MQTT task; check factory certificates",
                           _getMqttStateReason(currentState), currentState);
-                _taskShouldRun = false; // Signal the task loop to exit (cannot call _stopTask from inside the task — it would deadlock)
+                _taskShouldRun = false; // Signal the task loop to exit (cannot call _stopTask from inside the task: it would deadlock)
                 return false;
             } else {
                 if (currentState != 0) {

@@ -2,7 +2,6 @@
 
 <!-- All the usual badges (license, stars, release, etc.) -->
 ![Online](https://img.shields.io/badge/dynamic/json?url=https://mrvpmspx4fkhs2ucbtept3vwau0keafd.lambda-url.eu-central-1.on.aws/&query=$.total_active&style=for-the-badge&label=EnergyMe-Home%20Active&color=green&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAHYAAAB2AH6XKZyAAAD+ElEQVR42r2Xa0xTVxzAyRaBrcRlU4bZK5hhhiPZJGaguEUZzrgikOHI1kQT34+YGD/4SExM6r23two2tS8KrSCtpbWYKEQUFFEuglBa2tSm1kd8EASiH4wYTTRK/95zg8U+bnvv9fHh96Ef2t/vnHvO6blJAJAkhH8u65anH699VdihsaLPQhH0pVJKXT7DVjMxzWSEz8wGKKbU6z5awIo2o3S2/cgrJH/DDHomxL3KeR88YHlbfUOmzRRE0kiyTunHV5+rEn2wgKXtNc0ZlqNIxkpBu673vQesuStNnd9a7UeCRKSYjVDWrdrw3gL+7jDl5p80P2MEHMk6qX+ScFABZaYU4JO4AaWt9Vvzmo4HRaa6KQFHyqjDeyJ/zzYmz7SNkTtto6TjX+8BKHETK1kDVpyrU82xm4LJvMRT5J/VXUO/0zQsz7KOkLtpqdM2KgdE/X05fN2DQ5GHtMQMEJ9tOJ3RyCw2QXxpNUBpl+qpdVR+HQkjKfcSkNKFQZ6T8EUFFLcf3fettYGXcHqjARa262CdQwkHb1SBdQSJYqMeIiGNwpiA7H7iUViA5NKhmd/YDS+5in87o4PdXgWY7x+YFCRmoYsZPUP6ZWwiLKCgTdvJRTy3uRqwQBWLhJ1dN0kkDiGiMAgFlFBVs9MsxmA8cTJNaZcaLMwU88M4TEJ6DxKHg84YJqCwQ1uXSL7NpeQpnmLRIIGEUZT5FN8zAT+d0j+IF/Bfj0qwfPt1GZLFROKTZTAB6fbal+x7WgtWgfLKeyRM744tF9EwayCpqenTVBZ5msUA2jsHBckNw3L4rhfJYjOzZ3IX5LcczmAbvfiiWpDcRC/UnH4ciViZ0088ZgLQSkw2xw5Q3KrkLW+k5QWh/c7OIid+JbQN6eMzagvOstfwlltplroTyxFiDy4NBWQ3V49HBKDjlbd8mYebHJ2CFX5pWihg8XktFRmw8oqGsxwdTn9yHDnij0GiM+xCsn5AUZQSsQ5WObScF1yei7v8q248KLlKZkfdiH5u0Y+9HbDGmXgG0H/7LwM4ZzniLzehiXklE3eqJW9fQNa64m9BzRAJP/bxk//qwIfj3glzWqpH3gRscLPPAHabpPfxfl7yrD58HB29cQMqutXFqZNrYSNLwJaADEQ8xIgcB/6wwl85i9OtOLdVfxMFbPJoop73kkGCl/gLCoMij6x1vqt2GudrefklxQLRMSNs9k4FyO+Q8EMvzln8OU3uADZU4Sd+F/ReUHhB07flqh6OjZAg8REg4iKlmOf8fIlHdnGtH8t/pxeTHb4jxXtv6CY2BnCY66gMY57zECxwK4OLPcoXy7yqRyU+VeB/v+rEnnuKAiEvp68BSJih/3uMeCMAAAAASUVORK5CYII=)
-![Visitors](https://api.visitorbadge.io/api/VisitorHit?user=jibrilsharafi&repo=EnergyMe-Home&countColor=%97CA00)
 
 [![GitHub release](https://img.shields.io/github/release/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/releases)
 [![GitHub stars](https://img.shields.io/github/stars/jibrilsharafi/EnergyMe-Home.svg?style=social&label=Stars)](https://github.com/jibrilsharafi/EnergyMe-Home/stargazers)
@@ -40,24 +39,25 @@ EnergyMe-Home is compatible with various electrical systems worldwide:
 **Monitoring Capacity:**
 
 - Up to **16 circuits** simultaneously
-- 1× main circuit (typically 50A CT), sampled at high frequency for accurate total energy measurement
-- 15× branch circuits (typically 30A CTs), multiplexed for individual monitoring
+- 1× main circuit, sampled at high frequency for accurate total energy measurement
+- 15× branch circuits, multiplexed for individual monitoring
 
 ⚠️ **Important**: Installation requires working with your main electrical panel. Always consult a qualified electrician if you're not experienced with electrical installations. The user is responsible for ensuring compliance with local electrical codes and regulations, and assumes all risks associated with the installation and use of this device.
 
 ## Hardware
 
-![PCB](resources/PCB%20top%20view.jpg)
+![PCB front](resources/front_pcb_populated.jpg)
+![PCB back](resources/back_pcb_populated.jpg)
 
 The hardware (currently at **v6.1**) consists of both the PCB design and the components used to build the energy monitoring system.
 
 The key components include:
 
-- ESP32-S3: the brain of the project
-- ADE7953: single-phase energy measurement IC
-- ZMPT107-1: voltage transformer providing **full galvanic isolation** between the AC mains and the low-voltage measurement circuitry — no direct connection between mains and the board's ground
-- Multiplexers: used to monitor multiple circuits at once
-- 3.5 mm jack connectors: used to easily connect current transformers
+- **ESP32-S3**: the brain of the project
+- **ADE7953**: single-phase energy measurement IC
+- **ZMPT107-1**: voltage transformer providing **full galvanic isolation** between the AC mains and the low-voltage measurement circuitry, with no direct connection between mains and the board's ground
+- **Multiplexers**: used to monitor multiple circuits at once
+- **3.5 mm jack connectors**: used to easily connect current transformers
 
 PCB schematics and BOMs are available in the `documentation/pcb` directory, while datasheets for key components are in the `documentation/components` directory. Additional hardware specifications and technical details can be found in the [`documentation/README.md`](documentation/README.md).
 
@@ -117,6 +117,10 @@ For detailed build instructions and troubleshooting, see the [documentation](doc
 ## Privacy & Telemetry
 
 Optional anonymous usage statistics sent once per boot: hashed device ID, firmware version, country/city (from public IP). Helps count active installations. No personal data or usage patterns collected. Disable in `platformio.ini`: set `ENABLE_OPEN_SOURCE_TELEMETRY=0`.
+
+## Releases
+
+Firmware binaries and per-version release notes are published on [GitHub Releases](https://github.com/jibrilsharafi/EnergyMe-Home/releases). See [CHANGELOG.md](CHANGELOG.md) for an index of versions and links to the corresponding pull requests.
 
 ## Contributing
 

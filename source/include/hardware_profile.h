@@ -10,7 +10,7 @@
 #include "structs.h"
 
 // Physical 74HC4067 chip maximum: 16 channels (Y0-Y15).
-// Used for muxChannelMap array sizing — do not use for runtime iteration.
+// Used for muxChannelMap array sizing; do not use for runtime iteration.
 #define HW_PROFILE_MAX_MUX_CHANNELS 16
 
 // Compile-time maximum total channels across all PCB versions.
@@ -46,7 +46,7 @@ struct HardwareProfile {
     uint8_t ade7953InterruptPin;
 
     // Voltage sensing network resistor values (ohms).
-    // Used at runtime to compute _voltPerLsb in Ade7953::begin() — see ade7953.cpp.
+    // Used at runtime to compute _voltPerLsb in Ade7953::begin() (see ade7953.cpp).
     float voltageDividerR1;
     float voltageDividerR2;
 
