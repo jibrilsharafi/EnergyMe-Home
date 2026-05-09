@@ -779,7 +779,9 @@ namespace Ade7953
 
         // Arm transient flags on inactive->active transition. Polarity check runs for
         // every channel (including channel 0); the priority slot is meaningful only
-        // for mux-routed channels (channel 0 bypasses the rotation entirely).
+        // for mux-routed channels (channel 0 bypasses the rotation entirely). Already
+        // under _channelDataMutex - meter task / scheduler take the same mutex when
+        // reading or clearing these flags.
         if (wasInactive && _channelData[channelIndex].active) {
             _channelData[channelIndex]._pendingPolarityCheck = true;
             if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
@@ -2126,13 +2128,19 @@ namespace Ade7953
             }
 
             // Drain pending polarity-flip persistence (queued by the meter task on PSRAM
-            // stack, which cannot itself touch NVS). Clear the flag before saving so that
-            // a concurrent re-set from the meter task is picked up on the next iteration.
+            // stack, which cannot itself touch NVS). Test-and-clear under _channelDataMutex
+            // so a concurrent re-set from the meter task lands on the *next* iteration
+            // instead of being lost between the read and the false-write.
             for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
-                if (_pendingPolaritySave[i]) {
-                    _pendingPolaritySave[i] = false;
-                    _saveChannelDataToPreferences(i);
+                bool drain = false;
+                if (acquireMutex(&_channelDataMutex)) {
+                    if (_pendingPolaritySave[i]) {
+                        _pendingPolaritySave[i] = false;
+                        drain = true;
+                    }
+                    releaseMutex(&_channelDataMutex);
                 }
+                if (drain) _saveChannelDataToPreferences(i);
             }
 
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_ENERGY_INTERVAL)) > 0) {
@@ -3747,21 +3755,35 @@ namespace Ade7953
         // reverse flag, queue the NVS write for the energy save task, re-arm the priority
         // slot so the corrected reading lands on the very next linecyc, and discard this
         // reading. The threshold avoids flipping on noise when the circuit is essentially idle.
-        if (_channelData[channelIndex]._pendingPolarityCheck && abs(activePower) >= AUTO_POLARITY_MIN_POWER_W) {
-            if (activePower < 0.0f) {
-                _channelData[channelIndex].reverse = !_channelData[channelIndex].reverse;
-                _pendingPolaritySave[channelIndex] = true;
-                if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
-                _channelData[channelIndex]._pendingPolarityCheck = false;
-                LOG_WARNING(
+        //
+        // Hold _channelDataMutex for the test-and-clear so a concurrent setChannelData arm
+        // is neither lost nor double-fired. The block only fires once per channel after
+        // activation / role change so the contention is negligible.
+        if (abs(activePower) >= AUTO_POLARITY_MIN_POWER_W) {
+            bool flipped = false;
+            bool newReverse = false;
+            if (acquireMutex(&_channelDataMutex)) {
+                if (_channelData[channelIndex]._pendingPolarityCheck) {
+                    _channelData[channelIndex]._pendingPolarityCheck = false;
+                    if (activePower < 0.0f) {
+                        _channelData[channelIndex].reverse = !_channelData[channelIndex].reverse;
+                        _pendingPolaritySave[channelIndex] = true;
+                        if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+                        flipped = true;
+                        newReverse = _channelData[channelIndex].reverse;
+                    }
+                }
+                releaseMutex(&_channelDataMutex);
+            }
+            if (flipped) {
+                LOG_INFO(
                     "%s (%u): auto-detected reversed CT (raw P=%.1fW, role=%s); reverse flag now %d, discarding this reading",
                     channelData.label, channelIndex, activePower,
-                    channelRoleToString(channelData.role), _channelData[channelIndex].reverse
+                    channelRoleToString(channelData.role), newReverse
                 );
                 _recordFailure();
                 return false;
             }
-            _channelData[channelIndex]._pendingPolarityCheck = false;
         }
 
         // Discard negative readings for Load channels (likely CT installed backwards)
@@ -4427,12 +4449,20 @@ namespace Ade7953
 
         // One-shot priority override: a freshly activated channel jumps the WDRR queue
         // for exactly one read so the user gets immediate data (and so the auto-polarity
-        // check runs without waiting for the channel to win a normal slot).
+        // check runs without waiting for the channel to win a normal slot). Take
+        // _channelDataMutex for the test-and-clear so a concurrent re-arm from
+        // setChannelData / the polarity check cannot be lost between read and write.
         for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
-            if (_channelData[i].active && _channelData[i]._pendingPriorityRead) {
-                _channelData[i]._pendingPriorityRead = false;
-                return i;
+            if (!_channelData[i].active) continue;
+            bool claim = false;
+            if (acquireMutex(&_channelDataMutex)) {
+                if (_channelData[i]._pendingPriorityRead) {
+                    _channelData[i]._pendingPriorityRead = false;
+                    claim = true;
+                }
+                releaseMutex(&_channelDataMutex);
             }
+            if (claim) return i;
         }
 
         // Add each channel's weight to its deficit
