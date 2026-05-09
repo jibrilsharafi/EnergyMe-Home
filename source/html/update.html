@@ -460,25 +460,14 @@
             return false; // Prevent the form from submitting the traditional way
         }
 
-        function getDeviceInfo() {
-            energyApi.getSystemInfo()
-                .then(data => {
-                    // Extract firmware info from the system info response
-                    const firmwareInfo = data.static?.firmware || data.firmware;
-                    if (firmwareInfo) {
-                        document.getElementById("current-firmware-version").innerHTML = firmwareInfo.buildVersion || 'N/A';
-                        document.getElementById("current-firmware-date").innerHTML = firmwareInfo.buildDate || 'N/A';
-                    }
-                })
-                .catch(error => {
-                    console.error("Error getting device info:", error);
-                });
-        }
-
         function getFirmwareUpdateInfo() {
-            // Use the unified API via the API client
             energyApi.getFirmwareUpdateInfo()
                 .then(data => {
+                    // Populate current firmware info
+                    document.getElementById("current-firmware-version").innerHTML = data.currentVersion || 'N/A';
+                    document.getElementById("current-firmware-date").innerHTML = data.buildDate || 'N/A';
+
+                    // Populate update availability info
                     updateFirmwareInfoUI(data);
                 })
                 .catch(error => {
@@ -744,7 +733,6 @@
         }
 
         document.addEventListener("DOMContentLoaded", function () {
-            getDeviceInfo();
             getFirmwareUpdateInfo();
         });
     </script>

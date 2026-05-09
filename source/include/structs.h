@@ -6,6 +6,7 @@
 #include <Arduino.h>
 
 #include "constants.h"
+#include "taskprofiler.h"
 
 struct Statistics { // This will be global and we accept the very small race condition as we only do ++ or read the value (almost atomic?)
   uint64_t ade7953TotalInterrupts;
@@ -50,14 +51,34 @@ struct Statistics { // This will be global and we accept the very small race con
     logVerbose(0), logDebug(0), logInfo(0), logWarning(0), logError(0), logFatal(0), logDropped(0) {}
 };
 
+// Lightweight heartbeat holder maintained by each instrumented task. Each task
+// keeps a static TaskHeartbeat in its own translation unit and updates it via
+// the TASK_HEARTBEAT(hb) macro at the top of its main loop. The TaskInfo
+// accessor passes a pointer to it into getTaskInfoSafely so the snapshot
+// reaches /system/info.
+struct TaskHeartbeat {
+  uint64_t lastTickMillis;
+  uint32_t loopCount;
+  TaskHeartbeat() : lastTickMillis(0), loopCount(0) {}
+};
+
 struct TaskInfo {
   uint32_t allocatedStack;
   uint32_t minimumFreeStack;
   float freePercentage;
   float usedPercentage;
 
-  TaskInfo() : allocatedStack(0), minimumFreeStack(0), freePercentage(0.0f), usedPercentage(0.0f) {}
-  TaskInfo(uint32_t allocated, uint32_t minimum) : allocatedStack(allocated), minimumFreeStack(minimum) {
+  // Heartbeat fields. Updated by the task itself via TASK_HEARTBEAT(infoVar) at the
+  // top of its main loop. lastTickMillis stays 0 if the task is not instrumented;
+  // a non-zero value combined with a large now-lastTickMillis gap indicates the
+  // task is starved or stuck. loopCount lets you sanity-check liveness over time.
+  uint64_t lastTickMillis;
+  uint32_t loopCount;
+
+  TaskInfo() : allocatedStack(0), minimumFreeStack(0), freePercentage(0.0f), usedPercentage(0.0f),
+               lastTickMillis(0), loopCount(0) {}
+  TaskInfo(uint32_t allocated, uint32_t minimum) : allocatedStack(allocated), minimumFreeStack(minimum),
+                                                   lastTickMillis(0), loopCount(0) {
     freePercentage = (allocatedStack > 0) ? (100.0f * (float)(minimumFreeStack) / (float)(allocatedStack)) : 0.0f;
     usedPercentage = (allocatedStack > 0) ? (100.0f * (float)(allocatedStack - minimumFreeStack) / (float)(allocatedStack)) : 0.0f;
   }
@@ -106,7 +127,12 @@ struct SystemStaticInfo {
     
     // Device configuration
     char deviceId[DEVICE_ID_BUFFER_SIZE];
-    
+
+    // Factory provisioning (written at manufacturing time into NVS factory_ns;
+    // defaults to "Unknown" / 0 on community / unprovisioned devices).
+    char serialNumber[NAME_BUFFER_SIZE];
+    uint64_t manufacturingUnixTs;
+
     SystemStaticInfo() {
         // Initialize with safe defaults
         memset(this, 0, sizeof(*this));
@@ -127,6 +153,8 @@ struct SystemStaticInfo {
         snprintf(coreVersion, sizeof(coreVersion), "Unknown");
         snprintf(lastResetReasonString, sizeof(lastResetReasonString), "Unknown");
         snprintf(deviceId, sizeof(deviceId), "Unknown");
+        snprintf(serialNumber, sizeof(serialNumber), "Unknown");
+        manufacturingUnixTs = 0;
     }
 };
 
@@ -172,6 +200,11 @@ struct SystemDynamicInfo {
 
     // Performance
     float temperatureCelsius;
+
+    // Per-core CPU stats (current + percentiles) from TaskProfiler ring buffer.
+    // Zero-initialized until begin()+sample() have run.
+    TaskProfiler::CpuStats cpuCore0Stats;
+    TaskProfiler::CpuStats cpuCore1Stats;
     
     // Network status
     int32_t wifiRssi;
@@ -211,15 +244,6 @@ struct SystemDynamicInfo {
         snprintf(wifiDnsIp, sizeof(wifiDnsIp), "0.0.0.0");
         snprintf(wifiBssid, sizeof(wifiBssid), "00:00:00:00:00:00");
     }
-};
-
-struct EfuseProvisioningData {
-    bool isProvisioned;
-    uint32_t serial;
-    uint64_t manufacturingDate;
-    uint16_t hardwareVersion;
-
-    EfuseProvisioningData() : isProvisioned(false), serial(0), manufacturingDate(0), hardwareVersion(0) {}
 };
 
 struct PayloadMeter

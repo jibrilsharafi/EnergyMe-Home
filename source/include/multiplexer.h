@@ -6,6 +6,7 @@
 #include <Arduino.h>
 
 #include "structs.h"
+#include "hardware_profile.h"
 
 #define INVALID_PIN 255
 

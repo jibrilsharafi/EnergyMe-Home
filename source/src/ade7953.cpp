@@ -2,9 +2,14 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "ade7953.h"
+#include "taskprofiler.h"
 
 namespace Ade7953
 {
+    static TaskHeartbeat _meterReadingHeartbeat;
+    static TaskHeartbeat _energySaveHeartbeat;
+    static TaskHeartbeat _hourlyCsvHeartbeat;
+
     // Static variables
     // =========================================================
     // =========================================================
@@ -21,11 +26,20 @@ namespace Ade7953
     static uint64_t _sampleTime; // in milliseconds, time between linecycles readings
     static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
     // Dynamic channel scheduling state (Weighted Deficit Round-Robin)
-    static float _channelWeight[CHANNEL_COUNT] = {};     // Computed dynamic weight per channel
-    static float _channelDeficit[CHANNEL_COUNT] = {};    // Deficit counter for scheduling
-    static float _prevActivePower[CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
-    static float _powerVariability[CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
+    static float _channelWeight[MAX_CHANNEL_COUNT] = {};     // Computed dynamic weight per channel
+    static float _channelDeficit[MAX_CHANNEL_COUNT] = {};    // Deficit counter for scheduling
+    static float _prevActivePower[MAX_CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
+    static float _powerVariability[MAX_CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
     static float _gridFrequency = 50.0f;
+
+    // Set by the meter task when an auto-polarity flip flips the persisted reverse flag.
+    // Drained by the energy save task (internal-RAM stack, flash-capable) since the meter
+    // task runs on a PSRAM stack and cannot perform NVS writes.
+    static volatile bool _pendingPolaritySave[MAX_CHANNEL_COUNT] = {};
+
+    // Voltage-to-LSB conversion factors, computed once in begin() from globalHwProfile voltage divider.
+    static float _voltPerLsb = 0.0f;
+    static float _voltPerLsbInstantaneous = 0.0f;
 
     // Failure tracking
     static uint32_t _failureCount = 0;
@@ -81,9 +95,9 @@ namespace Ade7953
 
     // Configuration and data arrays
     static Ade7953Configuration _configuration;
-    MeterValues _meterValues[CHANNEL_COUNT];
-    EnergyValues _energyValues[CHANNEL_COUNT]; // Store previous energy values for energy comparisons (optimize saving to flash)
-    ChannelData _channelData[CHANNEL_COUNT];
+    MeterValues _meterValues[MAX_CHANNEL_COUNT];
+    EnergyValues _energyValues[MAX_CHANNEL_COUNT]; // Store previous energy values for energy comparisons (optimize saving to flash)
+    ChannelData _channelData[MAX_CHANNEL_COUNT];
     static uint16_t _lineFrequency = DEFAULT_FALLBACK_FREQUENCY; // Line frequency (fixed 50 or 60 Hz value)
 
     // Private function declarations
@@ -139,6 +153,7 @@ namespace Ade7953
     static void _clearAllHistoricalData();
 
     // Configuration management
+    static void _seedConfigurationFromFactory();
     static void _setConfigurationFromPreferences();
     static void _saveConfigurationToPreferences();
     static void _applyConfiguration(const Ade7953Configuration &config); // Apply all the single register values from the configuration
@@ -282,7 +297,13 @@ namespace Ade7953
       
         _setHardwarePins(ssPin, sckPin, misoPin, mosiPin, resetPin, interruptPin);
         LOG_DEBUG("Successfully set up hardware pins");
-     
+
+        // Compute voltage-per-LSB from the hardware profile's voltage divider values.
+        // ratio = R2 / (R1 + R2) — the fraction of the mains voltage seen by the ADE7953 input.
+        const float ratio = globalHwProfile->voltageDividerR2 / (globalHwProfile->voltageDividerR1 + globalHwProfile->voltageDividerR2);
+        _voltPerLsb             = (MAXIMUM_ADC_CHANNEL_INPUT / 1.41421356f) / ratio / static_cast<float>(FULL_SCALE_LSB_FOR_RMS_VALUES);
+        _voltPerLsbInstantaneous = MAXIMUM_ADC_CHANNEL_INPUT / ratio / static_cast<float>(FULL_SCALE_LSB_FOR_INSTANTANEOUS_VALUES);
+
         if (!_verifyCommunication()) {
             LOG_ERROR("Failed to communicate with ADE7953");
             return false;
@@ -295,18 +316,19 @@ namespace Ade7953
         _setDefaultParameters();
         LOG_DEBUG("Set default parameters");
 
+        _seedConfigurationFromFactory();
         _setConfigurationFromPreferences();
         LOG_DEBUG("Done setting configuration from Preferences");
 
         _setSampleTimeFromPreferences();
         LOG_DEBUG("Done setting sample time from Preferences");
 
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _setChannelDataFromPreferences(i);
         }
         LOG_DEBUG("Done setting channel data from Preferences");
 
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _setEnergyFromPreferences(i);
         }
         LOG_DEBUG("Done setting energy from Preferences");
@@ -738,8 +760,9 @@ namespace Ade7953
             return false;
         }
 
-        // Snapshot old role before applying new data (for role change detection)
+        // Snapshot old role and active state before applying new data
         ChannelRole oldRole = _channelData[channelIndex].role;
+        bool wasInactive = !_channelData[channelIndex].active;
 
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
@@ -754,15 +777,28 @@ namespace Ade7953
             _channelData[channelIndex] = channelData;
         }
 
+        // Arm transient flags on inactive->active transition. Polarity check runs for
+        // every channel (including channel 0); the priority slot is meaningful only
+        // for mux-routed channels (channel 0 bypasses the rotation entirely). Already
+        // under _channelDataMutex - meter task / scheduler take the same mutex when
+        // reading or clearing these flags.
+        if (wasInactive && _channelData[channelIndex].active) {
+            _channelData[channelIndex]._pendingPolarityCheck = true;
+            if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+        }
+        // Re-arm polarity check on role change while channel is active (sign convention
+        // can legitimately differ between roles; let the next reading re-validate).
+        if (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role) {
+            _channelData[channelIndex]._pendingPolarityCheck = true;
+        }
+
         _recalculateWeights();
 
         releaseMutex(&_channelDataMutex);
 
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
-        #ifdef HAS_SECRETS
-        Mqtt::requestChannelPublish();
-        #endif
+        if (!globalCommunityMode) Mqtt::requestChannelPublish();
 
         // Detect role change
         bool detected = (oldRole != channelData.role);
@@ -807,7 +843,7 @@ namespace Ade7953
     }
 
     bool getAllChannelDataAsJson(JsonDocument &jsonDocument) {
-        for (uint8_t channelIndex = 0; channelIndex < CHANNEL_COUNT; channelIndex++) {
+        for (uint8_t channelIndex = 0; channelIndex < globalHwProfile->totalChannelCount; channelIndex++) {
             SpiRamAllocator allocator;
             JsonDocument channelDoc(&allocator);
             if (!getChannelDataAsJson(channelDoc, channelIndex)) {
@@ -822,13 +858,13 @@ namespace Ade7953
     }
 
     uint32_t computeAllChannelDataHash() {
-        ChannelData allChannelData[CHANNEL_COUNT];
+        ChannelData allChannelData[MAX_CHANNEL_COUNT];
 
         // Zero-initialize to ensure padding bytes and unused char array bytes are consistent
         memset(allChannelData, 0, sizeof(allChannelData));
 
         // Collect all channel data
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (!getChannelData(allChannelData[i], i)) {
                 LOG_WARNING("Failed to get channel data for hash computation (channel %u)", i);
                 return 0; // Return 0 on error to force fresh data
@@ -889,6 +925,10 @@ namespace Ade7953
     }
 
     void channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial) {
+        // Transient flags are runtime-only and never carried in/out via JSON.
+        channelData._pendingPriorityRead = false;
+        channelData._pendingPolarityCheck = false;
+
         if (partial) {
             // Update only fields that are present in JSON
             if (jsonDocument["index"].is<uint8_t>()) channelData.index = jsonDocument["index"].as<uint8_t>();
@@ -992,7 +1032,7 @@ namespace Ade7953
         }
 
         // Set all energy values to 0 (safe since we acquired the mutex)
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _meterValues[i].activeEnergyImported = 0.0;
             _meterValues[i].activeEnergyExported = 0.0;
             _meterValues[i].reactiveEnergyImported = 0.0;
@@ -1008,7 +1048,7 @@ namespace Ade7953
         preferences.clear();
         preferences.end();
 
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) _saveEnergyToPreferences(i);
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) _saveEnergyToPreferences(i);
 
         // Offload heavy file I/O to background task
         _spawnHistoryClearTask(CLEAR_ALL_CHANNELS_SENTINEL);
@@ -1066,7 +1106,9 @@ namespace Ade7953
             // Skip temporary working files (TEMPORARY_FILE_PREFIX*) that may be left over from previous crashes
             std::vector<char*> filenames;
             File file = dir.openNextFile();
-            while (file) {
+            uint32_t loops = 0;
+            while (file && loops < MAX_LOOP_ITERATIONS) {
+                loops++;
                 const char* filename = file.name();
                 // Skip temporary working files (TEMPORARY_FILE_PREFIX_decompressed.csv, TEMPORARY_FILE_PREFIX_filter.csv, etc.)
                 if (!file.isDirectory() && (endsWith(filename, ".csv") || endsWith(filename, ".csv.gz"))
@@ -1141,7 +1183,9 @@ namespace Ade7953
                 char channelStr[8];
                 snprintf(channelStr, sizeof(channelStr), ",%u,", channelIndex);
 
-                while (srcFile.available()) {
+                uint32_t loops = 0;
+                while (srcFile.available() && loops < MAX_LOOP_ITERATIONS) {
+                    loops++;
                     size_t len = 0;
                     char c;
                     while (srcFile.available() && len < sizeof(lineBuffer) - 1) {
@@ -1290,7 +1334,7 @@ namespace Ade7953
 
 
     bool fullMeterValuesToJson(JsonDocument &jsonDocument) {
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             // Here we also ensure the channel has valid measurements since we have the "duty" to pass all the correct data
             if (isChannelActive(i) && hasChannelValidMeasurements(i)) {
                 ChannelData channelData(i);
@@ -1344,7 +1388,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].activePower;
                 }
@@ -1361,7 +1405,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].reactivePower;
                 }
@@ -1378,7 +1422,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].apparentPower;
                 }
@@ -1396,7 +1440,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sumActivePower += _meterValues[i].activePower;
                     sumApparentPower += _meterValues[i].apparentPower;
@@ -1418,7 +1462,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].activeEnergyImported;
                 }
@@ -1435,7 +1479,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].activeEnergyExported;
                 }
@@ -1452,7 +1496,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].reactiveEnergyImported;
                 }
@@ -1469,7 +1513,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].reactiveEnergyExported;
                 }
@@ -1486,7 +1530,7 @@ namespace Ade7953
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex");
         } else {
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i) && getChannelRole(i) == role) {
                     sum += _meterValues[i].apparentEnergy;
                 }
@@ -1798,9 +1842,10 @@ namespace Ade7953
             if (!Update.isRunning()) {
                 _currentChannel = _findNextActiveChannel(_currentChannel);
 
-                // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
-                // 1 (since channel 0 does not pass through the multiplexer)
-                Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
+                // Channel 0 is the direct ADE7953 input (not routed through the mux). So it will never be chosen as actual _currentChannel value
+                // For channels 1+, look up the physical mux channel via muxChannelMap
+                // (logical index _currentChannel - 1 → physical Y-channel on the 74HC4067).
+                if (_currentChannel != INVALID_CHANNEL) Multiplexer::setChannel(globalHwProfile->muxChannelMap[_currentChannel - 1]);
             } else {
                 LOG_DEBUG("OTA in progress, skipping channel switching to avoid timing issues");
             }
@@ -1988,6 +2033,8 @@ namespace Ade7953
         
         while (_meterReadingTaskShouldRun)
         {
+            TASK_HEARTBEAT(_meterReadingHeartbeat);
+
             // Wait for interrupt signal with timeout
             if (
                 _ade7953InterruptSemaphore != NULL &&
@@ -2074,8 +2121,26 @@ namespace Ade7953
 
         _energySaveTaskShouldRun = true;
         while (_energySaveTaskShouldRun) {
-            for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+            TASK_HEARTBEAT(_energySaveHeartbeat);
+
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 if (isChannelActive(i)) _saveEnergyToPreferences(i);
+            }
+
+            // Drain pending polarity-flip persistence (queued by the meter task on PSRAM
+            // stack, which cannot itself touch NVS). Test-and-clear under _channelDataMutex
+            // so a concurrent re-set from the meter task lands on the *next* iteration
+            // instead of being lost between the read and the false-write.
+            for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+                bool drain = false;
+                if (acquireMutex(&_channelDataMutex)) {
+                    if (_pendingPolaritySave[i]) {
+                        _pendingPolaritySave[i] = false;
+                        drain = true;
+                    }
+                    releaseMutex(&_channelDataMutex);
+                }
+                if (drain) _saveChannelDataToPreferences(i);
             }
 
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_ENERGY_INTERVAL)) > 0) {
@@ -2153,7 +2218,9 @@ namespace Ade7953
             File dailyDir = LittleFS.open(ENERGY_CSV_DAILY_PREFIX);
             if (dailyDir) {
                 File file = dailyDir.openNextFile();
-                while (file) {
+                uint32_t loops = 0;
+                while (file && loops < MAX_LOOP_ITERATIONS) {
+                    loops++;
                     const char* filename = file.name();
                     // Check for files like YYYY-MM-DD.csv.gz from previous months
                     if (endsWith(filename, ".csv.gz") && strlen(filename) >= 10) {
@@ -2184,7 +2251,9 @@ namespace Ade7953
             File monthlyDir = LittleFS.open(ENERGY_CSV_MONTHLY_PREFIX);
             if (monthlyDir) {
                 File file = monthlyDir.openNextFile();
-                while (file) {
+                uint32_t loops = 0;
+                while (file && loops < MAX_LOOP_ITERATIONS) {
+                    loops++;
                     const char* filename = file.name();
                     // Check for files like YYYY-MM.csv.gz from previous years
                     if (endsWith(filename, ".csv.gz") && strlen(filename) >= 7) {
@@ -2212,6 +2281,8 @@ namespace Ade7953
 
         _hourlyCsvSaveTaskShouldRun = true;
         while (_hourlyCsvSaveTaskShouldRun) {
+            TASK_HEARTBEAT(_hourlyCsvHeartbeat);
+
             // Calculate milliseconds until next hour using CustomTime
             uint64_t msUntilNextHour = CustomTime::getMillisecondsUntilNextHour();
             LOG_DEBUG("Waiting for %llu ms until next hour to save the hourly energy", msUntilNextHour);
@@ -2350,7 +2421,9 @@ namespace Ade7953
             if (!root) continue;
 
             File file = root.openNextFile();
-            while (file) {
+            uint32_t loops = 0;
+            while (file && loops < MAX_LOOP_ITERATIONS) {
+                loops++;
                 if (!file.isDirectory() && (strstr(file.name(), ".csv.gz") || strstr(file.name(), ".csv"))) {
                     char fullPathFile[NAME_BUFFER_SIZE];
                     snprintf(fullPathFile, sizeof(fullPathFile), "%s/%s", dirPath, file.name());
@@ -2401,6 +2474,85 @@ namespace Ade7953
 
     // Configuration management functions
     // ==================================
+
+    void _seedConfigurationFromFactory() {
+        // On provisioned devices, seed ade7953_ns from the factory namespace if ade7953_ns
+        // has not been written yet. This copies factory calibration coefficients (written at
+        // manufacturing) into the runtime namespace so _setConfigurationFromPreferences()
+        // picks them up instead of using hardcoded defaults. User calibration changes later
+        // overwrite ade7953_ns, so this seeding only happens once.
+        if (globalCommunityMode) return;
+
+        Preferences adePrefs;
+        if (!adePrefs.begin(PREFERENCES_NAMESPACE_ADE7953, true)) return;
+
+        // Try to read any value from ade7953_ns to check if it's already been seeded
+        // If the value is found, it means it has already been seeded or user-calibrated
+        // so we can skip seeding from factory namespace to avoid overwriting existing calibration with factory values  
+        bool alreadySeeded = adePrefs.isKey(CONFIG_AV_GAIN_KEY);
+        adePrefs.end();
+        if (alreadySeeded) return;
+
+        Preferences factoryPrefs;
+        if (!factoryPrefs.begin(PREFERENCES_NAMESPACE_FACTORY, true)) return;
+
+        // In theory, provisioned device should have the AV gain factory calibration value at least
+        // We use it as proxy to determine if factory calibration values are present - if not, we skip
+        bool hasFactoryCalibration = factoryPrefs.isKey(FACTORY_KEY_AV_GAIN);
+        if (!hasFactoryCalibration) {
+            factoryPrefs.end();
+            LOG_WARNING("Factory calibration namespace found, but values not found, skipping ADE7953 configuration seeding");
+            return;
+        }
+
+        // Read factory calibration values
+        Ade7953Configuration factoryCfg;
+        factoryCfg.aVGain  = factoryPrefs.getLong(FACTORY_KEY_AV_GAIN, DEFAULT_CONFIG_AV_GAIN);
+        factoryCfg.aIGain  = factoryPrefs.getLong(FACTORY_KEY_AI_GAIN, DEFAULT_CONFIG_AI_GAIN);
+        factoryCfg.bIGain  = factoryPrefs.getLong(FACTORY_KEY_BI_GAIN, DEFAULT_CONFIG_BI_GAIN);
+        factoryCfg.aIRmsOs = factoryPrefs.getLong(FACTORY_KEY_AIRMS_OS, DEFAULT_CONFIG_AIRMS_OS);
+        factoryCfg.bIRmsOs = factoryPrefs.getLong(FACTORY_KEY_BIRMS_OS, DEFAULT_CONFIG_BIRMS_OS);
+        factoryCfg.aWGain  = factoryPrefs.getLong(FACTORY_KEY_AW_GAIN, DEFAULT_CONFIG_AW_GAIN);
+        factoryCfg.bWGain  = factoryPrefs.getLong(FACTORY_KEY_BW_GAIN, DEFAULT_CONFIG_BW_GAIN);
+        factoryCfg.aWattOs = factoryPrefs.getLong(FACTORY_KEY_AWATT_OS, DEFAULT_CONFIG_AWATT_OS);
+        factoryCfg.bWattOs = factoryPrefs.getLong(FACTORY_KEY_BWATT_OS, DEFAULT_CONFIG_BWATT_OS);
+        factoryCfg.aVarGain = factoryPrefs.getLong(FACTORY_KEY_AVAR_GAIN, DEFAULT_CONFIG_AVAR_GAIN);
+        factoryCfg.bVarGain = factoryPrefs.getLong(FACTORY_KEY_BVAR_GAIN, DEFAULT_CONFIG_BVAR_GAIN);
+        factoryCfg.aVarOs  = factoryPrefs.getLong(FACTORY_KEY_AVAR_OS, DEFAULT_CONFIG_AVAR_OS);
+        factoryCfg.bVarOs  = factoryPrefs.getLong(FACTORY_KEY_BVAR_OS, DEFAULT_CONFIG_BVAR_OS);
+        factoryCfg.aVaGain = factoryPrefs.getLong(FACTORY_KEY_AVA_GAIN, DEFAULT_CONFIG_AVA_GAIN);
+        factoryCfg.bVaGain = factoryPrefs.getLong(FACTORY_KEY_BVA_GAIN, DEFAULT_CONFIG_BVA_GAIN);
+        factoryCfg.aVaOs   = factoryPrefs.getLong(FACTORY_KEY_AVA_OS, DEFAULT_CONFIG_AVA_OS);
+        factoryCfg.bVaOs   = factoryPrefs.getLong(FACTORY_KEY_BVA_OS, DEFAULT_CONFIG_BVA_OS);
+        factoryCfg.phCalA  = factoryPrefs.getLong(FACTORY_KEY_PHCAL_A, DEFAULT_CONFIG_PHCAL_A);
+        factoryCfg.phCalB  = factoryPrefs.getLong(FACTORY_KEY_PHCAL_B, DEFAULT_CONFIG_PHCAL_B);
+        factoryPrefs.end();
+
+        // Write to ade7953_ns so later _setConfigurationFromPreferences picks them up
+        if (!adePrefs.begin(PREFERENCES_NAMESPACE_ADE7953, false)) return;
+        adePrefs.putLong(CONFIG_AV_GAIN_KEY, factoryCfg.aVGain);
+        adePrefs.putLong(CONFIG_AI_GAIN_KEY, factoryCfg.aIGain);
+        adePrefs.putLong(CONFIG_BI_GAIN_KEY, factoryCfg.bIGain);
+        adePrefs.putLong(CONFIG_AIRMS_OS_KEY, factoryCfg.aIRmsOs);
+        adePrefs.putLong(CONFIG_BIRMS_OS_KEY, factoryCfg.bIRmsOs);
+        adePrefs.putLong(CONFIG_AW_GAIN_KEY, factoryCfg.aWGain);
+        adePrefs.putLong(CONFIG_BW_GAIN_KEY, factoryCfg.bWGain);
+        adePrefs.putLong(CONFIG_AWATT_OS_KEY, factoryCfg.aWattOs);
+        adePrefs.putLong(CONFIG_BWATT_OS_KEY, factoryCfg.bWattOs);
+        adePrefs.putLong(CONFIG_AVAR_GAIN_KEY, factoryCfg.aVarGain);
+        adePrefs.putLong(CONFIG_BVAR_GAIN_KEY, factoryCfg.bVarGain);
+        adePrefs.putLong(CONFIG_AVAR_OS_KEY, factoryCfg.aVarOs);
+        adePrefs.putLong(CONFIG_BVAR_OS_KEY, factoryCfg.bVarOs);
+        adePrefs.putLong(CONFIG_AVA_GAIN_KEY, factoryCfg.aVaGain);
+        adePrefs.putLong(CONFIG_BVA_GAIN_KEY, factoryCfg.bVaGain);
+        adePrefs.putLong(CONFIG_AVA_OS_KEY, factoryCfg.aVaOs);
+        adePrefs.putLong(CONFIG_BVA_OS_KEY, factoryCfg.bVaOs);
+        adePrefs.putLong(CONFIG_PHCAL_A_KEY, factoryCfg.phCalA);
+        adePrefs.putLong(CONFIG_PHCAL_B_KEY, factoryCfg.phCalB);
+        adePrefs.end();
+
+        LOG_INFO("Seeded ADE7953 calibration from factory namespace");
+    }
 
     void _setConfigurationFromPreferences() {
         Preferences preferences;
@@ -2769,7 +2921,7 @@ namespace Ade7953
         }
 
         // Check all other channels with same groupLabel
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (i == channelIndex) continue;  // Skip self
 
             // If another channel has same groupLabel, roles must match
@@ -3018,7 +3170,7 @@ namespace Ade7953
         // General helping values
         // The datasheet provides the absolute maximum input voltage for the ADE7953, 
         // but for convenience we will do all the calculations based on the RMS values
-        float maximumAdcChannelInputRms = MAXIMUM_ADC_CHANNEL_INPUT / sqrt(2.0f);
+        float maximumAdcChannelInputRms = MAXIMUM_ADC_CHANNEL_INPUT / sqrt(2.0f); // Constant value of 0.3535534
 
         // Current constant calculation
         // ----------------------------
@@ -3027,25 +3179,30 @@ namespace Ade7953
         // The usable voltage for the current is related to the CT voltage output, which is typically 333mV for a 30A CT.
         // This value can be exceeded with caution (for instance, using 100A 1V output CTs, given a load that never exceeds
         // 30A).
-        float usableAdcChannelInputRms = ctSpec.voltageOutput / maximumAdcChannelInputRms;
+        float usableFractionAdcChannelInputRms = ctSpec.voltageOutput / maximumAdcChannelInputRms;
         // We need the usable voltage to calculate the usable LSB because if the voltage output is lower than the maximum ADC input,
-        // we will have less LSB to work with, and thus we need to scale everything.
-        float usableLsbRms = FULL_SCALE_LSB_FOR_RMS_VALUES / usableAdcChannelInputRms;
+        // we will have less LSB to work with, and thus we need to scale everything down. Previously we miscompute this
+        // by dividing by usableFractionAdcChannelInputRms instead of multiplying. We must always ensure the usableLsbRms is less than or equal to 
+        // FULL_SCALE_LSB_FOR_RMS_VALUES, since we cannot have more resolution than the maximum allowed by the ADC. If this happens (like with the)
+        // above mentioned 100A 1V output CTs, we will log a warning and proceed with the calculation, but the user should be aware that they are risk
+        // of saturating the ADC if the CT voltage output exceeds the maximum ADC input.
+        float usableLsbRms = FULL_SCALE_LSB_FOR_RMS_VALUES * usableFractionAdcChannelInputRms;
+        if (usableLsbRms > FULL_SCALE_LSB_FOR_RMS_VALUES) {
+            LOG_WARNING("Usable LSB for RMS values (%.0f) exceeds full scale LSB (%ld). Ensure the CT voltage output is within limits.", usableLsbRms, FULL_SCALE_LSB_FOR_RMS_VALUES);
+        }
         // Finally, we can calculate the LSB for the current channel by dividing the current rating (in A RMS) by the usable LSB,
         // remembering to include the scaling fraction.
         ctSpec.aLsb = ctSpec.currentRating / usableLsbRms * (1 + ctSpec.scalingFraction);
 
-        // ctSpec.wLsb = 1.0f / 462.59f;
-        // ctSpec.varLsb = 1.0f / 462.59f;
-        // ctSpec.vaLsb = 1.0f / 462.59f;
-
         // Energy constant calculation
         // ---------------------------
         // This is more tricky since we need to consider the full scale current and voltage ratings
-        // First, we compute the full scale current RMS, which is simply the CT current rating.
-        float fullScaleCurrentRms = ctSpec.currentRating;
+        // First, we compute the possible full scale current RMS, which is based on the theoretical maximum ADC input at the current channel
+        // but with out CT (so most likely with 30A/333mV it will be > 30A). This makes sense because we are not using the full scale (only 333mV RMS/353mV RMS)
+        // so the maximum theoretical full scale current is sligthly higher. The same principle applies to the voltage
+        float fullScaleCurrentRms = ctSpec.currentRating / usableFractionAdcChannelInputRms;
         // Then we compute the full scale voltage RMS, which is the maximum ADC input RMS scaled by the voltage divider ratio.
-        float voltageDivideRatio = 1 / (VOLTAGE_DIVIDER_R2 / (VOLTAGE_DIVIDER_R1 + VOLTAGE_DIVIDER_R2));
+        float voltageDivideRatio = 1 / (globalHwProfile->voltageDividerR2 / (globalHwProfile->voltageDividerR1 + globalHwProfile->voltageDividerR2));
         float fullScaleVoltageRms = maximumAdcChannelInputRms * voltageDivideRatio;
         // The full scale power is simply the product of the full scale current and voltage RMS values (assuming cos phi = 1 for simplicity).
         float fullScalePower = fullScaleCurrentRms * fullScaleVoltageRms;
@@ -3285,7 +3442,7 @@ namespace Ade7953
         }
         
         // Write data for each active channel
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (isChannelActive(i)) {
                 LOG_VERBOSE("Saving hourly energy data for channel %d: %s", i, _channelData[i].label);
 
@@ -3319,7 +3476,7 @@ namespace Ade7953
     }
 
     void _saveEnergyComplete() {
-        for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (isChannelActive(i)) _saveEnergyToPreferences(i, true); // Force save to ensure all values are saved
         }
         if (CustomTime::isNowCloseToHour()) _saveHourlyEnergyToCsv(); // If we are not close to the hour, we avoid saving since we will save at the hour anyway on the next reboot
@@ -3448,7 +3605,7 @@ namespace Ade7953
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
             // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
             if (channelIndex == 0) {
-                voltage = float(_readVoltageRms()) * VOLT_PER_LSB * voltageMultiplier;
+                voltage = float(_readVoltageRms()) * _voltPerLsb * voltageMultiplier;
 
                 // Update grid frequency during channel 0 reading
                 float newGridFrequency = _readGridFrequency();
@@ -3593,6 +3750,42 @@ namespace Ade7953
 
         }
 
+        // Auto-detect a reversed CT clamp on the first meaningful reading after activation
+        // (or after a role change). If the active power is negative, toggle the persisted
+        // reverse flag, queue the NVS write for the energy save task, re-arm the priority
+        // slot so the corrected reading lands on the very next linecyc, and discard this
+        // reading. The threshold avoids flipping on noise when the circuit is essentially idle.
+        //
+        // Hold _channelDataMutex for the test-and-clear so a concurrent setChannelData arm
+        // is neither lost nor double-fired. The block only fires once per channel after
+        // activation / role change so the contention is negligible.
+        if (abs(activePower) >= AUTO_POLARITY_MIN_POWER_W) {
+            bool flipped = false;
+            bool newReverse = false;
+            if (acquireMutex(&_channelDataMutex)) {
+                if (_channelData[channelIndex]._pendingPolarityCheck) {
+                    _channelData[channelIndex]._pendingPolarityCheck = false;
+                    if (activePower < 0.0f) {
+                        _channelData[channelIndex].reverse = !_channelData[channelIndex].reverse;
+                        _pendingPolaritySave[channelIndex] = true;
+                        if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+                        flipped = true;
+                        newReverse = _channelData[channelIndex].reverse;
+                    }
+                }
+                releaseMutex(&_channelDataMutex);
+            }
+            if (flipped) {
+                LOG_INFO(
+                    "%s (%u): auto-detected reversed CT (raw P=%.1fW, role=%s); reverse flag now %d, discarding this reading",
+                    channelData.label, channelIndex, activePower,
+                    channelRoleToString(channelData.role), newReverse
+                );
+                _recordFailure();
+                return false;
+            }
+        }
+
         // Discard negative readings for Load channels (likely CT installed backwards)
         if (activePower < 0.0f && channelData.role == CHANNEL_ROLE_LOAD) {
             LOG_DEBUG(
@@ -3693,7 +3886,7 @@ namespace Ade7953
             _meterValues[channelIndex].apparentPower = 0.0f;
         }
 
-        // TODO: add here, after everything has been validated, the computation of the mean values over the last X values (with a simple exponential filter alpha = 0.3 - 0.5)
+        // TODO: add here, after everything has been validated, the computation of the mean values over the last X values (with a simple exponential filter alpha = 0.3 - 0.5). Allowing for automations, led lights, with more smoothness compared to raw values
 
         // Update dynamic scheduling: track power variability and recalculate channel weights
         _updateVariability(channelIndex, _meterValues[channelIndex].activePower);
@@ -3733,7 +3926,7 @@ namespace Ade7953
     }
 
     void _addMeterDataToPayload(uint8_t channelIndex) {
-        #ifdef HAS_SECRETS
+        if (globalCommunityMode) return;
 
         LOG_VERBOSE("Adding meter data to payload for channel %u", channelIndex);
 
@@ -3756,7 +3949,6 @@ namespace Ade7953
                 meterValues.powerFactor
             )
         );
-        #endif
     }
 
     // ADE7953 register writing functions
@@ -4133,9 +4325,11 @@ namespace Ade7953
         return true;
     }
 
+    // LOG_DEBUG in these validate functions since while the value may be out of boundaries, there could be a reason
+    // (e.g. low currents) that make the error handled. So the actual LOG_WARNING or similar will be handled one level up
     bool _validateVoltage(float value) {
         if (!isValueInRange(value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX)) {
-            LOG_WARNING("Voltage %.1f V out of range (%.1f - %.1f V)", value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
+            LOG_DEBUG("Voltage %.1f V out of range (%.1f - %.1f V)", value, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
             return false;
         }
         return true;
@@ -4143,7 +4337,7 @@ namespace Ade7953
 
     bool _validateCurrent(float value) {
         if (!isValueInRange(value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX)) {
-            LOG_WARNING("Current %.3f A out of range (%.3f - %.3f A)", value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
+            LOG_DEBUG("Current %.3f A out of range (%.3f - %.3f A)", value, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
             return false;
         }
         return true;
@@ -4151,7 +4345,7 @@ namespace Ade7953
 
     bool _validatePower(float value) {
         if (!isValueInRange(value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX)) {
-            LOG_WARNING("Power %.1f W out of range (%.1f - %.1f W)", value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
+            LOG_DEBUG("Power %.1f W out of range (%.1f - %.1f W)", value, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
             return false;
         }
         return true;
@@ -4159,7 +4353,7 @@ namespace Ade7953
 
     bool _validatePowerFactor(float value) {
         if (!isValueInRange(value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX)) {
-            LOG_WARNING("Power factor %.3f out of range (%.3f - %.3f)", value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
+            LOG_DEBUG("Power factor %.3f out of range (%.3f - %.3f)", value, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
             return false;
         }
         return true;
@@ -4167,7 +4361,7 @@ namespace Ade7953
 
     bool _validateGridFrequency(float value) {
         if (!isValueInRange(value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX)) {
-            LOG_WARNING("Grid frequency %.1f Hz out of range (%.1f - %.1f Hz)", value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
+            LOG_DEBUG("Grid frequency %.1f Hz out of range (%.1f - %.1f Hz)", value, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX);
             return false;
         }
         return true;
@@ -4181,7 +4375,7 @@ namespace Ade7953
      * Called after each successful meter reading to track how much the power is changing.
      */
     static void _updateVariability(uint8_t channelIndex, float newActivePower) {
-        if (channelIndex >= CHANNEL_COUNT) return;
+        if (channelIndex >= globalHwProfile->totalChannelCount) return;
         
         // Skip variability computation on the very first reading (prevActivePower is 0 from init)
         // to avoid inflating the variability score with the initial power value
@@ -4207,7 +4401,7 @@ namespace Ade7953
         float totalVariability = 0.0f;
 
         // Sum totals across active multiplexed channels (skip channel 0)
-        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (_channelData[i].active) {
                 totalAbsPower += fabsf(_meterValues[i].activePower);
                 totalVariability += _powerVariability[i];
@@ -4215,7 +4409,7 @@ namespace Ade7953
         }
 
         // Compute per-channel weights
-        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (!_channelData[i].active) {
                 _channelWeight[i] = 0.0f;
                 continue;
@@ -4253,8 +4447,26 @@ namespace Ade7953
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
         (void)currentChannel; // No longer needed for state tracking
 
+        // One-shot priority override: a freshly activated channel jumps the WDRR queue
+        // for exactly one read so the user gets immediate data (and so the auto-polarity
+        // check runs without waiting for the channel to win a normal slot). Take
+        // _channelDataMutex for the test-and-clear so a concurrent re-arm from
+        // setChannelData / the polarity check cannot be lost between read and write.
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
+            if (!_channelData[i].active) continue;
+            bool claim = false;
+            if (acquireMutex(&_channelDataMutex)) {
+                if (_channelData[i]._pendingPriorityRead) {
+                    _channelData[i]._pendingPriorityRead = false;
+                    claim = true;
+                }
+                releaseMutex(&_channelDataMutex);
+            }
+            if (claim) return i;
+        }
+
         // Add each channel's weight to its deficit
-        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (_channelData[i].active) {
                 _channelDeficit[i] += _channelWeight[i];
             } else {
@@ -4266,7 +4478,7 @@ namespace Ade7953
         uint8_t bestChannel = INVALID_CHANNEL;
         float bestDeficit = -1e9f; // Use a very large negative value to ensure any active channel is selectable
 
-        for (uint8_t i = 1; i < CHANNEL_COUNT; i++) {
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (_channelData[i].active && _channelDeficit[i] > bestDeficit) {
                 bestDeficit = _channelDeficit[i];
                 bestChannel = i;
@@ -4405,29 +4617,17 @@ namespace Ade7953
 
     TaskInfo getMeterReadingTaskInfo()
     {
-        if (_meterReadingTaskHandle != NULL) {
-            return TaskInfo(ADE7953_METER_READING_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_meterReadingTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_meterReadingTaskHandle, ADE7953_METER_READING_TASK_STACK_SIZE, &_meterReadingHeartbeat);
     }
 
     TaskInfo getEnergySaveTaskInfo()
     {
-        if (_energySaveTaskHandle != NULL) {
-            return TaskInfo(ADE7953_ENERGY_SAVE_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_energySaveTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_energySaveTaskHandle, ADE7953_ENERGY_SAVE_TASK_STACK_SIZE, &_energySaveHeartbeat);
     }
 
     TaskInfo getHourlyCsvTaskInfo()
     {
-        if (_hourlyCsvSaveTaskHandle != NULL) {
-            return TaskInfo(ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE, uxTaskGetStackHighWaterMark(_hourlyCsvSaveTaskHandle));
-        } else {
-            return TaskInfo(); // Return empty/default TaskInfo if task is not running
-        }
+        return getTaskInfoSafely(_hourlyCsvSaveTaskHandle, ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE, &_hourlyCsvHeartbeat);
     }
 
     // Waveform capture API
@@ -4527,7 +4727,7 @@ namespace Ade7953
         
         // Populate the arrays with scaled values only (leaner JSON)
         for (uint16_t i = 0; i < _captureSampleCount; i++) {
-            voltageArray.add(roundToDecimals(float(_voltageWaveformBuffer[i]) * VOLT_PER_LSB_INSTANTANEOUS, VOLTAGE_DECIMALS));
+            voltageArray.add(roundToDecimals(float(_voltageWaveformBuffer[i]) * _voltPerLsbInstantaneous, VOLTAGE_DECIMALS));
             // HACK: computing the actual value needed for the real current instantaneous values is long. Times 2 is close enough
             currentArray.add(roundToDecimals(float(_currentWaveformBuffer[i]) * _channelData[_captureChannel].ctSpecification.aLsb * 2, CURRENT_DECIMALS));
             microsArray.add(_microsWaveformBuffer[i]);

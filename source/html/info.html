@@ -410,6 +410,14 @@
                     <span class="info-label"><span class="emoji">🆔</span>Device ID</span>
                     <span class="info-value" id="deviceId">Loading...</span>
                 </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🏷️</span>Serial Number</span>
+                    <span class="info-value" id="serialNumber">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📅</span>Manufactured</span>
+                    <span class="info-value" id="manufacturingDate">Loading...</span>
+                </div>
             </div>
 
             <!-- Memory Information Card -->
@@ -500,6 +508,61 @@
                     <span class="info-label"><span class="emoji">🚪</span>Gateway</span>
                     <span class="info-value" id="wifiGateway">Loading...</span>
                 </div>
+            </div>
+
+            <!-- CPU Load Card -->
+            <div class="info-card">
+                <div class="card-header">
+                    <div class="card-icon">🖥️</div>
+                    <h3 class="card-title">CPU Load</h3>
+                </div>
+                <!-- Core 0 -->
+                <div style="margin-bottom: 18px;">
+                    <div style="font-weight: 600; color: #2c3e50; margin-bottom: 8px;">Core 0</div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">⚡</span>Current</span>
+                        <span class="info-value" id="cpuCore0Current">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">📈</span>Max / p99 / p95</span>
+                        <span class="info-value" id="cpuCore0Peaks">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">📊</span>Avg / p50</span>
+                        <span class="info-value" id="cpuCore0Avg">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">⚠️</span>Spikes (&ge;80%)</span>
+                        <span class="info-value" id="cpuCore0Spikes">Loading...</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="cpuCore0Bar"></div>
+                    </div>
+                </div>
+                <!-- Core 1 -->
+                <div>
+                    <div style="font-weight: 600; color: #2c3e50; margin-bottom: 8px;">Core 1</div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">⚡</span>Current</span>
+                        <span class="info-value" id="cpuCore1Current">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">📈</span>Max / p99 / p95</span>
+                        <span class="info-value" id="cpuCore1Peaks">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">📊</span>Avg / p50</span>
+                        <span class="info-value" id="cpuCore1Avg">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">⚠️</span>Spikes (&ge;80%)</span>
+                        <span class="info-value" id="cpuCore1Spikes">Loading...</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="cpuCore1Bar"></div>
+                    </div>
+                </div>
+                <div style="margin-top: 12px; font-size: 0.8rem; color: #888;" id="cpuWindowLabel"></div>
             </div>
 
             <!-- ADE7953 Statistics Card -->
@@ -700,6 +763,9 @@
             document.getElementById('psramSize').textContent = formatBytes(data.static.hardware.psramSizeBytes);
             document.getElementById('temperature').textContent = `${data.dynamic.performance.temperatureCelsius.toFixed(1)}°C`;
 
+            // CPU Load
+            displayCpuInfo(data.dynamic.cpu);
+
             // System Status
             document.getElementById('uptime').textContent = formatUptime(data.dynamic.time.uptimeMilliseconds);
             document.getElementById('currentTime').textContent = new Date(data.dynamic.time.currentTimestampIso).toLocaleString();
@@ -707,6 +773,14 @@
             document.getElementById('crashCount').textContent = `${data.static.monitoring.crashCount} (${data.static.monitoring.consecutiveCrashCount} consecutive)`;
             document.getElementById('lastResetReason').textContent = data.static.monitoring.lastResetReasonString;
             document.getElementById('deviceId').textContent = data.static.device.id;
+
+            // Factory provisioning (shows "Unknown" when the device is not factory-provisioned)
+            const factory = data.static.factory || {};
+            document.getElementById('serialNumber').textContent = factory.serialNumber || 'Unknown';
+            const mfgTs = Number(factory.manufacturingUnixTs) || 0;
+            document.getElementById('manufacturingDate').textContent = mfgTs > 0
+                ? new Date(mfgTs * 1000).toLocaleDateString()
+                : 'Unknown';
 
             // Memory Information
             displayMemoryInfo(data.dynamic.memory);
@@ -716,6 +790,39 @@
 
             // Network Information
             displayNetworkInfo(data.dynamic.network);
+        }
+
+        function displayCpuInfo(cpu) {
+            if (!cpu || !cpu.core0 || !cpu.core1) return;
+
+            function renderCore(prefix, core) {
+                document.getElementById(prefix + 'Current').textContent = core.current + '%';
+                document.getElementById(prefix + 'Peaks').textContent =
+                    core.max + '% / ' + core.p99 + '% / ' + core.p95 + '%';
+                document.getElementById(prefix + 'Avg').textContent =
+                    core.avg + '% / ' + core.p50 + '%';
+
+                const spikeText = core.samplesAboveThreshold + ' / ' + core.samplesInWindow + ' samples';
+                const spikeEl = document.getElementById(prefix + 'Spikes');
+                spikeEl.textContent = spikeText;
+                spikeEl.style.color = core.samplesAboveThreshold > 0 ? '#f44336' : '#4caf50';
+
+                const bar = document.getElementById(prefix + 'Bar');
+                bar.style.width = core.current + '%';
+                bar.className = 'progress-fill ' + (
+                    core.current < 50 ? 'progress-good' :
+                    core.current < 75 ? 'progress-warning' : 'progress-critical'
+                );
+            }
+
+            renderCore('cpuCore0', cpu.core0);
+            renderCore('cpuCore1', cpu.core1);
+
+            const w = cpu.core0.windowSeconds || 0;
+            const label = w > 0
+                ? 'Stats over last ' + (w >= 3600 ? (w / 3600).toFixed(0) + ' h' : w + ' s')
+                : 'Warming up...';
+            document.getElementById('cpuWindowLabel').textContent = label;
         }
 
         function displayStatistics(stats) {
@@ -854,8 +961,8 @@
         }
 
         function getMemoryProgressClass(freePercentage) {
-            if (freePercentage > 50) return 'progress-good';
-            if (freePercentage > 25) return 'progress-warning';
+            if (freePercentage > 25) return 'progress-good';
+            if (freePercentage > 10) return 'progress-warning';
             return 'progress-critical';
         }
 

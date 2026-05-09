@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "buttonhandler.h"
+#include "taskprofiler.h"
 
 namespace ButtonHandler
 {
+    static TaskHeartbeat _heartbeat;
+
     // Static state variables
     static uint8_t _buttonPin = INVALID_PIN; // Default pin
     static TaskHandle_t _buttonTaskHandle = NULL;
@@ -128,6 +131,8 @@ namespace ButtonHandler
         // This task should "never" be stopped, and to avoid over-complicating due to the semaphore, we don't stick to the standard approach
         while (true)
         {
+            TASK_HEARTBEAT(_heartbeat);
+
             // Wait for button event or timeout for visual feedback updates
             if (xSemaphoreTake(_buttonSemaphore, feedbackUpdateInterval)) {
                 // Button event occurred
@@ -289,6 +294,6 @@ namespace ButtonHandler
 
     TaskInfo getTaskInfo()
     {
-        return getTaskInfoSafely(_buttonTaskHandle, BUTTON_TASK_STACK_SIZE);
+        return getTaskInfoSafely(_buttonTaskHandle, BUTTON_TASK_STACK_SIZE, &_heartbeat);
     }
 }

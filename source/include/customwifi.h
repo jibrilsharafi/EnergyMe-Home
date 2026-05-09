@@ -16,6 +16,7 @@
 
 #include "awsconfig.h"
 #include "constants.h"
+#include "factory_keys.h"
 #include "globals.h"
 #include "led.h"
 #include "utils.h"
@@ -50,11 +51,15 @@
 // =====================
 // NOTE: Build-time flag ENABLE_OPEN_SOURCE_TELEMETRY controls whether telemetry is sent.
 //       Set -DENABLE_OPEN_SOURCE_TELEMETRY=0 or remove the define to disable.
-#define TELEMETRY_URL "lwpomidzl5vkgmit72oq25rwtu0asdwf.lambda-url.eu-central-1.on.aws"
+#ifdef ENV_DEV
+#define TELEMETRY_URL "5jyfvyfmubfr6rw7tx7ozb4foq0hstkk.lambda-url.eu-west-1.on.aws"
+#else
+#define TELEMETRY_URL "vd2obqbugurdyhbf4iaxrzmk4i0njltb.lambda-url.eu-west-1.on.aws"
+#endif
 #define TELEMETRY_PORT 443
 #define TELEMETRY_PATH "/"
 #define TELEMETRY_TIMEOUT_MS (1 * 1000) // Very short timeout since we don't really care about the response
-#define TELEMETRY_JSON_BUFFER_SIZE 512 // Sufficient for {device_id, firmware_version, sketch_md5}
+#define TELEMETRY_JSON_BUFFER_SIZE 512 // Sufficient for {hashed_device_id, firmware_version, sketch_md5}
 
 namespace CustomWifi
 {

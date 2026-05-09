@@ -6,8 +6,8 @@
 // Note: all the durations hereafter are in milliseconds unless specified otherwise
 
 // Firmware info
-#define FIRMWARE_BUILD_VERSION_MAJOR "1"
-#define FIRMWARE_BUILD_VERSION_MINOR "1"
+#define FIRMWARE_BUILD_VERSION_MAJOR "2"
+#define FIRMWARE_BUILD_VERSION_MINOR "0"
 #define FIRMWARE_BUILD_VERSION_PATCH "0"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
@@ -18,9 +18,9 @@
 #define COMPANY_NAME "EnergyMe"
 #define PRODUCT_NAME "Home"
 #define FULL_PRODUCT_NAME "EnergyMe - Home"
-#define PRODUCT_DESCRIPTION "An open-source energy monitoring system for home use, capable of monitoring up to 17 circuits."
+#define PRODUCT_DESCRIPTION "An open-source energy monitoring system for home use, capable of monitoring up to 16 circuits."
 #define GITHUB_URL "https://github.com/jibrilsharafi/EnergyMe-Home"
-#define GITHUB_API_RELEASES_URL "https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases/latest"
+#define GITHUB_API_RELEASES_URL "https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases?per_page=20"
 #define AUTHOR "Jibril Sharafi"
 #define AUTHOR_EMAIL "jibril.sharafi@gmail.com"
 
@@ -43,10 +43,39 @@
 #define PREFERENCES_NAMESPACE_WIFI "wifi_ns"
 #define PREFERENCES_NAMESPACE_TIME "time_ns"
 #define PREFERENCES_NAMESPACE_CRASHMONITOR "crashmonitor_ns"
-#define PREFERENCES_NAMESPACE_CERTIFICATES "certificates_ns"
+#define PREFERENCES_NAMESPACE_FACTORY "factory_ns"
 #define PREFERENCES_NAMESPACE_LED "led_ns"
 #define PREFERENCES_NAMESPACE_AUTH "auth_ns" 
 #define PREFERENCES_NAMESPACE_UDP_LOG "udp_log_ns"
+
+// Default ESP32 NVS spaces (only for reference - should never be touched)
+#define PREFERENCES_DEFAULT_NAMESPACE_PHY "phy"
+#define PREFERENCES_DEFAULT_NAMESPACE_WIFI "nvs.net80211"
+
+// NVS namespaces excluded from backup/restore (sensitive or device-specific data)
+// These must be skipped during export and rejected during import
+#define EXCLUDED_NVS_NAMESPACES_LIST \
+    PREFERENCES_NAMESPACE_AUTH, \
+    PREFERENCES_DEFAULT_NAMESPACE_WIFI, \
+    PREFERENCES_DEFAULT_NAMESPACE_PHY, \
+    PREFERENCES_NAMESPACE_FACTORY
+
+#define TO_INITIALIZE_NVS_NAMESPACES_LIST \
+    PREFERENCES_NAMESPACE_GENERAL, \
+    PREFERENCES_NAMESPACE_ADE7953, \
+    PREFERENCES_NAMESPACE_ENERGY, \
+    PREFERENCES_NAMESPACE_CALIBRATION, \
+    PREFERENCES_NAMESPACE_CHANNELS, \
+    PREFERENCES_NAMESPACE_MQTT, \
+    PREFERENCES_NAMESPACE_CUSTOM_MQTT, \
+    PREFERENCES_NAMESPACE_INFLUXDB, \
+    PREFERENCES_NAMESPACE_BUTTON, \
+    PREFERENCES_NAMESPACE_WIFI, \
+    PREFERENCES_NAMESPACE_TIME, \
+    PREFERENCES_NAMESPACE_CRASHMONITOR, \
+    PREFERENCES_NAMESPACE_LED, \
+    PREFERENCES_NAMESPACE_AUTH, \
+    PREFERENCES_NAMESPACE_UDP_LOG, \
 
 // Logger
 #define LOG_PATH "/log.txt"
@@ -83,10 +112,6 @@
 #define TASK_STOPPING_TIMEOUT (3 * 1000)
 #define TASK_STOPPING_CHECK_INTERVAL 100
 #define CONFIG_MUTEX_TIMEOUT_MS (1 * 1000) // Generic timeout for configuration mutexes. Long timeouts cause wdt crash (like in async tcp)
-
-// Channel configuration
-#define MULTIPLEXER_CHANNEL_COUNT 16
-#define CHANNEL_COUNT (MULTIPLEXER_CHANNEL_COUNT + 1) // All the 16 of the multiplexer + 1 directly going to channel A of ADE7953 
 
 // Server used ports (here to ensure no conflicts)
 #define MODBUS_TCP_PORT 502

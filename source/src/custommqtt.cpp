@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "custommqtt.h"
+#include "taskprofiler.h"
 
 namespace CustomMqtt
 {
+    static TaskHeartbeat _heartbeat;
+
     // Static variables
     // ==========================================================
     
@@ -277,6 +280,7 @@ namespace CustomMqtt
         CustomMqttConfiguration config;
 
         while (_taskShouldRun) {
+            TASK_HEARTBEAT(_heartbeat);
             getConfiguration(config);
             if (config.enabled) { // We have the custom MQTT enabled (atomic operation, no race condition)
                 if (CustomWifi::isFullyConnected()) { // We are connected (no need to check if time is synched)
@@ -594,6 +598,6 @@ namespace CustomMqtt
 
     TaskInfo getTaskInfo()
     {
-        return getTaskInfoSafely(_customMqttTaskHandle, CUSTOM_MQTT_TASK_STACK_SIZE);
+        return getTaskInfoSafely(_customMqttTaskHandle, CUSTOM_MQTT_TASK_STACK_SIZE, &_heartbeat);
     }
 }

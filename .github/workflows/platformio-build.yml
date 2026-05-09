@@ -7,15 +7,15 @@ on:
     branches: [ development, main ]
 
 jobs:
-  # Job 1: Validation build with dummy secrets (only runs on PRs to give a quicker feedback)
+  # Job 1: Validation build on PRs (quick feedback)
   build-check:
     runs-on: ubuntu-latest
-    name: Build Check (Dummy Secrets)
+    name: Build Check
     if: github.event_name == 'pull_request'
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
     - name: Set up Python
       uses: actions/setup-python@v6
@@ -23,7 +23,7 @@ jobs:
         python-version: '3.11.7' # Same version as PlatformIO installs on its own via VSCode extension
 
     - name: Cache PlatformIO
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.platformio
@@ -43,42 +43,25 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "📌 Detected version: $VERSION"
 
-    - name: Determine build environments
+    - name: Determine build environment
       id: envs
       run: |
         if [[ "${{ github.base_ref }}" == "main" || "${{ github.head_ref }}" == *"main"* ]]; then
           echo "ENV1=esp32s3-prod" >> $GITHUB_OUTPUT
-          echo "ENV2=esp32s3-prod-nosecrets" >> $GITHUB_OUTPUT
           echo "ENV_TYPE=prod" >> $GITHUB_OUTPUT
-          echo "📦 Building PRODUCTION environments"
+          echo "📦 Building PRODUCTION environment"
         else
           echo "ENV1=esp32s3-dev" >> $GITHUB_OUTPUT
-          echo "ENV2=esp32s3-dev-nosecrets" >> $GITHUB_OUTPUT
           echo "ENV_TYPE=dev" >> $GITHUB_OUTPUT
-          echo "📦 Building DEVELOPMENT environments"
+          echo "📦 Building DEVELOPMENT environment"
         fi
-
-    - name: Create dummy secrets
-      working-directory: source
-      run: |
-        mkdir -p secrets
-        echo "dummy" > secrets/privateclaim.pem
-        echo "dummy" > secrets/certclaim.pem
-        echo "dummy" > secrets/encryptionkey.txt
 
     - name: Build firmware (${{ steps.envs.outputs.ENV1 }})
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV1 }} with dummy secrets..."
+        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV1 }}..."
         pio run -e ${{ steps.envs.outputs.ENV1 }}
         echo "✅ Build completed for ${{ steps.envs.outputs.ENV1 }}!"
-
-    - name: Build firmware (${{ steps.envs.outputs.ENV2 }})
-      working-directory: source
-      run: |
-        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV2 }}..."
-        pio run -e ${{ steps.envs.outputs.ENV2 }}
-        echo "✅ Build completed for ${{ steps.envs.outputs.ENV2 }}!"
 
     - name: Prepare artifacts (${{ steps.envs.outputs.ENV1 }})
       working-directory: source
@@ -89,38 +72,22 @@ jobs:
         cp .pio/build/${{ steps.envs.outputs.ENV1 }}/partitions.bin artifacts/${{ steps.envs.outputs.ENV1 }}/partitions.bin
         cp .pio/build/${{ steps.envs.outputs.ENV1 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV1 }}/bootloader.bin
 
-    - name: Prepare artifacts (${{ steps.envs.outputs.ENV2 }})
-      working-directory: source
-      run: |
-        mkdir -p artifacts/${{ steps.envs.outputs.ENV2 }}
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/firmware.bin artifacts/${{ steps.envs.outputs.ENV2 }}/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/firmware.elf artifacts/${{ steps.envs.outputs.ENV2 }}/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.elf
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/partitions.bin artifacts/${{ steps.envs.outputs.ENV2 }}/partitions.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV2 }}/bootloader.bin
-
     - name: Upload artifacts (${{ steps.envs.outputs.ENV1 }})
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: firmware-${{ steps.envs.outputs.ENV1 }}-check-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
         path: source/artifacts/${{ steps.envs.outputs.ENV1 }}/
         retention-days: 7
 
-    - name: Upload artifacts (${{ steps.envs.outputs.ENV2 }})
-      uses: actions/upload-artifact@v4
-      with:
-        name: firmware-${{ steps.envs.outputs.ENV2 }}-check-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
-        path: source/artifacts/${{ steps.envs.outputs.ENV2 }}/
-        retention-days: 7
-
-  # Job 2: Production build with real secrets (only runs on push to main/development to also provide the binary)
-  build-with-secrets:
+  # Job 2: Full build on push to main/development (produces retained artifacts)
+  build:
     runs-on: ubuntu-latest
-    name: Build with Real Secrets (Private)
+    name: Build
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
     - name: Set up Python
       uses: actions/setup-python@v6
@@ -128,7 +95,7 @@ jobs:
         python-version: '3.11.7' # Same version as PlatformIO installs on its own via VSCode extension
 
     - name: Cache PlatformIO
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.platformio
@@ -148,51 +115,25 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "📌 Detected version: $VERSION"
 
-    - name: Determine build environments
+    - name: Determine build environment
       id: envs
       run: |
         if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
           echo "ENV1=esp32s3-prod" >> $GITHUB_OUTPUT
-          echo "ENV2=esp32s3-prod-nosecrets" >> $GITHUB_OUTPUT
           echo "ENV_TYPE=prod" >> $GITHUB_OUTPUT
-          echo "📦 Building PRODUCTION environments"
+          echo "📦 Building PRODUCTION environment"
         else
           echo "ENV1=esp32s3-dev" >> $GITHUB_OUTPUT
-          echo "ENV2=esp32s3-dev-nosecrets" >> $GITHUB_OUTPUT
           echo "ENV_TYPE=dev" >> $GITHUB_OUTPUT
-          echo "📦 Building DEVELOPMENT environments"
+          echo "📦 Building DEVELOPMENT environment"
         fi
 
-    - name: Create secrets directory
-      working-directory: source
-      run: mkdir -p secrets
-
-    - name: Inject real secrets
-      working-directory: source/secrets
-      env:
-        PRIVATE_CLAIM_PEM: ${{ secrets.PRIVATE_CLAIM_PEM }}
-        CERT_CLAIM_PEM: ${{ secrets.CERT_CLAIM_PEM }}
-        ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-      run: |
-        echo "🔐 Injecting real secrets..."
-        printf "%s" "$PRIVATE_CLAIM_PEM" > privateclaim.pem
-        printf "%s" "$CERT_CLAIM_PEM" > certclaim.pem
-        printf "%s" "$ENCRYPTION_KEY" > encryptionkey.txt
-        echo "✅ Secrets injected successfully"
-
-    - name: Build firmware with real secrets (${{ steps.envs.outputs.ENV1 }})
+    - name: Build firmware (${{ steps.envs.outputs.ENV1 }})
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV1 }} with REAL secrets..."
+        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV1 }}..."
         pio run -e ${{ steps.envs.outputs.ENV1 }}
         echo "✅ Build completed for ${{ steps.envs.outputs.ENV1 }}!"
-
-    - name: Build firmware (${{ steps.envs.outputs.ENV2 }})
-      working-directory: source
-      run: |
-        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV2 }}..."
-        pio run -e ${{ steps.envs.outputs.ENV2 }}
-        echo "✅ Build completed for ${{ steps.envs.outputs.ENV2 }}!"
 
     - name: Prepare artifacts (${{ steps.envs.outputs.ENV1 }})
       working-directory: source
@@ -203,36 +144,12 @@ jobs:
         cp .pio/build/${{ steps.envs.outputs.ENV1 }}/partitions.bin artifacts/${{ steps.envs.outputs.ENV1 }}/partitions.bin
         cp .pio/build/${{ steps.envs.outputs.ENV1 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV1 }}/bootloader.bin
 
-    - name: Prepare artifacts (${{ steps.envs.outputs.ENV2 }})
-      working-directory: source
-      run: |
-        mkdir -p artifacts/${{ steps.envs.outputs.ENV2 }}
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/firmware.bin artifacts/${{ steps.envs.outputs.ENV2 }}/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/firmware.elf artifacts/${{ steps.envs.outputs.ENV2 }}/energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.elf
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/partitions.bin artifacts/${{ steps.envs.outputs.ENV2 }}/partitions.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV2 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV2 }}/bootloader.bin
-
-    - name: Upload private firmware artifact (${{ steps.envs.outputs.ENV1 }})
-      uses: actions/upload-artifact@v4
+    - name: Upload firmware artifact (${{ steps.envs.outputs.ENV1 }})
+      uses: actions/upload-artifact@v5
       with:
-        name: firmware-${{ steps.envs.outputs.ENV1 }}-private-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
+        name: firmware-${{ steps.envs.outputs.ENV1 }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
         path: source/artifacts/${{ steps.envs.outputs.ENV1 }}/
         retention-days: 30
-
-    - name: Upload firmware artifact (${{ steps.envs.outputs.ENV2 }})
-      uses: actions/upload-artifact@v4
-      with:
-        name: firmware-${{ steps.envs.outputs.ENV2 }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
-        path: source/artifacts/${{ steps.envs.outputs.ENV2 }}/
-        retention-days: 30
-
-    - name: Cleanup secrets
-      if: always()  # Always run, even if build fails
-      working-directory: source
-      run: |
-        echo "🧹 Cleaning up secrets..."
-        rm -rf secrets/
-        echo "✅ Secrets cleaned up"
 
     - name: Build summary
       run: |
@@ -241,21 +158,11 @@ jobs:
         echo "**Version**: \`${{ steps.version.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
         echo "**Environment Type**: \`${{ steps.envs.outputs.ENV_TYPE }}\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "#### 🔐 Private Build (${{ steps.envs.outputs.ENV1 }})" >> $GITHUB_STEP_SUMMARY
-        echo "✅ Firmware built with real secrets" >> $GITHUB_STEP_SUMMARY
-        echo "📦 Artifact: \`firmware-${{ steps.envs.outputs.ENV1 }}-private-${{ steps.version.outputs.VERSION }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "#### Build (${{ steps.envs.outputs.ENV1 }})" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Firmware built successfully" >> $GITHUB_STEP_SUMMARY
+        echo "📦 Artifact: \`firmware-${{ steps.envs.outputs.ENV1 }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
         echo "📄 Files:" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`partitions.bin\`" >> $GITHUB_STEP_SUMMARY
-        echo "🔒 **This artifact is PRIVATE** - only accessible to repository members" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "#### 🌐 Public Build (${{ steps.envs.outputs.ENV2 }})" >> $GITHUB_STEP_SUMMARY
-        echo "✅ Firmware built without embedded secrets" >> $GITHUB_STEP_SUMMARY
-        echo "📦 Artifact: \`firmware-${{ steps.envs.outputs.ENV2 }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "📄 Files:" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.bin\`" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}_nosecrets.elf\`" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`partitions.bin\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
         echo "⏱️ Retention: 30 days" >> $GITHUB_STEP_SUMMARY

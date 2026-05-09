@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "influxdbclient.h"
+#include "taskprofiler.h"
 
 namespace InfluxDbClient
 {
+    static TaskHeartbeat _heartbeat;
+
     // Static variables
     // ==========================================================
     
@@ -325,6 +328,7 @@ namespace InfluxDbClient
         InfluxDbConfiguration config;
 
         while (_taskShouldRun) {
+            TASK_HEARTBEAT(_heartbeat);
             getConfiguration(config);
             if (config.enabled) { // We have the InfluxDB enabled
                 if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) { // We are connected and time is synched (needed as InfluxDB requires timestamps)
@@ -562,7 +566,7 @@ namespace InfluxDbClient
         size_t remaining = PAYLOAD_BUFFER_SIZE;
         bool bufferFull = false;
 
-        for (uint8_t i = 0; i < CHANNEL_COUNT && !bufferFull; i++)
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount && !bufferFull; i++)
         {
             if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i))
             {
@@ -769,6 +773,6 @@ namespace InfluxDbClient
 
     TaskInfo getTaskInfo()
     {
-        return getTaskInfoSafely(_influxDbTaskHandle, INFLUXDB_TASK_STACK_SIZE);
+        return getTaskInfoSafely(_influxDbTaskHandle, INFLUXDB_TASK_STACK_SIZE, &_heartbeat);
     }
 } // namespace InfluxDbClient

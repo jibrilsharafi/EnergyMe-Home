@@ -12,7 +12,7 @@ Provide project context and coding guidelines that AI should follow when generat
 
 1. **Project Context**:
     - EnergyMe-Home is an open-source ESP32-based energy monitoring system using the Arduino framework with PlatformIO
-    - Monitors up to 17 circuits (1 direct + 16 multiplexed) via ADE7953 energy meter IC
+    - Monitors up to 16 circuits (1 direct + 15 multiplexed) via ADE7953 energy meter IC
     - Primary interfaces: Web UI, MQTT, InfluxDB, Modbus TCP
     - Uses Preferences for configuration storage and LittleFS for historical data (compressed CSV)
     - Most processing is handled by the ADE7953 IC - ESP32S3 mainly handles communication and data routing
@@ -30,6 +30,14 @@ Provide project context and coding guidelines that AI should follow when generat
     - Use named constants for buffer sizes (e.g., `URL_BUFFER_SIZE`, `LINE_PROTOCOL_BUFFER_SIZE`)
     - Use `sizeof(buffer)` instead of hardcoded sizes in function calls
     - Only optimize memory usage in frequently called or critical functions (understand from context)
+
+    **Loop Safety:**
+    - Every `while(...)` loop MUST be bounded by `MAX_LOOP_ITERATIONS` (defined in `constants.h`), except:
+      - Task loops that run until a `_taskShouldRun` flag is cleared
+      - `while(true)` / `while(1)` loops
+      - Loops already bounded by a size/length variable that physically cannot exceed a safe count
+    - Use `uint32_t loops = 0;` before the loop, `loops++` at the top of the body, and add `loops < MAX_LOOP_ITERATIONS` to the condition
+    - If a loop legitimately needs more iterations than `MAX_LOOP_ITERATIONS`, increase the constant value in `constants.h` with a comment explaining why
 
     **Error Handling:**
     - Never use try-catch blocks - they are not supported in the Arduino framework

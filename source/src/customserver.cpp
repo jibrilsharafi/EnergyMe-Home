@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "taskprofiler.h"
 
 namespace CustomServer
 {
+    static TaskHeartbeat _healthCheckHeartbeat;
+
     // Private variables
     // ==============================
     // ==============================
@@ -88,10 +91,8 @@ namespace CustomServer
     static void _serveOtaUploadEndpoint();
     static void _serveOtaStatusEndpoint();
     static void _serveOtaRollbackEndpoint();
-    #ifndef HAS_SECRETS
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc);
     static int _compareVersions(const char* current, const char* available);
-    #endif
     static void _serveFirmwareStatusEndpoint();
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request);
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
@@ -423,6 +424,8 @@ namespace CustomServer
         _healthCheckTaskShouldRun = true;
         while (_healthCheckTaskShouldRun)
         {
+            TASK_HEARTBEAT(_healthCheckHeartbeat);
+
             // Perform health check
             if (_performHealthCheck())
             {
@@ -577,6 +580,7 @@ namespace CustomServer
 
         return res > 0 && res < bufferSize; // Ensure we don't return true if the password is actually null or too long
     }
+    
     // Only check length - there is no need to be picky here
     static bool _validatePasswordStrength(const char *password)
     {
@@ -1291,9 +1295,7 @@ namespace CustomServer
         });
     }
 
-    // TODO: important, since we are going to embed the certs in the nvs of the device in v6, we can allow to update from github since the firmware will be unified regardless of the secrets compiled or not
-    #ifndef HAS_SECRETS
-    static bool _fetchGitHubReleaseInfo(JsonDocument &doc) // Used only if no secrets are compiled
+    static bool _fetchGitHubReleaseInfo(JsonDocument &doc)
     {
         // Check internet connectivity before attempting API call
         if (!CustomWifi::isFullyConnected(true)) {
@@ -1319,48 +1321,77 @@ namespace CustomServer
         String response = http.getString();
         http.end();
 
-        DeserializationError error = deserializeJson(doc, response);
+
+        // Create the JSON document for parsing the response (different from the function argument doc)
+        SpiRamAllocator allocator;
+        JsonDocument responseDoc(&allocator);
+
+        DeserializationError error = deserializeJson(responseDoc, response);
         if (error) {
             LOG_WARNING("Failed to parse GitHub API response: %s", error.c_str());
             return false;
         }
-        
-        // Extract release information
-        if (!doc["tag_name"].is<const char*>()) {
-            LOG_WARNING("Invalid GitHub API response: missing tag_name");
+
+        if (!responseDoc.is<JsonArray>()) {
+            LOG_WARNING("Invalid GitHub API response: expected array");
             return false;
         }
-        
-        const char* tagName = doc["tag_name"];
-        const char* releaseDate = doc["published_at"].as<const char*>();
-        const char* changelog = doc["html_url"].as<const char*>();
-        
-        // Find .bin asset
-        JsonArray assets = doc["assets"];
+
+        // Find the latest non-prerelease release matching the current major version
+        const char* tagName = nullptr;
+        const char* releaseDate = nullptr;
+        const char* changelog = nullptr;
         const char* downloadUrl = nullptr;
-        
-        for (JsonObject asset : assets) {
-            const char* name = asset["name"];
-            // We must ensure we are not taking bootloader.bin or similar files.
-            // The firmware name is always like energyme_home_vX.Y.Z.bin.
-            if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
-                downloadUrl = asset["browser_download_url"];
-                break;
+
+        for (JsonObject release : responseDoc.as<JsonArray>()) {
+            if (release["prerelease"].as<bool>() || release["draft"].as<bool>()) continue;
+
+            const char* tag = release["tag_name"].as<const char*>();
+            if (!tag) continue;
+
+            // Parse major version from tag (strip leading 'v' if present)
+            const char* tagStr = (tag[0] == 'v') ? tag + 1 : tag;
+            int major = 0;
+            sscanf(tagStr, "%d", &major);
+
+            // Only consider releases matching the current firmware major version
+            if (major != atoi(FIRMWARE_BUILD_VERSION_MAJOR)) continue;
+
+            // Releases are returned newest-first, so the first match is the latest
+            tagName = tag;
+            releaseDate = release["published_at"].as<const char*>();
+            changelog = release["html_url"].as<const char*>();
+
+            for (JsonObject asset : release["assets"].as<JsonArray>()) {
+                const char* name = asset["name"].as<const char*>();
+                if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
+                    downloadUrl = asset["browser_download_url"].as<const char*>();
+                    break;
+                }
             }
+            break;
         }
-        
-        // Set response fields
-        doc["availableVersion"] = tagName;
-        if (releaseDate) doc["releaseDate"] = releaseDate;
-        if (downloadUrl) doc["updateUrl"] = downloadUrl;
-        if (changelog) doc["changelogUrl"] = changelog;
-        
+
+        if (!tagName) {
+            LOG_WARNING("No matching release found for major version %s", FIRMWARE_BUILD_VERSION_MAJOR);
+            return false;
+        }
+
         // Compare versions to determine if update is available
-        doc["isLatest"] = _compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
-        
-        LOG_DEBUG("GitHub release info fetched: version=%s, isLatest=%s", 
-                 tagName, doc["isLatest"].as<bool>() ? "true" : "false");
-        
+        bool isLatest = _compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
+        doc["isLatest"] = isLatest;
+
+        // Only populate update fields when a newer version is available
+        if (!isLatest) {
+            doc["availableVersion"] = tagName;
+            if (releaseDate) doc["releaseDate"] = releaseDate;
+            if (downloadUrl) doc["updateUrl"] = downloadUrl;
+            if (changelog) doc["changelogUrl"] = changelog;
+        }
+
+        LOG_DEBUG("GitHub release info fetched: version=%s, isLatest=%s",
+                 tagName, isLatest ? "true" : "false");
+
         return true;
     }
 
@@ -1382,7 +1413,6 @@ namespace CustomServer
         if (currentMinor != availableMinor) return currentMinor - availableMinor;
         return currentPatch - availablePatch;
     }
-    #endif
 
     static void _serveFirmwareStatusEndpoint()
     {
@@ -1395,18 +1425,22 @@ namespace CustomServer
             // Get current firmware info
             doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
             doc["buildDate"] = FIRMWARE_BUILD_DATE;
-            doc["buildTime"] = FIRMWARE_BUILD_TIME;
-            
-            #ifdef HAS_SECRETS
-            doc["isLatest"] = true; // TODO: when with v6 the certs will be embedded, the HAS_SECRETS will be removed and this will work anyway
-            #else
-            // Fetch from GitHub API when no secrets are available
-            if (!_fetchGitHubReleaseInfo(doc)) {
-                // If GitHub fetch fails, just return current version info
-                doc["isLatest"] = true; // Assume latest if we can't check
-                LOG_WARNING("Failed to fetch GitHub release info, assuming current version is latest");
+
+            // In non-community mode, we assume updates are handled via app/cloud, so we consider it always up to date            
+            if (!globalCommunityMode) doc["isLatest"] = true; 
+            else if (CustomWifi::isFullyConnected(true)) { // Check internet connectivity before checking anything            
+                // Fetch from GitHub API in community mode
+                bool githubInfoFetched = _fetchGitHubReleaseInfo(doc);
+                
+                if (!githubInfoFetched) {
+                    doc["isLatest"] = true; // Assume latest since we can't check
+                    // Here we log the warning since internet should be present, but most likely GitHub/the logic broke
+                    LOG_WARNING("Failed to fetch GitHub release info, assuming current version is latest");
+                }
+            } else {
+                doc["isLatest"] = true; // Assume latest since we can't check
+                LOG_DEBUG("No internet connectivity, cannot check for firmware updates"); // Only debug since internet may not be available
             }
-            #endif
 
             _sendJsonResponse(request, doc);
         });
@@ -1440,6 +1474,64 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             statisticsToJson(statistics, doc);
+            _sendJsonResponse(request, doc); });
+
+        // Raw CPU ring samples - forensic timeline endpoint
+        // Query params: lastSeconds (1..3600, default 600), core (0|1|both, default both)
+        server.on("/api/v1/system/cpu/samples", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            uint32_t lastSeconds = TaskProfiler::CPU_DEFAULT_FETCH_LAST_SECONDS;
+            if (request->hasParam("lastSeconds")) {
+                long parsed = request->getParam("lastSeconds")->value().toInt();
+                if (parsed <= 0) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "lastSeconds must be a positive integer");
+                    return;
+                }
+                lastSeconds = (uint32_t)parsed;
+                if (lastSeconds > TaskProfiler::CPU_RING_CAPACITY_SECONDS)
+                    lastSeconds = TaskProfiler::CPU_RING_CAPACITY_SECONDS;
+            }
+
+            bool wantCore0 = true, wantCore1 = true;
+            if (request->hasParam("core")) {
+                const String& coreParam = request->getParam("core")->value();
+                if (coreParam == "0")         { wantCore1 = false; }
+                else if (coreParam == "1")    { wantCore0 = false; }
+                else if (coreParam != "both") {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "core must be 0, 1, or both");
+                    return;
+                }
+            }
+
+            // Allocate temp buffer on heap (max 3600 entries x 8 B = 28.8 KB).
+            // ESPAsyncWebServer dispatches handlers serially so the buffer never
+            // overlaps with another invocation of this handler.
+            size_t maxSamples = lastSeconds > 0 ? lastSeconds : TaskProfiler::CPU_RING_CAPACITY_SECONDS;
+            TaskProfiler::CpuSample* buf = (TaskProfiler::CpuSample*)ps_malloc(maxSamples * sizeof(TaskProfiler::CpuSample));
+            if (buf == nullptr) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Out of PSRAM");
+                return;
+            }
+
+            size_t count = TaskProfiler::getRawSamples(buf, maxSamples, lastSeconds);
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc["intervalSeconds"] = 1;
+            doc["fromEpoch"] = count > 0 ? buf[0].epochSecond : 0;
+            doc["toEpoch"]   = count > 0 ? buf[count - 1].epochSecond : 0;
+            doc["samplesReturned"] = count;
+
+            if (wantCore0) {
+                JsonArray a0 = doc["core0"].to<JsonArray>();
+                for (size_t i = 0; i < count; i++) a0.add(buf[i].core0Percent);
+            }
+            if (wantCore1) {
+                JsonArray a1 = doc["core1"].to<JsonArray>();
+                for (size_t i = 0; i < count; i++) a1.add(buf[i].core1Percent);
+            }
+
+            free(buf);
             _sendJsonResponse(request, doc); });
 
         // System restart
@@ -1496,11 +1588,7 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
 
-            #ifdef HAS_SECRETS // Like this it returns true or false, otherwise it returns 1 or 0
-            doc["hasSecrets"] = true;
-            #else
-            doc["hasSecrets"] = false;
-            #endif
+            doc["hasSecrets"] = !globalCommunityMode;
             _sendJsonResponse(request, doc); });
 
         // Get system time
@@ -1940,7 +2028,7 @@ namespace CustomServer
             "/api/v1/ade7953/channels",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA * CHANNEL_COUNT)) return;
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA * MAX_CHANNEL_COUNT)) return;
 
                 SpiRamAllocator allocator;
                 JsonDocument doc(&allocator);
@@ -2367,11 +2455,7 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             
-            #ifdef HAS_SECRETS
-            doc["enabled"] = Mqtt::isCloudServicesEnabled();
-            #else
-            doc["enabled"] = false; // If no secrets, cloud services are not enabled
-            #endif
+            doc["enabled"] = !globalCommunityMode && Mqtt::isCloudServicesEnabled();
 
             _sendJsonResponse(request, doc);
         });
@@ -2381,29 +2465,28 @@ namespace CustomServer
             "/api/v1/mqtt/cloud-services",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                #ifdef HAS_SECRETS
+                if (globalCommunityMode) {
+                    _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Cloud services are not available in community mode");
+                    return;
+                }
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_MQTT_CLOUD_SERVICES)) return;
-                
+
                 SpiRamAllocator allocator;
                 JsonDocument doc(&allocator);
                 doc.set(json);
-                
+
                 // Validate JSON structure
                 if (!doc.is<JsonObject>() || !doc["enabled"].is<bool>())
                 {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"enabled\": true/false}");
                     return;
                 }
-                
+
                 bool enabled = doc["enabled"];
                 Mqtt::setCloudServicesEnabled(enabled);
-                
+
                 LOG_INFO("Cloud services %s via API", enabled ? "enabled" : "disabled");
                 _sendSuccessResponse(request, enabled ? "Cloud services enabled successfully" : "Cloud services disabled successfully");
-                #else
-                _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Cloud services are not available without secrets");
-                return;
-                #endif
             });
         server.addHandler(setCloudServicesHandler);
     }
@@ -2517,7 +2600,7 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             
-            if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) { // TODO: this should be streamed instead, and the full data raw (no useless JSON)
+            if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) {
                 _sendJsonResponse(request, doc);
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve core dump data");
@@ -2831,7 +2914,7 @@ namespace CustomServer
                     }
 
                     // Validate namespace exclusions (ensure no sensitive data)
-                    const char* excludedNamespaces[] = {"auth_ns", "nvs.net80211", "phy", "certificates_ns"};
+                    const char* excludedNamespaces[] = {EXCLUDED_NVS_NAMESPACES_LIST};
                     for (JsonPair nsPair : doc["nvs"].as<JsonObject>()) {
                         for (const char* excluded : excludedNamespaces) {
                             if (strcmp(nsPair.key().c_str(), excluded) == 0) {
@@ -3125,7 +3208,7 @@ namespace CustomServer
 
     TaskInfo getHealthCheckTaskInfo()
     {
-        return getTaskInfoSafely(_healthCheckTaskHandle, HEALTH_CHECK_TASK_STACK_SIZE);
+        return getTaskInfoSafely(_healthCheckTaskHandle, HEALTH_CHECK_TASK_STACK_SIZE, &_healthCheckHeartbeat);
     }
 
     TaskInfo getOtaTimeoutTaskInfo()

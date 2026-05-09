@@ -318,12 +318,12 @@ namespace ModbusTcp
         }
 
         // Per-channel values: 1000 + (channel * 100) + offset
-        // 17 channels (0-16), each with 20 registers (0-19)
+        // 16 channels (0-15), each with 20 registers (0-19)
         if (address >= LOWER_LIMIT_CHANNEL_REGISTERS && address < UPPER_LIMIT_CHANNEL_REGISTERS) {
             uint16_t channelOffset = address - LOWER_LIMIT_CHANNEL_REGISTERS;
             uint8_t channel = channelOffset / STEP_CHANNEL_REGISTERS;
             uint8_t registerOffset = channelOffset % STEP_CHANNEL_REGISTERS;
-            return channel < CHANNEL_COUNT && registerOffset < 20;
+            return channel < globalHwProfile->totalChannelCount && registerOffset < 20;
         }
 
         return false;

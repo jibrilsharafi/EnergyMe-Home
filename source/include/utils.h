@@ -27,6 +27,7 @@
 #include "binaries.h"
 #include "buttonhandler.h"
 #include "constants.h"
+#include "factory_keys.h"
 #include "customlog.h"
 #include "customtime.h"
 #include "customwifi.h"
@@ -101,7 +102,7 @@ inline uint64_t micros64() {
 }
 
 // Validation utilities
-inline bool isChannelValid(uint8_t channel) {return channel < CHANNEL_COUNT;}
+inline bool isChannelValid(uint8_t channel) { return channel < globalHwProfile->totalChannelCount; }
 
 // String validation utilities
 inline bool isStringLengthValid(const char* str, size_t minLength, size_t maxLength) {
@@ -134,7 +135,6 @@ inline double roundToDecimals(double value, uint8_t decimals = 3) {
 
 // Device identification
 void getDeviceId(char* deviceId, size_t maxLength);
-bool readEfuseProvisioningData(EfuseProvisioningData& data);
 
 // System information and monitoring
 void populateSystemStaticInfo(SystemStaticInfo& info);
@@ -160,14 +160,18 @@ void stopMaintenanceTask();
 size_t getLogFileSize();
 
 // Task information utilities
-inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize)
+inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize, const TaskHeartbeat* heartbeat = nullptr)
 {
     // Defensive check against corrupted or invalid task handles
     if (taskHandle != NULL && eTaskGetState(taskHandle) != eInvalid) {
-        return TaskInfo(stackSize, uxTaskGetStackHighWaterMark(taskHandle));
-    } else {
-        return TaskInfo(); // Return empty/default TaskInfo if task is not running or invalid
+        TaskInfo info(stackSize, uxTaskGetStackHighWaterMark(taskHandle));
+        if (heartbeat) {
+            info.lastTickMillis = heartbeat->lastTickMillis;
+            info.loopCount = heartbeat->loopCount;
+        }
+        return info;
     }
+    return TaskInfo(); // Return empty/default TaskInfo if task is not running or invalid
 }
 TaskInfo getMaintenanceTaskInfo();
 
@@ -197,7 +201,7 @@ bool safeSerializeJson(JsonDocument &jsonDocument, char* buffer, size_t bufferSi
 bool isFirstBootDone();
 void setFirstBootDone();
 void createAllNamespaces();
-void clearAllPreferences(bool nuclearOption = false); // No real function passes true to this function, but maybe it will be useful in the future
+void clearAllPreferences();
 
 // LittleFS file operations
 bool listLittleFsFiles(JsonDocument &doc, const char* folderPath = nullptr); // Optional folder path to filter files

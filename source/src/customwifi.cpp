@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customwifi.h"
+#include "taskprofiler.h"
 
 namespace CustomWifi
 {
+  static TaskHeartbeat _heartbeat;
+
   // WiFi connection task variables
   static TaskHandle_t _wifiTaskHandle = NULL;
   
@@ -55,6 +58,7 @@ namespace CustomWifi
   static void _forceReconnectInternal();
   static bool _isPowerReset();
   static void _sendOpenSourceTelemetry();
+  static void _resolveApPassword(char* out, size_t outSize);
   static bool _telemetrySent = false; // Ensures telemetry is sent only once per boot
 
   bool begin()
@@ -83,6 +87,8 @@ namespace CustomWifi
     // TODO: add these functionalities (via config) to allow for channel and power settings
     // WiFi.setChannel(6);       // Optional - if user configured a specific channel
     // WiFi.setTxPower(WIFI_POWER_20dBm);  // Optional - regional compliance
+
+    // TODO: add a way to set a static IP (save to NVS the config, and with the button we can revert the WiFi connection credentials and to DHCP)
 
     // Start WiFi connection task
     _startWifiTask();
@@ -315,7 +321,11 @@ namespace CustomWifi
             if (fileSize > maxLogSize) {
               logFile.seek(fileSize - maxLogSize);
               // Skip to next newline to avoid partial line
-              while (logFile.available() && logFile.read() != '\n') {}
+              uint32_t loops = 0;
+              while (logFile.available() && loops < MAX_LOOP_ITERATIONS * 10) { // Increase the limit since logs may be long
+                loops++;
+                if (logFile.read() == '\n') break;
+              }
             }
             while (logFile.available() && pos < PAGE_BUFFER_SIZE - 10) { // Leave margin for closing tags
               int c = logFile.read();
@@ -523,7 +533,9 @@ namespace CustomWifi
     // If we don't manage to connect with WiFi Manager and the credentials are not provided, we might as well just restart.
     // In the future, we could allow for full-offline functionality, but for now, we keep it simple.
     // TODO: implement a full custom WiFi manager for better UX
-    if (!wifiManager->autoConnect(hostname)) {
+    char apPassword[WIFI_PASSWORD_BUFFER_SIZE];
+    _resolveApPassword(apPassword, sizeof(apPassword));
+    if (!wifiManager->autoConnect(hostname, apPassword)) {
       LOG_WARNING("WiFi connection failed, exiting wifi task");
       Led::blinkRedFast(Led::PRIO_URGENT);
       _taskShouldRun = false;
@@ -551,6 +563,8 @@ namespace CustomWifi
     // Main task loop - handles fallback scenarios and deferred logging
     while (_taskShouldRun)
     {
+      TASK_HEARTBEAT(_heartbeat);
+
       // Wait for notification from event handler or timeout
       if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(WIFI_PERIODIC_CHECK_INTERVAL)))
       {
@@ -643,8 +657,10 @@ namespace CustomWifi
               }
               _setupWiFiManager(*portalManager);
 
-              // Try WiFiManager portal
-              if (!portalManager->startConfigPortal(hostname)) // TODO: use the password if present in eFuse (or if not present, the device mac address all lower)
+              // Try WiFiManager portal (WPA2-protected; password from factory NVS or MAC fallback)
+              char fallbackApPassword[WIFI_PASSWORD_BUFFER_SIZE];
+              _resolveApPassword(fallbackApPassword, sizeof(fallbackApPassword));
+              if (!portalManager->startConfigPortal(hostname, fallbackApPassword))
               {
                 LOG_ERROR("Portal failed - restarting device");
                 Led::blinkRedFast(Led::PRIO_URGENT);
@@ -801,7 +817,7 @@ namespace CustomWifi
       MDNS.addServiceTxt("modbus", "tcp", "vendor", COMPANY_NAME);
       MDNS.addServiceTxt("modbus", "tcp", "model", PRODUCT_NAME);
       MDNS.addServiceTxt("modbus", "tcp", "version", FIRMWARE_BUILD_VERSION);
-      MDNS.addServiceTxt("modbus", "tcp", "channels", "17");
+      MDNS.addServiceTxt("modbus", "tcp", "channels", "16"); // Cannot use constant since that is a number, not a string
 
       LOG_INFO("mDNS setup done: %s.local", MDNS_HOSTNAME);
       return true;
@@ -911,6 +927,26 @@ namespace CustomWifi
     return resetReason == ESP_RST_POWERON || resetReason == ESP_RST_BROWNOUT;
   }
 
+  // Load the SoftAP password used by the WiFi config portal. Prefers the factory-provisioned
+  // value (NVS factory_ns::ap_password); falls back to DEVICE_ID, which is already part of
+  // the portal SSID so users connecting to the AP can read it off the network name.
+  // DEVICE_ID is 12 hex chars, which satisfies WPA2's 8-character minimum.
+  static void _resolveApPassword(char* out, size_t outSize)
+  {
+    if (out == nullptr || outSize == 0) return;
+    out[0] = '\0';
+
+    Preferences prefs;
+    if (prefs.begin(PREFERENCES_NAMESPACE_FACTORY, true)) {
+      prefs.getString(FACTORY_KEY_AP_PASSWORD, out, outSize);
+      prefs.end();
+    }
+
+    if (strlen(out) < 8) {
+      snprintf(out, outSize, "%s", DEVICE_ID);
+    }
+  }
+
   static void _sendOpenSourceTelemetry()
   {
 #ifdef ENABLE_OPEN_SOURCE_TELEMETRY
@@ -938,7 +974,7 @@ namespace CustomWifi
     char hashedDeviceId[65]; // 64 hex chars + null
     for (int i = 0; i < 32; i++) snprintf(&hashedDeviceId[i * 2], 3, "%02x", hash[i]);
     
-    doc["device_id"] = hashedDeviceId; // Replace plain ID with hashed value
+    doc["hashed_device_id"] = hashedDeviceId; // Replace plain ID with hashed value
     doc["firmware_version"] = FIRMWARE_BUILD_VERSION;
     doc["sketch_md5"] = ESP.getSketchMD5();
 
@@ -1046,6 +1082,6 @@ namespace CustomWifi
 
   TaskInfo getTaskInfo()
   {
-    return getTaskInfoSafely(_wifiTaskHandle, WIFI_TASK_STACK_SIZE);
+    return getTaskInfoSafely(_wifiTaskHandle, WIFI_TASK_STACK_SIZE, &_heartbeat);
   }
 }
