@@ -217,6 +217,41 @@
         <button class="buttonForm" onclick="getInfluxDbConfiguration()" id="reloadInfluxDbButton" style="float: right;">🔄 Reload Status</button>
     </div>
 
+    <!-- Home Assistant Section -->
+    <div class="section-box">
+        <h2>Home Assistant</h2>
+        <p><i>
+                A custom integration for Home Assistant that exposes all device channels as native sensors
+                (voltage, current, active/reactive/apparent power, power factor, and energy totals).
+                It uses the device REST API and works fully on the local network, with no cloud dependency.
+            </i></p>
+
+        <div class="register-map-section">
+            <h3>Quick Setup</h3>
+            <ol style="margin-left: 20px;">
+                <li>Install the integration via <a href="https://hacs.xyz/" target="_blank">HACS</a> (recommended) or manually.
+                    <ul style="margin-top: 8px;">
+                        <li><strong>HACS:</strong> HACS &rarr; Integrations &rarr; ⋮ &rarr; Custom repositories &rarr;
+                            add <code>https://github.com/jibrilsharafi/homeassistant-energyme</code> as an Integration,
+                            then install "EnergyMe".</li>
+                        <li><strong>Manual:</strong> download the latest release, extract the <code>energyme</code> folder
+                            into your <code>custom_components</code> directory.</li>
+                    </ul>
+                </li>
+                <li>Restart Home Assistant.</li>
+                <li>Go to <strong>Settings</strong> &rarr; <strong>Devices &amp; Services</strong> &rarr;
+                    <strong>Add Integration</strong> and search for "EnergyMe".</li>
+                <li>Enter the device IP/hostname and the credentials (defaults: user <code>admin</code>,
+                    password <code>energyme</code>). Active channels are discovered automatically.</li>
+            </ol>
+
+            <p>Full documentation, troubleshooting, and screenshots are available in the integration repository.</p>
+        </div>
+
+        <a href="https://github.com/jibrilsharafi/homeassistant-energyme" target="_blank" class="buttonForm">📦 GitHub Repository</a>
+        <a href="https://github.com/jibrilsharafi/homeassistant-energyme#hacs-installation" target="_blank" class="buttonForm">🛒 HACS Installation Guide</a>
+    </div>
+
     <!-- REST API Documentation Section -->
     <div class="section-box">
         <h2>REST API Documentation</h2>
