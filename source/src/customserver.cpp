@@ -1477,12 +1477,17 @@ namespace CustomServer
             _sendJsonResponse(request, doc); });
 
         // Raw CPU ring samples - forensic timeline endpoint
-        // Query params: lastSeconds (default 600, max 3600), core (0|1|both, default both)
+        // Query params: lastSeconds (1..3600, default 600), core (0|1|both, default both)
         server.on("/api/v1/system/cpu/samples", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             uint32_t lastSeconds = TaskProfiler::CPU_DEFAULT_FETCH_LAST_SECONDS;
             if (request->hasParam("lastSeconds")) {
-                lastSeconds = (uint32_t)request->getParam("lastSeconds")->value().toInt();
+                long parsed = request->getParam("lastSeconds")->value().toInt();
+                if (parsed <= 0) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "lastSeconds must be a positive integer");
+                    return;
+                }
+                lastSeconds = (uint32_t)parsed;
                 if (lastSeconds > TaskProfiler::CPU_RING_CAPACITY_SECONDS)
                     lastSeconds = TaskProfiler::CPU_RING_CAPACITY_SECONDS;
             }
@@ -1490,11 +1495,17 @@ namespace CustomServer
             bool wantCore0 = true, wantCore1 = true;
             if (request->hasParam("core")) {
                 const String& coreParam = request->getParam("core")->value();
-                if (coreParam == "0")    { wantCore1 = false; }
-                else if (coreParam == "1") { wantCore0 = false; }
+                if (coreParam == "0")         { wantCore1 = false; }
+                else if (coreParam == "1")    { wantCore0 = false; }
+                else if (coreParam != "both") {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "core must be 0, 1, or both");
+                    return;
+                }
             }
 
-            // Allocate temp buffer on heap (max 3600 entries x 8 B = 28.8 KB)
+            // Allocate temp buffer on heap (max 3600 entries x 8 B = 28.8 KB).
+            // ESPAsyncWebServer dispatches handlers serially so the buffer never
+            // overlaps with another invocation of this handler.
             size_t maxSamples = lastSeconds > 0 ? lastSeconds : TaskProfiler::CPU_RING_CAPACITY_SECONDS;
             TaskProfiler::CpuSample* buf = (TaskProfiler::CpuSample*)ps_malloc(maxSamples * sizeof(TaskProfiler::CpuSample));
             if (buf == nullptr) {
