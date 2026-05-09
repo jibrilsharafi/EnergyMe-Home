@@ -339,7 +339,9 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
         doc["tasks"][name]["usedPercentage"] = t.usedPercentage;
         doc["tasks"][name]["lastTickMillis"] = (uint64_t)t.lastTickMillis;
         doc["tasks"][name]["loopCount"] = t.loopCount;
-        // staleMs: "" if never instrumented (lastTickMillis==0), else ms since last heartbeat
+        // staleMs == 0 means "task not instrumented" (no TASK_HEARTBEAT call) - it does
+        // not mean the task ticked this exact ms. Consumers that care about liveness
+        // should also check loopCount > 0.
         doc["tasks"][name]["staleMs"] = (t.lastTickMillis == 0) ? 0ULL : (nowMs - t.lastTickMillis);
     };
 
