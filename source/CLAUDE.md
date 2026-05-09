@@ -50,6 +50,7 @@ Firmware for the EnergyMe Home energy monitor. ESP32-S3-N16R2 (16 MB flash, 2 MB
 ### FreeRTOS tasks
 
 - Mandatory mutex on any non-atomic shared state; go through getters/setters.
+- Keep critical sections short. Slow work (NVS, LittleFS, MQTT publish, JSON serialization) runs **unlocked** - copy what you need into a local under the mutex (a struct, or a single decision bool), release, then act on the local. Avoids deadlock with callees that re-acquire the same mutex via getters.
 - Graceful shutdown via task notifications (`ulTaskNotifyTake(pdTRUE, timeout)`); task self-deletes with `vTaskDelete(NULL)` after setting its handle to `NULL`.
 - Stack placement: **PSRAM** for non-flash-I/O tasks (WiFi, LED, button, crash monitor, ADE7953 meter); **internal RAM** for tasks that touch flash (NVS, LittleFS, OTA) - flash cache disable makes PSRAM unreadable and crashes PSRAM-stack tasks.
 
