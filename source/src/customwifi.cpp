@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customwifi.h"
+#include "taskprofiler.h"
 
 namespace CustomWifi
 {
+  static TaskHeartbeat _heartbeat;
+
   // WiFi connection task variables
   static TaskHandle_t _wifiTaskHandle = NULL;
   
@@ -560,6 +563,8 @@ namespace CustomWifi
     // Main task loop - handles fallback scenarios and deferred logging
     while (_taskShouldRun)
     {
+      TASK_HEARTBEAT(_heartbeat);
+
       // Wait for notification from event handler or timeout
       if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(WIFI_PERIODIC_CHECK_INTERVAL)))
       {
@@ -969,7 +974,7 @@ namespace CustomWifi
     char hashedDeviceId[65]; // 64 hex chars + null
     for (int i = 0; i < 32; i++) snprintf(&hashedDeviceId[i * 2], 3, "%02x", hash[i]);
     
-    doc["device_id"] = hashedDeviceId; // Replace plain ID with hashed value
+    doc["hashed_device_id"] = hashedDeviceId; // Replace plain ID with hashed value
     doc["firmware_version"] = FIRMWARE_BUILD_VERSION;
     doc["sketch_md5"] = ESP.getSketchMD5();
 
@@ -1077,6 +1082,6 @@ namespace CustomWifi
 
   TaskInfo getTaskInfo()
   {
-    return getTaskInfoSafely(_wifiTaskHandle, WIFI_TASK_STACK_SIZE);
+    return getTaskInfoSafely(_wifiTaskHandle, WIFI_TASK_STACK_SIZE, &_heartbeat);
   }
 }

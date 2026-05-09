@@ -3,11 +3,15 @@
 
 #include "utils.h"
 
+#include "taskprofiler.h"
+
 static TaskHandle_t _restartTaskHandle = NULL;
 static TaskHandle_t _maintenanceTaskHandle = NULL;
 static bool _maintenanceTaskShouldRun = false;
 
 static esp_timer_handle_t _failsafeTimer = NULL;
+
+static TaskHeartbeat _maintenanceHeartbeat;
 
 // Static function declarations
 static void _factoryReset();
@@ -147,7 +151,17 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
 
     // Performance
     info.temperatureCelsius = temperatureRead();
-    
+
+    // CPU stats over a window matching the system_dynamic publish cadence.
+    // ENV_DEV: last 60 s; ENV_PROD: full 3600 s ring.
+#ifdef ENV_DEV
+    static constexpr uint32_t CPU_STATS_WINDOW_SECONDS = 60;
+#else
+    static constexpr uint32_t CPU_STATS_WINDOW_SECONDS = 0; // 0 = full ring
+#endif
+    info.cpuCore0Stats = TaskProfiler::getCpuStats(0, CPU_STATS_WINDOW_SECONDS);
+    info.cpuCore1Stats = TaskProfiler::getCpuStats(1, CPU_STATS_WINDOW_SECONDS);
+
     // Network (if connected)
     if (CustomWifi::isFullyConnected()) {
         info.wifiConnected = true;
@@ -287,7 +301,24 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
 
     // Performance
     doc["performance"]["temperatureCelsius"] = info.temperatureCelsius;
-    
+
+    // CPU stats (per core, spike-aware ring buffer)
+    auto addCpuCore = [&](const char* key, const TaskProfiler::CpuStats& s) {
+        doc["cpu"][key]["current"]               = s.current;
+        doc["cpu"][key]["min"]                   = s.min;
+        doc["cpu"][key]["max"]                   = s.max;
+        doc["cpu"][key]["avg"]                   = s.avg;
+        doc["cpu"][key]["p50"]                   = s.p50;
+        doc["cpu"][key]["p90"]                   = s.p90;
+        doc["cpu"][key]["p95"]                   = s.p95;
+        doc["cpu"][key]["p99"]                   = s.p99;
+        doc["cpu"][key]["samplesInWindow"]        = s.samplesInWindow;
+        doc["cpu"][key]["samplesAboveThreshold"]  = s.samplesAboveThreshold;
+        doc["cpu"][key]["windowSeconds"]          = s.windowSeconds;
+    };
+    addCpuCore("core0", info.cpuCore0Stats);
+    addCpuCore("core1", info.cpuCore1Stats);
+
     // Network
     doc["network"]["wifiConnected"] = info.wifiConnected;
     doc["network"]["wifiSsid"] = JsonString(info.wifiSsid); // Ensure it is not a dangling pointer
@@ -300,80 +331,35 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     doc["network"]["wifiRssi"] = info.wifiRssi;
 
     // Tasks
-    doc["tasks"]["mqtt"]["allocatedStack"] = info.mqttTaskInfo.allocatedStack;
-    doc["tasks"]["mqtt"]["minimumFreeStack"] = info.mqttTaskInfo.minimumFreeStack;
-    doc["tasks"]["mqtt"]["freePercentage"] = info.mqttTaskInfo.freePercentage;
-    doc["tasks"]["mqtt"]["usedPercentage"] = info.mqttTaskInfo.usedPercentage;
+    uint64_t nowMs = millis64();
+    auto addTask = [&](const char* name, const TaskInfo& t) {
+        doc["tasks"][name]["allocatedStack"] = t.allocatedStack;
+        doc["tasks"][name]["minimumFreeStack"] = t.minimumFreeStack;
+        doc["tasks"][name]["freePercentage"] = t.freePercentage;
+        doc["tasks"][name]["usedPercentage"] = t.usedPercentage;
+        doc["tasks"][name]["lastTickMillis"] = (uint64_t)t.lastTickMillis;
+        doc["tasks"][name]["loopCount"] = t.loopCount;
+        // staleMs == 0 means "task not instrumented" (no TASK_HEARTBEAT call) - it does
+        // not mean the task ticked this exact ms. Consumers that care about liveness
+        // should also check loopCount > 0.
+        doc["tasks"][name]["staleMs"] = (t.lastTickMillis == 0) ? 0ULL : (nowMs - t.lastTickMillis);
+    };
 
-    doc["tasks"]["mqttOta"]["allocatedStack"] = info.mqttOtaTaskInfo.allocatedStack;
-    doc["tasks"]["mqttOta"]["minimumFreeStack"] = info.mqttOtaTaskInfo.minimumFreeStack;
-    doc["tasks"]["mqttOta"]["freePercentage"] = info.mqttOtaTaskInfo.freePercentage;
-    doc["tasks"]["mqttOta"]["usedPercentage"] = info.mqttOtaTaskInfo.usedPercentage;
-
-    doc["tasks"]["customMqtt"]["allocatedStack"] = info.customMqttTaskInfo.allocatedStack;
-    doc["tasks"]["customMqtt"]["minimumFreeStack"] = info.customMqttTaskInfo.minimumFreeStack;
-    doc["tasks"]["customMqtt"]["freePercentage"] = info.customMqttTaskInfo.freePercentage;
-    doc["tasks"]["customMqtt"]["usedPercentage"] = info.customMqttTaskInfo.usedPercentage;
-
-    doc["tasks"]["customServerHealthCheck"]["allocatedStack"] = info.customServerHealthCheckTaskInfo.allocatedStack;
-    doc["tasks"]["customServerHealthCheck"]["minimumFreeStack"] = info.customServerHealthCheckTaskInfo.minimumFreeStack;
-    doc["tasks"]["customServerHealthCheck"]["freePercentage"] = info.customServerHealthCheckTaskInfo.freePercentage;
-    doc["tasks"]["customServerHealthCheck"]["usedPercentage"] = info.customServerHealthCheckTaskInfo.usedPercentage;
-
-    doc["tasks"]["customServerOtaTimeout"]["allocatedStack"] = info.customServerOtaTimeoutTaskInfo.allocatedStack;
-    doc["tasks"]["customServerOtaTimeout"]["minimumFreeStack"] = info.customServerOtaTimeoutTaskInfo.minimumFreeStack;
-    doc["tasks"]["customServerOtaTimeout"]["freePercentage"] = info.customServerOtaTimeoutTaskInfo.freePercentage;
-    doc["tasks"]["customServerOtaTimeout"]["usedPercentage"] = info.customServerOtaTimeoutTaskInfo.usedPercentage;
-
-    doc["tasks"]["led"]["allocatedStack"] = info.ledTaskInfo.allocatedStack;
-    doc["tasks"]["led"]["minimumFreeStack"] = info.ledTaskInfo.minimumFreeStack;
-    doc["tasks"]["led"]["freePercentage"] = info.ledTaskInfo.freePercentage;
-    doc["tasks"]["led"]["usedPercentage"] = info.ledTaskInfo.usedPercentage;
-
-    doc["tasks"]["influxDb"]["allocatedStack"] = info.influxDbTaskInfo.allocatedStack;
-    doc["tasks"]["influxDb"]["minimumFreeStack"] = info.influxDbTaskInfo.minimumFreeStack;
-    doc["tasks"]["influxDb"]["freePercentage"] = info.influxDbTaskInfo.freePercentage;
-    doc["tasks"]["influxDb"]["usedPercentage"] = info.influxDbTaskInfo.usedPercentage;
-
-    doc["tasks"]["crashMonitor"]["allocatedStack"] = info.crashMonitorTaskInfo.allocatedStack;
-    doc["tasks"]["crashMonitor"]["minimumFreeStack"] = info.crashMonitorTaskInfo.minimumFreeStack;
-    doc["tasks"]["crashMonitor"]["freePercentage"] = info.crashMonitorTaskInfo.freePercentage;
-    doc["tasks"]["crashMonitor"]["usedPercentage"] = info.crashMonitorTaskInfo.usedPercentage;
-
-    doc["tasks"]["buttonHandler"]["allocatedStack"] = info.buttonHandlerTaskInfo.allocatedStack;
-    doc["tasks"]["buttonHandler"]["minimumFreeStack"] = info.buttonHandlerTaskInfo.minimumFreeStack;
-    doc["tasks"]["buttonHandler"]["freePercentage"] = info.buttonHandlerTaskInfo.freePercentage;
-    doc["tasks"]["buttonHandler"]["usedPercentage"] = info.buttonHandlerTaskInfo.usedPercentage;
-
-    doc["tasks"]["udpLog"]["allocatedStack"] = info.udpLogTaskInfo.allocatedStack;
-    doc["tasks"]["udpLog"]["minimumFreeStack"] = info.udpLogTaskInfo.minimumFreeStack;
-    doc["tasks"]["udpLog"]["freePercentage"] = info.udpLogTaskInfo.freePercentage;
-    doc["tasks"]["udpLog"]["usedPercentage"] = info.udpLogTaskInfo.usedPercentage;
-
-    doc["tasks"]["customWifi"]["allocatedStack"] = info.customWifiTaskInfo.allocatedStack;
-    doc["tasks"]["customWifi"]["minimumFreeStack"] = info.customWifiTaskInfo.minimumFreeStack;
-    doc["tasks"]["customWifi"]["freePercentage"] = info.customWifiTaskInfo.freePercentage;
-    doc["tasks"]["customWifi"]["usedPercentage"] = info.customWifiTaskInfo.usedPercentage;
-
-    doc["tasks"]["ade7953MeterReading"]["allocatedStack"] = info.ade7953MeterReadingTaskInfo.allocatedStack;
-    doc["tasks"]["ade7953MeterReading"]["minimumFreeStack"] = info.ade7953MeterReadingTaskInfo.minimumFreeStack;
-    doc["tasks"]["ade7953MeterReading"]["freePercentage"] = info.ade7953MeterReadingTaskInfo.freePercentage;
-    doc["tasks"]["ade7953MeterReading"]["usedPercentage"] = info.ade7953MeterReadingTaskInfo.usedPercentage;
-
-    doc["tasks"]["ade7953EnergySave"]["allocatedStack"] = info.ade7953EnergySaveTaskInfo.allocatedStack;
-    doc["tasks"]["ade7953EnergySave"]["minimumFreeStack"] = info.ade7953EnergySaveTaskInfo.minimumFreeStack;
-    doc["tasks"]["ade7953EnergySave"]["freePercentage"] = info.ade7953EnergySaveTaskInfo.freePercentage;
-    doc["tasks"]["ade7953EnergySave"]["usedPercentage"] = info.ade7953EnergySaveTaskInfo.usedPercentage;
-
-    doc["tasks"]["ade7953HourlyCsv"]["allocatedStack"] = info.ade7953HourlyCsvTaskInfo.allocatedStack;
-    doc["tasks"]["ade7953HourlyCsv"]["minimumFreeStack"] = info.ade7953HourlyCsvTaskInfo.minimumFreeStack;
-    doc["tasks"]["ade7953HourlyCsv"]["freePercentage"] = info.ade7953HourlyCsvTaskInfo.freePercentage;
-    doc["tasks"]["ade7953HourlyCsv"]["usedPercentage"] = info.ade7953HourlyCsvTaskInfo.usedPercentage;
-
-    doc["tasks"]["maintenance"]["allocatedStack"] = info.maintenanceTaskInfo.allocatedStack;
-    doc["tasks"]["maintenance"]["minimumFreeStack"] = info.maintenanceTaskInfo.minimumFreeStack;
-    doc["tasks"]["maintenance"]["freePercentage"] = info.maintenanceTaskInfo.freePercentage;
-    doc["tasks"]["maintenance"]["usedPercentage"] = info.maintenanceTaskInfo.usedPercentage;
+    addTask("mqtt", info.mqttTaskInfo);
+    addTask("mqttOta", info.mqttOtaTaskInfo);
+    addTask("customMqtt", info.customMqttTaskInfo);
+    addTask("customServerHealthCheck", info.customServerHealthCheckTaskInfo);
+    addTask("customServerOtaTimeout", info.customServerOtaTimeoutTaskInfo);
+    addTask("led", info.ledTaskInfo);
+    addTask("influxDb", info.influxDbTaskInfo);
+    addTask("crashMonitor", info.crashMonitorTaskInfo);
+    addTask("buttonHandler", info.buttonHandlerTaskInfo);
+    addTask("udpLog", info.udpLogTaskInfo);
+    addTask("customWifi", info.customWifiTaskInfo);
+    addTask("ade7953MeterReading", info.ade7953MeterReadingTaskInfo);
+    addTask("ade7953EnergySave", info.ade7953EnergySaveTaskInfo);
+    addTask("ade7953HourlyCsv", info.ade7953HourlyCsvTaskInfo);
+    addTask("maintenance", info.maintenanceTaskInfo);
 
     LOG_DEBUG("Dynamic system info converted to JSON");
 }
@@ -424,6 +410,8 @@ static void _maintenanceTask(void* parameter) {
     
     _maintenanceTaskShouldRun = true;
     while (_maintenanceTaskShouldRun) {
+        TASK_HEARTBEAT(_maintenanceHeartbeat);
+
         // Update and print statistics
         printStatistics();
         printDeviceStatusDynamic();
@@ -541,7 +529,7 @@ void stopMaintenanceTask() {
 
 TaskInfo getMaintenanceTaskInfo()
 {
-    return getTaskInfoSafely(_maintenanceTaskHandle, TASK_MAINTENANCE_STACK_SIZE);
+    return getTaskInfoSafely(_maintenanceTaskHandle, TASK_MAINTENANCE_STACK_SIZE, &_maintenanceHeartbeat);
 }
 
 // Failsafe timer callback - runs from esp_timer task context, guaranteed to execute

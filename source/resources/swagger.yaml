@@ -227,7 +227,65 @@ paths:
                       and default to `"Unknown"` / `0` on community (unprovisioned) devices.
                   dynamic:
                     type: object
-                    description: Dynamic system information (uptime, memory usage, temperature, etc.)
+                    description: |
+                      Dynamic system information (uptime, memory usage, temperature, etc.).
+                      Includes a `cpu` block with auto-calibrated per-core load %, and per-task
+                      heartbeat fields (`lastTickMillis`, `loopCount`, `staleMs`) under each
+                      entry in `tasks` for starvation/stuck-task diagnosis.
+                    properties:
+                      cpu:
+                        type: object
+                        description: |
+                          Per-core CPU load %, auto-calibrated by the FreeRTOS idle-hook profiler.
+                          Each core's "100% idle" baseline is the highest idle-tick rate ever
+                          observed; load = `100 * (1 - currentRate / baselineRate)`. Reports 0
+                          before the first sample window completes (~1 s after boot).
+                        properties:
+                          core0Percent:
+                            type: integer
+                            minimum: 0
+                            maximum: 100
+                            example: 38
+                          core1Percent:
+                            type: integer
+                            minimum: 0
+                            maximum: 100
+                            example: 12
+                          sampleWindowMs:
+                            type: integer
+                            description: Wall-clock milliseconds covered by the most recent sample window (nominally ~1000)
+                            example: 1000
+                      tasks:
+                        type: object
+                        description: |
+                          Per-task block. Each entry has the existing stack fields plus heartbeat
+                          fields. `lastTickMillis` is updated by the task at the top of every loop
+                          iteration; `staleMs` is `now - lastTickMillis` (or 0 if the task is not
+                          instrumented, e.g. one-shot tasks like `mqttOta`). A `staleMs` value
+                          significantly larger than the task's expected loop interval indicates
+                          the task is starved or stuck.
+                        additionalProperties:
+                          type: object
+                          properties:
+                            allocatedStack:
+                              type: integer
+                              description: Allocated stack size in bytes
+                            minimumFreeStack:
+                              type: integer
+                              description: Lowest free stack ever observed (uxTaskGetStackHighWaterMark)
+                            freePercentage:
+                              type: number
+                            usedPercentage:
+                              type: number
+                            lastTickMillis:
+                              type: integer
+                              description: millis64() at the top of the task's last loop iteration; 0 if task is not instrumented
+                            loopCount:
+                              type: integer
+                              description: Total loop iterations since boot (instrumented tasks only)
+                            staleMs:
+                              type: integer
+                              description: Milliseconds since last heartbeat; 0 if task is not instrumented
                   safeMode:
                     type: object
                     description: Safe mode status and restart protection information
@@ -3193,4 +3251,4 @@ components:
           type: number
           format: float
           description: Accumulated apparent energy in VAh
-          example: 12356.8
+          example: 12356.8 
