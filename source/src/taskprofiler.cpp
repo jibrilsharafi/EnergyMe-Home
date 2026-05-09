@@ -19,11 +19,16 @@ namespace TaskProfiler
     static constexpr uint8_t CORE_COUNT = 2;
     static constexpr uint32_t SAMPLE_INTERVAL_US = 1000000; // 1 Hz
 
-    // Idle hook state - bumped in IRAM context, non-blocking.
-    static volatile uint64_t _idleCount[CORE_COUNT] = {0, 0};
+    // Idle hook state - bumped in IRAM context, non-blocking. uint32_t (rather than
+    // uint64_t) is single-word on this 32-bit core, so reads from the sampler task
+    // are atomic and can never tear; rollover is harmless because we only consume
+    // the value via modular subtraction (delta = cur - prev wraps correctly for any
+    // window < 2^32 ticks, which is ~7 minutes at typical idle rates - far longer
+    // than the 1 s sample interval).
+    static volatile uint32_t _idleCount[CORE_COUNT] = {0, 0};
 
     // Sampler state.
-    static uint64_t _lastSampleIdleCount[CORE_COUNT] = {0, 0};
+    static uint32_t _lastSampleIdleCount[CORE_COUNT] = {0, 0};
     static uint64_t _lastSampleMicros = 0;
     static uint64_t _baselineIdlePerSecond[CORE_COUNT] = {0, 0};
     static uint8_t  _lastLoadPercent[CORE_COUNT] = {0, 0};
@@ -65,6 +70,10 @@ namespace TaskProfiler
     {
         if (_begun) return;
 
+        // Note: AdvancedLogger is not yet initialized at this point in setup()
+        // (see main.cpp - LOG_* only becomes safe after AdvancedLogger::begin()),
+        // so we use Serial directly for early-boot diagnostics. Same pattern as
+        // customlog.cpp queue init and mqtt.cpp log queue init.
         esp_err_t r0 = esp_register_freertos_idle_hook_for_cpu(_idleHookCore0, 0);
         esp_err_t r1 = esp_register_freertos_idle_hook_for_cpu(_idleHookCore1, 1);
 
@@ -90,7 +99,6 @@ namespace TaskProfiler
         _lastSampleMicros = esp_timer_get_time();
         _lastSampleIdleCount[0] = _idleCount[0];
         _lastSampleIdleCount[1] = _idleCount[1];
-        _begun = true;
 
         const esp_timer_create_args_t timerArgs = {
             .callback = _samplerTimerCallback,
@@ -99,11 +107,21 @@ namespace TaskProfiler
             .name = "task_profiler",
             .skip_unhandled_events = true,
         };
-        if (esp_timer_create(&timerArgs, &_samplerTimer) == ESP_OK) {
-            esp_timer_start_periodic(_samplerTimer, SAMPLE_INTERVAL_US);
-        } else {
-            Serial.println("[WARN] TaskProfiler: esp_timer_create failed; sample() must be called manually");
+        if (esp_timer_create(&timerArgs, &_samplerTimer) != ESP_OK) {
+            Serial.println("[WARN] TaskProfiler: esp_timer_create failed; profiler disabled");
+            return;
         }
+        if (esp_timer_start_periodic(_samplerTimer, SAMPLE_INTERVAL_US) != ESP_OK) {
+            Serial.println("[WARN] TaskProfiler: esp_timer_start_periodic failed; profiler disabled");
+            esp_timer_delete(_samplerTimer);
+            _samplerTimer = NULL;
+            return;
+        }
+
+        // Only mark the profiler as begun once the periodic sampler is actually running.
+        // sample() guards on _begun, so leaving it false on failure means stale counters
+        // can never be consumed and getCpuStats() will keep returning zeroed structs.
+        _begun = true;
     }
 
     void sample()
@@ -117,11 +135,13 @@ namespace TaskProfiler
         _lastSampleWindowMs = (uint32_t)(windowMicros / 1000ULL);
 
         for (uint8_t c = 0; c < CORE_COUNT; c++) {
-            uint64_t cur = _idleCount[c];
-            uint64_t delta = cur - _lastSampleIdleCount[c];
+            uint32_t cur = _idleCount[c];
+            // Modular subtraction: handles uint32_t rollover correctly for any
+            // window < 2^32 ticks. Result fits in uint32 since the same constraint holds.
+            uint32_t delta = cur - _lastSampleIdleCount[c];
             _lastSampleIdleCount[c] = cur;
 
-            uint64_t idlePerSec = (delta * 1000000ULL) / windowMicros;
+            uint64_t idlePerSec = ((uint64_t)delta * 1000000ULL) / windowMicros;
 
             if (idlePerSec > _baselineIdlePerSecond[c]) {
                 _baselineIdlePerSecond[c] = idlePerSec;

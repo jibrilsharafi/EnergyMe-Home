@@ -10,7 +10,7 @@
 // Lightweight task-load profiler.
 //
 // - Per-core CPU%: one FreeRTOS idle hook per core increments a counter; a 1 Hz
-//   sampler drives load% computation against an auto-calibrated baseline.
+//   sampler driven by esp_timer computes load% against an auto-calibrated baseline.
 // - Spike-aware ring buffer: 1 hour of 1 Hz samples in PSRAM; on-demand
 //   percentile (p50/p90/p95/p99) + min/max/avg computed via in-place histogram.
 // - Per-task heartbeat: each task writes lastTickMillis + loopCount via the
@@ -20,12 +20,14 @@
 
 namespace TaskProfiler
 {
-    // Register idle hooks on both cores. Call once from setup() before any task
-    // is created. Also allocates the PSRAM ring buffer.
+    // Register idle hooks on both cores, allocate the PSRAM ring buffer, and
+    // start a periodic esp_timer that drives sample() at 1 Hz. Call once from
+    // setup() before any task is created. Idempotent (no-op on subsequent calls).
     void begin();
 
     // Sample idle deltas, update per-core load%, and push one entry to the ring.
-    // Call ~once per second from the maintenance task.
+    // Driven automatically by the esp_timer registered in begin(); exposed for
+    // tests / diagnostics only - normal code should not call this.
     void sample();
 
     // Returns 0..100. Returns 0 if begin() has not been called or not enough
