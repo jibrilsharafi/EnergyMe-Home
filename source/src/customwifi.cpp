@@ -15,6 +15,8 @@ namespace CustomWifi
   static uint64_t _lastReconnectAttempt = 0;
   static int32_t _reconnectAttempts = 0; // Increased every disconnection, reset on stable (few minutes) connection
   static uint64_t _lastWifiConnectedMillis = 0; // Timestamp when WiFi was last fully connected (for lwIP stabilization)
+  static IPAddress _lastMdnsIp; // Last IP for which mDNS was initialized; used to skip rebuild when IP unchanged
+  static bool _mdnsInitialized = false;
 
   // WiFi event notification values for task communication
   static const uint32_t WIFI_EVENT_CONNECTED = 1;
@@ -789,11 +791,23 @@ namespace CustomWifi
 
   bool _setupMdns()
   {
+    // Skip rebuild if responder is already running for the current IP. ESP-IDF mDNS
+    // does periodic unsolicited re-announces (~120 s, RFC 6762) on its own, so peers
+    // stay aware as long as the responder is alive. Most WiFi reconnects keep the
+    // same DHCP lease; only rebuild when the IP actually changed.
+    IPAddress currentIp = WiFi.localIP();
+    if (_mdnsInitialized && currentIp == _lastMdnsIp) {
+      LOG_DEBUG("mDNS already running for %s, skipping rebuild", currentIp.toString().c_str());
+      return true;
+    }
+
     LOG_DEBUG("Setting up mDNS...");
 
     // Ensure mDNS is stopped before starting
-    MDNS.end();
-    delay(100);
+    if (_mdnsInitialized) {
+      MDNS.end();
+      delay(100);
+    }
 
     // I would like to check for same MDNS_HOSTNAME on the newtork, but it seems that
     // I cannot do this with consistency. Let's just start the mDNS on the network and
@@ -819,6 +833,8 @@ namespace CustomWifi
       MDNS.addServiceTxt("modbus", "tcp", "version", FIRMWARE_BUILD_VERSION);
       MDNS.addServiceTxt("modbus", "tcp", "channels", "16"); // Cannot use constant since that is a number, not a string
 
+      _lastMdnsIp = currentIp;
+      _mdnsInitialized = true;
       LOG_INFO("mDNS setup done: %s.local", MDNS_HOSTNAME);
       return true;
     }
@@ -841,7 +857,9 @@ namespace CustomWifi
     
     // Stop mDNS
     MDNS.end();
-    
+    _mdnsInitialized = false;
+    _lastMdnsIp = IPAddress();
+
     LOG_DEBUG("WiFi cleanup completed");
   }
 
