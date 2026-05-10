@@ -66,3 +66,4 @@ Firmware for the EnergyMe Home energy monitor. ESP32-S3-N16R2 (16 MB flash, 2 MB
 - Be concise; stick to the request.
 - **Never create new files (especially Markdown / docs) unless explicitly asked.** Propose first.
 - Don't remove TODO/FIXME comments unless the underlying task is actually done.
+- **Never run firmware builds** (`pio run`, `platformio run`, etc.). Jibril always compiles and flashes himself. After code edits, stop - do not verify via compilation.

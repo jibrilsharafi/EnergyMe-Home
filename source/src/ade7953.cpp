@@ -754,7 +754,7 @@ namespace Ade7953
         return true;
     }
 
-    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged) {
+    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged, bool armTransients) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
             return false;
@@ -782,14 +782,21 @@ namespace Ade7953
         // for mux-routed channels (channel 0 bypasses the rotation entirely). Already
         // under _channelDataMutex - meter task / scheduler take the same mutex when
         // reading or clearing these flags.
-        if (wasInactive && _channelData[channelIndex].active) {
-            _channelData[channelIndex]._pendingPolarityCheck = true;
-            if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
-        }
-        // Re-arm polarity check on role change while channel is active (sign convention
-        // can legitimately differ between roles; let the next reading re-validate).
-        if (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role) {
-            _channelData[channelIndex]._pendingPolarityCheck = true;
+        // armTransients=false suppresses arming for boot-time restore from NVS, where
+        // the apparent inactive->active edge is just the default-constructed array
+        // being filled in (not a real config change). Without this guard, every boot
+        // re-runs the auto-polarity detection and can oscillate the persisted reverse
+        // flag on channels that genuinely read negative at idle.
+        if (armTransients) {
+            if (wasInactive && _channelData[channelIndex].active) {
+                _channelData[channelIndex]._pendingPolarityCheck = true;
+                if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+            }
+            // Re-arm polarity check on role change while channel is active (sign convention
+            // can legitimately differ between roles; let the next reading re-validate).
+            if (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role) {
+                _channelData[channelIndex]._pendingPolarityCheck = true;
+            }
         }
 
         _recalculateWeights();
@@ -2728,8 +2735,8 @@ namespace Ade7953
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, true)) { // true = read-only
             LOG_ERROR("Failed to open Preferences for channel data");
-            // Set default channel data
-            setChannelData(channelData, channelIndex);
+            // Set default channel data (boot-time restore, do not arm transient flags)
+            setChannelData(channelData, channelIndex, nullptr, false);
             return;
         }
 
@@ -2809,7 +2816,10 @@ namespace Ade7953
 
         preferences.end();
 
-        setChannelData(channelData, channelIndex);
+        // armTransients=false: this is a boot-time restore, not a user/API change.
+        // Without this, the inactive->active edge from default-constructed _channelData
+        // would re-arm the polarity auto-detect on every boot.
+        setChannelData(channelData, channelIndex, nullptr, false);
 
         LOG_DEBUG("Successfully set channel data from Preferences for channel %lu", channelIndex);
     }
