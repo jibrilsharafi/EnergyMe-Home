@@ -46,7 +46,7 @@
 #define TASK_RESTART_PRIORITY 5
 
 #define TASK_MAINTENANCE_NAME "maintenance_task"
-#define TASK_MAINTENANCE_STACK_SIZE (5 * 1024)     // Maximum usage close to 5 kB
+#define TASK_MAINTENANCE_STACK_SIZE (6 * 1024)     // Week-long min free hit 11.6% (~594 bytes) at 5 KB - bumped to 6 KB for safer margin during flash I/O bursts
 #define TASK_MAINTENANCE_PRIORITY 3
 #define MAINTENANCE_CHECK_INTERVAL (60 * 1000)
 

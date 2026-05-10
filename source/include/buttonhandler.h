@@ -12,7 +12,7 @@
 #include "utils.h"
 
 #define BUTTON_TASK_NAME "button_task"
-#define BUTTON_TASK_STACK_SIZE (4 * 1024)  // Increased to 4KB due to logging stack usage
+#define BUTTON_TASK_STACK_SIZE (3 * 1024)  // Week-long peak ~796 bytes (19.4%); 3 KB keeps ~73% margin while saving 1 KB internal heap (preserves room for occasional logging)
 #define BUTTON_TASK_PRIORITY 2
 
 // Timing constants
