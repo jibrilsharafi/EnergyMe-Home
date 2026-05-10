@@ -276,7 +276,6 @@
 #define DEFAULT_CHANNEL_GROUP_LABEL_FORMAT "Group %u"
 
 // CT Specification defaults
-#define DEFAULT_CT_CURRENT_RATING_CHANNEL_0 50.0f   // 50A for channel 0 only as it is "standard" in EnergyMe Home
 #define DEFAULT_CT_CURRENT_RATING 30.0f   // 30A
 #define DEFAULT_CT_VOLTAGE_OUTPUT 0.333f  // 333mV
 #define DEFAULT_CT_SCALING_FRACTION 0.0f  // No scaling by default

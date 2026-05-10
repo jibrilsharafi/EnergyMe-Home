@@ -2764,7 +2764,7 @@ namespace Ade7953
 
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
-        channelData.ctSpecification.currentRating = preferences.getFloat(key, channelIndex == 0 ? DEFAULT_CT_CURRENT_RATING_CHANNEL_0 : DEFAULT_CT_CURRENT_RATING);
+        channelData.ctSpecification.currentRating = preferences.getFloat(key, DEFAULT_CT_CURRENT_RATING);
 
         snprintf(key, sizeof(key), CHANNEL_CT_VOLTAGE_OUTPUT_KEY, channelIndex);
         channelData.ctSpecification.voltageOutput = preferences.getFloat(key, DEFAULT_CT_VOLTAGE_OUTPUT);
