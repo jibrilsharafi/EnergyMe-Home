@@ -48,8 +48,8 @@
 #define HEALTH_CHECK_TASK_STACK_SIZE (6 * 1024)
 #define HEALTH_CHECK_TASK_PRIORITY 1
 #define HEALTH_CHECK_INTERVAL_MS (30 * 1000)
-#define HEALTH_CHECK_TIMEOUT_MS (5 * 1000)
-#define HEALTH_CHECK_MAX_FAILURES 3 // Maximum consecutive failures before restart
+#define HEALTH_CHECK_TIMEOUT_MS (15 * 1000) // Allow handlers that legitimately take a few seconds (large config dumps, NVS writes)
+#define HEALTH_CHECK_MAX_FAILURES 5 // Maximum consecutive failures before restart. 5 * 30s = 2.5 min of sustained failure - tolerant of transient stalls but still catches a real wedge
 
 // Authentication
 #define PREFERENCES_KEY_PASSWORD "password"
