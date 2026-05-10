@@ -125,6 +125,14 @@
     var updateQueue = {};
     var isProcessingUpdate = false;
 
+    // Firmware can mutate channel state asynchronously after a PATCH (e.g. the
+    // auto-polarity check flips `reverse` on the next meter reading, channel 0
+    // is force-reactivated). Re-fetch shortly after each PATCH so the UI reflects
+    // what the firmware actually settled on. 2.5s covers a full WDRR rotation
+    // plus one polarity-check pass under realistic channel counts.
+    const RECONCILE_DELAY_MS = 2500;
+    var reconcileTimers = {};
+
     // Initialize the page
     async function initializePage() {
         try {
@@ -418,6 +426,7 @@
 
             for (const update of updates) {
                 await energyApi.patchChannelConfig(update);
+                scheduleReconcile(update.index, update);
             }
 
             showStatus('Channels updated successfully', 'success');
@@ -442,6 +451,71 @@
         // If there are new updates in queue, process them
         if (Object.keys(updateQueue).length > 0) {
             setTimeout(processChannelUpdates, 500);
+        }
+    }
+
+    function scheduleReconcile(index, sentSnapshot) {
+        if (reconcileTimers[index]) {
+            clearTimeout(reconcileTimers[index]);
+        }
+        reconcileTimers[index] = setTimeout(() => {
+            delete reconcileTimers[index];
+            reconcileChannel(index, sentSnapshot);
+        }, RECONCILE_DELAY_MS);
+    }
+
+    async function reconcileChannel(index, sentSnapshot) {
+        // If a fresh edit is queued or in flight for this channel, skip - the
+        // user's latest action will be reconciled when its own timer fires.
+        if (updateQueue[index] !== undefined) return;
+
+        let serverChannel;
+        try {
+            const all = await energyApi.getChannelConfig();
+            serverChannel = all && all[index];
+        } catch (error) {
+            console.error('Reconcile fetch failed for channel', index, error);
+            return;
+        }
+        if (!serverChannel) return;
+
+        const fields = ['active', 'reverse', 'role', 'phase', 'label', 'groupLabel'];
+        const diffs = [];
+        fields.forEach(field => {
+            const sent = sentSnapshot[field];
+            const got = serverChannel[field];
+            if (sent === undefined) return;
+            if (sent === got) return;
+            diffs.push(field);
+        });
+
+        if (diffs.length === 0) {
+            // Still refresh local mirror so subsequent edits start from truth.
+            channelData[index] = serverChannel;
+            return;
+        }
+
+        diffs.forEach(field => applyServerFieldToDom(index, field, serverChannel[field]));
+        channelData[index] = serverChannel;
+
+        const label = serverChannel.label || `Channel ${index}`;
+        showStatus(`${label}: automatically adjusted ${diffs.join(', ')}`, 'info');
+    }
+
+    function applyServerFieldToDom(index, field, value) {
+        const el = document.getElementById(`${field}${index}`);
+        if (!el) return;
+        if (el.type === 'checkbox') {
+            el.checked = !!value;
+        } else if (el.tagName === 'SELECT') {
+            el.value = String(value);
+        } else {
+            el.value = value == null ? '' : value;
+        }
+        if (field === 'active') {
+            if (value) startPowerUpdate(index);
+            else stopPowerUpdate(index);
+            startGlobalPowerUpdates();
         }
     }
 
