@@ -33,7 +33,7 @@
 
 // Tasks
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task"
-#define ADE7953_METER_READING_TASK_STACK_SIZE (12 * 1024) // Fine, around 5 kB usage. Increased since we use PSRAM
+#define ADE7953_METER_READING_TASK_STACK_SIZE (8 * 1024) // Week-long peak ~5358 bytes (43.6%); 8 KB leaves ~33% margin and frees 4 KB of internal heap
 #define ADE7953_METER_READING_TASK_PRIORITY 5
 
 #define ADE7953_ENERGY_SAVE_TASK_NAME "energy_save_task"

@@ -22,7 +22,7 @@
 #include "utils.h"
 
 #define WIFI_TASK_NAME "wifi_task"
-#define WIFI_TASK_STACK_SIZE (6 * 1024) // Increased for esp_wifi_set_config() which uses ~500+ bytes stack
+#define WIFI_TASK_STACK_SIZE (8 * 1024) // Week-long high-water mark hit 5580 bytes (only 564 bytes free at 6 KB) - bumped to 8 KB for ~30% safety margin on portal/credential paths
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"

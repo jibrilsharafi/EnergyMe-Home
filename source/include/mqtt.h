@@ -26,7 +26,7 @@
 
 #define MQTT_TASK_NAME "mqtt_task"
 #define MQTT_TASK_STACK_SIZE (7 * 1024) // Around 6 kB usage
-#define MQTT_TASK_PRIORITY 3
+#define MQTT_TASK_PRIORITY 1 // Below AsyncTCP/web (priority 3) so user-facing requests preempt cloud publishing
 
 #define MQTT_LOG_QUEUE_SIZE (256 * 1024) // Generous log size (in bytes) thanks to PSRAM
 #define MQTT_METER_QUEUE_SIZE (64 * 1024) // Size in bytes to allocate to PSRAM
