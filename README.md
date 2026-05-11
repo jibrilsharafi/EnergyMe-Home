@@ -13,9 +13,11 @@
 
 ![Homepage](resources/homepage.gif)
 
-> **Join the community!** Head over to [GitHub Discussions](https://github.com/jibrilsharafi/EnergyMe-Home/discussions) - ask questions, share your builds and dashboards, suggest features, and exchange integration tips. It's the home for everyone building, installing, or tinkering with EnergyMe-Home.
+> **Join the community!** Head over to [GitHub Discussions](https://github.com/jibrilsharafi/EnergyMe-Home/discussions) - ask questions, share your builds and dashboards, suggest features, and exchange integration tips. It's the home for everyone building, installing, or tinkering with EnergyMe-Home
 
-EnergyMe-Home is an open-source energy monitoring system for home use, capable of monitoring up to 16 circuits. It integrates with any platform through REST API, MQTT, Modbus TCP, and InfluxDB.
+> Want to try it? Access the [demo dashboard](https://demo-energyme-home.energyme.net)!
+
+*EnergyMe-Home* is an open-source energy monitoring system for home use, capable of monitoring up to 16 circuits. It integrates with any platform through REST API, MQTT, Modbus TCP, and InfluxDB.
 
 Built for makers and DIY enthusiasts who want to track their home's energy consumption. The hardware uses ESP32-S3 and ADE7953 energy measurement IC, while the firmware is written in C++ with PlatformIO and Arduino framework. You can build and customize it yourself - all hardware designs and software are open-source.
 
