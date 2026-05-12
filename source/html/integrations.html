@@ -217,6 +217,41 @@
         <button class="buttonForm" onclick="getInfluxDbConfiguration()" id="reloadInfluxDbButton" style="float: right;">🔄 Reload Status</button>
     </div>
 
+    <!-- Home Assistant Section -->
+    <div class="section-box">
+        <h2>Home Assistant</h2>
+        <p><i>
+                A custom integration for Home Assistant that exposes all device channels as native sensors
+                (voltage, current, active/reactive/apparent power, power factor, and energy totals).
+                It uses the device REST API and works fully on the local network, with no cloud dependency.
+            </i></p>
+
+        <div class="register-map-section">
+            <h3>Quick Setup</h3>
+            <ol style="margin-left: 20px;">
+                <li>Install the integration via <a href="https://hacs.xyz/" target="_blank">HACS</a> (recommended) or manually.
+                    <ul style="margin-top: 8px;">
+                        <li><strong>HACS:</strong> HACS &rarr; Integrations &rarr; ⋮ &rarr; Custom repositories &rarr;
+                            add <code>https://github.com/jibrilsharafi/homeassistant-energyme</code> as an Integration,
+                            then install "EnergyMe".</li>
+                        <li><strong>Manual:</strong> download the latest release, extract the <code>energyme</code> folder
+                            into your <code>custom_components</code> directory.</li>
+                    </ul>
+                </li>
+                <li>Restart Home Assistant.</li>
+                <li>Go to <strong>Settings</strong> &rarr; <strong>Devices &amp; Services</strong> &rarr;
+                    <strong>Add Integration</strong> and search for "EnergyMe".</li>
+                <li>Enter the device IP/hostname and the credentials (defaults: user <code>admin</code>,
+                    password <code>energyme</code>). Active channels are discovered automatically.</li>
+            </ol>
+
+            <p>Full documentation, troubleshooting, and screenshots are available in the integration repository.</p>
+        </div>
+
+        <a href="https://github.com/jibrilsharafi/homeassistant-energyme" target="_blank" class="buttonForm">📦 GitHub Repository</a>
+        <a href="https://github.com/jibrilsharafi/homeassistant-energyme#hacs-installation" target="_blank" class="buttonForm">🛒 HACS Installation Guide</a>
+    </div>
+
     <!-- REST API Documentation Section -->
     <div class="section-box">
         <h2>REST API Documentation</h2>
@@ -323,7 +358,7 @@
             </ul>
 
             <h4>Per-Channel Registers (1000 + channel×100 + offset)</h4>
-            <p>For each channel 0-16, registers are organized as follows:</p>
+            <p>For each active channel (0 to N-1, where N is the device's channel count - 16 on PCB v6.1), registers are organized as follows:</p>
             <ul>
                 <li><code>+0-1</code>: Current (float32)</li>
                 <li><code>+2-3</code>: Active power (float32)</li>
@@ -386,7 +421,7 @@
                         <li><code>vendor</code>: Manufacturer name</li>
                         <li><code>model</code>: Product model</li>
                         <li><code>version</code>: Firmware version</li>
-                        <li><code>channels</code>: Number of available channels (17)</li>
+                        <li><code>channels</code>: Number of available channels (16)</li>
                     </ul>
                 </li>
             </ul>
@@ -805,8 +840,8 @@
             registerMap.push({ offset: 614, count: 2, name: "Inverter reactive energy exported", dataType: "float32", unit: "VARh" });
             registerMap.push({ offset: 616, count: 2, name: "Inverter apparent energy", dataType: "float32", unit: "VAh" });
 
-            // Per-Channel Registers (1000 + channel×100 + offset) for channels 0-16
-            for (let channel = 0; channel <= 16; channel++) {
+            // Per-Channel Registers (1000 + channel×100 + offset). MAX_CHANNEL_COUNT = 17 is the firmware-side compile-time max; v6.1 advertises 16 active channels via mDNS and Modbus only validates 0..totalChannelCount-1.
+            for (let channel = 0; channel <= 15; channel++) {
                 const baseAddr = 1000 + (channel * 100);
                 registerMap.push({ offset: baseAddr, count: 2, name: `Ch${channel} Current`, dataType: "float32", unit: "A" });
                 registerMap.push({ offset: baseAddr + 2, count: 2, name: `Ch${channel} Active power`, dataType: "float32", unit: "W" });

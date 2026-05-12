@@ -123,4 +123,4 @@ Il tuo dispositivo EnergyMe è ora fisicamente installato e alimentato. Ora è i
 
 ---
 
-**Hai bisogno di aiuto?** Contatta: <jibril.sharafi@gmail.com>
+**Hai bisogno di aiuto?** Contatta: <support@energyme.net>

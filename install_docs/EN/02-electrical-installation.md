@@ -118,4 +118,4 @@ Your EnergyMe device is now physically installed and powered. Now it is time to 
 
 ---
 
-**Need help?** Contact: <jibril.sharafi@gmail.com>
+**Need help?** Contact: <support@energyme.net>

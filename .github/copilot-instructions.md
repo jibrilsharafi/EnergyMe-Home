@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-EnergyMe-Home is an open-source energy monitoring system for home use, capable of monitoring up to 17 circuits. It's an embedded firmware project built for ESP32-S3 microcontrollers with the following key characteristics:
+EnergyMe-Home is an open-source energy monitoring system for home use, capable of monitoring up to 16 circuits. It's an embedded firmware project built for ESP32-S3 microcontrollers with the following key characteristics:
 
 - **Hardware**: ESP32-S3-N16R2 with 16MB Flash and 2MB PSRAM
 - **Framework**: Arduino 3.x framework with PlatformIO build system
@@ -23,36 +23,35 @@ EnergyMe-Home is an open-source energy monitoring system for home use, capable o
 
 ## Build System & Environments
 
-This project uses **PlatformIO** with four build environments:
+This project uses **PlatformIO** with two build environments (defined in `source/platformio.ini`):
 
-1. **esp32s3-dev** - Development with secrets embedded (for internal testing)
-2. **esp32s3-dev-nosecrets** - Development without secrets (for open-source development)
-3. **esp32s3-prod** - Production build with secrets
-4. **esp32s3-prod-nosecrets** - Production build for public releases
+1. **esp32s3-dev** - Debug build (`-O0`, verbose logging) for development.
+2. **esp32s3-prod** - Release build (`-Os`, warnings/errors only) for shipping firmware.
+
+There are no longer separate `-nosecrets` variants. Cloud certificates and other device-specific secrets are loaded at runtime from the `factory_ns` NVS partition (provisioned at manufacturing). Community / self-built boards run in community mode automatically when factory NVS is missing.
 
 ### Building the Project
 
 ```bash
-# Install PlatformIO if not already installed
-pip install platformio
+# Install PlatformIO if not already installed (use uv / pipx; never bare pip)
+# Then invoke pio with its full path; do not rely on shell PATH.
 
-# Build for open-source development (no secrets required)
 cd source
-pio run -e esp32s3-dev-nosecrets
+pio run -e esp32s3-dev
 
 # Clean build
-pio run -t clean -e esp32s3-dev-nosecrets
+pio run -t clean -e esp32s3-dev
 
 # Static analysis
-pio check -e esp32s3-dev-nosecrets
+pio check -e esp32s3-dev
 ```
 
 ### Important Build Notes
 
-- Always use the `-nosecrets` environments for open-source contributions
 - The project requires specific ESP32-S3 configurations (PSRAM, flash mode, partition table)
 - Web interface files (HTML/CSS/JS) are embedded at compile time using `board_build.embed_txtfiles`
 - Do NOT modify `platformio.ini` unless absolutely necessary - the ESP32-S3-N16R2 configuration is fragile
+- Use `-DPCB_VERSION_FALLBACK="vX.Y"` to force a specific hardware profile when the factory NVS is not provisioned (community builds)
 
 ## Coding Standards & Conventions
 
@@ -80,7 +79,7 @@ pio check -e esp32s3-dev-nosecrets
 
 3. **Hardware Interfacing**
    - SPI is used for ADE7953 communication
-   - GPIO pins are defined in `include/pins.h`
+   - GPIO pins come from `globalHwProfile` at runtime; the active profile is selected by `initHardwareProfile()` in `src/hardware_profile.cpp`. Never hard-code pins.
    - Always check hardware availability before accessing peripherals
    - Use proper error handling for hardware failures
 
@@ -105,15 +104,16 @@ pio check -e esp32s3-dev-nosecrets
 
 ## Dependencies
 
-All dependencies are pinned to specific versions in `platformio.ini`:
+All dependencies are pinned to specific versions in `platformio.ini` (always treat that file as the source of truth - the values below may drift):
 
-- **AdvancedLogger** (2.0.1) - Logging with PSRAM support
-- **ArduinoJson** (7.4.2) - JSON processing
-- **AsyncTCP** (3.4.8) & **ESPAsyncWebServer** (3.8.1) - Async web server
-- **PubSubClient** (2.8.0) - MQTT client
-- **WiFiManager** (2.0.17) - WiFi configuration
-- **eModbus** (1.7.4) - Modbus TCP support
-- **ESP32-targz** (1.2.9) - Archive extraction
+- **AdvancedLogger** - Logging with PSRAM support
+- **ArduinoJson** - JSON processing
+- **AsyncTCP** & **ESPAsyncWebServer** - Async web server
+- **StreamUtils** - Stream helpers used during JSON deserialisation
+- **PubSubClient** - MQTT client
+- **WiFiManager** - WiFi configuration with captive portal
+- **eModbus** - Modbus TCP support
+- **ESP32-targz** - Archive extraction
 
 **Do not update dependency versions** without thorough testing - embedded systems require stability.
 
@@ -132,8 +132,8 @@ There is no unit test framework currently set up. Focus on ensuring compilation 
 
 1. **Secrets Management**
    - Never commit secrets (certificates, keys, endpoints) to the repository
-   - Use the `-nosecrets` build environments for open-source work
-   - Secrets are provisioned at runtime in production builds without embedded secrets
+   - Cloud certificates and device serials live in the `factory_ns` NVS partition, written at manufacturing time. The firmware reads them transparently at boot - no build-time secrets are required.
+   - Devices without factory provisioning (community builds) automatically run in community mode (cloud disabled, local integrations functional)
 
 2. **Web Security**
    - The web interface uses token-based authentication
@@ -199,4 +199,4 @@ There is no unit test framework currently set up. Focus on ensuring compilation 
 - Run static analysis: `pio check`
 - Ask for clarification if hardware-specific changes are needed
 - Prefer minimal, targeted changes over large refactors
-- Test compilation in the `-nosecrets` environment before submitting changes
+- Test compilation in the `esp32s3-dev` environment before submitting changes

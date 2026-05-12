@@ -498,10 +498,10 @@ def get_logs() -> str:
             try:
                 return json.dumps(response.json(), indent=2)
             except ValueError:
-                # Malformed JSON — fall back to raw text
+                # Malformed JSON, fall back to raw text
                 return response.text
         else:
-            # Logs are typically plain text — return as-is
+            # Logs are typically plain text, return as-is
             return response.text
 
     except requests.exceptions.RequestException as e:

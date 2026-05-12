@@ -193,6 +193,10 @@ def fetch_from_device(host: str, password: str):
     fail_count = 0
     
     for endpoint in GET_ENDPOINTS:
+        # Skip /api/v1/logs (log content is served from little-fs/log.txt)
+        if endpoint == '/api/v1/logs':
+            print(f"  Skipped: {endpoint} (served from little-fs/log.txt)")
+            continue
         url = f"http://{host}{endpoint}"
         try:
             req = urllib.request.Request(url)
@@ -204,7 +208,7 @@ def fetch_from_device(host: str, password: str):
                     save_mock_response(endpoint, data)
                     success_count += 1
                 elif 'text/plain' in content_type:
-                    # For text responses like /api/v1/logs, save as-is in a wrapper
+                    # Save text responses as-is in a wrapper
                     text = response.read().decode('utf-8')
                     save_mock_response(endpoint, {"_text": text})
                     success_count += 1

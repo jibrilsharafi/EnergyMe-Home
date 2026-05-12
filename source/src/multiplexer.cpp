@@ -20,13 +20,12 @@ namespace Multiplexer {
         pinMode(_s2Pin, OUTPUT);
         pinMode(_s3Pin, OUTPUT);
 
-        // At boot, set the multiplexer to channel 1 (channel 0 of the multiplexer)
-        // To avoid incorrect first readings 
+        // At boot, pre-select physical channel Y0 to avoid floating select lines
         setChannel(0);
     }
 
     void setChannel(uint8_t channel) {
-        if (channel > MULTIPLEXER_CHANNEL_COUNT-1) return;
+        if (channel >= globalHwProfile->muxChipChannels) return;
 
         // Truth table for the multiplexer
         // Enable pin (E) is always 0 at the hardware level

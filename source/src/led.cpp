@@ -2,9 +2,12 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "led.h"
+#include "taskprofiler.h"
 
 namespace Led
 {
+    static TaskHeartbeat _heartbeat;
+
     // Hardware pins
     static uint8_t _redPin = INVALID_PIN;
     static uint8_t _greenPin = INVALID_PIN;
@@ -117,6 +120,7 @@ namespace Led
         _ledTaskShouldRun = true;
         while (_ledTaskShouldRun)
         {
+            TASK_HEARTBEAT(_heartbeat);
 
             // Check for new commands in queue with timeout
             if (xQueueReceive(_ledQueue, &command, pdMS_TO_TICKS(LED_TASK_DELAY_MS)) == pdTRUE)
@@ -350,6 +354,6 @@ namespace Led
 
     TaskInfo getTaskInfo()
     {
-        return getTaskInfoSafely(_ledTaskHandle, LED_TASK_STACK_SIZE);
+        return getTaskInfoSafely(_ledTaskHandle, LED_TASK_STACK_SIZE, &_heartbeat);
     }
 }

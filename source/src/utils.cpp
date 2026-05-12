@@ -3,11 +3,15 @@
 
 #include "utils.h"
 
+#include "taskprofiler.h"
+
 static TaskHandle_t _restartTaskHandle = NULL;
 static TaskHandle_t _maintenanceTaskHandle = NULL;
 static bool _maintenanceTaskShouldRun = false;
 
 static esp_timer_handle_t _failsafeTimer = NULL;
+
+static TaskHeartbeat _maintenanceHeartbeat;
 
 // Static function declarations
 static void _factoryReset();
@@ -67,6 +71,17 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     
     // Device ID
     getDeviceId(info.deviceId, sizeof(info.deviceId));
+
+    // Factory provisioning data (written at manufacturing time; defaults kept otherwise)
+    Preferences factoryPrefs;
+    if (factoryPrefs.begin(PREFERENCES_NAMESPACE_FACTORY, true)) {
+        factoryPrefs.getString(FACTORY_KEY_SERIAL_NUMBER, info.serialNumber, sizeof(info.serialNumber));
+        if (strlen(info.serialNumber) == 0) {
+            snprintf(info.serialNumber, sizeof(info.serialNumber), "Unknown");
+        }
+        info.manufacturingUnixTs = factoryPrefs.getULong(FACTORY_KEY_MFG_TS, 0);
+        factoryPrefs.end();
+    }
 
     LOG_DEBUG("Static system info populated");
 }
@@ -136,7 +151,17 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
 
     // Performance
     info.temperatureCelsius = temperatureRead();
-    
+
+    // CPU stats over a window matching the system_dynamic publish cadence.
+    // ENV_DEV: last 60 s; ENV_PROD: full 3600 s ring.
+#ifdef ENV_DEV
+    static constexpr uint32_t CPU_STATS_WINDOW_SECONDS = 60;
+#else
+    static constexpr uint32_t CPU_STATS_WINDOW_SECONDS = 0; // 0 = full ring
+#endif
+    info.cpuCore0Stats = TaskProfiler::getCpuStats(0, CPU_STATS_WINDOW_SECONDS);
+    info.cpuCore1Stats = TaskProfiler::getCpuStats(1, CPU_STATS_WINDOW_SECONDS);
+
     // Network (if connected)
     if (CustomWifi::isFullyConnected()) {
         info.wifiConnected = true;
@@ -160,10 +185,10 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
 
     // Tasks
-    #ifdef HAS_SECRETS
-    info.mqttTaskInfo = Mqtt::getMqttTaskInfo();
-    info.mqttOtaTaskInfo = Mqtt::getMqttOtaTaskInfo();
-    #endif
+    if (!globalCommunityMode) {
+        info.mqttTaskInfo = Mqtt::getMqttTaskInfo();
+        info.mqttOtaTaskInfo = Mqtt::getMqttOtaTaskInfo();
+    }
     info.customMqttTaskInfo = CustomMqtt::getTaskInfo();
     info.customServerHealthCheckTaskInfo = CustomServer::getHealthCheckTaskInfo();
     info.customServerOtaTimeoutTaskInfo = CustomServer::getOtaTimeoutTaskInfo();
@@ -228,6 +253,10 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument &doc) {
     // Device
     doc["device"]["id"] = info.deviceId;
 
+    // Factory provisioning (Unknown / 0 when the device was not factory-provisioned)
+    doc["factory"]["serialNumber"] = info.serialNumber;
+    doc["factory"]["manufacturingUnixTs"] = info.manufacturingUnixTs;
+
     LOG_DEBUG("Static system info converted to JSON");
 }
 
@@ -272,7 +301,24 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
 
     // Performance
     doc["performance"]["temperatureCelsius"] = info.temperatureCelsius;
-    
+
+    // CPU stats (per core, spike-aware ring buffer)
+    auto addCpuCore = [&](const char* key, const TaskProfiler::CpuStats& s) {
+        doc["cpu"][key]["current"]               = s.current;
+        doc["cpu"][key]["min"]                   = s.min;
+        doc["cpu"][key]["max"]                   = s.max;
+        doc["cpu"][key]["avg"]                   = s.avg;
+        doc["cpu"][key]["p50"]                   = s.p50;
+        doc["cpu"][key]["p90"]                   = s.p90;
+        doc["cpu"][key]["p95"]                   = s.p95;
+        doc["cpu"][key]["p99"]                   = s.p99;
+        doc["cpu"][key]["samplesInWindow"]        = s.samplesInWindow;
+        doc["cpu"][key]["samplesAboveThreshold"]  = s.samplesAboveThreshold;
+        doc["cpu"][key]["windowSeconds"]          = s.windowSeconds;
+    };
+    addCpuCore("core0", info.cpuCore0Stats);
+    addCpuCore("core1", info.cpuCore1Stats);
+
     // Network
     doc["network"]["wifiConnected"] = info.wifiConnected;
     doc["network"]["wifiSsid"] = JsonString(info.wifiSsid); // Ensure it is not a dangling pointer
@@ -285,80 +331,35 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     doc["network"]["wifiRssi"] = info.wifiRssi;
 
     // Tasks
-    doc["tasks"]["mqtt"]["allocatedStack"] = info.mqttTaskInfo.allocatedStack;
-    doc["tasks"]["mqtt"]["minimumFreeStack"] = info.mqttTaskInfo.minimumFreeStack;
-    doc["tasks"]["mqtt"]["freePercentage"] = info.mqttTaskInfo.freePercentage;
-    doc["tasks"]["mqtt"]["usedPercentage"] = info.mqttTaskInfo.usedPercentage;
+    uint64_t nowMs = millis64();
+    auto addTask = [&](const char* name, const TaskInfo& t) {
+        doc["tasks"][name]["allocatedStack"] = t.allocatedStack;
+        doc["tasks"][name]["minimumFreeStack"] = t.minimumFreeStack;
+        doc["tasks"][name]["freePercentage"] = t.freePercentage;
+        doc["tasks"][name]["usedPercentage"] = t.usedPercentage;
+        doc["tasks"][name]["lastTickMillis"] = (uint64_t)t.lastTickMillis;
+        doc["tasks"][name]["loopCount"] = t.loopCount;
+        // staleMs == 0 means "task not instrumented" (no TASK_HEARTBEAT call) - it does
+        // not mean the task ticked this exact ms. Consumers that care about liveness
+        // should also check loopCount > 0.
+        doc["tasks"][name]["staleMs"] = (t.lastTickMillis == 0) ? 0ULL : (nowMs - t.lastTickMillis);
+    };
 
-    doc["tasks"]["mqttOta"]["allocatedStack"] = info.mqttOtaTaskInfo.allocatedStack;
-    doc["tasks"]["mqttOta"]["minimumFreeStack"] = info.mqttOtaTaskInfo.minimumFreeStack;
-    doc["tasks"]["mqttOta"]["freePercentage"] = info.mqttOtaTaskInfo.freePercentage;
-    doc["tasks"]["mqttOta"]["usedPercentage"] = info.mqttOtaTaskInfo.usedPercentage;
-
-    doc["tasks"]["customMqtt"]["allocatedStack"] = info.customMqttTaskInfo.allocatedStack;
-    doc["tasks"]["customMqtt"]["minimumFreeStack"] = info.customMqttTaskInfo.minimumFreeStack;
-    doc["tasks"]["customMqtt"]["freePercentage"] = info.customMqttTaskInfo.freePercentage;
-    doc["tasks"]["customMqtt"]["usedPercentage"] = info.customMqttTaskInfo.usedPercentage;
-
-    doc["tasks"]["customServerHealthCheck"]["allocatedStack"] = info.customServerHealthCheckTaskInfo.allocatedStack;
-    doc["tasks"]["customServerHealthCheck"]["minimumFreeStack"] = info.customServerHealthCheckTaskInfo.minimumFreeStack;
-    doc["tasks"]["customServerHealthCheck"]["freePercentage"] = info.customServerHealthCheckTaskInfo.freePercentage;
-    doc["tasks"]["customServerHealthCheck"]["usedPercentage"] = info.customServerHealthCheckTaskInfo.usedPercentage;
-
-    doc["tasks"]["customServerOtaTimeout"]["allocatedStack"] = info.customServerOtaTimeoutTaskInfo.allocatedStack;
-    doc["tasks"]["customServerOtaTimeout"]["minimumFreeStack"] = info.customServerOtaTimeoutTaskInfo.minimumFreeStack;
-    doc["tasks"]["customServerOtaTimeout"]["freePercentage"] = info.customServerOtaTimeoutTaskInfo.freePercentage;
-    doc["tasks"]["customServerOtaTimeout"]["usedPercentage"] = info.customServerOtaTimeoutTaskInfo.usedPercentage;
-
-    doc["tasks"]["led"]["allocatedStack"] = info.ledTaskInfo.allocatedStack;
-    doc["tasks"]["led"]["minimumFreeStack"] = info.ledTaskInfo.minimumFreeStack;
-    doc["tasks"]["led"]["freePercentage"] = info.ledTaskInfo.freePercentage;
-    doc["tasks"]["led"]["usedPercentage"] = info.ledTaskInfo.usedPercentage;
-
-    doc["tasks"]["influxDb"]["allocatedStack"] = info.influxDbTaskInfo.allocatedStack;
-    doc["tasks"]["influxDb"]["minimumFreeStack"] = info.influxDbTaskInfo.minimumFreeStack;
-    doc["tasks"]["influxDb"]["freePercentage"] = info.influxDbTaskInfo.freePercentage;
-    doc["tasks"]["influxDb"]["usedPercentage"] = info.influxDbTaskInfo.usedPercentage;
-
-    doc["tasks"]["crashMonitor"]["allocatedStack"] = info.crashMonitorTaskInfo.allocatedStack;
-    doc["tasks"]["crashMonitor"]["minimumFreeStack"] = info.crashMonitorTaskInfo.minimumFreeStack;
-    doc["tasks"]["crashMonitor"]["freePercentage"] = info.crashMonitorTaskInfo.freePercentage;
-    doc["tasks"]["crashMonitor"]["usedPercentage"] = info.crashMonitorTaskInfo.usedPercentage;
-
-    doc["tasks"]["buttonHandler"]["allocatedStack"] = info.buttonHandlerTaskInfo.allocatedStack;
-    doc["tasks"]["buttonHandler"]["minimumFreeStack"] = info.buttonHandlerTaskInfo.minimumFreeStack;
-    doc["tasks"]["buttonHandler"]["freePercentage"] = info.buttonHandlerTaskInfo.freePercentage;
-    doc["tasks"]["buttonHandler"]["usedPercentage"] = info.buttonHandlerTaskInfo.usedPercentage;
-
-    doc["tasks"]["udpLog"]["allocatedStack"] = info.udpLogTaskInfo.allocatedStack;
-    doc["tasks"]["udpLog"]["minimumFreeStack"] = info.udpLogTaskInfo.minimumFreeStack;
-    doc["tasks"]["udpLog"]["freePercentage"] = info.udpLogTaskInfo.freePercentage;
-    doc["tasks"]["udpLog"]["usedPercentage"] = info.udpLogTaskInfo.usedPercentage;
-
-    doc["tasks"]["customWifi"]["allocatedStack"] = info.customWifiTaskInfo.allocatedStack;
-    doc["tasks"]["customWifi"]["minimumFreeStack"] = info.customWifiTaskInfo.minimumFreeStack;
-    doc["tasks"]["customWifi"]["freePercentage"] = info.customWifiTaskInfo.freePercentage;
-    doc["tasks"]["customWifi"]["usedPercentage"] = info.customWifiTaskInfo.usedPercentage;
-
-    doc["tasks"]["ade7953MeterReading"]["allocatedStack"] = info.ade7953MeterReadingTaskInfo.allocatedStack;
-    doc["tasks"]["ade7953MeterReading"]["minimumFreeStack"] = info.ade7953MeterReadingTaskInfo.minimumFreeStack;
-    doc["tasks"]["ade7953MeterReading"]["freePercentage"] = info.ade7953MeterReadingTaskInfo.freePercentage;
-    doc["tasks"]["ade7953MeterReading"]["usedPercentage"] = info.ade7953MeterReadingTaskInfo.usedPercentage;
-
-    doc["tasks"]["ade7953EnergySave"]["allocatedStack"] = info.ade7953EnergySaveTaskInfo.allocatedStack;
-    doc["tasks"]["ade7953EnergySave"]["minimumFreeStack"] = info.ade7953EnergySaveTaskInfo.minimumFreeStack;
-    doc["tasks"]["ade7953EnergySave"]["freePercentage"] = info.ade7953EnergySaveTaskInfo.freePercentage;
-    doc["tasks"]["ade7953EnergySave"]["usedPercentage"] = info.ade7953EnergySaveTaskInfo.usedPercentage;
-
-    doc["tasks"]["ade7953HourlyCsv"]["allocatedStack"] = info.ade7953HourlyCsvTaskInfo.allocatedStack;
-    doc["tasks"]["ade7953HourlyCsv"]["minimumFreeStack"] = info.ade7953HourlyCsvTaskInfo.minimumFreeStack;
-    doc["tasks"]["ade7953HourlyCsv"]["freePercentage"] = info.ade7953HourlyCsvTaskInfo.freePercentage;
-    doc["tasks"]["ade7953HourlyCsv"]["usedPercentage"] = info.ade7953HourlyCsvTaskInfo.usedPercentage;
-
-    doc["tasks"]["maintenance"]["allocatedStack"] = info.maintenanceTaskInfo.allocatedStack;
-    doc["tasks"]["maintenance"]["minimumFreeStack"] = info.maintenanceTaskInfo.minimumFreeStack;
-    doc["tasks"]["maintenance"]["freePercentage"] = info.maintenanceTaskInfo.freePercentage;
-    doc["tasks"]["maintenance"]["usedPercentage"] = info.maintenanceTaskInfo.usedPercentage;
+    addTask("mqtt", info.mqttTaskInfo);
+    addTask("mqttOta", info.mqttOtaTaskInfo);
+    addTask("customMqtt", info.customMqttTaskInfo);
+    addTask("customServerHealthCheck", info.customServerHealthCheckTaskInfo);
+    addTask("customServerOtaTimeout", info.customServerOtaTimeoutTaskInfo);
+    addTask("led", info.ledTaskInfo);
+    addTask("influxDb", info.influxDbTaskInfo);
+    addTask("crashMonitor", info.crashMonitorTaskInfo);
+    addTask("buttonHandler", info.buttonHandlerTaskInfo);
+    addTask("udpLog", info.udpLogTaskInfo);
+    addTask("customWifi", info.customWifiTaskInfo);
+    addTask("ade7953MeterReading", info.ade7953MeterReadingTaskInfo);
+    addTask("ade7953EnergySave", info.ade7953EnergySaveTaskInfo);
+    addTask("ade7953HourlyCsv", info.ade7953HourlyCsvTaskInfo);
+    addTask("maintenance", info.maintenanceTaskInfo);
 
     LOG_DEBUG("Dynamic system info converted to JSON");
 }
@@ -409,6 +410,8 @@ static void _maintenanceTask(void* parameter) {
     
     _maintenanceTaskShouldRun = true;
     while (_maintenanceTaskShouldRun) {
+        TASK_HEARTBEAT(_maintenanceHeartbeat);
+
         // Update and print statistics
         printStatistics();
         printDeviceStatusDynamic();
@@ -526,7 +529,7 @@ void stopMaintenanceTask() {
 
 TaskInfo getMaintenanceTaskInfo()
 {
-    return getTaskInfoSafely(_maintenanceTaskHandle, TASK_MAINTENANCE_STACK_SIZE);
+    return getTaskInfoSafely(_maintenanceTaskHandle, TASK_MAINTENANCE_STACK_SIZE, &_maintenanceHeartbeat);
 }
 
 // Failsafe timer callback - runs from esp_timer task context, guaranteed to execute
@@ -571,9 +574,7 @@ static void _restartTask(void* parameter) {
     CustomServer::stop();
     Ade7953::stop();
     ModbusTcp::stop();
-    #ifdef HAS_SECRETS
-    Mqtt::stop();
-    #endif
+    if (!globalCommunityMode) Mqtt::stop();
     LOG_DEBUG("Services stopped");
 
     // 3. Close log file (if this blocks, failsafe timer will restart us)
@@ -844,7 +845,7 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     Led::setBrightness(max(Led::getBrightness(), (uint8_t)1)); // Show a faint light even if it is off
     Led::blinkRedFast(Led::PRIO_CRITICAL);
 
-    clearAllPreferences(false);
+    clearAllPreferences();
 
     Serial.println("[WARNING] Formatting LittleFS. This will take some time.");
     LittleFS.format();
@@ -875,49 +876,76 @@ void setFirstBootDone() { // No arguments because the only way to set first boot
 }
 
 void createAllNamespaces() {
-    Preferences preferences;
+    // Initialize all known app namespaces on first boot
+    const char* namespacesToCreate[] = {TO_INITIALIZE_NVS_NAMESPACES_LIST};
 
-    preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_MQTT, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_TIME, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.end();
+    Preferences preferences;
+    for (const char* ns : namespacesToCreate) {
+        preferences.begin(ns, false);
+        preferences.end();
+    }
 
     LOG_DEBUG("All namespaces created");
 }
 
-void clearAllPreferences(bool nuclearOption) {
+void clearAllPreferences() {
+    // Clear all app namespaces during factory reset, skipping only critical ones
+    // Critical namespaces: factory-provisioned data (certs, calibration) and device-specific data
+    const char* excludedNamespaces[] = {EXCLUDED_NVS_NAMESPACES_LIST};
+
+    nvs_iterator_t it = nullptr;
+    esp_err_t err = nvs_entry_find("nvs", nullptr, NVS_TYPE_ANY, &it);
+
+    if (err != ESP_OK) {
+        LOG_WARNING("Could not initialize NVS iterator for clearing preferences (error %d)", err);
+        return;
+    }
+
     Preferences preferences;
+    uint32_t clearedCount = 0;
 
-    preferences.begin(PREFERENCES_NAMESPACE_GENERAL, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CALIBRATION, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CHANNELS, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_ENERGY, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_MQTT, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CUSTOM_MQTT, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_INFLUXDB, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_BUTTON, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_WIFI, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_TIME, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_CERTIFICATES, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_LED, false); preferences.clear(); preferences.end();
-    preferences.begin(PREFERENCES_NAMESPACE_AUTH, false); preferences.clear(); preferences.end();
-    
-    if (nuclearOption) nvs_flash_erase(); // Nuclear solution. In development, the NVS can get overcrowded with test data, so we clear it completely (losing also WiFi credentials, etc.)
+    uint32_t loops = 0;
+    while (err == ESP_OK && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
+        nvs_entry_info_t info;
+        nvs_entry_info(it, &info);
 
-    LOG_WARNING("Cleared all preferences");
+        // Skip system namespaces (handled separately by ESP)
+        // Most likely they would be already handled by excludedNamespaces, but better safe than sorry
+        if (strncmp(info.namespace_name, "nvs.", 4) == 0) {
+            err = nvs_entry_next(&it);
+            continue;
+        }
+
+        // Check if this namespace should be skipped (critical data)
+        bool isExcluded = false;
+        for (const char* excluded : excludedNamespaces) {
+            if (strcmp(info.namespace_name, excluded) == 0) {
+                isExcluded = true;
+                break;
+            }
+        }
+
+        // Clear non-critical namespaces
+        if (!isExcluded && preferences.begin(info.namespace_name, false)) {
+            preferences.clear();
+            preferences.end();
+            clearedCount++;
+        }
+
+        err = nvs_entry_next(&it);
+
+        if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+            LOG_ERROR("Could not advance NVS iterator (error %d)", err);
+            break;
+        }
+    }
+
+    if (it != nullptr) {
+        nvs_release_iterator(it);
+    }
+
+    LOG_WARNING("Cleared %ld preferences (factory/device-specific data preserved)", clearedCount);
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {
@@ -929,39 +957,6 @@ void getDeviceId(char* deviceId, size_t maxLength) {
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-bool readEfuseProvisioningData(EfuseProvisioningData& data) {
-    // Read 32 bytes from BLOCK_USR_DATA (USER_DATA eFuse block)
-    uint8_t efuseData[32];
-    
-    #include <esp_efuse.h>
-    
-    // Read the user data block
-    esp_err_t err = esp_efuse_read_field_blob(ESP_EFUSE_USER_DATA, efuseData, sizeof(efuseData) * 8);
-    
-    if (err != ESP_OK) {
-        LOG_DEBUG("Failed to read eFuse user data: %s", esp_err_to_name(err));
-        data.isProvisioned = false;
-        return false;
-    }
-    
-    // Check provisioning flag at byte 0
-    if (efuseData[0] != 0x01) {
-        LOG_DEBUG("Device not provisioned (flag: 0x%02X)", efuseData[0]);
-        data.isProvisioned = false;
-        return false;
-    }
-    
-    // Parse data structure (matching Python script format)
-    data.isProvisioned = true;
-    data.serial = *((uint32_t*)&efuseData[4]);           // Bytes 4-7: Serial (little-endian)
-    data.manufacturingDate = *((uint64_t*)&efuseData[8]); // Bytes 8-15: Manufacturing date (little-endian)
-    data.hardwareVersion = *((uint16_t*)&efuseData[16]);  // Bytes 16-17: Hardware version (little-endian)
-    
-    LOG_DEBUG("eFuse provisioning data read: serial=0x%08X, mfgDate=%llu, hwVer=%u", 
-              data.serial, data.manufacturingDate, data.hardwareVersion);
-    
-    return true;
-}
 
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier) {
     if (attempt == 0) return 0;
@@ -1218,7 +1213,9 @@ void migrateCsvToGzip(const char* dirPath, const char* excludePrefix) {
     dir.rewindDirectory();
 
     File file = dir.openNextFile();
-    while (file) {
+    uint32_t loops = 0;
+    while (file && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
         if (!file.isDirectory()) {
             const char* path = file.name();
             char fullPath[NAME_BUFFER_SIZE];
@@ -1299,15 +1296,19 @@ static bool _appendFileToFile(const char* srcPath, File &destFile, bool skipHead
     // Skip header line if requested
     if (skipHeader && srcFile.available()) {
         // Read and discard the first line (header)
-        while (srcFile.available()) {
+        uint32_t loops = 0;
+        while (srcFile.available() && loops < MAX_LOOP_ITERATIONS) {
+            loops++;
             int c = srcFile.read();
             if (c == '\n') break;
         }
     }
-    
+
     // Copy remaining content
     uint8_t buffer[512];
-    while (srcFile.available()) {
+    uint32_t loops = 0;
+    while (srcFile.available() && loops < MAX_LOOP_ITERATIONS) {
+        loops++;
         size_t bytesRead = srcFile.read(buffer, sizeof(buffer));
         if (bytesRead > 0) {
             destFile.write(buffer, bytesRead);
@@ -1880,12 +1881,7 @@ bool nvsDataToJson(JsonObject &doc) {
     doc["nvs"].to<JsonObject>();
 
     // Namespaces to exclude from backup (sensitive, device-specific, or auto-generated data)
-    const char* excludedNamespaces[] = {
-        "auth_ns",        // Contains passwords
-        "nvs.net80211",   // WiFi credentials and BSSID info (device/network-specific)
-        "phy",            // Calibration data (auto-generated from ROM per device)
-        "certificates_ns" // MQTT AWS IoT Core certs for connecting (sensitive data)
-    };
+    const char* excludedNamespaces[] = {EXCLUDED_NVS_NAMESPACES_LIST};
     const size_t excludedCount = sizeof(excludedNamespaces) / sizeof(excludedNamespaces[0]);
 
     // Iterate ALL NVS entries and populate
@@ -1898,7 +1894,7 @@ bool nvsDataToJson(JsonObject &doc) {
     }
 
     uint32_t entryCount = 0;
-    while (err == ESP_OK) {
+    while (err == ESP_OK && entryCount < MAX_LOOP_ITERATIONS) {
         nvs_entry_info_t info;
         nvs_entry_info(it, &info);
         entryCount++;
@@ -2131,6 +2127,19 @@ bool restoreNvsFromJson(JsonDocument &doc) {
     // Iterate namespaces
     for (JsonPair nsPair : doc["nvs"].as<JsonObject>()) {
         const char* ns = nsPair.key().c_str();
+
+        // Skip excluded namespaces (should not be present in restore file, but safety check)
+        const char* excludedNamespaces[] = {EXCLUDED_NVS_NAMESPACES_LIST};
+        bool isExcluded = false;
+        for (const char* excluded : excludedNamespaces) {
+            if (strcmp(ns, excluded) == 0) {
+                LOG_WARNING("Skipping excluded namespace in restore: %s (security/device-specific data)", ns);
+                isExcluded = true;
+                break;
+            }
+        }
+        if (isExcluded) continue;
+
         LOG_DEBUG("Restoring namespace: %s", ns);
 
         Preferences prefs;
@@ -2180,7 +2189,6 @@ bool restoreNvsFromJson(JsonDocument &doc) {
                 size_t len = prefs.putString(key, valueVar.as<const char*>()); // This returns the length of the string stored, not true/false
                 success = strlen(valueVar.as<const char*>()) == len;
             } else if (strcmp(typeStr, "blob") == 0) {
-                // TODO: Handle base64-encoded blob data if needed
                 LOG_WARNING("BLOB type not yet supported during restore: %s/%s", ns, key);
                 failedKeys++;
                 continue;

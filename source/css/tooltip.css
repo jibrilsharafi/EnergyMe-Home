@@ -46,7 +46,7 @@
     border-radius: 2px;
 }
 
-/* The floating popover — positioned via JS using position:fixed
+/* The floating popover, positioned via JS using position:fixed
    so it is never clipped by overflow:hidden parent containers */
 .info-tooltip-popover {
     position: fixed;

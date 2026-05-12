@@ -21,9 +21,10 @@
 #include "mqtt.h"
 #include "binaries.h"
 #include "constants.h"
+#include "factory_keys.h"
 #include "structs.h"
 #include "utils.h"
-#include "pins.h" // For the voltage divider
+#include "hardware_profile.h"
 
 // SPI
 #define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz
@@ -32,7 +33,7 @@
 
 // Tasks
 #define ADE7953_METER_READING_TASK_NAME "ade7953_task"
-#define ADE7953_METER_READING_TASK_STACK_SIZE (12 * 1024) // Fine, around 5 kB usage. Increased since we use PSRAM
+#define ADE7953_METER_READING_TASK_STACK_SIZE (8 * 1024) // Week-long peak ~5358 bytes (43.6%); 8 KB leaves ~33% margin and frees 4 KB of internal heap
 #define ADE7953_METER_READING_TASK_PRIORITY 5
 
 #define ADE7953_ENERGY_SAVE_TASK_NAME "energy_save_task"
@@ -69,7 +70,7 @@
 #define ADE7953_VERIFY_COMMUNICATION_INTERVAL 500
 
 // Dynamic channel scheduling (Weighted Deficit Round-Robin)
-// Weights are intentionally not normalized to 1.0 — the WDRR deficit counter
+// Weights are intentionally not normalized to 1.0. The WDRR deficit counter
 // algorithm uses relative weights: a channel with weight 2x will be sampled ~2x
 // as often. The minimum base prevents starvation.
 #define WEIGHT_POWER_SHARE 0.4f      // Weight contribution from power magnitude share
@@ -99,20 +100,18 @@
 #define VALIDATE_CT_SCALING_FRACTION_MAX 10.0f
 
 // Constant hardware-fixed values
-// Leaving 
 #define FULL_SCALE_LSB_FOR_RMS_VALUES 9032007 // Maximum value of RMS registers (24-bit unsigned) - current (channel A and B) and voltage
+#define FULL_SCALE_LSB_FOR_INSTANTANEOUS_VALUES 6500000 // Maximum value of waveform registers (23-bit signed, ±6500000 at ±0.5V input)
 #define MAXIMUM_ADC_CHANNEL_INPUT 0.5f // Maximum voltage in volts (absolute) for all ADC channels in ADE7953 (both current and voltage)
 #define ENERGY_ACCUMULATION_FREQUENCY 206900 // At full input scale, an LSB is added every this frequency to the energy register
 
-// This is a hardcoded value since the voltage divider implemented (in v5 is 990 kOhm to 1 kOhm) yields this volts per LSB constant
-// The computation is as follows:
-// The maximum value of register VRMS is 9032007 (24-bit unsigned) with full scale inputs (0.5V absolute, 0.3536V rms).
-// The voltage divider ratio is 1000/(990000+1000) =0.001009
-// The maximum RMS voltage in input is 0.3536 / 0.001009 = 350.4 V
-// The LSB per volt is therefore 9032007 / 350.4 = 25779
-// For embedded systems, multiplications are better than divisions, so we use a float constant which is VOLT_PER_LSB = 1 / 25779
-#define VOLT_PER_LSB 0.0000387922f
-#define VOLT_PER_LSB_INSTANTANEOUS 0.000076236f // Same calculations as above, but using 500mV as peak and 6500000 as full scale
+// _voltPerLsb and _voltPerLsbInstantaneous are computed at runtime in Ade7953::begin() from
+// globalHwProfile->voltageDividerR1 and voltageDividerR2 (see hardware_profile.h).
+// Formulas:
+//   _voltPerLsb             = (MAXIMUM_ADC_CHANNEL_INPUT / sqrt(2)) / ratio / FULL_SCALE_LSB_FOR_RMS_VALUES
+//   _voltPerLsbInstantaneous = MAXIMUM_ADC_CHANNEL_INPUT / ratio / FULL_SCALE_LSB_FOR_INSTANTANEOUS_VALUES
+// where ratio = R2 / (R1 + R2).
+// Computed once at begin(), stored as static floats in ade7953.cpp, with no per-measurement overhead.
 #define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet). Unused but left for reference
 #define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f. Unused but left for reference
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
@@ -149,11 +148,11 @@
 #define CONFIG_PHCAL_B_KEY "phcal_b"
 
 // Energy Preferences Keys (max 15 chars)
-#define ENERGY_ACTIVE_IMP_KEY "ch%u_actImp"    // Format: ch17_actImp (11 chars)
-#define ENERGY_ACTIVE_EXP_KEY "ch%u_actExp"    // Format: ch17_actExp (11 chars)
-#define ENERGY_REACTIVE_IMP_KEY "ch%u_reactImp" // Format: ch17_reactImp (13 chars)
-#define ENERGY_REACTIVE_EXP_KEY "ch%u_reactExp" // Format: ch17_reactExp (13 chars)
-#define ENERGY_APPARENT_KEY "ch%u_apparent"   // Format: ch17_apparent (13 chars)
+#define ENERGY_ACTIVE_IMP_KEY "ch%u_actImp"    // Format: ch16_actImp (11 chars)
+#define ENERGY_ACTIVE_EXP_KEY "ch%u_actExp"    // Format: ch16_actExp (11 chars)
+#define ENERGY_REACTIVE_IMP_KEY "ch%u_reactImp" // Format: ch16_reactImp (13 chars)
+#define ENERGY_REACTIVE_EXP_KEY "ch%u_reactExp" // Format: ch16_reactExp (13 chars)
+#define ENERGY_APPARENT_KEY "ch%u_apparent"   // Format: ch16_apparent (13 chars)
 
 // Default configuration values
 #define DEFAULT_SAMPLE_TIME 200ULL // Will be converted to integer line cycles (so at 50Hz, 200ms = 10 cycles)
@@ -227,6 +226,7 @@
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_CURRENT_FOR_VALIDATION 0.02f // Below this current threshold, skip invalidating the reading as measurements are unreliable (noise dominates)
 #define MINIMUM_POWER_FACTOR 0.10f // Measuring such low power factors is virtually impossible with such CTs
+#define AUTO_POLARITY_MIN_POWER_W 5.0f // Below this absolute active power, the auto-polarity check stays armed (avoids flipping on noise / idle circuits)
 #define ADE7953_MIN_LINECYC 10UL // Below this the readings are unstable (200 ms)
 #define ADE7953_MAX_LINECYC 1000UL // Above this too much time passes (20 seconds)
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
@@ -237,9 +237,9 @@
 
 // ADE7953 Critical Failure Detection (missed interrupts)
 #ifdef ENV_DEV
-#define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT (10 * 5) // 5x higher limit in dev environment
+#define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT (100 * 5) // 5x higher limit in dev environment
 #else
-#define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT 50  // This cannot be too low as if we keep missing an interrupt we would reboot every few seconds
+#define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT (10 * 10)  // This cannot be too low as if we keep missing an interrupt we would reboot every few seconds
 #endif
 #define ADE7953_CRITICAL_FAILURE_RESET_TIMEOUT_MS (5 * 60 * 1000) // Reset counter after 5 minutes
 
@@ -276,7 +276,6 @@
 #define DEFAULT_CHANNEL_GROUP_LABEL_FORMAT "Group %u"
 
 // CT Specification defaults
-#define DEFAULT_CT_CURRENT_RATING_CHANNEL_0 50.0f   // 50A for channel 0 only as it is "standard" in EnergyMe Home
 #define DEFAULT_CT_CURRENT_RATING 30.0f   // 30A
 #define DEFAULT_CT_VOLTAGE_OUTPUT 0.333f  // 333mV
 #define DEFAULT_CT_SCALING_FRACTION 0.0f  // No scaling by default
@@ -318,7 +317,7 @@ inline const char* ADE7953_CHANNEL_TO_STRING(Ade7953Channel channel) {
     }
 }
 
-// We don't have an enum for 17 channels since having them as unsigned int is more flexible
+// We don't have an enum for 16 channels since having them as unsigned int is more flexible
 
 enum class MeasurementType{
     VOLTAGE,
@@ -445,13 +444,23 @@ struct ChannelData
   // Channel role
   ChannelRole role;
 
+  // Transient runtime flags (NOT persisted to NVS, NOT exported to JSON).
+  // Set on inactive->active transition (and on role change for the polarity check).
+  // Used by the scheduler / meter task to give a freshly activated channel a
+  // single priority slot and to auto-detect a reversed CT clamp on the first
+  // meaningful reading.
+  bool _pendingPriorityRead;
+  bool _pendingPolarityCheck;
+
   ChannelData()
     : index(0),
       active(false),
       reverse(false),
       phase(PHASE_1),
       ctSpecification(CtSpecification()),
-      role(DEFAULT_CHANNEL_ROLE)
+      role(DEFAULT_CHANNEL_ROLE),
+      _pendingPriorityRead(false),
+      _pendingPolarityCheck(false)
     {
       snprintf(label, sizeof(label), "Channel");
       snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, 0);
@@ -463,7 +472,9 @@ struct ChannelData
       reverse(DEFAULT_CHANNEL_REVERSE),
       phase(DEFAULT_CHANNEL_PHASE),
       ctSpecification(CtSpecification()),
-      role(idx == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE)
+      role(idx == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE),
+      _pendingPriorityRead(false),
+      _pendingPolarityCheck(false)
     {
       snprintf(label, sizeof(label), DEFAULT_CHANNEL_LABEL_FORMAT, idx);
       snprintf(groupLabel, sizeof(groupLabel), DEFAULT_CHANNEL_GROUP_LABEL_FORMAT, idx);
@@ -573,7 +584,7 @@ namespace Ade7953
     bool hasChannelValidMeasurements(uint8_t channelIndex);
     void getChannelLabel(uint8_t channelIndex, char* buffer, size_t bufferSize); // No need for bool return, fallback is the default constructor value if getChannelData failed
     bool getChannelData(ChannelData &channelData, uint8_t channelIndex);
-    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged = nullptr);
+    bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged = nullptr, bool armTransients = true);
     void resetChannelData(uint8_t channelIndex);
 
     // Channel data management - JSON operations

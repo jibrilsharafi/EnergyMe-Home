@@ -153,9 +153,7 @@ namespace CrashMonitor
         }
 
         // Regardless if last crash was due to a reset or crash, send this data if available (maybe previously we didn't have time to send it to the cloud)
-        #ifdef HAS_SECRETS // MQTT is not available without secrets
-        if (hasCoreDump()) Mqtt::requestCrashPublish();
-        #endif
+        if (!globalCommunityMode && hasCoreDump()) Mqtt::requestCrashPublish();
 
         // Increment reset count (always)
         _resetCount++;
@@ -335,7 +333,7 @@ namespace CrashMonitor
             return;
         }
 
-        // TODO: if we find a crash dump, save it immediately to LittleFS (how? binary blob?) in a folder with the current datetime ISO, in the folder the binary blob anad a JSON with metadata
+        // TODO: if we find a crash dump, save it immediately to LittleFS (how? binary blob?) in a folder for crashes, with the current unix time in seconds, in the folder the binary blob anad a JSON with metadata. But we must also ensure (with robust logic) this data gets erased once sent, or in any case that we don't fill the memory with this data
         LOG_INFO("Core dump found from previous crash, retrieving summary...");
         
         // Log only essential crash data for analysis
@@ -522,7 +520,7 @@ namespace CrashMonitor
         LOG_WARNING("=== End Crash Analysis ===");
     }
 
-    bool getCoreDumpInfoJson(JsonDocument &doc) { // TODO: this should instead save the binary blob to LittleFS with the unix timestamp of when it happened and the elf256 partial as name. THen later updated, but immediately cleared from partition
+    bool getCoreDumpInfoJson(JsonDocument &doc) {
         // Basic crash information
         esp_reset_reason_t resetReason = esp_reset_reason();
         doc["resetReason"] = getResetReasonString(resetReason);

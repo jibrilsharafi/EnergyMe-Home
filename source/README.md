@@ -1,7 +1,7 @@
 # EnergyMe - Home | Source Code
 
 **Platform:** ESP32-S3 with Arduino 3.x Framework  
-**Hardware Revision:** See `include/pins.h`
+**Hardware Revision:** Selected at runtime via `globalHwProfile` (see `src/hardware_profile.cpp` and `include/hardware_profile.h`).
 
 ## System Overview
 
@@ -9,7 +9,7 @@ Task-based energy monitoring system built on FreeRTOS. ESP32-S3 interfaces with 
 
 **Monitoring Capabilities:**
 
-- **17 channels**: 1 direct (channel 0) + 16 multiplexed
+- **16 channels**: 1 direct (channel 0) + 15 multiplexed
 - **Measurements**: Voltage, current, active/reactive/apparent power, power factor, energy accumulation
 - Single-phase per channel (three-phase assumes 120° shift, same voltage reference - see `ade7953.cpp`)
 - Calibration with no-load threshold detection
@@ -187,7 +187,7 @@ Monitored tasks: MQTT clients, web server, ADE7953 operations, crash monitor, LE
 
 **Monitoring:**
 
-- 17 circuits: 1 direct + 16 multiplexed
+- 16 circuits: 1 direct + 15 multiplexed
 - Parameters: RMS voltage/current, active/reactive/apparent power, power factor, energy accumulation
 - Sampling: Channel 0 every 200ms, others every 400ms minimum (depends on active channels)
 - Accuracy: Typically ±1% with proper CT calibration
@@ -213,7 +213,7 @@ Swagger documentation at `/swagger.html` covers authentication, system managemen
 
 **MQTT:**  
 
-- AWS IoT Core (requires secrets)
+- AWS IoT Core (certificates loaded from the `factory_ns` NVS partition; no build-time secrets)
 - Local broker support with configurable authentication
 - TLS/SSL with certificates
 
@@ -235,13 +235,9 @@ Username: `admin` | Password: `energyme`
 
 ## AWS IoT Integration (Optional)
 
-Requires files in `secrets/` directory:
+Device certificates and calibration data are provisioned at manufacturing time into the `factory_ns` NVS namespace. The firmware reads them transparently at boot. No build-time secrets are required.
 
-- `ca.pem`, `certclaim.pem`, `privateclaim.pem` (X.509 certificates)
-- `endpoint.txt`, `rulemeter.txt` (AWS IoT config)
-- `encryptionkey.txt` (local encryption key)
-
-System works without these using local MQTT brokers via CustomMqtt.
+Devices without factory provisioning (community builds) run in local-only mode. All local integrations (Modbus TCP, CustomMqtt, InfluxDB) remain fully functional.
 
 ## Development
 

@@ -16,12 +16,13 @@
 
 #include "awsconfig.h"
 #include "constants.h"
+#include "factory_keys.h"
 #include "globals.h"
 #include "led.h"
 #include "utils.h"
 
 #define WIFI_TASK_NAME "wifi_task"
-#define WIFI_TASK_STACK_SIZE (6 * 1024) // Increased for esp_wifi_set_config() which uses ~500+ bytes stack
+#define WIFI_TASK_STACK_SIZE (8 * 1024) // Week-long high-water mark hit 5580 bytes (only 564 bytes free at 6 KB) - bumped to 8 KB for ~30% safety margin on portal/credential paths
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
@@ -50,11 +51,15 @@
 // =====================
 // NOTE: Build-time flag ENABLE_OPEN_SOURCE_TELEMETRY controls whether telemetry is sent.
 //       Set -DENABLE_OPEN_SOURCE_TELEMETRY=0 or remove the define to disable.
-#define TELEMETRY_URL "lwpomidzl5vkgmit72oq25rwtu0asdwf.lambda-url.eu-central-1.on.aws"
+#ifdef ENV_DEV
+#define TELEMETRY_URL "5jyfvyfmubfr6rw7tx7ozb4foq0hstkk.lambda-url.eu-west-1.on.aws"
+#else
+#define TELEMETRY_URL "vd2obqbugurdyhbf4iaxrzmk4i0njltb.lambda-url.eu-west-1.on.aws"
+#endif
 #define TELEMETRY_PORT 443
 #define TELEMETRY_PATH "/"
 #define TELEMETRY_TIMEOUT_MS (1 * 1000) // Very short timeout since we don't really care about the response
-#define TELEMETRY_JSON_BUFFER_SIZE 512 // Sufficient for {device_id, firmware_version, sketch_md5}
+#define TELEMETRY_JSON_BUFFER_SIZE 512 // Sufficient for {hashed_device_id, firmware_version, sketch_md5}
 
 namespace CustomWifi
 {

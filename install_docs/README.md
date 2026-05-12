@@ -69,7 +69,7 @@ Connect to WiFi and configure the device through the web interface.
 
 - **Full documentation**: [github.com/jibrilsharafi/EnergyMe-Home](https://github.com/jibrilsharafi/EnergyMe-Home)
 - **Project updates**: [energyme.net](https://energyme.net)
-- **Support**: <jibril.sharafi@gmail.com>
+- **Support**: <support@energyme.net>
 
 ---
 

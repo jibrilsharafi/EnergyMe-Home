@@ -70,7 +70,7 @@ Se `energyme.local` non funziona:
 ## Passo 5: Configurare i Canali
 
 1. Vai su **Configuration** → **Channel**
-2. Vedrai una lista di tutti i 17 canali (0-16)
+2. Vedrai una lista di tutti i 16 canali (0-15)
 
 ![Schermata login](../media/software/homepage-navigation-top.png)
 ![Configurazione](../media/software/configuration.png)
@@ -148,6 +148,6 @@ Ora puoi:
 
 - **Documentazione**: [github.com/jibrilsharafi/EnergyMe-Home](https://github.com/jibrilsharafi/EnergyMe-Home)
 - **Aggiornamenti progetto**: [energyme.net](https://energyme.net)
-- **Supporto**: <jibril.sharafi@gmail.com>
+- **Supporto**: <support@energyme.net>
 
 **Grazie per aver scelto EnergyMe!** 🎉

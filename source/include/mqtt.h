@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Jibril Sharafi
 
-#ifdef HAS_SECRETS
 #pragma once
 
 #include <AdvancedLogger.h>
@@ -14,14 +13,10 @@
 #include <WiFiClientSecure.h>
 #include "esp_https_ota.h"
 #include "esp_http_client.h"
-#include "mbedtls/base64.h"
-#include "mbedtls/gcm.h"
-#include "mbedtls/sha256.h"
-
 #include "ade7953.h"
 #include "awsconfig.h"
-#include "binaries.h"
 #include "constants.h"
+#include "factory_keys.h"
 #include "customtime.h"
 #include "customwifi.h"
 #include "customlog.h"
@@ -31,7 +26,7 @@
 
 #define MQTT_TASK_NAME "mqtt_task"
 #define MQTT_TASK_STACK_SIZE (7 * 1024) // Around 6 kB usage
-#define MQTT_TASK_PRIORITY 3
+#define MQTT_TASK_PRIORITY 1 // Below AsyncTCP/web (priority 3) so user-facing requests preempt cloud publishing
 
 #define MQTT_LOG_QUEUE_SIZE (256 * 1024) // Generous log size (in bytes) thanks to PSRAM
 #define MQTT_METER_QUEUE_SIZE (64 * 1024) // Size in bytes to allocate to PSRAM
@@ -63,28 +58,24 @@
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
 #define CORE_DUMP_CHUNK_SIZE (4 * 1024) // Do not exceed 4kB to avoid stability issues
 
-#ifdef ENV_PROD // TODO: how should we handle the default value for this? With v6, the certs will be embedded in the device also
-#define DEFAULT_CLOUD_SERVICES_ENABLED true // In prod, enable by default
-#else
-#define DEFAULT_CLOUD_SERVICES_ENABLED false // Leave manual connection
-#endif
+#define DEFAULT_CLOUD_SERVICES_ENABLED false // Always off by default, and enabled only explicitly by the user
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
 #define DEFAULT_MQTT_LOG_LEVEL_INT 2 // Default minimum log level for MQTT publishing (INFO = 2)
 
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
+#ifdef ENV_DEV
+// In dev: send system_dynamic and statistics every minute so post-mortem
+// telemetry has the resolution needed to investigate behavior.
+#define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (60 * 1000)
+#define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (60 * 1000)
+#else
 #define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (60 * 60 * 1000)  // 1 hour since the data does not change frequently (and sent on reboot/reconnection anyway)
 #define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (6 * 60 * 60 * 1000)  // 6 hours since they are cumulative counters (and sent on reboot/reconnection anyway)
+#endif
 
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
 
-#define MQTT_CLAIM_MAX_CONNECTION_PUBLISH_ATTEMPT 10 // The maximum number of attempts to connect or publish to AWS IoT Core MQTT broker for claiming certificates
-#define MQTT_CLAIM_INITIAL_RETRY_INTERVAL (5 * 1000) // Base delay for exponential backoff in milliseconds
-#define MQTT_CLAIM_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds
-#define MQTT_CLAIM_RETRY_MULTIPLIER 2 // Multiplier for exponential backoff
-#define MQTT_CLAIM_TIMEOUT (30 * 1000) // Timeout for claiming certificates (in milliseconds)
-
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
-#define MQTT_CLAIMING_INTERVAL (1 * 1000) // Interval between two MQTT claiming checks
 #define MQTT_METER_ESTIMATED_PER_ENTRY 35 // Estimated size in bytes of each meter entry (unix ms, channel, active power, pf)
 #define MQTT_METER_ESTIMATED_ENERGY_VOLTAGE_OVERHEAD_BYTES 500 // Estimated overhead in bytes for energy and voltage data in the payload
 #define AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE (5 * 1024) // This is the minimum billable size for AWS IoT Core, so it makes little sense to send smaller payloads
@@ -99,22 +90,7 @@
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 #define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
 
-// Cloud services
-// --------------------
-// Reserved topics
-#define AWS_TOPIC "$aws"
-#define MQTT_BASIC_INGEST AWS_TOPIC "/rules"
-#define MQTT_THINGS AWS_TOPIC "/things"
-
-// Certificates path
-#define PREFS_KEY_CERTIFICATE "certificate"
-#define PREFS_KEY_PRIVATE_KEY "private_key"
-
-// EnergyMe - Home | Custom MQTT topics
-// Base topics
-#define MQTT_TOPIC_1 "energyme"
-#define MQTT_TOPIC_2 "home"
-
+// MQTT topic suffixes (application-level; see awsconfig.h for the namespace prefix)
 // Publish topics
 #define MQTT_TOPIC_METER "meter"
 #define MQTT_TOPIC_SYSTEM_STATIC "system/static"
@@ -123,16 +99,10 @@
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_LOG "log"
-#define MQTT_TOPIC_PROVISIONING_REQUEST "provisioning/request"
-
 // Subscribe topics
 #define MQTT_TOPIC_SUBSCRIBE_COMMAND "command"
-#define MQTT_TOPIC_SUBSCRIBE_PROVISIONING_RESPONSE "provisioning/response"
 #define MQTT_TOPIC_SUBSCRIBE_JOBS "jobs"
 #define MQTT_TOPIC_SUBSCRIBE_QOS 1
-
-// AWS IoT Core endpoint
-#define AWS_IOT_CORE_PORT 8883
 
 struct PublishMqtt
 {
@@ -174,4 +144,3 @@ namespace Mqtt
     TaskInfo getMqttTaskInfo();
     TaskInfo getMqttOtaTaskInfo();
 }
-#endif
