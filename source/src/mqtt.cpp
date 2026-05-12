@@ -66,6 +66,7 @@ namespace Mqtt
     static char _otaCurrentJobId[NAME_BUFFER_SIZE];
     static TaskHandle_t _otaTaskHandle = nullptr;
     static TaskHandle_t _otaValidationTaskHandle = nullptr;
+    static bool _otaRebootPending = false;
 
     // Thread safety
     static SemaphoreHandle_t _configMutex = nullptr;
@@ -1032,6 +1033,7 @@ namespace Mqtt
             prefs.putBool(MQTT_PREFERENCES_OTA_PENDING_KEY, true);
             prefs.putString(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY, sha256Hex);
             prefs.end();
+            _otaRebootPending = true;
             LOG_DEBUG("Saved OTA pending state for job %s, expected SHA256: %s", _otaCurrentJobId, sha256Hex);
 
             // Publish IN_PROGRESS status (download complete, about to reboot)
@@ -1181,10 +1183,18 @@ namespace Mqtt
             return;
         }
 
-        // Check if there is already an OTA job being downloaded  
-        if (_otaTaskHandle != nullptr) {  
-            LOG_DEBUG("Skipping OTA job '%s' - download already in progress", jobId);  
-            return;  
+        // Check if there is already an OTA job being downloaded
+        if (_otaTaskHandle != nullptr) {
+            LOG_DEBUG("Skipping OTA job '%s' - download already in progress", jobId);
+            return;
+        }
+
+        // Check if a successful download is awaiting reboot for validation.
+        // Between download success and reboot, MQTT may reconnect and the job still
+        // shows IN_PROGRESS on AWS, which would otherwise trigger a second download.
+        if (_otaRebootPending) {
+            LOG_DEBUG("Skipping OTA job '%s' - reboot pending after successful download", jobId);
+            return;
         }
 
         LOG_INFO("Received OTA Job '%s'. Firmware URL length: %d", jobId, strlen(url));
