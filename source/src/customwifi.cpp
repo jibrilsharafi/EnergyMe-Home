@@ -933,7 +933,7 @@ namespace CustomWifi
     char hashedDeviceId[65]; // 64 hex chars + null
     for (int i = 0; i < 32; i++) snprintf(&hashedDeviceId[i * 2], 3, "%02x", hash[i]);
     
-    doc["device_id"] = hashedDeviceId; // Replace plain ID with hashed value
+    doc["hashed_device_id"] = hashedDeviceId; // Replace plain ID with hashed value
     doc["firmware_version"] = FIRMWARE_BUILD_VERSION;
     doc["sketch_md5"] = ESP.getSketchMD5();
 
