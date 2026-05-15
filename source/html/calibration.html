@@ -436,7 +436,7 @@
         }
 
         function adjustScaling(direction) {
-            scalingPercentage += direction * 1; // 1% increments
+            scalingPercentage += direction * 0.1; // 0.1% increments
             scalingPercentage = Math.max(-50, Math.min(50, scalingPercentage)); // Clamp to -50% to +50%
             updateScalingDisplay();
             updateCalibrationPreview();
