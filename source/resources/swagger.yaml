@@ -2471,10 +2471,23 @@ paths:
 
   /api/v1/ade7953/energy/reset:
     post:
-      summary: Reset all energy values
-      description: Reset accumulated energy values for all channels to zero
+      summary: Reset energy values
+      description: |
+        Reset accumulated energy values to zero. When the optional `index` query
+        parameter is provided, only that channel is reset; otherwise all channels
+        are reset.
       tags:
         - ADE7953
+      parameters:
+        - name: index
+          in: query
+          required: false
+          description: Channel index to reset. If omitted, all channels are reset.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 16
+          example: 0
       responses:
         '200':
           description: Energy values reset successfully
@@ -2482,6 +2495,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid channel index
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/ade7953/energy:
     put:
