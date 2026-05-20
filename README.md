@@ -61,7 +61,7 @@ The key components include:
 - **Multiplexers**: used to monitor multiple circuits at once
 - **3.5 mm jack connectors**: used to easily connect current transformers
 
-PCB schematics and BOMs are available in the `documentation/pcb` directory, while datasheets for key components are in the `documentation/components` directory. Additional hardware specifications and technical details can be found in the [`documentation/README.md`](documentation/README.md).
+PCB schematics and BOMs are available in the `hardware/pcb` directory, while datasheets for key components are in the `hardware/components` directory. Additional hardware specifications and technical details can be found in the [`hardware/README.md`](hardware/README.md).
 
 The project is published on *EasyEDA* for easy access to the PCB design files. You can find the project on [EasyEDA OSHWLab](https://oshwlab.com/jabrillo/multiple-channel-energy-meter).
 
@@ -108,13 +108,13 @@ Get started at [homeassistant-energyme](https://github.com/jibrilsharafi/homeass
 
 ## Getting Started
 
-1. **Order the PCB**: Download the design files from the [Schematics folder](documentation/pcb/) and order from your preferred PCB manufacturer
-2. **Populate the board**: Solder all components using the BOMs in `documentation/pcb/main_board/`, `documentation/pcb/top_board_1/`, and `documentation/pcb/top_board_2/`
+1. **Order the PCB**: Download the design files from the [Schematics folder](hardware/pcb/) and order from your preferred PCB manufacturer
+2. **Populate the board**: Solder all components using the BOMs in `hardware/pcb/main_board/`, `hardware/pcb/top_board_1/`, and `hardware/pcb/top_board_2/`
 3. **Flash the firmware**: Connect a USB-to-UART adapter to the UART pins and flash using PlatformIO
 4. **Configure WiFi**: Power on the device and connect to the captive portal to set up WiFi credentials
 5. **Start monitoring**: Access the web interface at `http://energyme.local` (default credentials: *admin*/*energyme*)
 
-For detailed build instructions and troubleshooting, see the [documentation](documentation/README.md).
+For detailed build instructions and troubleshooting, see the [manual](manual/README.md).
 
 ## Privacy & Telemetry
 
