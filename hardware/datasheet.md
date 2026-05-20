@@ -28,7 +28,7 @@ Technical specifications for *EnergyMe Home*. For installation and use, see the 
 | IP rating | IP20 (indoor closed panel only) |
 | Mounting | Spring-clip onto DIN rail |
 | Power terminals | Screw terminals, internal, with removable cover |
-| CT inputs | 15 × 3.5 mm stereo jack (PJ-3133-5A) |
+| CT inputs | 16 × 3.5 mm stereo jack (PJ-3133-5A) |
 
 ### 2.1 Current transformers (supplied)
 

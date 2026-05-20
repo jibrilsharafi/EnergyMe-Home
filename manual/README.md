@@ -32,7 +32,4 @@ Hold tight. This is going to be interesting.
 2. [Setup](02-setup.md) — Wi-Fi, web interface, channel configuration (end user)
 3. [Troubleshooting](03-troubleshooting.md) — symptom-driven guide for when something doesn't behave as expected
 4. [Appendices](appendices.md) — channel map, three-phase configuration, LED reference, button reference
-
----
-
-`[⚙ TO ADD: Warranty, Disposal (next iterations) and other things required by CE]`
+5. [Safety & Compliance Information](safety-and-compliance.md) — manufacturer, Declaration of Conformity, intended use, residual risks, maintenance, disposal (WEEE), warranty

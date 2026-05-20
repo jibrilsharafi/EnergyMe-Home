@@ -18,7 +18,7 @@ For the practical step-by-step installation and setup, see the [Installation Man
 | **Website** | <https://www.energyme.net> |
 | **Support** | <support@energyme.net> |
 
-**Authorized service.** Service, repair, and extraordinary maintenance are carried out exclusively by the manufacturer or by personnel authorized in writing by the manufacturer. Any intervention by unauthorized personnel voids the warranty and may compromise safety.
+**Authorized service.** Service, repair, and non-routine maintenance are carried out exclusively by the manufacturer or by personnel authorized in writing by the manufacturer. Any intervention by unauthorized personnel voids the warranty and may compromise safety.
 
 ---
 
@@ -43,7 +43,7 @@ The device complies with the essential requirements of the following EU legislat
 
 - **2014/35/EU** — Low Voltage Directive (LVD)
 - **2014/30/EU** — Electromagnetic Compatibility (EMC)
-- **2014/53/EU** — Radio Equipment Directive (RED)
+- **2014/53/EU** — Radio Equipment Directive (RED), including the cybersecurity requirements of Article 3(3)(d)/(e)/(f) addressed via **EN 18031-1** and **EN 18031-2**
 - **2011/65/EU** — Restriction of Hazardous Substances (RoHS), as amended by Delegated Directive (EU) **2015/863**
 - **2012/19/EU** — Waste Electrical and Electronic Equipment (WEEE)
 - **Regulation (EU) 2023/988** — General Product Safety Regulation (GPSR)
@@ -181,9 +181,9 @@ The device is designed for long operating life with minimal maintenance. **There
 > - ❌ Do **not** spray liquids directly onto the device.
 > - ✅ Use a dry or barely damp soft cloth on the outside of the case only, if needed.
 
-### 10.2 Extraordinary maintenance (by the manufacturer)
+### 10.2 Non-routine maintenance (by the manufacturer)
 
-Extraordinary maintenance (repairs, replacement of internal components, firmware recovery after physical fault) is performed exclusively by the manufacturer or by authorized personnel. Contact `support@energyme.net` for any intervention beyond routine cleaning.
+Non-routine maintenance (repairs, replacement of internal components, firmware recovery after physical fault) is performed exclusively by the manufacturer or by authorized personnel. Contact `support@energyme.net` for any intervention beyond routine cleaning.
 
 ### 10.3 Firmware updates
 
@@ -197,7 +197,7 @@ Use original spare parts only. The use of non-original parts voids the warranty 
 
 ## 11. Disposal (WEEE)
 
-<img src="https://upload.wikimedia.org/wikipedia/commons/7/7e/WEEE_symbol_vectors.svg" alt="WEEE symbol" width="60">
+<img src="assets/weee-symbol.svg" alt="WEEE symbol" width="60">
 
 The **crossed-out wheeled bin** symbol printed on the device label indicates that at the end of its operational life, the device must be disposed of separately from household waste, in accordance with:
 
@@ -248,7 +248,7 @@ The warranty does **not** cover:
 - Damage caused by improper use, negligence, accident, or non-observance of this documentation.
 - Damage caused by external events (lightning, surges, flooding, fire, natural disasters).
 - Damage caused by use with non-original accessories, spare parts, or current transformers.
-- Damage to the case, labels, or electrical values caused by tampering, opening, or modification.
+- Damage to the case, labels, or internal components caused by tampering, opening, or modification.
 - Wear consistent with normal use.
 - Costs of transport, shipping, and installation, which are at the buyer's expense.
 - Difficulties arising from regulations in countries other than the country where the device was sold.

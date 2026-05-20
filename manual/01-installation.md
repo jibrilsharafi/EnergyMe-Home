@@ -93,7 +93,7 @@ The CT on **Channel 0** is the most accurate channel and should be used to measu
 1. Take **one** of the CT clamps from the kit (any of them, they're all identical).
 2. Identify the **main line conductor** downstream of the main breaker (typically the brown/black wire coming from the kWh meter into the panel).
 3. Open the CT clamp.
-4. Clamp it **around the single Line conductor only**. Never clamp around L and N together; the magnetic fields cancel out and you would read zero. It is possible to also clamp around the neutral.
+4. Clamp it **around either the Line conductor alone or the Neutral conductor alone** — never both together. Clamping around L and N together makes the magnetic fields cancel and the reading goes to zero.
 5. Close the clamp until you hear/feel the click.
 6. Plug the 3.5 mm jack into the socket marked **`0`** on the device (the channel numbers are printed on the top front sticker).
 
@@ -129,7 +129,7 @@ For each circuit you want to monitor:
 1. Decide which breaker you want to monitor (e.g., "kitchen", "lights", "washing machine").
 2. Locate the **output** wire of that breaker, the one leaving the bottom terminal towards the loads. **Not** the input wire on top.
 3. Open the CT clamp.
-4. Clamp it **around the single Line conductor** of that output wire. Not around L+N together, not around the protective earth (yellow/green wire). Neutral also works fine.
+4. Clamp it **around either the single Line conductor or the single Neutral conductor** of that output wire — never both together, never around the protective earth (yellow/green wire).
 5. Close the clamp until it clicks.
 6. Plug the 3.5 mm jack into a free socket on the device, **numbered 1 to 15** (the channel numbers are printed on the front stickers).
 7. **If you know what circuit it is, write down the channel number and the breaker label** (e.g., "Channel 2 → Garden lights"). You'll use this in [§4.5](02-setup.md#45-configure-each-channel) to give each channel a meaningful name in the UI. Use the table in [Appendix A](appendices.md#appendix-a-channel-map).

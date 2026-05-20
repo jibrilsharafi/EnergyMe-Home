@@ -44,6 +44,8 @@ In **Channels** ([§4.5](02-setup.md#45-configure-each-channel)), set up the thr
 
 The three channels share the same **Grouping** value (`Grid`), so the dashboard will show a single "Grid" card with the **total three-phase power** of the main supply.
 
+> **ⓘ Override the default group.** The Grouping field is pre-filled with `Group 0`, `Group 1`, `Group 2`, etc., by default. For three-phase grouping you must **replace** the default value with the shared group name (e.g., `Grid`) on each of the three channels.
+
 ### B.2 Three-phase branch load (e.g., EV charger, heat pump, oven)
 
 #### Hardware
@@ -82,7 +84,7 @@ The LED on the front of the device communicates the system state at a glance.
 | LED | State | Meaning |
 | --- | --- | --- |
 | 🟢 Green, solid | Connected | Wi-Fi connected, monitoring normally |
-| 🔵 Blue, slow pulse | Reconnecting | Wi-Fi temporarily lost; reconnecting automatically, usually resolves on its own |
+| 🔵 Blue, slow pulse | Connecting | Wi-Fi credentials configured but not currently connected (first boot, router still booting, or temporary connection loss). Reconnects automatically; usually resolves within 60 s |
 | 🔵 Blue, fast blink | Portal active | No Wi-Fi configured; captive portal is open ([§4.1](02-setup.md#41-connect-to-the-devices-wi-fi-captive-portal)) |
 
 ### Alerts
