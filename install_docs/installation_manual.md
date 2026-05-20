@@ -22,7 +22,7 @@ Hold tight. This is going to be interesting.
 *EnergyMe - Home* connects directly to the AC mains inside your electrical panel. Working inside an electrical panel is **dangerous** if you don't know what you are doing.
 
 | You can do yourself | You need a qualified electrician |
-|---|---|
+| --- | --- |
 | Open the box and identify the parts ([1](#1-whats-in-the-box)) | Anything inside the electrical panel ([3](#3-electrical-installation)) |
 | Configure Wi-Fi and the web interface ([4](#4-software-configuration)) | Switching off the main breaker |
 | Map circuits to channels in the UI ([4.5](#45-configure-each-channel)) | Connecting L / N to the device |
@@ -38,7 +38,7 @@ Hold tight. This is going to be interesting.
 ### 1.1 Starter Kit (always included)
 
 | # | Item | Qty | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | *EnergyMe Home* device | 1 | Pre-assembled, 3-module DIN-rail mount, with L/N wires already connected. **Channels are numbered 0 to 15 on the front stickers** (16 channels total, 4 on the top and 12 on the bottom) |
 | 2 | CT clamps (30 A, 1 m cable, 3.5 mm jack) | 4 | All identical; the rating "30 A" is printed on each clamp body. 1 will be used for **Channel 0** (main line) and 3 for branch circuits |
 
@@ -107,13 +107,13 @@ The device comes with **two wires already connected** to the internal power term
 3. Tighten the screws firmly.
 
 > **ⓘ NOTE: Custom wiring**  
-> If the provided wiring is not suitable for your application, it is possible to use your own wires. 
-> 
+> If the provided wiring is not suitable for your application, it is possible to use your own wires.
+>
 > To do so, lift the plastic cover of the power terminal on the device, unscrew and disconnect the brown and blue wires, and connect your own wires to the same terminals, following the same Line/Neutral convention. Then put the cover back on.
 >
 > Make sure to use wires of appropriate gauge and insulation for mains voltage.
 
-`[⚙ PHOTO NEEDED: brown/blue wires already connected to device, and their connection to a nearby breaker + neutral bar]`
+![Connection of L and N wires](connection_l_n.jpg)
 
 ### 3.3 Install the CT on Channel 0 (main line)
 
@@ -151,39 +151,23 @@ The wire on the **OUTPUT (bottom) side** of the breaker carries **only** the cur
 
 > **Always clamp the branch CTs on the OUTPUT (load) side of the breaker, meaning the wire that leaves the breaker and goes to the loads in the house. Never on the input bus.**
 
-#### 3.4.3 How to identify the output wire
-
-In a typical DIN-rail panel:
-
-| Look at the breaker | Output side is... |
-|---|---|
-| MCB / magnetothermal breaker (single module) | The **bottom** terminal; the wire goes **down** towards the wiring duct |
-| Differential (RCD) | The **bottom** terminal; feeds the loads |
-| Combined RCBO | The **bottom** terminal |
-
-> **✅ TIP: Trace the wire**  
-> If you are unsure which side is input and which is output, trace the wire visually:
-> - The **input** side connects to a **comb bar** (a horizontal copper bar shared with neighbouring breakers).
-> - The **output** side connects to a **single wire** that disappears into the wiring duct towards the rest of the house.
->
-> **The single wire is where the CT goes.**
-
-#### 3.4.4 Step-by-step for each branch CT
+#### 3.4.3 Step-by-step for each branch CT
 
 For each circuit you want to monitor:
 
 1. Decide which breaker you want to monitor (e.g., "kitchen", "lights", "washing machine").
 2. Locate the **output** wire of that breaker, the one leaving the bottom terminal towards the loads. **Not** the input wire on top.
 3. Open the CT clamp.
-4. Clamp it **around the single Line conductor** of that output wire. Not around L+N together, not around the protective earth (yellow/green wire).
+4. Clamp it **around the single Line conductor** of that output wire. Not around L+N together, not around the protective earth (yellow/green wire). Neutral also works fine.
 5. Close the clamp until it clicks.
-6. Plug the 3.5 mm jack into a free socket on the device, **numbered 1 to 15** (the channel numbers are printed on the front sticker).
+6. Plug the 3.5 mm jack into a free socket on the device, **numbered 1 to 15** (the channel numbers are printed on the front stickers).
 7. **If you know what circuit it is, write down the channel number and the breaker label** (e.g., "Channel 2 → Garden lights"). You'll use this in [4.5](#45-configure-each-channel) to give each channel a meaningful name in the UI. Use the table in Appendix A.
 
 > **✅ TIP: Don't know what each breaker controls?**  
 > No problem. Plug the CTs into any free channels and proceed with the installation. Once the device is online you can rename the channels at any time from the web interface.
 
 > **⚠ WARNING: Common mistakes to avoid**
+>
 > - ❌ Clamping on the **input** wire of a breaker (reads multiple circuits)
 > - ❌ Clamping on the **comb bar** (reads the sum of all breakers on the comb)
 > - ❌ Clamping around **both** L and N (reads zero)
@@ -198,7 +182,7 @@ For each circuit you want to monitor:
 Before turning the main breaker back ON:
 
 | Check | OK? |
-|---|---|
+| --- | --- |
 | All CT jacks are fully inserted in the device (1 on Channel 0, the others on Channels 1-15) | ☐ |
 | Brown (L) and Blue (N) wires from the device are tightly connected, no copper visible | ☐ |
 | Channel 0 CT is on the main Line conductor | ☐ |
@@ -219,10 +203,10 @@ Before turning the main breaker back ON:
 After boot, three outcomes are possible:
 
 | LED behaviour | Meaning | Next step |
-|---|---|---|
-| Blue, fast blink | No Wi-Fi configured yet; captive portal active | Go to **[4.1](#41-connect-to-the-devices-wi-fi-captive-portal)** |
-| Blue, slow pulse | Known Wi-Fi found but not yet connected (e.g. router still booting) | Wait up to 60 s; LED should settle to solid green |
-| Solid green | Connected to home Wi-Fi, monitoring | Go to **[4.3](#43-access-the-web-interface)** (skip [4.1](#41-connect-to-the-devices-wi-fi-captive-portal) and [4.2](#42-configure-your-home-wi-fi)) |
+| --- | --- | --- |
+| 🔵 Blue, fast blink | No Wi-Fi configured yet; captive portal active | Go to **[4.1](#41-connect-to-the-devices-wi-fi-captive-portal)** |
+| 🔵 Blue, slow pulse | Known Wi-Fi found but not yet connected (e.g. router still booting) | Wait up to 60 s; LED should settle to solid green |
+| 🟢 Solid green | Connected to home Wi-Fi, monitoring | Go to **[4.3](#43-access-the-web-interface)** (skip [4.1](#41-connect-to-the-devices-wi-fi-captive-portal) and [4.2](#42-configure-your-home-wi-fi)) |
 
 > **⚠ WARNING**  
 > If you smell anything burning, hear buzzing, or see smoke: **switch the main breaker OFF immediately** and contact support before doing anything else.
@@ -240,7 +224,7 @@ On first power-on, or after a Wi-Fi reset, the device broadcasts its own Wi-Fi n
 1. On your phone or laptop, open Wi-Fi settings.
 2. Look for a network named **`EnergyMe-<DEVICE_ID>`**, where `<DEVICE_ID>` is the 12-character code printed on the label inside the device case.
 3. Connect to it. The password is:
-   - **EnergyMe devices** (purchased from us): printed on the label inside the case, next to the QR code, both as a QR code and as plain text.
+   - **EnergyMe devices** (purchased from us): printed on the stickers on the case, both as a scannable QR code and as plain text.
    - **Community devices** (self-built): the `DEVICE_ID` itself (same 12-character code as the network name).
 4. A configuration page opens automatically. If it does not, open a browser and navigate to **`http://192.168.4.1`**.
 
@@ -251,10 +235,11 @@ On first power-on, or after a Wi-Fi reset, the device broadcasts its own Wi-Fi n
 
 In the captive portal page:
 
-1. Select your home Wi-Fi network from the list (tap **Scan** if it doesn't appear).
-2. Enter your Wi-Fi password.
-3. Tap **Save**.
-4. The device restarts and connects to your home network, which takes about 30 seconds. The LED will stop blinking blue and settle to **solid green** once connected.
+1. Go to **Configure Wi-Fi**.
+2. Select your home Wi-Fi network from the list.
+3. Enter your Wi-Fi password.
+4. Tap **Save**.
+5. The device restarts and connects to your home network, which takes about 30 seconds. The LED will stop blinking blue and settle to **solid green** once connected.
 
 > **✅ TIP: 2.4 GHz only**  
 > *EnergyMe Home* uses **2.4 GHz Wi-Fi**. If your router shows separate 2.4 GHz and 5 GHz networks, pick the 2.4 GHz one. If your router uses a single combined name ("band steering"), it will usually work fine, but if you have connection problems, ask your router's admin page to expose the 2.4 GHz band as a separate SSID.
@@ -268,7 +253,7 @@ In the captive portal page:
    - **Password:** `energyme`
 
 > **ⓘ NOTE: Note down the IP address**  
-> Once logged in, go to **Info** in the top menu. Under **Network Status**, you will see the device's local IP address (e.g. `192.168.1.42`). **Write it down or bookmark it.** If `energyme.local` stops resolving in the future (some routers and older Android versions don't handle `.local` names reliably), you can always reach the interface directly by typing that IP address into your browser.
+> Once logged in, go to **Info** in the top menu. Under **Network Status**, you will see the device's local IP address (e.g. `192.168.1.42`). **Write it down or bookmark it.** If `energyme.local` stops resolving in the future (some routers, PCs, and older Android versions don't handle `.local` names reliably), you can always reach the interface directly by typing that IP address into your browser.
 >
 > If you haven't noted the IP yet and `energyme.local` no longer works, open your router's admin page and look for a device with hostname `energyme-home-<DEVICE_ID>`.
 
@@ -293,7 +278,7 @@ Now you map each physical CT to a meaningful name and role in the UI. Go to **Ch
 Each channel has the following fields:
 
 | Field | What it means |
-|---|---|
+| --- | --- |
 | **Label** | A free-text name (e.g., "Grid", "Kitchen", "EV charger"). It's the name that will appear on the dashboard |
 | **Phase** | The phase the CT is clamped on. Use `1` for single-phase systems. For three-phase, see Appendix B |
 | **Reverse** | Tick this if the channel reads with the wrong sign (e.g., shows -8 W when you expect +8 W). Flips the sign instantly, no need to reopen the panel |
@@ -304,7 +289,7 @@ Each channel has the following fields:
 #### Role values
 
 | Role | When to use |
-|---|---|
+| --- | --- |
 | `Load` | A branch circuit consuming energy (kitchen, lights, appliances, EV charger, heat pump...) |
 | `Grid (+ import, - export)` | The main supply line. Positive when importing from the grid, negative when exporting (e.g. PV selling back) |
 | `PV / Solar (+ generation)` | A solar panel string measured directly (AC side). Positive when generating |
@@ -316,7 +301,7 @@ Each channel has the following fields:
 **Channel 0 (main line):**
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Label | `Grid` (or `Main`, or your preference) |
 | Phase | `1` |
 | Reverse | (leave unchecked, fix later if needed) |
@@ -327,7 +312,7 @@ Each channel has the following fields:
 **Channels 1 to 15 (branch loads):**
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Label | The breaker label from Appendix A (e.g., "Kitchen") |
 | Phase | `1` |
 | Reverse | (leave unchecked, fix later if needed) |
@@ -367,7 +352,7 @@ Repeat for every channel that uses a non-standard CT.
 ### 4.7 Verification
 
 | Check | When | Expected | If wrong |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Voltage | Within seconds | Your nominal grid voltage (~120 V or ~230 V depending on your region) | Re-check L/N connection |
 | Channel 0 power (W) when importing from grid | Within seconds | **Positive** (importing energy) | If consistently negative when you know you're importing, tick **Reverse** for Channel 0 |
 | Channel 0 power (W) when exporting (PV) | Within seconds | **Negative** | Sign convention is correct: `+ import, - export` |
@@ -411,7 +396,7 @@ To update:
 Fill in during installation (where known), take a photo before closing the panel.
 
 | Channel # | Breaker label | Description (room/load) | CT rating | Role | Phase | Grouping |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | 0 | Main breaker | Whole-home incoming line | 30 A | Grid | 1 | Group 0 |
 | 1 | | | 30 A | Load | 1 | Group 1 |
 | 2 | | | 30 A | Load | 1 | Group 2 |
@@ -443,7 +428,7 @@ Fill in during installation (where known), take a photo before closing the panel
 In **Channels** ([4.5](#45-configure-each-channel)), set up the three channels like this:
 
 | Channel | Label | Phase | Active | Grouping | Role |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | 0 | `Grid L1` | `1` | ☑ | `Grid` | `Grid (+ import, - export)` |
 | 1 (or chosen branch) | `Grid L2` | `2` | ☑ | `Grid` | `Grid (+ import, - export)` |
 | 2 (or chosen branch) | `Grid L3` | `3` | ☑ | `Grid` | `Grid (+ import, - export)` |
@@ -464,7 +449,7 @@ The three channels share the same **Grouping** value (`Grid`), so the dashboard 
 Example for a three-phase EV charger:
 
 | Channel | Label | Phase | Active | Grouping | Role |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | 3 | `EV charger L1` | `1` | ☑ | `EV charger` | `Load` |
 | 4 | `EV charger L2` | `2` | ☑ | `EV charger` | `Load` |
 | 5 | `EV charger L3` | `3` | ☑ | `EV charger` | `Load` |
@@ -486,7 +471,7 @@ The LED on the front of the device communicates the system state at a glance.
 ### Normal operation
 
 | LED | State | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | 🟢 Green, solid | Connected | Wi-Fi connected, monitoring normally |
 | 🔵 Blue, slow pulse | Reconnecting | Wi-Fi temporarily lost; reconnecting automatically, usually resolves on its own |
 | 🔵 Blue, fast blink | Portal active | No Wi-Fi configured; captive portal is open ([4.1](#41-connect-to-the-devices-wi-fi-captive-portal)) |
@@ -494,16 +479,16 @@ The LED on the front of the device communicates the system state at a glance.
 ### Alerts
 
 | LED | State | Meaning | What to do |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 🟣 Purple, solid | Safe mode | Crash protection triggered; device is still monitoring and fully reachable via the web interface | Go to **Logs** in the top menu to investigate; the device will recover automatically |
 | 🔴 Red, fast blink | Critical error | Persistent failure after recovery attempts | Restart via button (Appendix D); if it recurs, contact support |
 
 ### Button feedback (while the button is held; see Appendix D)
 
 | LED colour while holding | Action that will trigger on release |
-|---|---|
+| --- | --- |
 | ⚪ White | Press registered but below action threshold. Release for no action |
-| 🩵 Cyan | Restart |
+| 🔵 Cyan | Restart |
 | 🟡 Yellow | Password reset to default |
 | 🟠 Orange | Wi-Fi reset (re-opens captive portal) |
 | 🔴 Red | Factory reset: all data and settings will be erased |
@@ -518,7 +503,7 @@ The button on the front of the device lets you recover from common situations wi
 **How it works:** press and hold. The LED changes colour as you hold longer, showing which action will trigger on release. **Release the button as soon as you see the colour for the action you want.**
 
 | Hold time | LED colour | Action on release |
-|---|---|---|
+| --- | --- | --- |
 | < 2 s | White | No action |
 | 2-5 s | **Cyan** | **Restart:** equivalent to a power cycle |
 | 5-10 s | **Yellow** | **Password reset:** resets the web password to `energyme` |
