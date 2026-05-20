@@ -166,6 +166,9 @@ For each circuit you want to monitor:
 > **✅ TIP: Don't know what each breaker controls?**  
 > No problem. Plug the CTs into any free channels and proceed with the installation. Once the device is online you can rename the channels at any time from the web interface.
 
+> **✅ TIP: Don't worry about CT orientation**  
+> Installed a CT backwards by accident? No problem. EnergyMe automatically detects reversed CTs on the first reading after you activate a channel and flips the polarity for you. No need to reopen the panel or manually adjust anything.
+
 > **⚠ WARNING: Common mistakes to avoid**
 >
 > - ❌ Clamping on the **input** wire of a breaker (reads multiple circuits)
@@ -281,7 +284,7 @@ Each channel has the following fields:
 | --- | --- |
 | **Label** | A free-text name (e.g., "Grid", "Kitchen", "EV charger"). It's the name that will appear on the dashboard |
 | **Phase** | The phase the CT is clamped on. Use `1` for single-phase systems. For three-phase, see Appendix B |
-| **Reverse** | Tick this if the channel reads with the wrong sign (e.g., shows -8 W when you expect +8 W). Flips the sign instantly, no need to reopen the panel |
+| **Reverse** | Flips the sign of a channel. Normally you won't need this: EnergyMe auto-detects reversed CTs on first activation and corrects them automatically. Manual toggle is available if needed (e.g., a channel role changes). Flips the sign instantly, no need to reopen the panel |
 | **Active** | Enables the channel. Untick for unused channels |
 | **Grouping** | Channels sharing the same group label are combined into one card on the home dashboard. Use this for multi-phase loads: set all three phase CTs of your oven to "Oven" and the dashboard will show total power for the whole appliance |
 | **Role** | What the channel represents (see table below) |
@@ -364,7 +367,7 @@ Repeat for every channel that uses a non-standard CT.
 > Instantaneous power (Watts) appears within seconds. **Aggregated energy values (kWh) take a few hours to populate**, because the device needs to accumulate measurements before showing trends. Check back later in the day.
 
 > **ⓘ NOTE: The Reverse checkbox is your friend**  
-> If a channel reads with the wrong sign, you don't need to reopen the panel and flip the CT. Just tick **Reverse** for that channel in [4.5](#45-configure-each-channel); the sign flips instantly.
+> Most reversed CTs are auto-corrected by EnergyMe on first activation. But if a channel ever reads with the wrong sign (e.g., shows -8 W when you expect +8 W), you don't need to reopen the panel. Just tick **Reverse** for that channel in [4.5](#45-configure-each-channel); the sign flips instantly.
 
 > **✅ TIP: The "kettle test" (instant verification)**  
 > Turn on a single high-power load on a known circuit (e.g., a kettle in the kitchen). You should see the instantaneous power increase **on that one branch channel** and on Channel 0 by approximately the same amount.
