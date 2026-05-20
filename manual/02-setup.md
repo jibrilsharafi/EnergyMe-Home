@@ -41,6 +41,9 @@ In the captive portal page:
    - **Username:** `admin`
    - **Password:** `energyme`
 
+> **✅ TIP: Live demo**  
+> A fully configured device is available online at **[demo-energyme-home.energyme.net](https://demo-energyme-home.energyme.net/)**. Use it to explore the interface, compare against your own dashboard, or familiarise yourself with the layout before installing.
+
 > **ⓘ NOTE: Note down the IP address**  
 > Once logged in, go to **Info** in the top menu. Under **Network Status**, you will see the device's local IP address (e.g. `192.168.1.42`). **Write it down or bookmark it.** If `energyme.local` stops resolving in the future (some routers, PCs, and older Android versions don't handle `.local` names reliably), you can always reach the interface directly by typing that IP address into your browser.
 >
