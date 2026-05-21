@@ -51,4 +51,4 @@ _codeql_detected_source_root
 
 # Manual PDF build artifacts
 manual/dist/
-manual/**/.merged-*.md
+manual/**/.merged*.md
