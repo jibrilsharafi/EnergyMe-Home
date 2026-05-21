@@ -17,9 +17,9 @@ EnergyMe-Home is an open-source energy monitoring system for home use, capable o
   - `include/` - Header files
   - `html/`, `css/`, `js/` - Web interface files (embedded in firmware)
   - `platformio.ini` - Build configuration
-- `/documentation` - Hardware schematics, component datasheets
+- `/hardware` - Hardware schematics, component datasheets
 - `/examples` - Example configurations and integrations
-- `/install_docs` - Installation and setup guides
+- `/manual` - Installation, first setup, and troubleshooting guides
 
 ## Build System & Environments
 
@@ -187,7 +187,7 @@ There is no unit test framework currently set up. Focus on ensuring compilation 
 
 - Main README: `/README.md`
 - Source code documentation: `/source/README.md`
-- Hardware documentation: `/documentation/README.md`
+- Hardware documentation: `/hardware/README.md`
 - Contributing guidelines: `/CONTRIBUTING.md`
 - Swagger API documentation: `/source/resources/swagger.yaml`
 - PlatformIO configuration: `/source/platformio.ini`

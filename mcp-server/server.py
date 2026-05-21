@@ -62,7 +62,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="read_documentation",
-            description="Read documentation files from the project. Provide a relative path from the documentation folder (e.g., 'README.md', 'Components/Energy IC/README.md')",
+            description="Read documentation files from the project. Provide a relative path from the hardware folder (e.g., 'README.md', 'Components/Energy IC/README.md')",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -76,7 +76,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="list_files",
-            description="List files in a specific directory of the project. Provide a relative path from project root (e.g., 'documentation', 'source/include')",
+            description="List files in a specific directory of the project. Provide a relative path from project root (e.g., 'hardware', 'manual', 'source/include')",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -275,12 +275,15 @@ def get_project_info() -> str:
 def read_documentation(path: str) -> str:
     """Read a documentation file."""
     try:
-        # Handle both absolute paths from doc root and paths starting with "documentation/"
-        if path.startswith("documentation/"):
+        # Handle both absolute paths from doc root and paths starting with "hardware/" or "manual/"
+        if path.startswith("hardware/") or path.startswith("manual/"):
             file_path = PROJECT_ROOT / path
         else:
-            # Try documentation folder first
-            file_path = PROJECT_ROOT / "documentation" / path
+            # Try hardware folder first
+            file_path = PROJECT_ROOT / "hardware" / path
+            if not file_path.exists():
+                # Try manual folder
+                file_path = PROJECT_ROOT / "manual" / path
             if not file_path.exists():
                 # Try project root
                 file_path = PROJECT_ROOT / path
