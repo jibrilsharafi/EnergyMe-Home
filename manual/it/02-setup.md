@@ -1,9 +1,3 @@
-<!-- translation
-source: 02-setup.md
-source-commit: 3207d0e
-translated: 2026-05-21
--->
-
 # Configurazione
 
 Da ora in poi, il lavoro può essere svolto dall'utente finale. Il quadro elettrico può restare chiuso.

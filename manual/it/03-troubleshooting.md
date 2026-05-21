@@ -1,9 +1,3 @@
-<!-- translation
-source: 03-troubleshooting.md
-source-commit: 82c8057
-translated: 2026-05-21
--->
-
 # Risoluzione dei problemi
 
 > *Questo capitolo è in fase di lavorazione e verrà ampliato nelle prossime revisioni di questo manuale.*

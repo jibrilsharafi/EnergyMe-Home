@@ -1,9 +1,3 @@
-<!-- translation
-source: appendices.md
-source-commit: f2923d3
-translated: 2026-05-21
--->
-
 # Appendici
 
 ## Appendice A: Mappa dei canali {#appendix-a-channel-map}

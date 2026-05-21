@@ -1,9 +1,3 @@
-<!-- translation
-source: 03-troubleshooting.md
-source-commit: 82c8057
-translated: 2026-05-21
--->
-
 # Dépannage
 
 > *Ce chapitre est en cours de rédaction et sera complété dans les futures révisions de ce manuel.*

@@ -1,9 +1,3 @@
-<!-- translation
-source: README.md
-source-commit: 0ade5f7
-translated: 2026-05-21
--->
-
 # EnergyMe Home : Manuel d'installation
 
 ## Avant de commencer : lisez cette page

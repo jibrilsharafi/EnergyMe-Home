@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
 """Check whether translated manual files are still in sync with their English sources.
 
-Each translated file under ``manual/<lang>/*.md`` must begin with a provenance
-comment that names its English source::
-
-    <!-- translation
-    source: <english-filename>
-    source-commit: <sha-when-translated>   (informational)
-    translated: YYYY-MM-DD                 (informational)
-    -->
-
-The actual sync check compares the **last commit that touched each file**:
+Translations live under ``manual/<lang>/<filename>.md`` and are paired with
+the English source at ``manual/<filename>.md`` (same filename). The sync
+check compares the **last commit that touched each file**:
 
 * if the translation's last-touching commit is at least as recent as the
   source's, the translation is considered in sync (it was updated together
@@ -18,14 +11,12 @@ The actual sync check compares the **last commit that touched each file**:
 * if the source has been touched more recently than the translation, the
   translation is flagged as drifted.
 
-This means a single commit that edits both the source and the translation is
-treated as synced automatically. There is no need to manually bump a SHA in
-the provenance header on every edit; the ``source-commit:`` and
-``translated:`` fields are kept purely for human reference.
+A single commit that edits both the source and the translation is treated
+as synced automatically.
 
-Exit code 0 if everything is in sync, 1 if any translation is stale or
-missing provenance metadata. Stdlib only; works the same on Windows, Linux,
-and macOS. Suitable for CI and as a pre-commit hook.
+Exit code 0 if everything is in sync, 1 if any translation is missing its
+English source or has drifted. Stdlib only; works the same on Windows,
+Linux, and macOS. Suitable for CI and as a pre-commit hook.
 """
 
 from __future__ import annotations
@@ -36,14 +27,6 @@ import sys
 from pathlib import Path
 
 LANG_DIR_RE = re.compile(r"^[a-z]{2}$")
-
-# Only the ``source:`` field is required at check time. ``source-commit:`` and
-# ``translated:`` may be present but are informational.
-HEADER_RE = re.compile(
-    r"<!--\s*translation\s*\r?\n"
-    r"\s*source:\s*(?P<source>\S+)\s*\r?\n",
-    re.IGNORECASE,
-)
 
 
 def repo_root() -> Path:
@@ -80,28 +63,14 @@ def git_last_commit_info(path: Path) -> tuple[str, int] | None:
 
 
 def check_file(translated: Path, manual_dir: Path) -> tuple[str | None, str | None]:
-    """Check one translated file.
-
-    Returns ``(drift, missing)`` where each is either a human-readable
-    message or ``None``.
-    """
-    try:
-        content = translated.read_text(encoding="utf-8")
-    except OSError as exc:
-        return None, f"{translated.relative_to(manual_dir.parent)}: cannot read ({exc})"
-
-    match = HEADER_RE.search(content)
-    if not match:
-        return None, f"{translated.relative_to(manual_dir.parent)}: no provenance header found"
-
-    source_name = match.group("source")
-    source_path = manual_dir / source_name
+    """Check one translated file. Returns ``(drift, missing)`` messages or ``None``."""
+    source_path = manual_dir / translated.name
     if not source_path.exists():
-        return None, f"{translated.relative_to(manual_dir.parent)}: source `{source_name}` not found"
+        return None, f"{translated.relative_to(manual_dir.parent)}: no English source named `{translated.name}` in manual/"
 
     source_info = git_last_commit_info(source_path)
     if source_info is None:
-        return None, f"{translated.relative_to(manual_dir.parent)}: cannot resolve git history for `{source_name}`"
+        return None, f"{translated.relative_to(manual_dir.parent)}: cannot resolve git history for `{translated.name}`"
     source_sha, source_ts = source_info
 
     translation_info = git_last_commit_info(translated)
@@ -114,7 +83,7 @@ def check_file(translated: Path, manual_dir: Path) -> tuple[str | None, str | No
 
     msg = (
         f"{translated.relative_to(manual_dir.parent)}: last touched at {translation_sha[:7]}, "
-        f"but {source_name} has been touched more recently at {source_sha[:7]}"
+        f"but manual/{translated.name} has been touched more recently at {source_sha[:7]}"
     )
     return msg, None
 
@@ -152,7 +121,7 @@ def main() -> int:
         print()
 
     if missing:
-        print("Translations with missing or unreadable provenance:")
+        print("Translations with no matching English source:")
         for line in missing:
             print(f"  - {line}")
         print()

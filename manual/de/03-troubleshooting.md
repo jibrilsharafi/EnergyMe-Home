@@ -1,9 +1,3 @@
-<!-- translation
-source: 03-troubleshooting.md
-source-commit: 82c8057
-translated: 2026-05-21
--->
-
 # Fehlerbehebung
 
 > *Dieses Kapitel ist in Arbeit und wird in zukünftigen Überarbeitungen dieses Handbuchs erweitert.*

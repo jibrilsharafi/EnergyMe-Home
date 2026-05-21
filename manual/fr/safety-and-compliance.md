@@ -1,9 +1,3 @@
-<!-- translation
-source: safety-and-compliance.md
-source-commit: eda785a
-translated: 2026-05-21
--->
-
 # EnergyMe Home : Informations de sécurité et conformité
 
 Ce document contient les informations réglementaires, de sécurité, de garantie et d'élimination relatives à *EnergyMe Home*. **Lisez-le une fois avant d'installer l'appareil.** Conservez ce document pendant toute la durée de vie du produit ; si le produit est cédé à un tiers, ce document doit être transmis avec lui.

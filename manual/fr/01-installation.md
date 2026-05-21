@@ -1,9 +1,3 @@
-<!-- translation
-source: 01-installation.md
-source-commit: eda785a
-translated: 2026-05-21
--->
-
 # Installation
 
 > Lisez le [préambule de sécurité](README.md#before-you-start-read-this-page) avant de commencer.

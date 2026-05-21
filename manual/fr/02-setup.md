@@ -1,9 +1,3 @@
-<!-- translation
-source: 02-setup.md
-source-commit: 3207d0e
-translated: 2026-05-21
--->
-
 # Configuration
 
 À partir de maintenant, le travail peut être effectué par l'utilisateur final. Le tableau électrique peut rester fermé.

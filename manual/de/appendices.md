@@ -1,9 +1,3 @@
-<!-- translation
-source: appendices.md
-source-commit: f2923d3
-translated: 2026-05-21
--->
-
 # Anhänge
 
 ## Anhang A: Kanalübersicht {#appendix-a-channel-map}

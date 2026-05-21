@@ -1,9 +1,3 @@
-<!-- translation
-source: 02-setup.md
-source-commit: 3207d0e
-translated: 2026-05-21
--->
-
 # Setup
 
 Ab jetzt kann die Arbeit vom Endnutzer ausgeführt werden. Der Schaltschrank kann geschlossen bleiben.
