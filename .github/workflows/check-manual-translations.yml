@@ -59,7 +59,7 @@ jobs:
         run: python manual/build_pdfs.py
 
       - name: Upload PDF artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: energyme-home-manual-pdfs
           path: manual/dist/*.pdf
