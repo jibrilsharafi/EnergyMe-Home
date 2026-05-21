@@ -1,6 +1,6 @@
 <!-- translation
 source: appendices.md
-source-commit: eda785a
+source-commit: f2923d3
 translated: 2026-05-21
 -->
 
@@ -22,9 +22,9 @@ Während der Installation ausfüllen (soweit bekannt), ein Foto machen, bevor de
 
 ---
 
-## Anhang B: Dreiphasen-Konfiguration {#appendix-b-three-phase-configuration}
+## Anhang B: Mehrphasen-Konfigurationen {#appendix-b-three-phase-configuration}
 
-*EnergyMe Home* ist grundsätzlich ein einphasiges Gerät, kann aber eine **dreiphasige Hauptversorgung** (oder bestimmte dreiphasige Lasten) überwachen, indem **ein CT pro Phase** verwendet und die drei Messwerte auf dem Dashboard über das Feld `Grouping` kombiniert werden.
+*EnergyMe Home* ist grundsätzlich ein einphasiges Gerät, kann aber eine **dreiphasige Hauptversorgung**, **bestimmte dreiphasige Lasten** sowie **nordamerikanische 120/240-V-Split-Phase-Stromkreise** überwachen, indem das Feld `Phase` für jeden Kanal gesetzt und die Messwerte auf dem Dashboard über das Feld `Grouping` kombiniert werden.
 
 ### B.1 Dreiphasige Hauptversorgung {#b1-three-phase-main-supply}
 
@@ -75,6 +75,55 @@ Das Dashboard zeigt eine einzige "EV charger"-Karte mit der dreiphasigen Gesamtl
 
 > **✅ TIPP: Benennung der Gruppe**  
 > Verwenden Sie einen sauberen Gruppennamen (z. B. `Oven`, `Heat pump`, `EV charger`) ohne Phasensuffixe; das ist es, was auf dem Dashboard erscheint. Setzen Sie das Phasensuffix nur in das `Label` jedes Kanals, damit Sie bei Bedarf weiterhin einzelne Phasen inspizieren können.
+
+### B.3 Nordamerikanisches 120/240-V-Split-Phase-System {#b3-north-american-120240-v-split-phase}
+
+Die Standard-Hausanschlussversorgung in Nordamerika ist ein **Split-Phase-System (Zweiphasennetz mit Mittelpunktleiter)**: Ein Mittelpunktstransformator liefert zwei 120-V-"Schenkel" (L1 und L2) sowie einen Neutralleiter. Die meisten Stromkreise laufen Phase-zu-Neutralleiter bei 120 V (Beleuchtung, Steckdosen); große Geräte (Elektroherd, Warmwasserbereiter, Wäschetrockner, Zentralklimaanlage, Level-2-Wallbox) laufen Phase-zu-Phase bei 240 V über beide Schenkel.
+
+*EnergyMe Home* misst die Spannung **Phase-zu-Neutralleiter** (≈120 V), sodass ein CT an einem 240-V-Stromkreis die Leistung standardmäßig um den Faktor zwei unterschätzen würde. Die Firmware übernimmt dies für Sie: Wählen Sie **`240V (Split Phase)`** im Feld `Phase` des Kanals, und ein **2×-Spannungsmultiplikator** wird automatisch angewendet.
+
+> **⚠ WARNUNG: Die L- und N-Stromversorgung des Geräts selbst muss immer Phase-zu-Neutralleiter (≈120 V) verdrahtet sein.**  
+>
+> Die Einstellung `240V (Split Phase)` im Feld `Phase` **ändert ausschließlich, wie die Strommessung des CT dieses einen Kanals interpretiert wird**. Sie ändert **nicht**, wie das Gerät selbst versorgt wird oder wie die Spannung intern gemessen wird.
+>
+> - Die **braune (L)** und **blaue (N)** Leitung des Geräts müssen immer zwischen **einem 120-V-Schenkel und dem Neutralleiter** angeschlossen sein, genau wie bei einem 120-V-Stromkreis.
+> - Verdrahten Sie L und N des Geräts niemals über die beiden Schenkel bei 240 V. Das interne Netzteil ist für 100-240 V AC ausgelegt und würde nicht beschädigt, aber die **Spannungsreferenz, die zur Berechnung der Leistung auf jedem Kanal verwendet wird**, würde nicht mehr mit der Annahme der Firmware übereinstimmen, und **alle Messungen wären falsch**.
+> - Dies gilt unabhängig davon, wie viele Kanäle auf `240V (Split Phase)` gesetzt sind: Die Stromversorgungsverdrahtung des Geräts ist unabhängig von der `Phase`-Einstellung der einzelnen Kanäle.
+
+#### Welche Phasen-Einstellung wann verwenden (Nordamerika)
+
+| Stromkreistyp | Worum der CT geklemmt ist | Phase-Einstellung |
+| --- | --- | --- |
+| 120-V-Abzweig (ein Schenkel, Phase-zu-Neutralleiter) | Einer der Schenkel des 120-V-Stromkreises | `1` |
+| 240-V-Abzweig (Phase-zu-Phase, beide Schenkel) | Einer der Schenkel des 240-V-Stromkreises | `240V (Split Phase)` |
+| Hauptversorgung, einzelner Schenkel | Einer der beiden Hauptschenkel | `1` |
+| Hauptversorgung, beide Schenkel separat | Ein CT pro Schenkel, auf separaten Kanälen | jeweils `1` |
+
+#### Hardware
+
+Für einen 240-V-Abzweig (z. B. einen Wäschetrockner oder eine Level-2-Wallbox):
+
+1. Nehmen Sie **einen** Klemmstromwandler.
+2. Klemmen Sie ihn um **einen** der beiden Phasenleiter des 240-V-Stromkreises (L1 oder L2). Nicht um den Neutralleiter klemmen und niemals um beide Schenkel zusammen.
+3. Schließen Sie die Klemme, bis sie einrastet.
+4. Stecken Sie den 3,5-mm-Klinkenstecker in einen freien Kanal am Gerät.
+
+#### Software
+
+In **Channels** ([§4.5](02-setup.md#45-configure-each-channel)) setzen Sie:
+
+| Feld | Wert |
+| --- | --- |
+| Label | z. B. `Dryer` oder `EV charger` |
+| Phase | **`240V (Split Phase)`** |
+| Active | ☑ |
+| Grouping | Eine Gruppe pro Gerät (Standard `Group N` ist in Ordnung) |
+| Role | `Load` (oder `Battery` / `Inverter` falls zutreffend) |
+
+> **ⓘ HINWEIS: Warum ×2 und nicht die Spannung direkt messen?**  
+> Der Spannungswandler im Inneren von *EnergyMe Home* ist zwischen Phase und Neutralleiter verdrahtet, was in einem nordamerikanischen Split-Phase-Netz ≈120 V entspricht. Ein 240-V-Phase-zu-Phase-Stromkreis hat genau die doppelte RMS-Spannung, sodass die Multiplikation des Stroms mit dem 2-fachen der gemessenen 120 V die korrekte Leistung ergibt. Dies ist einer zusätzlichen Spannungsreferenz vorzuziehen und funktioniert für jedes standardmäßige Split-Phase-Netz.
+
+> **⚠ Verwenden Sie `240V (Split Phase)` nicht außerhalb nordamerikanischer Split-Phase-Systeme.** Es ist eine numerische Abkürzung für die spezifische 120/240-V-Split-Phase-Topologie und würde in einem europäischen 230-V-Einphasensystem oder einem beliebigen Dreiphasensystem falsche Messwerte erzeugen.
 
 ---
 

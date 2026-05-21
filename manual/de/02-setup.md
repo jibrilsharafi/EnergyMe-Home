@@ -1,6 +1,6 @@
 <!-- translation
 source: 02-setup.md
-source-commit: dbf89c0
+source-commit: 3207d0e
 translated: 2026-05-21
 -->
 
@@ -78,7 +78,7 @@ Jeder Kanal hat die folgenden Felder:
 | Feld | Bedeutung |
 | --- | --- |
 | **Label** | Ein freier Textname (z. B. "Grid", "Kitchen", "EV charger"). Es ist der Name, der auf dem Dashboard angezeigt wird |
-| **Phase** | Die Phase, auf der der CT angeklemmt ist. Verwenden Sie `1` für einphasige Systeme. Für dreiphasige siehe [Anhang B](appendices.md#appendix-b-three-phase-configuration) |
+| **Phase** | Die AC-Phase, auf der der CT angeklemmt ist. Verwenden Sie `1` für europäische einphasige Systeme und für 120-V-Standardlasten in Nordamerika. Verwenden Sie `2` oder `3` für die beiden anderen Phasen eines Dreiphasensystems (siehe [Anhang B](appendices.md#appendix-b-three-phase-configuration)). Verwenden Sie **`240V (Split Phase)`** für einen nordamerikanischen 240-V-Stromkreis, der beide Schenkel L1-L2 umspannt (siehe [Anhang B.3](appendices.md#b3-north-american-120240-v-split-phase)); die Firmware wendet automatisch einen 2×-Spannungsmultiplikator an, da die Spannungsreferenz Phase-zu-Neutralleiter (≈120 V) ist, während der Stromkreis Phase-zu-Phase (240 V) verläuft. |
 | **Reverse** | Kehrt das Vorzeichen eines Kanals um. Normalerweise nicht nötig: EnergyMe erkennt umgekehrt installierte CTs automatisch bei der ersten Aktivierung und korrigiert sie automatisch. Manuelles Umschalten ist bei Bedarf verfügbar (z. B. wenn sich eine Kanalrolle ändert). Kehrt das Vorzeichen sofort um, kein erneutes Öffnen des Schaltschranks nötig |
 | **Active** | Aktiviert den Kanal. Bei nicht verwendeten Kanälen entfernen |
 | **Grouping** | Kanäle mit derselben Gruppenbezeichnung werden auf dem Home-Dashboard zu einer Karte zusammengefasst. Verwenden Sie dies für mehrphasige Lasten: Setzen Sie alle drei Phasen-CTs Ihres Ofens auf "Oven", und das Dashboard zeigt die Gesamtleistung für das gesamte Gerät an |

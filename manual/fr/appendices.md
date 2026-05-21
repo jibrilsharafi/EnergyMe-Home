@@ -1,6 +1,6 @@
 <!-- translation
 source: appendices.md
-source-commit: eda785a
+source-commit: f2923d3
 translated: 2026-05-21
 -->
 
@@ -22,9 +22,9 @@ translated: 2026-05-21
 
 ---
 
-## Annexe B : Configuration triphasée {#appendix-b-three-phase-configuration}
+## Annexe B : Configurations multiphases {#appendix-b-three-phase-configuration}
 
-*EnergyMe Home* est fondamentalement un appareil monophasé, mais il peut surveiller une **alimentation principale triphasée** (ou des charges triphasées spécifiques) en utilisant **un TC par phase** et en combinant les trois mesures sur le tableau de bord via le champ `Grouping`.
+*EnergyMe Home* est fondamentalement un appareil monophasé, mais il peut surveiller une **alimentation principale triphasée**, des **charges triphasées spécifiques**, ainsi que les **circuits biphasés à point milieu 120/240 V nord-américains**, en réglant le champ `Phase` sur chaque canal et en combinant les mesures sur le tableau de bord via le champ `Grouping`.
 
 ### B.1 Alimentation principale triphasée {#b1-three-phase-main-supply}
 
@@ -75,6 +75,55 @@ Le tableau de bord affichera une seule carte « EV charger » avec la puissance 
 
 > **✅ ASTUCE : Nommer le groupe**  
 > Utilisez un nom de groupe simple (par exemple, `Oven`, `Heat pump`, `EV charger`) sans suffixe de phase ; c'est ce qui apparaîtra sur le tableau de bord. Mettez le suffixe de phase uniquement dans le `Label` de chaque canal, afin de pouvoir toujours inspecter les phases individuelles si nécessaire.
+
+### B.3 Biphasé à point milieu 120/240 V nord-américain {#b3-north-american-120240-v-split-phase}
+
+Le service résidentiel standard en Amérique du Nord est un système **biphasé à point milieu** (split-phase) : un transformateur à point milieu fournit deux « branches » de 120 V (L1 et L2) plus un neutre. La plupart des circuits fonctionnent en phase-neutre à 120 V (éclairage, prises) ; les gros appareils (cuisinière électrique, chauffe-eau, sèche-linge, climatisation centrale, borne de recharge VE de niveau 2) fonctionnent en phase-phase à 240 V à cheval sur les deux branches.
+
+*EnergyMe Home* mesure la tension **phase-neutre** (≈120 V), donc un TC sur un circuit 240 V sous-estimerait par défaut la puissance d'un facteur deux. Le micrologiciel s'en charge pour vous : sélectionnez **`240V (Split Phase)`** dans le champ `Phase` du canal et un **multiplicateur de tension ×2** est appliqué automatiquement.
+
+> **⚠ AVERTISSEMENT : L'alimentation L et N de l'appareil lui-même doit toujours être câblée en phase-neutre (≈120 V).**  
+>
+> Le réglage `240V (Split Phase)` dans le champ `Phase` **modifie uniquement la façon dont la mesure de courant du TC de ce canal est interprétée**. Il **ne change pas** la façon dont l'appareil lui-même est alimenté, ni comment la tension est mesurée en interne.
+>
+> - Les fils **marron (L)** et **bleu (N)** de l'appareil doivent toujours être raccordés entre **une branche 120 V et le Neutre**, exactement comme pour un circuit 120 V.
+> - Ne câblez jamais le L et le N de l'appareil à cheval sur les deux branches à 240 V. L'alimentation interne est prévue pour 100-240 V AC et ne serait pas endommagée, mais la **référence de tension utilisée pour calculer la puissance sur chaque canal** ne correspondrait plus à l'hypothèse du micrologiciel et **toutes les mesures seraient fausses**.
+> - Ceci s'applique quel que soit le nombre de canaux réglés sur `240V (Split Phase)` : le câblage d'alimentation de l'appareil est indépendant du réglage `Phase` par canal.
+
+#### Quand utiliser chaque réglage de phase (Amérique du Nord) {#when-to-use-each-phase-setting-north-america}
+
+| Type de circuit | Sur quoi le TC est installé | Réglage Phase |
+| --- | --- | --- |
+| Dérivation 120 V (une branche, phase-neutre) | L'une ou l'autre branche du circuit 120 V | `1` |
+| Dérivation 240 V (phase-phase, les deux branches) | L'une ou l'autre branche du circuit 240 V | `240V (Split Phase)` |
+| Alimentation principale, une seule branche | L'une des deux branches principales | `1` |
+| Alimentation principale, les deux branches séparément | Un TC sur chaque branche, sur des canaux séparés | `1` sur chacun |
+
+#### Matériel {#hardware-2}
+
+Pour une dérivation 240 V (par exemple, un sèche-linge ou une borne de recharge VE de niveau 2) :
+
+1. Prenez **un** TC à pince.
+2. Installez-le autour de **l'un ou l'autre** des deux conducteurs de ligne du circuit 240 V (L1 ou L2). Ne pincez pas le neutre, et jamais les deux branches ensemble.
+3. Refermez la pince jusqu'au clic.
+4. Branchez la fiche 3,5 mm dans un canal libre de l'appareil.
+
+#### Logiciel {#software-2}
+
+Dans **Channels** ([§4.5](02-setup.md#45-configure-each-channel)), réglez :
+
+| Champ | Valeur |
+| --- | --- |
+| Label | par exemple, `Dryer` ou `EV charger` |
+| Phase | **`240V (Split Phase)`** |
+| Active | ☑ |
+| Grouping | Un groupe par appareil (le `Group N` par défaut convient) |
+| Role | `Load` (ou `Battery` / `Inverter` selon le cas) |
+
+> **ⓘ NOTE : Pourquoi ×2 et pas une mesure directe de la tension ?**  
+> Le transformateur de tension à l'intérieur d'*EnergyMe Home* est câblé entre la phase et le neutre, ce qui correspond à ≈120 V sur un service biphasé à point milieu nord-américain. Un circuit 240 V phase-phase a exactement le double de cette tension RMS, donc multiplier le courant par 2× les 120 V mesurés donne la puissance correcte. C'est préférable à l'ajout d'une référence de tension supplémentaire, et cela fonctionne pour tout service split-phase standard.
+
+> **⚠ N'utilisez pas `240V (Split Phase)` en dehors des systèmes biphasés à point milieu nord-américains.** C'est un raccourci numérique pour la topologie 120/240 V split-phase spécifique, et il produirait des lectures erronées sur un système 230 V monophasé européen ou sur tout système triphasé.
 
 ---
 

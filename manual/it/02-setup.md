@@ -1,6 +1,6 @@
 <!-- translation
 source: 02-setup.md
-source-commit: dbf89c0
+source-commit: 3207d0e
 translated: 2026-05-21
 -->
 
@@ -78,7 +78,7 @@ Ogni canale ha i seguenti campi:
 | Campo | Cosa significa |
 | --- | --- |
 | **Label** | Un nome a testo libero (es. "Grid", "Cucina", "EV charger"). È il nome che apparirà sulla dashboard |
-| **Phase** | La fase su cui è applicato il TA. Usare `1` per impianti monofase. Per il trifase, vedere [Appendice B](appendices.md#appendix-b-three-phase-configuration) |
+| **Phase** | La fase AC su cui è applicato il TA. Usare `1` per il monofase europeo e per i carichi nordamericani standard a 120 V. Usare `2` o `3` per le altre due fasi di un sistema trifase (vedere [Appendice B](appendices.md#appendix-b-three-phase-configuration)). Usare **`240V (Split Phase)`** per un circuito nordamericano a 240 V che si estende su entrambe le semifasi L1-L2 (vedere [Appendice B.3](appendices.md#b3-north-american-120240-v-split-phase)); il firmware applica automaticamente un moltiplicatore di tensione ×2 perché il riferimento di tensione è fase-neutro (≈120 V) mentre il circuito è fase-fase (240 V). |
 | **Reverse** | Inverte il segno di un canale. Normalmente non serve: EnergyMe rileva automaticamente i TA invertiti alla prima attivazione e li corregge in automatico. L'interruttore manuale è disponibile se necessario (es. quando cambia il ruolo di un canale). Inverte il segno istantaneamente, senza necessità di riaprire il quadro |
 | **Active** | Abilita il canale. Deselezionare per i canali non utilizzati |
 | **Grouping** | I canali che condividono la stessa etichetta di gruppo vengono combinati in un'unica card sulla dashboard. Lo usi per carichi multifase: imposti tutti e tre i TA di fase del Suo forno su "Forno" e la dashboard mostrerà la potenza totale dell'intero elettrodomestico |

@@ -1,6 +1,6 @@
 <!-- translation
 source: 02-setup.md
-source-commit: dbf89c0
+source-commit: 3207d0e
 translated: 2026-05-21
 -->
 
@@ -78,7 +78,7 @@ Chaque canal a les champs suivants :
 | Champ | Signification |
 | --- | --- |
 | **Label** | Un nom libre (par exemple, « Grid », « Cuisine », « Borne VE »). C'est le nom qui apparaîtra sur le tableau de bord |
-| **Phase** | La phase sur laquelle le TC est installé. Utilisez `1` pour les installations monophasées. Pour le triphasé, voir [Annexe B](appendices.md#appendix-b-three-phase-configuration) |
+| **Phase** | La phase AC sur laquelle le TC est installé. Utilisez `1` pour le monophasé européen et pour les charges 120 V nord-américaines standard. Utilisez `2` ou `3` pour les deux autres phases d'un système triphasé (voir [Annexe B](appendices.md#appendix-b-three-phase-configuration)). Utilisez **`240V (Split Phase)`** pour un circuit nord-américain 240 V qui couvre les deux branches L1-L2 (voir [Annexe B.3](appendices.md#b3-north-american-120240-v-split-phase)) ; le micrologiciel applique automatiquement un multiplicateur de tension ×2 car la référence de tension est phase-neutre (≈120 V) alors que le circuit est phase-phase (240 V). |
 | **Reverse** | Inverse le signe d'un canal. Normalement, vous n'en aurez pas besoin : EnergyMe détecte automatiquement les TC inversés à la première activation et les corrige automatiquement. Une bascule manuelle est disponible si nécessaire (par exemple, si le rôle d'un canal change). Inverse le signe instantanément, pas besoin de rouvrir le tableau |
 | **Active** | Active le canal. Décochez pour les canaux inutilisés |
 | **Grouping** | Les canaux partageant la même valeur de groupe sont combinés en une seule carte sur le tableau de bord principal. Utilisez ceci pour les charges multiphases : définissez les trois TC de phase de votre four à « Oven » et le tableau de bord affichera la puissance totale pour l'ensemble de l'appareil |

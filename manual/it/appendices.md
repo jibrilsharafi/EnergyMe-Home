@@ -1,6 +1,6 @@
 <!-- translation
 source: appendices.md
-source-commit: eda785a
+source-commit: f2923d3
 translated: 2026-05-21
 -->
 
@@ -22,9 +22,9 @@ Da compilare durante l'installazione (dove noto), scattare una foto prima di chi
 
 ---
 
-## Appendice B: Configurazione trifase {#appendix-b-three-phase-configuration}
+## Appendice B: Configurazioni multifase {#appendix-b-three-phase-configuration}
 
-*EnergyMe Home* è fondamentalmente un dispositivo monofase, ma può monitorare un'**alimentazione principale trifase** (o carichi trifase specifici) utilizzando **un TA per fase** e combinando le tre letture sulla dashboard tramite il campo `Grouping`.
+*EnergyMe Home* è fondamentalmente un dispositivo monofase, ma può monitorare un'**alimentazione principale trifase**, **carichi trifase specifici** e **circuiti bifase nordamericani 120/240 V** impostando il campo `Phase` su ciascun canale e combinando le letture sulla dashboard tramite il campo `Grouping`.
 
 ### B.1 Alimentazione principale trifase {#b1-three-phase-main-supply}
 
@@ -75,6 +75,55 @@ La dashboard mostrerà un'unica card "EV charger" con la potenza trifase totale 
 
 > **✅ SUGGERIMENTO: Nominare il gruppo**  
 > Usare un nome di gruppo pulito (es. `Oven`, `Heat pump`, `EV charger`) senza suffissi di fase; è quello che apparirà sulla dashboard. Metta il suffisso di fase solo nella `Label` di ciascun canale, in modo da poter comunque ispezionare le singole fasi se necessario.
+
+### B.3 Bifase nordamericano 120/240 V {#b3-north-american-120240-v-split-phase}
+
+Il servizio residenziale standard in Nord America è un sistema **bifase**: un trasformatore con presa centrale fornisce due "semifasi" da 120 V (L1 e L2) più un neutro. La maggior parte dei circuiti funziona fase-neutro a 120 V (illuminazione, prese); i grandi elettrodomestici (piano cottura elettrico, scaldabagno, asciugatrice, climatizzazione centralizzata, EV charger Livello 2) funzionano fase-fase a 240 V tra entrambe le semifasi.
+
+*EnergyMe Home* misura la tensione **fase-neutro** (≈120 V), quindi un TA su un circuito a 240 V sottostimerebbe per impostazione predefinita la potenza di un fattore due. Il firmware gestisce questo aspetto al Suo posto: selezioni **`240V (Split Phase)`** nel campo `Phase` del canale e verrà applicato automaticamente un **moltiplicatore di tensione ×2**.
+
+> **⚠ ATTENZIONE: L'alimentazione L e N del dispositivo stesso deve essere sempre cablata fase-neutro (≈120 V).**  
+>
+> L'impostazione `240V (Split Phase)` nel campo `Phase` **modifica unicamente il modo in cui viene interpretata la misurazione di corrente del TA di quel singolo canale**. **Non** modifica il modo in cui il dispositivo stesso viene alimentato né il modo in cui la tensione viene misurata internamente.
+>
+> - I fili **marrone (L)** e **blu (N)** del dispositivo devono sempre essere collegati tra **una semifase a 120 V e il Neutro**, esattamente come per un circuito a 120 V.
+> - Non cablare mai L e N del dispositivo tra le due semifasi a 240 V. L'alimentatore interno è certificato 100-240 V AC e non verrebbe danneggiato, ma il **riferimento di tensione utilizzato per calcolare la potenza su ogni canale** non corrisponderebbe più all'assunzione del firmware e **tutte le misurazioni sarebbero errate**.
+> - Questo vale indipendentemente da quanti canali siano impostati su `240V (Split Phase)`: il cablaggio di alimentazione del dispositivo è indipendente dall'impostazione `Phase` di ciascun canale.
+
+#### Quando usare ciascuna impostazione di Phase (Nord America) {#when-to-use-each-phase-setting-north-america}
+
+| Tipo di circuito | Su cosa è applicato il TA | Impostazione Phase |
+| --- | --- | --- |
+| Derivato a 120 V (una semifase, fase-neutro) | Una delle due semifasi del circuito a 120 V | `1` |
+| Derivato a 240 V (fase-fase, entrambe le semifasi) | Una delle due semifasi del circuito a 240 V | `240V (Split Phase)` |
+| Alimentazione principale, semifase singola | Una delle due semifasi principali | `1` |
+| Alimentazione principale, entrambe le semifasi separatamente | Un TA su ciascuna semifase, su canali separati | `1` su ciascuno |
+
+#### Hardware
+
+Per un derivato a 240 V (es. un'asciugatrice o un EV charger Livello 2):
+
+1. Prendere **una** pinza amperometrica.
+2. Applicarla attorno a **uno qualsiasi** dei due conduttori di linea del circuito a 240 V (L1 o L2). Non applicarla attorno al neutro, e mai attorno a entrambe le semifasi insieme.
+3. Chiudere la pinza finché non scatta.
+4. Inserire il jack da 3,5 mm in un canale libero del dispositivo.
+
+#### Software
+
+In **Channels** ([§4.5](02-setup.md#45-configure-each-channel)), impostare:
+
+| Campo | Valore |
+| --- | --- |
+| Label | es. `Dryer` o `EV charger` |
+| Phase | **`240V (Split Phase)`** |
+| Active | ☑ |
+| Grouping | Un gruppo per ogni elettrodomestico (il `Group N` predefinito va bene) |
+| Role | `Load` (oppure `Battery` / `Inverter` se applicabile) |
+
+> **ⓘ NOTA: Perché ×2 e non misurare direttamente la tensione?**  
+> Il trasformatore di tensione all'interno di *EnergyMe Home* è cablato tra Linea e Neutro, che su un servizio bifase nordamericano corrisponde a ≈120 V. Un circuito fase-fase a 240 V ha esattamente il doppio di quella tensione RMS, quindi moltiplicare la corrente per 2× i 120 V misurati fornisce la potenza corretta. Questa soluzione è preferibile a un riferimento di tensione aggiuntivo e funziona per qualsiasi servizio bifase standard.
+
+> **⚠ Non utilizzare `240V (Split Phase)` al di fuori dei sistemi bifase nordamericani.** È una scorciatoia numerica per la specifica topologia bifase 120/240 V e produrrebbe letture errate su un monofase europeo a 230 V o su qualsiasi sistema trifase.
 
 ---
 
