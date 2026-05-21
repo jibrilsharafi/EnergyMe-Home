@@ -4,7 +4,7 @@
 
 > *"Sie werden gleich Dinge entdecken, von denen Sie nie wussten, dass sie hinter Ihren Wänden geschehen."*
 
-Willkommen! In den nächsten 15 Minuten wird Ihr Zuhause aufhören, eine Blackbox zu sein. Sie werden zum ersten Mal genau sehen, wohin Ihre Energie fließt: welche Stromkreise sie in der Nacht verbrauchen, welche Geräte still und heimlich Ihr Portemonnaie leeren, welche Lichter Sie vor drei Jahren vergessen haben auszuschalten.
+Willkommen. In den nächsten 15 Minuten wird Ihr Zuhause aufhören, eine Blackbox zu sein. Sie werden zum ersten Mal genau sehen, wohin Ihre Energie fließt: welche Stromkreise sie in der Nacht verbrauchen, welche Geräte still und heimlich Ihr Portemonnaie leeren, welche Lichter Sie vor drei Jahren vergessen haben auszuschalten.
 
 Manche Nutzer stellen fest, dass ihr Kühlschrank mehr verbraucht als ihr Fernseher. Andere finden eine Phantomlast, die seit Jahren läuft. Einige entdecken, dass ihre Solaranlage weniger produziert als sie sollte. **Was auch immer Ihr Zuhause verbirgt, EnergyMe wird es enthüllen.**
 
