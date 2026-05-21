@@ -1,0 +1,35 @@
+name: Check manual translations
+
+# Verify that every translated manual file under manual/<lang>/ still
+# records the current commit SHA of its English source. Runs whenever a
+# file under manual/ changes.
+
+on:
+  push:
+    paths:
+      - "manual/**"
+  pull_request:
+    paths:
+      - "manual/**"
+  workflow_dispatch:
+
+jobs:
+  check-translations:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # Full history is required: check_translations.py calls
+          # `git log -1 --format=%H -- <file>` to find the most recent
+          # commit that touched each English source file.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Run translation drift check
+        run: python manual/check_translations.py

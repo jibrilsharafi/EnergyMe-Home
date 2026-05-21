@@ -76,6 +76,14 @@ Standard residential service in North America is a **split-phase** system: a cen
 
 *EnergyMe Home* measures the voltage **line-to-neutral** (≈120 V), so a CT on a 240 V circuit would by default underestimate the power by a factor of two. The firmware handles this for you: select **`240V (Split Phase)`** in the `Phase` field of the channel and a **×2 voltage multiplier** is applied automatically.
 
+> **⚠ WARNING: The device's own L and N power supply must always be wired line-to-neutral (≈120 V).**  
+>
+> The `240V (Split Phase)` setting in the `Phase` field **only changes how the current measurement of that one channel's CT is interpreted**. It does **not** change how the device itself is powered or how voltage is measured internally.
+>
+> - The device's **brown (L)** and **blue (N)** wires must always connect between **one 120 V leg and Neutral**, exactly as for a 120 V circuit.
+> - Never wire the device's L and N across the two legs at 240 V. The internal power supply is rated 100-240 V AC and would not be damaged, but the **voltage reference used to compute power on every channel** would no longer match the firmware's assumption and **all measurements would be wrong**.
+> - This applies regardless of how many channels are set to `240V (Split Phase)`: the device's power supply wiring is independent of the per-channel `Phase` setting.
+
 #### When to use each phase setting (North America)
 
 | Circuit type | What the CT is clamped on | Phase setting |
