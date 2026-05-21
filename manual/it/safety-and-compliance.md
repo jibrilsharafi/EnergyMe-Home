@@ -13,7 +13,6 @@ Per l'installazione e la configurazione pratica passo-passo, vedere il [Manuale 
 | **Società** | EnergyMe S.r.l. |
 | **Sede legale** | Via Plezzo 56, 20132 Milano (MI), Italy |
 | **P. IVA / Codice Fiscale** | IT14543830963 |
-| **Telefono** | +39 320 8765133 |
 | **Sito web** | <https://www.energyme.net> |
 | **Assistenza** | <support@energyme.net> |
 
