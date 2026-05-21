@@ -1,6 +1,6 @@
 <!-- translation
 source: README.md
-source-commit: eda785a
+source-commit: 0ade5f7
 translated: 2026-05-21
 -->
 
@@ -10,7 +10,7 @@ translated: 2026-05-21
 
 > *"Sta per scoprire cose che non sapeva stessero accadendo dietro le Sue pareti."*
 
-Benvenuto. Nei prossimi 15 minuti, la Sua casa smetterà di essere una scatola nera. Vedrà, per la prima volta, esattamente dove va a finire la Sua energia: quali circuiti la consumano di notte, quali elettrodomestici stanno silenziosamente svuotando il Suo portafoglio, quali luci ha dimenticato accese tre anni fa.
+Benvenuto! Nei prossimi 15 minuti, la Sua casa smetterà di essere una scatola nera. Vedrà, per la prima volta, esattamente dove va a finire la Sua energia: quali circuiti la consumano di notte, quali elettrodomestici stanno silenziosamente svuotando il Suo portafoglio, quali luci ha dimenticato accese tre anni fa.
 
 Alcuni utenti scoprono che il loro frigorifero consuma più della TV. Altri trovano un carico fantasma che funziona da anni. Qualcuno scopre che i propri pannelli solari producono meno di quanto dovrebbero. **Qualunque cosa la Sua casa stia nascondendo, EnergyMe sta per rivelarla.**
 

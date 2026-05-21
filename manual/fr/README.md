@@ -1,6 +1,6 @@
 <!-- translation
 source: README.md
-source-commit: eda785a
+source-commit: 0ade5f7
 translated: 2026-05-21
 -->
 
@@ -10,7 +10,7 @@ translated: 2026-05-21
 
 > *« Vous êtes sur le point de découvrir des choses dont vous ignoriez l'existence derrière vos murs. »*
 
-Bienvenue. Dans les 15 prochaines minutes, votre maison va cesser d'être une boîte noire. Vous allez voir, pour la première fois, exactement où va votre énergie : quels circuits la consomment pendant la nuit, quels appareils vident discrètement votre portefeuille, quelles lumières vous avez oubliées d'éteindre il y a trois ans.
+Bienvenue ! Dans les 15 prochaines minutes, votre maison va cesser d'être une boîte noire. Vous allez voir, pour la première fois, exactement où va votre énergie : quels circuits la consomment pendant la nuit, quels appareils vident discrètement votre portefeuille, quelles lumières vous avez oubliées d'éteindre il y a trois ans.
 
 Certains utilisateurs découvrent que leur frigo consomme plus que leur télévision. D'autres trouvent une charge fantôme qui tourne depuis des années. Quelques-uns découvrent que leurs panneaux solaires produisent moins qu'ils ne le devraient. **Quoi que votre maison cache, EnergyMe est sur le point de le révéler.**
 
