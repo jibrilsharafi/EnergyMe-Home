@@ -4,7 +4,7 @@
 
 > *"You're about to discover things you never knew were happening behind your walls."*
 
-Welcome. In the next 15 minutes, your home is going to stop being a black box. You're going to see, for the first time, exactly where your energy goes: which circuits eat it during the night, which appliances are quietly draining your wallet, which lights you forgot on three years ago.
+Welcome! In the next 15 minutes, your home is going to stop being a black box. You're going to see, for the first time, exactly where your energy goes: which circuits eat it during the night, which appliances are quietly draining your wallet, which lights you forgot on three years ago.
 
 Some users discover their fridge consumes more than their TV. Some find a phantom load that's been running for years. A few discover their solar panels are producing less than they should. **Whatever your home is hiding, EnergyMe is about to reveal it.**
 
