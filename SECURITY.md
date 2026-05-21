@@ -1,10 +1,20 @@
 # Security Policy
 
-  ## Reporting a Vulnerability
+## Supported Versions
 
-  Please report security issues privately to **<support@energyme.net>**.
+Support matrix by PCB and firmware version:
 
-  Do not open a public GitHub issue for security findings.
+| PCB Version | < 2.0 | 2.0+ |
+| --- | --- | --- |
+| 5.0 | Support only | :x: |
+| 6.0 | :x: | :white_check_mark: |
+| 6.1 | :x: | :white_check_mark: |
 
-  We aim to acknowledge reports within 5 business days and to release a
-  fix or mitigation within 90 days for high-severity issues.
+## Reporting a Vulnerability
+
+Please report security issues privately to **<support@energyme.net>**.
+
+Do not open a public GitHub issue for security findings.
+
+We aim to acknowledge reports within 5 business days and to release a
+fix or mitigation within 90 days for high-severity issues.
