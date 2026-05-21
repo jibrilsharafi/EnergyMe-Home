@@ -14,7 +14,6 @@ For the practical step-by-step installation and setup, see the [Installation Man
 | **Registered address** | Via Plezzo 56, 20132 Milano (MI), Italy |
 | **VAT / Codice Fiscale** | IT14543830963 |
 | **Phone** | +39 320 8765133 |
-| **Email** | <jibril.sharafi@energyme.net> |
 | **Website** | <https://www.energyme.net> |
 | **Support** | <support@energyme.net> |
 

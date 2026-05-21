@@ -20,7 +20,6 @@ Per l'installazione e la configurazione pratica passo-passo, vedere il [Manuale 
 | **Sede legale** | Via Plezzo 56, 20132 Milano (MI), Italy |
 | **P. IVA / Codice Fiscale** | IT14543830963 |
 | **Telefono** | +39 320 8765133 |
-| **Email** | <jibril.sharafi@energyme.net> |
 | **Sito web** | <https://www.energyme.net> |
 | **Assistenza** | <support@energyme.net> |
 

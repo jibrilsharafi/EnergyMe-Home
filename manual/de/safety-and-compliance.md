@@ -20,7 +20,6 @@ Für die praktische Schritt-für-Schritt-Installation und Einrichtung siehe das 
 | **Eingetragene Adresse** | Via Plezzo 56, 20132 Milano (MI), Italien |
 | **USt-IdNr. / Codice Fiscale** | IT14543830963 |
 | **Telefon** | +39 320 8765133 |
-| **E-Mail** | <jibril.sharafi@energyme.net> |
 | **Website** | <https://www.energyme.net> |
 | **Support** | <support@energyme.net> |
 
