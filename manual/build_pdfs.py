@@ -106,6 +106,7 @@ def build(lang_key: str) -> Path:
         "-o", str(out),
         "--from=gfm+yaml_metadata_block+raw_html",
         "--pdf-engine=xelatex",
+        "--resource-path", str(src_dir),
         "--toc",
         "--toc-depth=2",
         "-V", f"title={cfg['title']}",

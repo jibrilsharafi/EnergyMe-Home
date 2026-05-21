@@ -53,8 +53,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             pandoc \
             librsvg2-bin \
+            lmodern \
             texlive-xetex \
             texlive-fonts-recommended \
+            texlive-fonts-extra \
             texlive-latex-recommended \
             texlive-latex-extra \
             texlive-lang-european
