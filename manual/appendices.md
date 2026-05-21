@@ -16,9 +16,9 @@ Fill in during installation (where known), take a photo before closing the panel
 
 ---
 
-## Appendix B: Three-phase configuration
+## Appendix B: Multi-phase configurations
 
-*EnergyMe Home* is fundamentally a single-phase device, but it can monitor a **three-phase main supply** (or specific three-phase loads) by using **one CT per phase** and combining the three readings on the dashboard via the `Grouping` field.
+*EnergyMe Home* is fundamentally a single-phase device, but it can monitor a **three-phase main supply**, **specific three-phase loads**, and **North American 120/240 V split-phase circuits** by setting the `Phase` field on each channel and combining readings on the dashboard via the `Grouping` field.
 
 ### B.1 Three-phase main supply
 
@@ -69,6 +69,47 @@ The dashboard will show a single "EV charger" card with the total three-phase po
 
 > **✅ TIP: Naming the group**  
 > Use a clean group name (e.g., `Oven`, `Heat pump`, `EV charger`) without phase suffixes; that's what will appear on the dashboard. Put the phase suffix only in the `Label` of each channel, so you can still inspect individual phases if needed.
+
+### B.3 North American 120/240 V split-phase
+
+Standard residential service in North America is a **split-phase** system: a centre-tapped transformer provides two 120 V "legs" (L1 and L2) plus a neutral. Most circuits run line-to-neutral at 120 V (lighting, outlets); large appliances (electric range, water heater, dryer, central AC, Level 2 EV charger) run line-to-line at 240 V across both legs.
+
+*EnergyMe Home* measures the voltage **line-to-neutral** (≈120 V), so a CT on a 240 V circuit would by default underestimate the power by a factor of two. The firmware handles this for you: select **`240V (Split Phase)`** in the `Phase` field of the channel and a **×2 voltage multiplier** is applied automatically.
+
+#### When to use each phase setting (North America)
+
+| Circuit type | What the CT is clamped on | Phase setting |
+| --- | --- | --- |
+| 120 V branch (one leg, line-to-neutral) | Either leg of the 120 V circuit | `1` |
+| 240 V branch (line-to-line, both legs) | Either leg of the 240 V circuit | `240V (Split Phase)` |
+| Main supply, single leg | One of the two main legs | `1` |
+| Main supply, both legs separately | One CT on each leg, on separate channels | `1` on each |
+
+#### Hardware
+
+For a 240 V branch (e.g., a dryer or Level 2 EV charger):
+
+1. Take **one** CT clamp.
+2. Clamp it around **either** of the two line conductors of the 240 V circuit (L1 or L2). Do not clamp around the neutral, and never around both legs together.
+3. Close the clamp until it clicks.
+4. Plug the 3.5 mm jack into a free channel on the device.
+
+#### Software
+
+In **Channels** ([§4.5](02-setup.md#45-configure-each-channel)), set:
+
+| Field | Value |
+| --- | --- |
+| Label | e.g., `Dryer` or `EV charger` |
+| Phase | **`240V (Split Phase)`** |
+| Active | ☑ |
+| Grouping | One group per appliance (default `Group N` is fine) |
+| Role | `Load` (or `Battery` / `Inverter` if applicable) |
+
+> **ⓘ NOTE: Why ×2 and not measure the voltage directly?**  
+> The voltage transformer inside *EnergyMe Home* is wired between Line and Neutral, which on a North American split-phase service is ≈120 V. A 240 V line-to-line circuit has exactly twice that RMS voltage, so multiplying current by 2× the measured 120 V gives the correct power. This is preferable to running an additional voltage reference and works for any standard split-phase service.
+
+> **⚠ Do not use `240V (Split Phase)` outside North American split-phase systems.** It is a numerical shortcut for the specific 120/240 V split-phase topology and would produce wrong readings on a European 230 V single-phase or any three-phase system.
 
 ---
 

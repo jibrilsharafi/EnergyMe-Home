@@ -72,7 +72,7 @@ Each channel has the following fields:
 | Field | What it means |
 | --- | --- |
 | **Label** | A free-text name (e.g., "Grid", "Kitchen", "EV charger"). It's the name that will appear on the dashboard |
-| **Phase** | The phase the CT is clamped on. Use `1` for single-phase systems. For three-phase, see [Appendix B](appendices.md#appendix-b-three-phase-configuration) |
+| **Phase** | The AC phase the CT is clamped on. Use `1` for European single-phase and for standard 120 V North American loads. Use `2` or `3` for the other two phases of a three-phase system (see [Appendix B](appendices.md#appendix-b-three-phase-configuration)). Use **`240V (Split Phase)`** for a North American 240 V circuit that spans both legs L1-L2 (see [Appendix B.3](appendices.md#b3-north-american-120240-v-split-phase)); the firmware automatically applies a 2× voltage multiplier because the voltage reference is line-to-neutral (≈120 V) while the circuit is line-to-line (240 V). |
 | **Reverse** | Flips the sign of a channel. Normally you won't need this: EnergyMe auto-detects reversed CTs on first activation and corrects them automatically. Manual toggle is available if needed (e.g., a channel role changes). Flips the sign instantly, no need to reopen the panel |
 | **Active** | Enables the channel. Untick for unused channels |
 | **Grouping** | Channels sharing the same group label are combined into one card on the home dashboard. Use this for multi-phase loads: set all three phase CTs of your oven to "Oven" and the dashboard will show total power for the whole appliance |
