@@ -47,19 +47,13 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Install pandoc, xelatex, librsvg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            pandoc \
-            librsvg2-bin \
-            lmodern \
-            texlive-xetex \
-            texlive-fonts-recommended \
-            texlive-fonts-extra \
-            texlive-latex-recommended \
-            texlive-latex-extra \
-            texlive-lang-european
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install md-to-pdf
+        run: npm install -g md-to-pdf
 
       - name: Build PDFs
         run: python manual/build_pdfs.py
