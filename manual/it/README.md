@@ -1,5 +1,7 @@
 # EnergyMe Home: Manuale di installazione
 
+*Revisione del manuale {{MANUAL_VERSION}} - {{MANUAL_DATE}}*
+
 ## Prima di iniziare: leggere questa pagina
 
 > *"Sta per scoprire cose che non sapeva stessero accadendo dietro le Sue pareti."*

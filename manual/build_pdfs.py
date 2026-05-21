@@ -27,6 +27,14 @@ MANUAL_DIR = Path(__file__).resolve().parent
 DIST_DIR = MANUAL_DIR / "dist"
 STYLESHEET = MANUAL_DIR / "pdf.css"
 
+# Single source of truth for the manual's document revision. Bump these
+# whenever the manual content changes in a way users/regulators should see.
+# The values are substituted into `{{MANUAL_VERSION}}` / `{{MANUAL_DATE}}`
+# placeholders in every language's README.md cover and
+# safety-and-compliance.md product-identification table.
+MANUAL_VERSION = "1.0"
+MANUAL_DATE = "2026-05-21"
+
 CHAPTERS = [
     "README.md",
     "01-installation.md",
@@ -64,13 +72,19 @@ def _rewrite_links(md: str) -> str:
     return _CROSS_FILE_LINK.sub(repl, md)
 
 
+def _substitute_version(md: str) -> str:
+    return md.replace("{{MANUAL_VERSION}}", MANUAL_VERSION).replace(
+        "{{MANUAL_DATE}}", MANUAL_DATE
+    )
+
+
 def _merge(src_dir: Path) -> str:
     parts: list[str] = []
     for ch in CHAPTERS:
         path = src_dir / ch
         if not path.is_file():
             raise SystemExit(f"missing chapter: {path}")
-        parts.append(_rewrite_links(path.read_text(encoding="utf-8")))
+        parts.append(_substitute_version(_rewrite_links(path.read_text(encoding="utf-8"))))
     return PAGEBREAK.join(parts)
 
 

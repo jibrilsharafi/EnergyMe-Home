@@ -27,6 +27,7 @@ Für die praktische Schritt-für-Schritt-Installation und Einrichtung siehe das 
 | **Produktname** | EnergyMe Home |
 | **Produktcode** | EM-HOME-1.0-KIT-STANDARD |
 | **Hardware-Revision** | v6.1 |
+| **Dokumentenrevision** | {{MANUAL_VERSION}} ({{MANUAL_DATE}}) |
 | **Open-Source-Zertifizierung** | OSHWA `IT000025` |
 
 Die Seriennummer, Hardware-Revision und Fertigungsdaten sind auf dem Etikett im Inneren des Gerätegehäuses aufgedruckt. Notieren Sie diese, bevor Sie das Produkt installieren; sie sind für Support-Anfragen und Garantieansprüche erforderlich.
