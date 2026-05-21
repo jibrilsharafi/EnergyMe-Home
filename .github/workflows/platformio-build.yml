@@ -3,8 +3,14 @@ name: PlatformIO Build
 on:
   push:
     branches: [ development, main ]
+    paths:
+      - 'source/**'
+      - '.github/workflows/platformio-build.yml'
   pull_request:
     branches: [ development, main ]
+    paths:
+      - 'source/**'
+      - '.github/workflows/platformio-build.yml'
 
 jobs:
   # Job 1: Validation build on PRs (quick feedback)
