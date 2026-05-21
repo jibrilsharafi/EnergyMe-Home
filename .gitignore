@@ -48,3 +48,7 @@ _codeql_detected_source_root
 
 # AI stuff
 .claude
+
+# Manual PDF build artifacts
+manual/dist/
+manual/**/.merged-*.md
