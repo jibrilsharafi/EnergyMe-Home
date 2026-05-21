@@ -79,7 +79,7 @@ jobs:
         cp .pio/build/${{ steps.envs.outputs.ENV1 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV1 }}/bootloader.bin
 
     - name: Upload artifacts (${{ steps.envs.outputs.ENV1 }})
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v7
       with:
         name: firmware-${{ steps.envs.outputs.ENV1 }}-check-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
         path: source/artifacts/${{ steps.envs.outputs.ENV1 }}/
@@ -151,7 +151,7 @@ jobs:
         cp .pio/build/${{ steps.envs.outputs.ENV1 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV1 }}/bootloader.bin
 
     - name: Upload firmware artifact (${{ steps.envs.outputs.ENV1 }})
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v7
       with:
         name: firmware-${{ steps.envs.outputs.ENV1 }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
         path: source/artifacts/${{ steps.envs.outputs.ENV1 }}/
