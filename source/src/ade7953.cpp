@@ -30,6 +30,7 @@ namespace Ade7953
     static float _channelDeficit[MAX_CHANNEL_COUNT] = {};    // Deficit counter for scheduling
     static float _prevActivePower[MAX_CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
     static float _powerVariability[MAX_CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
+    static uint8_t _wdrrCursor = 0;                          // Round-robin tie-break cursor for argmax
     static float _gridFrequency = 50.0f;
 
     // Set by the meter task when an auto-polarity flip flips the persisted reverse flag.
@@ -4569,20 +4570,29 @@ namespace Ade7953
             if (claim) return i;
         }
 
-        // Select the channel with the highest deficit
+        // Select the channel with the highest deficit, with a round-robin
+        // tie-break (iteration starts at _wdrrCursor + 1 wrapping back to 1).
+        // Without the rotation, when every active channel sits at the same
+        // deficit (e.g., a multi-channel discard storm or post-watchdog reset),
+        // the lowest-index active channel monopolises the scheduler. The cursor
+        // moves to the winning channel so the next call starts iteration one
+        // past it.
         uint8_t bestChannel = INVALID_CHANNEL;
         float bestDeficit = -1e9f; // Use a very large negative value to ensure any active channel is selectable
 
-        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
+        uint8_t n = globalHwProfile->totalChannelCount;
+        for (uint8_t offset = 1; offset < n; offset++) {
+            uint8_t i = ((_wdrrCursor + offset - 1) % (n - 1)) + 1;
             if (_channelData[i].active && _channelDeficit[i] > bestDeficit) {
                 bestDeficit = _channelDeficit[i];
                 bestChannel = i;
             }
         }
 
-        // Decrement the selected channel's deficit
+        // Decrement the selected channel's deficit and advance the cursor.
         if (bestChannel != INVALID_CHANNEL) {
             _channelDeficit[bestChannel] -= 1.0f;
+            _wdrrCursor = bestChannel;
         }
 
         return bestChannel;
