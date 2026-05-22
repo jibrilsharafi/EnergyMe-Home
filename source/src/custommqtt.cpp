@@ -19,7 +19,6 @@ namespace CustomMqtt
     static bool _isSetupDone = false;
     static uint32_t _currentMqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
-    static uint32_t _currentFailedMessagePublishAttempt = 0;
 
     // Custom MQTT configuration
     static CustomMqttConfiguration _configuration;
@@ -54,7 +53,6 @@ namespace CustomMqtt
     static void _customMqttTask(void* parameter);
     static void _startTask();
     static void _stopTask();
-    static void _disable(const char* reason); // Needed for halting the functionality if we have too many failure
 
     // Utils
     const char* _getMqttStateReason(int32_t state);
@@ -126,7 +124,6 @@ namespace CustomMqtt
         // Reset counter to start fresh
         _nextMqttConnectionAttemptMillis = 0; // Immediately attempt to connect
         _currentMqttConnectionAttempt = 0;
-        _currentFailedMessagePublishAttempt = 0;
 
         _saveConfigurationToPreferences(config);
 
@@ -414,20 +411,6 @@ namespace CustomMqtt
         }
     }
 
-    static void _disable(const char* reason) {
-        if (!acquireMutex(&_configMutex)) return;
-        _configuration.enabled = false;
-        _saveConfigurationToPreferences(_configuration);
-        releaseMutex(&_configMutex);
-
-        snprintf(_status, sizeof(_status), "Disabled due to: %s", reason);
-        _statusTimestampUnix = CustomTime::getUnixTime();
-
-        // Not calling _stopTask() here to avoid deadlock
-
-        LOG_WARNING("Custom MQTT disabled due to: %s", reason);
-    }
-
     static bool _connectMqtt(const CustomMqttConfiguration &config)
     {
         LOG_DEBUG("Attempt to connect to Custom MQTT (attempt %d)...", _currentMqttConnectionAttempt + 1);
@@ -471,20 +454,6 @@ namespace CustomMqtt
             _currentMqttConnectionAttempt++;
             int32_t currentState = _mqttClient.state();
             const char* _reason = _getMqttStateReason(currentState);
-
-            // Check for specific errors that warrant disabling Custom MQTT
-            if (currentState == MQTT_CONNECT_BAD_CREDENTIALS || currentState == MQTT_CONNECT_UNAUTHORIZED) {
-                 LOG_ERROR("Custom MQTT connection failed due to authorization/credentials error (%d). Disabling Custom MQTT.",
-                    currentState);
-                _disable("Authorization/credentials error");
-                return false;
-            }
-
-            if (_currentMqttConnectionAttempt >= MQTT_CUSTOM_MAX_RECONNECT_ATTEMPTS) {
-                LOG_ERROR("Custom MQTT connection failed after %lu attempts. Disabling Custom MQTT.", _currentMqttConnectionAttempt);
-                _disable("Max reconnect attempts reached");
-                return false;
-            }
 
             // Calculate next attempt time using exponential backoff
             uint64_t _backoffDelay = calculateExponentialBackoff(_currentMqttConnectionAttempt, MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL, MQTT_CUSTOM_MAX_RECONNECT_INTERVAL, MQTT_CUSTOM_RECONNECT_MULTIPLIER);
@@ -536,10 +505,6 @@ namespace CustomMqtt
         if (!_mqttClient.beginPublish(topic, payloadLength, false)) {
             LOG_WARNING("Failed to begin streaming publish. MQTT client state: %s", _getMqttStateReason(_mqttClient.state()));
             statistics.customMqttMessagesPublishedError++;
-            _currentFailedMessagePublishAttempt++;
-            if (_currentFailedMessagePublishAttempt > MQTT_CUSTOM_MAX_FAILED_MESSAGE_PUBLISH_ATTEMPTS) {
-                _disable("Max failed message publish attempts reached");
-            }
             return false;
         }
 
@@ -551,15 +516,10 @@ namespace CustomMqtt
         if (bytesWritten != payloadLength) {
             LOG_WARNING("Streaming publish size mismatch: expected %zu bytes, wrote %zu bytes", payloadLength, bytesWritten);
             statistics.customMqttMessagesPublishedError++;
-            _currentFailedMessagePublishAttempt++;
-            if (_currentFailedMessagePublishAttempt > MQTT_CUSTOM_MAX_FAILED_MESSAGE_PUBLISH_ATTEMPTS) {
-                _disable("Max failed message publish attempts reached");
-            }
             return false;
         }
 
         // success
-        _currentFailedMessagePublishAttempt = 0;
         statistics.customMqttMessagesPublished++;
         LOG_DEBUG("Streaming publish successful: %zu bytes written to topic '%s'", bytesWritten, topic);
         return true;
