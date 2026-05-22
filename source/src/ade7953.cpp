@@ -760,9 +760,10 @@ namespace Ade7953
             return false;
         }
 
-        // Snapshot old role and active state before applying new data
+        // Snapshot old role, active state, and reverse flag before applying new data
         ChannelRole oldRole = _channelData[channelIndex].role;
         bool wasInactive = !_channelData[channelIndex].active;
+        bool oldReverse = _channelData[channelIndex].reverse;
 
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
@@ -796,6 +797,13 @@ namespace Ade7953
             // can legitimately differ between roles; let the next reading re-validate).
             if (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role) {
                 _channelData[channelIndex]._pendingPolarityCheck = true;
+            }
+            // Fix for issue #149: arm priority read when the user flips the reverse
+            // flag via API. Intent is "read me now with the corrected sign" - without
+            // this, the corrected reading lands on the next normal rotation slot,
+            // which can be up to 15 s away on a heavily loaded scheduler.
+            if (channelIndex > 0 && oldReverse != _channelData[channelIndex].reverse) {
+                _channelData[channelIndex]._pendingPriorityRead = true;
             }
         }
 
