@@ -4514,21 +4514,35 @@ namespace Ade7953
         // permanently misclamped CT): user gets one warning per interval, not a
         // torrent. The deficit reset prevents the channel from immediately
         // re-winning the argmax on the next call.
+        //
+        // Hold _meterValuesMutex around the read and the write: a 32-bit ESP32
+        // cannot atomically store a uint64_t, so a concurrent setChannelData
+        // baseline write from the web task could be torn-read here.
         uint64_t nowMillis = millis64();
-        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
-            if (!_channelData[i].active) continue;
-            uint64_t lastMs = _meterValues[i].lastMillis;
-            if (lastMs == 0) continue; // never baselined - priority slot handles it
-            uint64_t gap = nowMillis - lastMs;
-            if (gap > CHANNEL_MAX_GAP_MS) {
-                LOG_WARNING(
-                    "%s (%u): scheduler starvation, %llu ms since last read; force-picking",
-                    _channelData[i].label, i, gap
-                );
-                _channelDeficit[i] = 0.0f;
-                _meterValues[i].lastMillis = nowMillis;
-                return i;
+        uint8_t starvedChannel = INVALID_CHANNEL;
+        uint64_t starvedGap = 0;
+        if (acquireMutex(&_meterValuesMutex)) {
+            for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
+                if (!_channelData[i].active) continue;
+                uint64_t lastMs = _meterValues[i].lastMillis;
+                if (lastMs == 0) continue; // never baselined - priority slot handles it
+                uint64_t gap = nowMillis - lastMs;
+                if (gap > CHANNEL_MAX_GAP_MS) {
+                    starvedChannel = i;
+                    starvedGap = gap;
+                    _meterValues[i].lastMillis = nowMillis;
+                    break;
+                }
             }
+            releaseMutex(&_meterValuesMutex);
+        }
+        if (starvedChannel != INVALID_CHANNEL) {
+            LOG_WARNING(
+                "%s (%u): scheduler starvation, %llu ms since last read; force-picking",
+                _channelData[starvedChannel].label, starvedChannel, starvedGap
+            );
+            _channelDeficit[starvedChannel] = 0.0f;
+            return starvedChannel;
         }
 
         // Add each channel's weight to its deficit. Done BEFORE the priority-claim
