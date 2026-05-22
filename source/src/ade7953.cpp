@@ -1838,7 +1838,19 @@ namespace Ade7953
             }
             
             // Process current channel (if active)
-            if (_currentChannel != INVALID_CHANNEL) _processChannelReading(_currentChannel, linecycUnix);
+            bool readOk = true;
+            if (_currentChannel != INVALID_CHANNEL) {
+                readOk = _processChannelReading(_currentChannel, linecycUnix);
+            }
+
+            // Fix for issue #149: refund the WDRR deficit decremented at selection
+            // time when the reading was actually discarded. Without this, a channel
+            // stuck in a discard loop drifts ever-more-negative in the deficit array
+            // and starves out of the scheduler. Channel 0 is not in the rotation, so
+            // skip it. Matches the existing mutex-free access pattern on _channelDeficit[].
+            if (!readOk && _currentChannel != INVALID_CHANNEL && _currentChannel > 0) {
+                _channelDeficit[_currentChannel] += 1.0f;
+            }
 
             // Thanks to the linecyc approach, the data in the ADE7953 is "frozen"
             // until the next linecyc interrupt is received, which allows us to switch to the
