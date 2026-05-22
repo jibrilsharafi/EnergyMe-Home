@@ -60,7 +60,6 @@ namespace InfluxDbClient
     static void _influxDbTask(void* parameter);
     static void _startTask();
     static void _stopTask();
-    static void _disable(const char* reason);
 
     // Public API functions
     // =========================================================
@@ -469,20 +468,6 @@ namespace InfluxDbClient
         }
     }
 
-    static void _disable(const char* reason) {
-        if (!acquireMutex(&_configMutex)) return;
-        _configuration.enabled = false;
-        _saveConfigurationToPreferences(_configuration);
-        releaseMutex(&_configMutex);
-
-        snprintf(_status, sizeof(_status), "Disabled due to: %s", reason);
-        _statusTimestampUnix = CustomTime::getUnixTime();
-
-        // Not calling _stopTask() here to avoid deadlock
-
-        LOG_WARNING("InfluxDB disabled due to: %s", reason);
-    }
-
     static void _setInfluxFullUrl(const InfluxDbConfiguration &config) {
         char baseUrl[URL_BUFFER_SIZE + 15]; // Extra space for "http(s)://", server, and port
 
@@ -671,26 +656,13 @@ namespace InfluxDbClient
             statistics.influxdbUploadCountError++;
             _currentSendAttempt++;
 
-            // Check for specific errors that warrant disabling InfluxDB
+            // Log auth errors loudly but keep retrying - server config reload, token rotation
+            // and transient ACL hiccups are recoverable; permanently disabling forces the user
+            // to manually re-enable and was the source of #148
             if (httpCode == HTTP_CODE_UNAUTHORIZED || httpCode == HTTP_CODE_FORBIDDEN) {
-                LOG_ERROR("InfluxDB send failed due to authorization error (%ld - %s). Disabling InfluxDB.", httpCode, httpStatus);
-                _disable("Authorization error");
-                free(payload);
-                free(lineProtocol);
-                http.end();
-                return;
+                LOG_ERROR("InfluxDB send failed due to authorization error (%ld - %s)", httpCode, httpStatus);
             }
-            
-            // Check if we've exceeded the maximum number of failures
-            if (_currentSendAttempt >= INFLUXDB_MAX_CONSECUTIVE_FAILURES) {
-                LOG_ERROR("InfluxDB send failed %u consecutive times. Disabling InfluxDB.", _currentSendAttempt);
-                _disable("Max consecutive failures reached");
-                free(payload);
-                free(lineProtocol);
-                http.end();
-                return;
-            }
-            
+
             // Calculate next attempt time using exponential backoff
             uint64_t backoffDelay = calculateExponentialBackoff(_currentSendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
             _nextSendAttemptMillis = millis64() + backoffDelay;
