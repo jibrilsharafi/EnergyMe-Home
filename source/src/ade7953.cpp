@@ -4430,11 +4430,16 @@ namespace Ade7953
         float totalAbsPower = 0.0f;
         float totalVariability = 0.0f;
 
-        // Sum totals across active multiplexed channels (skip channel 0)
+        // Sum totals across active multiplexed channels (skip channel 0).
+        // NaN guards: a NaN reading must not poison the totals - it would
+        // make every powerScore NaN, propagating into _channelWeight[] and
+        // breaking argmax in _findNextActiveChannel.
         for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (_channelData[i].active) {
-                totalAbsPower += fabsf(_meterValues[i].activePower);
-                totalVariability += _powerVariability[i];
+                float ap = _meterValues[i].activePower;
+                float pv = _powerVariability[i];
+                if (!isnan(ap)) totalAbsPower += fabsf(ap);
+                if (!isnan(pv)) totalVariability += pv;
             }
         }
 
@@ -4447,12 +4452,14 @@ namespace Ade7953
 
             float powerScore = 0.0f;
             if (totalAbsPower > 0.0f) {
-                powerScore = fabsf(_meterValues[i].activePower) / totalAbsPower;
+                float ap = _meterValues[i].activePower;
+                if (!isnan(ap)) powerScore = fabsf(ap) / totalAbsPower;
             }
 
             float variabilityScore = 0.0f;
             if (totalVariability > 0.0f) {
-                variabilityScore = _powerVariability[i] / totalVariability;
+                float pv = _powerVariability[i];
+                if (!isnan(pv)) variabilityScore = pv / totalVariability;
             }
 
             _channelWeight[i] = WEIGHT_POWER_SHARE * powerScore
@@ -4482,12 +4489,18 @@ namespace Ade7953
         // updated in this round (fix for issue #149 - previously the priority
         // branch returned early and skipped the gain phase entirely, leaving the
         // claiming channel one round behind in the WDRR accounting).
+        // NaN guard + symmetric clamp keeps the deficit array in a sane range even
+        // in pathological cases (NaN injection from a broken read, weight-table
+        // shock from a sudden role change, OTA-induced timing jumps).
         for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (_channelData[i].active) {
                 _channelDeficit[i] += _channelWeight[i];
             } else {
                 _channelDeficit[i] = 0.0f;
             }
+            if (isnan(_channelDeficit[i])) _channelDeficit[i] = 0.0f;
+            if (_channelDeficit[i] > MAX_CHANNEL_DEFICIT_BOUND) _channelDeficit[i] = MAX_CHANNEL_DEFICIT_BOUND;
+            else if (_channelDeficit[i] < -MAX_CHANNEL_DEFICIT_BOUND) _channelDeficit[i] = -MAX_CHANNEL_DEFICIT_BOUND;
         }
 
         // One-shot priority override: a freshly activated channel jumps the WDRR queue
