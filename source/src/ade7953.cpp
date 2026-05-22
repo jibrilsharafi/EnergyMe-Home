@@ -807,9 +807,26 @@ namespace Ade7953
             }
         }
 
+        // Capture the post-write active state for use after we release the
+        // channel mutex (we can't hold both _channelDataMutex and
+        // _meterValuesMutex at once without introducing a new lock order).
+        bool didActivate = (channelIndex > 0 && wasInactive && _channelData[channelIndex].active);
+
         _recalculateWeights();
 
         releaseMutex(&_channelDataMutex);
+
+        // Baseline _meterValues[i].lastMillis on inactive->active so the
+        // starvation watchdog has a meaningful zero point. Without this, a
+        // newly-activated channel whose very first read fails (e.g., CT
+        // wired backwards at boot) would have lastMillis=0 forever and the
+        // watchdog would skip it.
+        if (didActivate) {
+            if (acquireMutex(&_meterValuesMutex)) {
+                _meterValues[channelIndex].lastMillis = millis64();
+                releaseMutex(&_meterValuesMutex);
+            }
+        }
 
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
@@ -4483,6 +4500,35 @@ namespace Ade7953
      */
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
         (void)currentChannel; // No longer needed for state tracking
+
+        // Starvation watchdog (fix for issue #149): hard upper bound on the time
+        // between successful reads for any active mux channel. If a channel goes
+        // CHANNEL_MAX_GAP_MS without lastMillis advancing - whether because the
+        // WDRR weights are skewed, the channel is in a discard loop, or the meter
+        // task missed cycles during OTA - force-pick it now.
+        //
+        // After firing, we set lastMillis = now and reset the deficit. The
+        // lastMillis reset throttles the watchdog to one fire per
+        // CHANNEL_MAX_GAP_MS even when the read continues to fail (e.g., a
+        // permanently misclamped CT): user gets one warning per interval, not a
+        // torrent. The deficit reset prevents the channel from immediately
+        // re-winning the argmax on the next call.
+        uint64_t nowMillis = millis64();
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
+            if (!_channelData[i].active) continue;
+            uint64_t lastMs = _meterValues[i].lastMillis;
+            if (lastMs == 0) continue; // never baselined - priority slot handles it
+            uint64_t gap = nowMillis - lastMs;
+            if (gap > CHANNEL_MAX_GAP_MS) {
+                LOG_WARNING(
+                    "%s (%u): scheduler starvation, %llu ms since last read; force-picking",
+                    _channelData[i].label, i, gap
+                );
+                _channelDeficit[i] = 0.0f;
+                _meterValues[i].lastMillis = nowMillis;
+                return i;
+            }
+        }
 
         // Add each channel's weight to its deficit. Done BEFORE the priority-claim
         // loop so that a channel taking the priority slot still has its deficit
