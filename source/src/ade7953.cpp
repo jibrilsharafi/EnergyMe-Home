@@ -4469,11 +4469,26 @@ namespace Ade7953
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
         (void)currentChannel; // No longer needed for state tracking
 
+        // Add each channel's weight to its deficit. Done BEFORE the priority-claim
+        // loop so that a channel taking the priority slot still has its deficit
+        // updated in this round (fix for issue #149 - previously the priority
+        // branch returned early and skipped the gain phase entirely, leaving the
+        // claiming channel one round behind in the WDRR accounting).
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
+            if (_channelData[i].active) {
+                _channelDeficit[i] += _channelWeight[i];
+            } else {
+                _channelDeficit[i] = 0.0f;
+            }
+        }
+
         // One-shot priority override: a freshly activated channel jumps the WDRR queue
         // for exactly one read so the user gets immediate data (and so the auto-polarity
         // check runs without waiting for the channel to win a normal slot). Take
         // _channelDataMutex for the test-and-clear so a concurrent re-arm from
         // setChannelData / the polarity check cannot be lost between read and write.
+        // Priority pick is a freebie: no deficit decrement, since the channel has
+        // not "consumed" a normal scheduling slot.
         for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (!_channelData[i].active) continue;
             bool claim = false;
@@ -4485,15 +4500,6 @@ namespace Ade7953
                 releaseMutex(&_channelDataMutex);
             }
             if (claim) return i;
-        }
-
-        // Add each channel's weight to its deficit
-        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
-            if (_channelData[i].active) {
-                _channelDeficit[i] += _channelWeight[i];
-            } else {
-                _channelDeficit[i] = 0.0f;
-            }
         }
 
         // Select the channel with the highest deficit
