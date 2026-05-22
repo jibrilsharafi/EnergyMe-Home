@@ -4537,7 +4537,9 @@ namespace Ade7953
             releaseMutex(&_meterValuesMutex);
         }
         if (starvedChannel != INVALID_CHANNEL) {
-            LOG_WARNING(
+            // This might happen in cases of high-value loads in some channels
+            // with static 0W channels, so it is not an error per se (thus DEBUG level)
+            LOG_DEBUG(
                 "%s (%u): scheduler starvation, %llu ms since last read; force-picking",
                 _channelData[starvedChannel].label, starvedChannel, starvedGap
             );
