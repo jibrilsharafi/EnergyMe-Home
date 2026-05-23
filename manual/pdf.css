@@ -18,6 +18,19 @@ html, body {
 h1 { font-size: 22pt; margin-top: 1.2em; }
 
 .page-break { page-break-after: always; }
+
+.cover {
+  height: 92vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  page-break-after: always;
+}
+.cover img { width: 60%; max-width: 14cm; height: auto; }
+.cover .cover-sub { margin-top: 1.2em; font-size: 14pt; color: #333; }
+.cover .cover-meta { margin-top: 0.4em; font-size: 10.5pt; color: #666; }
 h2 { font-size: 15pt; margin-top: 1.4em; border-bottom: 1px solid #ddd; padding-bottom: 0.2em; }
 h3 { font-size: 12pt; margin-top: 1.2em; }
 h4 { font-size: 11pt; }

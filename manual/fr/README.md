@@ -1,3 +1,9 @@
+<div class="cover">
+  <img src="../assets/logo_horizontal.png" alt="EnergyMe">
+  <div class="cover-sub">Manuel d'installation</div>
+  <div class="cover-meta">Révision {{MANUAL_VERSION}} - {{MANUAL_DATE}}</div>
+</div>
+
 # EnergyMe Home : Manuel d'installation
 
 *Révision du manuel {{MANUAL_VERSION}} - {{MANUAL_DATE}}*
