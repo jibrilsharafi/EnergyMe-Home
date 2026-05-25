@@ -225,8 +225,8 @@ FC03/FC04 function codes, register mapping for system info and measurements.
 
 ## Security
 
-**Authentication:**  
-Token-based sessions with automatic expiration, BCrypt password hashing, HTTP-only cookies.
+**Authentication:**
+HTTP Digest Authentication (RFC 7616) via ESPAsyncWebServer. Password stored in NVS, with length validation. Local network only.
 
 **Default Credentials:**  
 Username: `admin` | Password: `energyme`

@@ -1,0 +1,67 @@
+name: Manual checks and PDF build
+
+# Verify that every translated manual file under manual/<lang>/ is still in
+# sync with its English source, then build the per-language PDFs and upload
+# them as workflow artifacts. Runs whenever a file under manual/ changes.
+
+on:
+  push:
+    paths:
+      - "manual/**"
+  pull_request:
+    paths:
+      - "manual/**"
+  workflow_dispatch:
+
+jobs:
+  check-translations:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          # Full history is required: check_translations.py calls
+          # `git log -1 --format=%cI -- <file>` to find the most recent
+          # commit timestamp that touched each source/translation pair.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Run translation drift check
+        run: python manual/check_translations.py
+
+  build-pdfs:
+    needs: check-translations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install md-to-pdf
+        run: npm install -g md-to-pdf
+
+      - name: Build PDFs
+        run: python manual/build_pdfs.py
+
+      - name: Upload PDF artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: energyme-home-manual-pdfs
+          path: manual/dist/*.pdf
+          if-no-files-found: error
+          retention-days: 90

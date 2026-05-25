@@ -20,7 +20,6 @@
 #define UDP_LOG_SERVERITY_FACILITY 16 // Standard syslog facility for local0.info
 #define UDP_LOG_PORT 514 // Standard syslog port
 #define UDP_LOG_BUFFER_SIZE 1024 // Smaller buffer for UDP packets (not critical, but should be enough for most messages). Increased thanks to PSRAM
-#define DEFAULT_UDP_LOG_DESTINATION_IP "239.255.255.250" // Multicast IP for UDP logging
 
 #define LOG_QUEUE_SIZE (512 * 1024) // Callback queue size in bytes (length will be computed based on this). Can be set high thanks to PSRAM
 #define LOG_ESPVPRINTF_CALLBACK_MESSAGE_SIZE 256 // Size for log message coming from ESP-IDF. They are small usually so 256 is enough

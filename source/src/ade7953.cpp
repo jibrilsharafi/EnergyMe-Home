@@ -30,6 +30,7 @@ namespace Ade7953
     static float _channelDeficit[MAX_CHANNEL_COUNT] = {};    // Deficit counter for scheduling
     static float _prevActivePower[MAX_CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
     static float _powerVariability[MAX_CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
+    static uint8_t _wdrrCursor = 0;                          // Round-robin tie-break cursor for argmax
     static float _gridFrequency = 50.0f;
 
     // Set by the meter task when an auto-polarity flip flips the persisted reverse flag.
@@ -760,9 +761,10 @@ namespace Ade7953
             return false;
         }
 
-        // Snapshot old role and active state before applying new data
+        // Snapshot old role, active state, and reverse flag before applying new data
         ChannelRole oldRole = _channelData[channelIndex].role;
         bool wasInactive = !_channelData[channelIndex].active;
+        bool oldReverse = _channelData[channelIndex].reverse;
 
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
@@ -797,11 +799,35 @@ namespace Ade7953
             if (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role) {
                 _channelData[channelIndex]._pendingPolarityCheck = true;
             }
+            // Fix for issue #149: arm priority read when the user flips the reverse
+            // flag via API. Intent is "read me now with the corrected sign" - without
+            // this, the corrected reading lands on the next normal rotation slot,
+            // which can be up to 15 s away on a heavily loaded scheduler.
+            if (channelIndex > 0 && oldReverse != _channelData[channelIndex].reverse) {
+                _channelData[channelIndex]._pendingPriorityRead = true;
+            }
         }
+
+        // Capture the post-write active state for use after we release the
+        // channel mutex (we can't hold both _channelDataMutex and
+        // _meterValuesMutex at once without introducing a new lock order).
+        bool didActivate = (channelIndex > 0 && wasInactive && _channelData[channelIndex].active);
 
         _recalculateWeights();
 
         releaseMutex(&_channelDataMutex);
+
+        // Baseline _meterValues[i].lastMillis on inactive->active so the
+        // starvation watchdog has a meaningful zero point. Without this, a
+        // newly-activated channel whose very first read fails (e.g., CT
+        // wired backwards at boot) would have lastMillis=0 forever and the
+        // watchdog would skip it.
+        if (didActivate) {
+            if (acquireMutex(&_meterValuesMutex)) {
+                _meterValues[channelIndex].lastMillis = millis64();
+                releaseMutex(&_meterValuesMutex);
+            }
+        }
 
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
@@ -1838,7 +1864,19 @@ namespace Ade7953
             }
             
             // Process current channel (if active)
-            if (_currentChannel != INVALID_CHANNEL) _processChannelReading(_currentChannel, linecycUnix);
+            bool readOk = true;
+            if (_currentChannel != INVALID_CHANNEL) {
+                readOk = _processChannelReading(_currentChannel, linecycUnix);
+            }
+
+            // Fix for issue #149: refund the WDRR deficit decremented at selection
+            // time when the reading was actually discarded. Without this, a channel
+            // stuck in a discard loop drifts ever-more-negative in the deficit array
+            // and starves out of the scheduler. Channel 0 is not in the rotation, so
+            // skip it. Matches the existing mutex-free access pattern on _channelDeficit[].
+            if (!readOk && _currentChannel != INVALID_CHANNEL && _currentChannel > 0) {
+                _channelDeficit[_currentChannel] += 1.0f;
+            }
 
             // Thanks to the linecyc approach, the data in the ADE7953 is "frozen"
             // until the next linecyc interrupt is received, which allows us to switch to the
@@ -4410,11 +4448,16 @@ namespace Ade7953
         float totalAbsPower = 0.0f;
         float totalVariability = 0.0f;
 
-        // Sum totals across active multiplexed channels (skip channel 0)
+        // Sum totals across active multiplexed channels (skip channel 0).
+        // NaN guards: a NaN reading must not poison the totals - it would
+        // make every powerScore NaN, propagating into _channelWeight[] and
+        // breaking argmax in _findNextActiveChannel.
         for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (_channelData[i].active) {
-                totalAbsPower += fabsf(_meterValues[i].activePower);
-                totalVariability += _powerVariability[i];
+                float ap = _meterValues[i].activePower;
+                float pv = _powerVariability[i];
+                if (!isnan(ap)) totalAbsPower += fabsf(ap);
+                if (!isnan(pv)) totalVariability += pv;
             }
         }
 
@@ -4427,12 +4470,14 @@ namespace Ade7953
 
             float powerScore = 0.0f;
             if (totalAbsPower > 0.0f) {
-                powerScore = fabsf(_meterValues[i].activePower) / totalAbsPower;
+                float ap = _meterValues[i].activePower;
+                if (!isnan(ap)) powerScore = fabsf(ap) / totalAbsPower;
             }
 
             float variabilityScore = 0.0f;
             if (totalVariability > 0.0f) {
-                variabilityScore = _powerVariability[i] / totalVariability;
+                float pv = _powerVariability[i];
+                if (!isnan(pv)) variabilityScore = pv / totalVariability;
             }
 
             _channelWeight[i] = WEIGHT_POWER_SHARE * powerScore
@@ -4457,11 +4502,77 @@ namespace Ade7953
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
         (void)currentChannel; // No longer needed for state tracking
 
+        // Starvation watchdog (fix for issue #149): hard upper bound on the time
+        // between successful reads for any active mux channel. If a channel goes
+        // CHANNEL_MAX_GAP_MS without lastMillis advancing - whether because the
+        // WDRR weights are skewed, the channel is in a discard loop, or the meter
+        // task missed cycles during OTA - force-pick it now.
+        //
+        // After firing, we set lastMillis = now and reset the deficit. The
+        // lastMillis reset throttles the watchdog to one fire per
+        // CHANNEL_MAX_GAP_MS even when the read continues to fail (e.g., a
+        // permanently misclamped CT): user gets one warning per interval, not a
+        // torrent. The deficit reset prevents the channel from immediately
+        // re-winning the argmax on the next call.
+        //
+        // Hold _meterValuesMutex around the read and the write: a 32-bit ESP32
+        // cannot atomically store a uint64_t, so a concurrent setChannelData
+        // baseline write from the web task could be torn-read here.
+        uint64_t nowMillis = millis64();
+        uint8_t starvedChannel = INVALID_CHANNEL;
+        uint64_t starvedGap = 0;
+        if (acquireMutex(&_meterValuesMutex)) {
+            for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
+                if (!_channelData[i].active) continue;
+                uint64_t lastMs = _meterValues[i].lastMillis;
+                if (lastMs == 0) continue; // never baselined - priority slot handles it
+                uint64_t gap = nowMillis - lastMs;
+                if (gap > CHANNEL_MAX_GAP_MS) {
+                    starvedChannel = i;
+                    starvedGap = gap;
+                    _meterValues[i].lastMillis = nowMillis;
+                    break;
+                }
+            }
+            releaseMutex(&_meterValuesMutex);
+        }
+        if (starvedChannel != INVALID_CHANNEL) {
+            // This might happen in cases of high-value loads in some channels
+            // with static 0W channels, so it is not an error per se (thus DEBUG level)
+            LOG_DEBUG(
+                "%s (%u): scheduler starvation, %llu ms since last read; force-picking",
+                _channelData[starvedChannel].label, starvedChannel, starvedGap
+            );
+            _channelDeficit[starvedChannel] = 0.0f;
+            return starvedChannel;
+        }
+
+        // Add each channel's weight to its deficit. Done BEFORE the priority-claim
+        // loop so that a channel taking the priority slot still has its deficit
+        // updated in this round (fix for issue #149 - previously the priority
+        // branch returned early and skipped the gain phase entirely, leaving the
+        // claiming channel one round behind in the WDRR accounting).
+        // NaN guard + symmetric clamp keeps the deficit array in a sane range even
+        // in pathological cases (NaN injection from a broken read, weight-table
+        // shock from a sudden role change, OTA-induced timing jumps).
+        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
+            if (_channelData[i].active) {
+                _channelDeficit[i] += _channelWeight[i];
+            } else {
+                _channelDeficit[i] = 0.0f;
+            }
+            if (isnan(_channelDeficit[i])) _channelDeficit[i] = 0.0f;
+            if (_channelDeficit[i] > MAX_CHANNEL_DEFICIT_BOUND) _channelDeficit[i] = MAX_CHANNEL_DEFICIT_BOUND;
+            else if (_channelDeficit[i] < -MAX_CHANNEL_DEFICIT_BOUND) _channelDeficit[i] = -MAX_CHANNEL_DEFICIT_BOUND;
+        }
+
         // One-shot priority override: a freshly activated channel jumps the WDRR queue
         // for exactly one read so the user gets immediate data (and so the auto-polarity
         // check runs without waiting for the channel to win a normal slot). Take
         // _channelDataMutex for the test-and-clear so a concurrent re-arm from
         // setChannelData / the polarity check cannot be lost between read and write.
+        // Priority pick is a freebie: no deficit decrement, since the channel has
+        // not "consumed" a normal scheduling slot.
         for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
             if (!_channelData[i].active) continue;
             bool claim = false;
@@ -4475,29 +4586,29 @@ namespace Ade7953
             if (claim) return i;
         }
 
-        // Add each channel's weight to its deficit
-        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
-            if (_channelData[i].active) {
-                _channelDeficit[i] += _channelWeight[i];
-            } else {
-                _channelDeficit[i] = 0.0f;
-            }
-        }
-
-        // Select the channel with the highest deficit
+        // Select the channel with the highest deficit, with a round-robin
+        // tie-break (iteration starts at _wdrrCursor + 1 wrapping back to 1).
+        // Without the rotation, when every active channel sits at the same
+        // deficit (e.g., a multi-channel discard storm or post-watchdog reset),
+        // the lowest-index active channel monopolises the scheduler. The cursor
+        // moves to the winning channel so the next call starts iteration one
+        // past it.
         uint8_t bestChannel = INVALID_CHANNEL;
         float bestDeficit = -1e9f; // Use a very large negative value to ensure any active channel is selectable
 
-        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
+        uint8_t n = globalHwProfile->totalChannelCount;
+        for (uint8_t offset = 1; offset < n; offset++) {
+            uint8_t i = ((_wdrrCursor + offset - 1) % (n - 1)) + 1;
             if (_channelData[i].active && _channelDeficit[i] > bestDeficit) {
                 bestDeficit = _channelDeficit[i];
                 bestChannel = i;
             }
         }
 
-        // Decrement the selected channel's deficit
+        // Decrement the selected channel's deficit and advance the cursor.
         if (bestChannel != INVALID_CHANNEL) {
             _channelDeficit[bestChannel] -= 1.0f;
+            _wdrrCursor = bestChannel;
         }
 
         return bestChannel;

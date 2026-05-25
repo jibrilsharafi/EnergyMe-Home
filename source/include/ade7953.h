@@ -77,6 +77,8 @@
 #define WEIGHT_VARIABILITY 0.4f      // Weight contribution from power variability share
 #define WEIGHT_MIN_BASE 0.1f         // Minimum base weight to prevent starvation
 #define VARIABILITY_EMA_ALPHA 0.3f   // Exponential moving average smoothing for variability (0-1, lower = smoother)
+#define CHANNEL_MAX_GAP_MS 15000ULL  // Watchdog: max time between successful reads before forcing a pick
+#define MAX_CHANNEL_DEFICIT_BOUND 5.0f // Symmetric clamp on per-channel deficit (safety net against arithmetic edge cases)
 
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register

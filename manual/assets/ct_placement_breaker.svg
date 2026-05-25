@@ -1,0 +1,100 @@
+<svg width="680" viewBox="0 0 680 460" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
+  <title>CT placement on circuit breakers — correct vs wrong</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="680" height="460" fill="#ffffff"/>
+
+  <!-- Panel dashed border -->
+  <rect x="28" y="28" width="452" height="392" rx="10" fill="none" stroke="#888" stroke-width="1" stroke-dasharray="6 4"/>
+  <text x="254" y="450" text-anchor="middle" font-size="12" fill="#666">Electrical panel — branch section</text>
+
+  <!-- Supply label + wire -->
+  <text x="88" y="52" text-anchor="end" font-size="12" fill="#444">Supply</text>
+  <line x1="115" y1="28" x2="115" y2="90" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- INPUT daisy-chain bus bar at y=90 -->
+  <line x1="125" y1="90" x2="250" y2="90" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="260" y1="90" x2="390" y2="90" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Drops from bus to each breaker input -->
+  <line x1="115" y1="90" x2="115" y2="130" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="125" y1="90" x2="125" y2="130" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="250" y1="90" x2="250" y2="130" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="260" y1="90" x2="260" y2="130" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="390" y1="90" x2="390" y2="130" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Breaker 1 -->
+  <rect x="78" y="130" width="84" height="52" rx="6" fill="#f0ede8" stroke="#9e9c94" stroke-width="0.8"/>
+  <text x="120" y="153" text-anchor="middle" font-size="13" font-weight="500" fill="#2c2c2a">Breaker 1</text>
+  <text x="120" y="170" text-anchor="middle" font-size="11" fill="#5f5e5a">15 A</text>
+
+  <!-- Breaker 2 -->
+  <rect x="213" y="130" width="84" height="52" rx="6" fill="#f0ede8" stroke="#9e9c94" stroke-width="0.8"/>
+  <text x="255" y="153" text-anchor="middle" font-size="13" font-weight="500" fill="#2c2c2a">Breaker 2</text>
+  <text x="255" y="170" text-anchor="middle" font-size="11" fill="#5f5e5a">20 A</text>
+
+  <!-- Breaker 3 -->
+  <rect x="348" y="130" width="84" height="52" rx="6" fill="#f0ede8" stroke="#9e9c94" stroke-width="0.8"/>
+  <text x="390" y="153" text-anchor="middle" font-size="13" font-weight="500" fill="#2c2c2a">Breaker 3</text>
+  <text x="390" y="170" text-anchor="middle" font-size="11" fill="#5f5e5a">20 A</text>
+
+  <!-- OUTPUT wires -->
+  <line x1="120" y1="182" x2="120" y2="356" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="255" y1="182" x2="255" y2="356" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="390" y1="182" x2="390" y2="356" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Load 1 -->
+  <rect x="78" y="356" width="84" height="38" rx="6" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.8"/>
+  <text x="120" y="378" text-anchor="middle" font-size="12" fill="#0c447c">Load 1</text>
+
+  <!-- Load 2 -->
+  <rect x="213" y="356" width="84" height="38" rx="6" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.8"/>
+  <text x="255" y="378" text-anchor="middle" font-size="12" fill="#0c447c">Load 2</text>
+
+  <!-- Load 3 -->
+  <rect x="348" y="356" width="84" height="38" rx="6" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.8"/>
+  <text x="390" y="378" text-anchor="middle" font-size="12" fill="#0c447c">Load 3</text>
+
+  <!-- Region labels -->
+  <text x="40" y="84" font-size="11" fill="#666">INPUT side</text>
+  <text x="40" y="265" font-size="11" fill="#666">OUTPUT side</text>
+  <text x="255" y="73" text-anchor="middle" font-size="11" fill="#888">daisy chain</text>
+
+  <!-- ── WRONG CT: on input bus bar ── -->
+  <ellipse cx="187" cy="90" rx="20" ry="12" fill="#FCEBEB" stroke="#E24B4A" stroke-width="2.5"/>
+  <line x1="183" y1="86" x2="191" y2="94" stroke="#E24B4A" stroke-width="1.8" stroke-linecap="round"/>
+  <line x1="191" y1="86" x2="183" y2="94" stroke="#E24B4A" stroke-width="1.8" stroke-linecap="round"/>
+  <!-- CT lead going up -->
+  <line x1="187" y1="78" x2="187" y2="58" stroke="#E24B4A" stroke-width="1" stroke-dasharray="3 2"/>
+  <circle cx="187" cy="56" r="3" fill="#E24B4A"/>
+
+  <!-- WRONG callout -->
+  <rect x="490" y="28" width="165" height="80" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.8"/>
+  <text x="572" y="50" text-anchor="middle" font-size="14" font-weight="500" fill="#791f1f">WRONG</text>
+  <text x="572" y="67" text-anchor="middle" font-size="12" fill="#A32D2D">Input (supply) side</text>
+  <text x="572" y="84" text-anchor="middle" font-size="12" fill="#A32D2D">reads all circuits</text>
+
+  <!-- Leader: WRONG CT → callout -->
+  <path d="M 187 78 L 187 38 L 488 65" fill="none" stroke="#E24B4A" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+
+  <!-- ── CORRECT CT: on output wire of Breaker 3 ── -->
+  <ellipse cx="390" cy="265" rx="20" ry="12" fill="#EAF3DE" stroke="#639922" stroke-width="2.5"/>
+  <polyline points="384,265 388,270 397,258" fill="none" stroke="#3B6D11" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- CT lead going right -->
+  <line x1="410" y1="265" x2="430" y2="265" stroke="#639922" stroke-width="1" stroke-dasharray="3 2"/>
+  <circle cx="432" cy="265" r="3" fill="#639922"/>
+
+  <!-- CORRECT callout -->
+  <rect x="490" y="232" width="165" height="76" rx="8" fill="#EAF3DE" stroke="#3B6D11" stroke-width="0.8"/>
+  <text x="572" y="253" text-anchor="middle" font-size="14" font-weight="500" fill="#173404">CORRECT</text>
+  <text x="572" y="271" text-anchor="middle" font-size="12" fill="#3B6D11">Output (load) side</text>
+  <text x="572" y="289" text-anchor="middle" font-size="12" fill="#3B6D11">reads this circuit</text>
+
+  <!-- Leader: CORRECT CT → callout -->
+  <path d="M 410 265 L 488 265" fill="none" stroke="#639922" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+</svg>

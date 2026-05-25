@@ -30,7 +30,7 @@ namespace CustomLog
     static void _startTask();
     static void _stopTask();
     static void _udpTask(void* parameter);
-    
+
     // Preferences management
     static bool _loadUdpDestinationFromPreferences();
     static bool _saveUdpDestinationToPreferences();
@@ -72,18 +72,17 @@ namespace CustomLog
         // Make all ESP logs also go to our logger
         esp_log_set_vprintf(_espLogVprintf);
 
-        // Load UDP destination from preferences or use default
+        // No persisted destination -> leave _udpDestination at 0.0.0.0 so _callbackUdp drops logs
+        // until one is configured via PUT /api/v1/logs-udp-destination.
         if (!_loadUdpDestinationFromPreferences()) {
-            LOG_DEBUG("No saved UDP destination, using default multicast address");
-            _udpDestination.fromString(DEFAULT_UDP_LOG_DESTINATION_IP);
-            _saveUdpDestinationToPreferences();
+            LOG_DEBUG("No saved UDP destination, UDP logging silent until one is set via API");
         }
-        
+
         _udpClient.begin(UDP_LOG_PORT);
         _isUdpInitialized = true;
 
         LOG_DEBUG("UDP logging configured to %d.%d.%d.%d:%d, PSRAM buffer: %zu bytes",
-                _udpDestination[0], _udpDestination[1], 
+                _udpDestination[0], _udpDestination[1],
                 _udpDestination[2], _udpDestination[3],
                 UDP_LOG_PORT, LOG_QUEUE_SIZE);
 
@@ -100,11 +99,11 @@ namespace CustomLog
             _isUdpInitialized = false;
             LOG_DEBUG("UDP client stopped");
         }
-        
+
         // Clean up the queue and PSRAM buffers
         if (_udpLogQueueStorage != nullptr) {
             _udpLogQueue = nullptr;
-            
+
             // Free PSRAM buffer
             if (_udpLogQueueStorage != nullptr) {
                 free(_udpLogQueueStorage);
@@ -113,13 +112,13 @@ namespace CustomLog
 
             LOG_DEBUG("UDP logging queue stopped, PSRAM freed");
         }
-        
+
         // Free UDP message buffer
         if (_udpBuffer != nullptr) {
             free(_udpBuffer);
             _udpBuffer = nullptr;
         }
-        
+
         // Delete mutex
         deleteMutex(&_udpDestinationMutex);
     }
@@ -134,19 +133,19 @@ namespace CustomLog
         // Create buffer for the formatted message
         char buffer[LOG_ESPVPRINTF_CALLBACK_MESSAGE_SIZE];
         int len = vsnprintf(buffer, sizeof(buffer), format, args);
-        
+
         if (len > 0) {
             // Remove newlines and clean up the message
             if (buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
-            
+
             // Map to ERROR for ESP error logs, WARNING for others
             if (strstr(buffer, "E (") != nullptr) LOG_ERROR("[ESP-IDF] %s", buffer);
             else if (strstr(buffer, "W (") != nullptr) LOG_WARNING("[ESP-IDF] %s", buffer);
             else LOG_INFO("[ESP-IDF] %s", buffer);
         }
-        
+
         // Also print to serial for debugging
         return vprintf(format, args);
     }
@@ -159,7 +158,7 @@ namespace CustomLog
         uint32_t queueLength = LOG_QUEUE_SIZE / sizeof(LogEntry);
         size_t realQueueSize = queueLength * sizeof(LogEntry);
         _udpLogQueueStorage = (uint8_t*)ps_malloc(realQueueSize);
-        
+
         if (_udpLogQueueStorage == nullptr) {
             Serial.printf("[ERROR] Failed to allocate PSRAM for UDP log queue (%d bytes) | Free PSRAM: %d bytes\n", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
             return false;
@@ -185,12 +184,10 @@ namespace CustomLog
 
     static void _callbackUdp(const LogEntry& entry)
     {
-        #ifndef ENV_DEV // Only send UDP logs in development mode to avoid flooding network of production devices
-        return;
-        #endif
         if (entry.level == LogLevel::VERBOSE) return; // Never send verbose logs via UDP
+        if ((uint32_t)_udpDestination == 0) return; // No destination configured: drop silently
         if (!_initializeQueue()) return; // Failed to initialize, drop this log
-        
+
         if (xQueueSend(_udpLogQueue, &entry, 0) != pdTRUE) { // Send to queue with no wait to avoid blocking
             // Queue full -> drop
         }
@@ -266,19 +263,19 @@ namespace CustomLog
                 entry.file,
                 entry.function,
                 entry.message);
-            
+
             // Send to configured destination
             if (!acquireMutex(&_udpDestinationMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
                 delay(DELAY_SEND_UDP);
                 continue;
             }
-            
+
             if (!_udpClient.beginPacket(_udpDestination, UDP_LOG_PORT)) {
                 releaseMutex(&_udpDestinationMutex);
                 delay(DELAY_SEND_UDP);
                 continue;
             }
-            
+
             size_t bytesWritten = _udpClient.write((const uint8_t*)_udpBuffer, strlen(_udpBuffer));
             if (bytesWritten == 0) {
                 _udpClient.endPacket();
@@ -286,13 +283,13 @@ namespace CustomLog
                 delay(DELAY_SEND_UDP);
                 continue;
             }
-            
+
             if (!_udpClient.endPacket()) {
                 releaseMutex(&_udpDestinationMutex);
                 delay(DELAY_SEND_UDP);
                 continue;
             }
-            
+
             releaseMutex(&_udpDestinationMutex);
         }
 
@@ -308,7 +305,7 @@ namespace CustomLog
 
     // UDP Destination Management
     // ============================
-    
+
     static bool _loadUdpDestinationFromPreferences()
     {
         Preferences prefs;

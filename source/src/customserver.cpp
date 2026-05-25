@@ -693,13 +693,17 @@ namespace CustomServer
      * If client sends matching If-None-Match header, responds with 304 Not Modified (no body)
      * Otherwise sends full content with ETag and Cache-Control headers
      */
-    static void _sendStaticWithEtag(AsyncWebServerRequest *request, const char* contentType, const char* content, const char* etag)
+    static void _sendStaticWithEtag(AsyncWebServerRequest *request, const char* contentType, const uint8_t* content, size_t len, const char* etag)
     {
         // Check if client sent matching ETag
         if (_checkEtagAndSend304(request, etag)) return;
-        
-        // ETag doesn't match or not provided - send full content
-        AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, contentType, content);
+
+        // ETag doesn't match or not provided - stream full content from flash
+        // (uint8_t* + size_t overload constructs AsyncProgmemResponse, which reads
+        // chunks directly from flash via memcpy_P; no heap copy of the body, vs
+        // the const char* overload that copies the entire file into a String and
+        // can corrupt under concurrent parallel requests on a fragmented heap)
+        AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, contentType, content, len);
         _sendResponseWithEtag(request, response, etag);
     }
 
@@ -735,7 +739,6 @@ namespace CustomServer
     // === STATIC CONTENT SERVING ===
     static void _serveStaticContent()
     {
-        // === STATIC CONTENT (no auth required) ===
         // Cache strategy: "no-cache" with ETag validation
         // - Browser always asks server before using cache
         // - Server responds 304 Not Modified (no body) if ETag matches → fast
@@ -748,89 +751,89 @@ namespace CustomServer
 
         // CSS files
         server.on("/css/button.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/css", button_css, etag);
+            _sendStaticWithEtag(request, "text/css", EMBEDDED(button_css), etag);
         });
         server.on("/css/forms.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/css", forms_css, etag);
+            _sendStaticWithEtag(request, "text/css", EMBEDDED(forms_css), etag);
         });
         server.on("/css/index.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/css", index_css, etag);
+            _sendStaticWithEtag(request, "text/css", EMBEDDED(index_css), etag);
         });
         server.on("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
-            _sendStaticWithEtag(request, "text/css", styles_css, etag);
+            _sendStaticWithEtag(request, "text/css", EMBEDDED(styles_css), etag);
         });
         server.on("/css/section.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/css", section_css, etag);
+            _sendStaticWithEtag(request, "text/css", EMBEDDED(section_css), etag);
         });
         server.on("/css/tooltip.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/css", tooltip_css, etag);
+            _sendStaticWithEtag(request, "text/css", EMBEDDED(tooltip_css), etag);
         });
         server.on("/css/typography.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/css", typography_css, etag);
+            _sendStaticWithEtag(request, "text/css", EMBEDDED(typography_css), etag);
         });
 
         // JavaScript files
         server.on("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "application/javascript", api_client_js, etag);
+            _sendStaticWithEtag(request, "application/javascript", EMBEDDED(api_client_js), etag);
         });
         server.on("/js/chart-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "application/javascript", chart_helpers_js, etag);
+            _sendStaticWithEtag(request, "application/javascript", EMBEDDED(chart_helpers_js), etag);
         });
         server.on("/js/data-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "application/javascript", data_helpers_js, etag);
+            _sendStaticWithEtag(request, "application/javascript", EMBEDDED(data_helpers_js), etag);
         });
         server.on("/js/power-flow.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "application/javascript", power_flow_js, etag);
+            _sendStaticWithEtag(request, "application/javascript", EMBEDDED(power_flow_js), etag);
         });
         server.on("/js/tooltip.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "application/javascript", tooltip_js, etag);
+            _sendStaticWithEtag(request, "application/javascript", EMBEDDED(tooltip_js), etag);
         });
 
         // Resources
         server.on("/favicon.svg", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "image/svg+xml", favicon_svg, etag);
+            _sendStaticWithEtag(request, "image/svg+xml", EMBEDDED(favicon_svg), etag);
         });
 
         // Main dashboard
         server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", index_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(index_html), etag);
         });
 
         // Configuration pages
         server.on("/ade7953-tester", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", ade7953_tester_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(ade7953_tester_html), etag);
         });
         server.on("/configuration", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", configuration_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(configuration_html), etag);
         });
         server.on("/calibration", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", calibration_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(calibration_html), etag);
         });
         server.on("/channel", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", channel_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(channel_html), etag);
         });
         server.on("/info", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", info_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(info_html), etag);
         });
         server.on("/integrations", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", integrations_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(integrations_html), etag);
         });
         server.on("/log", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", log_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(log_html), etag);
         });
         server.on("/update", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", update_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(update_html), etag);
         });
         server.on("/waveform", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", waveform_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(waveform_html), etag);
         });
 
         // Swagger UI
         server.on("/swagger-ui", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", swagger_ui_html, etag);
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(swagger_ui_html), etag);
         });
         server.on("/swagger.yaml", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/yaml", swagger_yaml, etag);
+            _sendStaticWithEtag(request, "text/yaml", EMBEDDED(swagger_yaml), etag);
         });
     }
 

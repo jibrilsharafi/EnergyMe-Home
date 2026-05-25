@@ -433,7 +433,7 @@ def main():
     parser.add_argument('-u', '--username', default='admin', help='Username (default: admin)')
     parser.add_argument('-p', '--password', default='energyme', help='Password (default: energyme)')
     parser.add_argument('-env', '--environment', default='dev', 
-                       choices=['dev', 'dev-nosecrets', 'prod', 'prod-nosecrets'],
+                       choices=['dev', 'prod'],
                        help='Build environment (default: dev)')
     parser.add_argument('-b', '--bin', 
                        help='Path to firmware .bin file (overrides --environment)')
@@ -450,9 +450,7 @@ def main():
     if not args.bin or not args.elf:
         env_map = {
             'dev': 'esp32s3-dev',
-            'dev-nosecrets': 'esp32s3-dev-nosecrets',
             'prod': 'esp32s3-prod',
-            'prod-nosecrets': 'esp32s3-prod-nosecrets'
         }
         env_name = env_map[args.environment]
         
