@@ -44,6 +44,10 @@ namespace CustomWifi
   static char _lastDisconnectBSSID[MAC_ADDRESS_BUFFER_SIZE] = {0};
   static int8_t _lastDisconnectRSSI = 0;
 
+  // Network configuration (static IP / channel / TX power)
+  static WifiConfiguration _configuration;
+  static SemaphoreHandle_t _configMutex = nullptr;
+
   // Private helper functions
   static void _onWiFiEvent(WiFiEvent_t event);
   static void _onWiFiEventWithInfo(WiFiEvent_t event, WiFiEventInfo_t info);
@@ -62,6 +66,16 @@ namespace CustomWifi
   static void _sendOpenSourceTelemetry();
   static void _resolveApPassword(char* out, size_t outSize);
   static bool _telemetrySent = false; // Ensures telemetry is sent only once per boot
+
+  // Network configuration helpers
+  static void _loadConfiguration();
+  static void _saveConfigurationToPreferences(const WifiConfiguration &config);
+  static void _applyNetworkConfiguration();
+  static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial);
+  static bool _validateConfiguration(const WifiConfiguration &config);
+  static float _txPowerToDbm(int8_t value);
+  static bool _dbmToTxPower(float dbm, int8_t &out);
+  static bool _isValidIpv4(const char* str, bool allowZero);
 
   bool begin()
   {
@@ -86,11 +100,11 @@ namespace CustomWifi
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false); // Disable WiFi sleep to prevent handshake timeouts
 
-    // TODO: add these functionalities (via config) to allow for channel and power settings
-    // WiFi.setChannel(6);       // Optional - if user configured a specific channel
-    // WiFi.setTxPower(WIFI_POWER_20dBm);  // Optional - regional compliance
-
-    // TODO: add a way to set a static IP (save to NVS the config, and with the button we can revert the WiFi connection credentials and to DHCP)
+    // Load persisted network configuration, applying defaults and writing them back to
+    // NVS on first boot (migration). Then apply static IP / channel / TX power before the
+    // connection attempt so they take effect for the initial join.
+    _loadConfiguration();
+    _applyNetworkConfiguration();
 
     // Start WiFi connection task
     _startWifiTask();
@@ -486,6 +500,17 @@ namespace CustomWifi
   static void _handleSuccessfulConnection()
   {
     _lastReconnectAttempt = 0;
+
+    // Re-apply TX power: the radio can revert to a driver default during the
+    // esp_wifi_start/connect sequence, so enforce the configured level here. This matters
+    // for regional regulatory compliance. (Channel is intentionally not re-applied - in STA
+    // the station follows the AP's channel and forcing it post-connect would break the link.)
+    WifiConfiguration netConfig;
+    if (getConfiguration(netConfig)) {
+      WiFi.setTxPower(static_cast<wifi_power_t>(netConfig.txPower));
+      LOG_DEBUG("TX power after connect: requested %.2f dBm, actual %.2f dBm",
+                _txPowerToDbm(netConfig.txPower), _txPowerToDbm(static_cast<int8_t>(WiFi.getTxPower())));
+    }
 
     _setupMdns();
     // Note: printDeviceStatusDynamic() removed to avoid flash I/O from PSRAM task
@@ -1096,6 +1121,312 @@ namespace CustomWifi
     }
 
     WiFi.disconnect(true);
+  }
+
+  // ============================================================================
+  // Network configuration (static IP / channel / TX power)
+  // ============================================================================
+
+  // Discrete TX power levels supported by the ESP32 radio. The API speaks dBm; we store
+  // the raw wifi_power_t value (quarter-dBm units). Keep ordered by dBm ascending.
+  struct TxPowerOption { float dbm; int8_t value; };
+  static const TxPowerOption TX_POWER_OPTIONS[] = {
+    { -1.0f, WIFI_POWER_MINUS_1dBm },
+    {  2.0f, WIFI_POWER_2dBm },
+    {  5.0f, WIFI_POWER_5dBm },
+    {  7.0f, WIFI_POWER_7dBm },
+    {  8.5f, WIFI_POWER_8_5dBm },
+    { 11.0f, WIFI_POWER_11dBm },
+    { 13.0f, WIFI_POWER_13dBm },
+    { 15.0f, WIFI_POWER_15dBm },
+    { 17.0f, WIFI_POWER_17dBm },
+    { 18.5f, WIFI_POWER_18_5dBm },
+    { 19.0f, WIFI_POWER_19dBm },
+    { 19.5f, WIFI_POWER_19_5dBm },
+  };
+  static const size_t TX_POWER_OPTION_COUNT = sizeof(TX_POWER_OPTIONS) / sizeof(TX_POWER_OPTIONS[0]);
+
+  static float _txPowerToDbm(int8_t value)
+  {
+    for (size_t i = 0; i < TX_POWER_OPTION_COUNT; i++) {
+      if (TX_POWER_OPTIONS[i].value == value) return TX_POWER_OPTIONS[i].dbm;
+    }
+    return value / 4.0f; // Fallback: raw value is in quarter-dBm units
+  }
+
+  static bool _dbmToTxPower(float dbm, int8_t &out)
+  {
+    for (size_t i = 0; i < TX_POWER_OPTION_COUNT; i++) {
+      if (fabsf(TX_POWER_OPTIONS[i].dbm - dbm) < 0.125f) { // Half a step tolerance
+        out = TX_POWER_OPTIONS[i].value;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _isValidIpv4(const char* str, bool allowZero)
+  {
+    if (str == nullptr || str[0] == '\0') return false;
+    IPAddress addr;
+    if (!addr.fromString(str)) return false;
+    if (!allowZero && addr == IPAddress(0, 0, 0, 0)) return false;
+    return true;
+  }
+
+  bool getConfiguration(WifiConfiguration &config)
+  {
+    if (!acquireMutex(&_configMutex)) {
+      LOG_ERROR("Failed to acquire configuration mutex for getConfiguration");
+      return false;
+    }
+    config = _configuration;
+    releaseMutex(&_configMutex);
+    return true;
+  }
+
+  bool setConfiguration(const WifiConfiguration &config)
+  {
+    if (!_validateConfiguration(config)) {
+      LOG_WARNING("Refusing to set invalid network configuration");
+      return false;
+    }
+
+    if (!createMutexIfNeeded(&_configMutex)) return false;
+    if (!acquireMutex(&_configMutex)) {
+      LOG_ERROR("Failed to acquire configuration mutex for setConfiguration");
+      return false;
+    }
+    _configuration = config;
+    releaseMutex(&_configMutex);
+
+    // NVS write runs unlocked - copy was already taken under the mutex
+    _saveConfigurationToPreferences(config);
+
+    LOG_DEBUG("Network configuration set");
+    return true;
+  }
+
+  bool resetConfiguration()
+  {
+    LOG_DEBUG("Resetting network configuration to default");
+    WifiConfiguration defaultConfig;
+    if (!setConfiguration(defaultConfig)) {
+      LOG_ERROR("Failed to reset network configuration");
+      return false;
+    }
+    LOG_INFO("Network configuration reset to default");
+    return true;
+  }
+
+  bool getConfigurationAsJson(JsonDocument &jsonDocument)
+  {
+    WifiConfiguration config;
+    if (!getConfiguration(config)) return false;
+    configurationToJson(config, jsonDocument);
+    return true;
+  }
+
+  bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial)
+  {
+    WifiConfiguration config;
+    getConfiguration(config);
+
+    if (!configurationFromJson(jsonDocument, config, partial)) {
+      LOG_ERROR("Failed to set network configuration from JSON");
+      return false;
+    }
+
+    return setConfiguration(config);
+  }
+
+  void configurationToJson(const WifiConfiguration &config, JsonDocument &jsonDocument)
+  {
+    jsonDocument["useStaticIp"] = config.useStaticIp;
+    jsonDocument["ip"] = JsonString(config.ip);
+    jsonDocument["gateway"] = JsonString(config.gateway);
+    jsonDocument["subnet"] = JsonString(config.subnet);
+    jsonDocument["dns1"] = JsonString(config.dns1);
+    jsonDocument["dns2"] = JsonString(config.dns2);
+    jsonDocument["channel"] = config.channel;
+    jsonDocument["txPower"] = _txPowerToDbm(config.txPower);
+  }
+
+  bool configurationFromJson(JsonDocument &jsonDocument, WifiConfiguration &config, bool partial)
+  {
+    if (!_validateJsonConfiguration(jsonDocument, partial)) {
+      LOG_WARNING("Invalid network configuration JSON");
+      return false;
+    }
+
+    if (jsonDocument["useStaticIp"].is<bool>())     config.useStaticIp = jsonDocument["useStaticIp"].as<bool>();
+    if (jsonDocument["ip"].is<const char*>())       snprintf(config.ip, sizeof(config.ip), "%s", jsonDocument["ip"].as<const char*>());
+    if (jsonDocument["gateway"].is<const char*>())  snprintf(config.gateway, sizeof(config.gateway), "%s", jsonDocument["gateway"].as<const char*>());
+    if (jsonDocument["subnet"].is<const char*>())   snprintf(config.subnet, sizeof(config.subnet), "%s", jsonDocument["subnet"].as<const char*>());
+    if (jsonDocument["dns1"].is<const char*>())     snprintf(config.dns1, sizeof(config.dns1), "%s", jsonDocument["dns1"].as<const char*>());
+    if (jsonDocument["dns2"].is<const char*>())     snprintf(config.dns2, sizeof(config.dns2), "%s", jsonDocument["dns2"].as<const char*>());
+    if (jsonDocument["channel"].is<uint8_t>())      config.channel = jsonDocument["channel"].as<uint8_t>();
+    if (jsonDocument["txPower"].is<float>()) {
+      int8_t txValue;
+      if (!_dbmToTxPower(jsonDocument["txPower"].as<float>(), txValue)) {
+        LOG_WARNING("Unsupported txPower value: %.2f dBm", jsonDocument["txPower"].as<float>());
+        return false;
+      }
+      config.txPower = txValue;
+    }
+
+    // Cross-field validation on the merged result (catches e.g. useStaticIp=true with no IP via PATCH)
+    return _validateConfiguration(config);
+  }
+
+  static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial)
+  {
+    if (jsonDocument.isNull() || !jsonDocument.is<JsonObject>()) {
+      LOG_WARNING("Invalid JSON document");
+      return false;
+    }
+
+    if (partial) {
+      // At least one valid field must be present
+      if (jsonDocument["useStaticIp"].is<bool>())    return true;
+      if (jsonDocument["ip"].is<const char*>())      return true;
+      if (jsonDocument["gateway"].is<const char*>()) return true;
+      if (jsonDocument["subnet"].is<const char*>())  return true;
+      if (jsonDocument["dns1"].is<const char*>())    return true;
+      if (jsonDocument["dns2"].is<const char*>())    return true;
+      if (jsonDocument["channel"].is<uint8_t>())     return true;
+      if (jsonDocument["txPower"].is<float>())       return true;
+      LOG_WARNING("No valid fields found in JSON document");
+      return false;
+    }
+
+    // Full validation - all fields must be present and of the right type
+    if (!jsonDocument["useStaticIp"].is<bool>())    { LOG_WARNING("useStaticIp field is not a boolean"); return false; }
+    if (!jsonDocument["ip"].is<const char*>())      { LOG_WARNING("ip field is not a string"); return false; }
+    if (!jsonDocument["gateway"].is<const char*>()) { LOG_WARNING("gateway field is not a string"); return false; }
+    if (!jsonDocument["subnet"].is<const char*>())  { LOG_WARNING("subnet field is not a string"); return false; }
+    if (!jsonDocument["dns1"].is<const char*>())    { LOG_WARNING("dns1 field is not a string"); return false; }
+    if (!jsonDocument["dns2"].is<const char*>())    { LOG_WARNING("dns2 field is not a string"); return false; }
+    if (!jsonDocument["channel"].is<uint8_t>())     { LOG_WARNING("channel field is not an integer"); return false; }
+    if (!jsonDocument["txPower"].is<float>())       { LOG_WARNING("txPower field is not a number"); return false; }
+    return true;
+  }
+
+  static bool _validateConfiguration(const WifiConfiguration &config)
+  {
+    if (config.channel > WIFI_CHANNEL_MAX) {
+      LOG_WARNING("Invalid WiFi channel %u (allowed 0-%d)", config.channel, WIFI_CHANNEL_MAX);
+      return false;
+    }
+
+    if (_txPowerToDbm(config.txPower) < -1.5f) { // Sanity guard against a corrupted stored value
+      LOG_WARNING("Invalid TX power value %d", config.txPower);
+      return false;
+    }
+
+    if (config.useStaticIp) {
+      // IP, gateway and subnet are mandatory and must be non-zero; DNS servers are optional
+      if (!_isValidIpv4(config.ip, false))      { LOG_WARNING("Static IP enabled but 'ip' is invalid"); return false; }
+      if (!_isValidIpv4(config.gateway, false)) { LOG_WARNING("Static IP enabled but 'gateway' is invalid"); return false; }
+      if (!_isValidIpv4(config.subnet, false))  { LOG_WARNING("Static IP enabled but 'subnet' is invalid"); return false; }
+      if (config.dns1[0] != '\0' && !_isValidIpv4(config.dns1, true)) { LOG_WARNING("Invalid 'dns1' address"); return false; }
+      if (config.dns2[0] != '\0' && !_isValidIpv4(config.dns2, true)) { LOG_WARNING("Invalid 'dns2' address"); return false; }
+    }
+
+    return true;
+  }
+
+  static void _loadConfiguration()
+  {
+    LOG_DEBUG("Loading network configuration from Preferences...");
+
+    WifiConfiguration config; // Constructor sets all defaults
+
+    Preferences preferences;
+    if (preferences.begin(PREFERENCES_NAMESPACE_WIFI, true)) {
+      config.useStaticIp = preferences.getBool(WIFI_CONFIG_USE_STATIC_KEY, WIFI_USE_STATIC_IP_DEFAULT);
+      snprintf(config.ip, sizeof(config.ip), "%s", preferences.getString(WIFI_CONFIG_IP_KEY, "").c_str());
+      snprintf(config.gateway, sizeof(config.gateway), "%s", preferences.getString(WIFI_CONFIG_GATEWAY_KEY, "").c_str());
+      snprintf(config.subnet, sizeof(config.subnet), "%s", preferences.getString(WIFI_CONFIG_SUBNET_KEY, "").c_str());
+      snprintf(config.dns1, sizeof(config.dns1), "%s", preferences.getString(WIFI_CONFIG_DNS1_KEY, "").c_str());
+      snprintf(config.dns2, sizeof(config.dns2), "%s", preferences.getString(WIFI_CONFIG_DNS2_KEY, "").c_str());
+      config.channel = preferences.getUChar(WIFI_CONFIG_CHANNEL_KEY, WIFI_CHANNEL_DEFAULT);
+      config.txPower = preferences.getChar(WIFI_CONFIG_TXPOWER_KEY, WIFI_TX_POWER_DEFAULT);
+      preferences.end();
+    } else {
+      LOG_ERROR("Failed to open Preferences namespace for WiFi. Using default configuration");
+    }
+
+    // setConfiguration persists the (possibly default) values back to NVS, so missing keys
+    // are materialized on first boot - a clean migration with no separate version flag.
+    // If the stored values fail validation (corruption / firmware downgrade), fall back to
+    // defaults so the config subsystem (and its mutex) is always initialized.
+    if (!setConfiguration(config)) {
+      LOG_WARNING("Stored network configuration invalid - reverting to defaults");
+      WifiConfiguration defaultConfig;
+      setConfiguration(defaultConfig);
+    }
+
+    LOG_DEBUG("Network configuration loaded");
+  }
+
+  static void _saveConfigurationToPreferences(const WifiConfiguration &config)
+  {
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_WIFI, false)) {
+      LOG_ERROR("Failed to open Preferences namespace for WiFi");
+      return;
+    }
+
+    preferences.putBool(WIFI_CONFIG_USE_STATIC_KEY, config.useStaticIp);
+    preferences.putString(WIFI_CONFIG_IP_KEY, config.ip);
+    preferences.putString(WIFI_CONFIG_GATEWAY_KEY, config.gateway);
+    preferences.putString(WIFI_CONFIG_SUBNET_KEY, config.subnet);
+    preferences.putString(WIFI_CONFIG_DNS1_KEY, config.dns1);
+    preferences.putString(WIFI_CONFIG_DNS2_KEY, config.dns2);
+    preferences.putUChar(WIFI_CONFIG_CHANNEL_KEY, config.channel);
+    preferences.putChar(WIFI_CONFIG_TXPOWER_KEY, config.txPower);
+
+    preferences.end();
+    LOG_DEBUG("Network configuration saved to Preferences");
+  }
+
+  // Apply the network configuration to the radio. Must run after WiFi.mode(WIFI_STA) and
+  // before the connection attempt. Static IP is set via WiFi.config(); WiFiManager only
+  // overrides this when it has its own static IP set (it does not), so the config survives
+  // autoConnect. When static IP is disabled we leave the netif on DHCP (its boot default).
+  static void _applyNetworkConfiguration()
+  {
+    WifiConfiguration config;
+    if (!getConfiguration(config)) return;
+
+    // TX power - default is maximum, so this is a no-op unless the user lowered it
+    WiFi.setTxPower(static_cast<wifi_power_t>(config.txPower));
+    LOG_DEBUG("TX power set to %.2f dBm", _txPowerToDbm(config.txPower));
+
+    // Fixed channel (best-effort: in STA the station ultimately follows the AP's channel)
+    if (config.channel >= 1 && config.channel <= WIFI_CHANNEL_MAX) {
+      WiFi.setChannel(config.channel);
+      LOG_INFO("Fixed WiFi channel set to %u", config.channel);
+    }
+
+    // Static IP
+    if (config.useStaticIp) {
+      IPAddress ip, gateway, subnet, dns1, dns2;
+      if (ip.fromString(config.ip) && gateway.fromString(config.gateway) && subnet.fromString(config.subnet)) {
+        dns1.fromString(config.dns1); // Stay 0.0.0.0 when empty/invalid
+        dns2.fromString(config.dns2);
+        if (WiFi.config(ip, gateway, subnet, dns1, dns2)) {
+          LOG_INFO("Static IP configured: %s (gw %s)", config.ip, config.gateway);
+        } else {
+          LOG_ERROR("Failed to apply static IP configuration - falling back to DHCP");
+        }
+      } else {
+        LOG_WARNING("Static IP enabled but addresses invalid - using DHCP");
+      }
+    } else {
+      LOG_DEBUG("Using DHCP for IP configuration");
+    }
   }
 
   TaskInfo getTaskInfo()

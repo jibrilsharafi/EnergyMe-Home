@@ -47,6 +47,50 @@
 
 #define MDNS_HOSTNAME "energyme"
 
+// Network configuration (static IP / channel / TX power)
+// =====================================================
+// Defaults are chosen so a freshly provisioned device behaves exactly as before:
+// DHCP, automatic channel, maximum TX power.
+#define WIFI_USE_STATIC_IP_DEFAULT false
+#define WIFI_CHANNEL_DEFAULT 0                      // 0 = automatic (station follows the AP)
+#define WIFI_CHANNEL_MAX 13                         // 2.4 GHz channels 1-13 (14 is region-restricted)
+#define WIFI_TX_POWER_DEFAULT WIFI_POWER_19_5dBm    // Maximum TX power (raw wifi_power_t, quarter-dBm units)
+
+// Preferences keys for persistent storage (wifi_ns). Max 15 chars each.
+#define WIFI_CONFIG_USE_STATIC_KEY "useStatic"
+#define WIFI_CONFIG_IP_KEY "ip"
+#define WIFI_CONFIG_GATEWAY_KEY "gateway"
+#define WIFI_CONFIG_SUBNET_KEY "subnet"
+#define WIFI_CONFIG_DNS1_KEY "dns1"
+#define WIFI_CONFIG_DNS2_KEY "dns2"
+#define WIFI_CONFIG_CHANNEL_KEY "channel"
+#define WIFI_CONFIG_TXPOWER_KEY "txPower"
+
+// Network configuration: static IP, fixed channel and TX power. Stored in NVS (wifi_ns)
+// and applied at WiFi init. txPower holds the raw wifi_power_t value (quarter-dBm); the
+// JSON API exposes it as dBm. All addresses are stored as strings for easy validation.
+struct WifiConfiguration {
+    bool useStaticIp;
+    char ip[IP_ADDRESS_BUFFER_SIZE];
+    char gateway[IP_ADDRESS_BUFFER_SIZE];
+    char subnet[IP_ADDRESS_BUFFER_SIZE];
+    char dns1[IP_ADDRESS_BUFFER_SIZE];
+    char dns2[IP_ADDRESS_BUFFER_SIZE];
+    uint8_t channel;    // 0 = automatic, 1-13 for a fixed channel
+    int8_t txPower;     // Raw wifi_power_t value (e.g. 78 = 19.5 dBm)
+
+    WifiConfiguration()
+        : useStaticIp(WIFI_USE_STATIC_IP_DEFAULT),
+          channel(WIFI_CHANNEL_DEFAULT),
+          txPower(WIFI_TX_POWER_DEFAULT) {
+      ip[0] = '\0';
+      gateway[0] = '\0';
+      subnet[0] = '\0';
+      dns1[0] = '\0';
+      dns2[0] = '\0';
+    }
+};
+
 // Open Source Telemetry
 // =====================
 // NOTE: Build-time flag ENABLE_OPEN_SOURCE_TELEMETRY controls whether telemetry is sent.
@@ -72,6 +116,17 @@ namespace CustomWifi
 
     void resetWifi();
     bool setCredentials(const char* ssid, const char* password); // Set new WiFi credentials and trigger reconnection
+
+    // Network configuration management - direct struct operations
+    bool getConfiguration(WifiConfiguration &config);
+    bool setConfiguration(const WifiConfiguration &config); // Persists to NVS; caller restarts to apply
+    bool resetConfiguration();
+
+    // Network configuration management - JSON operations
+    bool getConfigurationAsJson(JsonDocument &jsonDocument);
+    bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial = false);
+    void configurationToJson(const WifiConfiguration &config, JsonDocument &jsonDocument);
+    bool configurationFromJson(JsonDocument &jsonDocument, WifiConfiguration &config, bool partial = false);
 
     // Task information
     TaskInfo getTaskInfo();
