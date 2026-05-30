@@ -485,7 +485,14 @@
             }
 
             document.getElementById("update-version").innerHTML = data.availableVersion || 'N/A';
-            document.getElementById("update-date").innerHTML = data.releaseDate || data.buildDate || 'N/A';
+
+            // Show the release date in the browser's local timezone (the API returns UTC ISO 8601).
+            let displayDate = data.buildDate || 'N/A';
+            if (data.releaseDate) {
+                const parsed = new Date(data.releaseDate);
+                displayDate = isNaN(parsed.getTime()) ? data.releaseDate : parsed.toLocaleString();
+            }
+            document.getElementById("update-date").innerHTML = displayDate;
 
             if (data.updateUrl) {
                 document.getElementById("update-url").href = data.updateUrl;

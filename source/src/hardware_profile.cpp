@@ -152,6 +152,13 @@ static const HardwareProfile* pickCommunityFallback() {
 }
 
 void initHardwareProfile() {
+#ifdef FORCE_COMMUNITY_MODE
+    globalCommunityMode = true;
+    globalHwProfile = pickCommunityFallback();
+    LOG_WARNING("FORCE_COMMUNITY_MODE build flag set - ignoring factory NVS, running in community mode");
+    return;
+#endif
+
     Preferences prefs;
     if (!prefs.begin(PREFERENCES_NAMESPACE_FACTORY, true)) {
         globalCommunityMode = true;

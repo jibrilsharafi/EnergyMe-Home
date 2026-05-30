@@ -1307,7 +1307,7 @@ namespace CustomServer
         }
 
         HTTPClient http;
-        http.begin(GITHUB_API_RELEASES_URL);
+        http.begin(GITHUB_API_LATEST_RELEASE_URL);
         http.addHeader("User-Agent", "EnergyMe-Home-ESP32");
         http.addHeader("Accept", "application/vnd.github.v3+json");
 
@@ -1335,49 +1335,31 @@ namespace CustomServer
             return false;
         }
 
-        if (!responseDoc.is<JsonArray>()) {
-            LOG_WARNING("Invalid GitHub API response: expected array");
+        if (!responseDoc.is<JsonObject>()) {
+            LOG_WARNING("Invalid GitHub API response: expected object");
             return false;
         }
 
-        // Find the latest non-prerelease release matching the current major version
-        const char* tagName = nullptr;
-        const char* releaseDate = nullptr;
-        const char* changelog = nullptr;
+        // /releases/latest returns the newest published release repo-wide and already
+        // excludes drafts and prereleases, so no filtering loop is needed here.
+        JsonObject release = responseDoc.as<JsonObject>();
+
+        const char* tagName = release["tag_name"].as<const char*>();
+        if (!tagName) {
+            LOG_WARNING("No tag_name in GitHub latest release response");
+            return false;
+        }
+
+        const char* releaseDate = release["published_at"].as<const char*>();
+        const char* changelog = release["html_url"].as<const char*>();
         const char* downloadUrl = nullptr;
 
-        for (JsonObject release : responseDoc.as<JsonArray>()) {
-            if (release["prerelease"].as<bool>() || release["draft"].as<bool>()) continue;
-
-            const char* tag = release["tag_name"].as<const char*>();
-            if (!tag) continue;
-
-            // Parse major version from tag (strip leading 'v' if present)
-            const char* tagStr = (tag[0] == 'v') ? tag + 1 : tag;
-            int major = 0;
-            sscanf(tagStr, "%d", &major);
-
-            // Only consider releases matching the current firmware major version
-            if (major != atoi(FIRMWARE_BUILD_VERSION_MAJOR)) continue;
-
-            // Releases are returned newest-first, so the first match is the latest
-            tagName = tag;
-            releaseDate = release["published_at"].as<const char*>();
-            changelog = release["html_url"].as<const char*>();
-
-            for (JsonObject asset : release["assets"].as<JsonArray>()) {
-                const char* name = asset["name"].as<const char*>();
-                if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
-                    downloadUrl = asset["browser_download_url"].as<const char*>();
-                    break;
-                }
+        for (JsonObject asset : release["assets"].as<JsonArray>()) {
+            const char* name = asset["name"].as<const char*>();
+            if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
+                downloadUrl = asset["browser_download_url"].as<const char*>();
+                break;
             }
-            break;
-        }
-
-        if (!tagName) {
-            LOG_WARNING("No matching release found for major version %s", FIRMWARE_BUILD_VERSION_MAJOR);
-            return false;
         }
 
         // Compare versions to determine if update is available
