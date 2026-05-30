@@ -361,6 +361,28 @@ class EnergyMeAPI {
     }
 
     /**
+     * Get network configuration (static IP)
+     */
+    async getNetworkConfig() {
+        return this.get('network/config');
+    }
+
+    /**
+     * Set network configuration (full update). The device restarts to apply.
+     * @param {object} config - { useStaticIp, ip, gateway, subnet, dns1, dns2, fallbackToDhcp }
+     */
+    async setNetworkConfig(config) {
+        return this.put('network/config', config);
+    }
+
+    /**
+     * Reset network configuration to defaults. The device restarts to apply.
+     */
+    async resetNetworkConfig() {
+        return this.post('network/config/reset');
+    }
+
+    /**
      * Get health status
      */
     async getHealth() {

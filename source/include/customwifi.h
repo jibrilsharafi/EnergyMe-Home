@@ -46,6 +46,59 @@
 
 #define MDNS_HOSTNAME "energyme"
 
+// Network configuration (static IP)
+// =====================================================
+// Defaults are chosen so a freshly provisioned device behaves exactly as before: DHCP.
+#define WIFI_USE_STATIC_IP_DEFAULT false
+#define WIFI_FALLBACK_TO_DHCP_DEFAULT true          // Auto-revert to DHCP if a configured static IP can't reach the internet
+
+// Two independent safety nets protect against a bad static IP locking the device out. Both recover
+// only by restarting onto DHCP - never by reconfiguring the live netif, which races lwIP (an in-flight
+// UDP send asserts in ip4_route during the IP-less window):
+//   1. Boot-fail backstop (always on): a persistent counter is incremented BEFORE the static IP is
+//      applied on each boot and cleared once the device proves the static IP is not a boot-loop
+//      offender (it stays connected past the early crash window). After this many consecutive failed
+//      boots the static IP is ignored at startup and the device comes up on DHCP - so a static IP
+//      that crashes or fails to associate can never brick it.
+//   2. DHCP auto-recovery (only when fallbackToDhcp is set): if a static IP that DID come up has no
+//      internet for several consecutive periodic checks, force the backstop and restart once; the
+//      next boot comes up clean on DHCP. Disarms after the first successful check so a later internet
+//      blip on a good static IP never triggers it. LAN-only users leave fallbackToDhcp off.
+#define WIFI_STATIC_IP_MAX_BOOT_FAILS 3
+#define WIFI_STATIC_IP_FAIL_STREAK 2               // Consecutive periodic internet failures before DHCP auto-recovery
+
+// Preferences keys for persistent storage (wifi_ns). Max 15 chars each.
+#define WIFI_CONFIG_USE_STATIC_KEY "useStatic"
+#define WIFI_CONFIG_IP_KEY "ip"
+#define WIFI_CONFIG_GATEWAY_KEY "gateway"
+#define WIFI_CONFIG_SUBNET_KEY "subnet"
+#define WIFI_CONFIG_DNS1_KEY "dns1"
+#define WIFI_CONFIG_DNS2_KEY "dns2"
+#define WIFI_CONFIG_FALLBACK_KEY "fallback"
+#define WIFI_CONFIG_STATIC_FAILS_KEY "staticFails" // Consecutive failed static-IP boots (backstop)
+
+// Network configuration: static IP. Stored in NVS (wifi_ns) and applied at WiFi init.
+// All addresses are stored as strings for easy validation.
+struct WifiConfiguration {
+    bool useStaticIp;
+    char ip[IP_ADDRESS_BUFFER_SIZE];
+    char gateway[IP_ADDRESS_BUFFER_SIZE];
+    char subnet[IP_ADDRESS_BUFFER_SIZE];
+    char dns1[IP_ADDRESS_BUFFER_SIZE];
+    char dns2[IP_ADDRESS_BUFFER_SIZE];
+    bool fallbackToDhcp; // When static IP is enabled, auto-revert to DHCP if the gateway is unreachable
+
+    WifiConfiguration()
+        : useStaticIp(WIFI_USE_STATIC_IP_DEFAULT),
+          fallbackToDhcp(WIFI_FALLBACK_TO_DHCP_DEFAULT) {
+      ip[0] = '\0';
+      gateway[0] = '\0';
+      subnet[0] = '\0';
+      dns1[0] = '\0';
+      dns2[0] = '\0';
+    }
+};
+
 // Open Source Telemetry
 // =====================
 // NOTE: Build-time flag ENABLE_OPEN_SOURCE_TELEMETRY controls whether telemetry is sent.
@@ -67,6 +120,17 @@ namespace CustomWifi
 
     void resetWifi();
     bool setCredentials(const char* ssid, const char* password); // Set new WiFi credentials and trigger reconnection
+
+    // Network configuration management - direct struct operations
+    bool getConfiguration(WifiConfiguration &config);
+    bool setConfiguration(const WifiConfiguration &config); // Persists to NVS; caller restarts to apply
+    bool resetConfiguration();
+
+    // Network configuration management - JSON operations
+    bool getConfigurationAsJson(JsonDocument &jsonDocument);
+    bool setConfigurationFromJson(JsonDocument &jsonDocument, bool partial = false);
+    void configurationToJson(const WifiConfiguration &config, JsonDocument &jsonDocument);
+    bool configurationFromJson(JsonDocument &jsonDocument, WifiConfiguration &config, bool partial = false);
 
     // Task information
     TaskInfo getTaskInfo();
