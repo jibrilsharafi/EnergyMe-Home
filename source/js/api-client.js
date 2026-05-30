@@ -361,7 +361,7 @@ class EnergyMeAPI {
     }
 
     /**
-     * Get network configuration (static IP / channel / TX power)
+     * Get network configuration (static IP)
      */
     async getNetworkConfig() {
         return this.get('network/config');
@@ -369,7 +369,7 @@ class EnergyMeAPI {
 
     /**
      * Set network configuration (full update). The device restarts to apply.
-     * @param {object} config - { useStaticIp, ip, gateway, subnet, dns1, dns2, channel, txPower }
+     * @param {object} config - { useStaticIp, ip, gateway, subnet, dns1, dns2, fallbackToDhcp }
      */
     async setNetworkConfig(config) {
         return this.put('network/config', config);
