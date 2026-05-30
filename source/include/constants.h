@@ -21,6 +21,10 @@
 #define PRODUCT_DESCRIPTION "An open-source energy monitoring system for home use, capable of monitoring up to 17 circuits."
 #define GITHUB_URL "https://github.com/jibrilsharafi/EnergyMe-Home"
 #define GITHUB_API_RELEASES_URL "https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases?per_page=100"
+#define GITHUB_API_TAGS_URL "https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/tags?per_page=100"
+// Deterministic v1.x asset/changelog URL patterns (printf format: version "X.Y.Z")
+#define GITHUB_DOWNLOAD_URL_PATTERN "https://github.com/jibrilsharafi/EnergyMe-Home/releases/download/v%s/energyme_home_%s_nosecrets.bin"
+#define GITHUB_CHANGELOG_URL_PATTERN "https://github.com/jibrilsharafi/EnergyMe-Home/releases/tag/v%s"
 #define AUTHOR "Jibril Sharafi"
 #define AUTHOR_EMAIL "jibril.sharafi@gmail.com"
 

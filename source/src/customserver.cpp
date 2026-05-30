@@ -1300,8 +1300,19 @@ namespace CustomServer
             return false;
         }
 
+        // Fetch the lightweight tags list instead of the full releases array.
+        // The releases endpoint returns a large payload that the TLS stack
+        // truncates, causing ArduinoJson "IncompleteInput". The tags endpoint
+        // is tiny (~13 entries) and only carries a "name" per tag. For legacy
+        // we only ever offer the latest v1.X release, and since there is no
+        // GitHub endpoint for "latest of a given major" we discover the newest
+        // v1.x tag here and construct the download/changelog URLs deterministically.
+        // Trade-off vs the old releases-based code: tags carry no prerelease flag
+        // and no asset list, so this offers any v1.x X.Y.Z tag and assumes the
+        // _nosecrets.bin asset exists. Accepted for legacy: all v1.x releases are
+        // stable and always ship that asset (the v1.x line is frozen).
         HTTPClient http;
-        http.begin(GITHUB_API_RELEASES_URL); // fetches a list, not a single release
+        http.begin(GITHUB_API_TAGS_URL);
         http.addHeader("User-Agent", "EnergyMe-Home-ESP32");
         http.addHeader("Accept", "application/vnd.github.v3+json");
 
@@ -1316,10 +1327,14 @@ namespace CustomServer
         String response = http.getString();
         http.end();
 
-        // Parse as array
+        // Parse as array, keeping only the "name" field of each element to stay
+        // lean and robust against any extra fields in the tag objects.
         SpiRamAllocator allocator;
+        JsonDocument filter(&allocator);
+        filter[0]["name"] = true;
+
         JsonDocument listDoc(&allocator);
-        DeserializationError error = deserializeJson(listDoc, response);
+        DeserializationError error = deserializeJson(listDoc, response, DeserializationOption::Filter(filter));
         if (error) {
             LOG_WARNING("Failed to parse GitHub API response: %s", error.c_str());
             return false;
@@ -1330,70 +1345,66 @@ namespace CustomServer
             return false;
         }
 
-        // Parse the current firmware's major version (e.g. "1" → 1)
+        // Parse the current firmware's major version (e.g. "1" -> 1)
         int currentMajor = atoi(FIRMWARE_BUILD_VERSION_MAJOR);
 
-        // Find the first (newest) stable release whose major version matches
-        // ours. We skip drafts and prereleases to avoid advertising unstable
-        // builds, and require a full X.Y.Z parse (sscanf returns 3) to skip
-        // non-semver tags like "beta" or "v1-rc1" that would otherwise match.
-        JsonObject matchedRelease;
-        for (JsonObject release : listDoc.as<JsonArray>()) {
-            if (release["draft"].as<bool>() || release["prerelease"].as<bool>()) continue;
-            const char* tag = release["tag_name"];
-            if (!tag) continue;
+        // Scan ALL tags and track the highest v1.x semver. Tag ordering from the
+        // tags endpoint is not guaranteed, so we cannot assume the first match is
+        // newest. We require a full X.Y.Z parse that consumes the whole string,
+        // rejecting suffixes like "1.2.3-rc1" or non-semver tags.
+        int bestMajor = -1, bestMinor = -1, bestPatch = -1;
+        bool found = false;
+        for (JsonObject tagObj : listDoc.as<JsonArray>()) {
+            const char* name = tagObj["name"];
+            if (!name) continue;
             // Strip leading 'v' if present
-            const char* tagStr = (tag[0] == 'v') ? tag + 1 : tag;
+            const char* nameStr = (name[0] == 'v') ? name + 1 : name;
             int major = 0, minor = 0, patch = 0;
             int consumed = 0;
             // Require exact "X.Y.Z" with no suffix (e.g. reject "1.2.3-rc1")
-            if (sscanf(tagStr, "%d.%d.%d%n", &major, &minor, &patch, &consumed) != 3) continue;
-            if (tagStr[consumed] != '\0') continue;
-            if (major == currentMajor) {
-                matchedRelease = release;
-                break;
+            if (sscanf(nameStr, "%d.%d.%d%n", &major, &minor, &patch, &consumed) != 3) continue;
+            if (nameStr[consumed] != '\0') continue;
+            if (major != currentMajor) continue;
+
+            // Keep the highest version among matches
+            if (!found ||
+                major > bestMajor ||
+                (major == bestMajor && minor > bestMinor) ||
+                (major == bestMajor && minor == bestMinor && patch > bestPatch)) {
+                bestMajor = major;
+                bestMinor = minor;
+                bestPatch = patch;
+                found = true;
             }
         }
 
-        if (matchedRelease.isNull()) {
-            LOG_WARNING("No GitHub release found matching major version %d", currentMajor);
+        if (!found) {
+            LOG_WARNING("No GitHub tag found matching major version %d", currentMajor);
             return false;
         }
 
-        const char* tagName    = matchedRelease["tag_name"];
-        if (!tagName) {
-            LOG_WARNING("Matched release has no tag_name");
-            return false;
-        }
-        const char* releaseDate = matchedRelease["published_at"].as<const char*>();
-        const char* changelog  = matchedRelease["html_url"].as<const char*>();
+        // Build the normalized "X.Y.Z" version and construct the asset/changelog
+        // URLs deterministically from the consistent v1.x naming convention.
+        char normalizedVersion[VERSION_BUFFER_SIZE];
+        snprintf(normalizedVersion, sizeof(normalizedVersion), "%d.%d.%d", bestMajor, bestMinor, bestPatch);
 
-        // Find .bin asset
-        JsonArray assets = matchedRelease["assets"];
-        const char* downloadUrl = nullptr;
+        char updateUrl[FULL_URL_BUFFER_SIZE];
+        snprintf(updateUrl, sizeof(updateUrl), GITHUB_DOWNLOAD_URL_PATTERN, normalizedVersion, normalizedVersion);
 
-        for (JsonObject asset : assets) {
-            const char* name = asset["name"];
-            // Firmware name is always like energyme_home_vX.Y.Z.bin
-            if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
-                downloadUrl = asset["browser_download_url"];
-                break;
-            }
-        }
+        char changelogUrl[URL_BUFFER_SIZE];
+        snprintf(changelogUrl, sizeof(changelogUrl), GITHUB_CHANGELOG_URL_PATTERN, normalizedVersion);
 
-        // Populate the output document — strip leading 'v' from tag to match
-        // FIRMWARE_BUILD_VERSION format (e.g. "1.1.1", not "v1.1.1")
-        const char* tagNameNormalized = (tagName[0] == 'v') ? tagName + 1 : tagName;
-        doc["availableVersion"] = tagNameNormalized;
-        if (releaseDate) doc["releaseDate"] = releaseDate;
-        if (downloadUrl) doc["updateUrl"]   = downloadUrl;
-        if (changelog)   doc["changelogUrl"] = changelog;
+        // Populate the output document. releaseDate is not available from the
+        // tags endpoint, so it is omitted; the frontend falls back to buildDate.
+        doc["availableVersion"] = normalizedVersion;
+        doc["updateUrl"] = updateUrl;
+        doc["changelogUrl"] = changelogUrl;
 
         // Compare versions to determine if update is available
-        doc["isLatest"] = _compareVersions(FIRMWARE_BUILD_VERSION, tagNameNormalized) >= 0;
+        doc["isLatest"] = _compareVersions(FIRMWARE_BUILD_VERSION, normalizedVersion) >= 0;
 
         LOG_DEBUG("GitHub release info fetched (major=%d): version=%s, isLatest=%s",
-                  currentMajor, tagNameNormalized, doc["isLatest"].as<bool>() ? "true" : "false");
+                  currentMajor, normalizedVersion, doc["isLatest"].as<bool>() ? "true" : "false");
 
         return true;
     }
