@@ -1692,7 +1692,7 @@ namespace CustomServer
             });
         server.addHandler(wifiCredentialsHandler);
 
-        // Get network configuration (static IP / channel / TX power)
+        // Get network configuration (static IP)
         server.on("/api/v1/network/config", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             SpiRamAllocator allocator;
@@ -1723,7 +1723,7 @@ namespace CustomServer
             });
         server.addHandler(setNetworkConfigHandler);
 
-        // Reset network configuration to defaults (DHCP, automatic channel, maximum TX power)
+        // Reset network configuration to defaults (DHCP)
         server.on("/api/v1/network/config/reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
             if (!_validateRequest(request, "POST")) return;

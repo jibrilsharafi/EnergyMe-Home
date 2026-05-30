@@ -44,7 +44,7 @@ namespace CustomWifi
   static char _lastDisconnectBSSID[MAC_ADDRESS_BUFFER_SIZE] = {0};
   static int8_t _lastDisconnectRSSI = 0;
 
-  // Network configuration (static IP / channel / TX power)
+  // Network configuration (static IP)
   static WifiConfiguration _configuration;
   static SemaphoreHandle_t _configMutex = nullptr;
 
@@ -73,9 +73,17 @@ namespace CustomWifi
   static void _applyNetworkConfiguration();
   static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial);
   static bool _validateConfiguration(const WifiConfiguration &config);
-  static float _txPowerToDbm(int8_t value);
-  static bool _dbmToTxPower(float dbm, int8_t &out);
   static bool _isValidIpv4(const char* str, bool allowZero);
+  static void _serviceStaticIpHealth(bool internetReachable);
+  static uint8_t _getStaticBootFails();
+  static void _setStaticBootFails(uint8_t count);
+  // Static-IP health state, reset each boot. _staticIpApplied: the static IP was actually applied
+  // (not skipped by the backstop). _staticBackstopCleared: the boot-fail counter has been cleared
+  // this boot. _staticRecoveryResolved: DHCP auto-recovery has confirmed internet or already fired.
+  static bool _staticIpApplied = false;
+  static bool _staticBackstopCleared = false;
+  static bool _staticRecoveryResolved = false;
+  static uint8_t _staticInternetFailStreak = 0;
 
   bool begin()
   {
@@ -101,8 +109,8 @@ namespace CustomWifi
     WiFi.setSleep(false); // Disable WiFi sleep to prevent handshake timeouts
 
     // Load persisted network configuration, applying defaults and writing them back to
-    // NVS on first boot (migration). Then apply static IP / channel / TX power before the
-    // connection attempt so they take effect for the initial join.
+    // NVS on first boot (migration). Then apply the static IP before the connection
+    // attempt so it takes effect for the initial join.
     _loadConfiguration();
     _applyNetworkConfiguration();
 
@@ -501,23 +509,17 @@ namespace CustomWifi
   {
     _lastReconnectAttempt = 0;
 
-    // Re-apply TX power: the radio can revert to a driver default during the
-    // esp_wifi_start/connect sequence, so enforce the configured level here. This matters
-    // for regional regulatory compliance. (Channel is intentionally not re-applied - in STA
-    // the station follows the AP's channel and forcing it post-connect would break the link.)
-    WifiConfiguration netConfig;
-    if (getConfiguration(netConfig)) {
-      WiFi.setTxPower(static_cast<wifi_power_t>(netConfig.txPower));
-      LOG_DEBUG("TX power after connect: requested %.2f dBm, actual %.2f dBm",
-                _txPowerToDbm(netConfig.txPower), _txPowerToDbm(static_cast<int8_t>(WiFi.getTxPower())));
-    }
-
     _setupMdns();
     // Note: printDeviceStatusDynamic() removed to avoid flash I/O from PSRAM task
 
     Led::clearPattern(Led::PRIO_MEDIUM); // Ensure that if we are connected again, we don't keep the blue pattern
     Led::setGreen(Led::PRIO_NORMAL); // Hack: to ensure we get back to green light, we set it here even though a proper LED manager would handle priorities better
     LOG_INFO("WiFi fully connected and operational");
+
+    // Static-IP health (boot-fail backstop clear + DHCP auto-recovery) is serviced from the periodic
+    // check in the task loop, not here: it must run past the early crash window and after the restart
+    // gate's minimum uptime, and we never reconfigure the live netif (that races lwIP).
+
     _sendOpenSourceTelemetry(); // Non-blocking short POST (guarded by compile-time flag)
   }
 
@@ -718,14 +720,18 @@ namespace CustomWifi
         if (_taskShouldRun)
         {
           if (isFullyConnected())
-          {   
+          {
             // Test internet connectivity but don't force reconnection if it fails
             // WiFi is connected to local network - internet may simply be unavailable
             // This allows the device to operate in local-only mode (static IP, isolated networks)
-            if (!_testConnectivity()) {
+            bool internetReachable = _testConnectivity();
+            if (!internetReachable) {
               LOG_DEBUG("Internet connectivity unavailable - device operating in local-only mode");
             }
-          
+
+            // Manage the static-IP safety nets (backstop clear + DHCP auto-recovery)
+            _serviceStaticIpHealth(internetReachable);
+
             // Reset failure counter on sustained connection
             if (_reconnectAttempts > 0 && millis64() - _lastReconnectAttempt > WIFI_STABLE_CONNECTION_DURATION)
             {
@@ -756,7 +762,7 @@ namespace CustomWifi
     LOG_INFO("Resetting WiFi credentials and restarting...");
     Led::blinkOrangeFast(Led::PRIO_CRITICAL);
 
-    // Also revert the network configuration (static IP / channel / TX power) to defaults.
+    // Also revert the network configuration (static IP) to defaults.
     // A WiFi reset is the connectivity-recovery path, so it must give a clean DHCP slate -
     // otherwise a bad static IP would survive the credential reset and keep the device
     // unreachable even after reconfiguring WiFi through the portal.
@@ -1130,46 +1136,8 @@ namespace CustomWifi
   }
 
   // ============================================================================
-  // Network configuration (static IP / channel / TX power)
+  // Network configuration (static IP)
   // ============================================================================
-
-  // Discrete TX power levels supported by the ESP32 radio. The API speaks dBm; we store
-  // the raw wifi_power_t value (quarter-dBm units). Keep ordered by dBm ascending.
-  struct TxPowerOption { float dbm; int8_t value; };
-  static const TxPowerOption TX_POWER_OPTIONS[] = {
-    { -1.0f, WIFI_POWER_MINUS_1dBm },
-    {  2.0f, WIFI_POWER_2dBm },
-    {  5.0f, WIFI_POWER_5dBm },
-    {  7.0f, WIFI_POWER_7dBm },
-    {  8.5f, WIFI_POWER_8_5dBm },
-    { 11.0f, WIFI_POWER_11dBm },
-    { 13.0f, WIFI_POWER_13dBm },
-    { 15.0f, WIFI_POWER_15dBm },
-    { 17.0f, WIFI_POWER_17dBm },
-    { 18.5f, WIFI_POWER_18_5dBm },
-    { 19.0f, WIFI_POWER_19dBm },
-    { 19.5f, WIFI_POWER_19_5dBm },
-  };
-  static const size_t TX_POWER_OPTION_COUNT = sizeof(TX_POWER_OPTIONS) / sizeof(TX_POWER_OPTIONS[0]);
-
-  static float _txPowerToDbm(int8_t value)
-  {
-    for (size_t i = 0; i < TX_POWER_OPTION_COUNT; i++) {
-      if (TX_POWER_OPTIONS[i].value == value) return TX_POWER_OPTIONS[i].dbm;
-    }
-    return value / 4.0f; // Fallback: raw value is in quarter-dBm units
-  }
-
-  static bool _dbmToTxPower(float dbm, int8_t &out)
-  {
-    for (size_t i = 0; i < TX_POWER_OPTION_COUNT; i++) {
-      if (fabsf(TX_POWER_OPTIONS[i].dbm - dbm) < 0.125f) { // Half a step tolerance
-        out = TX_POWER_OPTIONS[i].value;
-        return true;
-      }
-    }
-    return false;
-  }
 
   static bool _isValidIpv4(const char* str, bool allowZero)
   {
@@ -1221,6 +1189,7 @@ namespace CustomWifi
       LOG_ERROR("Failed to reset network configuration");
       return false;
     }
+    _setStaticBootFails(0); // Clean slate - default config is DHCP anyway
     LOG_INFO("Network configuration reset to default");
     return true;
   }
@@ -1243,7 +1212,12 @@ namespace CustomWifi
       return false;
     }
 
-    return setConfiguration(config);
+    if (!setConfiguration(config)) return false;
+
+    // A user-saved config is the escape hatch: give the (possibly new) static IP a fresh set of
+    // boot attempts so the backstop doesn't keep it disabled from previous failures.
+    _setStaticBootFails(0);
+    return true;
   }
 
   void configurationToJson(const WifiConfiguration &config, JsonDocument &jsonDocument)
@@ -1254,8 +1228,7 @@ namespace CustomWifi
     jsonDocument["subnet"] = JsonString(config.subnet);
     jsonDocument["dns1"] = JsonString(config.dns1);
     jsonDocument["dns2"] = JsonString(config.dns2);
-    jsonDocument["channel"] = config.channel;
-    jsonDocument["txPower"] = _txPowerToDbm(config.txPower);
+    jsonDocument["fallbackToDhcp"] = config.fallbackToDhcp;
   }
 
   bool configurationFromJson(JsonDocument &jsonDocument, WifiConfiguration &config, bool partial)
@@ -1271,15 +1244,7 @@ namespace CustomWifi
     if (jsonDocument["subnet"].is<const char*>())   snprintf(config.subnet, sizeof(config.subnet), "%s", jsonDocument["subnet"].as<const char*>());
     if (jsonDocument["dns1"].is<const char*>())     snprintf(config.dns1, sizeof(config.dns1), "%s", jsonDocument["dns1"].as<const char*>());
     if (jsonDocument["dns2"].is<const char*>())     snprintf(config.dns2, sizeof(config.dns2), "%s", jsonDocument["dns2"].as<const char*>());
-    if (jsonDocument["channel"].is<uint8_t>())      config.channel = jsonDocument["channel"].as<uint8_t>();
-    if (jsonDocument["txPower"].is<float>()) {
-      int8_t txValue;
-      if (!_dbmToTxPower(jsonDocument["txPower"].as<float>(), txValue)) {
-        LOG_WARNING("Unsupported txPower value: %.2f dBm", jsonDocument["txPower"].as<float>());
-        return false;
-      }
-      config.txPower = txValue;
-    }
+    if (jsonDocument["fallbackToDhcp"].is<bool>()) config.fallbackToDhcp = jsonDocument["fallbackToDhcp"].as<bool>();
 
     // Cross-field validation on the merged result (catches e.g. useStaticIp=true with no IP via PATCH)
     return _validateConfiguration(config);
@@ -1300,8 +1265,7 @@ namespace CustomWifi
       if (jsonDocument["subnet"].is<const char*>())  return true;
       if (jsonDocument["dns1"].is<const char*>())    return true;
       if (jsonDocument["dns2"].is<const char*>())    return true;
-      if (jsonDocument["channel"].is<uint8_t>())     return true;
-      if (jsonDocument["txPower"].is<float>())       return true;
+      if (jsonDocument["fallbackToDhcp"].is<bool>()) return true;
       LOG_WARNING("No valid fields found in JSON document");
       return false;
     }
@@ -1313,23 +1277,12 @@ namespace CustomWifi
     if (!jsonDocument["subnet"].is<const char*>())  { LOG_WARNING("subnet field is not a string"); return false; }
     if (!jsonDocument["dns1"].is<const char*>())    { LOG_WARNING("dns1 field is not a string"); return false; }
     if (!jsonDocument["dns2"].is<const char*>())    { LOG_WARNING("dns2 field is not a string"); return false; }
-    if (!jsonDocument["channel"].is<uint8_t>())     { LOG_WARNING("channel field is not an integer"); return false; }
-    if (!jsonDocument["txPower"].is<float>())       { LOG_WARNING("txPower field is not a number"); return false; }
+    if (!jsonDocument["fallbackToDhcp"].is<bool>()) { LOG_WARNING("fallbackToDhcp field is not a boolean"); return false; }
     return true;
   }
 
   static bool _validateConfiguration(const WifiConfiguration &config)
   {
-    if (config.channel > WIFI_CHANNEL_MAX) {
-      LOG_WARNING("Invalid WiFi channel %u (allowed 0-%d)", config.channel, WIFI_CHANNEL_MAX);
-      return false;
-    }
-
-    if (_txPowerToDbm(config.txPower) < -1.5f) { // Sanity guard against a corrupted stored value
-      LOG_WARNING("Invalid TX power value %d", config.txPower);
-      return false;
-    }
-
     if (config.useStaticIp) {
       // IP, gateway and subnet are mandatory and must be non-zero; DNS servers are optional
       if (!_isValidIpv4(config.ip, false))      { LOG_WARNING("Static IP enabled but 'ip' is invalid"); return false; }
@@ -1356,8 +1309,7 @@ namespace CustomWifi
       snprintf(config.subnet, sizeof(config.subnet), "%s", preferences.getString(WIFI_CONFIG_SUBNET_KEY, "").c_str());
       snprintf(config.dns1, sizeof(config.dns1), "%s", preferences.getString(WIFI_CONFIG_DNS1_KEY, "").c_str());
       snprintf(config.dns2, sizeof(config.dns2), "%s", preferences.getString(WIFI_CONFIG_DNS2_KEY, "").c_str());
-      config.channel = preferences.getUChar(WIFI_CONFIG_CHANNEL_KEY, WIFI_CHANNEL_DEFAULT);
-      config.txPower = preferences.getChar(WIFI_CONFIG_TXPOWER_KEY, WIFI_TX_POWER_DEFAULT);
+      config.fallbackToDhcp = preferences.getBool(WIFI_CONFIG_FALLBACK_KEY, WIFI_FALLBACK_TO_DHCP_DEFAULT);
       preferences.end();
     } else {
       LOG_ERROR("Failed to open Preferences namespace for WiFi. Using default configuration");
@@ -1390,8 +1342,7 @@ namespace CustomWifi
     preferences.putString(WIFI_CONFIG_SUBNET_KEY, config.subnet);
     preferences.putString(WIFI_CONFIG_DNS1_KEY, config.dns1);
     preferences.putString(WIFI_CONFIG_DNS2_KEY, config.dns2);
-    preferences.putUChar(WIFI_CONFIG_CHANNEL_KEY, config.channel);
-    preferences.putChar(WIFI_CONFIG_TXPOWER_KEY, config.txPower);
+    preferences.putBool(WIFI_CONFIG_FALLBACK_KEY, config.fallbackToDhcp);
 
     preferences.end();
     LOG_DEBUG("Network configuration saved to Preferences");
@@ -1406,33 +1357,109 @@ namespace CustomWifi
     WifiConfiguration config;
     if (!getConfiguration(config)) return;
 
-    // TX power - default is maximum, so this is a no-op unless the user lowered it
-    WiFi.setTxPower(static_cast<wifi_power_t>(config.txPower));
-    LOG_DEBUG("TX power set to %.2f dBm", _txPowerToDbm(config.txPower));
+    _staticIpApplied = false;
 
-    // Fixed channel (best-effort: in STA the station ultimately follows the AP's channel)
-    if (config.channel >= 1 && config.channel <= WIFI_CHANNEL_MAX) {
-      WiFi.setChannel(config.channel);
-      LOG_INFO("Fixed WiFi channel set to %u", config.channel);
-    }
-
-    // Static IP
-    if (config.useStaticIp) {
-      IPAddress ip, gateway, subnet, dns1, dns2;
-      if (ip.fromString(config.ip) && gateway.fromString(config.gateway) && subnet.fromString(config.subnet)) {
-        dns1.fromString(config.dns1); // Stay 0.0.0.0 when empty/invalid
-        dns2.fromString(config.dns2);
-        if (WiFi.config(ip, gateway, subnet, dns1, dns2)) {
-          LOG_INFO("Static IP configured: %s (gw %s)", config.ip, config.gateway);
-        } else {
-          LOG_ERROR("Failed to apply static IP configuration - falling back to DHCP");
-        }
-      } else {
-        LOG_WARNING("Static IP enabled but addresses invalid - using DHCP");
-      }
-    } else {
+    if (!config.useStaticIp) {
       LOG_DEBUG("Using DHCP for IP configuration");
+      return;
     }
+
+    // Backstop: if the last few boots with this static IP all failed, ignore it and come up on
+    // DHCP so the device is always recoverable. The counter is cleared once static is confirmed
+    // healthy (_serviceStaticIpHealth) or the user saves a new config (setConfigurationFromJson).
+    uint8_t bootFails = _getStaticBootFails();
+    if (bootFails >= WIFI_STATIC_IP_MAX_BOOT_FAILS) {
+      LOG_WARNING("Static IP disabled after %u failed boots - using DHCP (config kept, save again to retry)", bootFails);
+      return;
+    }
+
+    IPAddress ip, gateway, subnet, dns1, dns2;
+    if (!(ip.fromString(config.ip) && gateway.fromString(config.gateway) && subnet.fromString(config.subnet))) {
+      LOG_WARNING("Static IP enabled but addresses invalid - using DHCP");
+      return;
+    }
+
+    // DNS is mandatory for the radio to resolve hostnames (AWS/MQTT/NTP). When the user leaves it
+    // blank, default the primary DNS to the gateway (routers commonly relay DNS) rather than 0.0.0.0,
+    // which would silently break name resolution.
+    if (!dns1.fromString(config.dns1)) dns1 = gateway;
+    dns2.fromString(config.dns2); // Optional - stays 0.0.0.0 when empty
+
+    // Count this attempt BEFORE applying, so a crash or lock-out mid-boot still accumulates.
+    _setStaticBootFails(bootFails + 1);
+
+    if (WiFi.config(ip, gateway, subnet, dns1, dns2)) {
+      _staticIpApplied = true;
+      LOG_INFO("Static IP configured: %s (gateway: %s, attempt %u)", config.ip, config.gateway, bootFails + 1);
+    } else {
+      LOG_ERROR("Failed to apply static IP configuration - falling back to DHCP");
+    }
+  }
+
+  // Persistent count of consecutive static-IP boots that did not reach healthy connectivity.
+  // Backs the boot-fail backstop in _applyNetworkConfiguration. Stored in wifi_ns.
+  static uint8_t _getStaticBootFails()
+  {
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_WIFI, true)) return 0;
+    uint8_t count = preferences.getUChar(WIFI_CONFIG_STATIC_FAILS_KEY, 0);
+    preferences.end();
+    return count;
+  }
+
+  static void _setStaticBootFails(uint8_t count)
+  {
+    Preferences preferences;
+    if (!preferences.begin(PREFERENCES_NAMESPACE_WIFI, false)) {
+      LOG_ERROR("Failed to open Preferences to update static boot-fail counter");
+      return;
+    }
+    preferences.putUChar(WIFI_CONFIG_STATIC_FAILS_KEY, count);
+    preferences.end();
+  }
+
+  // Services the two static-IP safety nets from the periodic WiFi check (runs only when a static IP
+  // was actually applied this boot). Recovery is always by restart-onto-DHCP, never by live netif
+  // reconfiguration (WiFi.config(0,0,0) races lwIP and asserts in ip4_route during the IP-less window).
+  static void _serviceStaticIpHealth(bool internetReachable)
+  {
+    if (!_staticIpApplied) return; // DHCP boot, or static was skipped by the backstop - nothing to manage
+
+    // Backstop clear: reaching a periodic check still connected means the static IP is past the early
+    // crash/assoc window and is not a boot-loop offender. Clear the counter (internet-independent, so a
+    // valid LAN-only static IP is never disabled). Gated on _staticIpApplied, so the DHCP recovery boot
+    // (where static was skipped) never clears it - that would re-arm a known-bad static IP and oscillate.
+    if (!_staticBackstopCleared) {
+      _setStaticBootFails(0);
+      _staticBackstopCleared = true;
+      LOG_INFO("Static IP stable - boot-fail backstop counter cleared");
+    }
+
+    // DHCP auto-recovery: only when the user opted in, and only until the first successful check
+    // (so a later internet blip on a good static IP can never reboot the device off it).
+    if (_staticRecoveryResolved) return;
+
+    WifiConfiguration config;
+    if (!getConfiguration(config) || !config.fallbackToDhcp) return;
+
+    if (internetReachable) {
+      _staticRecoveryResolved = true; // Confirmed good - disarm for the rest of this boot
+      return;
+    }
+
+    _staticInternetFailStreak++;
+    if (_staticInternetFailStreak < WIFI_STATIC_IP_FAIL_STREAK) {
+      LOG_WARNING("Static IP has no internet (%u/%u) - will recover on DHCP if it persists",
+                  _staticInternetFailStreak, WIFI_STATIC_IP_FAIL_STREAK);
+      return;
+    }
+
+    // Persistently unreachable: force the backstop so the next boot comes up on DHCP, then restart once.
+    // The restart gate's minimum uptime is already satisfied by the time the periodic check fires.
+    _staticRecoveryResolved = true;
+    LOG_WARNING("Static IP has no internet - forcing DHCP and restarting to recover (static config kept in NVS)");
+    _setStaticBootFails(WIFI_STATIC_IP_MAX_BOOT_FAILS);
+    setRestartSystem("Static IP unreachable - recovering on DHCP");
   }
 
   TaskInfo getTaskInfo()
