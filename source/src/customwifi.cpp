@@ -755,14 +755,20 @@ namespace CustomWifi
   {
     LOG_INFO("Resetting WiFi credentials and restarting...");
     Led::blinkOrangeFast(Led::PRIO_CRITICAL);
-    
+
+    // Also revert the network configuration (static IP / channel / TX power) to defaults.
+    // A WiFi reset is the connectivity-recovery path, so it must give a clean DHCP slate -
+    // otherwise a bad static IP would survive the credential reset and keep the device
+    // unreachable even after reconfiguring WiFi through the portal.
+    resetConfiguration();
+
     // Create WiFiManager on heap temporarily to reset settings
     WiFiManager* wifiManager = new WiFiManager();
     if (wifiManager) {
       wifiManager->resetSettings();
       delete wifiManager;
     }
-    
+
     setRestartSystem("Restart after WiFi reset");
   }
 
