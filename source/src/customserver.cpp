@@ -1691,6 +1691,50 @@ namespace CustomServer
                 else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to save credentials for the specified network. Please verify them and try again.");
             });
         server.addHandler(wifiCredentialsHandler);
+
+        // Get network configuration (static IP)
+        server.on("/api/v1/network/config", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            if (CustomWifi::getConfigurationAsJson(doc)) _sendJsonResponse(request, doc);
+            else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to get network configuration");
+        });
+
+        // Set network configuration (full PUT or partial PATCH). The device restarts to apply.
+        static AsyncCallbackJsonWebHandler *setNetworkConfigHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/network/config",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                bool isPartialUpdate = _isPartialUpdate(request);
+                if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_NETWORK)) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                if (CustomWifi::setConfigurationFromJson(doc, isPartialUpdate)) {
+                    LOG_INFO("Network configuration %s via API", isPartialUpdate ? "partially updated" : "updated");
+                    _sendSuccessResponse(request, "Network configuration updated successfully. The device will restart to apply the new settings.");
+                    setRestartSystem("Restart to apply new network configuration");
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid network configuration");
+                }
+            });
+        server.addHandler(setNetworkConfigHandler);
+
+        // Reset network configuration to defaults (DHCP)
+        server.on("/api/v1/network/config/reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            if (CustomWifi::resetConfiguration()) {
+                _sendSuccessResponse(request, "Network configuration reset successfully. The device will restart to apply the defaults.");
+                setRestartSystem("Restart to apply network configuration reset");
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to reset network configuration");
+            }
+        });
     }
 
     // === LOGGING ENDPOINTS ===

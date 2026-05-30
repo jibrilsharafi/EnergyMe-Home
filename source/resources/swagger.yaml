@@ -1103,6 +1103,119 @@ paths:
                     type: string
                     example: "Failed to queue WiFi credentials. Please try again."
 
+  /api/v1/network/config:
+    get:
+      summary: Get network configuration
+      description: Retrieve the current network configuration (static IP).
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Current network configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkConfiguration'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Update network configuration (full update)
+      description: |
+        Replace the full network configuration. All fields are required.
+        The device restarts to apply the new settings, so it will be temporarily unavailable.
+
+        **Warning:** A misconfigured static IP can make the device unreachable. Recover by
+        power-cycling and using the WiFi config portal / reset.
+      tags:
+        - Network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkConfiguration'
+            examples:
+              static_ip:
+                summary: Static IP
+                value:
+                  useStaticIp: true
+                  ip: "192.168.1.50"
+                  gateway: "192.168.1.1"
+                  subnet: "255.255.255.0"
+                  dns1: "8.8.8.8"
+                  dns2: "1.1.1.1"
+                  fallbackToDhcp: true
+              dhcp:
+                summary: DHCP (default)
+                value:
+                  useStaticIp: false
+                  ip: ""
+                  gateway: ""
+                  subnet: ""
+                  dns1: ""
+                  dns2: ""
+                  fallbackToDhcp: true
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: Invalid network configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update network configuration (partial update)
+      description: |
+        Update one or more network configuration fields. At least one valid field is required.
+        Cross-field rules still apply (enabling static IP requires valid ip/gateway/subnet).
+        The device restarts to apply the new settings.
+      tags:
+        - Network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkConfiguration'
+            examples:
+              enable_static_ip:
+                summary: Switch to a static IP
+                value:
+                  useStaticIp: true
+                  ip: "192.168.1.50"
+                  gateway: "192.168.1.1"
+                  subnet: "255.255.255.0"
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: Invalid network configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/network/config/reset:
+    post:
+      summary: Reset network configuration
+      description: Reset the network configuration to defaults (DHCP). The device restarts to apply.
+      tags:
+        - Network
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # Crash Monitor endpoints
   /api/v1/crash/info:
     get:
@@ -2918,7 +3031,57 @@ components:
           description: MQTT password (required if useCredentials is true)
           example: "mqtt_password"
           maxLength: 64
-    
+
+    NetworkConfiguration:
+      type: object
+      required:
+        - useStaticIp
+        - ip
+        - gateway
+        - subnet
+        - dns1
+        - dns2
+        - fallbackToDhcp
+      properties:
+        useStaticIp:
+          type: boolean
+          description: Use a static IP address instead of DHCP
+          example: false
+        ip:
+          type: string
+          description: Static IPv4 address (required when useStaticIp is true)
+          example: "192.168.1.50"
+          maxLength: 15
+        gateway:
+          type: string
+          description: Default gateway IPv4 address (required when useStaticIp is true)
+          example: "192.168.1.1"
+          maxLength: 15
+        subnet:
+          type: string
+          description: Subnet mask (required when useStaticIp is true)
+          example: "255.255.255.0"
+          maxLength: 15
+        dns1:
+          type: string
+          description: Primary DNS server (optional). When empty, defaults to the gateway address.
+          example: "8.8.8.8"
+          maxLength: 15
+        dns2:
+          type: string
+          description: Secondary DNS server (optional, empty string to omit)
+          example: "1.1.1.1"
+          maxLength: 15
+        fallbackToDhcp:
+          type: boolean
+          description: |
+            When static IP is enabled, automatically revert to DHCP at runtime if the static IP has
+            no working internet connectivity (e.g. wrong subnet/gateway). The static config is kept
+            in NVS and retried on the next boot. Independently, after several consecutive failed
+            static-IP boots the device ignores the static IP at startup and comes up on DHCP, so a
+            bad static IP can never permanently lock you out. Recommended to keep enabled.
+          example: true
+
     InfluxDbConfiguration:
       type: object
       required:
