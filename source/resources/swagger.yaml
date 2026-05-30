@@ -1106,7 +1106,7 @@ paths:
   /api/v1/network/config:
     get:
       summary: Get network configuration
-      description: Retrieve the current network configuration (static IP, fixed channel, TX power).
+      description: Retrieve the current network configuration (static IP).
       tags:
         - Network
       responses:
@@ -1128,8 +1128,8 @@ paths:
         Replace the full network configuration. All fields are required.
         The device restarts to apply the new settings, so it will be temporarily unavailable.
 
-        **Warning:** A misconfigured static IP, fixed channel or very low TX power can make the
-        device unreachable. Recover by power-cycling and using the WiFi config portal / reset.
+        **Warning:** A misconfigured static IP can make the device unreachable. Recover by
+        power-cycling and using the WiFi config portal / reset.
       tags:
         - Network
       requestBody:
@@ -1140,7 +1140,7 @@ paths:
               $ref: '#/components/schemas/NetworkConfiguration'
             examples:
               static_ip:
-                summary: Static IP with fixed channel
+                summary: Static IP
                 value:
                   useStaticIp: true
                   ip: "192.168.1.50"
@@ -1148,10 +1148,9 @@ paths:
                   subnet: "255.255.255.0"
                   dns1: "8.8.8.8"
                   dns2: "1.1.1.1"
-                  channel: 6
-                  txPower: 19.5
+                  fallbackToDhcp: true
               dhcp:
-                summary: DHCP, automatic channel, maximum TX power
+                summary: DHCP (default)
                 value:
                   useStaticIp: false
                   ip: ""
@@ -1159,8 +1158,7 @@ paths:
                   subnet: ""
                   dns1: ""
                   dns2: ""
-                  channel: 0
-                  txPower: 19.5
+                  fallbackToDhcp: true
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -1185,10 +1183,13 @@ paths:
             schema:
               $ref: '#/components/schemas/NetworkConfiguration'
             examples:
-              tx_power_only:
-                summary: Lower TX power only
+              enable_static_ip:
+                summary: Switch to a static IP
                 value:
-                  txPower: 11
+                  useStaticIp: true
+                  ip: "192.168.1.50"
+                  gateway: "192.168.1.1"
+                  subnet: "255.255.255.0"
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -1202,7 +1203,7 @@ paths:
   /api/v1/network/config/reset:
     post:
       summary: Reset network configuration
-      description: Reset the network configuration to defaults (DHCP, automatic channel, maximum TX power). The device restarts to apply.
+      description: Reset the network configuration to defaults (DHCP). The device restarts to apply.
       tags:
         - Network
       responses:
@@ -3040,8 +3041,7 @@ components:
         - subnet
         - dns1
         - dns2
-        - channel
-        - txPower
+        - fallbackToDhcp
       properties:
         useStaticIp:
           type: boolean
@@ -3064,7 +3064,7 @@ components:
           maxLength: 15
         dns1:
           type: string
-          description: Primary DNS server (optional, empty string to omit)
+          description: Primary DNS server (optional). When empty, defaults to the gateway address.
           example: "8.8.8.8"
           maxLength: 15
         dns2:
@@ -3072,19 +3072,15 @@ components:
           description: Secondary DNS server (optional, empty string to omit)
           example: "1.1.1.1"
           maxLength: 15
-        channel:
-          type: integer
-          description: Fixed 2.4 GHz WiFi channel. 0 means automatic (station follows the AP).
-          example: 0
-          minimum: 0
-          maximum: 13
-        txPower:
-          type: number
+        fallbackToDhcp:
+          type: boolean
           description: |
-            WiFi transmit power in dBm. Must be one of the discrete levels supported by the radio:
-            -1, 2, 5, 7, 8.5, 11, 13, 15, 17, 18.5, 19, 19.5. Default is 19.5 (maximum).
-          example: 19.5
-          enum: [-1, 2, 5, 7, 8.5, 11, 13, 15, 17, 18.5, 19, 19.5]
+            When static IP is enabled, automatically revert to DHCP at runtime if the static IP has
+            no working internet connectivity (e.g. wrong subnet/gateway). The static config is kept
+            in NVS and retried on the next boot. Independently, after several consecutive failed
+            static-IP boots the device ignores the static IP at startup and comes up on DHCP, so a
+            bad static IP can never permanently lock you out. Recommended to keep enabled.
+          example: true
 
     InfluxDbConfiguration:
       type: object
